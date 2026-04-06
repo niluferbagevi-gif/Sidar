@@ -472,6 +472,41 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
     assert manager.docker_available is True
 
 
+def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
+    original_import = builtins.__import__
+
+    def _import_without_docker(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker missing")
+        return original_import(name, *args, **kwargs)
+
+    fake_cached_docker = ModuleType("docker")
+    monkeypatch.setitem(sys.modules, "docker", fake_cached_docker)
+    monkeypatch.setattr(builtins, "__import__", _import_without_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is fake_cached_docker)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+    manager._init_docker()
+    assert manager.docker_available is False
+
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda _mod: False)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+    manager._init_docker()
+    assert manager.docker_available is False
+
+    monkeypatch.setattr(builtins, "__import__", original_import)
+
+    class _ErrDocker(ModuleType):
+        def from_env(self):
+            raise RuntimeError("daemon down")
+
+    err_docker = _ErrDocker("docker")
+    monkeypatch.setitem(sys.modules, "docker", err_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is err_docker)
+    manager._init_docker()
+    assert manager.docker_available is False
+
+
 def test_execute_code_docker_error_paths(manager, monkeypatch):
     manager.docker_available = True
     manager.security.level = SANDBOX
@@ -498,6 +533,53 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
     monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
     ok, msg = manager.execute_code("print(1)")
     assert ok and msg == "local-fallback"
+
+
+def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
+    manager.docker_available = True
+    manager.docker_runtime = "runc"
+    called = {}
+
+    class FakeContainer:
+        status = "exited"
+
+        def reload(self):
+            return None
+
+        def logs(self, **_kwargs):
+            return b"ok"
+
+        def wait(self, timeout=1):
+            return 0
+
+        def remove(self, force=False):
+            return None
+
+    class FakeContainers:
+        def run(self, **kwargs):
+            called.update(kwargs)
+            return FakeContainer()
+
+    fake_docker = ModuleType("docker")
+    fake_docker.errors = SimpleNamespace(ImageNotFound=RuntimeError)
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    manager.docker_client = SimpleNamespace(containers=FakeContainers())
+
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and "Docker Sandbox" in msg
+    assert called["runtime"] == "runc"
+
+
+def test_analyze_pytest_output_failure_section_parser(manager):
+    sample = """___ test parser branch ___
+E AssertionError
+foo/bar_test.py:42: in test_parser_branch
+= 1 failed in 0.10s =
+"""
+    parsed = manager.analyze_pytest_output(sample)
+    assert parsed["has_failures"] is True
+    assert parsed["failure_targets"][0]["summary"] == "test parser branch"
+    assert parsed["failure_targets"][0]["target_path"] == "foo/bar_test.py"
 
 
 def test_execute_code_local_and_shell_additional_errors(manager, monkeypatch):
