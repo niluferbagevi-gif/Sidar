@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -793,3 +794,156 @@ def test_document_store_schedule_judge_and_search_with_otel(monkeypatch: pytest.
     monkeypatch.setattr(rag, "_otel_trace", SimpleNamespace(get_tracer=lambda _name: _Tracer()))
     ok, txt = asyncio.run(store.search("query", session_id="s1"))
     assert ok is True and txt == "ok"
+
+
+def test_document_store_init_backends_and_import_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._write_lock = threading.Lock()
+    store._index = {"doc1": {"session_id": "s1"}}
+    (tmp_path / "doc1.txt").write_text("hello world", encoding="utf-8")
+
+    # _check_import true/false branches
+    import importlib
+
+    original_import_module = importlib.import_module
+    monkeypatch.setattr(importlib, "import_module", lambda name: (_ for _ in ()).throw(ImportError()) if name == "missing.mod" else original_import_module(name))
+    assert store._check_import("json") is True
+    assert store._check_import("missing.mod") is False
+
+    # _init_chroma success path
+    class _Settings:
+        def __init__(self, anonymized_telemetry: bool) -> None:
+            self.anonymized_telemetry = anonymized_telemetry
+
+    class _Client:
+        def __init__(self, **_kwargs: object) -> None:
+            self.created = []
+
+        def get_or_create_collection(self, name: str, **kwargs: object) -> object:
+            self.created.append((name, kwargs))
+            return object()
+
+    chromadb_mod = SimpleNamespace(PersistentClient=lambda **kwargs: _Client(**kwargs))
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", chromadb_mod)
+    monkeypatch.setitem(__import__("sys").modules, "chromadb.config", SimpleNamespace(Settings=_Settings))
+    monkeypatch.setattr(rag, "_build_embedding_function", lambda **_kwargs: object())
+    store._use_gpu = True
+    store._gpu_device = 0
+    store._mixed_precision = False
+    store._chroma_available = True
+    store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
+    store._init_chroma()
+    assert store.collection is not None
+    assert os.environ["CHROMA_TELEMETRY_DISABLED"] == "1"
+
+    # _init_fts migration path
+    store._init_fts()
+    count = store.fts_conn.execute("SELECT count(*) as c FROM bm25_index").fetchone()["c"]
+    assert count == 1
+
+
+def test_document_store_pgvector_init_and_query_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._check_import = lambda _name: True  # type: ignore[method-assign]
+    store._pg_table = "rag_pg"
+    store._pg_embedding_dim = 3
+    store._pg_embedding_model_name = "mini"
+    store._pgvector_available = False
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql+asyncpg://u:p@h/db")
+
+    executed: list[tuple[str, dict[str, object] | None]] = []
+
+    class _Rows:
+        def __init__(self, rows: list[object]) -> None:
+            self._rows = rows
+
+        def fetchall(self) -> list[object]:
+            return self._rows
+
+    class _Conn:
+        def execute(self, sql: object, params: dict[str, object] | None = None) -> _Rows | None:
+            executed.append((str(sql), params))
+            if params and "qvec" in params:
+                rows = [
+                    SimpleNamespace(parent_id="p1", title="Doc 1", source="src://1", chunk_content="a", distance=0.1),
+                    SimpleNamespace(parent_id="p1", title="Doc 1", source="src://1", chunk_content="a2", distance=0.2),
+                    SimpleNamespace(parent_id="p2", title="Doc 2", source="src://2", chunk_content="b", distance=0.3),
+                ]
+                return _Rows(rows)
+            return None
+
+    class _Begin:
+        def __enter__(self) -> _Conn:
+            return _Conn()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _Engine:
+        def begin(self) -> _Begin:
+            return _Begin()
+
+    monkeypatch.setitem(__import__("sys").modules, "sqlalchemy", SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda s: s))
+
+    class _ST:
+        def __init__(self, _model: str) -> None:
+            pass
+
+        def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> list[list[float]]:
+            assert normalize_embeddings is True
+            return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setitem(__import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_ST))
+    store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
+    store._init_pgvector()
+    assert store._pgvector_available is True
+
+    # _fetch_pgvector with parent de-dup
+    store._is_local_llm_provider = False
+    results = store._fetch_pgvector("query", top_k=2, session_id="s1")
+    assert [r["id"] for r in results] == ["p1", "p2"]
+
+    # _upsert + delete branches
+    store._pgvector_embed_texts = lambda _chunks: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+    store._upsert_pgvector_chunks("chunk-1", "parent-1", "s1", "title", "src", ["content"])
+    store._delete_pgvector_parent("parent-1", "s1")
+    assert any("DELETE FROM rag_pg" in sql for sql, _ in executed)
+
+
+def test_document_store_load_and_bm25_fetch_and_keyword_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._write_lock = threading.Lock()
+    store._bm25_available = True
+    store._index = {
+        "d1": {"session_id": "s1", "title": "First", "source": "src://1", "tags": ["alpha"]},
+        "d2": {"session_id": "s2", "title": "Second", "source": "src://2", "tags": ["beta"]},
+    }
+    (tmp_path / "d1.txt").write_text("hello alpha world", encoding="utf-8")
+    (tmp_path / "d2.txt").write_text("hello beta world", encoding="utf-8")
+
+    # _load_index invalid json branch
+    store.index_file.write_text("{broken", encoding="utf-8")
+    assert store._load_index() == {}
+
+    # _init_fts for BM25 tables
+    store._init_fts()
+    bm25_rows = store._fetch_bm25("hello", top_k=2, session_id="s1")
+    assert bm25_rows and bm25_rows[0]["id"] == "d1"
+    assert store._fetch_bm25("???", top_k=2, session_id="s1") == []
+
+    # _fetch_chroma empty ids branch and normal branch
+    store.collection = SimpleNamespace(
+        count=lambda: 10,
+        query=lambda **_kwargs: {"ids": [["c1", "c2"]], "documents": [["snippet1", "snippet2"]], "metadatas": [[{"parent_id": "d1", "title": "T1", "source": "S1"}, {"parent_id": "d1"}]]},
+    )
+    store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=2)
+    store._is_local_llm_provider = False
+    chroma = store._fetch_chroma("q", 2, "s1")
+    assert chroma and chroma[0]["id"] == "d1"
+
+    store.collection = SimpleNamespace(count=lambda: 1, query=lambda **_kwargs: {"ids": [[]]})
+    assert store._fetch_chroma("q", 2, "s1") == []
+
+    # keyword search/session filtering
+    ok, text = store._keyword_search("alpha", 2, "s1")
+    assert ok is True and "First" in text
