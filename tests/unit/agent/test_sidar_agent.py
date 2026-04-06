@@ -79,6 +79,15 @@ def _load_sidar_agent_module(monkeypatch: pytest.MonkeyPatch):
     return importlib.import_module("agent.sidar_agent")
 
 
+def test_import_sets_trace_none_when_opentelemetry_trace_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    opentelemetry_stub = types.ModuleType("opentelemetry")
+    monkeypatch.setitem(sys.modules, "opentelemetry", opentelemetry_stub)
+
+    sidar_agent = _load_sidar_agent_module(monkeypatch)
+
+    assert sidar_agent.trace is None
+
+
 def test_default_derive_correlation_id_returns_first_non_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
     sidar_agent = _load_sidar_agent_module(monkeypatch)
     result = sidar_agent._default_derive_correlation_id("", "   ", None, "corr-123", "corr-456")
