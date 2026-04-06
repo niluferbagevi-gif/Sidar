@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib
+import builtins
 import json
 import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -721,3 +724,177 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
 
     manager.docker_available = True
     assert "Docker Sandbox Aktif" in manager.status()
+
+
+def test_import_fallback_and_uri_windows_non_drive(monkeypatch):
+    real_config = importlib.import_module("config")
+    fake_config = ModuleType("config")
+    fake_config.Config = type("Config", (), {})
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+    reloaded = importlib.reload(cm)
+    assert reloaded.SANDBOX_LIMITS == {}
+    monkeypatch.setitem(sys.modules, "config", real_config)
+    importlib.reload(cm)
+
+    monkeypatch.setattr(cm, "_OS_NAME", "nt")
+    p = cm._file_uri_to_path("file:///tmp/no-drive.py")
+    assert isinstance(p, cm.PureWindowsPath)
+    monkeypatch.setattr(cm, "_OS_NAME", "posix")
+
+
+def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tmp_path):
+    real_open = builtins.open
+    missing = tmp_path / "missing.py"
+    ok, msg = manager.read_file(str(missing))
+    assert not ok and "bulunamadı" in msg
+
+    d = tmp_path / "d"
+    d.mkdir()
+    ok, msg = manager.read_file(str(d))
+    assert not ok and "dizin" in msg
+
+    p = tmp_path / "perm.py"
+    p.write_text("x=1\n", encoding="utf-8")
+    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x")))
+    ok, msg = manager.read_file(str(p))
+    assert not ok and "Erişim reddedildi" in msg
+
+    manager.security.write_ok = False
+    ok, msg = manager.write_file(str(p), "x=2\n")
+    assert not ok and "Güvenli alternatif" in msg
+    manager.security.write_ok = True
+
+    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x")))
+    ok, msg = manager.write_file(str(p), "x=2\n", validate=False)
+    assert not ok and "Yazma erişimi reddedildi" in msg
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    p.write_text("dup\ndup\n", encoding="utf-8")
+    ok, msg = manager.patch_file(str(p), "dup", "x")
+    assert not ok and "belirsiz" in msg
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=2, stdout="", stderr="err"))
+    ok, msg = manager.run_shell("python -c 'import sys;sys.exit(2)'", allow_shell_features=True)
+    assert not ok and "çıkış kodu: 2" in msg
+
+
+def test_execute_code_more_paths(manager, monkeypatch):
+    manager.docker_available = True
+    manager.max_output_chars = 5
+
+    class TimeoutContainer:
+        status = "running"
+
+        def reload(self):
+            return None
+
+        def kill(self):
+            return None
+
+        def remove(self, force=False):
+            return None
+
+    fake_docker = ModuleType("docker")
+    fake_docker.errors = SimpleNamespace(ImageNotFound=RuntimeError)
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: TimeoutContainer()))
+
+    ticks = {"n": 0}
+
+    def _fake_time():
+        ticks["n"] += 1
+        return 0.0 if ticks["n"] == 1 else 99.0
+
+    monkeypatch.setattr(cm.time, "time", _fake_time)
+    ok, msg = manager.execute_code("print(1)")
+    assert not ok and "Zaman aşımı" in msg
+    monkeypatch.setattr(cm.time, "time", time.time)
+
+    class ExitContainer:
+        status = "exited"
+
+        def reload(self):
+            return None
+
+        def logs(self, **_kwargs):
+            return b"abcdefghij"
+
+        def wait(self, timeout=1):
+            return {"StatusCode": 3}
+
+        def remove(self, force=False):
+            return None
+
+    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: ExitContainer()))
+    ok, msg = manager.execute_code("print(1)")
+    assert not ok and "Docker Sandbox" in msg
+
+
+def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
+    py = tmp_path / "a.py"
+    extra = tmp_path / "b.py"
+    py.write_text("a=1\n", encoding="utf-8")
+    extra.write_text("b=2\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    class P:
+        returncode = 0
+
+        def communicate(self, *_a, **_k):
+            raise subprocess.TimeoutExpired(cmd="x", timeout=1)
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: P())
+    with pytest.raises(RuntimeError):
+        manager._run_lsp_sequence(
+            primary_path=py, request_method="textDocument/definition", extra_open_files=[extra, Path("ghost.py")]
+        )
+
+    edit = {
+        "documentChanges": [
+            {
+                "textDocument": {"uri": cm._path_to_file_uri(py)},
+                "edits": [
+                    {
+                        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                        "newText": "z",
+                    }
+                ],
+            }
+        ]
+    }
+    ok, msg = manager._apply_workspace_edit(edit)
+    assert ok and "Değişen dosya sayısı: 1" in msg
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: [{"id": 2, "result": {"changes": {}}}])
+    ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "new", apply=False)
+    assert ok and "Etkilenen dosya sayısı: 0" in msg
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("oops")))
+    ok, report = manager.lsp_semantic_audit([str(py)])
+    assert not ok and report["status"] == "tool-error"
+
+
+def test_grep_glob_list_audit_more_branches(manager, monkeypatch, tmp_path):
+    # glob "**" branch
+    (tmp_path / "x.py").write_text("hello\n", encoding="utf-8")
+    ok, msg = manager.glob_search("**/*.py", base_path=str(tmp_path))
+    assert ok and "x.py" in msg
+
+    # grep target file branch with relative_to ValueError fallback
+    outside = Path("/tmp/outside_sidar_test.txt")
+    outside.write_text("needle\n", encoding="utf-8")
+    ok, msg = manager.grep_files("needle", path=str(outside))
+    assert ok and "outside_sidar_test.txt" in msg
+
+    # max_results truncation warning
+    (tmp_path / "a.txt").write_text("needle\nneedle\n", encoding="utf-8")
+    ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.txt", max_results=1)
+    assert ok and "Maksimum eşleşme sayısına ulaşıldı" in msg
+
+    # audit_project read exception branch
+    monkeypatch.setattr(cm.Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x")))
+    report = manager.audit_project(root=str(tmp_path))
+    assert "Okunamadı" in report
