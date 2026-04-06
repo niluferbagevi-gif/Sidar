@@ -270,3 +270,87 @@ def test_document_store_clean_html_with_and_without_bleach(monkeypatch: pytest.M
     monkeypatch.setattr(rag, "_BLEACH_AVAILABLE", True)
     monkeypatch.setattr(rag, "_bleach", _FakeBleach)
     assert rag.DocumentStore._clean_html(html) == "<ignored>Clean Text</ignored>"
+
+
+def test_document_store_consolidate_session_documents_skip_paths(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+
+    # keep_recent_docs eşiğinin altında: direkt skip
+    store._index = {"a": {"session_id": "s1", "created_at": 1}}
+    skip_by_count = store.consolidate_session_documents("s1", keep_recent_docs=2)
+    assert skip_by_count["status"] == "skipped"
+    assert skip_by_count["removed_docs"] == 0
+
+    # Dokümanlar var ama removable yok (pinned / access_count>1): yine skip
+    store._index = {
+        "a": {"session_id": "s1", "created_at": 1, "tags": ["pinned"]},
+        "b": {"session_id": "s1", "created_at": 2, "access_count": 10},
+        "c": {"session_id": "s1", "created_at": 3, "tags": ["memory-summary"]},
+    }
+    skip_no_removable = store.consolidate_session_documents("s1", keep_recent_docs=1)
+    assert skip_no_removable["status"] == "skipped"
+    assert skip_no_removable["removed_docs"] == 0
+
+
+def test_document_store_consolidate_session_documents_completed_flow(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {
+        "digest-old": {"session_id": "s1", "source": "memory://nightly-digest/2026-01-01", "created_at": 1},
+        "keep-new": {"session_id": "s1", "title": "Keep", "created_at": 99, "access_count": 2},
+        "drop-1": {"session_id": "s1", "title": "Drop1", "created_at": 3, "access_count": 0, "preview": "foo"},
+        "drop-2": {"session_id": "s1", "title": "Drop2", "created_at": 2, "access_count": 0, "preview": "bar"},
+    }
+
+    deleted: list[tuple[str, str]] = []
+    store.delete_document = lambda doc_id, sid: deleted.append((doc_id, sid)) or "ok"  # type: ignore[assignment]
+    store._add_document_sync = lambda **_kwargs: "summary-1"  # type: ignore[assignment]
+
+    result = store.consolidate_session_documents("s1", keep_recent_docs=1)
+    assert result["status"] == "completed"
+    assert result["summary_doc_id"] == "summary-1"
+    assert result["removed_docs"] == 3
+    # eski digest + removable dokümanlar silinmeli
+    assert deleted.count(("digest-old", "s1")) >= 1
+    assert ("drop-1", "s1") in deleted
+    assert ("drop-2", "s1") in deleted
+
+
+def test_document_store_list_documents_empty_and_populated(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    assert "boş" in store.list_documents(session_id="none")
+
+    store._index = {
+        "doc1": {"title": "Title 1", "source": "src://a", "size": 2048, "tags": ["x"], "session_id": "s1"},
+        "doc2": {"title": "Title 2", "source": "src://b", "size": 512, "tags": [], "session_id": "s2"},
+    }
+    listed = store.list_documents(session_id="s1")
+    assert "Title 1" in listed
+    assert "src://a" in listed
+    assert "Title 2" not in listed
+
+
+def test_document_store_status_engine_variants(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {}
+    store._bm25_available = True
+    store._chroma_available = False
+    store._graph_rag_enabled = False
+
+    store._pgvector_available = True
+    store._vector_backend = "chroma"
+    store._use_gpu = False
+    store._gpu_device = 0
+    assert "pgvector" in store.status()
+
+    store._pgvector_available = False
+    store._vector_backend = "pgvector"
+    assert "pgvector (pasif)" in store.status()
+
+    store._vector_backend = "chroma"
+    store._chroma_available = True
+    store._use_gpu = True
+    store._gpu_device = 1
+    status = store.status()
+    assert "ChromaDB (Chunking + GPU cuda:1)" in status
+    assert "BM25 (SQLite FTS5)" in status
+    assert "Anahtar Kelime" in status
