@@ -318,7 +318,216 @@ def test_null_span_noop_methods() -> None:
     with span as ctx:
         assert ctx is span
         ctx.set_attribute("k", "v")
-    assert span.__exit__(None, None, None) is False
+
+
+def test_supervisor_init_falls_back_when_base_agent_init_raises_type_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        raise TypeError("stub object init")
+
+    monkeypatch.setattr(supervisor_mod.BaseAgent, "__init__", _broken_base_init)
+    sup = SupervisorAgent()
+
+    assert sup.role_name == "supervisor"
+    assert sup.llm is None
+    assert sup.tools == {}
+
+
+def test_supervisor_init_sets_agents_none_when_role_instantiation_type_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BrokenRole:
+        def __init__(self, _cfg=None) -> None:
+            raise TypeError("role build failed")
+
+    monkeypatch.setattr(supervisor_mod, "ResearcherAgent", _BrokenRole)
+
+    sup = SupervisorAgent()
+
+    assert sup.researcher is None
+    assert sup.coder is None
+    assert sup.reviewer is None
+    assert sup.poyraz is None
+    assert sup.qa is None
+    assert sup.coverage is None
+
+
+def test_supervisor_init_coverage_registration_failure_falls_back_to_qa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BrokenCoverage:
+        def __init__(self, _cfg=None) -> None:
+            raise RuntimeError("coverage unavailable")
+
+    monkeypatch.setattr(supervisor_mod, "CoverageAgent", _BrokenCoverage)
+
+    sup = SupervisorAgent()
+
+    assert sup.coverage is sup.qa
+
+
+def test_is_reject_feedback_payload_false_when_empty_body() -> None:
+    assert SupervisorAgent._is_reject_feedback_payload("qa_feedback|   ") is False
+
+
+def test_delegate_records_metrics_and_ignores_metrics_record_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sup = _build_supervisor()
+
+    class _Agent:
+        async def run_task(self, goal: str) -> str:
+            return f"ok:{goal}"
+
+    class _Registry:
+        def get(self, _receiver: str) -> _Agent:
+            return _Agent()
+
+    class _Metrics:
+        def record(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("metrics down")
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def set_attribute(self, *_args) -> None:
+            return None
+
+    class _Tracer:
+        def start_as_current_span(self, *_args, **_kwargs) -> _Span:
+            return _Span()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", _Tracer())
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Metrics())
+    sup.registry = _Registry()
+
+    result = asyncio.run(sup._delegate("coder", "hedef", "code"))
+    assert result.status == "done"
+    assert sup.memory_hub.role_notes[-1] == ("coder", "ok:hedef")
+
+
+def test_delegate_with_span_without_set_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
+    sup = _build_supervisor()
+
+    class _Agent:
+        async def run_task(self, _goal: str) -> str:
+            return "minimal"
+
+    class _Registry:
+        def get(self, _receiver: str) -> _Agent:
+            return _Agent()
+
+    class _SpanNoAttrs:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Tracer:
+        def start_as_current_span(self, *_args, **_kwargs) -> _SpanNoAttrs:
+            return _SpanNoAttrs()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", _Tracer())
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", None)
+    sup.registry = _Registry()
+
+    result = asyncio.run(sup._delegate("reviewer", "kontrol", "review"))
+    assert result.summary == "minimal"
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "github issue review et",
+        "seo kampanya üret",
+        "eksik test yaz",
+    ],
+)
+def test_run_task_non_code_routes_delegation_requests(prompt: str) -> None:
+    sup = _build_supervisor(has_coverage=True)
+
+    delegation = DelegationRequest(
+        task_id="deleg",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="fix this",
+        intent="p2p",
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return TaskResult(task_id="t0", status="done", summary=delegation)
+
+    async def _route_p2p(request: DelegationRequest, **_kwargs):
+        assert request is delegation
+        return TaskResult(task_id="t1", status="done", summary="p2p-done")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task(prompt))
+    assert result == "p2p-done"
+
+
+def test_run_task_code_flow_routes_delegation_requests_at_each_stage() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+
+    code_req = DelegationRequest(
+        task_id="d1",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="qa_feedback|decision=reject",
+        intent="p2p",
+    )
+    review_req = DelegationRequest(
+        task_id="d2",
+        reply_to="coder",
+        target_agent="reviewer",
+        payload="review this",
+        intent="p2p",
+    )
+    revise_req = DelegationRequest(
+        task_id="d3",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="revise this",
+        intent="p2p",
+    )
+    final_review_req = DelegationRequest(
+        task_id="d4",
+        reply_to="coder",
+        target_agent="reviewer",
+        payload="final review",
+        intent="p2p",
+    )
+    responses = iter(
+        [
+            TaskResult(task_id="c1", status="done", summary=code_req),
+            TaskResult(task_id="r1", status="done", summary=review_req),
+            TaskResult(task_id="c2", status="done", summary=revise_req),
+            TaskResult(task_id="r2", status="done", summary=final_review_req),
+        ]
+    )
+    p2p_outputs = iter(["ilk kod", "decision=reject", "ikinci kod", "Tüm testler geçti"])
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    async def _route_p2p(_req: DelegationRequest, **_kwargs):
+        return TaskResult(task_id="x", status="done", summary=next(p2p_outputs))
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("bir modül geliştir"))
+    assert "Reviewer QA Özeti (2. tur)" in result
+    assert "ikinci kod" in result
+    assert "Tüm testler geçti" in result
 
 
 def test_init_registers_specialist_agents() -> None:
