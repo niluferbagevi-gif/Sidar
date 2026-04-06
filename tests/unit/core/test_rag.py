@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import builtins
+import contextlib
 import importlib
 import os
+import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+import types
 
 import pytest
 
@@ -1351,3 +1355,97 @@ def test_document_store_misc_uncovered_fallback_paths(tmp_path: Path) -> None:
 
     sys.modules["core.judge"] = SimpleNamespace(get_llm_judge=lambda: _Judge())
     rag.DocumentStore._schedule_judge("q", "a")
+
+
+def test_graph_index_additional_branch_coverage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "ignored.py").write_text("x=1", encoding="utf-8")
+    keep = root / "keep.py"
+    keep.write_text("x=1", encoding="utf-8")
+
+    gi = rag.GraphIndex(root)
+    files = gi._iter_source_files(root)
+    assert keep in files
+    assert all("node_modules" not in str(p) for p in files)
+    assert gi._script_import_candidates(keep, "react", root) == []
+    assert gi._extract_str_literal(ast.Str(s=" legacy ")) == "legacy"
+
+    src = """
+from . import mod
+@router.get
+def no_args(): pass
+@router.get("/ok")
+def ok(): pass
+session.post()
+http.get("http://remote.example.com/x")
+foo.get("/x")
+obj.session.post("/y")
+"""
+    deps, defs, calls = gi._parse_python_source(keep, src)
+    assert isinstance(deps, list)
+    assert any(item["path"] == "/ok" for item in defs)
+    assert {item["path"] for item in calls} == {"/x", "/y"}
+
+    calls = gi._extract_script_endpoint_calls(
+        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new WebSocket("/ws"); new WebSocket("/ws")'
+    )
+    assert len(calls) == 1
+
+    original_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self == keep:
+            raise OSError("boom")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+    rebuilt = gi.rebuild(root)
+    assert rebuilt["nodes"] >= 1
+
+    assert gi.resolve_node_id("   ") is None
+    assert gi.explain_dependency_path("missing", "target") == []
+    gi.add_node("a")
+    gi.add_node("b")
+    assert gi.explain_dependency_path("a", "b") == []
+    assert gi.impact_analysis("missing") == {}
+
+    gi.add_node("core/a.py", node_type="file")
+    gi.add_node("core/b.py", node_type="file")
+    gi.add_node("core/c.py", node_type="file")
+    gi.add_node("target.py", node_type="file")
+    gi.add_edge("core/a.py", "target.py")
+    gi.add_edge("core/b.py", "target.py")
+    gi.add_edge("core/c.py", "target.py")
+    impact = gi.impact_analysis("target.py")
+    assert impact["risk_level"] == "medium"
+
+
+def test_embedding_function_mixed_precision_cuda_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _EF:
+        def __call__(self, input):
+            return ["ok", input]
+
+    class _Factory:
+        def __call__(self, **kwargs):
+            return _EF()
+
+    fake_embedding_functions = types.SimpleNamespace(SentenceTransformerEmbeddingFunction=_Factory())
+    fake_chromadb_utils = types.SimpleNamespace(embedding_functions=fake_embedding_functions)
+    fake_chromadb = types.SimpleNamespace(utils=fake_chromadb_utils)
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(is_available=lambda: True),
+        float16="fp16",
+        autocast=lambda **kwargs: contextlib.nullcontext(),
+    )
+
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils", fake_chromadb_utils)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", fake_embedding_functions)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.amp", types.ModuleType("torch.amp"))
+
+    ef = rag._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
+    assert ef is not None
+    assert ef.__call__(["x"])[0] == "ok"

@@ -9,6 +9,7 @@ from core.dlp import DLPDetection, DLPEngine, _is_valid_tckn, get_dlp_engine, ma
 def test_is_valid_tckn_for_valid_and_invalid_inputs():
     assert _is_valid_tckn("10000000146") is True
     assert _is_valid_tckn("12345678901") is False
+    assert _is_valid_tckn("10000000145") is False
     assert _is_valid_tckn("01234567890") is False
     assert _is_valid_tckn("abcdefghijk") is False
 
@@ -94,6 +95,15 @@ def test_mask_leaves_invalid_tckn_untouched():
 
     assert masked == text
     assert detections == []
+
+
+def test_mask_skips_tckn_block_when_disabled_but_continues_other_patterns():
+    engine = DLPEngine(mask_tckn=False, mask_email=True)
+    text = "tckn 10000000146 mail user@example.com"
+    masked, detections = engine.mask(text)
+    assert "10000000146" in masked
+    assert "user@example.com" not in masked
+    assert any(d.pattern_name == "email" for d in detections)
 
 
 def test_mask_messages_masks_only_string_contents_and_preserves_original_list():

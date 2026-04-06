@@ -1,5 +1,6 @@
 import asyncio
 import builtins
+import importlib
 import json
 import sys
 import types
@@ -250,6 +251,11 @@ def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(mo
     assert "score:1" in called["tags"]
 
 
+def test_feedback_store_flag_weak_response_returns_false_when_disabled():
+    store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=False))
+    assert run(store.flag_weak_response("p", "r", 5, "reason")) is False
+
+
 def test_dataset_exporter_formats_and_empty_case(tmp_path):
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1},
@@ -291,6 +297,8 @@ def test_pipeline_helpers_and_example_builders():
     assert pipe._normalize_tags(["a", "", 1]) == ["a", "1"]
     assert pipe._normalize_tags('["x","y"]') == ["x", "y"]
     assert pipe._normalize_tags("bad") == []
+    assert pipe._normalize_tags('{"not":"a-list"}') == []
+    assert pipe._normalize_tags(None) == []
     assert pipe._is_judge_reasoning_signal({"tags": ["judge_reasoning", "weak_response"]}) is True
 
     rows = [
@@ -305,6 +313,15 @@ def test_pipeline_helpers_and_example_builders():
 
     pref = pipe._build_preference_examples(rows)
     assert [x["feedback_id"] for x in pref] == [4]
+
+
+def test_pipeline_build_preference_examples_skips_equal_and_neutral_rows():
+    pipe = al.ContinuousLearningPipeline(InMemoryStore(), config=DummyConfig())
+    rows = [
+        {"id": 10, "prompt": "p", "response": "same", "correction": "same", "rating": 1, "tags": []},
+        {"id": 11, "prompt": "p", "response": "r", "correction": "c", "rating": 0, "tags": []},
+    ]
+    assert pipe._build_preference_examples(rows) == []
 
 
 def test_pipeline_serialize_and_write_jsonl(tmp_path):
@@ -438,6 +455,29 @@ def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
     assert pipe.schedule_cycle(reason="bg") is True
 
 
+def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch):
+    disabled_pipe = al.ContinuousLearningPipeline(
+        InMemoryStore([]),
+        config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False),
+    )
+    assert disabled_pipe.schedule_cycle(reason="bg") is False
+
+    cfg = DummyConfig()
+    pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
+
+    class CancelLoop:
+        def create_task(self, coro, name=None):
+            return asyncio.run(coro)
+
+    async def cancelled(**kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(pipe, "run_cycle", cancelled)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: CancelLoop())
+    with pytest.raises(asyncio.CancelledError):
+        pipe.schedule_cycle(reason="bg")
+
+
 def test_lora_trainer_check_and_train_paths(monkeypatch):
     cfg = DummyConfig()
     trainer = al.LoRATrainer(config=cfg)
@@ -482,6 +522,12 @@ def test_lora_trainer_check_peft_importerror(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert trainer._check_peft() is False
+
+
+def test_lora_trainer_check_peft_uses_cached_value():
+    trainer = al.LoRATrainer(config=DummyConfig())
+    trainer._peft_available = False
     assert trainer._check_peft() is False
 
 
@@ -708,6 +754,57 @@ def test_chunked_and_singletons(monkeypatch):
     pipe1 = al.get_continuous_learning_pipeline()
     pipe2 = al.get_continuous_learning_pipeline()
     assert pipe1 is pipe2
+
+
+def test_get_continuous_learning_pipeline_double_checked_lock_path(monkeypatch):
+    al._continuous_learning_pipeline = None
+
+    sentinel = object()
+
+    class EnterSetsPipeline:
+        def __enter__(self):
+            al._continuous_learning_pipeline = sentinel
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(al, "_pipeline_lock", EnterSetsPipeline())
+    assert al.get_continuous_learning_pipeline(config=DummyConfig()) is sentinel
+
+
+def test_active_learning_module_importerror_sets_sa_false(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("sqlalchemy"):
+            raise ImportError("sqlalchemy blocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    reloaded = importlib.reload(al)
+    assert reloaded._SA_AVAILABLE is False
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    importlib.reload(reloaded)
+
+
+def test_active_learning_module_import_success_sets_sa_true(monkeypatch):
+    fake_sa_asyncio = types.ModuleType("sqlalchemy.ext.asyncio")
+    fake_sa_asyncio.create_async_engine = lambda *args, **kwargs: object()
+    fake_sa = types.ModuleType("sqlalchemy")
+    fake_sa.text = lambda value: value
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy.ext.asyncio", fake_sa_asyncio)
+    monkeypatch.setitem(sys.modules, "sqlalchemy", fake_sa)
+
+    reloaded = importlib.reload(al)
+    assert reloaded._SA_AVAILABLE is True
+
+
+def test_feedback_store_close_no_engine_is_noop():
+    store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
+    run(store.close())
+    assert store._engine is None
 
 
 def test_schedule_and_flag_wrappers(monkeypatch):

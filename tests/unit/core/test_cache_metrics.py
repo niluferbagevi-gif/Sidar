@@ -66,6 +66,22 @@ def test_get_prometheus_metric_returns_none_when_import_fails(
     assert cache_metrics._get_prometheus_metric("x", "desc", "counter") is None
 
 
+def test_get_prometheus_metric_returns_cached_inside_lock_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinel = object()
+    cache_metrics._prometheus_metric_cache.clear()
+
+    class EnterSetsCache:
+        def __enter__(self):
+            cache_metrics._prometheus_metric_cache["late_metric"] = sentinel
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(cache_metrics, "_prometheus_metric_lock", EnterSetsCache())
+    assert cache_metrics._get_prometheus_metric("late_metric", "desc", "counter") is sentinel
+
+
 def test_get_prometheus_metric_uses_registry_existing_collector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -132,6 +148,11 @@ def test_inc_prometheus_counter_calls_inc_only_when_available(
     cache_metrics._inc_prometheus_counter("metric", "desc", count=4)
 
     assert inc_calls == [4]
+
+
+def test_inc_prometheus_counter_noop_when_counter_has_no_inc(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: object())
+    cache_metrics._inc_prometheus_counter("metric", "desc", count=2)
 
 
 def test_set_prometheus_gauge_calls_set_only_when_available(
