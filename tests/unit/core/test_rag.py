@@ -490,3 +490,97 @@ def test_document_store_rrf_and_formatting_and_snippet_behaviors(tmp_path: Path)
 
     snippet = rag.DocumentStore._extract_snippet("x" * 20, "missing", window=10)
     assert snippet == "xxxxxxxxxx..."
+
+
+def test_document_store_list_documents_and_touch_and_missing_file(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._save_index = lambda: None
+    store._index = {
+        "d1": {"session_id": "s1", "title": "Doc 1", "source": "src://1", "size": 2048, "tags": ["alpha"], "access_count": 0},
+    }
+
+    listing = store.list_documents(session_id="s1")
+    assert "[Belge Deposu — 1 belge]" in listing
+    assert "Doc 1" in listing and "2.0 KB" in listing
+
+    ok, msg = store.get_document("d1", session_id="s1")
+    assert ok is False
+    assert "dosyası eksik" in msg
+
+    store._touch_document("d1")
+    assert store._index["d1"]["access_count"] == 1
+
+
+def test_document_store_format_extract_and_consolidate_skip_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+
+    ok, text = store._format_results_from_struct([], "q", source_name="BM25")
+    assert ok is False
+    assert "ilgili sonuç bulunamadı" in text
+
+    snippet = rag.DocumentStore._extract_snippet("start middle keyword end", "keyword", window=8)
+    assert "keyword" in snippet
+
+    store._index = {"d1": {"session_id": "s1", "title": "Only"}}
+    summary = store.consolidate_session_documents("s1", keep_recent_docs=2)
+    assert summary["status"] == "skipped"
+
+    store._index = {
+        "d1": {"session_id": "s1", "title": "Pinned", "tags": ["pinned"], "access_count": 0, "created_at": 1, "last_accessed_at": 1},
+        "d2": {"session_id": "s1", "title": "Read", "tags": [], "access_count": 3, "created_at": 2, "last_accessed_at": 2},
+    }
+    summary = store.consolidate_session_documents("s1", keep_recent_docs=1)
+    assert summary["status"] == "skipped"
+
+
+def test_document_store_search_sync_fallback_chain_and_graph_not_found(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "A"}}
+    store._bm25_available = True
+    store._pgvector_available = True
+    store._chroma_available = True
+    store.collection = object()
+    store._is_local_llm_provider = False
+    store._local_hybrid_enabled = True
+    store._rrf_search = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("rrf"))  # type: ignore[method-assign]
+    store._pgvector_search = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("pg"))  # type: ignore[method-assign]
+    store._chroma_search = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("chroma"))  # type: ignore[method-assign]
+    store._bm25_search = lambda q, k, s: (True, f"bm25:{q}:{k}:{s}")  # type: ignore[method-assign]
+
+    ok, result = store._search_sync("needle", mode="auto", session_id="s1")
+    assert ok is True
+    assert result.startswith("bm25:needle")
+
+    graph_store = _make_store_stub(tmp_path)
+    graph_store._graph_rag_enabled = True
+    graph_store._graph_ready = True
+    graph_store._graph_index = rag.GraphIndex(tmp_path)
+
+    ok, result = graph_store.search_graph("unknown-module", top_k=2)
+    assert ok is False
+    assert "ilgili modül bulunamadı" in result
+
+
+def test_document_store_search_sync_empty_session_and_analyze_graph_impact(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {}
+
+    ok, msg = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is False
+    assert "belge deposu boş" in msg
+
+    graph_store = _make_store_stub(tmp_path)
+    graph_store._graph_rag_enabled = True
+    graph_store._graph_ready = True
+    graph_store._graph_index = rag.GraphIndex(tmp_path)
+    graph_store._graph_index.add_node("a.py", node_type="file")
+    graph_store._graph_index.add_node("b.py", node_type="file")
+    graph_store._graph_index.add_edge("a.py", "b.py", kind="imports")
+
+    ok, text = graph_store.analyze_graph_impact("a.py")
+    assert ok is True
+    assert "[GraphRAG Impact] a.py" in text
