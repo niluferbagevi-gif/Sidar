@@ -1105,3 +1105,166 @@ def test_document_store_list_documents_and_status_engine_variants(tmp_path: Path
     store._use_gpu = True
     store._gpu_device = 1
     assert "ChromaDB (Chunking + GPU cuda:1)" in store.status()
+
+
+def test_document_store_add_file_security_and_failure_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+
+    outside = Path("/etc/hosts")
+    ok, msg = store.add_document_from_file(str(outside), session_id="s1")
+    assert ok is False
+    assert "proje dizini dışında" in msg
+
+    blocked = tmp_path / "logs" / "note.txt"
+    blocked.parent.mkdir(parents=True)
+    blocked.write_text("hello", encoding="utf-8")
+    ok, msg = store.add_document_from_file(str(blocked), session_id="s1")
+    assert ok is False
+    assert "güvenlik politikası" in msg
+
+    empty = tmp_path / "empty.txt"
+    empty.write_text("   ", encoding="utf-8")
+    ok, msg = store.add_document_from_file(str(empty), session_id="s1")
+    assert ok is False
+    assert "Dosya boş" in msg
+
+    monkeypatch.setattr(Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("read boom")))
+    ok, msg = store.add_document_from_file(str(empty), session_id="s1")
+    assert ok is False
+    assert "Dosya eklenemedi" in msg
+
+
+def test_document_store_delete_document_graph_and_wrappers(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    class _DummyLock:
+        def __enter__(self) -> "_DummyLock":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    store._write_lock = _DummyLock()
+    store._chroma_available = True
+    store.collection = SimpleNamespace(delete=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("delete boom")))
+    store._pgvector_available = True
+    deleted: list[tuple[str, str]] = []
+    store._delete_pgvector_parent = lambda parent_id, session_id: deleted.append((parent_id, session_id))  # type: ignore[method-assign]
+    store._save_index = lambda: None
+    store._update_bm25_cache_on_delete = lambda _doc_id: None
+    store._index = {"doc1": {"title": "Doc1", "session_id": "s1", "parent_id": "p1"}}
+    (tmp_path / "doc1.txt").write_text("body", encoding="utf-8")
+
+    message = store.delete_document("doc1", session_id="s1")
+    assert "Belge silindi" in message
+    assert deleted == [("p1", "s1")]
+
+    ok, msg = store.get_document("missing", session_id="s1")
+    assert ok is False
+    assert "Belge bulunamadı" in msg
+
+    pg_ok, pg_msg = store._pgvector_search("q", 2, "s1")
+    assert pg_ok is False
+    assert "ilgili sonuç bulunamadı" in pg_msg
+
+    store.collection = SimpleNamespace(count=lambda: 0, query=lambda **_k: {"ids": [[]]})
+    ch_ok, ch_msg = store._chroma_search("q", 2, "s1")
+    assert ch_ok is False
+    assert "ilgili sonuç bulunamadı" in ch_msg
+
+    store._bm25_available = False
+    bm_ok, bm_msg = store._bm25_search("q", 2, "s1")
+    assert bm_ok is False
+    assert "ilgili sonuç bulunamadı" in bm_msg
+
+
+def test_document_store_search_mode_and_cache_update_edges(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "T1"}}
+    store._pgvector_available = True
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = False
+    store._is_local_llm_provider = True
+    store._local_hybrid_enabled = False
+    store._pgvector_search = lambda q, k, s: (True, f"pg:{q}:{k}:{s}")  # type: ignore[method-assign]
+    store._chroma_search = lambda q, k, s: (True, f"ch:{q}:{k}:{s}")  # type: ignore[method-assign]
+
+    ok, res = store._search_sync("q", mode="vector", session_id="s1")
+    assert ok is True and res.startswith("pg:")
+
+    store._pgvector_available = False
+    ok, res = store._search_sync("q", mode="vector", session_id="s1")
+    assert ok is True and res.startswith("ch:")
+
+    store._pgvector_available = True
+    ok, res = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is True and res.startswith("pg:")
+
+    # _update_bm25_cache_on_add / _update_bm25_cache_on_delete active branches
+    executed: list[tuple[str, tuple[object, ...]]] = []
+    store._bm25_available = True
+    store._index = {"d1": {"session_id": "s1"}}
+    store.fts_conn = SimpleNamespace(
+        execute=lambda sql, params: executed.append((sql, params)),
+        commit=lambda: executed.append(("COMMIT", ())),
+    )
+    store._update_bm25_cache_on_add("d1", "hello")
+    store._update_bm25_cache_on_delete("d1")
+    assert any("INSERT INTO bm25_index" in q for q, _ in executed)
+    assert ("COMMIT", ()) in executed
+
+
+def test_document_store_judge_and_vector_fetch_error_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setitem(__import__("sys").modules, "core.judge", SimpleNamespace(get_llm_judge=lambda: (_ for _ in ()).throw(RuntimeError("judge boom"))))
+    rag.DocumentStore._schedule_judge("q", "a")
+
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = False
+    assert store._fetch_pgvector("q", 2, "s1") == []
+
+    store._pgvector_available = True
+    store.pg_engine = object()
+    monkeypatch.setitem(__import__("sys").modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+    store._pgvector_embed_texts = lambda _texts: (_ for _ in ()).throw(RuntimeError("embed boom"))  # type: ignore[method-assign]
+    assert store._fetch_pgvector("q", 2, "s1") == []
+
+
+def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=1)
+    store._is_local_llm_provider = False
+    store.collection = SimpleNamespace(
+        count=lambda: (_ for _ in ()).throw(RuntimeError("count boom")),
+        query=lambda **_kwargs: {
+            "ids": [["", "c2"]],
+            "documents": [["first", "second"]],
+            "metadatas": [[{"parent_id": ""}, {"parent_id": "d2", "title": "Doc2"}]],
+        },
+    )
+    found = store._fetch_chroma("q", 2, "s1")
+    assert found and found[0]["id"] == "d2"
+
+    store._bm25_available = False
+    assert store._fetch_bm25("hello", 2, "s1") == []
+
+    class _Lock:
+        def __enter__(self) -> "_Lock":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    store._bm25_available = True
+    store._write_lock = _Lock()
+    store.fts_conn = SimpleNamespace(execute=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fts boom")))
+    assert store._fetch_bm25("hello", 2, "s1") == []
+
+    ok, text = store._format_results_from_struct(
+        [{"id": "x", "title": "t", "source": "", "snippet": "s", "score": 1.0}],
+        "q",
+        source_name="BM25",
+    )
+    assert ok is True
+    assert "Kaynak:" not in text
