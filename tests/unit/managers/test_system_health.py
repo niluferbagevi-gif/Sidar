@@ -461,3 +461,145 @@ def test_update_summary_report_close_repr_and_del(monkeypatch):
     assert manager2._nvml_initialized is False
     assert "SystemHealthManager" in repr(manager2)
     manager2.__del__()
+
+
+def test_init_calls_nvml_when_gpu_and_pynvml_available(monkeypatch):
+    calls = {"init": 0}
+    monkeypatch.setattr(
+        SystemHealthManager,
+        "_check_import",
+        staticmethod(lambda name: name in {"torch", "psutil", "pynvml"}),
+    )
+    monkeypatch.setattr(SystemHealthManager, "_check_gpu", lambda self: True)
+    monkeypatch.setattr(
+        SystemHealthManager,
+        "_init_nvml",
+        lambda self: calls.__setitem__("init", calls["init"] + 1),
+    )
+    _ = SystemHealthManager(use_gpu=True)
+    assert calls["init"] == 1
+
+
+def test_init_nvml_wsl2_logging_branch(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    manager._nvml_initialized = False
+
+    class FailingNvml:
+        @staticmethod
+        def nvmlInit():
+            raise RuntimeError("blocked")
+
+    monkeypatch.setitem(sys.modules, "pynvml", FailingNvml())
+
+    class FakeFile:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return "5.15.90-microsoft-standard-WSL2"
+
+    monkeypatch.setattr("builtins.open", lambda *_a, **_k: FakeFile())
+    manager._init_nvml()
+    assert manager._nvml_initialized is False
+
+
+def test_psutil_unavailable_and_gpu_info_error_paths(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    manager._psutil_available = False
+    assert manager.get_cpu_usage() is None
+    assert manager.get_memory_info() == {}
+
+    manager._gpu_available = False
+    assert manager.get_gpu_info()["available"] is False
+
+    manager._gpu_available = True
+
+    class BrokenTorch:
+        class cuda:
+            @staticmethod
+            def device_count():
+                raise RuntimeError("torch fail")
+
+    monkeypatch.setitem(sys.modules, "torch", BrokenTorch())
+    info = manager.get_gpu_info()
+    assert info["available"] is False
+    assert "torch fail" in info["error"]
+
+
+def test_driver_version_generic_error_and_ollama_exception(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("oops")))
+    assert manager._get_driver_version() == "N/A"
+
+    class BrokenRequests:
+        @staticmethod
+        def get(*_a, **_k):
+            raise RuntimeError("down")
+
+    monkeypatch.setitem(sys.modules, "requests", BrokenRequests())
+    assert manager.check_ollama() is False
+
+
+def test_update_prometheus_metrics_init_exception_and_empty_short_circuit(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    monkeypatch.setattr(manager, "_check_import", lambda _name: True)
+    monkeypatch.setitem(
+        sys.modules,
+        "prometheus_client",
+        types.SimpleNamespace(Gauge=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("gauge fail"))),
+    )
+    manager.update_prometheus_metrics({"cpu_percent": 1})
+    assert manager._prometheus_gauges == {}
+
+    # _prometheus_gauges boş dict olduğunda erken dönüş.
+    manager.update_prometheus_metrics({"ram_percent": 2})
+    assert manager._prometheus_gauges == {}
+
+
+def test_get_dependency_health_and_database_disabled(monkeypatch):
+    manager = _build_manager(monkeypatch, cfg=SimpleNamespace(DATABASE_URL="", REDIS_URL=""))
+    deps = manager.get_dependency_health()
+    assert deps["redis"]["mode"] == "disabled"
+    assert deps["database"]["mode"] == "disabled"
+
+
+def test_full_report_gpu_line_optional_fields(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 20.0)
+    monkeypatch.setattr(manager, "get_memory_info", lambda: {"percent": 10.0, "used_gb": 1.0, "total_gb": 4.0})
+    monkeypatch.setattr(manager, "check_ollama", lambda: True)
+    metrics = {}
+    monkeypatch.setattr(manager, "update_prometheus_metrics", lambda data: metrics.update(data))
+
+    # Sadece temperature var, utilization yok
+    monkeypatch.setattr(
+        manager,
+        "get_gpu_info",
+        lambda: {
+            "available": True,
+            "cuda_version": "12.0",
+            "driver_version": "550",
+            "devices": [{"id": 0, "name": "RTX", "compute_capability": "8.0", "allocated_gb": 1.0, "total_vram_gb": 8.0, "free_gb": 7.0, "temperature_c": 61}],
+        },
+    )
+    report = manager.full_report()
+    assert "61°C" in report
+    assert "% GPU" not in report
+
+    # Sadece utilization var, temperature yok
+    monkeypatch.setattr(
+        manager,
+        "get_gpu_info",
+        lambda: {
+            "available": True,
+            "cuda_version": "12.0",
+            "driver_version": "550",
+            "devices": [{"id": 0, "name": "RTX", "compute_capability": "8.0", "allocated_gb": 1.0, "total_vram_gb": 8.0, "free_gb": 7.0, "utilization_pct": 77}],
+        },
+    )
+    report2 = manager.full_report()
+    assert "%77 GPU" in report2
+    assert metrics["gpu_utilization_pct"] == 77
