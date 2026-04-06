@@ -373,6 +373,23 @@ def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch):
     assert db.inited == 1
 
 
+def test_ensure_db_returns_existing_db_inside_lock(tmp_path):
+    agent = make_agent(tmp_path)
+    existing_db = SimpleNamespace(name="already-ready")
+
+    class LockThatInjectsDB:
+        async def __aenter__(self):
+            agent._db = existing_db
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    agent._db_lock = LockThatInjectsDB()
+    db = asyncio.run(agent._ensure_db())
+    assert db is existing_db
+
+
 def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     class FakeMatch:
         @staticmethod
@@ -411,6 +428,44 @@ def test_module_sets_agentcatalog_get_fallback(monkeypatch):
     finally:
         if had_get and original_get is not None:
             RealCatalog.get = original_get
+
+
+def test_clean_code_output_handles_closing_fence_without_opening_hint():
+    class FakeStr(str):
+        def splitlines(self):
+            return []
+
+    class WeirdStringable:
+        def __str__(self):
+            return FakeStr("```synthetic")
+
+    assert CoverageAgent._clean_code_output(WeirdStringable()) == ""
+
+
+def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
+    xml_path = tmp_path / "coverage_full_branch.xml"
+    xml_path.write_text(
+        """
+<coverage>
+  <packages>
+    <package>
+      <classes>
+        <class filename="pkg/mod.py" line-rate="1.0" branch-rate="1.0">
+          <lines>
+            <line number="5" hits="1" branch="true" condition-coverage="100% (2/2)"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    data = CoverageAgent._parse_coverage_xml(str(xml_path))
+    assert data["findings"] == []
+    assert data["files"][0]["missing_branches_count"] == 0
 
 
 def test_run_task_routes_and_flows(tmp_path):
