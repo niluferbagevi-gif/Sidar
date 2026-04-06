@@ -41,17 +41,18 @@ def test_agent_metrics_collector_record_and_step_increment_counters() -> None:
     collector.record("qa", "repair", "ok", 0.4)
     collector.record("qa", "repair", "ok", 0.6)
     collector.record_step("coder", "tool", "pytest", "ok", 1.5)
+    collector.record_step("coder", "tool", "pytest", "ok", 0.5)
 
     assert collector._counters[("qa", "repair", "ok")] == 2
-    assert collector._step_counters[("coder", "tool", "pytest", "ok")] == 1
+    assert collector._step_counters[("coder", "tool", "pytest", "ok")] == 2
 
     delegation_snap = collector._histograms[("qa", "repair", "ok")].snapshot()
     assert delegation_snap["count"] == 2
     assert delegation_snap["sum"] == 1.0
 
     step_snap = collector._step_histograms[("coder", "tool", "pytest", "ok")].snapshot()
-    assert step_snap["count"] == 1
-    assert step_snap["sum"] == 1.5
+    assert step_snap["count"] == 2
+    assert step_snap["sum"] == 2.0
 
 
 def test_render_prometheus_includes_headers_even_without_metrics() -> None:
@@ -116,3 +117,23 @@ def test_get_agent_metrics_collector_thread_safe_singleton_creation() -> None:
     assert len(created) == 8
     first = created[0]
     assert all(item is first for item in created)
+
+
+def test_get_agent_metrics_collector_double_checked_lock_inner_branch() -> None:
+    sentinel = AgentMetricsCollector()
+    agent_metrics._COLLECTOR = None
+
+    class EnterSetsCollector:
+        def __enter__(self):
+            agent_metrics._COLLECTOR = sentinel
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_lock = agent_metrics._COLLECTOR_LOCK
+    try:
+        agent_metrics._COLLECTOR_LOCK = EnterSetsCollector()
+        assert agent_metrics.get_agent_metrics_collector() is sentinel
+    finally:
+        agent_metrics._COLLECTOR_LOCK = original_lock
