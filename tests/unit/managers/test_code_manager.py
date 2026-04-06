@@ -507,6 +507,36 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
     assert manager.docker_available is False
 
 
+def test_init_docker_covers_importerror_and_exception_early_returns(manager, monkeypatch):
+    original_import = builtins.__import__
+
+    def _import_raises_for_docker(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker missing")
+        return original_import(name, *args, **kwargs)
+
+    fake_cached_docker = ModuleType("docker")
+    monkeypatch.setitem(sys.modules, "docker", fake_cached_docker)
+    monkeypatch.setattr(builtins, "__import__", _import_raises_for_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is fake_cached_docker)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+    manager._init_docker()
+
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda _mod: False)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: True)
+    manager._init_docker()
+    monkeypatch.setattr(builtins, "__import__", original_import)
+
+    class _FailingDocker(ModuleType):
+        def from_env(self):
+            raise RuntimeError("daemon down")
+
+    failing_docker = _FailingDocker("docker")
+    monkeypatch.setitem(sys.modules, "docker", failing_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is failing_docker)
+    manager._init_docker()
+
+
 def test_execute_code_docker_error_paths(manager, monkeypatch):
     manager.docker_available = True
     manager.security.level = SANDBOX
