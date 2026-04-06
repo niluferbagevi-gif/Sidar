@@ -126,6 +126,8 @@ def test_get_tasks_limit_and_counts_repr_len(manager: TodoManager):
     assert manager.get_active_count() == 2
     assert len(manager) == 3
     assert "tasks=3" in repr(manager)
+    # valid status should filter
+    assert len(manager.get_tasks(status=STATUS_PENDING, limit=10)) == 1
     # invalid status should not filter
     assert len(manager.get_tasks(status="not-valid", limit=10)) == 3
     # non-int limit should fallback to default=50 and include all current tasks
