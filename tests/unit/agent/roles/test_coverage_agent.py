@@ -373,6 +373,23 @@ def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch):
     assert db.inited == 1
 
 
+def test_ensure_db_returns_cached_inside_lock(tmp_path):
+    agent = make_agent(tmp_path)
+    sentinel = object()
+
+    class FakeLock:
+        async def __aenter__(self):
+            agent._db = sentinel
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    agent._db_lock = FakeLock()
+    cached = asyncio.run(agent._ensure_db())
+    assert cached is sentinel
+
+
 def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     class FakeMatch:
         @staticmethod
@@ -387,6 +404,27 @@ def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     monkeypatch.setattr(_COVERAGE_MODULE.re, "compile", lambda _pattern: FakePattern())
     data = CoverageAgent._parse_terminal_coverage_output("dummy")
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
+
+
+def test_parse_coverage_xml_ignores_fully_covered_branch(tmp_path):
+    xml_path = tmp_path / "coverage_full_branch.xml"
+    xml_path.write_text(
+        """
+<coverage>
+  <packages><package><classes>
+    <class filename="src/x.py" line-rate="1.0" branch-rate="1.0">
+      <lines>
+        <line number="5" hits="1" branch="true" condition-coverage="100% (2/2)"/>
+      </lines>
+    </class>
+  </classes></package></packages>
+</coverage>
+        """.strip(),
+        encoding="utf-8",
+    )
+    data = CoverageAgent._parse_coverage_xml(str(xml_path))
+    assert data["files"][0]["missing_branches_count"] == 0
+    assert data["findings"] == []
 
 
 def test_module_sets_agentcatalog_get_fallback(monkeypatch):
