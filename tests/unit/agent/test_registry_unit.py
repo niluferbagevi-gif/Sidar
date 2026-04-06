@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.registry import AgentCatalog
+from agent.registry import AgentCatalog, AgentSpec
 
 
 class _DummyAgent:
@@ -55,3 +55,25 @@ def test_register_type_create_and_unregister_roundtrip() -> None:
 def test_create_unknown_role_raises_keyerror() -> None:
     with pytest.raises(KeyError):
         AgentCatalog.create("definitely_missing_role")
+
+
+def test_create_uses_agent_factory_when_agent_class_missing() -> None:
+    spec = AgentSpec(role_name="factory_role", agent_class=None)
+    spec._agent_factory = lambda value=0: {"value": value}  # type: ignore[attr-defined]
+    AgentCatalog._registry["factory_role"] = spec
+
+    assert AgentCatalog.create("factory_role", value=7) == {"value": 7}
+    assert AgentCatalog.unregister("factory_role") is True
+
+
+def test_create_raises_typeerror_without_class_or_factory() -> None:
+    AgentCatalog._registry["broken_role"] = AgentSpec(role_name="broken_role", agent_class=None)
+
+    with pytest.raises(TypeError):
+        AgentCatalog.create("broken_role")
+
+    assert AgentCatalog.unregister("broken_role") is True
+
+
+def test_unregister_returns_false_for_missing_role() -> None:
+    assert AgentCatalog.unregister("not_registered") is False
