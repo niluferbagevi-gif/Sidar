@@ -426,3 +426,142 @@ def test_security_status_pattern(monkeypatch):
     h = _build_handler(monkeypatch)
     assert h._try_security_status("openclaw erişim seviyesi nedir") == (True, "security")
     assert h._try_security_status("genel güvenlik analizi yap") == (False, "")
+
+
+def test_handle_short_circuit_routes_cover_each_return_branch(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    async def _false_async(*_args, **_kwargs):
+        return False, ""
+
+    def _false_sync(*_args, **_kwargs):
+        return False, ""
+
+    # handle içindeki sıralı tüm kontrol noktalarını tek tek short-circuit ile doğrula.
+    ordered_steps = [
+        "_try_clear_memory",
+        "_try_list_directory",
+        "_try_read_file",
+        "_try_audit",
+        "_try_health",
+        "_try_gpu_optimize",
+        "_try_validate_file",
+        "_try_github_commits",
+        "_try_github_info",
+        "_try_github_list_files",
+        "_try_github_read",
+        "_try_github_list_prs",
+        "_try_github_get_pr",
+        "_try_security_status",
+        "_try_web_search",
+        "_try_fetch_url",
+        "_try_search_docs",
+        "_try_search_stackoverflow",
+        "_try_pypi",
+        "_try_npm",
+        "_try_gh_releases",
+        "_try_docs_search",
+        "_try_docs_add",
+        "_try_docs_list",
+    ]
+
+    async_steps = {
+        "_try_clear_memory",
+        "_try_audit",
+        "_try_health",
+        "_try_gpu_optimize",
+        "_try_github_get_pr",
+        "_try_web_search",
+        "_try_fetch_url",
+        "_try_search_docs",
+        "_try_search_stackoverflow",
+        "_try_pypi",
+        "_try_npm",
+        "_try_gh_releases",
+        "_try_docs_search",
+        "_try_docs_add",
+    }
+
+    for target in ordered_steps:
+        for step in ordered_steps:
+            if step in async_steps:
+                setattr(h, step, _false_async)
+            else:
+                setattr(h, step, _false_sync)
+
+        if target in async_steps:
+            async def _true_async(*_args, _target=target, **_kwargs):
+                return True, f"ok:{_target}"
+
+            setattr(h, target, _true_async)
+        else:
+            def _true_sync(*_args, _target=target, **_kwargs):
+                return True, f"ok:{_target}"
+
+            setattr(h, target, _true_sync)
+
+        handled, response = asyncio.run(h.handle("tek adım"))
+        assert handled is True
+        assert response == f"ok:{target}"
+
+
+def test_remaining_auto_handle_branches(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    # _try_dot_command: regex eşleşip tanınmayan komut dalı
+    import re
+
+    h._DOT_CMD_RE = re.compile(r"^\s*\.(\w+)\b", re.IGNORECASE)
+    assert asyncio.run(h._try_dot_command(".noop", ".noop")) == (False, "")
+
+    # _try_read_file: read_file başarısız dalı
+    h.code = FakeCode(read_map={"nope.py": (False, "not found")})
+    handled, response = h._try_read_file("dosyayı oku", "dosyayı oku nope.py")
+    assert handled is True
+    assert response == "✗ not found"
+
+    # _try_audit/_try_health/_try_gpu_optimize: başarılı dal
+    assert asyncio.run(h._try_audit("audit")) == (True, "audit-ok")
+    assert asyncio.run(h._try_health(".health")) == (True, "health-ok")
+    assert asyncio.run(h._try_gpu_optimize(".gpu")) == (True, "gpu-ok")
+
+    # _try_validate_file: json doğrulama dalı
+    h.memory.set_last_file("data.json")
+    h.code = FakeCode(read_map={"data.json": (True, '{"ok": true}')})
+    assert h._try_validate_file("dosya doğrula", "dosya doğrula") == (True, "✓ valid json")
+
+    # _try_github_read: path eksik uyarısı
+    h.github = FakeGithub(available=True)
+    assert h._try_github_read("github dosya oku", "github dosya oku") == (
+        True,
+        "⚠ Okunacak GitHub dosya yolunu belirtin.",
+    )
+
+    # _try_github_list_prs: unavailable + all + open dalları
+    h.github = FakeGithub(available=False)
+    assert h._try_github_list_prs("pr listele", "pr listele") == (True, "⚠ GitHub token ayarlanmamış.")
+
+    h.github = FakeGithub(available=True)
+    assert h._try_github_list_prs("tüm pr listele", "tüm pr listele") == (True, "prs:all:10")
+    assert h.github.last_list_pr_args == ("all", 10)
+    assert h._try_github_list_prs("pr listele", "pr listele") == (True, "prs:open:10")
+    assert h.github.last_list_pr_args == ("open", 10)
+
+    # _try_github_get_pr: dosya alt-komutunda unavailable dalı
+    h.github = FakeGithub(available=False)
+    assert asyncio.run(h._try_github_get_pr("pr #8 dosya", "pr #8 dosya")) == (
+        True,
+        "⚠ GitHub token ayarlanmamış.",
+    )
+
+    # _try_clear_memory: sync clear dalı (await edilmemeli)
+    sync_memory = FakeMemory()
+    h.memory = sync_memory
+    assert asyncio.run(h._try_clear_memory(".clear")) == (True, "✓ Konuşma belleği temizlendi.")
+    assert sync_memory.cleared is True
+
+    # _try_web_search: boş sorgu dalı
+    assert asyncio.run(h._try_web_search("google:   ", "google:   ")) == (True, "⚠ Arama sorgusu belirtilmedi.")
+
+    # _try_fetch_url: URL bulunamadı dalı
+    assert asyncio.run(h._try_fetch_url("url fetch", "url fetch")) == (True, "⚠ Geçerli bir URL bulunamadı.")
