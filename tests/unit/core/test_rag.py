@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -270,3 +271,143 @@ def test_document_store_clean_html_with_and_without_bleach(monkeypatch: pytest.M
     monkeypatch.setattr(rag, "_BLEACH_AVAILABLE", True)
     monkeypatch.setattr(rag, "_bleach", _FakeBleach)
     assert rag.DocumentStore._clean_html(html) == "<ignored>Clean Text</ignored>"
+
+
+def test_document_store_apply_hf_runtime_env_sets_expected_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _make_store_stub(Path("/tmp"))
+    store.cfg = SimpleNamespace(HF_TOKEN="abc-token", HF_HUB_OFFLINE=True)
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    store._apply_hf_runtime_env()
+
+    assert os.environ["HF_TOKEN"] == "abc-token"
+    assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "abc-token"
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+
+def test_document_store_add_document_from_file_validation_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    captured: dict[str, object] = {}
+
+    def _fake_add(title: str, content: str, source: str, tags: list[str], session_id: str) -> str:
+        captured["title"] = title
+        captured["content"] = content
+        captured["source"] = source
+        captured["tags"] = tags
+        captured["session_id"] = session_id
+        return "doc-file-1"
+
+    store._add_document_sync = _fake_add  # type: ignore[method-assign]
+
+    bad = tmp_path / "payload.bin"
+    bad.write_bytes(b"\x00\x01")
+    ok, msg = store.add_document_from_file(str(bad), session_id="s-file")
+    assert ok is False
+    assert "Desteklenmeyen dosya türü" in msg
+
+    good = tmp_path / "notes.md"
+    good.write_text("hello world", encoding="utf-8")
+    ok, msg = store.add_document_from_file(str(good), tags=["alpha"], session_id="s-file")
+    assert ok is True
+    assert "[doc-file-1]" in msg
+    assert captured["title"] == "notes.md"
+    assert captured["source"] == f"file://{good.resolve()}"
+    assert captured["tags"] == ["alpha"]
+
+
+def test_document_store_graph_helpers_and_projection_and_plan(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = True
+    store._graph_root_dir = tmp_path
+    store._graph_ready = True
+    store._chroma_available = False
+    store.collection = None
+    store._pgvector_available = False
+    store._vector_backend = "bm25"
+    store._index = {
+        "d1": {"title": "Doc1", "source": "s1", "session_id": "s1"},
+        "d2": {"title": "Doc2", "source": "s2", "session_id": "s2"},
+    }
+    graph = rag.GraphIndex(tmp_path)
+    graph.add_node("a.py", node_type="file")
+    graph.add_node("endpoint:GET /h", node_type="endpoint")
+    graph.add_edge("a.py", "endpoint:GET /h", kind="calls_endpoint")
+    store._graph_index = graph
+
+    ok, msg = store.search_graph("", top_k=3)
+    assert ok is False
+    assert "boş sorgu" in msg
+
+    ok, msg = store.search_graph("a.py", top_k=2)
+    assert ok is True
+    assert "[GraphRAG: a.py]" in msg
+
+    proj = store.build_knowledge_graph_projection(session_id="s1", include_code_graph=True, limit=20)
+    node_ids = {n.id for n in proj["nodes"]}
+    assert "doc:d1" in node_ids
+    assert "doc:d2" not in node_ids
+    assert any(e.source == "code:a.py" for e in proj["edges"])
+
+    plan = store.build_graphrag_search_plan("hello", session_id="s1", top_k=2)
+    assert plan.query == "hello"
+    assert plan.vector_backend == "bm25"
+    assert plan.broker_topics[0].startswith("sidar.swarm.researcher.")
+
+
+def test_document_store_search_sync_mode_routing(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.default_top_k = 3
+    store.cfg = SimpleNamespace(RAG_TOP_K=3)
+    store._index = {"d1": {"session_id": "s1", "title": "t"}}
+    store._bm25_available = True
+    store._pgvector_available = False
+    store._chroma_available = False
+    store.collection = None
+    store._is_local_llm_provider = True
+    store._local_hybrid_enabled = False
+
+    store._bm25_search = lambda q, k, s: (True, f"bm25:{q}:{k}:{s}")  # type: ignore[method-assign]
+    store._keyword_search = lambda q, k, s: (True, f"kw:{q}:{k}:{s}")  # type: ignore[method-assign]
+    store._rrf_search = lambda q, k, s: (True, f"rrf:{q}:{k}:{s}")  # type: ignore[method-assign]
+    store.search_graph = lambda q, k: (True, f"graph:{q}:{k}")  # type: ignore[method-assign]
+
+    ok, result = store._search_sync("q", mode="graph", session_id="s1")
+    assert ok is True and result.startswith("graph:")
+
+    ok, result = store._search_sync("q", mode="vector", session_id="s1")
+    assert ok is False
+    assert "Vektör arama kullanılamıyor" in result
+
+    ok, result = store._search_sync("q", mode="bm25", session_id="s1")
+    assert ok is True and result.startswith("bm25:")
+
+    ok, result = store._search_sync("q", mode="keyword", session_id="s1")
+    assert ok is True and result.startswith("kw:")
+
+    ok, result = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is True and result.startswith("bm25:")
+
+
+def test_document_store_consolidate_session_documents(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {
+        "a": {"session_id": "s1", "title": "A", "preview": "old-a", "access_count": 0, "created_at": 1, "last_accessed_at": 1, "tags": []},
+        "b": {"session_id": "s1", "title": "B", "preview": "old-b", "access_count": 0, "created_at": 2, "last_accessed_at": 2, "tags": []},
+        "c": {"session_id": "s1", "title": "C", "preview": "keep", "access_count": 2, "created_at": 3, "last_accessed_at": 3, "tags": []},
+        "digest_old": {"session_id": "s1", "title": "Digest", "preview": "prev", "access_count": 0, "created_at": 4, "last_accessed_at": 4, "tags": ["memory-summary"], "source": "memory://nightly-digest/2026"},
+    }
+    deleted: list[str] = []
+    store.delete_document = lambda doc_id, _session_id="s1": deleted.append(doc_id) or "ok"  # type: ignore[method-assign]
+    store._add_document_sync = lambda **kwargs: "digest-new"  # type: ignore[method-assign]
+
+    summary = store.consolidate_session_documents("s1", keep_recent_docs=1)
+
+    assert summary["status"] == "completed"
+    assert summary["removed_docs"] >= 1
+    assert summary["summary_doc_id"] == "digest-new"
+    assert "digest_old" in deleted
