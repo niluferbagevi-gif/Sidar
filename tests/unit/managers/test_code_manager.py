@@ -549,3 +549,175 @@ def test_lsp_sequence_and_public_lsp_wrappers(manager, tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "lsp_semantic_audit", lambda _paths=None: (True, {"issues": [{"path": "a.py", "line": 1, "character": 1, "severity": 2, "message": "w"}]}))
     ok, msg = manager.lsp_workspace_diagnostics([str(py)])
     assert ok and "severity=2" in msg
+
+
+def test_low_level_helpers_extra_branches(manager, monkeypatch, tmp_path):
+    # _decode_lsp_stream with malformed header line (no colon) and partial header break
+    payload = cm._encode_lsp_message({"jsonrpc": "2.0", "id": 2, "result": 1})
+    assert cm._decode_lsp_stream(payload)[0]["id"] == 2
+    with pytest.raises(json.JSONDecodeError):
+        cm._decode_lsp_stream(b"bad-header\r\n\r\n{}")
+
+    # windows URI branch
+    monkeypatch.setattr(cm, "_OS_NAME", "nt")
+    out = cm._file_uri_to_path("file:///C:/tmp/x.py")
+    assert str(out).lower().endswith("c:\\tmp\\x.py") or "C:" in str(out)
+    monkeypatch.setattr(cm, "_OS_NAME", "posix")
+
+    manager.docker_microvm_mode = "kata"
+    manager.docker_runtime = ""
+    assert manager._resolve_runtime() == "kata-runtime"
+
+
+def test_docker_cli_and_sandbox_error_paths(manager, monkeypatch, tmp_path):
+    limits = {"memory": "1m", "cpus": "0.1", "pids_limit": 1, "network_mode": "none", "timeout": 1}
+
+    # docker cli timeout/error path in helper
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=1)),
+    )
+    with pytest.raises(subprocess.TimeoutExpired):
+        manager._execute_code_with_docker_cli("print(1)", limits)
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=7, stdout="", stderr="err"))
+    ok, msg = manager._execute_code_with_docker_cli("print(1)", limits)
+    assert not ok and "Docker CLI Sandbox" in msg
+
+    # run_shell_in_sandbox cwd invalid and outside base
+    bad = tmp_path / "nope"
+    ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(bad))
+    assert not ok
+
+    outside = Path("/").resolve()
+    ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(outside))
+    assert not ok
+
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("docker")))
+    ok, msg = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
+    assert not ok and "bulunamadı" in msg
+
+
+def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
+    manager.max_output_chars = 8
+    manager.security.shell_ok = True
+
+    # allow_shell_features True branch
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="1234567890", stderr=""))
+    ok, msg = manager.run_shell("echo a | cat", allow_shell_features=True)
+    assert ok and "KIRPILDI" in msg
+
+    # blocked shell pattern branch iteration
+    ok, msg = manager.run_shell("rm -rf /tmp", allow_shell_features=True)
+    assert not ok and "Engellendi" in msg
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("kaboom")))
+    ok, msg = manager.run_shell("echo x", allow_shell_features=True)
+    assert not ok and "Kabuk hatası" in msg
+
+    # glob empty / missing path / no match
+    ok, _ = manager.glob_search("")
+    assert not ok
+    ok, _ = manager.glob_search("*.py", base_path=str(tmp_path / "missing"))
+    assert not ok
+    ok, msg = manager.glob_search("*.doesnotexist", base_path=str(tmp_path))
+    assert ok and "bulunamadı" in msg
+
+    # grep invalid regex + path missing + no results
+    ok, _ = manager.grep_files("(", path=str(tmp_path))
+    assert not ok
+    ok, _ = manager.grep_files("x", path=str(tmp_path / "missing"))
+    assert not ok
+    (tmp_path / "a.txt").write_text("abc\n", encoding="utf-8")
+    ok, msg = manager.grep_files("zzz", path=str(tmp_path), file_glob="*.txt")
+    assert ok and "Eşleşme bulunamadı" in msg
+
+    # list directory error branches
+    ok, _ = manager.list_directory(str(tmp_path / "missing"))
+    assert not ok
+    filep = tmp_path / "f.txt"
+    filep.write_text("x", encoding="utf-8")
+    ok, _ = manager.list_directory(str(filep))
+    assert not ok
+
+
+def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
+    fp = tmp_path / "a.py"
+    fp.write_text("a=1\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    assert manager.validate_json("{")[0] is False
+    assert manager._detect_language_id(tmp_path / "a.ts") == "typescript"
+    with pytest.raises(ValueError):
+        manager._resolve_lsp_command("go")
+
+    with pytest.raises(RuntimeError):
+        manager.enable_lsp = False
+        manager._run_lsp_sequence(primary_path=fp, request_method=None)
+    manager.enable_lsp = True
+
+    with pytest.raises(ValueError):
+        manager._run_lsp_sequence(primary_path=tmp_path / "a.txt", request_method=None)
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("x")))
+    with pytest.raises(FileNotFoundError):
+        manager._run_lsp_sequence(primary_path=fp, request_method=None)
+
+    class P:
+        returncode = 1
+        def communicate(self, *_a, **_k):
+            return b"", b"boom"
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: P())
+    with pytest.raises(RuntimeError):
+        manager._run_lsp_sequence(primary_path=fp, request_method=None)
+
+    with pytest.raises(RuntimeError):
+        manager._extract_lsp_result([{"id": 2, "error": {"message": "x"}}])
+
+    loc_text = manager._format_lsp_locations([
+        {"targetUri": cm._path_to_file_uri(fp), "targetRange": {"start": {"line": 0, "character": 0}}},
+        {"uri": cm._path_to_file_uri(fp), "range": {"start": {"line": 1, "character": 1}}},
+    ], limit=1)
+    assert "ek sonuç" in loc_text
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("lsp")))
+    ok, _ = manager.lsp_go_to_definition(str(fp), 0, 0)
+    assert not ok
+    ok, _ = manager.lsp_find_references(str(fp), 0, 0)
+    assert not ok
+
+    ok, msg = manager._apply_workspace_edit({})
+    assert not ok and "boş" in msg
+
+    # write permission denied
+    manager.security.write_ok = False
+    edit = {"changes": {cm._path_to_file_uri(fp): [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "b"}]}}
+    ok, _ = manager._apply_workspace_edit(edit)
+    assert not ok
+    manager.security.write_ok = True
+
+    ok, _ = manager.lsp_rename_symbol(str(fp), 0, 0, "   ")
+    assert not ok
+
+    # diagnostics summary branches
+    summary = manager._summarize_lsp_diagnostic_entries([{"severity": "x"}, {"severity": 2}])
+    assert summary["decision"] == "APPROVE"
+
+    manager.base_dir = tmp_path / "empty"
+    manager.base_dir.mkdir()
+    ok, audit = manager.lsp_semantic_audit()
+    assert not ok and audit["status"] == "no-targets"
+
+    # audit_project max file warning path
+    manager.base_dir = tmp_path
+    (tmp_path / "bad.py").write_text("def x(:\n", encoding="utf-8")
+    report = manager.audit_project(root=str(tmp_path), max_files=1)
+    assert "Uyarı" in report
+
+    manager.docker_available = True
+    assert "Docker Sandbox Aktif" in manager.status()
