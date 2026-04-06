@@ -121,6 +121,30 @@ def test_schedule_bootstrap_without_loop(bus: AgentEventBus, monkeypatch: pytest
     assert bus._redis_bootstrap_task is None
 
 
+def test_schedule_bootstrap_skips_when_task_already_running(bus: AgentEventBus) -> None:
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._redis_bootstrap_task = _RunningTask()
+    bus._schedule_redis_bootstrap()
+    assert isinstance(bus._redis_bootstrap_task, _RunningTask)
+
+
+def test_schedule_bootstrap_creates_task(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    created = {"task": None}
+
+    class _Loop:
+        def create_task(self, coro):
+            coro.close()
+            created["task"] = object()
+            return created["task"]
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _Loop())
+    bus._schedule_redis_bootstrap()
+    assert bus._redis_bootstrap_task is created["task"]
+
+
 def test_publish_fanout_and_redis_call(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
     fanout_events: list[AgentEvent] = []
 
@@ -173,6 +197,39 @@ def test_ensure_listener_success_and_busygroup(monkeypatch: pytest.MonkeyPatch, 
     assert bus._redis_client is redis
     assert bus._redis_listener_task is not None
     asyncio.run(bus._cleanup_redis())
+
+
+def test_ensure_listener_early_return_and_non_busygroup_error(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    bus._redis_available = False
+    asyncio.run(bus._ensure_redis_listener())
+
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._redis_available = None
+    bus._redis_listener_task = _RunningTask()
+    asyncio.run(bus._ensure_redis_listener())
+
+    redis = DummyRedis()
+    bus._redis_listener_task = None
+    bus._redis_client = redis
+
+    async def _group_create(**_kwargs):
+        raise event_stream.ResponseError("unexpected response error")
+
+    cleaned = {"ok": False}
+    redis.xgroup_create = _group_create
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup)
+    asyncio.run(bus._ensure_redis_listener())
+    assert bus._redis_available is False
+    assert cleaned["ok"] is True
 
 
 def test_ensure_listener_failure_triggers_cleanup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
@@ -284,6 +341,19 @@ def test_redis_listener_loop_handles_payload_ack_and_errors(bus: AgentEventBus, 
     assert "ack_failed" in dlq_reasons
 
 
+def test_redis_listener_loop_empty_response_continue(bus: AgentEventBus) -> None:
+    redis = DummyRedis()
+    bus._redis_client = redis
+    bus._redis_available = True
+    redis.responses = [
+        [],
+        asyncio.CancelledError(),
+    ]
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(bus._redis_listener_loop())
+
+
 def test_redis_listener_loop_read_error_cleanup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
     class _BrokenRedis(DummyRedis):
         async def xreadgroup(self, **_kwargs):
@@ -331,6 +401,13 @@ def test_drain_buffered_events_and_fanout(bus: AgentEventBus) -> None:
     assert sid2 not in bus._subscribers
 
 
+def test_drain_buffered_events_skips_missing_buffers(bus: AgentEventBus) -> None:
+    sid = 100
+    bus._subscribers = {sid: asyncio.Queue(maxsize=1)}
+    progressed = asyncio.run(bus._drain_buffered_events_once())
+    assert progressed is False
+
+
 def test_cleanup_redis_handles_cancel_and_close() -> None:
     bus = AgentEventBus()
 
@@ -359,6 +436,13 @@ def test_cleanup_redis_handles_cancel_and_close() -> None:
 
     bus._redis_client = FailingCloseRedis()
     asyncio.run(bus._cleanup_redis())
+    assert bus._redis_client is None
+
+
+def test_cleanup_redis_without_client_or_listener() -> None:
+    bus = AgentEventBus()
+    asyncio.run(bus._cleanup_redis())
+    assert bus._redis_listener_task is None
     assert bus._redis_client is None
 
 
