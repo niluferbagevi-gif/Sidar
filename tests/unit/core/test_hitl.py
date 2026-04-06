@@ -79,6 +79,26 @@ def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch)
     assert expired.decision == hitl.HITLDecision.TIMEOUT
 
 
+def test_store_pending_and_all_recent_initialize_lock_and_skip_non_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = hitl._HITLStore()
+    store._requests.extend(
+        [
+            _make_request(request_id="r-approved", expires_at=200.0, decision=hitl.HITLDecision.APPROVED),
+            _make_request(request_id="r-pending", expires_at=200.0, decision=hitl.HITLDecision.PENDING),
+        ]
+    )
+    store._index = {req.request_id: req for req in store._requests}
+    store._lock = None
+
+    monkeypatch.setattr(hitl.time, "time", lambda: 100.0)
+    pending = run(store.pending())
+    assert [r.request_id for r in pending] == ["r-pending"]
+
+    store._lock = None
+    recent = run(store.all_recent(limit=2))
+    assert [r.request_id for r in recent] == ["r-approved", "r-pending"]
+
+
 def test_notify_without_hook_and_with_exception(caplog: pytest.LogCaptureFixture) -> None:
     req = _make_request(request_id="n1", expires_at=100.0)
 
@@ -215,6 +235,32 @@ def test_request_approval_timeout_updates_request(monkeypatch: pytest.MonkeyPatc
     requests = run(hitl.get_hitl_store().all_recent(limit=1))
     assert requests[0].decision == hitl.HITLDecision.TIMEOUT
     assert requests[0].decided_at == 11.0
+
+
+def test_request_approval_timeout_branch_skips_timeout_update_when_decision_changed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HITL_ENABLED", "true")
+    monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
+    gate = hitl.HITLGate()
+    now = [0.0]
+
+    def fake_time() -> float:
+        return now[0]
+
+    async def jump_and_decide(_: float) -> None:
+        store = hitl.get_hitl_store()
+        pending = await store.pending()
+        if pending:
+            pending[0].decision = hitl.HITLDecision.REJECTED
+        now[0] = 11.0
+
+    monkeypatch.setattr(hitl.time, "time", fake_time)
+    monkeypatch.setattr(hitl.asyncio, "sleep", jump_and_decide)
+
+    approved = run(gate.request_approval(action="file_overwrite", description="Overwrite file"))
+    assert approved is False
+    requests = run(hitl.get_hitl_store().all_recent(limit=1))
+    assert requests[0].decision == hitl.HITLDecision.REJECTED
+    assert requests[0].decided_at is None
 
 
 def test_respond_none_already_decided_and_rejected_fields(monkeypatch: pytest.MonkeyPatch) -> None:
