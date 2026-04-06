@@ -114,6 +114,12 @@ def test_send_adaptive_card_wraps_body(monkeypatch: pytest.MonkeyPatch) -> None:
     assert '"contentType": "application/vnd.microsoft.card.adaptive"' in client.calls[0]["content"]
 
 
+def test_send_adaptive_card_requires_webhook() -> None:
+    ok, err = _run(TeamsManager().send_adaptive_card({"type": "AdaptiveCard", "body": []}))
+    assert ok is False
+    assert "TEAMS_WEBHOOK_URL" in err
+
+
 def test_send_notification_status_and_link(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
@@ -205,6 +211,16 @@ def test_post_non_success_http(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_post_success_for_accepted_empty_text(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _FakeAsyncClient(response=_FakeResponse(status_code=202, text=""))
+    monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    ok, err = _run(TeamsManager(webhook_url="https://example.test/hook")._post({"a": 1}))
+
+    assert ok is True
+    assert err == ""
+
+
+def test_post_success_for_nonstandard_success_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="accepted"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
     ok, err = _run(TeamsManager(webhook_url="https://example.test/hook")._post({"a": 1}))

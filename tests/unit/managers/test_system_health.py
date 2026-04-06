@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import types
+import sys
 
 import pytest
 
@@ -211,3 +213,251 @@ def test_get_driver_version_falls_back_to_na_on_missing_command(monkeypatch):
     monkeypatch.setattr("subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError()))
 
     assert manager._get_driver_version() == "N/A"
+
+
+def test_check_import_and_check_gpu_paths(monkeypatch):
+    assert SystemHealthManager._check_import("sys") is True
+    assert SystemHealthManager._check_import("module_does_not_exist_123") is False
+
+    monkeypatch.setattr(SystemHealthManager, "_check_import", staticmethod(lambda _name: False))
+    manager = SystemHealthManager(use_gpu=True)
+    manager._torch_available = False
+    assert manager._check_gpu() is False
+
+    manager._torch_available = True
+    fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    assert manager._check_gpu() is True
+
+    class BrokenTorch:
+        class cuda:
+            @staticmethod
+            def is_available():
+                raise RuntimeError("boom")
+
+    monkeypatch.setitem(sys.modules, "torch", BrokenTorch())
+    assert manager._check_gpu() is False
+
+
+def test_init_nvml_sets_state_and_handles_fallback(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    manager._nvml_initialized = False
+    fake_pynvml = types.SimpleNamespace(nvmlInit=lambda: None)
+    monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml)
+    manager._init_nvml()
+    assert manager._nvml_initialized is True
+
+    manager2 = _build_manager(monkeypatch)
+    manager2._nvml_initialized = False
+
+    class FailingNvml:
+        @staticmethod
+        def nvmlInit():
+            raise RuntimeError("nvml blocked")
+
+    monkeypatch.setitem(sys.modules, "pynvml", FailingNvml())
+    monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no file")))
+    manager2._init_nvml()
+    assert manager2._nvml_initialized is False
+
+
+def test_cpu_and_memory_paths_with_psutil(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    manager._psutil_available = True
+
+    class FakePsutil:
+        @staticmethod
+        def cpu_percent(interval):
+            return 42.5 if interval == 0.0 else interval
+
+        @staticmethod
+        def virtual_memory():
+            return types.SimpleNamespace(total=2e9, used=1e9, available=1e9, percent=50)
+
+    monkeypatch.setitem(sys.modules, "psutil", FakePsutil())
+    assert manager.get_cpu_usage() == 42.5
+    assert manager.get_cpu_usage(interval=-3) == 42.5
+    assert manager.get_memory_info()["percent"] == 50
+
+    class BrokenPsutil:
+        @staticmethod
+        def cpu_percent(interval):
+            raise RuntimeError("cpu fail")
+
+        @staticmethod
+        def virtual_memory():
+            raise RuntimeError("vm fail")
+
+    monkeypatch.setitem(sys.modules, "psutil", BrokenPsutil())
+    assert manager.get_cpu_usage() is None
+    assert manager.get_memory_info() == {}
+
+
+def test_get_gpu_info_and_driver_version_variants(monkeypatch):
+    manager = _build_manager(monkeypatch, use_gpu=True)
+    manager._gpu_available = True
+    manager._nvml_initialized = False
+    monkeypatch.setattr(manager, "_get_driver_version", lambda: "550.10")
+
+    class FakeTorch:
+        version = types.SimpleNamespace(cuda="12.1")
+
+        class cuda:
+            @staticmethod
+            def device_count():
+                return 1
+
+            @staticmethod
+            def get_device_properties(_idx):
+                return types.SimpleNamespace(name="RTX", major=8, minor=6, total_memory=10_000_000_000)
+
+            @staticmethod
+            def memory_allocated(_idx):
+                return 2_000_000_000
+
+            @staticmethod
+            def memory_reserved(_idx):
+                return 3_000_000_000
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
+    info = manager.get_gpu_info()
+    assert info["available"] is True
+    assert info["devices"][0]["compute_capability"] == "8.6"
+
+    manager._nvml_initialized = True
+    fake_pynvml = types.SimpleNamespace(
+        NVML_TEMPERATURE_GPU=0,
+        nvmlDeviceGetHandleByIndex=lambda _i: object(),
+        nvmlDeviceGetTemperature=lambda _h, _k: 70,
+        nvmlDeviceGetUtilizationRates=lambda _h: types.SimpleNamespace(gpu=90, memory=80),
+        nvmlSystemGetDriverVersion=lambda: "560.01",
+    )
+    monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml)
+    assert manager.get_gpu_info()["devices"][0]["temperature_c"] == 70
+    manager3 = _build_manager(monkeypatch, use_gpu=True)
+    manager3._nvml_initialized = True
+    monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml)
+    assert manager3._get_driver_version() == "560.01"
+
+    class BadPynvml:
+        @staticmethod
+        def nvmlSystemGetDriverVersion():
+            raise RuntimeError("no driver")
+
+    manager3._nvml_initialized = True
+    monkeypatch.setitem(sys.modules, "pynvml", BadPynvml())
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *_a, **_k: types.SimpleNamespace(stdout="535.54\n", returncode=0),
+    )
+    assert manager3._get_driver_version() == "535.54"
+
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *_a, **_k: types.SimpleNamespace(stdout="\n", returncode=1),
+    )
+    assert manager3._get_driver_version() == "N/A"
+
+
+def test_optimize_gpu_memory_gpu_paths_and_ollama(monkeypatch):
+    manager = _build_manager(monkeypatch, use_gpu=True)
+    manager._gpu_available = True
+    state = {"reserved": 500_000_000}
+
+    class FakeCuda:
+        @staticmethod
+        def memory_reserved():
+            return state["reserved"]
+
+        @staticmethod
+        def empty_cache():
+            state["reserved"] = 100_000_000
+
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=FakeCuda()))
+    monkeypatch.setattr("gc.collect", lambda: 0)
+    output = manager.optimize_gpu_memory()
+    assert "400.0 MB" in output
+
+    class BadCuda:
+        @staticmethod
+        def memory_reserved():
+            raise RuntimeError("cuda err")
+
+        @staticmethod
+        def empty_cache():
+            raise RuntimeError("cuda err")
+
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=BadCuda()))
+    output2 = manager.optimize_gpu_memory()
+    assert "GPU cache hatası" in output2
+
+    calls = {}
+
+    class FakeRequests:
+        @staticmethod
+        def get(url, timeout):
+            calls["url"] = url
+            calls["timeout"] = timeout
+            return types.SimpleNamespace(status_code=200)
+
+    manager.cfg = SimpleNamespace(OLLAMA_URL="http://ollama.test/api/", OLLAMA_TIMEOUT=0)
+    monkeypatch.setitem(sys.modules, "requests", FakeRequests())
+    assert manager.check_ollama() is True
+    assert calls["url"].endswith("/tags")
+    assert calls["timeout"] == 1
+
+
+def test_update_summary_report_close_repr_and_del(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    manager._prometheus_gauges = {"cpu_percent": object()}
+    manager.update_prometheus_metrics({})
+    manager.update_prometheus_metrics({"cpu_percent": "bad"})
+
+    cfg = SimpleNamespace(ENABLE_DEPENDENCY_HEALTHCHECKS=False)
+    manager2 = _build_manager(monkeypatch, cfg=cfg)
+    monkeypatch.setattr(manager2, "get_cpu_usage", lambda interval=None: 10.0)
+    monkeypatch.setattr(manager2, "get_memory_info", lambda: {"percent": 20.0, "used_gb": 1.0, "total_gb": 2.0})
+    monkeypatch.setattr(manager2, "check_ollama", lambda: True)
+    monkeypatch.setattr(
+        manager2,
+        "get_gpu_info",
+        lambda: {
+            "available": True,
+            "cuda_version": "12.2",
+            "driver_version": "550.1",
+            "devices": [
+                {
+                    "id": 0,
+                    "name": "RTX",
+                    "compute_capability": "8.6",
+                    "allocated_gb": 2.0,
+                    "total_vram_gb": 8.0,
+                    "free_gb": 6.0,
+                    "temperature_c": 65,
+                    "utilization_pct": 50,
+                }
+            ],
+        },
+    )
+    summary = manager2.get_health_summary()
+    assert summary["status"] == "healthy"
+    assert "dependencies" not in summary
+    report = manager2.full_report()
+    assert "CUDA      : 12.2" in report
+    assert "%50 GPU" in report
+
+    manager2._nvml_initialized = True
+    monkeypatch.setitem(sys.modules, "pynvml", types.SimpleNamespace(nvmlShutdown=lambda: None))
+    manager2.close()
+    assert manager2._nvml_initialized is False
+
+    manager2._nvml_initialized = True
+    monkeypatch.setitem(
+        sys.modules,
+        "pynvml",
+        types.SimpleNamespace(nvmlShutdown=lambda: (_ for _ in ()).throw(RuntimeError("x"))),
+    )
+    manager2.close()
+    assert manager2._nvml_initialized is False
+    assert "SystemHealthManager" in repr(manager2)
+    manager2.__del__()
