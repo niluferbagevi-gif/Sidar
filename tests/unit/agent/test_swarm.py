@@ -578,3 +578,199 @@ def test_execute_task_hop_limit_and_properties(monkeypatch):
 
     monkeypatch.setattr("agent.swarm.AgentCatalog.list_all", lambda: [AgentSpec(role_name="qa", capabilities=[])])
     assert orch.available_agents() == ["qa"]
+
+
+def test_contract_health_check_handles_constructor_exceptions():
+    class _ExplodingModule:
+        DelegationRequest = DelegationRequest
+        BrokerTaskEnvelope = object()
+        BrokerTaskResult = object()
+        is_delegation_request = staticmethod(lambda _v: False)
+
+        @staticmethod
+        def TaskEnvelope(**_kwargs):
+            raise RuntimeError("broken ctor")
+
+        @staticmethod
+        def TaskResult(**_kwargs):
+            return None
+
+    assert swarm._is_contracts_module_healthy(_ExplodingModule) is False
+
+
+def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch):
+    broken = SimpleNamespace()
+
+    class _Loader:
+        @staticmethod
+        def exec_module(module):
+            module.TaskEnvelope = lambda **_k: SimpleNamespace(**_k)
+            module.TaskResult = lambda **_k: SimpleNamespace(**_k)
+            module.DelegationRequest = lambda **_k: SimpleNamespace(**_k)
+            module.BrokerTaskEnvelope = object
+            module.BrokerTaskResult = object
+            module.is_delegation_request = lambda _v: False
+
+    class _Spec:
+        loader = _Loader()
+
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
+    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
+    monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+
+    repaired = swarm._contracts_module()
+    assert callable(repaired.TaskEnvelope)
+    assert "agent.core.contracts" in sys.modules
+
+
+def test_task_router_catalog_prefers_valid_live_catalog_and_last_resort_live(monkeypatch):
+    live = _FakeCatalog([AgentSpec(role_name="coder", capabilities=["code_generation"])])
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: SimpleNamespace(AgentCatalog=live))
+    assert TaskRouter._catalog() is live
+
+    invalid_live = SimpleNamespace()
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: SimpleNamespace(AgentCatalog=invalid_live))
+    monkeypatch.setattr(swarm, "AgentCatalog", SimpleNamespace())
+    assert TaskRouter._catalog() is invalid_live
+
+
+def test_task_router_route_by_role_with_get_and_list_iteration(monkeypatch):
+    qa = AgentSpec(role_name="qa", capabilities=[])
+    with_get = SimpleNamespace(get=lambda role: qa if role == "qa" else None)
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: with_get))
+    assert TaskRouter().route_by_role("qa") == qa
+
+    with_list = _LegacyOnlyCatalog(
+        [AgentSpec(role_name="coder", capabilities=[]), AgentSpec(role_name="reviewer", capabilities=[])]
+    )
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: with_list))
+    assert TaskRouter().route_by_role("missing") is None
+
+
+def test_looks_like_delegation_request_when_checker_not_callable(monkeypatch):
+    monkeypatch.setattr(swarm, "_ensure_contract_aliases", lambda: None)
+    monkeypatch.setattr(swarm, "is_delegation_request", "not-callable")
+    candidate = SimpleNamespace(target_agent="coder", payload="x", reply_to="reviewer")
+    assert swarm._looks_like_delegation_request(candidate) is True
+
+
+def test_should_fallback_to_supervisor_json_signals_on_type_and_text():
+    class JsonSchemaError(Exception):
+        pass
+
+    assert SwarmOrchestrator._should_fallback_to_supervisor(JsonSchemaError("boom")) is True
+    assert SwarmOrchestrator._should_fallback_to_supervisor(RuntimeError("malformed payload")) is True
+
+
+def test_run_autonomous_feedback_early_return_paths_and_schedule_guard(monkeypatch):
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    __import__("asyncio").run(
+        orch._run_autonomous_feedback(
+            prompt="",
+            response="r",
+            context={},
+            session_id="s",
+            agent_role="coder",
+            task_id="t0",
+        )
+    )
+
+    class _Judge:
+        enabled = True
+
+        async def evaluate_response(self, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "core.judge", types.SimpleNamespace(get_llm_judge=lambda: _Judge()))
+    monkeypatch.setitem(
+        sys.modules,
+        "core.active_learning",
+        types.SimpleNamespace(flag_weak_response=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unused"))),
+    )
+    __import__("asyncio").run(
+        orch._run_autonomous_feedback(
+            prompt="p",
+            response="r",
+            context={},
+            session_id="s",
+            agent_role="coder",
+            task_id="t1",
+        )
+    )
+
+    orch._schedule_autonomous_feedback(
+        prompt="",
+        response="r",
+        context={},
+        session_id="s",
+        agent_role="coder",
+        task_id="t",
+    )
+
+
+def test_run_pipeline_skips_context_on_failed_result(monkeypatch):
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    async def _fake_execute(task, **_kwargs):
+        status = "failed" if task.goal == "one" else "success"
+        return swarm.SwarmResult(
+            task_id=task.task_id,
+            agent_role="coder",
+            status=status,
+            summary=f"res:{task.goal}",
+            elapsed_ms=1,
+        )
+
+    monkeypatch.setattr(orch, "_execute_task", _fake_execute)
+    tasks = [SwarmTask(goal="one", context={}), SwarmTask(goal="two", context={})]
+    __import__("asyncio").run(orch.run_pipeline(tasks))
+    assert "prev_coder" not in tasks[1].context
+
+
+def test_execute_task_sets_reply_to_and_skips_feedback_for_non_success(monkeypatch):
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    delegation = DelegationRequest(
+        task_id="swarm-r",
+        reply_to="",
+        target_agent="coder",
+        payload="devret",
+        intent="code_generation",
+    )
+
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create",
+        lambda *_a, **_k: _HandleAgent(TaskResult(task_id="swarm-r", status="success", summary=delegation, evidence=[])),
+    )
+    seen = {}
+
+    async def _fake_handoff(_task, bumped, **_kwargs):
+        seen["reply_to"] = bumped.reply_to
+        return swarm.SwarmResult(
+            task_id="swarm-r",
+            agent_role="coder",
+            status="failed",
+            summary="handoff done",
+            elapsed_ms=1,
+        )
+
+    monkeypatch.setattr(orch, "_direct_handoff", _fake_handoff)
+    res = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="review")))
+    assert res.status == "failed"
+    assert seen["reply_to"] == "reviewer"
+
+    orch2 = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec2 = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch2.router, "route", lambda _intent: spec2)
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create",
+        lambda *_a, **_k: _HandleAgent(TaskResult(task_id="t", status="failed", summary="nope", evidence=[])),
+    )
+    called = {"scheduled": False}
+    monkeypatch.setattr(orch2, "_schedule_autonomous_feedback", lambda **_kwargs: called.__setitem__("scheduled", True))
+    result = __import__("asyncio").run(orch2._execute_task(SwarmTask(goal="x", intent="code")))
+    assert result.status == "failed"
+    assert called["scheduled"] is False
