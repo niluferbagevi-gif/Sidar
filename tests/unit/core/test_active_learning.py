@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import json
 import sys
 import types
@@ -158,6 +159,97 @@ def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypatch):
     assert params["id_2"] == 3
 
 
+def test_feedback_store_full_db_paths_and_close(monkeypatch):
+    monkeypatch.setattr(al, "_SA_AVAILABLE", True)
+    monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
+
+    executed = []
+
+    class FakeResult:
+        def __init__(self, scalar_value=None, rows=None):
+            self._scalar = scalar_value
+            self._rows = rows or []
+
+        def scalar(self):
+            return self._scalar
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConn:
+        def __init__(self, mode):
+            self.mode = mode
+            self.scalar_values = iter([7, 5, 2, 3])
+
+        async def execute(self, stmt, params=None):
+            executed.append((self.mode, str(stmt), params or {}))
+            text = str(stmt)
+            if "SELECT id, prompt" in text:
+                rows = [types.SimpleNamespace(_mapping={"id": 11, "prompt": "p", "response": "r", "correction": "", "rating": 1, "user_id": "u", "provider": "x", "model": "m"})]
+                return FakeResult(rows=rows)
+            if "COUNT(*)" in text:
+                return FakeResult(scalar_value=next(self.scalar_values))
+            return FakeResult()
+
+    class Ctx:
+        def __init__(self, mode):
+            self.mode = mode
+
+        async def __aenter__(self):
+            return FakeConn(self.mode)
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeEngine:
+        def begin(self):
+            return Ctx("begin")
+
+        def connect(self):
+            return Ctx("connect")
+
+        async def dispose(self):
+            executed.append(("dispose", "dispose", {}))
+
+    monkeypatch.setattr(al, "create_async_engine", lambda *args, **kwargs: FakeEngine(), raising=False)
+
+    store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
+    run(store.initialize())
+    assert store._engine is not None
+
+    assert run(store.record(prompt="p", response="r", rating=2, correction="c", user_id="u", tags=["t"])) is True
+    pending = run(store.get_pending_export())
+    assert pending[0]["id"] == 11
+
+    stats = run(store.stats())
+    assert stats == {"total": 7, "positive": 5, "negative": 2, "pending_export": 3}
+
+    run(store.close())
+    assert store._engine is None
+
+
+def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(monkeypatch):
+    store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
+
+    async def init_without_engine():
+        return None
+
+    monkeypatch.setattr(store, "initialize", init_without_engine)
+    assert run(store.flag_weak_response("p", "r", 0, "")) is False
+
+    store._engine = object()
+    called = {}
+
+    async def fake_record(**kwargs):
+        called.update(kwargs)
+        return True
+
+    monkeypatch.setattr(store, "record", fake_record)
+    assert run(store.flag_weak_response("p", "r", 0, "", tags=["base"])) is True
+    assert "judge_reasoning" not in called["tags"]
+    assert "score:1" in called["tags"]
+
+
 def test_dataset_exporter_formats_and_empty_case(tmp_path):
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1},
@@ -288,6 +380,20 @@ def test_pipeline_run_cycle_paths(monkeypatch):
     assert run(pipe_disabled.run_cycle())["reason"] == "continuous_learning_disabled"
 
 
+def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(monkeypatch):
+    cfg = DummyConfig()
+    trainer = types.SimpleNamespace(enabled=False, train=lambda p: {"success": True, "path": p})
+    pipe = al.ContinuousLearningPipeline(InMemoryStore([]), trainer=trainer, config=cfg)
+
+    async def manifest_ready():
+        return {"counts": {"sft_examples": 3, "preference_examples": 0}, "sft_path": "dataset.jsonl"}
+
+    monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_ready)
+    out = run(pipe.run_cycle(reason="manual"))
+    assert out["success"] is True
+    assert out["training_result"]["reason"] == "trainer_disabled_or_insufficient_sft"
+
+
 def test_pipeline_schedule_cycle(monkeypatch):
     cfg = DummyConfig()
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
@@ -313,6 +419,23 @@ def test_pipeline_schedule_cycle(monkeypatch):
 
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
     assert pipe.schedule_cycle() is False
+
+
+def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
+    cfg = DummyConfig()
+    pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
+
+    class FakeLoop:
+        def create_task(self, coro, name=None):
+            asyncio.run(coro)
+            return object()
+
+    async def boom(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(pipe, "run_cycle", boom)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: FakeLoop())
+    assert pipe.schedule_cycle(reason="bg") is True
 
 
 def test_lora_trainer_check_and_train_paths(monkeypatch):
@@ -345,6 +468,21 @@ def test_lora_trainer_check_and_train_paths(monkeypatch):
 
     monkeypatch.setattr(trainer, "_run_training", boom)
     assert trainer.train("d")["success"] is False
+
+
+def test_lora_trainer_check_peft_importerror(monkeypatch):
+    trainer = al.LoRATrainer(config=DummyConfig())
+    trainer._peft_available = None
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in {"peft", "transformers", "datasets"}:
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert trainer._check_peft() is False
 
 
 def test_lora_run_training_happy_path_with_fake_modules(monkeypatch, tmp_path):
@@ -477,6 +615,74 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
     monkeypatch.setitem(sys.modules, "peft", fake_peft)
     monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+
+    assert trainer._run_training("x")["success"] is True
+
+
+def test_lora_run_training_4bit_quant_and_conversation_branches(monkeypatch, tmp_path):
+    cfg = DummyConfig()
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-ok")
+    cfg.LORA_USE_4BIT = True
+    trainer = al.LoRATrainer(config=cfg)
+
+    class FakeTokenizer:
+        eos_token = "<eos>"
+        pad_token = None
+
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            return FakeTokenizer()
+
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2]}
+
+        def save_pretrained(self, out):
+            Path(out, "tok.txt").write_text("ok", encoding="utf-8")
+
+    class FakeModel:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            assert "quantization_config" in kwargs
+            return FakeModel()
+
+        def print_trainable_parameters(self):
+            return None
+
+        def save_pretrained(self, out):
+            Path(out, "model.txt").write_text("ok", encoding="utf-8")
+
+    class FakeDataset:
+        column_names = ["conversations"]
+
+        def map(self, fn, remove_columns=None):
+            fn({"conversations": [{"from": "human", "value": "only-human"}]})
+            fn({"conversations": [{"from": "gpt", "value": "only-gpt"}]})
+            fn({"conversations": "not-a-list"})
+            return [{"ok": 1}]
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.AutoModelForCausalLM = FakeModel
+    fake_transformers.AutoTokenizer = FakeTokenizer
+    fake_transformers.TrainingArguments = lambda **kwargs: kwargs
+    fake_transformers.Trainer = lambda **kwargs: types.SimpleNamespace(train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1))
+    fake_transformers.DataCollatorForSeq2Seq = lambda *args, **kwargs: None
+    fake_transformers.BitsAndBytesConfig = lambda **kwargs: kwargs
+
+    fake_peft = types.ModuleType("peft")
+    fake_peft.TaskType = types.SimpleNamespace(CAUSAL_LM="causal")
+    fake_peft.LoraConfig = lambda **kwargs: kwargs
+    fake_peft.get_peft_model = lambda model, conf: model
+
+    fake_datasets = types.ModuleType("datasets")
+    fake_datasets.load_dataset = lambda *args, **kwargs: FakeDataset()
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.float16 = "float16"
+
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setitem(sys.modules, "peft", fake_peft)
+    monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
     assert trainer._run_training("x")["success"] is True
 
