@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.registry import AgentCatalog
+from agent.registry import AgentCatalog, AgentSpec, _import_builtin_roles
 
 
 class _DummyAgent:
@@ -55,3 +55,66 @@ def test_register_type_create_and_unregister_roundtrip() -> None:
 def test_create_unknown_role_raises_keyerror() -> None:
     with pytest.raises(KeyError):
         AgentCatalog.create("definitely_missing_role")
+
+
+def test_create_uses_factory_when_agent_class_is_missing() -> None:
+    def _factory(*, value: int) -> dict[str, int]:
+        return {"value": value}
+
+    AgentCatalog._registry["tmp_factory"] = AgentSpec(  # type: ignore[attr-defined]
+        role_name="tmp_factory",
+        agent_class=None,
+        capabilities=["unit_test"],
+        description="factory-backed spec",
+        version="1.0.0",
+        is_builtin=False,
+    )
+    setattr(AgentCatalog._registry["tmp_factory"], "_agent_factory", _factory)  # type: ignore[attr-defined]
+
+    instance = AgentCatalog.create("tmp_factory", value=7)
+    assert instance == {"value": 7}
+
+    assert AgentCatalog.unregister("tmp_factory") is True
+
+
+def test_create_raises_typeerror_when_no_class_or_factory() -> None:
+    AgentCatalog._registry["tmp_broken"] = AgentSpec(  # type: ignore[attr-defined]
+        role_name="tmp_broken",
+        agent_class=None,
+        capabilities=[],
+        description="missing instantiation hooks",
+        version="1.0.0",
+        is_builtin=False,
+    )
+
+    with pytest.raises(TypeError):
+        AgentCatalog.create("tmp_broken")
+
+    assert AgentCatalog.unregister("tmp_broken") is True
+
+
+def test_unregister_returns_false_for_unknown_role() -> None:
+    assert AgentCatalog.unregister("definitely_unknown_role") is False
+
+
+def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    imported_modules: list[str] = []
+
+    def _fake_import_module(module_name: str):
+        imported_modules.append(module_name)
+        if module_name.endswith("qa_agent"):
+            raise RuntimeError("simulated import failure")
+        return object()
+
+    monkeypatch.setattr("importlib.import_module", _fake_import_module)
+
+    _import_builtin_roles()
+
+    assert imported_modules == [
+        "agent.roles.coder_agent",
+        "agent.roles.researcher_agent",
+        "agent.roles.reviewer_agent",
+        "agent.roles.poyraz_agent",
+        "agent.roles.coverage_agent",
+        "agent.roles.qa_agent",
+    ]
