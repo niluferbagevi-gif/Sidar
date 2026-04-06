@@ -102,6 +102,24 @@ def test_send_message_builds_payload_with_all_optional_fields(monkeypatch: pytes
     assert '"potentialAction"' in call["content"]
 
 
+def test_send_message_omits_optional_fields_when_not_provided(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="1"))
+    monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    mgr = TeamsManager(webhook_url="https://example.test/hook")
+    ok, err = _run(mgr.send_message(text="Body content"))
+
+    assert ok is True
+    assert err == ""
+
+    call = client.calls[0]
+    assert call["url"] == "https://example.test/hook"
+    assert '"summary": "Body content"' in call["content"]
+    assert '"title"' not in call["content"]
+    assert '"sections"' not in call["content"]
+    assert '"potentialAction"' not in call["content"]
+
+
 def test_send_adaptive_card_wraps_body(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _FakeAsyncClient(response=_FakeResponse(status_code=201, text="ok"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
