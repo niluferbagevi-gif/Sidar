@@ -28,6 +28,11 @@ def test_env_float_handles_defaults_and_invalid_values(monkeypatch: pytest.Monke
     assert llm_metrics._env_float("TEST_FLOAT", 7.25) == 7.25
 
 
+def test_env_float_handles_none_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TEST_FLOAT_NONE", raising=False)
+    assert llm_metrics._env_float("TEST_FLOAT_NONE", None) == 0.0
+
+
 def test_context_user_id_roundtrip() -> None:
     token = llm_metrics.set_current_metrics_user_id("  user-1  ")
     assert llm_metrics.get_current_metrics_user_id() == "user-1"
@@ -124,6 +129,19 @@ def test_record_usage_sink_errors_are_swallowed() -> None:
     collector.record(provider="openai", model="gpt-4o", latency_ms=1)
 
     assert len(list(collector._events)) == 1
+
+
+def test_record_usage_sink_non_awaitable_result_is_ignored() -> None:
+    collector = LLMMetricsCollector()
+    called = {"n": 0}
+
+    def sink(_event):
+        called["n"] += 1
+        return "ok"
+
+    collector.set_usage_sink(sink)
+    collector.record(provider="openai", model="gpt-4o", latency_ms=1)
+    assert called["n"] == 1
 
 
 def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(monkeypatch: pytest.MonkeyPatch) -> None:
