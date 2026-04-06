@@ -403,3 +403,135 @@ def test_run_task_main_paths(reviewer):
 
     reviewer.call_tool = default_call
     assert asyncio.run(reviewer.run_task("unknown")) == "prs"
+
+
+def test_init_registers_managers_and_tools(monkeypatch, tmp_path):
+    module = sys.modules[ReviewerAgent.__module__]
+
+    def fake_base_init(self, cfg=None, role_name="base"):
+        self.cfg = cfg
+        self.role_name = role_name
+        self.tools = {}
+
+    class FakeGitHub:
+        def __init__(self, token, repo):
+            self.token = token
+            self.repo = repo
+
+    class FakeSecurity:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+    class FakeCode:
+        def __init__(self, security, base_dir, **kwargs):
+            self.security = security
+            self.base_dir = base_dir
+            self.kwargs = kwargs
+
+    class FakeBrowser:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+    monkeypatch.setattr(module.BaseAgent, "__init__", fake_base_init)
+    monkeypatch.setattr(module, "GitHubManager", FakeGitHub)
+    monkeypatch.setattr(module, "SecurityManager", FakeSecurity)
+    monkeypatch.setattr(module, "CodeManager", FakeCode)
+    monkeypatch.setattr(module, "BrowserManager", FakeBrowser)
+    monkeypatch.setattr(module, "get_agent_event_bus", lambda: DummyEvents())
+
+    cfg = SimpleNamespace(
+        GITHUB_TOKEN="t",
+        GITHUB_REPO="r",
+        BASE_DIR=str(tmp_path),
+        DOCKER_PYTHON_IMAGE="python:3.11",
+        DOCKER_EXEC_TIMEOUT=15,
+        RAG_DIR=str(tmp_path / "rag"),
+        RAG_TOP_K=2,
+        RAG_CHUNK_SIZE=10,
+        RAG_CHUNK_OVERLAP=1,
+        USE_GPU=False,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+    )
+    agent = ReviewerAgent(cfg=cfg)
+    assert agent.github.token == "t"
+    assert agent.code.base_dir == str(tmp_path)
+    assert "browser_signals" in agent.tools
+
+
+def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
+    assert ReviewerAgent._extract_python_code_block("print('x')") == "print('x')"
+
+    assert ReviewerAgent._collect_graph_followup_paths({"reports": "x"}) == []
+    payload = {"status": "ok", "reports": [{"ok": True, "target": "x.py", "details": "bad"}]}
+    assert ReviewerAgent._summarize_graph_payload(payload)["high_risk_targets"] == []
+
+    assert ReviewerAgent._summarize_lsp_diagnostics("")["status"] == "clean"
+    assert ReviewerAgent._summarize_lsp_diagnostics('{"status":"x"}')["status"] == "clean"
+    assert ReviewerAgent._summarize_lsp_diagnostics("random satir")["status"] == "clean"
+
+    semantic = {"counts": {"bad": 3}, "issues": [None, {"path": "/workspace/Sidar/a.py"}, {"path": "/workspace/Sidar/a.py"}]}
+    combined = ReviewerAgent._build_combined_impact_report(semantic, {"risk": "orta", "followup_paths": ["b.py"], "high_risk_targets": []}, ["a.py"], [])
+    assert combined["impact_level"] == "high"
+
+    graph_payload = {"reports": [{"ok": False}, {"ok": True, "target": "a.py", "details": []}]}
+    recs = ReviewerAgent._build_fix_recommendations({"issues": [None, {"path": "", "message": "m"}]}, graph_payload, {"indirect_breakage_paths": []})
+    assert recs == []
+
+    graph_payload2 = {"reports": [{"ok": True, "target": "a.py", "details": {"risk_level": "low", "review_targets": "x"}}]}
+    recs2 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload2, {"indirect_breakage_paths": []})
+    assert recs2 == []
+
+    parsed = ReviewerAgent._parse_review_payload("[1,2,3]")
+    assert parsed["browser_session_id"] == ""
+
+    # cover unlink exception branch
+    original_unlink = Path.unlink
+    reviewer.call_tool = lambda *_a, **_k: asyncio.sleep(0, result="x")
+    reviewer.call_llm = lambda *_a, **_k: asyncio.sleep(0, result="def test_ok():\n    assert True\n")
+
+    def bad_unlink(self, missing_ok=True):
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "unlink", bad_unlink)
+    out = asyncio.run(reviewer._run_dynamic_tests("ctx"))
+    assert out == "x"
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+
+
+def test_run_task_decision_branches(reviewer):
+    reviewer._run_dynamic_tests = lambda _ctx: asyncio.sleep(0, result="[TEST:FAIL-CLOSED]")
+
+    async def call_tool_fail(name, _arg):
+        if name == "run_tests":
+            return "[TEST:OK]"
+        if name == "graph_impact":
+            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "low", "review_targets": [], "impacted_endpoints": []}}]})
+        if name == "browser_signals":
+            return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
+        if name == "lsp_diagnostics":
+            return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+        return ""
+
+    reviewer.call_tool = call_tool_fail
+    res = asyncio.run(reviewer.run_task("review_code|ctx"))
+    data = json.loads(res.payload.split("qa_feedback|", 1)[1])
+    assert data["decision"] == "REJECT"
+
+    reviewer._run_dynamic_tests = lambda _ctx: asyncio.sleep(0, result="[TEST:OK]")
+
+    async def call_tool_risk(name, _arg):
+        if name == "run_tests":
+            return "[TEST:OK]"
+        if name == "graph_impact":
+            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "high", "review_targets": ["b.py"], "impacted_endpoints": []}}]})
+        if name == "browser_signals":
+            return json.dumps({"status": "ok", "risk": "orta", "summary": "b"})
+        if name == "lsp_diagnostics":
+            return json.dumps({"summary": "s", "status": "clean", "risk": "orta", "decision": "APPROVE", "counts": {}, "issues": []})
+        return ""
+
+    reviewer.call_tool = call_tool_risk
+    res2 = asyncio.run(reviewer.run_task("review_code|ctx"))
+    data2 = json.loads(res2.payload.split("qa_feedback|", 1)[1])
+    assert data2["risk"] == "orta"
