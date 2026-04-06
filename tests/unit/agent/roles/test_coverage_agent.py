@@ -145,6 +145,8 @@ def test_static_helpers_and_parsers(tmp_path):
 
     assert CoverageAgent._clean_code_output("plain") == "plain"
     assert CoverageAgent._clean_code_output("```python\na=1\n```") == "a=1"
+    assert CoverageAgent._clean_code_output("```") == ""
+    assert CoverageAgent._clean_code_output("```python\na=1") == "a=1"
 
     assert CoverageAgent._normalize_analysis("x") == {"summary": "", "findings": []}
     normalized = CoverageAgent._normalize_analysis({"summary": None, "findings": [{"a": 1}, "bad"]})
@@ -196,6 +198,27 @@ def test_parse_coverage_xml_and_terminal(tmp_path):
     xml_missing = CoverageAgent._parse_coverage_xml(str(tmp_path / "missing.xml"))
     assert xml_missing["exists"] is False
 
+    xml_blank_filename = tmp_path / "coverage_blank_filename.xml"
+    xml_blank_filename.write_text(
+        """
+<coverage>
+  <packages>
+    <package>
+      <classes>
+        <class filename="" line-rate="0.3" branch-rate="0.2">
+          <lines><line number="1" hits="0"/></lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+        """.strip(),
+        encoding="utf-8",
+    )
+    blank_data = CoverageAgent._parse_coverage_xml(str(xml_blank_filename))
+    assert blank_data["files"] == []
+    assert blank_data["findings"] == []
+
     term = """
 Name                               Stmts   Miss Branch BrPart   Cover   Missing
 agent/roles/coverage_agent.py     260    217     80      1  12%   20
@@ -246,6 +269,26 @@ def test_tool_methods(tmp_path):
     cov_data = json.loads(cov_json)
     assert "coverage_xml" in cov_data
     assert "coverage_terminal" in cov_data
+    assert cov_data["findings"] == []
+
+    cov_xml2 = tmp_path / "coverage2.xml"
+    cov_xml2.write_text(
+        """
+<coverage>
+  <packages><package><classes>
+    <class filename="src/covered.py" line-rate="0.5" branch-rate="1.0">
+      <lines><line number="9" hits="0"/></lines>
+    </class>
+  </classes></package></packages>
+</coverage>
+        """.strip(),
+        encoding="utf-8",
+    )
+    cov_json2 = asyncio.run(
+        agent._tool_analyze_coverage_report(json.dumps({"coverage_xml": str(cov_xml2), "coverage_output": ""}))
+    )
+    cov_data2 = json.loads(cov_json2)
+    assert cov_data2["findings"][0]["target_path"] == "src/covered.py"
 
     async def fake_llm(messages, system_prompt, temperature):
         assert system_prompt == CoverageAgent.TEST_GENERATION_PROMPT
@@ -267,6 +310,17 @@ def test_tool_methods(tmp_path):
 
     gen_from_output = asyncio.run(agent._tool_generate_missing_tests(json.dumps({"target_path": "src/m.py", "pytest_output": "FAIL"})))
     assert "test_ok" in gen_from_output
+    gen_from_analysis = asyncio.run(
+        agent._tool_generate_missing_tests(
+            json.dumps(
+                {
+                    "target_path": "src/m.py",
+                    "analysis": {"summary": "ready", "findings": [{"target_path": "src/m.py"}]},
+                }
+            )
+        )
+    )
+    assert "test_ok" in gen_from_analysis
 
     write_json = asyncio.run(
         agent._tool_write_missing_tests(
@@ -303,6 +357,60 @@ def test_ensure_db_and_record_task(tmp_path, monkeypatch):
         )
     )
     assert db1.created and db1.findings
+
+
+def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch):
+    agent = make_agent(tmp_path)
+    agent._db_lock = asyncio.Lock()
+    core_pkg = ModuleType("core")
+    core_db = ModuleType("core.db")
+    core_db.Database = FakeDB
+    monkeypatch.setitem(sys.modules, "core", core_pkg)
+    monkeypatch.setitem(sys.modules, "core.db", core_db)
+
+    db = asyncio.run(agent._ensure_db())
+    assert db.connected == 1
+    assert db.inited == 1
+
+
+def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
+    class FakeMatch:
+        @staticmethod
+        def groupdict():
+            return {"path": "", "miss": "1", "branch": "0", "brpart": "0", "cover": "90", "missing": ""}
+
+    class FakePattern:
+        @staticmethod
+        def match(_line):
+            return FakeMatch()
+
+    monkeypatch.setattr(_COVERAGE_MODULE.re, "compile", lambda _pattern: FakePattern())
+    data = CoverageAgent._parse_terminal_coverage_output("dummy")
+    assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
+
+
+def test_module_sets_agentcatalog_get_fallback(monkeypatch):
+    module_path = Path("agent/roles/coverage_agent.py")
+    import importlib.util
+
+    from agent.registry import AgentCatalog as RealCatalog
+
+    had_get = hasattr(RealCatalog, "get")
+    original_get = getattr(RealCatalog, "get", None)
+    if had_get:
+        monkeypatch.delattr(RealCatalog, "get", raising=False)
+
+    try:
+        spec = importlib.util.spec_from_file_location("coverage_agent_no_get", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        sys.modules["coverage_agent_no_get"] = module
+        spec.loader.exec_module(module)
+        assert hasattr(RealCatalog, "get")
+        assert RealCatalog.get("anything") is None
+    finally:
+        if had_get and original_get is not None:
+            RealCatalog.get = original_get
 
 
 def test_run_task_routes_and_flows(tmp_path):
