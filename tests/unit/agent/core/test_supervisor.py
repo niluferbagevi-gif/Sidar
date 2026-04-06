@@ -643,6 +643,43 @@ def test_route_p2p_delegates_and_returns_terminal_result() -> None:
     assert calls[0]["context"]["p2p_handoff_depth"] == "2"
 
 
+def test_route_p2p_reject_feedback_continues_until_retry_limit_exceeded() -> None:
+    sup = _build_supervisor(max_qa_retries=1)
+    delegate_calls: list[str] = []
+
+    async def _delegate(receiver: str, _goal: str, intent: str, **_kwargs):
+        assert intent == "p2p"
+        delegate_calls.append(receiver)
+        return TaskResult(
+            task_id=str(len(delegate_calls)),
+            status="done",
+            summary=DelegationRequest(
+                task_id=f"loop-{len(delegate_calls)}",
+                reply_to="reviewer",
+                target_agent="coder",
+                payload="qa_feedback|decision=reject",
+                intent="p2p",
+                protocol="p2p.v1",
+            ),
+        )
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="qa_feedback|decision=reject",
+        intent="p2p",
+        protocol="p2p.v1",
+    )
+
+    result = asyncio.run(sup._route_p2p(req, max_hops=5))
+
+    assert len(delegate_calls) == 1
+    assert result.status == "failed"
+    assert "Maksimum QA retry limiti aşıldı (1)" in str(result.summary)
+
+
 def test_run_task_research_routes_p2p_when_delegation_request_returns() -> None:
     sup = _build_supervisor()
 
