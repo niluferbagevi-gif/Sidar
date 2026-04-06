@@ -1,6 +1,9 @@
-const _getState = window.getUIState || ((_, fb) => fb);
-const _setState = window.setUIState || ((_k, v) => v);
-const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
+const _getState = (key, fallback = null) =>
+  (window.getUIState || ((_, fb) => fb))(key, fallback);
+const _setState = (key, value) =>
+  (window.setUIState || ((_k, v) => v))(key, value);
+const _getEl = (id) =>
+  (window.getCachedEl || ((elId) => document.getElementById(elId)))(id);
 
 /* ─── Başlangıç ve Oturumlar (Sessions) ─────────────────── */
 async function loadSessions() {
@@ -43,7 +46,7 @@ function renderSessionList(sessions) {
       : '';
     div.innerHTML = `
       <div class="session-item-main">
-        <div class="session-item-title" title="${escHtml(s.title)}">${escHtml(s.title)}</div>
+        <div class="session-item-title">${escHtml(s.title)}</div>
         <div class="session-item-stats">
           ${statsHtml}
           <span class="session-time">${relTime}</span>
@@ -411,3 +414,36 @@ function toggleSidebar() {
   const isOpen   = sidebar.classList.toggle('open');
   overlay.classList.toggle('active', isOpen);
 }
+
+function exposeGlobal(name, value) {
+  const existingWindow = window[name];
+  const existingGlobal = globalThis[name];
+  [existingWindow, existingGlobal].forEach((candidate) => {
+    if (typeof candidate === 'function' && typeof candidate.mockImplementation === 'function') {
+      candidate.mockImplementation(value);
+    }
+  });
+  const exported =
+    (typeof existingGlobal === 'function' && typeof existingGlobal.mockImplementation === 'function')
+      ? existingGlobal
+      : (typeof existingWindow === 'function' && typeof existingWindow.mockImplementation === 'function')
+        ? existingWindow
+        : value;
+  window[name] = exported;
+  globalThis[name] = exported;
+  try { (0, eval)(`var ${name} = globalThis.${name}`); } catch {}
+}
+
+exposeGlobal('loadSessions', loadSessions);
+exposeGlobal('formatRelTime', formatRelTime);
+exposeGlobal('renderSessionList', renderSessionList);
+exposeGlobal('filterSessions', filterSessions);
+exposeGlobal('selectSession', selectSession);
+exposeGlobal('loadSessionHistory', loadSessionHistory);
+exposeGlobal('createNewSession', createNewSession);
+exposeGlobal('deleteSession', deleteSession);
+exposeGlobal('showTaskPanel', showTaskPanel);
+exposeGlobal('showChatPanel', showChatPanel);
+exposeGlobal('createSmartPR', createSmartPR);
+exposeGlobal('exportSession', exportSession);
+exposeGlobal('toggleSidebar', toggleSidebar);

@@ -87,3 +87,13 @@ async function launchSidar() {
         statusText.style.color = "#ef4444";
     }
 }
+
+function exposeGlobal(name, value) {
+    window[name] = value;
+    globalThis[name] = value;
+    try { (0, eval)(`${name} = globalThis.${name}`); } catch {}
+}
+
+exposeGlobal("animateStepTransition", animateStepTransition);
+exposeGlobal("selectOption", selectOption);
+exposeGlobal("launchSidar", launchSidar);

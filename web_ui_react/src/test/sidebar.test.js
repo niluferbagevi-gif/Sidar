@@ -18,8 +18,6 @@ window.fetchAPI = vi.fn().mockResolvedValue({
   json: async () => ({ success: true, sessions: [], active_session: null }),
 });
 // Functions expected to exist in a full page context — minimal stubs
-window.showChatPanel = vi.fn();
-window.showTaskPanel = vi.fn();
 window.loadSessionHistory = vi.fn().mockResolvedValue(undefined);
 window.startTask = vi.fn();
 window.quickTask = vi.fn();

@@ -130,3 +130,19 @@ function ragShowResult(elId, ok, msg) {
   el.style.display = 'block';
   setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
+
+function exposeGlobal(name, value) {
+  window[name] = value;
+  globalThis[name] = value;
+  try { (0, eval)(`${name} = globalThis.${name}`); } catch {}
+}
+
+exposeGlobal('openRagModal', openRagModal);
+exposeGlobal('closeRagModal', closeRagModal);
+exposeGlobal('ragTab', ragTab);
+exposeGlobal('ragLoadDocs', ragLoadDocs);
+exposeGlobal('ragDeleteDoc', ragDeleteDoc);
+exposeGlobal('ragAddFile', ragAddFile);
+exposeGlobal('ragAddUrl', ragAddUrl);
+exposeGlobal('ragSearch', ragSearch);
+exposeGlobal('ragShowResult', ragShowResult);

@@ -61,10 +61,16 @@ function reportUIError(err, fallback = 'Beklenmeyen bir hata oluştu.') {
   return message;
 }
 
+function escHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, '');
+}
+
 window.getUIState = getUIState;
 window.setUIState = setUIState;
 window.getCachedEl = getCachedEl;
 window.reportUIError = reportUIError;
+window.escHtml = escHtml;
+globalThis.escHtml = escHtml;
 
 function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';

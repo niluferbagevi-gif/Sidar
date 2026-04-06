@@ -1,5 +1,8 @@
 
-marked.setOptions({ breaks: true, gfm: true });
+const markdownParser = (typeof window !== 'undefined' && window.marked) || (typeof marked !== 'undefined' ? marked : null);
+if (markdownParser && typeof markdownParser.setOptions === 'function') {
+  markdownParser.setOptions({ breaks: true, gfm: true });
+}
 
 /* ─── Değişkenler ───────────────────────────────────────── */
 const _getState = window.getUIState || ((_, fb) => fb);
@@ -514,7 +517,11 @@ function finalizeMsg(id, rawText) {
   const body   = el.querySelector('.msg-body');
   const cursor = document.getElementById(`${id}-cur`);
   if (cursor) cursor.remove();
-  body.innerHTML = sanitizeRenderedHtml(marked.parse(rawText || '*(yanıt alınamadı)*'));
+  const fallback = rawText || '*(yanıt alınamadı)*';
+  const parsed = markdownParser && typeof markdownParser.parse === 'function'
+    ? markdownParser.parse(fallback)
+    : escHtml(fallback).replace(/\n/g, '<br>');
+  body.innerHTML = sanitizeRenderedHtml(parsed);
   body.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
 
   // Kod bloklarına kopyala butonu ekle
