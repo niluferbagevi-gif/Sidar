@@ -264,6 +264,13 @@ def test_dynamic_build_and_run(reviewer, monkeypatch):
     fail2 = asyncio.run(reviewer._build_dynamic_test_content("ctx"))
     assert "başarısız" in fail2
 
+    async def no_test_fn(*_a, **_k):
+        return "```python\nprint('no test')\n```"
+
+    reviewer.call_llm = no_test_fn
+    fail3 = asyncio.run(reviewer._build_dynamic_test_content("ctx"))
+    assert "pytest test fonksiyonu içermedi" in fail3
+
     async def fake_call_tool(name, arg):
         assert name == "run_tests"
         return f"ran:{arg}"
@@ -464,6 +471,14 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     assert ReviewerAgent._extract_python_code_block("print('x')") == "print('x')"
 
     assert ReviewerAgent._collect_graph_followup_paths({"reports": "x"}) == []
+    rich_payload = {
+        "reports": [
+            {"ok": False, "details": {"review_targets": ["skip.py"]}},
+            {"ok": True, "details": {"review_targets": "not-list"}},
+            {"ok": True, "details": {"review_targets": ["README.md", "x.py", "x.py"]}},
+        ]
+    }
+    assert ReviewerAgent._collect_graph_followup_paths(rich_payload) == ["x.py"]
     payload = {"status": "ok", "reports": [{"ok": True, "target": "x.py", "details": "bad"}]}
     assert ReviewerAgent._summarize_graph_payload(payload)["high_risk_targets"] == []
 
@@ -483,8 +498,22 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     recs2 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload2, {"indirect_breakage_paths": []})
     assert recs2 == []
 
+    graph_payload3 = {
+        "reports": [
+            {"ok": True, "target": "a.py", "details": {"risk_level": "high", "review_targets": [None, "a.py", "dep.py", "dep.py"], "caller_files": "x"}},
+            {"ok": True, "target": "b.py", "details": {"risk_level": "high", "direct_dependents": ["dep.py", "other.ts"]}},
+        ]
+    }
+    recs3 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload3, {"indirect_breakage_paths": []})
+    assert [item["path"] for item in recs3] == ["dep.py", "other.ts"]
+
     parsed = ReviewerAgent._parse_review_payload("[1,2,3]")
     assert parsed["browser_session_id"] == ""
+    parsed_fallback = ReviewerAgent._parse_review_payload("{this is invalid json")
+    assert parsed_fallback["review_context"] == "{this is invalid json"
+
+    assert ReviewerAgent._extract_changed_paths("src/a/../b.py /abs/x.py foo.py") == ["abs/x.py", "foo.py"]
+    assert reviewer._build_regression_commands("tests/unit/test_a.py src/a.py")[0].startswith("pytest -q tests/unit/test_a.py")
 
     # cover unlink exception branch
     original_unlink = Path.unlink
@@ -536,3 +565,19 @@ def test_run_task_decision_branches(reviewer):
     res2 = asyncio.run(reviewer.run_task("review_code|ctx"))
     data2 = json.loads(res2.payload.split("qa_feedback|", 1)[1])
     assert data2["risk"] == "orta"
+
+    async def call_tool_graph_medium(name, _arg):
+        if name == "run_tests":
+            return "[TEST:OK]"
+        if name == "graph_impact":
+            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "high", "review_targets": ["x.py"], "impacted_endpoints": []}}]})
+        if name == "browser_signals":
+            return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
+        if name == "lsp_diagnostics":
+            return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+        return ""
+
+    reviewer.call_tool = call_tool_graph_medium
+    res3 = asyncio.run(reviewer.run_task("review_code|ctx"))
+    data3 = json.loads(res3.payload.split("qa_feedback|", 1)[1])
+    assert data3["risk"] == "orta"
