@@ -113,8 +113,9 @@ class WebSearchManager:
         if self.engine == "tavily" and self.tavily_key:
             ok, res = await self._search_tavily(query, n)
             tavily_already_tried = True
-            # Tavily "sonuç yok" döndürebilir; bu durumda diğer motorlara fallback yapılır.
-            if self._is_actionable_result(ok, res):
+            # Motor açıkça tavily seçildiyse, başarılı yanıtı ("sonuç yok" dahil) doğrudan döndür.
+            # Fallback yalnızca gerçek hata durumlarında devreye girsin.
+            if ok:
                 return True, self._normalize_result_text(res)
             # 401/403 veya başka bir hata → aşağıdaki auto-fallback'e düş
             logger.info("Tavily başarısız; otomatik fallback başlatılıyor.")
