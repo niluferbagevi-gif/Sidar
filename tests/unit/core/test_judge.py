@@ -151,6 +151,22 @@ def test_call_llm_json_paths(monkeypatch, judge_instance):
     assert run(judge_instance._call_llm_json("sys", "msg")) is None
 
 
+def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
+    class NonStringClient(FakeLLMClient):
+        response = {"score": 7}
+
+    _install_llm_client_module(monkeypatch, NonStringClient)
+    assert run(judge_instance._call_llm_json("sys", "msg")) is None
+
+    class CancelClient(FakeLLMClient):
+        async def chat(self, **kwargs):
+            raise asyncio.CancelledError()
+
+    _install_llm_client_module(monkeypatch, CancelClient)
+    with pytest.raises(asyncio.CancelledError):
+        run(judge_instance._call_llm_json("sys", "msg"))
+
+
 def test_evaluate_response_success_and_fallback(monkeypatch, judge_instance):
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
 
@@ -238,6 +254,24 @@ def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
     assert out.hallucination_risk == 0.0
 
 
+def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judge_instance):
+    monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
+    calls = {"n": 0}
+
+    async def llm_once(*args, **kwargs):
+        calls["n"] += 1
+        return 0.8
+
+    monkeypatch.setattr(judge_instance, "_call_llm", llm_once)
+    monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
+    monkeypatch.setattr(judge, "_record_judge_metrics", lambda result: None)
+    monkeypatch.setattr(judge_instance, "_maybe_record_feedback", lambda **kwargs: asyncio.sleep(0, result=False))
+    out = run(judge_instance.evaluate_rag("q", ["d1", "d2"], answer=None))
+    assert out.relevance_score == 0.8
+    assert out.hallucination_risk == 0.0
+    assert calls["n"] == 1
+
+
 def test_maybe_record_feedback_paths(judge_instance):
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
@@ -279,6 +313,13 @@ def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_instanc
             raise RuntimeError("boom")
 
     fake_mod.get_feedback_store = lambda config: BadStore()
+    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
+
+    class FalseStore:
+        async def flag_weak_response(self, **kwargs):
+            return False
+
+    fake_mod.get_feedback_store = lambda config: FalseStore()
     assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
 
 
@@ -355,6 +396,11 @@ def test_schedule_background_no_loop(monkeypatch, judge_instance):
     judge_instance.schedule_background_evaluation("q", ["d"], "a")
 
 
+def test_schedule_background_skips_when_sampling_disabled(monkeypatch, judge_instance):
+    monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: False)
+    judge_instance.schedule_background_evaluation("q", ["d"], "a")
+
+
 def test_inc_prometheus_cache_and_errors(monkeypatch):
     judge._prometheus_gauges.clear()
 
@@ -413,6 +459,31 @@ def test_record_judge_metrics_variants(monkeypatch):
 
     metrics_mod.get_llm_metrics_collector = lambda: Collector(None)
     judge._record_judge_metrics(result)
+
+
+def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
+    result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
+    task_calls = {"n": 0}
+
+    class Collector:
+        def __init__(self, sink):
+            self._usage_sink = sink
+
+    async def async_sink(payload):
+        return None
+
+    class _Loop:
+        def create_task(self, coro):
+            task_calls["n"] += 1
+            coro.close()
+            return None
+
+    metrics_mod = types.ModuleType("core.llm_metrics")
+    metrics_mod.get_llm_metrics_collector = lambda: Collector(async_sink)
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", metrics_mod)
+    monkeypatch.setattr(judge.asyncio, "get_running_loop", lambda: _Loop())
+    judge._record_judge_metrics(result)
+    assert task_calls["n"] == 1
 
 
 def test_record_judge_metrics_exception(monkeypatch):
