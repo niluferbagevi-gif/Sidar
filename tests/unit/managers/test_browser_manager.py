@@ -540,6 +540,37 @@ def test_additional_summary_and_list(manager: BrowserManager) -> None:
     assert manager.summarize_audit_log("ok1")["status"] == "ok"
 
 
+def test_summary_branch_gaps_and_collect_signal_defaults(manager: BrowserManager) -> None:
+    # status/action boş olan kayıtlar branch fallback yollarını çalıştırmalı
+    manager._record_audit_event(session_id="b1", action="", status="", selector="#noop")
+
+    # Aynı başarısız aksiyon bir kez failed_actions listesine girmeli
+    manager._record_audit_event(
+        session_id="b1",
+        action="browser_click",
+        status="failed",
+        selector="#dup",
+    )
+    manager._record_audit_event(
+        session_id="b1",
+        action="browser_click",
+        status="failed",
+        selector="#dup",
+    )
+
+    summary = manager.summarize_audit_log("b1")
+    assert summary["status_counts"] == {"failed": 2}
+    assert summary["action_counts"] == {"browser_click": 2}
+    assert summary["failed_actions"] == ["browser_click:#dup"]
+
+    sess = _session("playwright")
+    sess.session_id = "b1"
+    manager._sessions["b1"] = sess
+    signal = manager.collect_session_signals("b1")
+    assert "dom_capture" not in signal
+    assert "screenshot" not in signal
+
+
 def test_playwright_impl_and_goto_selenium(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
