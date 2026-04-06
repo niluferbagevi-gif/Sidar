@@ -1,4 +1,338 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+from pathlib import Path
+
 import pytest
 
-def test_placeholder():
-    assert True
+import core.multimodal as multimodal
+
+
+class DummyLLM:
+    def __init__(self, response: str = "analiz") -> None:
+        self.response = response
+
+    async def chat(self, **_kwargs):
+        return self.response
+
+
+class DummyConfig:
+    ENABLE_MULTIMODAL = True
+    MULTIMODAL_MAX_FILE_BYTES = 1024 * 1024
+    MULTIMODAL_REMOTE_DOWNLOAD_TIMEOUT = 11.0
+    YOUTUBE_TRANSCRIPT_TIMEOUT = 3.0
+    MULTIMODAL_REMOTE_VIDEO_MAX_SECONDS = 33.0
+    VOICE_STT_PROVIDER = "whisper"
+    WHISPER_MODEL = "tiny"
+
+
+class AsyncClientStub:
+    def __init__(self, responses):
+        self._responses = list(responses)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, _url):
+        return self._responses.pop(0)
+
+
+class ResponseStub:
+    def __init__(self, *, status_code=200, payload=None, headers=None, content=b"", raise_error=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.headers = headers or {}
+        self.content = content
+        self._raise_error = raise_error
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self._raise_error:
+            raise self._raise_error
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def test_detect_media_kind_and_sources():
+    assert multimodal.detect_media_kind(mime_type="video/mp4") == "video"
+    assert multimodal.detect_media_kind(path="sound.mp3") == "audio"
+    assert multimodal.detect_media_kind(path="photo.png") == "image"
+    assert multimodal.detect_media_kind(path="unknown.xyz") == "unknown"
+    assert multimodal.is_remote_media_source("https://example.com/a.mp4") is True
+    assert multimodal.is_remote_media_source("/tmp/local.mp4") is False
+
+
+def test_detect_platform_and_youtube_id_extractors():
+    assert multimodal.detect_video_platform("https://youtu.be/abcdefghijk") == "youtube"
+    assert multimodal.detect_video_platform("https://vimeo.com/123") == "vimeo"
+    assert multimodal.detect_video_platform("https://loom.com/share/1") == "loom"
+    assert multimodal.detect_video_platform("https://example.com/file") == "generic"
+
+    assert multimodal.extract_youtube_video_id("abcdefghijk") == "abcdefghijk"
+    assert multimodal.extract_youtube_video_id("https://www.youtube.com/watch?v=abcdefghijk") == "abcdefghijk"
+    assert multimodal.extract_youtube_video_id("https://youtu.be/abcdefghijk") == "abcdefghijk"
+    assert multimodal.extract_youtube_video_id("https://www.youtube.com/shorts/abcdefghijk") == "abcdefghijk"
+    assert multimodal.extract_youtube_video_id("https://example.com/nope") == ""
+
+
+def test_normalize_youtube_events_skips_invalid_items():
+    payload = [
+        {"segs": [{"utf8": "Merhaba"}], "tStartMs": 1000, "dDurationMs": 500},
+        {"segs": "invalid"},
+        "not-dict",
+        {"segs": [{"utf8": "&amp; dunya"}], "tStartMs": 2000, "dDurationMs": 750},
+    ]
+    normalized = multimodal._normalize_youtube_transcript_events(payload)
+    assert normalized["text"] == "Merhaba & dunya"
+    assert normalized["segments"][0]["start_seconds"] == 1.0
+    assert normalized["segments"][1]["duration_seconds"] == 0.75
+
+
+def test_fetch_youtube_transcript_success_after_language_fallback():
+    responses = [
+        ResponseStub(status_code=404),
+        ResponseStub(payload={"events": [{"segs": [{"utf8": "Selam"}], "tStartMs": 0, "dDurationMs": 1000}]}),
+    ]
+
+    def factory(**_kwargs):
+        return AsyncClientStub(responses)
+
+    result = run(
+        multimodal.fetch_youtube_transcript(
+            "https://youtube.com/watch?v=abcdefghijk",
+            languages=("tr", "en"),
+            http_client_factory=factory,
+        )
+    )
+    assert result["success"] is True
+    assert result["language"] == "en"
+    assert result["text"] == "Selam"
+
+
+def test_fetch_youtube_transcript_invalid_id_returns_failure():
+    result = run(multimodal.fetch_youtube_transcript("https://example.com/video"))
+    assert result["success"] is False
+
+
+def test_download_remote_media_http_flow(tmp_path):
+    def factory(**_kwargs):
+        return AsyncClientStub([
+            ResponseStub(headers={"content-type": "video/mp4; charset=UTF-8"}, content=b"video-data")
+        ])
+
+    downloaded = run(
+        multimodal.download_remote_media(
+            "https://example.com/media/test.mp4", output_dir=tmp_path, http_client_factory=factory
+        )
+    )
+    assert Path(downloaded.path).read_bytes() == b"video-data"
+    assert downloaded.mime_type == "video/mp4"
+
+
+def test_download_remote_media_requires_remote_source(tmp_path):
+    with pytest.raises(ValueError):
+        run(multimodal.download_remote_media("/tmp/local.mp4", output_dir=tmp_path))
+
+
+def test_resolve_remote_media_stream_ytdlp_path(monkeypatch):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
+
+    async def fake_to_thread(_fn, command):
+        if "--dump-single-json" in command:
+            return '{"title":"Demo Video"}'
+        return "https://cdn.example.com/stream.mp4\n"
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
+    result = run(multimodal.resolve_remote_media_stream("https://youtube.com/watch?v=abcdefghijk"))
+    assert result["resolved_url"] == "https://cdn.example.com/stream.mp4"
+
+
+def test_materialize_remote_media_for_ffmpeg_fallbacks_to_download(monkeypatch, tmp_path):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
+
+    async def fake_download(source_url, *, output_dir, **_kwargs):
+        return multimodal.DownloadedMedia(
+            path=str(Path(output_dir) / "x.mp4"),
+            source_url=source_url,
+            mime_type="video/mp4",
+            platform="generic",
+        )
+
+    monkeypatch.setattr(multimodal, "download_remote_media", fake_download)
+    result = run(multimodal.materialize_remote_media_for_ffmpeg("https://example.com/v.mp4", output_dir=tmp_path))
+    assert result.path.endswith("x.mp4")
+
+
+def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
+    video = tmp_path / "sample.mp4"
+    video.write_bytes(b"x")
+    frames_dir = tmp_path / "frames"
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fake_to_thread(_fn, _command):
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        (frames_dir / "frame_001.jpg").write_bytes(b"a")
+        (frames_dir / "frame_002.jpg").write_bytes(b"b")
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
+    frames = run(multimodal.extract_video_frames(video, interval_seconds=2.5, max_frames=2, output_dir=frames_dir))
+    assert [Path(f.path).name for f in frames] == ["frame_001.jpg", "frame_002.jpg"]
+
+
+def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
+    source = tmp_path / "input.mp4"
+    source.write_bytes(b"x")
+    output = tmp_path / "audio.wav"
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fake_audio(_fn, _command):
+        output.write_bytes(b"wav")
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_audio)
+    audio_path = run(multimodal.extract_audio_track(source, output_path=output))
+    assert Path(audio_path).exists()
+
+    async def fake_whisper(_fn, command):
+        out = Path(command[command.index("--output_dir") + 1])
+        (out / f"{source.stem}.json").write_text('{"text":" tx ","segments":[1],"language":"tr"}', encoding="utf-8")
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_whisper)
+    result = run(multimodal.transcribe_audio(source, language="tr"))
+    assert result["success"] is True
+    assert result["text"] == "tx"
+
+
+def test_build_context_scene_summary_and_render_document():
+    transcript = {"text": "metin", "language": "tr"}
+    frames = [{"timestamp_seconds": 1.2, "analysis": "sahne-1"}]
+    context = multimodal.build_multimodal_context(media_kind="video", transcript=transcript, frame_analyses=frames)
+    assert "Transkript" in context
+    title, body = multimodal.render_multimodal_document(
+        {
+            "media_kind": "video",
+            "transcript": transcript,
+            "frame_analyses": frames,
+            "analysis": "öngörü",
+            "context": "bağlam",
+        },
+        source="demo.mp4",
+    )
+    assert "Video İçgörü Özeti" in title
+    assert "LLM İçgörüsü" in body
+
+
+def test_ingest_multimodal_analysis_success_and_failure():
+    class Store:
+        async def add_document(self, **kwargs):
+            self.last = kwargs
+            return "doc-1"
+
+    store = Store()
+    failed = run(multimodal.ingest_multimodal_analysis(store, {"success": False}, source="x"))
+    assert failed["success"] is False
+    ok = run(
+        multimodal.ingest_multimodal_analysis(
+            store,
+            {"success": True, "media_kind": "audio", "transcript": {"text": "x"}, "frame_analyses": []},
+            source="src",
+        )
+    )
+    assert ok["doc_id"] == "doc-1"
+
+
+def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
+
+    async def fake_transcribe(path, **_kwargs):
+        assert Path(path).exists()
+        return {"success": True, "text": "ses"}
+
+    monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
+    result = run(pipeline.transcribe_bytes(b"abc"))
+    assert result["success"] is True
+
+    pipeline.enabled = False
+    disabled = run(pipeline.analyze_media(media_path=str(tmp_path / "none")))
+    assert disabled["success"] is False
+
+
+def test_pipeline_analyze_local_media_video_happy_path(monkeypatch, tmp_path):
+    media = tmp_path / "v.mp4"
+    media.write_bytes(b"abc")
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("sonuc"), DummyConfig())
+
+    async def fake_extract_audio(_path, **_kwargs):
+        wav = tmp_path / "out.wav"
+        wav.write_bytes(b"w")
+        return str(wav)
+
+    async def fake_transcribe(_path, **_kwargs):
+        return {"success": True, "text": "trans", "language": "tr"}
+
+    async def fake_extract_frames(_path, **_kwargs):
+        return [multimodal.ExtractedFrame(path=str(tmp_path / "f.jpg"), timestamp_seconds=0.0)]
+
+    class VisionPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze(self, **_kwargs):
+            return {"analysis": "frame-analiz"}
+
+    monkeypatch.setitem(sys.modules, "core.vision", types.SimpleNamespace(VisionPipeline=VisionPipeline))
+    monkeypatch.setattr(multimodal, "extract_audio_track", fake_extract_audio)
+    monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(multimodal, "extract_video_frames", fake_extract_frames)
+
+    result = run(pipeline._analyze_local_media(media_path=media, mime_type="video/mp4", prompt="p"))
+    assert result["success"] is True
+    assert result["analysis"] == "sonuc"
+
+
+def test_pipeline_analyze_media_source_remote_with_ingest(monkeypatch):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("A"), DummyConfig())
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
+
+    async def fake_download(_source, *, output_dir, **_kwargs):
+        media = Path(output_dir) / "remote.mp4"
+        media.write_bytes(b"x")
+        return multimodal.DownloadedMedia(
+            path=str(media),
+            source_url="https://youtube.com/watch?v=abcdefghijk",
+            mime_type="video/mp4",
+            platform="youtube",
+            resolved_url="https://cdn",
+            title="yt",
+        )
+
+    async def fake_fetch(_source, **_kwargs):
+        return {"success": True, "text": "yt transcript", "language": "tr", "segments": []}
+
+    async def fake_analyze_local(**_kwargs):
+        return {"success": True, "media_kind": "video", "transcript": {"text": "x"}, "frame_analyses": []}
+
+    class Store:
+        async def add_document(self, **_kwargs):
+            return "doc-9"
+
+    monkeypatch.setattr(multimodal, "download_remote_media", fake_download)
+    monkeypatch.setattr(multimodal, "fetch_youtube_transcript", fake_fetch)
+    monkeypatch.setattr(pipeline, "_analyze_local_media", fake_analyze_local)
+
+    result = run(
+        pipeline.analyze_media_source(
+            media_source="https://youtube.com/watch?v=abcdefghijk",
+            ingest_document_store=Store(),
+        )
+    )
+    assert result["success"] is True
+    assert result["document_ingest"]["doc_id"] == "doc-9"
