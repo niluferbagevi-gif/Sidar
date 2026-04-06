@@ -411,3 +411,82 @@ def test_document_store_consolidate_session_documents(tmp_path: Path) -> None:
     assert summary["removed_docs"] >= 1
     assert summary["summary_doc_id"] == "digest-new"
     assert "digest_old" in deleted
+
+
+def test_document_store_graph_disabled_and_dispatch_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = False
+    store._graph_ready = False
+    store._index = {"d1": {"session_id": "s1", "title": "Doc"}}
+
+    ok, msg = store.rebuild_graph_index()
+    assert ok is False and "devre dışı" in msg
+
+    ok, msg = store.search_graph("anything")
+    assert ok is False and "devre dışı" in msg
+
+    ok, msg = store.explain_dependency_path("a.py", "b.py")
+    assert ok is False and "devre dışı" in msg
+
+    ok, msg = store.graph_impact_details("x")
+    assert ok is False and "devre dışı" in msg
+
+
+def test_document_store_graph_query_dispatch_and_empty_impact_target(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = True
+    store._graph_ready = True
+    store._index = {"d1": {"session_id": "s1", "title": "Doc"}}
+    store._graph_index = rag.GraphIndex(tmp_path)
+    store._graph_index.add_node("a.py", node_type="file")
+    store._graph_index.add_node("b.py", node_type="file")
+    store._graph_index.add_edge("a.py", "b.py", kind="imports")
+
+    ok, msg = store.search_graph("a.py -> b.py", top_k=3)
+    assert ok is True
+    assert "[GraphRAG Path]" in msg
+
+    ok, msg = store.search_graph("impact: ")
+    assert ok is False
+    assert "hedef belirtilmedi" in msg
+
+
+def test_document_store_build_graphrag_search_plan_with_pgvector_candidates(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = True
+    store._graph_ready = True
+    store._graph_index = rag.GraphIndex(tmp_path)
+    store._graph_index.add_node("file.py", node_type="file")
+    store._index = {"d1": {"session_id": "s1", "title": "Doc1", "source": "src1"}}
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._vector_backend = "bm25"
+    store._fetch_pgvector = lambda _q, _k, _s: [  # type: ignore[method-assign]
+        {"doc_id": "d1"},
+        {"doc_id": "d2"},
+    ]
+
+    plan = store.build_graphrag_search_plan("query", session_id="s1", top_k=1)
+
+    assert plan.vector_backend == "pgvector"
+    assert plan.vector_candidates == ["d1"]
+    assert any(topic.endswith(".rag_search") for topic in plan.broker_topics)
+
+
+def test_document_store_rrf_and_formatting_and_snippet_behaviors(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {"d1": {"session_id": "s1", "title": "Title 1", "source": "src://1"}}
+    store._pgvector_available = True
+    store._fetch_pgvector = lambda _q, _k, _s: [  # type: ignore[method-assign]
+        {"id": "d1", "title": "Title 1", "source": "src://1", "snippet": "a" * 500, "score": 0.9}
+    ]
+    store._fetch_bm25 = lambda _q, _k, _s: []  # type: ignore[method-assign]
+
+    ok, text = store._rrf_search("query", 1, "s1")
+    assert ok is True
+    assert "Hibrit RRF (pgvector + BM25)" in text
+    assert "..." in text
+
+    snippet = rag.DocumentStore._extract_snippet("x" * 20, "missing", window=10)
+    assert snippet == "xxxxxxxxxx..."
