@@ -1268,3 +1268,86 @@ def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Path) ->
     )
     assert ok is True
     assert "Kaynak:" not in text
+
+
+def test_document_store_graph_impact_and_helpers_extra_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = True
+    store._graph_ready = False
+    called: list[str] = []
+    store.rebuild_graph_index = lambda root_dir=None: called.append(str(root_dir)) or (True, "ok")  # type: ignore[method-assign]
+
+    # _ensure_graph_ready tetiklenir.
+    store._ensure_graph_ready()
+    assert called == ["None"]
+
+    # graph_impact_details: boş analiz dalı.
+    store._graph_ready = True
+    store._graph_index = rag.GraphIndex(tmp_path)
+    store._graph_index.impact_analysis = lambda *_args, **_kwargs: {}  # type: ignore[method-assign]
+    ok, msg = store.graph_impact_details("a.py")
+    assert ok is False
+    assert "etki analizi üretilemedi" in msg
+
+    # analyze_graph_impact: tüm alanlar dolu iken format satırları.
+    store.graph_impact_details = lambda *_args, **_kwargs: (  # type: ignore[method-assign]
+        True,
+        {
+            "target": "a.py",
+            "node_type": "file",
+            "risk_level": "high",
+            "direct_dependents": ["b.py"],
+            "dependencies": ["c.py"],
+            "impacted_endpoints": ["endpoint:GET /x"],
+            "impacted_endpoint_handlers": ["api.py"],
+            "caller_files": ["ui.js"],
+            "review_targets": ["service.py"],
+            "dependency_paths": [["ui.js", "api.py", "a.py"]],
+        },
+    )
+    ok, text = store.analyze_graph_impact("a.py")
+    assert ok is True
+    assert "Doğrudan bağımlılar" in text
+    assert "Aşağı akış bağımlılıklar" in text
+    assert "Etkilenen endpoint'ler" in text
+    assert "Etkilenen endpoint handler dosyaları" in text
+    assert "Çağıran dosyalar" in text
+    assert "Reviewer için önerilen hedefler" in text
+    assert "Örnek etki zincirleri" in text
+
+
+def test_document_store_misc_uncovered_fallback_paths(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "Doc"}}
+    store._bm25_available = False
+    ok, msg = store._search_sync("q", mode="bm25", session_id="s1")
+    assert ok is False
+    assert "BM25 kullanılamıyor" in msg
+
+    # _touch_document: olmayan belge dalı.
+    store._save_index = lambda: (_ for _ in ()).throw(AssertionError("should not save"))  # type: ignore[method-assign]
+    store._touch_document("missing")
+
+    # build_graphrag_search_plan: boş sorgu ile vector fetch atlanır.
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._graph_rag_enabled = False
+    store._fetch_pgvector = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no fetch"))  # type: ignore[method-assign]
+    plan = store.build_graphrag_search_plan("", session_id="s1", top_k=2)
+    assert plan.query == ""
+    assert plan.vector_candidates == []
+
+    # _schedule_judge: judge.enabled=False dalı.
+    class _Judge:
+        enabled = False
+
+        def schedule_background_evaluation(self, **_kwargs: object) -> None:
+            raise AssertionError("should not be called")
+
+    import sys
+
+    sys.modules["core.judge"] = SimpleNamespace(get_llm_judge=lambda: _Judge())
+    rag.DocumentStore._schedule_judge("q", "a")
