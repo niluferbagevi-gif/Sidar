@@ -370,3 +370,252 @@ def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
     assert "sidar.llm.total_ms" in span.attrs
     assert "sidar.llm.ttft_ms" not in span.attrs
     assert span.ended is True
+
+
+async def _consume_async_iter(it, max_items: int = 20):
+    out = []
+    async for item in it:
+        out.append(item)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def test_semantic_cache_get_redis_none_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+
+    async def _get_redis():
+        return None
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    assert _run(manager.get("hello")) is None
+
+
+def test_semantic_cache_get_handles_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    called = {"n": 0}
+
+    class BoomRedis:
+        async def lrange(self, *_args, **_kwargs):
+            raise RuntimeError("boom")
+
+    async def _get_redis():
+        return BoomRedis()
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0])
+    monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: called.__setitem__("n", called["n"] + 1))
+    assert _run(manager.get("hello")) is None
+    assert called["n"] == 1
+
+
+def test_semantic_cache_set_returns_without_vector(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+
+    async def _get_redis():
+        return _FakeRedis()
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [])
+    assert _run(manager.set("prompt", "resp")) is None
+
+
+def test_semantic_cache_set_records_redis_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    called = {"n": 0}
+
+    class BoomRedis(_FakeRedis):
+        async def lrange(self, *_args, **_kwargs):
+            raise RuntimeError("boom")
+
+    async def _get_redis():
+        return BoomRedis()
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0])
+    monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: called.__setitem__("n", called["n"] + 1))
+    _run(manager.set("prompt", "resp"))
+    assert called["n"] == 1
+
+
+def test_ollama_helpers_base_url_and_timeout() -> None:
+    client = llm_client.OllamaClient(SimpleNamespace(OLLAMA_URL="http://host:11434/api", OLLAMA_TIMEOUT=5))
+    assert client.base_url == "http://host:11434"
+    assert client._build_timeout().connect == 10.0
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ('data: {"choices":[{"delta":{"content":"A"}}]}', ["A"]),
+        ("data: [DONE]", []),
+    ],
+)
+def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch, line: str, expected: list[str]) -> None:
+    client = llm_client.OpenAIClient(SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30, OPENAI_MODEL="m"))
+
+    class Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield line
+
+    class StreamCM:
+        async def __aenter__(self):
+            return Resp()
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def stream(self, *_args, **_kwargs):
+            return StreamCM()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", FakeAsyncClient)
+    chunks = _run(_consume_async_iter(client._stream_openai({}, {}, llm_client.httpx.Timeout(10), True)))
+    assert chunks == expected
+
+
+def test_llmclient_constructor_and_helpers() -> None:
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=11)
+    c = llm_client.LLMClient("ollama", cfg)
+    assert c._ollama_base_url == "http://localhost:11434"
+    assert c._build_ollama_timeout().connect == 10.0
+    with pytest.raises(ValueError):
+        llm_client.LLMClient("unknown", cfg)
+
+
+def test_truncate_messages_for_local_model_keeps_last_and_system() -> None:
+    cfg = SimpleNamespace(OLLAMA_CONTEXT_MAX_CHARS=500)
+    c = llm_client.LLMClient("ollama", cfg)
+    messages = [
+        {"role": "system", "content": "s" * 600},
+        {"role": "user", "content": "u" * 600},
+        {"role": "assistant", "content": "a" * 600},
+    ]
+    out = c._truncate_messages_for_local_model(messages)
+    assert sum(len(m["content"]) for m in out) <= 1200
+    assert out[-1]["role"] == "assistant"
+
+
+def test_anthropic_split_system_and_messages() -> None:
+    system, conv = llm_client.AnthropicClient._split_system_and_messages(
+        [
+            {"role": "system", "content": "A"},
+            {"role": "system", "content": "B"},
+            {"role": "user", "content": "U"},
+        ]
+    )
+    assert system == "A\n\nB"
+    assert conv == [{"role": "user", "content": "U"}]
+
+
+def test_litellm_candidate_models_dedup() -> None:
+    cfg = SimpleNamespace(LITELLM_MODEL=" m1 ", OPENAI_MODEL="m2", LITELLM_FALLBACK_MODELS=["m2", "m1", "m3"])
+    client = llm_client.LiteLLMClient(cfg)
+    assert client._candidate_models(None) == ["m1", "m2", "m3"]
+
+
+def test_openai_chat_returns_missing_key_error_stream() -> None:
+    client = llm_client.OpenAIClient(SimpleNamespace(OPENAI_API_KEY="", OPENAI_MODEL="m", OPENAI_TIMEOUT=5))
+    stream = _run(client.chat(messages=[{"role": "user", "content": "hi"}], stream=True))
+    chunks = _run(_consume_async_iter(stream))
+    assert "OPENAI_API_KEY" in chunks[0]
+
+
+def test_gemini_chat_returns_missing_package_message() -> None:
+    client = llm_client.GeminiClient(SimpleNamespace(GEMINI_API_KEY="k", GEMINI_MODEL="g"))
+    out = _run(client.chat(messages=[{"role": "user", "content": "hi"}], stream=False))
+    assert "google-genai" in out
+
+
+def test_llmclient_stream_records_cache_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = SimpleNamespace(OLLAMA_CONTEXT_MAX_CHARS=1200)
+    c = llm_client.LLMClient("ollama", cfg)
+    called = {"n": 0}
+
+    class FakeRouter:
+        def select(self, messages, provider, model):
+            return provider, model
+
+    class FakeClient:
+        async def chat(self, **_kwargs):
+            async def gen():
+                yield "ok"
+
+            return gen()
+
+    c._router = FakeRouter()
+    c._client = FakeClient()
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    monkeypatch.setattr(llm_client, "record_cache_skip", lambda: called.__setitem__("n", called["n"] + 1))
+
+    stream = _run(c.chat(messages=[{"role": "user", "content": "hello"}], stream=True))
+    chunks = _run(_consume_async_iter(stream))
+    assert chunks == ["ok"]
+    assert called["n"] == 1
+
+
+def test_llmclient_non_stream_uses_cache_and_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = SimpleNamespace(COST_ROUTING_TOKEN_COST_USD=1e-6)
+    c = llm_client.LLMClient("openai", cfg)
+
+    class FakeRouter:
+        def select(self, messages, provider, model):
+            return provider, model
+
+    class FakeClient:
+        async def chat(self, **_kwargs):
+            return "response"
+
+    class FakeCache:
+        async def get(self, _prompt):
+            return None
+
+        async def set(self, prompt, response):
+            self.last = (prompt, response)
+
+    c._router = FakeRouter()
+    c._client = FakeClient()
+    c._semantic_cache = FakeCache()
+
+    costs = []
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda v: costs.append(v))
+
+    out = _run(c.chat(messages=[{"role": "user", "content": "hello"}], stream=False))
+    assert out == "response"
+    assert c._semantic_cache.last == ("hello", "response")
+    assert costs and costs[0] > 0
+
+
+def test_llmclient_non_stream_cache_hit_short_circuit(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = SimpleNamespace()
+    c = llm_client.LLMClient("openai", cfg)
+
+    class FakeRouter:
+        def select(self, messages, provider, model):
+            return provider, model
+
+    class FakeCache:
+        async def get(self, _prompt):
+            return "cached"
+
+    class FakeClient:
+        async def chat(self, **_kwargs):
+            raise AssertionError("should not be called")
+
+    c._router = FakeRouter()
+    c._semantic_cache = FakeCache()
+    c._client = FakeClient()
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+
+    out = _run(c.chat(messages=[{"role": "user", "content": "hello"}], stream=False))
+    assert out == "cached"
