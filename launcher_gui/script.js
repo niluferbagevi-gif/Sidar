@@ -67,7 +67,7 @@ async function launchSidar() {
     anim.to(".pulsate", { opacity: 0.4, repeat: -1, yoyo: true, duration: 0.75 });
 
     try {
-        const response = await eel.start_sidar(
+        const response = await window.eel.start_sidar(
             selections.mode,
             selections.provider,
             selections.level,
@@ -87,3 +87,8 @@ async function launchSidar() {
         statusText.style.color = "#ef4444";
     }
 }
+
+window.animateStepTransition = animateStepTransition;
+window.selectOption = selectOption;
+window.launchSidar = launchSidar;
+Object.assign(globalThis, { animateStepTransition, selectOption, launchSidar });

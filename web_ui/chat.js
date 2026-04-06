@@ -1,5 +1,11 @@
-
-marked.setOptions({ breaks: true, gfm: true });
+const markdownRenderer = (
+  (typeof window !== 'undefined' && window.marked)
+  || (typeof globalThis !== 'undefined' && globalThis.marked)
+  || null
+);
+if (markdownRenderer?.setOptions) {
+  markdownRenderer.setOptions({ breaks: true, gfm: true });
+}
 
 /* ─── Değişkenler ───────────────────────────────────────── */
 const _getState = window.getUIState || ((_, fb) => fb);
@@ -399,10 +405,12 @@ function finishStreaming() {
 
 /* ─── Mesaj yardımcıları ────────────────────────────────── */
 function escHtml(str) {
+  if (str == null) return '';
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(str));
   return d.innerHTML;
 }
+window.escHtml = window.escHtml || escHtml;
 
 
 function sanitizeRenderedHtml(html) {
@@ -514,7 +522,10 @@ function finalizeMsg(id, rawText) {
   const body   = el.querySelector('.msg-body');
   const cursor = document.getElementById(`${id}-cur`);
   if (cursor) cursor.remove();
-  body.innerHTML = sanitizeRenderedHtml(marked.parse(rawText || '*(yanıt alınamadı)*'));
+  const rendered = markdownRenderer?.parse
+    ? markdownRenderer.parse(rawText || '*(yanıt alınamadı)*')
+    : escHtml(rawText || '*(yanıt alınamadı)*');
+  body.innerHTML = sanitizeRenderedHtml(rendered);
   body.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
 
   // Kod bloklarına kopyala butonu ekle

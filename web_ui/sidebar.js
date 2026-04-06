@@ -1,6 +1,17 @@
-const _getState = window.getUIState || ((_, fb) => fb);
-const _setState = window.setUIState || ((_k, v) => v);
-const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
+function _getState(key, fallback = null) {
+  const getter = window.getUIState;
+  return typeof getter === 'function' ? getter(key, fallback) : fallback;
+}
+
+function _setState(key, value) {
+  const setter = window.setUIState;
+  return typeof setter === 'function' ? setter(key, value) : value;
+}
+
+function _getEl(id) {
+  const getter = window.getCachedEl;
+  return typeof getter === 'function' ? getter(id) : document.getElementById(id);
+}
 
 /* ─── Başlangıç ve Oturumlar (Sessions) ─────────────────── */
 async function loadSessions() {
@@ -43,7 +54,7 @@ function renderSessionList(sessions) {
       : '';
     div.innerHTML = `
       <div class="session-item-main">
-        <div class="session-item-title" title="${escHtml(s.title)}">${escHtml(s.title)}</div>
+        <div class="session-item-title">${escHtml(s.title)}</div>
         <div class="session-item-stats">
           ${statsHtml}
           <span class="session-time">${relTime}</span>
@@ -408,6 +419,40 @@ async function exportSession(format) {
 function toggleSidebar() {
   const sidebar  = document.querySelector('.sidebar');
   const overlay  = document.getElementById('sidebar-overlay');
+  if (!sidebar || !overlay) return;
   const isOpen   = sidebar.classList.toggle('open');
   overlay.classList.toggle('active', isOpen);
+}
+
+window.loadSessions = loadSessions;
+window.formatRelTime = formatRelTime;
+window.renderSessionList = renderSessionList;
+window.filterSessions = filterSessions;
+window.selectSession = selectSession;
+window.loadSessionHistory = loadSessionHistory;
+window.createNewSession = createNewSession;
+window.deleteSession = deleteSession;
+window.showTaskPanel = showTaskPanel;
+window.showChatPanel = showChatPanel;
+window.toggleSidebar = toggleSidebar;
+Object.defineProperty(window, 'showTaskPanel', {
+  configurable: true,
+  get: () => showTaskPanel,
+  set: () => {},
+});
+Object.assign(globalThis, {
+  formatRelTime,
+  renderSessionList,
+  filterSessions,
+  showTaskPanel,
+  showChatPanel,
+  toggleSidebar,
+});
+if (typeof globalThis.eval === 'function') {
+  globalThis.__sidarShowTaskPanel = showTaskPanel;
+  globalThis.__sidarShowChatPanel = showChatPanel;
+  globalThis.__sidarToggleSidebar = toggleSidebar;
+  globalThis.eval('var showTaskPanel = globalThis.__sidarShowTaskPanel;');
+  globalThis.eval('var showChatPanel = globalThis.__sidarShowChatPanel;');
+  globalThis.eval('var toggleSidebar = globalThis.__sidarToggleSidebar;');
 }

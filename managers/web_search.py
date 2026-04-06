@@ -113,12 +113,10 @@ class WebSearchManager:
         if self.engine == "tavily" and self.tavily_key:
             ok, res = await self._search_tavily(query, n)
             tavily_already_tried = True
-            # Motor açıkça tavily seçildiyse, başarılı yanıtı ("sonuç yok" dahil) doğrudan döndür.
-            # Fallback yalnızca gerçek hata durumlarında devreye girsin.
-            if ok:
+            if self._is_actionable_result(ok, res):
                 return True, self._normalize_result_text(res)
-            # 401/403 veya başka bir hata → aşağıdaki auto-fallback'e düş
-            logger.info("Tavily başarısız; otomatik fallback başlatılıyor.")
+            # "sonuç yok" veya hata durumunda auto fallback'e düş
+            logger.info("Tavily eyleme geçirilebilir sonuç üretmedi; otomatik fallback başlatılıyor.")
         elif self.engine == "google" and self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
             return ok, self._normalize_result_text(res)
@@ -255,10 +253,15 @@ class WebSearchManager:
                         return list(ddgs.text(query, max_results=n))
 
                 # Thread işlemini de timeout ile sınırlandır (Sessiz bloklanmaları önler)
-                results = await asyncio.wait_for(
-                    asyncio.to_thread(_sync_search),
-                    timeout=self.FETCH_TIMEOUT,
-                )
+                thread_task = asyncio.create_task(asyncio.to_thread(_sync_search))
+                try:
+                    results = await asyncio.wait_for(
+                        thread_task,
+                        timeout=self.FETCH_TIMEOUT,
+                    )
+                except Exception:
+                    thread_task.cancel()
+                    raise
 
             if not results:
                 return True, self._mark_no_results(f"'{query}' için DuckDuckGo'da sonuç bulunamadı.")

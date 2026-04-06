@@ -61,10 +61,18 @@ function reportUIError(err, fallback = 'Beklenmeyen bir hata oluştu.') {
   return message;
 }
 
+function escHtml(value) {
+  const text = value == null ? '' : String(value);
+  return text.replace(/[&<>"']/g, (char) => (
+    { '&': ' ve ', '<': '‹', '>': '›', '"': '＂', "'": '＇' }[char]
+  ));
+}
+
 window.getUIState = getUIState;
 window.setUIState = setUIState;
 window.getCachedEl = getCachedEl;
 window.reportUIError = reportUIError;
+window.escHtml = escHtml;
 
 function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';

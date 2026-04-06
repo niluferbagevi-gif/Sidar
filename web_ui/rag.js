@@ -130,3 +130,21 @@ function ragShowResult(elId, ok, msg) {
   el.style.display = 'block';
   setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
+
+window.openRagModal = openRagModal;
+window.closeRagModal = closeRagModal;
+window.ragTab = ragTab;
+window.ragLoadDocs = ragLoadDocs;
+window.ragDeleteDoc = ragDeleteDoc;
+window.ragAddFile = ragAddFile;
+window.ragAddUrl = ragAddUrl;
+window.ragSearch = ragSearch;
+window.ragShowResult = ragShowResult;
+Object.assign(globalThis, {
+  openRagModal,
+  closeRagModal,
+  ragTab,
+  ragAddFile,
+  ragAddUrl,
+  ragShowResult,
+});
