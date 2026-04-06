@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
+import importlib
 import os
 import threading
 from pathlib import Path
@@ -947,3 +949,100 @@ def test_document_store_load_and_bm25_fetch_and_keyword_paths(monkeypatch: pytes
     # keyword search/session filtering
     ok, text = store._keyword_search("alpha", 2, "s1")
     assert ok is True and "First" in text
+
+
+def test_rag_module_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("opentelemetry") or name == "bleach":
+            raise ImportError("blocked for test")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    reloaded = importlib.reload(rag)
+    try:
+        assert reloaded._otel_trace is None
+        assert reloaded._BLEACH_AVAILABLE is False
+    finally:
+        monkeypatch.setattr(builtins, "__import__", original_import)
+        importlib.reload(rag)
+
+
+def test_graph_index_iter_source_files_limits_and_excludes(tmp_path: Path) -> None:
+    root = tmp_path
+    (root / "a.py").write_text("print('a')", encoding="utf-8")
+    (root / "b.js").write_text("console.log('b')", encoding="utf-8")
+    skipped = root / "node_modules"
+    skipped.mkdir()
+    (skipped / "c.py").write_text("print('skip')", encoding="utf-8")
+    unsupported = root / "d.txt"
+    unsupported.write_text("text", encoding="utf-8")
+
+    graph = rag.GraphIndex(root, max_files=1)
+    files = graph._iter_source_files(root)
+
+    assert len(files) == 1
+    assert files[0].name in {"a.py", "b.js"}
+
+
+def test_graph_index_python_import_candidates_with_relative_levels(tmp_path: Path) -> None:
+    root = tmp_path
+    pkg = root / "pkg" / "sub"
+    pkg.mkdir(parents=True)
+    target = root / "pkg" / "shared.py"
+    target.write_text("", encoding="utf-8")
+    current = pkg / "caller.py"
+    current.write_text("", encoding="utf-8")
+
+    candidates = rag.GraphIndex._python_import_candidates(current, "shared", 2, root)
+    assert target.resolve() in candidates
+
+
+def test_document_store_init_chroma_and_fts_error_branches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._chroma_available = True
+    store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", SimpleNamespace(PersistentClient=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom"))))
+    monkeypatch.setitem(__import__("sys").modules, "chromadb.config", SimpleNamespace(Settings=lambda **_kwargs: object()))
+    store._init_chroma()
+    assert store._chroma_available is False
+
+    class _BrokenCursor:
+        def fetchone(self) -> dict[str, int]:
+            return {"c": 0}
+
+    class _BrokenConn:
+        row_factory = None
+
+        def execute(self, sql: object, *_args: object) -> _BrokenCursor:
+            if "SELECT count" in str(sql):
+                return _BrokenCursor()
+            raise RuntimeError("insert failed")
+
+        def commit(self) -> None:
+            return None
+
+    monkeypatch.setattr("sqlite3.connect", lambda *_a, **_k: _BrokenConn())
+    store._index = {"doc1": {"session_id": "s1"}}
+    (tmp_path / "doc1.txt").write_text("body", encoding="utf-8")
+    store._bm25_available = True
+    store._write_lock = threading.Lock()
+    store._init_fts()
+    assert store._bm25_available is False
+
+
+def test_document_store_apply_hf_runtime_env_when_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False)
+    monkeypatch.setenv("HF_TOKEN", "keep")
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "keep")
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    store._apply_hf_runtime_env()
+
+    assert os.environ["HF_TOKEN"] == "keep"
+    assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "keep"
+    assert "HF_HUB_OFFLINE" not in os.environ
