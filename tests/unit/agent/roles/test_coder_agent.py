@@ -1,4 +1,237 @@
-import pytest
+import importlib.util
+import asyncio
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
-def test_placeholder():
-    assert True
+
+def _load_coder_agent_module():
+    module_name = "coder_agent_under_test"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    if "httpx" not in sys.modules:
+        sys.modules["httpx"] = ModuleType("httpx")
+
+    if "redis" not in sys.modules:
+        redis_module = ModuleType("redis")
+        redis_asyncio = ModuleType("redis.asyncio")
+        redis_exceptions = ModuleType("redis.exceptions")
+        redis_asyncio.Redis = object
+        redis_exceptions.ResponseError = Exception
+        redis_module.asyncio = redis_asyncio
+        redis_module.exceptions = redis_exceptions
+        sys.modules["redis"] = redis_module
+        sys.modules["redis.asyncio"] = redis_asyncio
+        sys.modules["redis.exceptions"] = redis_exceptions
+
+    module_path = Path("agent/roles/coder_agent.py")
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+coder_module = _load_coder_agent_module()
+CoderAgent = coder_module.CoderAgent
+
+
+class DummyEvents:
+    def __init__(self):
+        self.messages = []
+
+    async def publish(self, role, message):
+        self.messages.append((role, message))
+
+
+class DummyCodeManager:
+    def __init__(self, *_args, **_kwargs):
+        self.calls = []
+
+    def read_file(self, path):
+        self.calls.append(("read_file", path))
+        return True, f"read:{path}"
+
+    def write_file(self, path, content):
+        self.calls.append(("write_file", path, content))
+        return True, f"write:{path}:{content}"
+
+    def patch_file(self, path, target, replacement):
+        self.calls.append(("patch_file", path, target, replacement))
+        return True, f"patch:{path}:{target}->{replacement}"
+
+    def execute_code(self, command):
+        self.calls.append(("execute_code", command))
+        return True, f"exec:{command}"
+
+    def list_directory(self, path):
+        self.calls.append(("list_directory", path))
+        return True, f"list:{path}"
+
+    def glob_search(self, pattern, base):
+        self.calls.append(("glob_search", pattern, base))
+        return True, f"glob:{pattern}:{base}"
+
+    def grep_files(self, pattern, path, file_glob, context_lines):
+        self.calls.append(("grep_files", pattern, path, file_glob, context_lines))
+        return True, f"grep:{pattern}:{path}:{file_glob}:{context_lines}"
+
+    def audit_project(self, path):
+        self.calls.append(("audit_project", path))
+        return f"audit:{path}"
+
+
+class DummyPkgManager:
+    def __init__(self, *_args, **_kwargs):
+        self.calls = []
+
+    async def pypi_info(self, package_name):
+        self.calls.append(package_name)
+        return True, f"pkg:{package_name}"
+
+
+class DummyTodoManager:
+    def __init__(self, *_args, **_kwargs):
+        self.calls = []
+
+    def scan_project_todos(self, directory, _filters):
+        self.calls.append((directory, _filters))
+        return f"todos:{directory}"
+
+
+def test_init_registers_tools(monkeypatch, tmp_path):
+    def fake_base_init(self, cfg=None, *, role_name="base"):
+        self.cfg = cfg
+        self.role_name = role_name
+        self.tools = {}
+        self.register_tool = coder_module.BaseAgent.register_tool.__get__(self, CoderAgent)
+
+    monkeypatch.setattr(coder_module.BaseAgent, "__init__", fake_base_init)
+    monkeypatch.setattr(coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level))
+    monkeypatch.setattr(coder_module, "CodeManager", DummyCodeManager)
+    monkeypatch.setattr(coder_module, "PackageInfoManager", DummyPkgManager)
+    monkeypatch.setattr(coder_module, "TodoManager", DummyTodoManager)
+
+    events = DummyEvents()
+    monkeypatch.setattr(coder_module, "get_agent_event_bus", lambda: events)
+
+    cfg = SimpleNamespace(BASE_DIR=tmp_path, ACCESS_LEVEL="restricted")
+    agent = CoderAgent(cfg)
+
+    assert agent.role_name == "coder"
+    assert agent.security == (cfg, "restricted")
+    assert agent.events is events
+    assert set(agent.tools.keys()) == {
+        "read_file",
+        "write_file",
+        "patch_file",
+        "execute_code",
+        "list_directory",
+        "glob_search",
+        "grep_search",
+        "audit_project",
+        "get_package_info",
+        "scan_project_todos",
+    }
+
+
+def test_parse_qa_feedback_variants():
+    assert CoderAgent._parse_qa_feedback("") == {}
+    assert CoderAgent._parse_qa_feedback(' {"decision":"approve"} ') == {"decision": "approve"}
+
+    malformed = CoderAgent._parse_qa_feedback("{not-json")
+    assert malformed == {"raw": "{not-json"}
+
+    parsed = CoderAgent._parse_qa_feedback("decision=reject; summary=Fix tests; x=y")
+    assert parsed["decision"] == "reject"
+    assert parsed["summary"] == "Fix tests"
+    assert parsed["x"] == "y"
+
+
+async def _new_runtime_agent():
+    agent = CoderAgent.__new__(CoderAgent)
+    agent.cfg = SimpleNamespace(BASE_DIR="/tmp/base")
+    agent.events = DummyEvents()
+    agent.code = DummyCodeManager()
+    agent.pkg = DummyPkgManager()
+    agent.todo = DummyTodoManager()
+    agent.role_name = "coder"
+    return agent
+
+
+def test_tool_methods_are_routed_correctly():
+    agent = asyncio.run(_new_runtime_agent())
+
+    assert asyncio.run(agent._tool_read_file("a.py")) == "read:a.py"
+    assert "Kullanım" in asyncio.run(agent._tool_write_file("only-path"))
+    assert asyncio.run(agent._tool_write_file("a.py|print(1)")) == "write:a.py:print(1)"
+
+    assert "Kullanım" in asyncio.run(agent._tool_patch_file("a.py|x"))
+    assert asyncio.run(agent._tool_patch_file("a.py|old|new")) == "patch:a.py:old->new"
+
+    assert asyncio.run(agent._tool_execute_code("pytest -q")) == "exec:pytest -q"
+    assert asyncio.run(agent._tool_list_directory("")) == "list:."
+    assert asyncio.run(agent._tool_list_directory("src")) == "list:src"
+
+    assert asyncio.run(agent._tool_glob_search("*.py|||tests")) == "glob:*.py:tests"
+    assert asyncio.run(agent._tool_glob_search("*.md")) == "glob:*.md:."
+
+    assert asyncio.run(agent._tool_grep_search("TODO|||src|||*.py|||5")) == "grep:TODO:src:*.py:5"
+    assert asyncio.run(agent._tool_grep_search("TODO|||src|||*.py|||x")) == "grep:TODO:src:*.py:2"
+
+    assert asyncio.run(agent._tool_audit_project("")) == "audit:."
+    assert asyncio.run(agent._tool_get_package_info(" requests ")) == "pkg:requests"
+    assert asyncio.run(agent._tool_scan_project_todos("")) == "todos:/tmp/base"
+    assert asyncio.run(agent._tool_scan_project_todos("src")) == "todos:src"
+
+
+def test_run_task_paths(monkeypatch):
+    agent = asyncio.run(_new_runtime_agent())
+
+    async def fake_call_tool(name, arg):
+        return f"tool:{name}:{arg}"
+
+    def fake_delegate(target, payload, reason=""):
+        return SimpleNamespace(target=target, payload=payload, reason=reason)
+
+    agent.call_tool = fake_call_tool
+    agent.delegate_to = fake_delegate
+
+    assert asyncio.run(agent.run_task("   ")) == "[UYARI] Boş kodlayıcı görevi verildi."
+
+    assert asyncio.run(agent.run_task("read_file|a.py")) == "tool:read_file:a.py"
+    assert asyncio.run(agent.run_task("WRITE_FILE|a.py|x")) == "tool:write_file:a.py|x"
+    assert asyncio.run(agent.run_task("patch_file|a.py|x|y")) == "tool:patch_file:a.py|x|y"
+    assert asyncio.run(agent.run_task("execute_code|pytest -q")) == "tool:execute_code:pytest -q"
+
+    approve = asyncio.run(agent.run_task("qa_feedback|decision=approve;summary=looks good"))
+    assert approve == "[CODER:APPROVED] Reviewer onayı alındı: looks good"
+
+    reject_feedback = (
+        'qa_feedback|{"decision":"reject","summary":"fix this",'
+        '"dynamic_test_output":"dyn fail","regression_test_output":"reg fail",'
+        '"remediation_loop":{"summary":"rerun needed"}}'
+    )
+    reject = asyncio.run(agent.run_task(reject_feedback))
+    assert reject.startswith("[CODER:REWORK_REQUIRED]")
+    assert "[REMEDIATION_LOOP] rerun needed" in reject
+    assert "[FAILED_TESTS] dyn fail\n\nreg fail" in reject
+
+    reject_no_outputs = asyncio.run(agent.run_task("qa_feedback|decision=reject;summary=needs work"))
+    assert "[FAILED_TESTS] -" in reject_no_outputs
+
+    req = asyncio.run(agent.run_task("request_review|src changed"))
+    assert req.target == "reviewer"
+    assert req.payload == "review_code|src changed"
+    assert req.reason == "coder_request_review"
+
+    nl = asyncio.run(agent.run_task("foo.py isimli bir dosyaya 'hello' yaz"))
+    assert nl == "tool:write_file:foo.py|hello"
+
+    fallback = asyncio.run(agent.run_task("unknown command"))
+    assert fallback == "[LEGACY_FALLBACK] coder_unhandled task=unknown command"
+
+    assert len(agent.events.messages) >= 1
+    assert all(role == "coder" for role, _ in agent.events.messages)
