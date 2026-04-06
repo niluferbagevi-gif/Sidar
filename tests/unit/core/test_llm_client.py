@@ -64,6 +64,7 @@ def test_ensure_json_text_wraps_invalid_payload() -> None:
 def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 12, "completion_tokens": 34}}) == (12, 34)
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 1, "output_tokens": 3}}) == (1, 3)
+    assert llm_client._extract_usage_tokens("invalid") == (0, 0)
 
 
 def test_is_retryable_exception_for_timeout_and_status() -> None:
@@ -76,6 +77,14 @@ def test_is_retryable_exception_for_timeout_and_status() -> None:
     retryable, status = llm_client._is_retryable_exception(exc)
     assert retryable is True
     assert status == 503
+
+
+def test_is_retryable_exception_for_non_retryable_status() -> None:
+    exc = Exception("bad request")
+    setattr(exc, "status_code", 400)
+    retryable, status = llm_client._is_retryable_exception(exc)
+    assert retryable is False
+    assert status == 400
 
 
 class _DummyClient(llm_client.BaseLLMClient):
@@ -126,6 +135,35 @@ def test_retry_with_backoff_raises_llm_api_error() -> None:
 
     assert exc.value.provider == "openai"
     assert exc.value.retryable is False
+
+
+def test_get_tracer_uses_trace_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = object()
+    fake_trace = SimpleNamespace(get_tracer=lambda _name: token)
+    monkeypatch.setattr(llm_client, "trace", fake_trace)
+    assert llm_client._get_tracer(SimpleNamespace(ENABLE_TRACING=True)) is token
+
+
+def test_fallback_stream_single_chunk() -> None:
+    async def consume():
+        return [c async for c in llm_client._fallback_stream("err")]
+
+    assert _run(consume()) == ["err"]
+
+
+def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    events = []
+
+    class Collector:
+        def record(self, **kwargs):
+            events.append(kwargs)
+
+    monkeypatch.setattr(llm_client, "get_llm_metrics_collector", lambda: Collector())
+    monkeypatch.setattr(llm_client, "get_current_metrics_user_id", lambda: "u-1")
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: 5.0)
+    llm_client._record_llm_metric(provider="openai", model="gpt", started_at=3.5, prompt_tokens=1, completion_tokens=2)
+    assert events[0]["user_id"] == "u-1"
+    assert events[0]["latency_ms"] == pytest.approx(1500.0)
 
 
 def test_semantic_cache_cosine_similarity() -> None:
@@ -206,6 +244,28 @@ def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _run(manager.get("hello")) == "cached"
 
 
+def test_semantic_cache_get_returns_none_without_prompt() -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    assert _run(manager.get("")) is None
+
+
+def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+    fake = _FakeRedis()
+    fake.index = ["k1"]
+    fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
+    misses = {"n": 0}
+
+    async def _get_redis():
+        return fake
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.0, 1.0])
+    monkeypatch.setattr(llm_client, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
+    assert _run(manager.get("hello")) is None
+    assert misses["n"] == 1
+
+
 def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
     fake = _FakeRedis()
@@ -224,6 +284,11 @@ def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch) -> Non
     assert len(fake.index) == 2
     assert any(v.get("response") == "resp" for v in fake.hashes.values())
     assert counters["eviction"] == 1
+
+
+def test_semantic_cache_set_skips_without_response() -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    assert _run(manager.set("prompt", "")) is None
 
 
 def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,4 +342,31 @@ def test_trace_stream_metrics_sets_ttft_and_total() -> None:
     assert chunks == ["first", "second"]
     assert "sidar.llm.total_ms" in span.attrs
     assert "sidar.llm.ttft_ms" in span.attrs
+    assert span.ended is True
+
+
+def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
+    class Span:
+        def __init__(self):
+            self.attrs = {}
+            self.ended = False
+
+        def set_attribute(self, key, value):
+            self.attrs[key] = value
+
+        def end(self):
+            self.ended = True
+
+    span = Span()
+
+    async def stream():
+        yield ""
+
+    async def consume():
+        return [c async for c in llm_client._trace_stream_metrics(stream(), span, 0.0)]
+
+    chunks = _run(consume())
+    assert chunks == [""]
+    assert "sidar.llm.total_ms" in span.attrs
+    assert "sidar.llm.ttft_ms" not in span.attrs
     assert span.ended is True
