@@ -113,10 +113,10 @@ class WebSearchManager:
         if self.engine == "tavily" and self.tavily_key:
             ok, res = await self._search_tavily(query, n)
             tavily_already_tried = True
-            if ok:
+            if self._is_actionable_result(ok, res):
                 return True, self._normalize_result_text(res)
-            # 401/403 veya başka bir hata → aşağıdaki auto-fallback'e düş
-            logger.info("Tavily başarısız; otomatik fallback başlatılıyor.")
+            # Sonuç yok veya hata durumunda otomatik fallback'e düş.
+            logger.info("Tavily sonucu aksiyon alınabilir değil; otomatik fallback başlatılıyor.")
         elif self.engine == "google" and self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
             return ok, self._normalize_result_text(res)
