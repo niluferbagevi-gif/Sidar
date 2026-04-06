@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
+import importlib.util
 import json
+import pathlib
 import sys
 import types
 from types import SimpleNamespace
@@ -1706,3 +1709,32 @@ def test_truncation_system_empty_and_empty_history_content() -> None:
     ]
     out = c._truncate_messages_for_local_model(msgs)
     assert any(m["role"] == "assistant" for m in out)
+
+
+def test_llm_client_optional_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in {"redis.asyncio", "opentelemetry"}:
+            raise ImportError("blocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    module_path = pathlib.Path(llm_client.__file__)
+    spec = importlib.util.spec_from_file_location("core.llm_client_no_optional", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    assert module.Redis is None
+    assert module.trace is None
+
+
+def test_semantic_cache_get_set_return_none_when_redis_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+
+    async def no_redis():
+        return None
+
+    monkeypatch.setattr(manager, "_get_redis", no_redis)
+    assert _run(manager.get("prompt")) is None
+    assert _run(manager.set("prompt", "response")) is None
