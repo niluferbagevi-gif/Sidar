@@ -903,3 +903,396 @@ def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPatch) -
     async def _gen():
         yield SimpleNamespace(text="t1")
     assert _run(_collect(c._stream_gemini_generator(_gen()))) == ["t1"]
+
+
+def test_retryable_exception_http_status_error_branch() -> None:
+    req = httpx.Request("GET", "https://example.test")
+    resp = httpx.Response(502, request=req)
+    exc = httpx.HTTPStatusError("bad gateway", request=req, response=resp)
+    retryable, status = llm_client._is_retryable_exception(exc)
+    assert retryable is True
+    assert status == 502
+
+
+def test_semantic_cache_cosine_similarity_zero_norm() -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    assert manager._cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+
+def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    fake_mod = types.SimpleNamespace(embed_texts_for_semantic_cache=lambda _texts, cfg=None: [[1, 2, 3]])
+    monkeypatch.setitem(sys.modules, "core.rag", fake_mod)
+    assert manager._embed_prompt("hello") == [1.0, 2.0, 3.0]
+
+
+def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+    fake = _FakeRedis()
+    fake.index = ["k1", "k2", "k3"]
+    fake.hashes["k1"] = {}
+    fake.hashes["k2"] = {"embedding": "not-json", "response": "r2"}
+    fake.hashes["k3"] = {"embedding": json.dumps([1.0, 0.0]), "response": "r3"}
+    misses = {"n": 0}
+
+    async def _redis():
+        return fake
+
+    monkeypatch.setattr(manager, "_get_redis", _redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.0, 1.0])
+    monkeypatch.setattr(llm_client, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
+    assert _run(manager.get("hello")) is None
+    assert misses["n"] == 1
+
+
+def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+
+    class _BrokenPipe(_FakePipe):
+        async def execute(self):
+            raise RuntimeError("write failed")
+
+    class _BrokenRedis(_FakeRedis):
+        def pipeline(self, transaction: bool = True):
+            return _BrokenPipe(self)
+
+    fake = _BrokenRedis()
+    errors = {"n": 0}
+
+    async def _redis():
+        return fake
+
+    monkeypatch.setattr(manager, "_get_redis", _redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
+    monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+    _run(manager.set("prompt", "resp"))
+    assert errors["n"] == 1
+
+
+class _Span:
+    def __init__(self):
+        self.attrs = {}
+        self.ended = 0
+
+    def set_attribute(self, key, value):
+        self.attrs[key] = value
+
+    def end(self):
+        self.ended += 1
+
+
+class _SpanCM:
+    def __init__(self, span):
+        self.span = span
+        self.exit_calls = 0
+
+    def __enter__(self):
+        return self.span
+
+    def __exit__(self, *_exc):
+        self.exit_calls += 1
+        return False
+
+
+def test_ollama_chat_with_tracing_sets_span_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", ENABLE_TRACING=True)
+    client = llm_client.OllamaClient(cfg)
+    span = _Span()
+    span_cm = _SpanCM(span)
+    tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
+
+    class _AC(_FakeAsyncClient):
+        async def post(self, *_a, **_kw):
+            return _FakeResponse(payload={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
+
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    out = _run(client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True))
+    assert "final_answer" in out
+    assert span.attrs["sidar.llm.provider"] == "ollama"
+    assert "sidar.llm.total_ms" in span.attrs
+    assert span_cm.exit_calls == 1
+
+
+def test_openai_chat_stream_with_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
+    span = _Span()
+    tracer = SimpleNamespace(start_span=lambda _n: span)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+
+    def _stream(*_a, **_kw):
+        async def gen():
+            yield "tok"
+        return gen()
+
+    monkeypatch.setattr(c, "_stream_openai", _stream)
+    stream = _run(c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False))
+    assert _run(_collect(stream)) == ["tok"]
+    assert span.attrs["sidar.llm.provider"] == "openai"
+
+
+def test_litellm_stream_and_nonstream_tracing_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True)
+    c = llm_client.LiteLLMClient(cfg)
+    span = _Span()
+    span_cm = _SpanCM(span)
+    tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm, start_span=lambda _n: span)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+
+    class _AC(_FakeAsyncClient):
+        async def post(self, *_a, **_kw):
+            return _FakeResponse(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    assert _run(c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)) == "ok"
+    assert span.attrs["sidar.llm.provider"] == "litellm"
+    assert span.attrs["sidar.llm.model"] == "m1"
+
+    def _stream(*_a, **_kw):
+        async def gen():
+            yield "A"
+        return gen()
+
+    monkeypatch.setattr(c, "_stream_openai_compatible", _stream)
+    got = _run(c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False))
+    assert _run(_collect(got)) == ["A"]
+
+
+def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    class _Resp:
+        text = '{"tool":"final_answer","argument":"ok","thought":"t"}'
+
+    class _Models:
+        async def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return _Resp()
+
+    class _Client:
+        def __init__(self, api_key):
+            self.aio = SimpleNamespace(models=_Models())
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
+    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+    out = _run(c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True))
+    assert "final_answer" in out
+    assert captured["contents"] == [{"role": "user", "parts": ["x"]}]
+    assert captured["config"].response_mime_type == "application/json"
+
+
+def test_openai_and_litellm_stream_skip_non_data_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
+    llm = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1"))
+
+    class _AC(_FakeAsyncClient):
+        def stream(self, *_a, **_kw):
+            lines = ["", "event: ping", "data: {\"choices\":[{\"delta\":{\"content\":\"X\"}}]}", "data: [DONE]"]
+            return _FakeStreamCM(_FakeResponse(lines=lines))
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    assert _run(_collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))) == ["X"]
+    assert _run(_collect(llm._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False))) == ["X"]
+
+
+def test_anthropic_json_mode_and_fallback_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    class _Usage:
+        input_tokens = 2
+        output_tokens = 3
+
+    class _MsgResp:
+        usage = _Usage()
+        content = [SimpleNamespace(text='{"tool":"final_answer","argument":"ok","thought":"t"}')]
+
+    class _Messages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return _MsgResp()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kw):
+            self.messages = _Messages()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude"))
+    out = _run(c.chat([{"role": "system", "content": "s"}], stream=False, json_mode=True))
+    assert "final_answer" in out
+    assert captured["messages"][0]["role"] == "user"
+    assert llm_client.SIDAR_TOOL_JSON_INSTRUCTION in captured["system"]
+
+
+def test_llmclient_provider_helpers_and_cache_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k")
+    c = llm_client.LLMClient("openai", cfg)
+    assert c._build_ollama_timeout().connect == 10.0
+    assert c._ollama_base_url.endswith("11434")
+    assert _run(c.list_ollama_models()) == []
+    assert _run(c.is_ollama_available()) is False
+
+    # no user prompt -> skip cache get/set but cloud cost path çalışır
+    events = {"cost": 0.0}
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    monkeypatch.setattr(c._router, "select", lambda *_a: ("openai", None))
+    monkeypatch.setattr(c._client, "chat", lambda **_kw: asyncio.sleep(0, result="ok"))
+    monkeypatch.setattr(c._semantic_cache, "get", lambda *_a: asyncio.sleep(0, result=None))
+    monkeypatch.setattr(c._semantic_cache, "set", lambda *_a: asyncio.sleep(0))
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda v: events.__setitem__("cost", v))
+    result = _run(c.chat([{"role": "assistant", "content": "a" * 40}], stream=False, json_mode=False))
+    assert result == "ok"
+    assert events["cost"] > 0
+
+
+def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt", ENABLE_TRACING=True))
+    assert c.json_mode_config()["response_format"]["type"] == "json_schema"
+    span = _Span()
+    span_cm = _SpanCM(span)
+    tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+
+    async def raise_llm(*_a, **_kw):
+        raise llm_client.LLMAPIError("openai", "x")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_llm)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True))
+
+    async def raise_other(*_a, **_kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_other)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True))
+    assert span.attrs["sidar.llm.provider"] == "openai"
+
+
+def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="m"))
+
+    async def broken(*_a, **_kw):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "x"}], stream=False))
+
+
+def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Models:
+        async def generate_content_stream(self, **_kw):
+            raise RuntimeError("stream-open-fail")
+
+    class _Client:
+        def __init__(self, api_key):
+            self.aio = SimpleNamespace(models=_Models())
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
+    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    span = _Span()
+    tracer = SimpleNamespace(start_span=lambda _n: span)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=True))
+    stream = _run(c.chat([{"role": "system", "content": "s"}, {"role": "user", "content": "u"}], stream=True, json_mode=True))
+    chunks = _run(_collect(stream))
+    assert "Gemini" in chunks[0]
+    assert span.attrs["sidar.llm.provider"] == "gemini"
+
+
+def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True))
+    span = _Span()
+    span_cm = _SpanCM(span)
+    tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+
+    class _ACFail(_FakeAsyncClient):
+        async def post(self, *_a, **_kw):
+            raise RuntimeError("fail")
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ACFail)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
+
+
+def test_anthropic_error_branches_and_split_system() -> None:
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True))
+    system, convo = c._split_system_and_messages([{"role": "system", "content": ""}, {"role": "user", "content": "u"}])
+    assert system == ""
+    assert convo == [{"role": "user", "content": "u"}]
+
+
+def test_anthropic_nonstream_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Messages:
+        async def create(self, **_kw):
+            return SimpleNamespace(usage=None, content=[])
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kw):
+            self.messages = _Messages()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True))
+    span = _Span()
+    span_cm = _SpanCM(span)
+    tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+
+    async def llm_err(*_a, **_kw):
+        raise llm_client.LLMAPIError("anthropic", "x")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", llm_err)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=True))
+
+    async def oth_err(*_a, **_kw):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", oth_err)
+    with pytest.raises(llm_client.LLMAPIError):
+        _run(c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=True))
+
+
+def test_llmclient_init_branches_and_truncation_and_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert isinstance(llm_client.LLMClient("gemini", _make_config())._client, llm_client.GeminiClient)
+    assert isinstance(llm_client.LLMClient("anthropic", _make_config())._client, llm_client.AnthropicClient)
+    assert isinstance(llm_client.LLMClient("litellm", _make_config())._client, llm_client.LiteLLMClient)
+    with pytest.raises(ValueError):
+        llm_client.LLMClient("unknown-provider", _make_config())
+
+    c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=600))
+    msgs = [
+        {"role": "system", "content": "s" * 400},
+        {"role": "user", "content": "u" * 500},
+        {"role": "assistant", "content": "a" * 500},
+    ]
+    out = c._truncate_messages_for_local_model(msgs)
+    assert sum(len(m["content"]) for m in out) <= 1200
+
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+
+    class _Routed:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        async def chat(self, **_kw):
+            return "routed-ok"
+
+    monkeypatch.setattr(c._router, "select", lambda *_a: ("openai", "m2"))
+    monkeypatch.setattr(llm_client, "LLMClient", _Routed)
+    assert _run(c.chat([{"role": "user", "content": "u"}], system_prompt="sys", stream=False, json_mode=False)) == "routed-ok"
+
+
+def test_llmclient_stream_gemini_generator_client_branch() -> None:
+    c = llm_client.LLMClient("gemini", _make_config())
+
+    async def _gen():
+        yield SimpleNamespace(text="gg")
+
+    assert _run(_collect(c._stream_gemini_generator(_gen()))) == ["gg"]
