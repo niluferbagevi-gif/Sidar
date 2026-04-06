@@ -7,8 +7,16 @@ from types import ModuleType, SimpleNamespace
 
 def _load_coder_agent_module():
     module_name = "agent.roles.coder_agent"
-    if module_name in sys.modules:
-        return sys.modules[module_name]
+    existing_module = sys.modules.get(module_name)
+    if existing_module is not None and all(
+        hasattr(existing_module, attr)
+        for attr in ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
+    ):
+        return existing_module
+
+    # Bazı testler bu modül adına stub yerleştirebildiği için gerçek dosyayı
+    # zorunlu olarak yeniden yükleyelim.
+    sys.modules.pop(module_name, None)
 
     if "httpx" not in sys.modules:
         sys.modules["httpx"] = ModuleType("httpx")
