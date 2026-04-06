@@ -252,6 +252,24 @@ def test_publish_tools_variants(poyraz_module, fake_cfg):
     assert "[WHATSAPP:SENT]" in wa_ok and "[WHATSAPP:ERROR]" in wa_err
 
 
+
+
+def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+    sentinel_db = object()
+
+    class PreloadedLock:
+        async def __aenter__(self):
+            agent._db = sentinel_db
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    agent._db_lock = PreloadedLock()
+
+    assert asyncio.run(agent._ensure_db()) is sentinel_db
+
 def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypatch):
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
@@ -446,7 +464,7 @@ def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkey
                     "campaign_name": "C",
                     "service_name": "S",
                     "audience": "A",
-                    "menu_plan": {},
+                    "menu_plan": {"empty": []},
                     "vendor_assignments": {},
                     "timeline": [],
                     "notes": "",
