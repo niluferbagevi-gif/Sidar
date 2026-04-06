@@ -1046,3 +1046,62 @@ def test_document_store_apply_hf_runtime_env_when_disabled(monkeypatch: pytest.M
     assert os.environ["HF_TOKEN"] == "keep"
     assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "keep"
     assert "HF_HUB_OFFLINE" not in os.environ
+
+
+def test_document_store_consolidate_session_documents_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {
+        "keep-new": {"session_id": "s1", "last_accessed_at": 30, "access_count": 2, "title": "Recent"},
+        "pinned": {"session_id": "s1", "last_accessed_at": 10, "access_count": 0, "title": "Pinned", "tags": ["pinned"]},
+        "stable": {"session_id": "s1", "last_accessed_at": 9, "access_count": 2, "title": "Stable"},
+    }
+    assert store.consolidate_session_documents("s1", keep_recent_docs=1)["status"] == "skipped"
+
+    removed: list[tuple[str, str]] = []
+    store._index = {
+        "old-1": {"session_id": "s1", "last_accessed_at": 5, "access_count": 0, "title": "Old 1", "preview": "alpha"},
+        "old-2": {"session_id": "s1", "last_accessed_at": 4, "access_count": 1, "title": "Old 2", "preview": "beta"},
+        "keep-new": {"session_id": "s1", "last_accessed_at": 30, "access_count": 3, "title": "Recent"},
+        "digest-old": {"session_id": "s1", "source": "memory://nightly-digest/prev", "title": "Digest"},
+    }
+    store._add_document_sync = lambda **_kwargs: "digest-new"  # type: ignore[method-assign]
+    store.delete_document = lambda doc_id, session_id: removed.append((doc_id, session_id)) or "ok"  # type: ignore[method-assign]
+
+    result = store.consolidate_session_documents("s1", keep_recent_docs=1)
+    assert result["status"] == "completed"
+    assert result["removed_docs"] == 3
+    assert result["summary_doc_id"] == "digest-new"
+    assert ("digest-old", "s1") in removed
+    assert ("old-1", "s1") in removed
+    assert ("old-2", "s1") in removed
+
+
+def test_document_store_list_documents_and_status_engine_variants(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    assert "Belge deposu boş" in store.list_documents(session_id="s1")
+
+    store._index = {"doc1": {"session_id": "s1", "title": "Doc 1", "source": "file://a", "size": 1024, "tags": ["x"]}}
+    listed = store.list_documents(session_id="s1")
+    assert "[Belge Deposu — 1 belge]" in listed
+    assert "Doc 1" in listed
+
+    store._bm25_available = False
+    store._graph_rag_enabled = False
+    store._graph_ready = False
+    store._use_gpu = False
+    store._gpu_device = 0
+
+    store._pgvector_available = True
+    store._vector_backend = "chroma"
+    store._chroma_available = False
+    assert "pgvector" in store.status()
+
+    store._pgvector_available = False
+    store._vector_backend = "pgvector"
+    assert "pgvector (pasif)" in store.status()
+
+    store._vector_backend = "chroma"
+    store._chroma_available = True
+    store._use_gpu = True
+    store._gpu_device = 1
+    assert "ChromaDB (Chunking + GPU cuda:1)" in store.status()
