@@ -97,7 +97,7 @@ class CoverageAgent(BaseAgent):
             return clean_text
 
         lines = clean_text.splitlines()
-        if lines and lines[0].strip().startswith("```"):
+        if lines[0].strip().startswith("```"):
             lines = lines[1:]
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
