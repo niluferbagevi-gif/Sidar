@@ -203,6 +203,16 @@ def test_load_repo_failure_and_set_repo_unavailable(manager):
     assert (ok, msg) == (False, "GitHub bağlantısı yok.")
 
 
+def test_load_repo_without_client_and_set_repo_failed_lookup(manager):
+    manager._gh = None
+    assert manager._load_repo("x/y") is False
+
+    manager._available = True
+    manager._gh = SimpleNamespace(get_repo=lambda _: (_ for _ in ()).throw(RuntimeError("no repo")))
+    ok, msg = manager.set_repo("x/y")
+    assert (ok, msg) == (False, "Depo bulunamadı veya erişim reddedildi: x/y")
+
+
 def test_list_repos_self_and_owner_and_error(manager):
     owner_repo = SimpleNamespace(full_name="org/r", default_branch="main", private=False)
     user_repo = SimpleNamespace(full_name="me/r", default_branch="dev", private=True)
@@ -214,6 +224,21 @@ def test_list_repos_self_and_owner_and_error(manager):
     ok, rows = manager.list_repos(limit=1)
     assert ok is True and rows[0]["private"] == "true"
     manager._gh = None
+    assert manager.list_repos() == (False, [])
+
+
+def test_list_repos_limit_break_and_exception(manager):
+    repos = [
+        SimpleNamespace(full_name="me/r1", default_branch="main", private=False),
+        SimpleNamespace(full_name="me/r2", default_branch="dev", private=True),
+    ]
+    self_account = SimpleNamespace(get_repos=lambda visibility: repos)
+    manager._gh = SimpleNamespace(get_user=lambda owner=None: self_account)
+
+    ok, rows = manager.list_repos(limit=0)
+    assert ok is True and rows == []
+
+    manager._gh = SimpleNamespace(get_user=lambda owner=None: (_ for _ in ()).throw(RuntimeError("boom")))
     assert manager.list_repos() == (False, [])
 
 
@@ -261,6 +286,12 @@ def test_read_remote_file_decode_and_exception_paths(manager):
     assert "Uzak dosya okunamadı" in manager.read_remote_file("missing.txt")[1]
 
 
+def test_read_remote_file_with_ref_kwarg(manager):
+    manager._repo._contents[("ok.txt", "feat/x")] = _File("ok.txt", decoded_content=b"hello ref")
+    ok, content = manager.read_remote_file("ok.txt", ref="feat/x")
+    assert (ok, content) == (True, "hello ref")
+
+
 def test_branches_and_files_listing(manager):
     ok, text = manager.list_branches(limit=5)
     assert ok is True and "* main" in text
@@ -274,6 +305,12 @@ def test_branches_and_files_listing(manager):
     assert manager.list_files()[0] is False
 
 
+def test_list_files_branch_and_single_item(manager):
+    manager._repo._contents[("README.md", "dev")] = _File("README.md")
+    ok, text = manager.list_files(path="README.md", branch="dev")
+    assert ok is True and "README.md" in text
+
+
 def test_create_or_update_file_paths(manager):
     manager._repo._contents[("x.txt", None)] = _File("x.txt", sha="s1")
     ok, msg = manager.create_or_update_file("x.txt", "new", "m")
@@ -283,6 +320,13 @@ def test_create_or_update_file_paths(manager):
     assert ok is True and "oluşturuldu" in msg and manager._repo.create_calls[-1]["branch"] == "dev"
     manager._repo._contents[("z.txt", None)] = RuntimeError("other")
     assert manager.create_or_update_file("z.txt", "new", "m")[0] is False
+
+
+def test_create_or_update_file_write_exception(manager):
+    manager._repo._contents[("x.txt", None)] = _File("x.txt", sha="s1")
+    manager._repo.update_file = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("write boom"))
+    ok, msg = manager.create_or_update_file("x.txt", "new", "msg")
+    assert ok is False and "GitHub dosya yazma hatası" in msg
 
 
 def test_branch_and_pr_operations(manager):
