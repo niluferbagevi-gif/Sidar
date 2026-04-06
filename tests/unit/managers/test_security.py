@@ -52,6 +52,13 @@ def test_is_path_under_rejects_dangerous_and_outside_path(tmp_path: Path) -> Non
     assert not mgr.is_path_under(str(outside), tmp_path)
 
 
+def test_is_path_under_rejects_when_resolve_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+
+    assert not mgr.is_path_under("safe/file.txt", tmp_path)
+
+
 def test_resolve_safe_returns_none_on_resolution_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
 
@@ -75,6 +82,7 @@ def test_is_safe_path_valid_and_invalid_cases(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside.txt"
     outside.touch()
     assert not mgr.is_safe_path(str(outside))
+    assert not mgr.is_safe_path(str(tmp_path / ".env"))
 
 
 def test_can_read_default_and_rejections(tmp_path: Path) -> None:
@@ -88,6 +96,20 @@ def test_can_read_default_and_rejections(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside-read.txt"
     outside.touch()
     assert not mgr.can_read(str(outside))
+
+
+def test_can_read_allows_safe_path_and_rejects_resolution_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    safe_file = tmp_path / "notes" / "safe.txt"
+    safe_file.parent.mkdir(parents=True)
+    safe_file.touch()
+
+    assert mgr.can_read(str(safe_file))
+
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+    assert not mgr.can_read("notes/safe.txt")
 
 
 def test_can_write_restricted_denies_everything(tmp_path: Path) -> None:
@@ -107,6 +129,13 @@ def test_can_write_sandbox_allows_only_temp(tmp_path: Path) -> None:
     assert not mgr.can_write(str(not_in_temp))
     assert not mgr.can_write("../escape.txt")
     assert not mgr.can_write("   ")
+
+
+def test_can_write_rejects_when_resolution_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+
+    assert not mgr.can_write("temp/file.txt")
 
 
 def test_can_write_full_allows_base_but_not_outside_or_blocked(tmp_path: Path) -> None:
