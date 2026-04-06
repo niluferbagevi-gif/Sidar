@@ -182,6 +182,7 @@ def test_search_google_and_duckduckgo_direct(monkeypatch):
 def test_search_auto_no_actionable_then_ddg_and_no_engine(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager(DummyConfig())
+    m.engine = "auto"
 
     async def no_tavily(query, n):
         return True, m._mark_no_results("tn")
