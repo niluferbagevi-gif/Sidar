@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import sqlite3
 import sys
 import types
 from dataclasses import dataclass
@@ -53,6 +54,7 @@ if "jwt" not in sys.modules:
     sys.modules["jwt"] = jwt_module
 
 from core.db import Database, _expires_in, _hash_password, _json_dumps, _quote_sql_identifier, _utc_now_iso, _verify_password
+import jwt
 
 
 @dataclass
@@ -730,3 +732,198 @@ def test_list_methods_limit_normalization(sqlite_db: Database):
     assert len(run(sqlite_db.list_content_assets(tenant_id="t1", limit=0))) == 1
     assert len(run(sqlite_db.list_operation_checklists(tenant_id="t1", limit=0))) == 1
     assert len(run(sqlite_db.list_coverage_tasks(tenant_id="t1", limit=0))) == 1
+
+
+def test_backend_and_sqlite_auxiliary_branches(tmp_path):
+    cfg = DummyCfg(DATABASE_URL="sqlite:///relative.db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    assert db._sqlite_path == tmp_path / "relative.db"
+    db.database_url = "sqlite:///another-relative.db"
+    db._configure_backend()
+    assert db._sqlite_path == tmp_path / "another-relative.db"
+    db.database_url = "plain-relative.db"
+    db._configure_backend()
+    assert db._sqlite_path == tmp_path / "plain-relative.db"
+
+    run(db.connect())
+    db._sqlite_lock = None
+    assert run(db._run_sqlite_op(lambda: 7)) == 7
+    assert db._sqlite_lock is not None
+
+    run(db.init_schema())
+    run(db.upsert_prompt("system", "p1", activate=True))
+    assert len(run(db.list_prompts())) >= 1
+    assert run(db.activate_prompt(999999)) is None
+    assert run(db.delete_session("missing")) is False
+    assert run(db.list_access_policies(user_id="nouser")) == []
+
+    with pytest.raises(ValueError):
+        run(db.upsert_marketing_campaign(tenant_id="t1", name=""))
+    with pytest.raises(ValueError):
+        run(db.upsert_marketing_campaign(tenant_id="t1", campaign_id=9999, name="missing"))
+    with pytest.raises(ValueError):
+        run(db.upsert_access_policy(user_id="u1", tenant_id="t1", resource_type="", action=""))
+    assert run(db.check_access_policy(user_id="", tenant_id="t1", resource_type="repo", action="read")) is False
+    assert run(db.check_access_policy(user_id="u1", tenant_id="t1", resource_type="repo", action="read")) is False
+
+    run(db._ensure_schema_version_sqlite())
+    run(db.close())
+
+
+def test_postgresql_dispatch_and_query_optional_paths(pg_db: Database, monkeypatch: pytest.MonkeyPatch):
+    conn = _RichPgConn()
+    pg_db._pg_pool = _FakePool(conn)
+
+    called: list[str] = []
+
+    async def _mark(name):
+        called.append(name)
+
+    monkeypatch.setattr(pg_db, "_init_schema_postgresql", lambda: _mark("init"))
+    monkeypatch.setattr(pg_db, "_ensure_access_control_schema_postgresql", lambda: _mark("ac"))
+    monkeypatch.setattr(pg_db, "_ensure_audit_log_schema_postgresql", lambda: _mark("audit"))
+    monkeypatch.setattr(pg_db, "_ensure_schema_version_postgresql", lambda: _mark("schema"))
+    monkeypatch.setattr(pg_db, "ensure_default_prompt_registry", lambda: _mark("prompt"))
+    run(pg_db.init_schema())
+    assert called == ["init", "ac", "audit", "schema", "prompt"]
+
+    # list/query branches without optional filters
+    assert len(run(pg_db.list_marketing_campaigns(tenant_id="t1", status=None, limit=1))) >= 1
+    assert len(run(pg_db.list_content_assets(tenant_id="t1", campaign_id=None, limit=1))) >= 1
+    assert len(run(pg_db.list_operation_checklists(tenant_id="t1", campaign_id=None, limit=1))) >= 1
+    assert len(run(pg_db.list_coverage_tasks(tenant_id="t1", status=None, limit=1))) >= 1
+    assert run(pg_db.activate_prompt(12345)) is None
+
+    original_fetchrow = conn.fetchrow
+
+    async def _none_active_prompt(query, *args):
+        if "WHERE role_name=$1 AND is_active=TRUE" in query:
+            return None
+        return await original_fetchrow(query, *args)
+
+    conn.fetchrow = _none_active_prompt
+    assert run(pg_db.get_active_prompt("system")) is None
+    conn.fetchrow = original_fetchrow
+    run(pg_db.upsert_prompt("system", "inactive", activate=False))
+    assert not any(
+        call[0] == "execute" and "UPDATE prompt_registry SET is_active=FALSE" in str(call[1])
+        for call in conn.calls
+    )
+
+    original_fetch = conn.fetch
+
+    async def _prompt_fetch(query, *args):
+        if "FROM prompt_registry" in query:
+            return [{"id": 1, "role_name": "system", "prompt_text": "x", "version": 1, "is_active": True, "created_at": "c", "updated_at": "u"}]
+        return await original_fetch(query, *args)
+
+    conn.fetch = _prompt_fetch
+    assert len(run(pg_db.list_prompts("system"))) >= 1
+    conn.fetch = original_fetch
+
+    async def _none_session(query, *args):
+        if "FROM sessions WHERE id=$1 AND user_id=$2" in query:
+            return None
+        return await original_fetchrow(query, *args)
+
+    conn.fetchrow = _none_session
+    assert run(pg_db.load_session("missing", user_id="u1")) is None
+    conn.fetchrow = original_fetchrow
+
+
+def test_postgresql_connect_and_default_prompt_guard_branches(pg_db: Database, monkeypatch: pytest.MonkeyPatch):
+    class _DummyAsyncPG:
+        class PoolError(Exception):
+            pass
+
+        @staticmethod
+        async def create_pool(**kwargs):
+            raise RuntimeError("generic failure")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", _DummyAsyncPG)
+    with pytest.raises(RuntimeError):
+        run(pg_db._connect_postgresql())
+
+    monkeypatch.setattr("importlib.util.spec_from_file_location", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pg_db, "get_active_prompt", lambda *_a, **_k: asyncio.sleep(0, result=None))
+    run(pg_db.ensure_default_prompt_registry())
+
+
+def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database):
+    payload = {"sub": "u1", "role": "", "username": "x", "tenant_id": "default"}
+    bad_token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
+    assert sqlite_db.verify_auth_token(bad_token) is None
+    assert run(sqlite_db.get_user_by_token("not-a-token")) is None
+
+
+def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path):
+    cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'ac.db'}", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    run(db.connect())
+    assert db._sqlite_conn is not None
+    run(
+        db._run_sqlite_op(
+            lambda: db._sqlite_conn.executescript(
+                """
+                DROP TABLE IF EXISTS users;
+                CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT,
+                    role TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                """
+            )
+        )
+    )
+    run(db._ensure_access_control_schema_sqlite())
+    cols = run(db._run_sqlite_op(lambda: db._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()))
+    assert "tenant_id" in {str(col[1]) for col in cols}
+    run(db.close())
+
+
+def test_schema_version_postgresql_short_circuit_and_delete_parse_fallback(pg_db: Database):
+    class _SchemaConn(_RichPgConn):
+        async def fetchval(self, query, *args):
+            if "MAX(version)" in query:
+                return pg_db.target_schema_version
+            return await super().fetchval(query, *args)
+
+        async def execute(self, query, *args):
+            if "DELETE FROM sessions" in query:
+                return "DELETE BAD"
+            return await super().execute(query, *args)
+
+        async def fetch(self, query, *args):
+            if "FROM access_policies" in query:
+                return [
+                    {
+                        "id": 1,
+                        "user_id": "u1",
+                        "tenant_id": "t1",
+                        "resource_type": "repo",
+                        "resource_id": "*",
+                        "action": "read",
+                        "effect": "allow",
+                        "created_at": "c",
+                        "updated_at": "u",
+                    }
+                ]
+            return await super().fetch(query, *args)
+
+    conn = _SchemaConn()
+    pg_db._pg_pool = _FakePool(conn)
+    run(pg_db._ensure_schema_version_postgresql())
+    assert not any("baseline migration" in str(call[1]) for call in conn.calls if call[0] == "execute")
+
+    assert run(pg_db.delete_session("s1")) is False
+    assert len(run(pg_db.list_access_policies("u1", tenant_id="t1"))) == 1
+    assert len(run(pg_db.list_access_policies("u1", tenant_id=""))) == 1
+
+
+def test_list_operation_checklists_sqlite_campaign_filter_branch(sqlite_db: Database):
+    campaign = run(sqlite_db.upsert_marketing_campaign(tenant_id="t1", name="Campaign for checklist"))
+    run(sqlite_db.add_operation_checklist(tenant_id="t1", title="Ops", items=["x"], campaign_id=campaign.id))
+    rows = run(sqlite_db.list_operation_checklists(tenant_id="t1", campaign_id=campaign.id, limit=10))
+    assert len(rows) == 1

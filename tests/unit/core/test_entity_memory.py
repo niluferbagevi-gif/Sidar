@@ -144,3 +144,27 @@ def test_well_known_keys_and_singleton_creation(monkeypatch):
     assert isinstance(first, EntityMemory)
     assert first is second
     assert first._db_url == fake_cfg.DATABASE_URL
+
+
+def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(monkeypatch, sqlite_db_url: str):
+    async def scenario():
+        monkeypatch.setattr(em_module, "_SA_AVAILABLE", False)
+        em = EntityMemory(database_url=sqlite_db_url)
+        await em.initialize()
+        assert em._engine is None
+        await em.close()  # no-op branch when engine is missing
+
+    asyncio.run(scenario())
+
+
+@requires_sqlalchemy
+def test_purge_expired_returns_zero_when_nothing_to_delete(sqlite_db_url: str):
+    async def scenario():
+        em = EntityMemory(database_url=sqlite_db_url, ttl_days=30)
+        await em.initialize()
+        assert await em.upsert("u1", "k1", "v1") is True
+        removed = await em.purge_expired()
+        assert removed == 0
+        await em.close()
+
+    asyncio.run(scenario())

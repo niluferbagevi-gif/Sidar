@@ -276,3 +276,141 @@ def test_static_helpers_and_noop_methods(mem):
 def test_del_swallows_exceptions(mem, monkeypatch):
     monkeypatch.setattr(mem, "force_save", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     mem.__del__()
+
+
+def test_constructor_defaults_and_ensure_initialized_lock(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    monkeypatch.chdir(tmp_path)
+    cfg = types.SimpleNamespace(DATABASE_URL="", BASE_DIR=str(tmp_path))
+    monkeypatch.setattr(memory_module, "get_config", lambda: cfg)
+
+    mem = ConversationMemory()
+    assert mem.sessions_dir == Path.cwd() / "data" / "sessions"
+    assert "sidar_memory.db" in mem.cfg.DATABASE_URL
+
+    asyncio.run(mem._ensure_initialized())
+    assert mem._initialized is True
+    assert mem._init_lock is not None
+
+
+def test_async_branches_for_existing_session_and_noop_paths(mem):
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u1")
+        first_sid = mem.active_session_id
+        await mem.create_session("ikinci")
+        second_sid = mem.active_session_id
+        # delete active session while another session exists -> load_session branch
+        assert await mem.delete_session(second_sid) is True
+        assert mem.active_session_id == first_sid
+
+        # update_title early-return when no active session id
+        mem.active_session_id = None
+        await mem.update_title("noop")
+
+        # add() creates session when missing
+        await mem.add("user", "auto-create")
+        assert mem.active_session_id is not None
+
+        # set_active_user with existing sessions path
+        sid_before = mem.active_session_id
+        await mem.set_active_user("u1", "alice")
+        assert mem.active_session_id == sid_before
+
+        # apply_summary / clear early-return branches (sid/uid missing)
+        mem.active_session_id = None
+        mem.active_user_id = None
+        await mem.apply_summary("s")
+        await mem.clear()
+
+    asyncio.run(scenario())
+
+
+def test_estimate_tokens_importerror_and_misc_branches(monkeypatch, mem):
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "tiktoken":
+            raise ImportError("no tiktoken")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    mem._turns = [{"role": "u", "content": "x" * 35}]
+    assert mem._estimate_tokens() == 10
+
+    summary = ConversationMemory._build_compaction_summary(
+        "Baslik",
+        [
+            types.SimpleNamespace(role="assistant", content=""),
+            types.SimpleNamespace(role="assistant", content="yanit"),
+        ],
+    )
+    assert "Öne çıkan kullanıcı istekleri" not in summary
+    assert "Öne çıkan SİDAR çıktıları" in summary
+
+    # _save(force=False) no-op branch
+    mem._dirty = True
+    mem._save(force=False)
+    assert mem._dirty is True
+
+
+def test_nightly_consolidation_skip_and_non_compacted_report(mem):
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u1")
+        for i in range(5):
+            await mem.add("user", f"m-{i}")
+
+        mem.db.users_with_quotas = [{"id": "u1"}]
+        report = await mem.run_nightly_consolidation(keep_recent_sessions=1, min_messages=99)
+        assert report["status"] == "completed"
+        assert report["sessions_compacted"] == 0
+
+    asyncio.run(scenario())
+
+
+def test_ensure_initialized_with_existing_lock_and_inner_already_initialized(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    mem = ConversationMemory(base_dir=tmp_path)
+    mem._initialized = False
+    mem._init_lock = asyncio.Lock()
+
+    async def scenario():
+        await mem._ensure_initialized()  # _init_lock zaten var -> 107->109 false branch
+        assert mem._initialized is True
+
+        class FlipLock:
+            async def __aenter__(self):
+                mem._initialized = True
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mem._initialized = False
+        mem._init_lock = FlipLock()
+        await mem._ensure_initialized()  # lock içinde _initialized=True -> 110->exit
+        assert mem._initialized is True
+
+    asyncio.run(scenario())
+
+
+def test_delete_non_active_session_and_nightly_skipped_report_branch(mem):
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u1")
+        sid1 = mem.active_session_id
+        sid2 = await mem.create_session("ikinci")
+        # active session sid2 iken sid1 silinir -> active_session_id koşulu false
+        assert await mem.delete_session(sid1) is True
+        assert mem.active_session_id == sid2
+
+        # report compacted değil (skipped) -> 399->390 false branch
+        for i in range(5):
+            await mem.add("user", f"s-{i}")
+        mem.db.users_with_quotas = [{"id": "u1"}]
+        report = await mem.run_nightly_consolidation(keep_recent_sessions=0, min_messages=99)
+        assert report["sessions_compacted"] == 0
+        assert report["reports"] and report["reports"][0]["status"] == "skipped"
+
+    asyncio.run(scenario())

@@ -85,6 +85,7 @@ def test_detect_platform_and_youtube_id_extractors():
     assert multimodal.extract_youtube_video_id("https://www.youtube.com/watch?v=abcdefghijk") == "abcdefghijk"
     assert multimodal.extract_youtube_video_id("https://youtu.be/abcdefghijk") == "abcdefghijk"
     assert multimodal.extract_youtube_video_id("https://www.youtube.com/shorts/abcdefghijk") == "abcdefghijk"
+    assert multimodal.extract_youtube_video_id("https://www.youtube.com/channel/abc") == ""
     assert multimodal.extract_youtube_video_id("https://example.com/nope") == ""
 
 
@@ -307,6 +308,9 @@ def test_transcribe_audio_failure_modes(monkeypatch, tmp_path):
     assert errored["success"] is False
     assert "boom" in errored["reason"]
 
+    with pytest.raises(FileNotFoundError):
+        run(multimodal.transcribe_audio(tmp_path / "not-found.wav"))
+
 
 def test_build_context_scene_summary_and_render_document():
     transcript = {"text": "metin", "language": "tr"}
@@ -348,6 +352,14 @@ def test_build_context_reason_path_and_render_download_details():
     assert "Platform: youtube" in body
     assert "Çözümlenen Akış" in body
 
+    reason_only = multimodal.build_multimodal_context(
+        media_kind="audio",
+        transcript={"reason": "yok"},
+        frame_analyses=[],
+    )
+    assert "Transkript Durumu: yok" in reason_only
+    assert "Transkript Dili" not in reason_only
+
 
 def test_ingest_multimodal_analysis_success_and_failure():
     class Store:
@@ -382,6 +394,7 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
     pipeline.enabled = False
     disabled = run(pipeline.analyze_media(media_path=str(tmp_path / "none")))
     assert disabled["success"] is False
+    assert run(pipeline.transcribe_bytes(b"abc"))["success"] is False
 
 
 def test_pipeline_transcribe_bytes_limits():
@@ -512,3 +525,208 @@ def test_pipeline_analyze_media_source_validations_and_non_remote(monkeypatch, t
     monkeypatch.setattr(pipeline, "_analyze_local_media", fake_local)
     local_result = run(pipeline.analyze_media_source(media_source=str(media)))
     assert local_result["media_source"] == str(media)
+
+
+def test_low_level_helpers_and_youtube_id_empty(monkeypatch):
+    monkeypatch.setattr(multimodal.shutil, "which", lambda name: "/usr/bin/x" if name == "ffmpeg" else None)
+    assert multimodal._command_exists("ffmpeg") is True
+    assert multimodal._command_exists("missing") is False
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return types.SimpleNamespace(stdout="captured")
+
+    monkeypatch.setattr(multimodal.subprocess, "run", fake_run)
+    multimodal._run_subprocess(["echo", "ok"])
+    assert calls[0][1]["check"] is True
+    assert calls[0][1]["capture_output"] is True
+    assert multimodal._run_subprocess_capture(["echo", "x"]) == "captured"
+
+    assert multimodal.extract_youtube_video_id("") == ""
+
+
+def test_download_remote_media_ytdlp_success_returns_downloaded_media(monkeypatch, tmp_path):
+    target = tmp_path / "video.mp4"
+    target.write_bytes(b"x")
+    monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", lambda _fn, _cmd: asyncio.sleep(0))
+    result = run(multimodal.download_remote_media("https://youtube.com/watch?v=abcdefghijk", output_dir=tmp_path))
+    assert result.path.endswith("video.mp4")
+    assert result.mime_type == "video/mp4"
+    assert result.title == "video"
+
+
+def test_resolve_remote_media_stream_ignores_non_dict_metadata(monkeypatch):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
+
+    async def fake_to_thread(_fn, command):
+        if "--dump-single-json" in command:
+            return "[]"
+        return "https://cdn.example.com/audio.webm\n"
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
+    result = run(multimodal.resolve_remote_media_stream("https://youtube.com/watch?v=abcdefghijk", prefer_video=False))
+    assert result["metadata"] == {}
+    assert result["mime_type"] == "audio/webm"
+
+
+def test_extract_video_frames_and_audio_track_not_found(monkeypatch, tmp_path):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+    with pytest.raises(FileNotFoundError):
+        run(multimodal.extract_video_frames(tmp_path / "missing.mp4"))
+    with pytest.raises(FileNotFoundError):
+        run(multimodal.extract_audio_track(tmp_path / "missing.mp4"))
+
+
+def test_transcribe_audio_prompt_and_missing_output_json(monkeypatch, tmp_path):
+    audio = tmp_path / "input.wav"
+    audio.write_bytes(b"a")
+    captured = {}
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fake_to_thread(_fn, command):
+        captured["command"] = command
+        # intentionally do not create output json
+        return None
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
+    result = run(multimodal.transcribe_audio(audio, language="tr", prompt="ilk komut"))
+    assert "--initial_prompt" in captured["command"]
+    assert result["success"] is False
+    assert "çıktı dosyası üretmedi" in result["reason"]
+
+
+def test_build_context_scene_summary_and_render_additional_branches():
+    context = multimodal.build_multimodal_context(
+        media_kind="video",
+        transcript=None,
+        frame_analyses=[{"timestamp_seconds": 2.0, "analysis": ""}],
+    )
+    assert "Transkript" not in context
+    assert "Frame Bulguları" in context
+
+    assert multimodal.build_scene_summary([{"timestamp_seconds": 1.0, "analysis": ""}]) == ""
+
+    title, body = multimodal.render_multimodal_document(
+        {"media_kind": "video", "download": {"platform": "", "resolved_url": "src"}},
+        source="src",
+        title="Özel Başlık",
+    )
+    assert title == "Özel Başlık"
+    assert "Platform:" not in body
+    assert "Çözümlenen Akış:" not in body
+
+    no_text_no_reason = multimodal.build_multimodal_context(
+        media_kind="audio",
+        transcript={},
+        frame_analyses=[],
+    )
+    assert "Transkript Durumu" not in no_text_no_reason
+
+
+def test_pipeline_additional_branches_audio_and_remote_fallback(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
+    audio = tmp_path / "a.mp3"
+    audio.write_bytes(b"abc")
+
+    async def fake_transcribe(_path, **_kwargs):
+        return {"success": True, "text": "ses"}
+
+    monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
+    audio_result = run(pipeline._analyze_local_media(media_path=audio, mime_type="audio/mpeg"))
+    assert audio_result["success"] is True
+    assert audio_result["media_kind"] == "audio"
+
+    async def fake_local(**kwargs):
+        return {"success": True, "transcript_override_seen": kwargs.get("transcript_override")}
+
+    monkeypatch.setattr(pipeline, "_analyze_local_media", fake_local)
+    analyzed = run(pipeline.analyze_media(media_path=str(audio)))
+    assert analyzed["success"] is True
+
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fail_materialize(*_args, **_kwargs):
+        raise RuntimeError("ffmpeg fail")
+
+    async def fake_download(_source, *, output_dir, **_kwargs):
+        local = Path(output_dir) / "fallback.mp4"
+        local.write_bytes(b"x")
+        return multimodal.DownloadedMedia(
+            path=str(local),
+            source_url=_source,
+            mime_type="video/mp4",
+            platform="generic",
+            resolved_url=_source,
+            title="fallback",
+        )
+
+    monkeypatch.setattr(multimodal, "materialize_remote_media_for_ffmpeg", fail_materialize)
+    monkeypatch.setattr(multimodal, "download_remote_media", fake_download)
+    remote = run(pipeline.analyze_media_source(media_source="https://example.com/video.mp4"))
+    assert remote["success"] is True
+    assert remote["download"]["platform"] == "generic"
+
+
+def test_pipeline_video_transcript_override_skips_audio_extraction(monkeypatch, tmp_path):
+    media = tmp_path / "v.mp4"
+    media.write_bytes(b"abc")
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
+
+    async def fail_extract_audio(*_args, **_kwargs):
+        raise AssertionError("extract_audio_track should not be called when transcript_override has text")
+
+    class VisionPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze(self, **_kwargs):
+            return {"analysis": "frame-analiz"}
+
+    async def fake_extract_frames(_path, **_kwargs):
+        return [multimodal.ExtractedFrame(path=str(tmp_path / "f.jpg"), timestamp_seconds=1.0)]
+
+    monkeypatch.setitem(sys.modules, "core.vision", types.SimpleNamespace(VisionPipeline=VisionPipeline))
+    monkeypatch.setattr(multimodal, "extract_audio_track", fail_extract_audio)
+    monkeypatch.setattr(multimodal, "extract_video_frames", fake_extract_frames)
+    result = run(
+        pipeline._analyze_local_media(
+            media_path=media,
+            mime_type="video/mp4",
+            transcript_override={"text": "hazır transkript", "language": "tr"},
+        )
+    )
+    assert result["success"] is True
+    assert result["transcript"]["text"] == "hazır transkript"
+
+
+def test_pipeline_remote_ffmpeg_materialize_success_skips_download_fallback(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fake_materialize(_source, *, output_dir, **_kwargs):
+        media = Path(output_dir) / "resolved.mp4"
+        media.write_bytes(b"x")
+        return multimodal.DownloadedMedia(
+            path=str(media),
+            source_url=_source,
+            mime_type="video/mp4",
+            platform="generic",
+            resolved_url="https://cdn.example.com/resolved.mp4",
+            title="resolved",
+        )
+
+    async def fail_download(*_args, **_kwargs):
+        raise AssertionError("download_remote_media should not be called when materialize succeeds")
+
+    async def fake_analyze_local(**kwargs):
+        return {"success": True, "seen_path": kwargs["media_path"], "frame_analyses": [], "transcript": {}}
+
+    monkeypatch.setattr(multimodal, "materialize_remote_media_for_ffmpeg", fake_materialize)
+    monkeypatch.setattr(multimodal, "download_remote_media", fail_download)
+    monkeypatch.setattr(pipeline, "_analyze_local_media", fake_analyze_local)
+    result = run(pipeline.analyze_media_source(media_source="https://example.com/video.mp4"))
+    assert result["success"] is True
+    assert result["download"]["resolved_url"] == "https://cdn.example.com/resolved.mp4"

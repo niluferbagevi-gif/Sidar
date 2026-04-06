@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import builtins
+import contextlib
 import importlib
 import os
+import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+import types
 
 import pytest
 
@@ -372,6 +376,7 @@ def test_document_store_search_sync_mode_routing(tmp_path: Path) -> None:
     store._pgvector_available = False
     store._chroma_available = False
     store.collection = None
+    store._vector_backend = "bm25"
     store._is_local_llm_provider = True
     store._local_hybrid_enabled = False
 
@@ -1351,3 +1356,632 @@ def test_document_store_misc_uncovered_fallback_paths(tmp_path: Path) -> None:
 
     sys.modules["core.judge"] = SimpleNamespace(get_llm_judge=lambda: _Judge())
     rag.DocumentStore._schedule_judge("q", "a")
+
+
+def test_graph_index_additional_branch_coverage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "ignored.py").write_text("x=1", encoding="utf-8")
+    keep = root / "keep.py"
+    keep.write_text("x=1", encoding="utf-8")
+
+    gi = rag.GraphIndex(root)
+    files = gi._iter_source_files(root)
+    assert keep in files
+    assert all("node_modules" not in str(p) for p in files)
+    assert gi._script_import_candidates(keep, "react", root) == []
+    assert gi._extract_str_literal(ast.Str(s=" legacy ")) == "legacy"
+
+    src = """
+from . import mod
+@router.get
+def no_args(): pass
+@router.get("/ok")
+def ok(): pass
+session.post()
+http.get("http://remote.example.com/x")
+foo.get("/x")
+obj.session.post("/y")
+"""
+    deps, defs, calls = gi._parse_python_source(keep, src)
+    assert isinstance(deps, list)
+    assert any(item["path"] == "/ok" for item in defs)
+    assert {item["path"] for item in calls} == {"/x", "/y"}
+
+    calls = gi._extract_script_endpoint_calls(
+        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new WebSocket("/ws"); new WebSocket("/ws")'
+    )
+    assert len(calls) == 1
+
+    original_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self == keep:
+            raise OSError("boom")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+    rebuilt = gi.rebuild(root)
+    assert rebuilt["nodes"] >= 1
+
+    assert gi.resolve_node_id("   ") is None
+    assert gi.explain_dependency_path("missing", "target") == []
+    gi.add_node("a")
+    gi.add_node("b")
+    assert gi.explain_dependency_path("a", "b") == []
+    assert gi.impact_analysis("missing") == {}
+
+    gi.add_node("core/a.py", node_type="file")
+    gi.add_node("core/b.py", node_type="file")
+    gi.add_node("core/c.py", node_type="file")
+    gi.add_node("target.py", node_type="file")
+    gi.add_edge("core/a.py", "target.py")
+    gi.add_edge("core/b.py", "target.py")
+    gi.add_edge("core/c.py", "target.py")
+    impact = gi.impact_analysis("target.py")
+    assert impact["risk_level"] == "medium"
+
+
+def test_embedding_function_mixed_precision_cuda_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _EF:
+        def __call__(self, input):
+            return ["ok", input]
+
+    class _Factory:
+        def __call__(self, **kwargs):
+            return _EF()
+
+    fake_embedding_functions = types.SimpleNamespace(SentenceTransformerEmbeddingFunction=_Factory())
+    fake_chromadb_utils = types.SimpleNamespace(embedding_functions=fake_embedding_functions)
+    fake_chromadb = types.SimpleNamespace(utils=fake_chromadb_utils)
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(is_available=lambda: True),
+        float16="fp16",
+        autocast=lambda **kwargs: contextlib.nullcontext(),
+    )
+
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils", fake_chromadb_utils)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", fake_embedding_functions)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.amp", types.ModuleType("torch.amp"))
+
+    ef = rag._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
+    assert ef is not None
+    assert ef.__call__(["x"])[0] == "ok"
+
+
+def test_rag_module_bleach_available_import_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "bleach":
+            return SimpleNamespace(clean=lambda html, **_kw: html)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    reloaded = importlib.reload(rag)
+    try:
+        assert reloaded._BLEACH_AVAILABLE is True
+    finally:
+        monkeypatch.setattr(builtins, "__import__", original_import)
+        importlib.reload(rag)
+
+
+def test_graph_index_parse_and_search_additional_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    gi = rag.GraphIndex(tmp_path)
+    sample = tmp_path / "svc.py"
+    sample.write_text("", encoding="utf-8")
+
+    src = """
+@router.get
+def no_args(): pass
+
+@router.get("{dynamic}")
+def dynamic(): pass
+
+obj.connect("/x")
+obj.router.get("/skip")
+"""
+    deps, defs, calls = gi._parse_python_source(sample, src)
+    assert deps == []
+    assert defs == []
+    assert calls == []
+
+    # ast.Str branchini doğrudan zorla.
+    fake_str_cls = type("FakeStr", (), {})
+    monkeypatch.setattr(rag.ast, "Str", fake_str_cls, raising=False)
+    node = fake_str_cls()
+    node.s = " legacy "
+    assert gi._extract_str_literal(node) == "legacy"
+
+    gi.add_node("alpha.py", node_type="file")
+    gi.add_node("beta.py", node_type="file")
+    related = gi.search_related("unmatched-token", top_k=3)
+    assert related == []
+
+
+def test_document_store_init_and_core_fallback_branches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
+    monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
+    chroma_calls: list[str] = []
+    monkeypatch.setattr(rag.DocumentStore, "_init_chroma", lambda self: chroma_calls.append("chroma"))
+    monkeypatch.setattr(rag.DocumentStore, "_init_pgvector", lambda self: None)
+    monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: True)
+    cfg = SimpleNamespace(
+        RAG_TOP_K=2,
+        RAG_CHUNK_SIZE=8,
+        RAG_CHUNK_OVERLAP=2,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=False,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=10,
+    )
+    rag.DocumentStore(tmp_path / "store2", cfg=cfg)
+    assert chroma_calls == ["chroma"]
+
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(DATABASE_URL="sqlite:///x.db")
+    store._check_import = lambda _m: False  # type: ignore[method-assign]
+    store._init_pgvector()
+    assert getattr(store, "_pgvector_available", False) is False
+
+
+def test_document_store_low_level_misc_branches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {}
+    store._save_index()
+    assert store.index_file.exists()
+    assert store._recursive_chunk_text("", size=10, overlap=2) == []
+    assert store._recursive_chunk_text("abc", size=2, overlap=9)
+
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("https:///nohost")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://10.0.0.1/x")
+
+    # add_document async wrapper
+    called = {}
+    store._add_document_sync = lambda *args, **kwargs: called.setdefault("ok", "doc-1")  # type: ignore[method-assign]
+    assert asyncio.run(store.add_document("t", "c", session_id="s1")) == "doc-1"
+
+
+def test_document_store_url_file_delete_and_graph_branches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._write_lock = threading.Lock()
+
+    # add_document_from_url: title dolu ise regex dalı atlanır
+    async def _fake_add(*_args, **_kwargs):
+        return "doc-u"
+
+    store.add_document = _fake_add  # type: ignore[method-assign]
+
+    class _Resp:
+        text = "<html><body>x</body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(AsyncClient=lambda **_k: _Client()))
+    ok, _msg = asyncio.run(store.add_document_from_url("https://example.com/x", title="manual", session_id="s1"))
+    assert ok is True
+
+    # file exists/is_file branchleri
+    ok, msg = store.add_document_from_file(str(tmp_path / "missing.txt"), session_id="s1")
+    assert ok is False and "Dosya bulunamadı" in msg
+    d = tmp_path / "adir"
+    d.mkdir()
+    ok, msg = store.add_document_from_file(str(d), session_id="s1")
+    assert ok is False and "yol bir dosya değil" in msg
+
+    # delete_document branchleri
+    assert "Belge bulunamadı" in store.delete_document("none", session_id="s1")
+    store._index = {"d1": {"title": "Doc", "session_id": "s2"}}
+    assert "yetkiniz yok" in store.delete_document("d1", session_id="s1")
+    class _FlipLock:
+        def __enter__(self):
+            store._index.pop("d1", None)
+            return self
+        def __exit__(self, *_args):
+            return None
+    store._index = {"d1": {"title": "Doc", "session_id": "s1"}}
+    store._write_lock = _FlipLock()
+    assert "zaten silinmiş" in store.delete_document("d1", session_id="s1")
+
+    store._graph_rag_enabled = True
+    store._graph_root_dir = tmp_path
+    store._graph_index = rag.GraphIndex(tmp_path)
+    ok, txt = store.rebuild_graph_index(root_dir=str(tmp_path))
+    assert ok is True and "GraphIndex hazırlandı" in txt
+
+
+def test_document_store_search_projection_and_rrf_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "T1"}}
+    store._bm25_available = False
+    store._pgvector_available = False
+    store._chroma_available = False
+    store.collection = None
+    store._vector_backend = "bm25"
+    store._is_local_llm_provider = True
+    store._local_hybrid_enabled = False
+    ok, msg = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is False and "ilgili sonuç bulunamadı" in msg
+
+    # Projection break branchleri
+    store._graph_rag_enabled = True
+    store._graph_ready = True
+    g = rag.GraphIndex(tmp_path)
+    g.add_node("a.py", node_type="file")
+    g.add_node("b.py", node_type="file")
+    g.add_node("c.py", node_type="file")
+    g.add_edge("a.py", "b.py", kind="imports")
+    g.add_edge("b.py", "c.py", kind="imports")
+    g.add_edge("c.py", "a.py", kind="imports")
+    store._graph_index = g
+    proj = store.build_knowledge_graph_projection(session_id="s1", include_code_graph=True, limit=1)
+    assert len(proj["edges"]) >= 1
+    assert any(e.source.startswith("code:") for e in proj["edges"])
+
+    # search() tracer yok dalı
+    rag._otel_trace = None  # type: ignore[assignment]
+    store._search_sync = lambda *_args, **_kwargs: (True, "ok")  # type: ignore[method-assign]
+    assert asyncio.run(store.search("q", session_id="s1")) == (True, "ok")
+
+    # rrf: iki taraf da boş ise keyword fallback
+    store._pgvector_available = True
+    store._fetch_pgvector = lambda *_a, **_k: []  # type: ignore[method-assign]
+    store._fetch_bm25 = lambda *_a, **_k: []  # type: ignore[method-assign]
+    store._keyword_search = lambda q, k, s: (True, f"kw:{q}:{k}:{s}")  # type: ignore[method-assign]
+    assert store._rrf_search("q", 2, "s1")[1].startswith("kw:")
+
+
+def test_document_store_vector_and_keyword_file_not_found_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {"d1": {"session_id": "s1", "title": "Doc1", "source": "src", "tags": ["alpha"]}}
+    store._bm25_available = True
+
+    class _Rows:
+        def fetchall(self):
+            return [{"doc_id": "d1", "score": -1.0}]
+
+    class _Lock:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+
+    store._write_lock = _Lock()
+    store.fts_conn = SimpleNamespace(execute=lambda *_a, **_k: _Rows())
+    bm = store._fetch_bm25("alpha", 1, "s1")
+    assert bm and bm[0]["snippet"] == ""
+
+    kw_ok, kw_msg = store._keyword_search("alpha", 1, "s1")
+    assert kw_ok is True and "Doc1" in kw_msg
+
+    # _update_bm25 early return branches
+    store._bm25_available = False
+    store._update_bm25_cache_on_add("d1", "body")
+    store._update_bm25_cache_on_delete("d1")
+
+    # pgvector delete hata dalı
+    store._pgvector_available = True
+    store.pg_engine = SimpleNamespace(begin=lambda: (_ for _ in ()).throw(RuntimeError("db down")))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+    store._delete_pgvector_parent("p1", "s1")
+
+
+def test_rag_remaining_branches_for_pgvector_and_add_document(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@h/db")
+    store._check_import = lambda _m: True  # type: ignore[method-assign]
+    store._pg_table = "t"
+    store._pg_embedding_dim = 3
+    store._pg_embedding_model_name = "m"
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("st fail"))))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(create_engine=lambda *_a, **_k: object(), text=lambda s: s))
+    store._init_pgvector()
+    assert store._pgvector_available is False
+
+    store._pg_embedding_model = None
+    assert store._pgvector_embed_texts(["a"]) == []
+    store._pg_embedding_model = SimpleNamespace(encode=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("enc fail")))
+    assert store._pgvector_embed_texts(["a"]) == []
+
+    store._pgvector_available = True
+    store.pg_engine = object()
+    store._upsert_pgvector_chunks("d", "p", "s", "t", "src", [])  # 817
+    store._pgvector_embed_texts = lambda _chunks: []  # type: ignore[method-assign]
+    store._upsert_pgvector_chunks("d", "p", "s", "t", "src", ["c"])  # 823
+    store._pgvector_embed_texts = lambda _chunks: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+    store.pg_engine = SimpleNamespace(begin=lambda: (_ for _ in ()).throw(RuntimeError("sql fail")))
+    store._upsert_pgvector_chunks("d", "p", "s", "t", "src", ["c"])  # 860-861
+
+    store.index_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("idx fail")))
+    assert store._load_index() == {}
+
+    # recursive chunking deep split paths
+    assert store._recursive_chunk_text("X" * 50, size=5, overlap=2)
+    assert store._recursive_chunk_text("a\n\n" + "b" * 40, size=8, overlap=2)
+
+    # _add_document_sync: chroma hata dalı + chunks empty branch
+    class _DummyLock:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+    store._write_lock = _DummyLock()
+    store._save_index = lambda: None
+    store._update_bm25_cache_on_add = lambda *_a: None  # type: ignore[method-assign]
+    store._chroma_available = True
+    store.collection = SimpleNamespace(delete=lambda **_k: (_ for _ in ()).throw(RuntimeError("chroma fail")), upsert=lambda **_k: None)
+    store._chunk_text = lambda *_a, **_k: []  # type: ignore[method-assign]
+    store._pgvector_available = False
+    doc = store._add_document_sync("T", "C", source="s", tags=[], session_id="s1")
+    assert doc in store._index
+
+
+def test_rag_remaining_branches_for_graph_search_and_rrf(tmp_path: Path) -> None:
+    # parse branch 217->219, 192
+    gi = rag.GraphIndex(tmp_path)
+    src = "@router.get\ndef x(): pass\nobj.app.get('/x')\n"
+    _deps, defs, calls = gi._parse_python_source(tmp_path / "a.py", src)
+    assert defs == [] and calls == []
+
+    # rebuild import target missing node branch (299->297)
+    (tmp_path / "main.py").write_text("import missing_mod", encoding="utf-8")
+    summary = gi.rebuild(tmp_path)
+    assert summary["nodes"] >= 1
+
+    # impact branchleri 400->399, 416->414
+    gi.add_node("endpoint:GET /z", node_type="endpoint")
+    gi.add_node("handler:virtual", node_type="endpoint")
+    gi.add_edge("endpoint:GET /z", "handler:virtual", kind="handled_by")
+    gi.add_node("target.py", node_type="file")
+    gi.add_edge("target.py", "endpoint:GET /z", kind="calls_endpoint")
+    impact = gi.impact_analysis("target.py")
+    assert impact["dependency_paths"] == []
+
+    store = _make_store_stub(tmp_path)
+    store._graph_rag_enabled = True
+    store._graph_ready = True
+    store._graph_index = gi
+    ok, msg = store.explain_dependency_path("a.py", "missing.py")
+    assert ok is False and "bulunamadı" in msg
+    store.graph_impact_details = lambda *_a, **_k: (True, {"target": "x", "node_type": "file", "risk_level": "low", "dependencies": []})  # type: ignore[method-assign]
+    ok, text = store.analyze_graph_impact("x")
+    assert ok is True and "Aşağı akış bağımlılıklar" not in text
+
+    # _search_sync fallback zinciri 1521+ branches
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "T"}}
+    store._pgvector_available = True
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = False
+    store._is_local_llm_provider = False
+    store._rrf_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rrf"))  # type: ignore[method-assign]
+    store._pgvector_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("pg"))  # type: ignore[method-assign]
+    store._chroma_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ch"))  # type: ignore[method-assign]
+    store._keyword_search = lambda q, k, s: (True, f"kw:{q}:{k}:{s}")  # type: ignore[method-assign]
+    ok, _res = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is True
+
+    # search tracer none -> 1553-1555
+    rag._otel_trace = None  # type: ignore[assignment]
+    store._search_sync = lambda *_a, **_k: (True, "ok")  # type: ignore[method-assign]
+    assert asyncio.run(store.search("q", session_id="s1")) == (True, "ok")
+
+    # rrf non-empty bm25 path 1589-1591
+    store2 = _make_store_stub(tmp_path)
+    store2._pgvector_available = True
+    store2._fetch_pgvector = lambda *_a, **_k: [{"id": "a", "title": "A", "source": "", "snippet": "", "score": 0.1}]  # type: ignore[method-assign]
+    store2._fetch_bm25 = lambda *_a, **_k: [{"id": "b", "title": "B", "source": "", "snippet": "", "score": 0.2}]  # type: ignore[method-assign]
+    ok, text = store2._rrf_search("q", 2, "s1")
+    assert ok is True and "Hibrit RRF" in text
+
+    # fetch_pgvector rows empty -> 1628->1644
+    store._pgvector_available = True
+    store.pg_engine = SimpleNamespace(begin=lambda: contextlib.nullcontext(SimpleNamespace(execute=lambda *_a, **_k: SimpleNamespace(fetchall=lambda: []))))
+    store._pgvector_embed_texts = lambda _t: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+    sys.modules["sqlalchemy"] = SimpleNamespace(text=lambda s: s)
+    assert store._fetch_pgvector("q", 2, "s1") == []
+
+
+def test_rag_remaining_edge_branches_round_two(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    gi = rag.GraphIndex(tmp_path)
+    src = """
+@router.get()
+def a(): pass
+obj.client.get('/ok')
+"""
+    _deps, defs, calls = gi._parse_python_source(tmp_path / "x.py", src)
+    assert defs == []
+    assert calls and calls[0]["path"] == "/ok"
+
+    # rebuild branch: dep hedefi düğümde yok
+    a = tmp_path / "a.py"
+    a.write_text("import x", encoding="utf-8")
+    monkeypatch.setattr(gi, "_extract_dependencies", lambda *_a, **_k: ([tmp_path / "missing.py"], [], []))
+    summary = gi.rebuild(tmp_path)
+    assert summary["nodes"] >= 1
+
+    # impact: endpoint handler file değil, dependency path boş
+    gi.clear()
+    gi.add_node("target.py", node_type="file")
+    gi.add_node("endpoint:GET /a", node_type="endpoint")
+    gi.add_node("endpoint-handler", node_type="endpoint")
+    gi.add_edge("endpoint:GET /a", "target.py", kind="handled_by")
+    gi.add_edge("endpoint:GET /a", "endpoint-handler", kind="handled_by")
+    gi.add_edge("caller.py", "endpoint:GET /a", kind="calls_endpoint")
+    gi.add_node("caller.py", node_type="file")
+    impact = gi.impact_analysis("target.py")
+    assert "endpoint-handler" not in impact["impacted_endpoint_handlers"]
+
+    # _init_chroma embedding_fn None path
+    store = _make_store_stub(tmp_path)
+    store._use_gpu = False
+    store._gpu_device = 0
+    store._mixed_precision = False
+    store._chroma_available = True
+    store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
+    class _Client:
+        def get_or_create_collection(self, **kwargs):
+            assert "embedding_function" not in kwargs
+            return object()
+    monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=lambda **_k: _Client()))
+    monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=lambda **_k: object()))
+    monkeypatch.setattr(rag, "_build_embedding_function", lambda **_k: None)
+    store._init_chroma()
+    assert store.collection is not None
+
+    # _init_fts migrate exception branch 727->740/738
+    store._index = {"d1": {"session_id": "s1"}}
+    store._bm25_available = True
+    class _Lock:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+    store._write_lock = _Lock()
+    store._init_fts()
+    assert store._bm25_available is True
+
+    # _init_pgvector early returns
+    store.cfg = SimpleNamespace(DATABASE_URL="sqlite:///a.db")
+    store._init_pgvector()
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@h/db")
+    store._check_import = lambda _m: False  # type: ignore[method-assign]
+    store._init_pgvector()
+
+    # _delete_pgvector_parent guard
+    store._pgvector_available = True
+    store.pg_engine = None
+    store._delete_pgvector_parent("p", "s")
+
+    # _load_index no file (878->883)
+    store.index_file.unlink(missing_ok=True)
+    assert store._load_index() == {}
+
+    # add_document chroma branching with empty chunks (1028/1034 false)
+    class _Lock:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+    store._write_lock = _Lock()
+    store._save_index = lambda: None
+    store._update_bm25_cache_on_add = lambda *_a: None  # type: ignore[method-assign]
+    calls = []
+    store.collection = SimpleNamespace(delete=lambda **_k: calls.append("del"), upsert=lambda **_k: calls.append("up"))
+    store._chroma_available = True
+    store._pgvector_available = False
+    store._chunk_size = 0
+    store._add_document_sync("t", "c", source="s", tags=[], session_id="s1")
+    assert calls == ["del"]
+
+    # _validate_url_safe 1076->1082 path (public ip)
+    rag.DocumentStore._validate_url_safe("http://8.8.8.8/x")
+
+    # delete_document doc file yoksa chroma branchine düşsün
+    store._index = {"d2": {"title": "D2", "session_id": "s1"}}
+    store._chroma_available = False
+    store.collection = None
+    store._update_bm25_cache_on_delete = lambda *_a: None  # type: ignore[method-assign]
+    msg = store.delete_document("d2", session_id="s1")
+    assert "Belge silindi" in msg
+
+    # _search_sync fallback zinciri alt dallar
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "T"}}
+    store._bm25_available = False
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._chroma_search = lambda q, k, s: (True, f"ch:{q}")  # type: ignore[method-assign]
+    ok, out = store._search_sync("q", mode="auto", session_id="s1")
+    assert ok is True and out.startswith("ch:")
+
+
+def test_rag_final_remaining_branches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # __init__ 631->635
+    monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
+    monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
+    monkeypatch.setattr(rag.DocumentStore, "_init_chroma", lambda self: (_ for _ in ()).throw(AssertionError("no chroma")))
+    monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: False)
+    cfg = SimpleNamespace(
+        RAG_TOP_K=1, RAG_CHUNK_SIZE=8, RAG_CHUNK_OVERLAP=2, RAG_VECTOR_BACKEND="bm25",
+        AI_PROVIDER="openai", RAG_LOCAL_ENABLE_HYBRID=False, ENABLE_GRAPH_RAG=False, BASE_DIR=tmp_path, GRAPH_RAG_MAX_FILES=1
+    )
+    rag.DocumentStore(tmp_path / "s3", cfg=cfg)
+
+    store = _make_store_stub(tmp_path)
+    class _L:
+        def __enter__(self): return self
+        def __exit__(self, *_a): return None
+    store._write_lock = _L()
+    store._save_index = lambda: None
+    store._update_bm25_cache_on_add = lambda *_a: None  # type: ignore[method-assign]
+    store._chroma_available = False
+    store.collection = None
+    store._pgvector_available = False
+    store._add_document_sync("t", "c", source="s", tags=[], session_id="s1")  # 1025->1042
+
+    # _search_sync 1529->1533
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d": {"session_id": "s1", "title": "T"}}
+    store._pgvector_available = False
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = True
+    store._bm25_search = lambda q, k, s: (True, f"bm:{q}")  # type: ignore[method-assign]
+    assert store._search_sync("q", mode="auto", session_id="s1")[1].startswith("bm:")
+
+    # _fetch_pgvector 1628->1644 with empty rows
+    store._pgvector_available = True
+    store._pg_table = "t"
+    store._is_local_llm_provider = False
+    store._pgvector_embed_texts = lambda _t: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+    class _Conn:
+        def execute(self, *_a, **_k):
+            return SimpleNamespace(fetchall=lambda: [])
+    store.pg_engine = SimpleNamespace(begin=lambda: contextlib.nullcontext(_Conn()))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+    assert store._fetch_pgvector("q", 2, "s1") == []
+
+
+def test_rag_almost_final_branches_for_parser_impact_and_fts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    gi = rag.GraphIndex(tmp_path)
+    deps, defs, calls = gi._parse_python_source(tmp_path / "p.py", "obj.client.get('/z')")
+    assert deps == [] and defs == [] and calls[0]["path"] == "/z"
+
+    gi.add_node("target.py", node_type="file")
+    gi.add_node("endpoint:GET /k", node_type="endpoint")
+    gi.add_edge("caller.py", "endpoint:GET /k", kind="calls_endpoint")
+    gi.add_edge("endpoint:GET /k", "target.py", kind="handled_by")
+    gi.add_node("caller.py", node_type="file")
+    monkeypatch.setattr(gi, "explain_dependency_path", lambda *_a, **_k: [])
+    impact = gi.impact_analysis("target.py")
+    assert isinstance(impact, dict)
+
+    store = _make_store_stub(tmp_path)
+    class _Lock:
+        def __enter__(self): return self
+        def __exit__(self, *_a): return None
+    store._write_lock = _Lock()
+    store._bm25_available = True
+    store._index = {"missing-doc": {"session_id": "s1"}}
+    # file intentionally missing -> line 738 except/pass branch
+    store._init_fts()
+    assert store._bm25_available is True
