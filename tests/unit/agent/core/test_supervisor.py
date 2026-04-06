@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from types import SimpleNamespace
@@ -55,6 +56,7 @@ event_stream_mod.get_agent_event_bus = get_agent_event_bus
 sys.modules["agent.core.event_stream"] = event_stream_mod
 
 from agent.core.contracts import DelegationRequest, TaskResult
+import agent.core.supervisor as supervisor_mod
 from agent.core.supervisor import SupervisorAgent
 
 class _DummyEvents:
@@ -68,9 +70,13 @@ class _DummyEvents:
 class _DummyMemoryHub:
     def __init__(self) -> None:
         self.global_notes: list[str] = []
+        self.role_notes: list[tuple[str, str]] = []
 
     def add_global(self, note: str) -> None:
         self.global_notes.append(note)
+
+    def add_role_note(self, role: str, note: str) -> None:
+        self.role_notes.append((role, note))
 
 
 class _DummyRegistry:
@@ -284,3 +290,174 @@ def test_run_task_code_flow_stops_after_retry_limit() -> None:
 
     assert "[P2P:STOP] Maksimum QA retry limiti aşıldı (1)." in result
     assert "ikinci kod" in result
+
+
+def test_ensure_delegation_request_shape_uses_existing_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
+    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
+
+    assert supervisor_mod._ensure_delegation_request_shape() is DelegationRequest
+
+
+def test_ensure_delegation_request_shape_builds_compat_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    contracts_mod = types.SimpleNamespace(DelegationRequest=object)
+    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
+
+    compat_cls = supervisor_mod._ensure_delegation_request_shape()
+    req = compat_cls(task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"})
+    bumped = req.bumped()
+
+    assert req.handoff_depth == 2
+    assert bumped.handoff_depth == 3
+    assert bumped.meta == {"k": "v"}
+    assert contracts_mod.DelegationRequest is compat_cls
+
+
+def test_null_span_noop_methods() -> None:
+    span = supervisor_mod._NullSpan()
+    with span as ctx:
+        assert ctx is span
+        ctx.set_attribute("k", "v")
+    assert span.__exit__(None, None, None) is False
+
+
+def test_init_registers_specialist_agents() -> None:
+    sup = SupervisorAgent()
+    assert sup.registry.has("researcher")
+    assert sup.registry.has("coder")
+    assert sup.registry.has("reviewer")
+    assert sup.registry.has("poyraz")
+    assert sup.registry.has("qa")
+    assert sup.registry.has("coverage")
+    assert sup.coverage is not None
+
+
+def test_init_falls_back_to_qa_when_coverage_registration_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _BrokenCoverage:
+        def __init__(self, _cfg=None) -> None:
+            raise RuntimeError("broken")
+
+    monkeypatch.setattr(supervisor_mod, "CoverageAgent", _BrokenCoverage)
+    sup = SupervisorAgent()
+    assert sup.coverage is sup.qa
+
+
+def test_delegate_success_records_metrics_and_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    sup = SupervisorAgent.__new__(SupervisorAgent)
+    sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
+    sup.memory_hub = _DummyMemoryHub()
+    sup.events = _DummyEvents()
+
+    class _Worker:
+        async def run_task(self, goal: str) -> str:
+            return f"ok:{goal}"
+
+    class _Registry:
+        def get(self, _role: str):
+            return _Worker()
+
+    records: list[tuple[str, str, str]] = []
+
+    class _Collector:
+        def record(self, receiver: str, intent: str, status: str, _duration: float) -> None:
+            records.append((receiver, intent, status))
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Collector())
+    sup.registry = _Registry()
+
+    result = asyncio.run(sup._delegate("coder", "görev", "code", parent_task_id="p1"))
+
+    assert result.status == "done"
+    assert result.summary == "ok:görev"
+    assert sup.memory_hub.global_notes == []
+    assert sup.memory_hub.role_notes == [("coder", "ok:görev")]
+    assert records == [("coder", "code", "done")]
+
+
+def test_delegate_error_records_status_and_reraises(monkeypatch: pytest.MonkeyPatch) -> None:
+    sup = SupervisorAgent.__new__(SupervisorAgent)
+    sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
+    sup.memory_hub = _DummyMemoryHub()
+    sup.events = _DummyEvents()
+
+    class _Worker:
+        async def run_task(self, _goal: str) -> str:
+            raise RuntimeError("boom")
+
+    class _Registry:
+        def get(self, _role: str):
+            return _Worker()
+
+    statuses: list[str] = []
+
+    class _Collector:
+        def record(self, _receiver: str, _intent: str, status: str, _duration: float) -> None:
+            statuses.append(status)
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Collector())
+    sup.registry = _Registry()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(sup._delegate("coder", "görev", "code"))
+
+    assert statuses == ["error"]
+
+
+def test_route_p2p_delegates_and_returns_terminal_result() -> None:
+    sup = _build_supervisor(max_qa_retries=3)
+    calls: list[dict[str, object]] = []
+
+    async def _delegate(receiver: str, goal: str, intent: str, **kwargs):
+        calls.append({"receiver": receiver, "goal": goal, "intent": intent, **kwargs})
+        return TaskResult(task_id="done", status="done", summary="tamam")
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="kod üret",
+        intent="p2p",
+        meta={"reason": "qa"},
+        handoff_depth=2,
+        protocol="p2p.v1",
+    )
+
+    result = asyncio.run(sup._route_p2p(req, parent_task_id="parent", max_hops=2))
+
+    assert result.summary == "tamam"
+    assert calls[0]["receiver"] == "coder"
+    assert calls[0]["sender"] == "reviewer"
+    assert calls[0]["parent_task_id"] == "parent"
+    assert calls[0]["context"]["p2p_handoff_depth"] == "2"
+
+
+def test_run_task_research_routes_p2p_when_delegation_request_returns() -> None:
+    sup = _build_supervisor()
+
+    async def _delegate(receiver: str, goal: str, intent: str, **_kwargs):
+        assert receiver == "researcher"
+        return TaskResult(
+            task_id="r1",
+            status="done",
+            summary=DelegationRequest(
+                task_id="d1",
+                reply_to="researcher",
+                target_agent="coder",
+                payload="aktar",
+                intent="p2p",
+            ),
+        )
+
+    async def _route_p2p(request: DelegationRequest, **kwargs):
+        assert request.target_agent == "coder"
+        assert kwargs["parent_task_id"] == "r1"
+        return TaskResult(task_id="x", status="done", summary="p2p-sonuc")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("web araştırması yap"))
+    assert result == "p2p-sonuc"
