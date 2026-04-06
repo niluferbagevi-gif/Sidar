@@ -32,6 +32,9 @@ def test_task_update_status_changes_timestamp(monkeypatch):
 def test_add_task_validations_and_invalid_status(manager: TodoManager):
     assert "boş olamaz" in manager.add_task("   ")
     assert "Geçersiz durum" in manager.add_task("iş", status="bad")
+    ok_msg = manager.add_task("normal pending", status=STATUS_PENDING)
+    assert "Görev eklendi" in ok_msg
+    assert "tek aktif görev" not in ok_msg
 
 
 def test_add_task_in_progress_demotes_existing(manager: TodoManager):
@@ -75,6 +78,20 @@ def test_update_task_paths_and_shortcuts(manager: TodoManager):
     assert "completed" in completed_msg
 
 
+def test_update_task_in_progress_appends_demoted_info(manager: TodoManager):
+    manager.set_tasks(
+        [
+            {"content": "a", "status": STATUS_IN_PROGRESS},
+            {"content": "b", "status": STATUS_PENDING},
+        ]
+    )
+
+    msg = manager.update_task(2, STATUS_IN_PROGRESS)
+    assert "tek aktif görev" in msg
+    items = manager.get_tasks(limit=10)
+    assert [i["status"] for i in items] == [STATUS_PENDING, STATUS_IN_PROGRESS]
+
+
 def test_list_tasks_variants_and_limit_normalization(manager: TodoManager):
     assert "boş" in manager.list_tasks()
 
@@ -109,6 +126,10 @@ def test_get_tasks_limit_and_counts_repr_len(manager: TodoManager):
     assert manager.get_active_count() == 2
     assert len(manager) == 3
     assert "tasks=3" in repr(manager)
+    # invalid status should not filter
+    assert len(manager.get_tasks(status="not-valid", limit=10)) == 3
+    # non-int limit should fallback to default=50 and include all current tasks
+    assert len(manager.get_tasks(limit="abc")) == 3
 
 
 def test_clear_completed_and_clear_all(manager: TodoManager):
@@ -125,6 +146,8 @@ def test_clear_completed_and_clear_all(manager: TodoManager):
     msg2 = manager.clear_all()
     assert "1 görev silindi" in msg2
     assert len(manager) == 0
+    msg3 = manager.clear_completed()
+    assert "0 tamamlanmış" in msg3
 
 
 def test_load_with_existing_json_and_invalid_entries(tmp_path: Path):
@@ -172,9 +195,12 @@ def test_scan_project_todos_branches(manager: TodoManager, tmp_path: Path):
     # found todos path
     todo_file = tmp_path / "b.py"
     todo_file.write_text("# TODO: test\n# FIXME critical\n", encoding="utf-8")
+    non_target = tmp_path / "note.txt"
+    non_target.write_text("TODO: ignored due to extension filter\n", encoding="utf-8")
     found = manager.scan_project_todos(extensions=["py"])
     assert "TODO VE FIXME" in found
     assert "b.py" in found
+    assert "note.txt" not in found
 
 
 def test_scan_project_todos_handles_walk_exception(manager: TodoManager, monkeypatch):
