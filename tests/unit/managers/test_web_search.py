@@ -248,6 +248,17 @@ def test_search_tavily_success_no_results_and_errors(monkeypatch):
     assert ok is True
     assert "Web Arama (Tavily)" in res
     assert "**t**" in res
+    assert "   c" in res
+
+    client_no_content = DummyAsyncClient(
+        response=DummyResponse(payload={"results": [{"title": "t2", "content": "", "url": "u2"}]})
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client_no_content)
+    ok, res = run(m._search_tavily("python", 3))
+    assert ok is True
+    assert "**t2**" in res
+    assert "   → u2" in res
+    assert "   \n" not in res
 
     client_empty = DummyAsyncClient(response=DummyResponse(payload={"results": []}))
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client_empty)
