@@ -84,10 +84,21 @@ class _FakeMemoryDB:
         return target
 
 
+class _FakeMemory:
+    def __init__(self, db: _FakeMemoryDB) -> None:
+        self.db = db
+
+    def __len__(self) -> int:
+        return 0
+
+    async def set_active_user(self, _user_id: str, _username: str) -> None:
+        return None
+
+
 @pytest.fixture
 def web_api_client(monkeypatch: pytest.MonkeyPatch):
     fake_db = _FakeMemoryDB()
-    fake_agent = SimpleNamespace(memory=SimpleNamespace(db=fake_db), system_prompt="")
+    fake_agent = SimpleNamespace(memory=_FakeMemory(fake_db), system_prompt="")
     original_overrides = app.dependency_overrides.copy()
 
     async def _fake_get_agent():
@@ -110,14 +121,14 @@ def web_api_client(monkeypatch: pytest.MonkeyPatch):
 
     client = TestClient(app)
     try:
-        yield client, fake_db
+        yield client, fake_db, fake_agent
     finally:
         app.dependency_overrides = original_overrides
 
 
 @pytest.mark.integration
 def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
-    client, fake_db = web_api_client
+    client, fake_db, _fake_agent = web_api_client
 
     register_response = client.post(
         "/auth/register",
@@ -141,7 +152,7 @@ def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
 
 @pytest.mark.integration
 def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
-    client, _fake_db = web_api_client
+    client, _fake_db, _fake_agent = web_api_client
     admin_headers = {"Authorization": "Bearer token-for-admin"}
 
     create_response = client.post(
@@ -178,7 +189,7 @@ def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None
 
 @pytest.mark.integration
 def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
-    client, _ = web_api_client
+    client, _, _fake_agent = web_api_client
 
     original_overrides = app.dependency_overrides.copy()
     try:
@@ -195,3 +206,36 @@ def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
         assert create_response.status_code in {401, 403}
     finally:
         app.dependency_overrides = original_overrides
+
+
+@pytest.mark.integration
+def test_chat_websocket_streams_agent_chunks(web_api_client, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _fake_db, fake_agent = web_api_client
+
+    async def mock_respond(prompt, **kwargs):
+        assert prompt == "Selam"
+        yield "Merhaba, "
+        yield "size nasıl yardımcı olabilirim?"
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    fake_agent.respond = mock_respond
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with client.websocket_connect("/ws/chat") as websocket:
+        websocket.send_json({"action": "auth", "token": "token-for-admin"})
+        auth_payload = websocket.receive_json()
+        assert auth_payload == {"auth_ok": True}
+
+        websocket.send_json({"message": "Selam"})
+
+        chunks: list[str] = []
+        done = False
+        while not done:
+            event = websocket.receive_json()
+            if "chunk" in event:
+                chunks.append(event["chunk"])
+            done = bool(event.get("done"))
+
+    assert "".join(chunks) == "Merhaba, size nasıl yardımcı olabilirim?"
