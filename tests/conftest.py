@@ -102,9 +102,14 @@ def sidar_agent_factory() -> Callable[..., Any]:
 
     `__init__` maliyetini ve dış bağımlılıklarını devre dışı bırakırken testlerin
     ortak başlangıç durumunu tek noktada toplar.
+
+    TODO(technical-debt): Bu fixture, üretimdeki başlatma kontratından kopmayı
+    engellemek için `SidarAgent.__new__` yaklaşımından çıkarılıp
+    `SidarAgent(mock_config)` ile normal inisyalizasyona taşınmalıdır.
     """
 
     def _create_agent(**overrides: Any) -> Any:
+        # NOTE: Bilinçli bypass; yukarıdaki TODO kapsamında kaldırılmalı.
         agent = sidar_agent_module.SidarAgent.__new__(sidar_agent_module.SidarAgent)
         agent.cfg = overrides.pop("cfg", MagicMock())
         agent.code = overrides.pop("code", MagicMock())
