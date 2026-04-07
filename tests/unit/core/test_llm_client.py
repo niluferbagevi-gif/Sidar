@@ -14,26 +14,15 @@ import httpx
 import pytest
 
 import core.llm_client as llm_client
+from tests.conftest import FakeAsyncClient as _FakeAsyncClient
+from tests.conftest import FakeRedis as _FakeRedis
+from tests.conftest import FakeResponse as _FakeResponse
+from tests.conftest import FakeStreamCM as _FakeStreamCM
+from tests.conftest import make_test_config as _make_config
 
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def _make_config(**overrides):
-    base = {
-        "LLM_MAX_RETRIES": 2,
-        "LLM_RETRY_BASE_DELAY": 0.01,
-        "LLM_RETRY_MAX_DELAY": 0.02,
-        "ENABLE_SEMANTIC_CACHE": True,
-        "SEMANTIC_CACHE_THRESHOLD": 0.9,
-        "SEMANTIC_CACHE_TTL": 60,
-        "SEMANTIC_CACHE_MAX_ITEMS": 2,
-        "REDIS_URL": "redis://localhost:6379/0",
-        "REDIS_MAX_CONNECTIONS": 5,
-    }
-    base.update(overrides)
-    return SimpleNamespace(**base)
 
 
 @pytest.mark.parametrize(
@@ -114,7 +103,7 @@ def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
     monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
     monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
@@ -127,17 +116,17 @@ async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.Monke
             raise err
         return "done"
 
-    result = await llm_client._retry_with_backoff("openai", op, config=_make_config(), retry_hint="retry")
+    result = await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
     assert result == "done"
     assert state["n"] == 2
 
 
-def test_retry_with_backoff_raises_llm_api_error() -> None:
+def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
     async def op():
         raise ValueError("fatal")
 
     with pytest.raises(llm_client.LLMAPIError) as exc:
-        _run(llm_client._retry_with_backoff("openai", op, config=_make_config(), retry_hint="retry"))
+        _run(llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry"))
 
     assert exc.value.provider == "openai"
     assert exc.value.retryable is False
@@ -172,72 +161,16 @@ def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.MonkeyPatch
     assert events[0]["latency_ms"] == pytest.approx(1500.0)
 
 
-def test_semantic_cache_cosine_similarity() -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+def test_semantic_cache_cosine_similarity(mock_config) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert manager._cosine_similarity([], [1.0]) == 0.0
 
 
-class _FakeRedis:
-    def __init__(self):
-        self.hashes: dict[str, dict[str, str]] = {}
-        self.index: list[str] = []
-
-    async def lrange(self, _key: str, _start: int, _end: int):
-        return list(self.index)
-
-    async def hgetall(self, key: str):
-        return self.hashes.get(key, {})
-
-    async def llen(self, _key: str):
-        return len(self.index)
-
-    def pipeline(self, transaction: bool = True):
-        return _FakePipe(self)
-
-
-class _FakePipe:
-    def __init__(self, redis: _FakeRedis):
-        self.redis = redis
-        self.ops = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return False
-
-    def hset(self, key: str, mapping: dict[str, str]):
-        self.ops.append(("hset", key, mapping))
-
-    def expire(self, key: str, ttl: int):
-        self.ops.append(("expire", key, ttl))
-
-    def lrem(self, _index_key: str, _count: int, key: str):
-        self.ops.append(("lrem", key))
-
-    def lpush(self, _index_key: str, key: str):
-        self.ops.append(("lpush", key))
-
-    def ltrim(self, _index_key: str, _start: int, end: int):
-        self.ops.append(("ltrim", end))
-
-    async def execute(self):
-        for op in self.ops:
-            if op[0] == "hset":
-                self.redis.hashes[op[1]] = op[2]
-            elif op[0] == "lrem":
-                self.redis.index = [k for k in self.redis.index if k != op[1]]
-            elif op[0] == "lpush":
-                self.redis.index.insert(0, op[1])
-            elif op[0] == "ltrim":
-                self.redis.index = self.redis.index[: op[1] + 1]
-
-
-def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
-    fake = _FakeRedis()
+def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
+    fake = fake_redis
     fake.index = ["k1"]
     fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
 
@@ -250,14 +183,14 @@ def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _run(manager.get("hello")) == "cached"
 
 
-def test_semantic_cache_get_returns_none_without_prompt() -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
     assert _run(manager.get("")) is None
 
 
-def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
-    fake = _FakeRedis()
+def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+    fake = fake_redis
     fake.index = ["k1"]
     fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
     misses = {"n": 0}
@@ -272,9 +205,9 @@ def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch) -> Non
     assert misses["n"] == 1
 
 
-def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
-    fake = _FakeRedis()
+def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
+    fake = fake_redis
     fake.index = ["old1", "old2"]
 
     async def _get_redis():
@@ -292,8 +225,8 @@ def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch) -> Non
     assert counters["eviction"] == 1
 
 
-def test_semantic_cache_set_skips_without_response() -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+def test_semantic_cache_set_skips_without_response(mock_config) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
     assert _run(manager.set("prompt", "")) is None
 
 
@@ -378,74 +311,15 @@ def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
     assert span.ended is True
 
 
-class _FakeResponse:
-    def __init__(self, *, payload=None, lines=None, bytes_chunks=None, status_ok=True):
-        self._payload = payload or {}
-        self._lines = lines or []
-        self._bytes_chunks = bytes_chunks or []
-        self._status_ok = status_ok
-
-    def raise_for_status(self):
-        if not self._status_ok:
-            err = Exception("http")
-            setattr(err, "status_code", 500)
-            raise err
-
-    def json(self):
-        return self._payload
-
-    async def aiter_lines(self):
-        for line in self._lines:
-            yield line
-
-    async def aiter_bytes(self):
-        for chunk in self._bytes_chunks:
-            yield chunk
-
-
-class _FakeStreamCM:
-    def __init__(self, response):
-        self._response = response
-
-    async def __aenter__(self):
-        return self._response
-
-    async def __aexit__(self, *_exc):
-        return False
-
-
-class _FakeAsyncClient:
-    def __init__(self, *args, **kwargs):
-        self._post_response = kwargs.pop("_post_response", None)
-        self._get_response = kwargs.pop("_get_response", None)
-        self._stream_response = kwargs.pop("_stream_response", None)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return False
-
-    async def post(self, *_args, **_kwargs):
-        return self._post_response or _FakeResponse(payload={})
-
-    async def get(self, *_args, **_kwargs):
-        return self._get_response or _FakeResponse(payload={})
-
-    def stream(self, *_args, **_kwargs):
-        return _FakeStreamCM(self._stream_response or _FakeResponse())
-
-    async def aclose(self):
-        return None
-
-
-def test_ollama_client_chat_non_stream_and_stream(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
+def test_ollama_client_chat_non_stream_and_stream(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+    cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
     client = llm_client.OllamaClient(cfg)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
-    class _AC(_FakeAsyncClient):
+    class _AC(fake_async_client_cls):
         async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
+            return fake_response_cls(payload={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     out = _run(client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True))
@@ -463,14 +337,17 @@ async def _collect(gen):
     return [x async for x in gen]
 
 
-def test_ollama_stream_response_parses_and_handles_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _make_config()
+def test_ollama_stream_response_parses_and_handles_error(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+    cfg = mock_config()
     client = llm_client.OllamaClient(cfg)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
-    class _AC(_FakeAsyncClient):
+    class _AC(fake_async_client_cls):
         def stream(self, *_a, **_kw):
             lines = b'{"message":{"content":"A"}}\ninvalid\n{"message":{"content":"B"}}'
-            return _FakeStreamCM(_FakeResponse(bytes_chunks=[lines]))
+            return fake_stream_cm_cls(fake_response_cls(bytes_chunks=[lines]))
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     chunks = _run(_collect(client._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))))
@@ -484,12 +361,14 @@ def test_ollama_stream_response_parses_and_handles_error(monkeypatch: pytest.Mon
     assert "HATA" in fallback[0]
 
 
-def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = llm_client.OllamaClient(_make_config())
+def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+    client = llm_client.OllamaClient(mock_config())
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
-    class _AC(_FakeAsyncClient):
+    class _AC(fake_async_client_cls):
         async def get(self, *_a, **_kw):
-            return _FakeResponse(payload={"models": [{"name": "m1"}]})
+            return fake_response_cls(payload={"models": [{"name": "m1"}]})
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     assert _run(client.list_models()) == ["m1"]
@@ -538,31 +417,36 @@ async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
     assert chunks == ["A"]
 
 
-def test_litellm_candidate_and_chat(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _make_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
+def test_litellm_candidate_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+    cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)
     assert c._candidate_models(None) == ["m"]
     assert "LITELLM_GATEWAY_URL" in _run(c.chat([{"role": "user", "content": "x"}], stream=False))
 
-    cfg2 = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
+    cfg2 = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c2 = llm_client.LiteLLMClient(cfg2)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
-    class _AC(_FakeAsyncClient):
+    class _AC(fake_async_client_cls):
         async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
+            return fake_response_cls(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     out = _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
     assert out == "ok"
 
 
-def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
+def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+    cfg = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c = llm_client.LiteLLMClient(cfg)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
-    class _AC(_FakeAsyncClient):
+    class _AC(fake_async_client_cls):
         def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(lines=["data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}", "data: [DONE]"]))
+            return fake_stream_cm_cls(fake_response_cls(lines=["data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}", "data: [DONE]"]))
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     got = _run(_collect(c._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)))
@@ -576,8 +460,8 @@ def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "LiteLLM" in got2[0]
 
 
-def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _make_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
+def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
     msg = _run(c.chat([{"role": "user", "content": "x"}], stream=False))
     assert "Gemini istemcisi kurulu" in msg or "GEMINI_API_KEY" in msg
@@ -603,15 +487,15 @@ def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
     monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
     monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
-    cfg2 = _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
+    cfg2 = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c2 = llm_client.GeminiClient(cfg2)
     assert _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)) == "hello"
     stream = _run(c2.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False))
     assert _run(_collect(stream)) == ["A"]
 
 
-def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch) -> None:
-    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY=""))
+def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    c = llm_client.AnthropicClient(mock_config(ANTHROPIC_API_KEY=""))
     assert "ANTHROPIC_API_KEY" in _run(c.chat([{"role": "user", "content": "x"}], stream=False))
     system, convo = c._split_system_and_messages([{"role": "system", "content": "s"}, {"role": "user", "content": "u"}])
     assert system == "s"
@@ -647,7 +531,7 @@ def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch) -> None:
 
     mod = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
     monkeypatch.setitem(sys.modules, "anthropic", mod)
-    cfg = _make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
+    cfg = mock_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
     c2 = llm_client.AnthropicClient(cfg)
     assert _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)) == "ok"
     s = _run(c2.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False))
