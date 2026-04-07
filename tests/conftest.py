@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import fakeredis
 import fakeredis.aioredis
@@ -57,7 +57,15 @@ def make_test_config(**overrides):
         "REDIS_MAX_CONNECTIONS": 5,
     }
     base.update(overrides)
-    return SimpleNamespace(**base)
+
+    mock_cfg = MagicMock()
+    for key, value in base.items():
+        setattr(mock_cfg, key, value)
+
+    mock_cfg.initialize_directories.return_value = True
+    mock_cfg.validate_critical_settings.return_value = True
+
+    return mock_cfg
 
 
 
