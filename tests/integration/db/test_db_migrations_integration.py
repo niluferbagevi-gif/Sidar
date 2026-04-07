@@ -9,8 +9,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.integration
-def test_alembic_migrations_up_and_down(tmp_path):
+def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     """Run alembic migrations end-to-end on a temporary SQLite database."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     db_path = tmp_path / "test_migration.db"
     db_url = f"sqlite:///{db_path}"
 
