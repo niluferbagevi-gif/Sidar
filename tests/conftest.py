@@ -7,7 +7,6 @@ import sys
 from unittest.mock import MagicMock
 
 import fakeredis
-import fakeredis.aioredis
 import pytest
 
 
@@ -18,13 +17,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @pytest.fixture
 def mock_config():
-    return make_test_config
+    return make_test_config()
 
 
 @pytest.fixture
 async def fake_redis():
     server = fakeredis.FakeServer()
-    redis = fakeredis.aioredis.FakeRedis(server=server, decode_responses=True)
+    redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     try:
         yield redis
     finally:
