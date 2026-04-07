@@ -34,8 +34,8 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
 
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
-    client = TestClient(web_server.app)
-    response = client.get("/healthz")
+    with TestClient(web_server.app) as client:
+        response = client.get("/healthz")
 
     assert response.status_code == 200
     payload = response.json()
