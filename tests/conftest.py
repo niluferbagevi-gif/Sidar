@@ -20,12 +20,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def mock_config():
+def mock_config() -> Callable[..., Any]:
     return make_test_config
 
 
 @pytest.fixture
-async def fake_redis():
+async def fake_redis() -> AsyncGenerator[Any, None]:
     fakeredis = pytest.importorskip("fakeredis")
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
@@ -88,7 +88,7 @@ def fake_video_stream() -> MagicMock:
 
 
 @pytest.fixture
-def agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
+def agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
     """Testler için standartlaştırılmış ajan üretim fabrikası."""
 
     def _create_agent(agent_class: type, **kwargs: Any) -> Any:
@@ -98,7 +98,7 @@ def agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
 
 
 @pytest.fixture
-def sidar_agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
+def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
     """SidarAgent için test örneği üreticisi."""
 
     def _create_agent(**overrides: Any) -> Any:
