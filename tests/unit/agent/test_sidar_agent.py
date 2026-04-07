@@ -10,6 +10,7 @@ pytestmark = pytest.mark.asyncio
 
 from agent.core.contracts import ExternalTrigger
 from managers.code_manager import CodeManager
+from core.llm_client import BaseLLMClient
 from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
@@ -464,8 +465,8 @@ async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_fact
     blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert blocked["status"] == "blocked"
 
-    agent.code = object()
-    agent.llm = object()
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
     agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
     agent._execute_self_heal_plan = AsyncMock(return_value={"status": "applied", "summary": "ok", "operations_applied": ["a.py"]})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}, {"name": "validate"}, {"name": "handoff"}]}}
@@ -1017,8 +1018,8 @@ async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_fact
 async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
-    agent.code = object()
-    agent.llm = object()
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
     agent._build_self_heal_plan = lambda **_k: _async_value({"operations": [{"path": "a.py"}]})
     agent._execute_self_heal_plan = lambda **_k: _async_value({"status": "reverted", "summary": "bad", "operations_applied": []})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}, {"name": "validate"}]}}
@@ -1253,8 +1254,8 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
 async def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
-    agent.code = object()
-    agent.llm = object()
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
     agent._build_self_heal_plan = lambda **_k: _async_value({"operations": []})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}]}}
     blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="d", remediation=remediation)
