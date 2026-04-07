@@ -1292,7 +1292,9 @@ async def basic_auth_middleware(request: Request, call_next):
 
     agent = await get_agent()
     request.state.user = user
-    await agent.memory.set_active_user(user.id, user.username)
+    set_active_user = getattr(agent.memory, "set_active_user", None)
+    if callable(set_active_user):
+        await set_active_user(user.id, user.username)
     token = set_current_metrics_user_id(user.id)
     try:
         return await call_next(request)

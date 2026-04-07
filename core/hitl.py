@@ -152,6 +152,7 @@ async def _notify(req: HITLRequest) -> None:
         })
     except Exception as exc:
         logger.warning("HITL broadcast hatası: %s", exc)
+        logging.getLogger().warning("HITL broadcast hatası: %s", exc)
 
 
 async def notify(req: HITLRequest) -> None:

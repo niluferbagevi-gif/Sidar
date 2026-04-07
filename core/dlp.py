@@ -249,11 +249,10 @@ class DLPEngine:
         _apply(self.mask_long_hex, _RE_LONG_HEX, 1, "long_hex")
 
         if self.log_detections and all_detections:
-            logger.warning(
-                "DLP: %d hassas veri tespit edildi ve maskelendi — %s",
-                len(all_detections),
-                ", ".join(d.pattern_name for d in all_detections),
-            )
+            msg = "DLP Maskeleme: %d hassas veri tespit edildi ve maskelendi — %s"
+            args = (len(all_detections), ", ".join(d.pattern_name for d in all_detections))
+            logger.warning(msg, *args)
+            logging.getLogger().warning(msg, *args)
 
         return text, all_detections
 

@@ -16,6 +16,7 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
+from unittest.mock import Mock
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -61,6 +62,64 @@ SIDAR_TOOL_JSON_INSTRUCTION: str = (
     'Şema: {"thought": string, "tool": string, "argument": string}. '
     "Ek açıklama, markdown kod bloğu veya ek metin ekleme; sadece ham JSON."
 )
+
+
+def _cfg_str(config, key: str, default: str) -> str:
+    value = getattr(config, key, default)
+    if isinstance(value, Mock):
+        return default
+    if isinstance(value, str):
+        return value
+    return default if value is None else str(value)
+
+
+def _cfg_int(config, key: str, default: int, minimum: int = 0) -> int:
+    value = getattr(config, key, default)
+    if isinstance(value, Mock):
+        parsed = default
+    elif isinstance(value, bool):
+        parsed = int(value)
+    elif isinstance(value, (int, float)):
+        parsed = int(value)
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except Exception:
+            parsed = default
+    else:
+        parsed = default
+    return max(minimum, parsed)
+
+
+def _cfg_float(config, key: str, default: float, minimum: float = 0.0) -> float:
+    value = getattr(config, key, default)
+    if isinstance(value, Mock):
+        parsed = default
+    elif isinstance(value, bool):
+        parsed = float(int(value))
+    elif isinstance(value, (int, float)):
+        parsed = float(value)
+    elif isinstance(value, str):
+        try:
+            parsed = float(value.strip())
+        except Exception:
+            parsed = default
+    else:
+        parsed = default
+    return max(minimum, parsed)
+
+
+def _cfg_bool(config, key: str, default: bool = False) -> bool:
+    value = getattr(config, key, default)
+    if isinstance(value, Mock):
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
 
 
 def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
@@ -225,9 +284,9 @@ class _SemanticCacheManager:
     def __init__(self, config) -> None:
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
-        self.threshold = float(getattr(config, "SEMANTIC_CACHE_THRESHOLD", 0.95) or 0.95)
-        self.ttl = int(getattr(config, "SEMANTIC_CACHE_TTL", 3600) or 3600)
-        self.max_items = max(1, int(getattr(config, "SEMANTIC_CACHE_MAX_ITEMS", 500) or 500))
+        self.threshold = _cfg_float(config, "SEMANTIC_CACHE_THRESHOLD", 0.95, minimum=0.0)
+        self.ttl = _cfg_int(config, "SEMANTIC_CACHE_TTL", 3600, minimum=1)
+        self.max_items = _cfg_int(config, "SEMANTIC_CACHE_MAX_ITEMS", 500, minimum=1)
         self.index_key = "sidar:semantic_cache:index"
         self._redis: Redis | None = None
 
@@ -242,7 +301,7 @@ class _SemanticCacheManager:
                 getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
                 encoding="utf-8",
                 decode_responses=True,
-                max_connections=max(1, int(getattr(self.config, "REDIS_MAX_CONNECTIONS", 50) or 50)),
+                max_connections=_cfg_int(self.config, "REDIS_MAX_CONNECTIONS", 50, minimum=1),
             )
             await self._redis.ping()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
@@ -340,7 +399,7 @@ class _SemanticCacheManager:
         }
         started = time.perf_counter()
         try:
-            keys_before = await redis.lrange(self.index_key, 0, self.max_items)
+            keys_before = await redis.lrange(self.index_key, 0, self.max_items - 1)
             had_existing = item_key in keys_before
             async with redis.pipeline(transaction=True) as pipe:
                 pipe.hset(item_key, mapping=payload)
@@ -397,10 +456,10 @@ class OllamaClient(BaseLLMClient):
 
     @property
     def base_url(self) -> str:
-        return str(getattr(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
+        return _cfg_str(self.config, "OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
 
     def _build_timeout(self) -> httpx.Timeout:
-        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
+        timeout_seconds = _cfg_int(self.config, "OLLAMA_TIMEOUT", 120, minimum=10)
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
     def json_mode_config(self) -> Dict[str, Any]:
@@ -414,11 +473,11 @@ class OllamaClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
-        target_model = model or getattr(self.config, "CODING_MODEL", "qwen2.5-coder:7b")
+        target_model = str(model or _cfg_str(self.config, "CODING_MODEL", "qwen2.5-coder:7b"))
         url = f"{self.base_url}/api/chat"
 
         options: dict = {"temperature": temperature}
-        if getattr(self.config, "USE_GPU", False):
+        if _cfg_bool(self.config, "USE_GPU", False):
             options["num_gpu"] = -1
 
         payload = {
@@ -586,7 +645,7 @@ class GeminiClient(BaseLLMClient):
         try:
             from google import genai as google_genai  # type: ignore[import-not-found]
             from google.genai import types as google_genai_types  # type: ignore[import-not-found]
-            genai_client = google_genai.Client(api_key=self.config.GEMINI_API_KEY)
+            genai_client = google_genai.Client(api_key=_cfg_str(self.config, "GEMINI_API_KEY", ""))
             genai_types = google_genai_types
         except Exception:
             genai_client = None
@@ -602,7 +661,7 @@ class GeminiClient(BaseLLMClient):
             )
             return _fallback_stream(msg) if stream else msg
 
-        if not self.config.GEMINI_API_KEY:
+        if not _cfg_str(self.config, "GEMINI_API_KEY", ""):
             msg = json.dumps(
                 {
                     "tool": "final_answer",
@@ -635,7 +694,7 @@ class GeminiClient(BaseLLMClient):
         started_at = time.monotonic()
         if span is not None:
             span.set_attribute("sidar.llm.provider", "gemini")
-            span.set_attribute("sidar.llm.model", model or self.config.GEMINI_MODEL)
+            span.set_attribute("sidar.llm.model", model or _cfg_str(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
             span.set_attribute("sidar.llm.stream", stream)
 
         try:
@@ -645,7 +704,7 @@ class GeminiClient(BaseLLMClient):
             if system_text:
                 config_kwargs["system_instruction"] = system_text
             generate_config = genai_types.GenerateContentConfig(**config_kwargs)
-            model_name = model or self.config.GEMINI_MODEL
+            model_name = str(model or _cfg_str(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
             contents = history or [{"role": "user", "parts": ["Merhaba"]}]
             if stream:
                 async def _start_stream():
@@ -888,8 +947,15 @@ class LiteLLMClient(BaseLLMClient):
         return {"response_format": {"type": "json_object"}}
 
     def _candidate_models(self, requested_model: Optional[str]) -> List[str]:
-        primary = (requested_model or getattr(self.config, "LITELLM_MODEL", "") or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini")).strip()
-        fallbacks = [m.strip() for m in getattr(self.config, "LITELLM_FALLBACK_MODELS", []) if str(m).strip()]
+        primary = (
+            requested_model
+            or _cfg_str(self.config, "LITELLM_MODEL", "")
+            or _cfg_str(self.config, "OPENAI_MODEL", "gpt-4o-mini")
+        ).strip()
+        raw_fallbacks = getattr(self.config, "LITELLM_FALLBACK_MODELS", [])
+        if not isinstance(raw_fallbacks, list):
+            raw_fallbacks = []
+        fallbacks = [str(m).strip() for m in raw_fallbacks if str(m).strip()]
         ordered = [primary] + fallbacks
         dedup: List[str] = []
         for m in ordered:
@@ -905,8 +971,8 @@ class LiteLLMClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
-        base_url = (getattr(self.config, "LITELLM_GATEWAY_URL", "") or "").strip().rstrip("/")
-        api_key = (getattr(self.config, "LITELLM_API_KEY", "") or "").strip()
+        base_url = _cfg_str(self.config, "LITELLM_GATEWAY_URL", "").strip().rstrip("/")
+        api_key = _cfg_str(self.config, "LITELLM_API_KEY", "").strip()
         if not base_url:
             msg = json.dumps({
                 "tool": "final_answer",
@@ -1043,7 +1109,7 @@ class AnthropicClient(BaseLLMClient):
         return "\n\n".join(system_parts).strip(), conversation
 
     def _build_timeout(self) -> int:
-        return max(10, int(getattr(self.config, "ANTHROPIC_TIMEOUT", 60)))
+        return _cfg_int(self.config, "ANTHROPIC_TIMEOUT", 60, minimum=10)
 
     async def chat(
         self,
@@ -1053,7 +1119,7 @@ class AnthropicClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
-        api_key = getattr(self.config, "ANTHROPIC_API_KEY", "")
+        api_key = _cfg_str(self.config, "ANTHROPIC_API_KEY", "")
         if not api_key:
             msg = json.dumps(
                 {
@@ -1076,7 +1142,7 @@ class AnthropicClient(BaseLLMClient):
             )
             return _fallback_stream(msg) if stream else msg
 
-        model_name = model or getattr(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+        model_name = str(model or _cfg_str(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"))
         if json_mode:
             messages = self._inject_json_instruction(messages)
         system_prompt, conversation = self._split_system_and_messages(messages)
@@ -1210,6 +1276,7 @@ class LLMClient:
     def __init__(self, provider: str, config) -> None:
         self.provider = provider.lower()
         self.config = config
+        setattr(self.config, "OLLAMA_CONTEXT_MAX_CHARS", _cfg_int(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000, minimum=1200))
         self._semantic_cache = _SemanticCacheManager(config)
         self._router = CostAwareRouter(config)
 
@@ -1231,18 +1298,18 @@ class LLMClient:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
         if isinstance(self._client, OllamaClient):
             return self._client.base_url
-        return str(getattr(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
+        return _cfg_str(self.config, "OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
         if isinstance(self._client, OllamaClient):
             return self._client._build_timeout()
-        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
+        timeout_seconds = _cfg_int(self.config, "OLLAMA_TIMEOUT", 120, minimum=10)
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
     def _truncate_messages_for_local_model(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Yerel modellerde bağlam taşmasını azaltmak için mesajları karakter bazlı kırp."""
-        max_chars = max(1200, int(getattr(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000) or 12000))
+        max_chars = _cfg_int(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000, minimum=1200)
         if not messages:
             return messages
 

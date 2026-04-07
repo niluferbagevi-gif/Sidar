@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @pytest.fixture
 def mock_config():
-    return make_test_config()
+    return make_test_config
 
 
 @pytest.fixture

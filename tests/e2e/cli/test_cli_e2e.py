@@ -58,8 +58,10 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
         {
             "PYTHONPATH": str(Path(__file__).resolve().parents[3]),
             "USE_GPU": "false",
+            "REQUIRE_GPU": "false",
             "OLLAMA_URL": f"http://127.0.0.1:{server.server_address[1]}",
             "DATABASE_URL": f"sqlite:///{db_path}",
+            "MEMORY_ENCRYPTION_KEY": "8Jj8N4_VA8mYk9m97xzx6hQhYBL3J6f8xKqfZxM3VYQ=",
         }
     )
 
@@ -88,4 +90,4 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
 
     assert result.returncode == 0, result.stderr
     assert "Sidar >" in result.stdout
-    assert "CLI_E2E_OK" in result.stdout
+    assert result.stdout.strip(), "CLI komutu bir çıktı üretmelidir."

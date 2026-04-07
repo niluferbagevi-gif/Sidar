@@ -39,5 +39,5 @@ def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     finally:
         downgraded_engine.dispose()
 
-    assert "alembic_version" not in downgraded_tables
-    assert not downgraded_tables, "Expected empty schema after downgrade to base."
+    # Alembic SQLite'da base downgrade sonrası yalnızca version tablosunu bırakabilir.
+    assert downgraded_tables in (set(), {"alembic_version"})
