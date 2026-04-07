@@ -10,14 +10,18 @@ pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
 
-def test_format_table_handles_small_dataset_quickly(benchmark) -> None:
+def test_format_table_handles_large_dataset_quickly(benchmark) -> None:
     rows = [
-        FileCoverage(path="core/rag.py", covered=10, missed=2),
-        FileCoverage(path="core/db.py", covered=20, missed=1),
-        FileCoverage(path="agent/registry.py", covered=30, missed=3),
+        FileCoverage(
+            path=f"module_{index // 100}/file_{index:05d}.py",
+            covered=(index % 120) + 1,
+            missed=index % 7,
+        )
+        for index in range(10_000)
     ]
 
     output = benchmark(format_table, rows)
 
     assert "| File | Coverage | Missed | Covered |" in output
-    assert "core/rag.py" in output
+    assert "module_0/file_00000.py" in output
+    assert "module_99/file_09999.py" in output
