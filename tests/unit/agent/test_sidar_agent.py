@@ -522,9 +522,11 @@ async def test_run_nightly_memory_maintenance_skipped_paths(sidar_agent_factory,
     lock = asyncio.Lock()
     await lock.acquire()
     agent._nightly_maintenance_lock = lock
-    running = await agent.run_nightly_memory_maintenance(force=True)
-    assert running["reason"] == "already_running"
-    lock.release()
+    try:
+        running = await agent.run_nightly_memory_maintenance(force=True)
+        assert running["reason"] == "already_running"
+    finally:
+        lock.release()
 
 
 async def test_get_autonomy_activity_counts(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
