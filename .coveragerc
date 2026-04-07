@@ -9,20 +9,15 @@ source =
     main.py
     web_server.py
 omit =
-    tests/*
-    tests/sidar_plugin_*
-    */tests/sidar_plugin_*
     */plug_auto_discover*
     */plug_bad_compile*
     conftest.py
     migrations/*
     scripts/*
     temp/*
-    web_ui_react/*
     */third_party/*
     */templates/*
     *:Zone.Identifier
-    docs/*
     */__pycache__/*
     */site-packages/*
     .venv/*
@@ -52,7 +47,6 @@ exclude_lines =
     @abstractproperty
     if 0:
     if False:
-    pass
 
 [html]
 directory = htmlcov
