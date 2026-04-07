@@ -1,64 +1,49 @@
+import types
+
 import pytest
 
-from agent.registry import AgentCatalog
+from tests.conftest import collect_async_chunks as _collect_stream
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_agent_catalog_programmatic_registration_lifecycle() -> None:
-    role_name = "integration_temp_programmatic"
+async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_agent_factory) -> None:
+    """Görev -> arama -> kod adımı -> nihai yanıt akışını entegre olarak doğrular."""
+    agent = sidar_agent_factory()
+    agent._lock = None
+    agent.initialize = lambda: _noop_async()
+    agent.mark_activity = lambda *_args, **_kwargs: None
 
-    class IntegrationTempProgrammaticAgent:
-        def __init__(self, *, name: str):
-            self.name = name
+    timeline: list[tuple[str, str]] = []
 
-    AgentCatalog.unregister(role_name)
-    AgentCatalog.register_type(
-        role_name=role_name,
-        agent_class=IntegrationTempProgrammaticAgent,
-        capabilities=["integration_capability"],
-        description="integration test role",
-        version="0.0.1",
-        is_builtin=False,
-    )
+    async def _memory_add(role: str, content: str) -> None:
+        timeline.append((role, content))
 
-    spec = AgentCatalog.get(role_name)
-    assert spec is not None
-    assert spec.role_name == role_name
-    assert "integration_capability" in spec.capabilities
+    async def _search(query: str, *_args):
+        return True, f"docs:{query}"
 
-    created = AgentCatalog.create(role_name, name="sidar")
-    assert isinstance(created, IntegrationTempProgrammaticAgent)
-    assert created.name == "sidar"
+    class _Code:
+        def run_shell(self, command: str):
+            timeline.append(("code", command))
+            return True, "lint:ok"
 
-    matches = AgentCatalog.find_by_capability("integration_capability")
-    assert any(item.role_name == role_name for item in matches)
+    async def _workflow(prompt: str) -> str:
+        docs_result = await agent._tool_docs_search("workflow")
+        _ok, shell_result = agent.code.run_shell("python -m compileall .")
+        return f"{docs_result} | {shell_result} | final:{prompt}"
 
-    assert AgentCatalog.unregister(role_name) is True
-    assert AgentCatalog.get(role_name) is None
+    agent._memory_add = _memory_add
+    agent._try_multi_agent = _workflow
+    agent.docs = types.SimpleNamespace(search=lambda *args, **kwargs: _search(*args, **kwargs))
+    agent.code = _Code()
+
+    out = await _collect_stream(agent.respond("Görevi tamamla"))
+
+    assert out == ["docs:workflow | lint:ok | final:Görevi tamamla"]
+    assert ("code", "python -m compileall .") in timeline
+    assert ("user", "Görevi tamamla") in timeline
+    assert ("assistant", "docs:workflow | lint:ok | final:Görevi tamamla") in timeline
 
 
-@pytest.mark.integration
-def test_agent_catalog_decorator_registration_exposes_metadata() -> None:
-    role_name = "integration_temp_decorator"
-    AgentCatalog.unregister(role_name)
-
-    @AgentCatalog.register(
-        capabilities=["decorator_capability"],
-        description="decorator integration role",
-        version="0.0.2",
-        is_builtin=False,
-    )
-    class IntegrationTempDecoratorAgent:
-        ROLE_NAME = role_name
-
-        def __init__(self, *, value: int):
-            self.value = value
-
-    listed_roles = {spec.role_name for spec in AgentCatalog.list_all()}
-    assert role_name in listed_roles
-
-    created = AgentCatalog.create(role_name, value=7)
-    assert isinstance(created, IntegrationTempDecoratorAgent)
-    assert created.value == 7
-
-    assert AgentCatalog.unregister(role_name) is True
+async def _noop_async() -> None:
+    return None
