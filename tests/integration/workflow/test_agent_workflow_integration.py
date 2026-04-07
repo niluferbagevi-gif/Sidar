@@ -1,6 +1,7 @@
 import types
 
 import pytest
+from unittest.mock import AsyncMock
 
 from tests.helpers import collect_async_chunks as _collect_stream
 
@@ -11,7 +12,7 @@ async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_ag
     """Görev -> arama -> kod adımı -> nihai yanıt akışını entegre olarak doğrular."""
     agent = sidar_agent_factory()
     agent._lock = None
-    agent.initialize = lambda: _noop_async()
+    agent.initialize = AsyncMock()
     agent.mark_activity = lambda *_args, **_kwargs: None
 
     timeline: list[tuple[str, str]] = []
@@ -44,6 +45,3 @@ async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_ag
     assert ("user", "Görevi tamamla") in timeline
     assert ("assistant", "docs:workflow | lint:ok | final:Görevi tamamla") in timeline
 
-
-async def _noop_async() -> None:
-    return None
