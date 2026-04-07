@@ -30,11 +30,10 @@ async def fake_redis():
     try:
         yield redis
     finally:
-        close = getattr(redis, "aclose", None) or getattr(redis, "close", None)
-        if callable(close):
-            maybe = close()
-            if hasattr(maybe, "__await__"):
-                await maybe
+        if hasattr(redis, "aclose"):
+            await redis.aclose()
+        else:
+            await redis.close()
 
 
 @pytest.fixture
