@@ -1,49 +1,32 @@
-import importlib.util
 import asyncio
+import importlib
 import sys
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
 
-def _load_coder_agent_module():
+
+@pytest.fixture
+def coder_module(monkeypatch: pytest.MonkeyPatch):
     module_name = "agent.roles.coder_agent"
-    existing_module = sys.modules.get(module_name)
-    if existing_module is not None and all(
-        hasattr(existing_module, attr)
-        for attr in ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
-    ):
-        return existing_module
+    monkeypatch.setitem(sys.modules, "httpx", ModuleType("httpx"))
 
-    # Bazı testler bu modül adına stub yerleştirebildiği için gerçek dosyayı
-    # zorunlu olarak yeniden yükleyelim.
-    sys.modules.pop(module_name, None)
+    redis_module = ModuleType("redis")
+    redis_asyncio = ModuleType("redis.asyncio")
+    redis_exceptions = ModuleType("redis.exceptions")
+    redis_asyncio.Redis = object
+    redis_exceptions.ResponseError = Exception
+    redis_module.asyncio = redis_asyncio
+    redis_module.exceptions = redis_exceptions
+    monkeypatch.setitem(sys.modules, "redis", redis_module)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", redis_asyncio)
+    monkeypatch.setitem(sys.modules, "redis.exceptions", redis_exceptions)
 
-    if "httpx" not in sys.modules:
-        sys.modules["httpx"] = ModuleType("httpx")
-
-    if "redis" not in sys.modules:
-        redis_module = ModuleType("redis")
-        redis_asyncio = ModuleType("redis.asyncio")
-        redis_exceptions = ModuleType("redis.exceptions")
-        redis_asyncio.Redis = object
-        redis_exceptions.ResponseError = Exception
-        redis_module.asyncio = redis_asyncio
-        redis_module.exceptions = redis_exceptions
-        sys.modules["redis"] = redis_module
-        sys.modules["redis.asyncio"] = redis_asyncio
-        sys.modules["redis.exceptions"] = redis_exceptions
-
-    module_path = Path("agent/roles/coder_agent.py")
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
+    module = importlib.import_module(module_name)
+    required_attrs = ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
+    if not all(hasattr(module, attr) for attr in required_attrs):
+        module = importlib.reload(module)
     return module
-
-
-coder_module = _load_coder_agent_module()
-CoderAgent = coder_module.CoderAgent
 
 
 class DummyEvents:
@@ -109,7 +92,8 @@ class DummyTodoManager:
         return f"todos:{directory}"
 
 
-def test_init_registers_tools(monkeypatch, tmp_path):
+def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
+    CoderAgent = coder_module.CoderAgent
     def fake_base_init(self, cfg=None, *, role_name="base"):
         self.cfg = cfg
         self.role_name = role_name
@@ -149,7 +133,8 @@ def test_init_registers_tools(monkeypatch, tmp_path):
     }
 
 
-def test_parse_qa_feedback_variants(monkeypatch):
+def test_parse_qa_feedback_variants(monkeypatch, coder_module):
+    CoderAgent = coder_module.CoderAgent
     assert CoderAgent._parse_qa_feedback("") == {}
     assert CoderAgent._parse_qa_feedback(' {"decision":"approve"} ') == {"decision": "approve"}
 
@@ -176,8 +161,8 @@ def test_parse_qa_feedback_variants(monkeypatch):
     assert "note without equals" not in parsed_with_noise
 
 
-async def _new_runtime_agent():
-    agent = CoderAgent.__new__(CoderAgent)
+async def _new_runtime_agent(coder_agent_class):
+    agent = coder_agent_class.__new__(coder_agent_class)
     agent.cfg = SimpleNamespace(BASE_DIR="/tmp/base")
     agent.events = DummyEvents()
     agent.code = DummyCodeManager()
@@ -187,8 +172,8 @@ async def _new_runtime_agent():
     return agent
 
 
-def test_tool_methods_are_routed_correctly():
-    agent = asyncio.run(_new_runtime_agent())
+def test_tool_methods_are_routed_correctly(coder_module):
+    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
 
     assert asyncio.run(agent._tool_read_file("a.py")) == "read:a.py"
     assert "Kullanım" in asyncio.run(agent._tool_write_file("only-path"))
@@ -213,8 +198,8 @@ def test_tool_methods_are_routed_correctly():
     assert asyncio.run(agent._tool_scan_project_todos("src")) == "todos:src"
 
 
-def test_run_task_paths(monkeypatch):
-    agent = asyncio.run(_new_runtime_agent())
+def test_run_task_paths(monkeypatch, coder_module):
+    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
 
     async def fake_call_tool(name, arg):
         return f"tool:{name}:{arg}"

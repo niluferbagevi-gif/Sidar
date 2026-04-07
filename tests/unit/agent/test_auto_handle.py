@@ -26,8 +26,8 @@ def _load_auto_handle(monkeypatch: pytest.MonkeyPatch):
         setattr(mod, class_name, Dummy)
         monkeypatch.setitem(sys.modules, module_name, mod)
 
-    sys.modules.pop("agent.auto_handle", None)
-    return importlib.import_module("agent.auto_handle")
+    module = importlib.import_module("agent.auto_handle")
+    return importlib.reload(module)
 
 
 class FakeMemory:
