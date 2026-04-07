@@ -304,7 +304,7 @@ def test_handle_external_trigger_success_and_failure(monkeypatch: pytest.MonkeyP
     result = asyncio.run(agent.handle_external_trigger({"trigger_id": "tr-1", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
     assert result["status"] == "success"
     assert records and records[0]["summary"] == "summary"
-    agent._memory_add.assert_any_await("user", "PROMPT")
+    agent._memory_add.assert_any_await("user", "[AUTONOMY_TRIGGER] PROMPT")
     agent._memory_add.assert_any_await("assistant", "summary")
 
     agent._try_multi_agent = AsyncMock(side_effect=RuntimeError("x"))
