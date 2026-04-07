@@ -63,6 +63,15 @@ async def test_fallback_action_feedback_uses_related_ids_for_correlation(sidar_a
     assert "summary=Ticket opened" in prompt
 
 
+async def test_init_accepts_config_alias_and_prefers_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = Mock(name="cfg")
+    cfg_alias = Mock(name="config_alias")
+
+    agent = sidar_agent.SidarAgent(cfg=cfg, config=cfg_alias)
+
+    assert agent.cfg is cfg_alias
+
+
 @pytest.mark.parametrize(
     ("raw", "expected_tool", "expected_argument"),
     [

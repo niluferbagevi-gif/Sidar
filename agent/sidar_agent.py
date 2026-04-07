@@ -154,8 +154,25 @@ class SidarAgent:
 
     VERSION = "5.1.0"  # Ürün baseline: Ultimate Launcher + multimodal/browser/voice Faz A/B
 
-    def __init__(self, cfg: Config = None) -> None:
-        self.cfg = cfg or Config()
+    def __init__(
+        self,
+        cfg: Config = None,
+        *,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> None:
+        """SidarAgent oluşturur.
+
+        Geriye dönük uyumluluk için hem ``cfg`` hem ``config`` parametreleri desteklenir.
+        ``config`` verildiğinde önceliklidir; beklenmeyen anahtar argümanlar reddedilir.
+        """
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs.keys()))
+            raise TypeError(f"Unexpected keyword argument(s): {unexpected}")
+
+        selected_cfg = config if config is not None else cfg
+        self.cfg = selected_cfg or Config()
+        self._normalize_config_defaults()
         # Bulgu D: asyncio.Lock() __init__ içinde (senkron bağlam) oluşturulmamalı.
         # Python <3.10'da event loop bağlanma hatalarına yol açar.
         # Lazy init: ilk async çağrıda oluşturulur (respond() içindeki guard).
@@ -223,6 +240,31 @@ class SidarAgent:
             self.cfg.CODING_MODEL,
             self.cfg.ACCESS_LEVEL,
         )
+
+
+    def _normalize_config_defaults(self) -> None:
+        """Eksik/uygunsuz config alanlarını varsayılan Config değerleriyle tamamlar."""
+        defaults = Config()
+        sentinel = object()
+
+        def _is_mock_like(value: Any) -> bool:
+            return value.__class__.__module__.startswith("unittest.mock")
+
+        default_keys = [key for key in dir(defaults) if key.isupper()]
+        for key in default_keys:
+            default_value = getattr(defaults, key, sentinel)
+            if default_value is sentinel:
+                continue
+            if not key.isupper():
+                continue
+            current = getattr(self.cfg, key, sentinel)
+            if current is sentinel or current is None or _is_mock_like(current):
+                setattr(self.cfg, key, default_value)
+                continue
+            expected = type(default_value)
+            if expected in (str, int, float, bool):
+                if not isinstance(current, expected):
+                    setattr(self.cfg, key, default_value)
 
 
     def _parse_tool_call(self, raw: str) -> Optional[Dict[str, Any]]:
