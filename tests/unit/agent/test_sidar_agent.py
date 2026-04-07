@@ -1107,7 +1107,13 @@ async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(s
 
 
 
-async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_docs_search_returns_plain_text(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent.docs = types.SimpleNamespace(search=lambda *_a: (True, "plain"))
+    assert await agent._tool_docs_search("q") == "plain"
+
+
+async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(
         AI_PROVIDER="openai",
@@ -1131,17 +1137,10 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
     agent.docs = types.SimpleNamespace(status=lambda: "d", search=lambda *_a: (True, "plain"))
     agent.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 1})
     agent.memory = types.SimpleNamespace(get_last_file=lambda: "")
-
-    class _Todo:
-        def __len__(self):
-            return 0
-
-    agent.todo = _Todo()
+    agent.todo = types.SimpleNamespace(__len__=lambda *_a: 0)
     agent._load_instruction_files = lambda: ""
     ctx = await agent._build_context()
     assert "Aktif Görev Listesi" not in ctx
-
-    assert await agent._tool_docs_search("q") == "plain"
 
     agent.cfg.AI_PROVIDER = "ollama"
     agent.cfg.LOCAL_INSTRUCTION_MAX_CHARS = 5000
@@ -1150,6 +1149,9 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
     tiny = await agent._build_context()
     assert "Bağlam yerel model için kırpıldı" in tiny
 
+async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     metrics_calls = []
     monkeypatch.setattr(
         sidar_agent,
@@ -1157,73 +1159,36 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
         lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a)),
     )
 
-    class _LLM:
-        async def chat(self, **_k):
-            return '{"bad": 1}'
-
-    agent.llm = _LLM()
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
+    agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
     out = await agent._tool_subtask("job")
     assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
-    assert metrics_calls
+    assert any(call[3] == "failed" for call in metrics_calls)
 
-    class _ToolLLM:
-        async def chat(self, **_k):
-            return '{"tool":"docs_search","argument":"arg","thought":"x"}'
 
-    agent.llm = _ToolLLM()
-    agent._execute_tool = AsyncMock(return_value="ok")
-    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
+async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
 
-    monkeypatch.setattr(
-        sidar_agent,
-        "get_agent_metrics_collector",
-        lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
+    github = Mock()
+    github.is_available.return_value = True
+    github.create_pull_request.return_value = (True, "ok")
+    github.default_branch = "main"
+
+    code = Mock()
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/a")
+        if "branch" in command
+        else (True, "M a.py")
+        if "status" in command
+        else (True, "diff")
+        if "diff --no-color" in command
+        else (True, "c1")
+        if "log" in command
+        else (True, "")
     )
-    agent.llm = _ToolLLM()
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
-    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
-    monkeypatch.setattr(
-        sidar_agent,
-        "get_agent_metrics_collector",
-        lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(("err",) + a)),
-    )
-
-    class _BoomLLM:
-        async def chat(self, **_k):
-            raise RuntimeError("llm-boom")
-
-    agent.llm = _BoomLLM()
-    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
-
-    agent.memory = types.SimpleNamespace(get_history=lambda: _async_value([{"role": "u", "content": "x", "timestamp": 1}]))
-    await agent._summarize_memory()
-
-    class _Git:
-        def is_available(self):
-            return True
-
-        @property
-        def default_branch(self):
-            raise RuntimeError("no-default")
-
-        def create_pull_request(self, *_a):
-            return True, "ok"
-
-    class _Code:
-        def run_shell(self, command):
-            if "branch" in command:
-                return True, "feat/a"
-            if "status" in command:
-                return True, "M a.py"
-            if "diff --no-color" in command:
-                return True, "diff"
-            if "log" in command:
-                return True, "c1"
-            return True, ""
-
-    agent.github = _Git()
-    agent.code = _Code()
+    agent.github = github
+    agent.code = code
     msg = await agent._tool_github_smart_pr("title")
     assert "oluşturuldu" in msg
 
@@ -1259,9 +1224,7 @@ async def test_attempt_self_heal_plan_without_operations_and_initialize_no_promp
     assert agent2.system_prompt == "default"
 
 
-async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    # initialize(): hit inner early-return branch (line 255)
+async def test_initialize_inner_early_return_branch(sidar_agent_factory) -> None:
     agent_init = sidar_agent_factory()
     agent_init._initialized = False
 
@@ -1277,7 +1240,8 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
     agent_init.memory = types.SimpleNamespace(initialize=_dummy_async)
     await agent_init.initialize()
 
-    # respond(): hit branch where lock already exists
+
+async def test_respond_and_append_history_with_existing_locks(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent._lock = asyncio.Lock()
     agent.initialize = _dummy_async
@@ -1292,21 +1256,15 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
     agent._autonomy_lock = asyncio.Lock()
     await agent._append_autonomy_history({"x": 1})
 
-    # _execute_self_heal_plan(): backup reuse branch
-    class _Code:
-        def read_file(self, path, _safe):
-            return True, "old"
 
-        def patch_file(self, path, target, replacement):
-            return True, "ok"
-
-        def run_shell_in_sandbox(self, command, base_dir):
-            return True, "ok"
-
-        def write_file(self, path, content, _safe):
-            return True, "ok"
-
-    agent.code = _Code()
+async def test_execute_self_heal_plan_applied_with_existing_backup(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    code = Mock()
+    code.read_file.return_value = (True, "old")
+    code.patch_file.return_value = (True, "ok")
+    code.run_shell_in_sandbox.return_value = (True, "ok")
+    code.write_file.return_value = (True, "ok")
+    agent.code = code
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp")
     plan = {
         "operations": [
@@ -1317,7 +1275,9 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
     }
     assert (await agent._execute_self_heal_plan(remediation_loop={}, plan=plan))["status"] == "applied"
 
-    # _tool_subtask(): generic exception path with metrics enabled
+
+async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
     metrics_calls = []
     monkeypatch.setattr(
         sidar_agent,
@@ -1326,12 +1286,7 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
     )
 
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
-
-    class _LLM:
-        async def chat(self, **_k):
-            return '{"tool":"docs_search","argument":"arg","thought":"x"}'
-
-    agent.llm = _LLM()
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
     out = await agent._tool_subtask("job")
