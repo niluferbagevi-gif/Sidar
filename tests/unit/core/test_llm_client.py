@@ -8,6 +8,7 @@ import pathlib
 import sys
 import types
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -113,8 +114,7 @@ def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
 
 
 def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    real_sleep = asyncio.sleep
-    monkeypatch.setattr(llm_client.asyncio, "sleep", lambda *_args, **_kwargs: real_sleep(0))
+    monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
     monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
 
@@ -496,6 +496,7 @@ def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx = pytest.importorskip("respx")
     no_key_cfg = _make_config(OPENAI_API_KEY="")
     c1 = llm_client.OpenAIClient(no_key_cfg)
     assert "OPENAI_API_KEY" in _run(c1.chat([{"role": "user", "content": "x"}], stream=False))
@@ -503,33 +504,34 @@ def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", OPENAI_TIMEOUT=20, ENABLE_TRACING=False)
     c2 = llm_client.OpenAIClient(cfg)
 
-    class _AC(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]})
-
     metrics = []
     monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kw: metrics.append(kw))
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    out = _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://api.openai.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]},
+            )
+        )
+        out = _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
     assert out == "ok"
     assert metrics[-1]["success"] is True
 
 
 def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx = pytest.importorskip("respx")
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
-
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            lines = [
-                "data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}",
-                "data: invalid",
-                "data: [DONE]",
-            ]
-            return _FakeStreamCM(_FakeResponse(lines=lines))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    chunks = _run(_collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)))
+    stream_bytes = (
+        b'data: {"choices":[{"delta":{"content":"A"}}]}\n'
+        b"data: invalid\n"
+        b"data: [DONE]\n"
+    )
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://api.openai.com/v1/chat/completions").mock(
+            return_value=httpx.Response(200, content=stream_bytes)
+        )
+        chunks = _run(_collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)))
     assert chunks == ["A"]
 
 
@@ -665,12 +667,12 @@ def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(client._router, "select", lambda *_a: ("ollama", None))
     monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
-    monkeypatch.setattr(client._semantic_cache, "get", lambda *_a: asyncio.sleep(0, result=None))
-    monkeypatch.setattr(client._semantic_cache, "set", lambda *_a: asyncio.sleep(0))
+    monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value=None))
+    monkeypatch.setattr(client._semantic_cache, "set", AsyncMock(return_value=None))
     monkeypatch.setattr(client._client, "chat", fake_chat)
     assert _run(client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False)) == "resp"
 
-    monkeypatch.setattr(client._semantic_cache, "get", lambda *_a: asyncio.sleep(0, result="cached"))
+    monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value="cached"))
     assert _run(client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False)) == "cached"
 
     async def fake_stream_chat(**_kw):
@@ -682,8 +684,8 @@ def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = _run(_collect(_run(client.chat([{"role": "user", "content": "hello"}], stream=True, json_mode=False))))
     assert chunks == ["x"]
 
-    monkeypatch.setattr(client._client, "list_models", lambda: asyncio.sleep(0, result=["model-a"]))
-    monkeypatch.setattr(client._client, "is_available", lambda: asyncio.sleep(0, result=True))
+    monkeypatch.setattr(client._client, "list_models", AsyncMock(return_value=["model-a"]))
+    monkeypatch.setattr(client._client, "is_available", AsyncMock(return_value=True))
     assert _run(client.list_ollama_models()) == ["model-a"]
     assert _run(client.is_ollama_available()) is True
 
