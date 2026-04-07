@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
-import importlib.util
 import json
-import pathlib
+import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -81,17 +79,11 @@ class _FakeAsyncClient:
 
 
 def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object]) -> None:
-    real_import = builtins.__import__
-
-    def _import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name in module_map:
-            module = module_map[name]
-            if isinstance(module, Exception):
-                raise module
-            return module
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _import)
+    for name, module in module_map.items():
+        if isinstance(module, Exception):
+            monkeypatch.setitem(sys.modules, name, None)
+            continue
+        monkeypatch.setitem(sys.modules, name, module)
 
 
 def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_types: object) -> None:
@@ -711,14 +703,7 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
     assert await manager3._get_redis() is None
 
     # embed import hatasında [] dönmeli
-    real_import = __import__
-
-    def _imp(name, *args, **kwargs):
-        if name == "core.rag":
-            raise ImportError("x")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _imp)
+    _patch_imports(monkeypatch, {"core.rag": ImportError("x")})
     assert manager3._embed_prompt("p") == []
 
 
