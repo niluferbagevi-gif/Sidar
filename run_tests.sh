@@ -47,7 +47,7 @@ run_pytest_coverage_report() {
   BACKEND_EXIT_CODE=$?
 
   # parallel=True nedeniyle oluşan .coverage.* dosyalarını birleştir
-  coverage combine >/dev/null 2>&1 || true
+  coverage combine || true
 
   # pytest başarısız olsa bile HTML raporunu üretmeyi dene
   coverage html >/dev/null 2>&1 || true
