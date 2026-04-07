@@ -162,7 +162,7 @@ class SidarAgent:
         self.security = SecurityManager(cfg=self.cfg)
         self.code = CodeManager(
             self.security,
-            self.cfg.BASE_DIR,
+            Path(self.cfg.BASE_DIR),
             docker_image=getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
             docker_exec_timeout=getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", 10),
         )
@@ -999,14 +999,19 @@ class SidarAgent:
         # Aynı dosya iki kez gelmesin, deterministik sırada olsun
         normalized_files = []
         for candidate in found_files:
-            path_obj = candidate if isinstance(candidate, Path) else Path(str(candidate))
+            if isinstance(candidate, str):
+                path_obj: Any = Path(candidate)
+            else:
+                path_obj = candidate
             try:
-                if path_obj.is_file():
-                    normalized_files.append(path_obj.resolve())
+                if not hasattr(path_obj, "is_file") or not path_obj.is_file():
+                    continue
+                resolved = path_obj.resolve() if hasattr(path_obj, "resolve") else path_obj
+                normalized_files.append(resolved)
             except Exception:
                 continue
 
-        unique_files = sorted(set(normalized_files))
+        unique_files = sorted(set(normalized_files), key=lambda p: str(p))
 
         # Mevcut mtime'ları topla
         current_mtimes: Dict[str, float] = {}
