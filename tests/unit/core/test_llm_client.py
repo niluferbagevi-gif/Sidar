@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
+import importlib.util
 import json
+import pathlib
 import sys
 import types
 from types import SimpleNamespace
@@ -458,7 +461,7 @@ async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> Non
 
     cfg2 = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c2 = llm_client.LiteLLMClient(cfg2)
-    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+    respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
     )
     out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
@@ -1311,8 +1314,8 @@ async def test_ollama_stream_trailing_decoder_branch(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
 
-    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
-    out = await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1)))
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
+    out = await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1)))
     assert out == ["TAIL"]
 
 
@@ -1386,12 +1389,12 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.asyncio
 async def test_openai_tracing_nonstream_success_and_error(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
-    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-4o-mini", ENABLE_TRACING=True))
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm))
 
-    respx_mock_router.post("http://gw/chat/completions").mock(
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
     )
     assert await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False) == "ok"
@@ -1429,8 +1432,8 @@ async def test_ollama_stream_additional_json_branches(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
 
-    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
-    assert await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))) == ["ok"]
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
+    assert await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1))) == ["ok"]
 
 
 @pytest.mark.asyncio
@@ -1564,15 +1567,15 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(monkeypatch: 
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderA()))
 
-    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
-    assert await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
+    assert await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
 
     class _DecoderB:
         def decode(self, _raw, final=False):
             return "" if final else "{not-json"
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderB()))
-    assert await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
+    assert await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
 
 
 @pytest.mark.asyncio
