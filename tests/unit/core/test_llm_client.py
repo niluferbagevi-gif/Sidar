@@ -15,6 +15,7 @@ import pytest
 
 import core.llm_client as llm_client
 from tests.conftest import FakeAsyncClient as _FakeAsyncClient
+from tests.conftest import FakePipe as _FakePipe
 from tests.conftest import FakeRedis as _FakeRedis
 from tests.conftest import FakeResponse as _FakeResponse
 from tests.conftest import FakeStreamCM as _FakeStreamCM
@@ -427,15 +428,25 @@ async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch, fake_httpx_
     c = llm_client.OpenAIClient(cfg)
     fake_response_cls = fake_httpx_classes.FakeResponse
     fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-    stream_bytes = (
-        b'data: {"choices":[{"delta":{"content":"A"}}]}\n'
-        b"data: invalid\n"
-        b"data: [DONE]\n"
-    )
+    stream_lines = [
+        'data: {"choices":[{"delta":{"content":"A"}}]}',
+        "data: invalid",
+        "data: [DONE]",
+    ]
+
+    class _StreamCM:
+        async def __aenter__(self):
+            return fake_response_cls(lines=stream_lines)
+
+        async def __aexit__(self, *_exc):
+            return False
 
     class _AC(fake_async_client_cls):
-        async def post(self, *_a, **_kw):
-            return fake_response_cls(bytes_chunks=[stream_bytes])
+        def stream(self, *_a, **_kw):
+            return _StreamCM()
+
+        async def aclose(self):
+            return None
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
