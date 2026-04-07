@@ -1,4 +1,3 @@
-import sys
 import types
 import asyncio
 from pathlib import Path
@@ -720,14 +719,14 @@ async def test_try_multi_agent_imports_supervisor_when_missing(sidar_agent_facto
 
     class _Supervisor:
         def __init__(self, _cfg):
-            pass
+            self._cfg = _cfg
 
         async def run_task(self, user_input):
             return f"ok:{user_input}"
 
-    supervisor_mod = types.ModuleType("agent.core.supervisor")
-    supervisor_mod.SupervisorAgent = _Supervisor
-    monkeypatch.setitem(sys.modules, "agent.core.supervisor", supervisor_mod)
+    from agent.core import supervisor as supervisor_mod
+
+    monkeypatch.setattr(supervisor_mod, "SupervisorAgent", _Supervisor)
 
     result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
