@@ -46,6 +46,12 @@ SIDAR_SYSTEM_PROMPT = agent_definitions.SIDAR_SYSTEM_PROMPT
 ExternalTrigger = agent_contracts.ExternalTrigger
 
 
+def get_agent_metrics_collector():
+    from core.agent_metrics import get_agent_metrics_collector as _get_agent_metrics_collector
+
+    return _get_agent_metrics_collector()
+
+
 def _default_derive_correlation_id(*values: object) -> str:
     for value in values:
         text = str(value or "").strip()
@@ -1116,7 +1122,6 @@ class SidarAgent:
             return "⚠ Alt görev belirtilmedi."
 
         try:
-            from core.agent_metrics import get_agent_metrics_collector
             _metrics = get_agent_metrics_collector()
         except Exception:
             _metrics = None

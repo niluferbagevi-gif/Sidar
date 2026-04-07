@@ -660,7 +660,8 @@ async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agen
 
 async def test_update_remediation_step_no_match_keeps_steps(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     remediation_loop = {"steps": [{"name": "patch", "status": "planned", "detail": "x"}]}
-    sidar_agent.SidarAgent._update_remediation_step(remediation_loop, "validate", status="completed", detail="ok")
+    agent = sidar_agent_factory()
+    agent._update_remediation_step(remediation_loop, "validate", status="completed", detail="ok")
     assert remediation_loop["steps"][0]["status"] == "planned"
 
 
@@ -1172,9 +1173,11 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
     assert "Bağlam yerel model için kırpıldı" in tiny
 
     metrics_calls = []
-    metrics_mod = types.ModuleType("core.agent_metrics")
-    metrics_mod.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a))
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a)),
+    )
 
     class _LLM:
         async def chat(self, **_k):
@@ -1193,15 +1196,20 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
     agent._execute_tool = AsyncMock(return_value="ok")
     assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
-    broken_metrics = types.ModuleType("core.agent_metrics")
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", broken_metrics)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
+    )
     agent.llm = _ToolLLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
     assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
-    metrics_mod2 = types.ModuleType("core.agent_metrics")
-    metrics_mod2.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(("err",) + a))
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod2)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(("err",) + a)),
+    )
 
     class _BoomLLM:
         async def chat(self, **_k):
@@ -1333,9 +1341,11 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
 
     # _tool_subtask(): generic exception path with metrics enabled
     metrics_calls = []
-    metrics_mod = types.ModuleType("core.agent_metrics")
-    metrics_mod.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a))
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a)),
+    )
 
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
 
@@ -1394,8 +1404,11 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
     monkeypatch.setattr(sidar_agent, "ValidationError", _VErr)
 
     # _metrics None + successful tool execution branch (1106->1114)
-    broken_metrics = types.ModuleType("core.agent_metrics")
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", broken_metrics)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
+    )
 
     class _LLM:
         async def chat(self, **_k):
@@ -1408,9 +1421,11 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
 
     # generic exception branch with metrics enabled (1125-1137)
     calls = []
-    metrics_mod = types.ModuleType("core.agent_metrics")
-    metrics_mod.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: calls.append(a))
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod)
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: types.SimpleNamespace(record_step=lambda *a: calls.append(a)),
+    )
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-fail"))
     out = await agent._tool_subtask("job")
@@ -1424,7 +1439,11 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
         pass
 
     monkeypatch.setattr(sidar_agent, "ValidationError", _VErr)
-    monkeypatch.setitem(sys.modules, "core.agent_metrics", types.ModuleType("core.agent_metrics"))
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
+    )
 
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
