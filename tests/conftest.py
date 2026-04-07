@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import threading
+import time
 from typing import Any, AsyncGenerator, Callable
 from unittest.mock import MagicMock
 
 import pytest
 
 from agent.core.event_stream import AgentEvent
+import agent.sidar_agent as sidar_agent_module
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -89,6 +92,42 @@ def agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
 
     def _create_agent(agent_class: type, **kwargs: Any) -> Any:
         return agent_class(config=mock_config, **kwargs)
+
+    return _create_agent
+
+
+@pytest.fixture
+def sidar_agent_factory() -> Callable[..., Any]:
+    """SidarAgent için merkezi, hafif test örneği üreticisi.
+
+    `__init__` maliyetini ve dış bağımlılıklarını devre dışı bırakırken testlerin
+    ortak başlangıç durumunu tek noktada toplar.
+    """
+
+    def _create_agent(**overrides: Any) -> Any:
+        agent = sidar_agent_module.SidarAgent.__new__(sidar_agent_module.SidarAgent)
+        agent.cfg = overrides.pop("cfg", MagicMock())
+        agent.code = overrides.pop("code", MagicMock())
+        agent.llm = overrides.pop("llm", MagicMock())
+        agent.docs = overrides.pop("docs", MagicMock())
+        agent.memory = overrides.pop("memory", MagicMock())
+        agent.github = overrides.pop("github", MagicMock())
+        agent.system_prompt = overrides.pop("system_prompt", "")
+        agent._autonomy_history = overrides.pop("_autonomy_history", [])
+        agent._autonomy_lock = overrides.pop("_autonomy_lock", None)
+        agent._lock = overrides.pop("_lock", None)
+        agent._initialized = overrides.pop("_initialized", False)
+        agent._init_lock = overrides.pop("_init_lock", None)
+        agent._last_activity_ts = overrides.pop("_last_activity_ts", time.time())
+        agent._nightly_maintenance_lock = overrides.pop("_nightly_maintenance_lock", None)
+        agent._last_nightly_maintenance_ts = overrides.pop("_last_nightly_maintenance_ts", 0.0)
+        agent._instructions_cache = overrides.pop("_instructions_cache", None)
+        agent._instructions_mtimes = overrides.pop("_instructions_mtimes", {})
+        agent._instructions_lock = overrides.pop("_instructions_lock", threading.Lock())
+        agent._supervisor = overrides.pop("_supervisor", None)
+        for key, value in overrides.items():
+            setattr(agent, key, value)
+        return agent
 
     return _create_agent
 
