@@ -7,6 +7,8 @@ import threading
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -48,12 +50,20 @@ class _ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 
-
-def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Path) -> None:
+@pytest.fixture
+def mock_ollama_server():
     server = _ThreadedTCPServer(("127.0.0.1", 0), _MockOllamaHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
+    yield server
+
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=2)
+
+
+def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Path, mock_ollama_server) -> None:
     db_path = tmp_path / "sidar_cli_e2e.db"
     env = os.environ.copy()
     env.update(
@@ -61,34 +71,30 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
             "PYTHONPATH": str(PROJECT_ROOT),
             "USE_GPU": "false",
             "REQUIRE_GPU": "false",
-            "OLLAMA_URL": f"http://127.0.0.1:{server.server_address[1]}",
+            "OLLAMA_URL": f"http://127.0.0.1:{mock_ollama_server.server_address[1]}",
             "DATABASE_URL": f"sqlite:///{db_path}",
             "MEMORY_ENCRYPTION_KEY": "8Jj8N4_VA8mYk9m97xzx6hQhYBL3J6f8xKqfZxM3VYQ=",
         }
     )
 
-    try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "cli.py",
-                "--provider",
-                "ollama",
-                "--model",
-                "mocked-model",
-                "--command",
-                "test_echo",
-            ],
-            cwd=str(PROJECT_ROOT),
-            text=True,
-            capture_output=True,
-            check=False,
-            env=env,
-        )
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "cli.py",
+            "--provider",
+            "ollama",
+            "--model",
+            "mocked-model",
+            "--command",
+            "test_echo",
+        ],
+        cwd=str(PROJECT_ROOT),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+        env=env,
+    )
 
     assert result.returncode == 0, result.stderr
     assert "Sidar >" in result.stdout
