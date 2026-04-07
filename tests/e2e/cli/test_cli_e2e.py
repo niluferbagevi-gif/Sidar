@@ -7,6 +7,8 @@ import threading
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 def _ollama_response_payload(argument: str) -> dict:
     tool_payload = {
@@ -56,7 +58,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
     env = os.environ.copy()
     env.update(
         {
-            "PYTHONPATH": str(Path(__file__).resolve().parents[3]),
+            "PYTHONPATH": str(PROJECT_ROOT),
             "USE_GPU": "false",
             "REQUIRE_GPU": "false",
             "OLLAMA_URL": f"http://127.0.0.1:{server.server_address[1]}",
@@ -77,7 +79,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
                 "--command",
                 "test_echo",
             ],
-            cwd=Path(__file__).resolve().parents[3],
+            cwd=str(PROJECT_ROOT),
             text=True,
             capture_output=True,
             check=False,
