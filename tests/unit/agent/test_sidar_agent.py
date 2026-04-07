@@ -2,13 +2,14 @@ import sys
 import types
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 
 pytestmark = pytest.mark.asyncio
 
 from agent.core.contracts import ExternalTrigger
+from managers.code_manager import CodeManager
 from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
@@ -141,23 +142,16 @@ async def test_build_trigger_correlation_matches_history_without_duplicate_ids(s
 async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     writes = {}
-
-    class _Code:
-        def read_file(self, path, _safe):
-            return True, f"old:{path}"
-
-        def patch_file(self, path, target, replacement):
-            writes[path] = (target, replacement)
-            return True, "ok"
-
-        def write_file(self, path, content, _safe):
-            writes[path] = ("restore", content)
-            return True, "ok"
-
-        def run_shell_in_sandbox(self, command, base_dir):
-            return True, f"ok:{command}:{base_dir}"
-
-    agent.code = _Code()
+    code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
+    code_mock.read_file.side_effect = lambda path, _safe=True: (True, f"old:{path}")
+    code_mock.patch_file.side_effect = lambda path, target, replacement: (
+        writes.__setitem__(path, (target, replacement)) or (True, "ok")
+    )
+    code_mock.write_file.side_effect = lambda path, content, _safe=True: (
+        writes.__setitem__(path, ("restore", content)) or (True, "ok")
+    )
+    code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, f"ok:{command}:{base_dir}")
+    agent.code = code_mock
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/project")
 
     plan = {
@@ -178,22 +172,14 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
 async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     restored = {}
-
-    class _Code:
-        def read_file(self, path, _safe):
-            return True, f"old:{path}"
-
-        def patch_file(self, path, target, replacement):
-            return False, "boom"
-
-        def write_file(self, path, content, _safe):
-            restored[path] = content
-            return True, "ok"
-
-        def run_shell_in_sandbox(self, command, base_dir):
-            return True, "ok"
-
-    agent.code = _Code()
+    code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
+    code_mock.read_file.side_effect = lambda path, _safe=True: (True, f"old:{path}")
+    code_mock.patch_file.side_effect = lambda path, target, replacement: (False, "boom")
+    code_mock.write_file.side_effect = lambda path, content, _safe=True: (
+        restored.__setitem__(path, content) or (True, "ok")
+    )
+    code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, "ok")
+    agent.code = code_mock
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/project")
     plan = {
         "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
