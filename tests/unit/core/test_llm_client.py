@@ -14,8 +14,8 @@ import httpx
 import pytest
 
 import core.llm_client as llm_client
-from tests.conftest import collect_async_chunks as _collect
-from tests.conftest import make_test_config as _make_config
+from tests.helpers import collect_async_chunks as _collect
+from tests.helpers import make_test_config as _make_config
 
 
 def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object]) -> None:

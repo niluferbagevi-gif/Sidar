@@ -2,7 +2,7 @@ import types
 
 import pytest
 
-from tests.conftest import collect_async_chunks as _collect_stream
+from tests.helpers import collect_async_chunks as _collect_stream
 
 
 @pytest.mark.asyncio

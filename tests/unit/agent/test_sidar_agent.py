@@ -9,7 +9,7 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 from agent.core.contracts import ExternalTrigger
-from tests.conftest import collect_async_chunks as _collect_stream
+from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
