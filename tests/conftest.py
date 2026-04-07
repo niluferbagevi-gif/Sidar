@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def mock_config():
+def mock_config_factory():
     return make_test_config
 
 
@@ -87,11 +87,11 @@ def fake_video_stream() -> MagicMock:
 
 
 @pytest.fixture
-def agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
+def agent_factory(mock_config_factory: MagicMock) -> Callable[..., Any]:
     """Testler için standartlaştırılmış ajan üretim fabrikası."""
 
     def _create_agent(agent_class: type, **kwargs: Any) -> Any:
-        return agent_class(config=mock_config, **kwargs)
+        return agent_class(config=mock_config_factory, **kwargs)
 
     return _create_agent
 

@@ -200,7 +200,7 @@ async def test_inject_json_instruction_handles_existing_and_missing_system() -> 
 
 
 @pytest.mark.asyncio
-async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch, mock_config_factory) -> None:
     monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
     monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
@@ -213,18 +213,18 @@ async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.Monke
             raise err
         return "done"
 
-    result = await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
+    result = await llm_client._retry_with_backoff("openai", op, config=mock_config_factory(), retry_hint="retry")
     assert result == "done"
     assert state["n"] == 2
 
 
 @pytest.mark.asyncio
-async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
+async def test_retry_with_backoff_raises_llm_api_error(mock_config_factory) -> None:
     async def op():
         raise ValueError("fatal")
 
     with pytest.raises(llm_client.LLMAPIError) as exc:
-        await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
+        await llm_client._retry_with_backoff("openai", op, config=mock_config_factory(), retry_hint="retry")
 
     assert exc.value.provider == "openai"
     assert exc.value.retryable is False
@@ -263,16 +263,16 @@ async def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_cosine_similarity(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+async def test_semantic_cache_cosine_similarity(mock_config_factory) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory())
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert manager._cosine_similarity([], [1.0]) == 0.0
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_config_factory, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory())
     fake = fake_redis
     await _cache_put(fake, manager, "k1", [1.0, 0.0], "cached")
 
@@ -286,14 +286,14 @@ async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_conf
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+async def test_semantic_cache_get_returns_none_without_prompt(mock_config_factory) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory())
     assert await manager.get("") is None
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, mock_config_factory, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory(SEMANTIC_CACHE_THRESHOLD=0.99))
     fake = fake_redis
     await _cache_put(fake, manager, "k1", [1.0, 0.0], "cached")
     misses = {"n": 0}
@@ -309,8 +309,8 @@ async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, 
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, mock_config_factory, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory())
     fake = fake_redis
     await fake.lpush(manager.index_key, "old2")
     await fake.lpush(manager.index_key, "old1")
@@ -339,8 +339,8 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+async def test_semantic_cache_set_skips_without_response(mock_config_factory) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config_factory())
     assert await manager.set("prompt", "") is None
 
 
@@ -430,9 +430,9 @@ async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
 
 @pytest.mark.asyncio
 async def test_ollama_client_chat_non_stream_and_stream(
-    monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
+    monkeypatch: pytest.MonkeyPatch, mock_config_factory, respx_mock_router
 ) -> None:
-    cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
+    cfg = mock_config_factory(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
     client = llm_client.OllamaClient(cfg)
     respx_mock_router.post("http://x/api/chat").mock(
         return_value=httpx.Response(200, json={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
@@ -450,9 +450,9 @@ async def test_ollama_client_chat_non_stream_and_stream(
 
 @pytest.mark.asyncio
 async def test_ollama_stream_response_parses_and_handles_error(
-    monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
+    monkeypatch: pytest.MonkeyPatch, mock_config_factory, respx_mock_router
 ) -> None:
-    cfg = mock_config()
+    cfg = mock_config_factory()
     client = llm_client.OllamaClient(cfg)
     stream_payload = "{\"message\":{\"content\":\"A\"}}\ninvalid\n{\"message\":{\"content\":\"B\"}}"
     stream_endpoint = "http://localhost:11434/api/chat"
@@ -471,8 +471,8 @@ async def test_ollama_stream_response_parses_and_handles_error(
 
 
 @pytest.mark.asyncio
-async def test_ollama_list_models_and_availability(mock_config, respx_mock_router) -> None:
-    client = llm_client.OllamaClient(mock_config())
+async def test_ollama_list_models_and_availability(mock_config_factory, respx_mock_router) -> None:
+    client = llm_client.OllamaClient(mock_config_factory())
     respx_mock_router.get("http://localhost:11434/api/tags").mock(
         return_value=httpx.Response(200, json={"models": [{"name": "m1"}]})
     )
@@ -521,13 +521,13 @@ async def test_openai_stream_parser(respx_mock_router) -> None:
 
 
 @pytest.mark.asyncio
-async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> None:
-    cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
+async def test_litellm_candidate_and_chat(mock_config_factory, respx_mock_router) -> None:
+    cfg = mock_config_factory(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)
     assert c._candidate_models(None) == ["m"]
     assert "LITELLM_GATEWAY_URL" in await c.chat([{"role": "user", "content": "x"}], stream=False)
 
-    cfg2 = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
+    cfg2 = mock_config_factory(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c2 = llm_client.LiteLLMClient(cfg2)
     respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
@@ -537,8 +537,8 @@ async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> Non
 
 
 @pytest.mark.asyncio
-async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router) -> None:
-    cfg = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
+async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_config_factory, respx_mock_router) -> None:
+    cfg = mock_config_factory(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c = llm_client.LiteLLMClient(cfg)
     stream_text = "\n".join(["data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}", "data: [DONE]"])
     stream_endpoint = "http://gw/chat/completions"
@@ -559,8 +559,8 @@ async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_con
 
 
 @pytest.mark.asyncio
-async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
-    cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
+async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config_factory) -> None:
+    cfg = mock_config_factory(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "Gemini istemcisi kurulu" in msg or "GEMINI_API_KEY" in msg
@@ -584,7 +584,7 @@ async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
-    cfg2 = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
+    cfg2 = mock_config_factory(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c2 = llm_client.GeminiClient(cfg2)
     assert await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "hello"
     stream = await c2.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
@@ -592,8 +592,8 @@ async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
-    c = llm_client.AnthropicClient(mock_config(ANTHROPIC_API_KEY=""))
+async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config_factory) -> None:
+    c = llm_client.AnthropicClient(mock_config_factory(ANTHROPIC_API_KEY=""))
     assert "ANTHROPIC_API_KEY" in await c.chat([{"role": "user", "content": "x"}], stream=False)
     system, convo = c._split_system_and_messages([{"role": "system", "content": "s"}, {"role": "user", "content": "u"}])
     assert system == "s"
@@ -628,7 +628,7 @@ async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_
             self.messages = _Messages()
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
-    cfg = mock_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
+    cfg = mock_config_factory(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
     c2 = llm_client.AnthropicClient(cfg)
     assert await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "ok"
     s = await c2.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
