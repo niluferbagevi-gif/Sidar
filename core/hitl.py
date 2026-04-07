@@ -151,7 +151,7 @@ async def _notify(req: HITLRequest) -> None:
             "data": req.to_dict(),
         })
     except Exception as exc:
-        logger.debug("HITL broadcast hatası: %s", exc)
+        logger.warning("HITL broadcast hatası: %s", exc)
 
 
 async def notify(req: HITLRequest) -> None:
