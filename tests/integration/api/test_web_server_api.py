@@ -94,6 +94,12 @@ class _FakeMemory:
     async def set_active_user(self, _user_id: str, _username: str) -> None:
         return None
 
+    async def aupdate_title(self, _title: str) -> None:
+        return None
+
+    async def update_title(self, _title: str) -> None:
+        return None
+
 
 @pytest.fixture
 def web_api_client(monkeypatch: pytest.MonkeyPatch):
