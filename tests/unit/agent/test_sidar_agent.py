@@ -143,11 +143,11 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
     agent = sidar_agent_factory()
     writes = {}
     code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
-    code_mock.read_file.side_effect = lambda path, _safe=True: (True, f"old:{path}")
+    code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
     code_mock.patch_file.side_effect = lambda path, target, replacement: (
         writes.__setitem__(path, (target, replacement)) or (True, "ok")
     )
-    code_mock.write_file.side_effect = lambda path, content, _safe=True: (
+    code_mock.write_file.side_effect = lambda path, content, *args, **kwargs: (
         writes.__setitem__(path, ("restore", content)) or (True, "ok")
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, f"ok:{command}:{base_dir}")
@@ -173,9 +173,9 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory
     agent = sidar_agent_factory()
     restored = {}
     code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
-    code_mock.read_file.side_effect = lambda path, _safe=True: (True, f"old:{path}")
+    code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
     code_mock.patch_file.side_effect = lambda path, target, replacement: (False, "boom")
-    code_mock.write_file.side_effect = lambda path, content, _safe=True: (
+    code_mock.write_file.side_effect = lambda path, content, *args, **kwargs: (
         restored.__setitem__(path, content) or (True, "ok")
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, "ok")
