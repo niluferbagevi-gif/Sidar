@@ -29,13 +29,24 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
         health=SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": True}),
     )
 
+    async def _fake_set_active_user(*_args, **_kwargs):
+        return None
+
+    fake_agent.memory = SimpleNamespace(set_active_user=_fake_set_active_user)
+
     async def _fake_get_agent():
         return fake_agent
 
+    async def _fake_resolve_user_from_token(_agent, token: str):
+        if token == "smoke-token":
+            return SimpleNamespace(id="u-smoke", username="smoke-user", role="user")
+        return None
+
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve_user_from_token)
 
     client = TestClient(web_server.app)
-    response = client.get("/healthz")
+    response = client.get("/healthz", headers={"Authorization": "Bearer smoke-token"})
 
     assert response.status_code == 200
     payload = response.json()

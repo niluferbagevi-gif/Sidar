@@ -87,7 +87,13 @@ class _FakeMemoryDB:
 @pytest.fixture
 def web_api_client(monkeypatch: pytest.MonkeyPatch):
     fake_db = _FakeMemoryDB()
-    fake_agent = SimpleNamespace(memory=SimpleNamespace(db=fake_db), system_prompt="")
+    async def _fake_set_active_user(*_args, **_kwargs):
+        return None
+
+    fake_agent = SimpleNamespace(
+        memory=SimpleNamespace(db=fake_db, set_active_user=_fake_set_active_user),
+        system_prompt="",
+    )
 
     async def _fake_get_agent():
         return fake_agent
@@ -95,8 +101,16 @@ def web_api_client(monkeypatch: pytest.MonkeyPatch):
     async def _fake_issue_auth_token(_agent, user):
         return f"token-for-{user.username}"
 
+    async def _fake_resolve_user_from_token(_agent, token: str):
+        username = token.removeprefix("token-for-").strip()
+        if not username:
+            return None
+        role = "admin" if username == "default_admin" else "user"
+        return _FakeUser(id=f"id-{username}", username=username, role=role)
+
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_issue_auth_token", _fake_issue_auth_token)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve_user_from_token)
     app.dependency_overrides[web_server._require_admin_user] = (
         lambda: _FakeUser(id="admin-1", username="default_admin", role="admin")
     )
@@ -134,25 +148,27 @@ def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
 @pytest.mark.integration
 def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
     client, _fake_db = web_api_client
+    headers = {"Authorization": "Bearer token-for-default_admin"}
 
     create_response = client.post(
         "/admin/prompts",
         json={"role_name": "system", "prompt_text": "Be concise", "activate": True},
+        headers=headers,
     )
     assert create_response.status_code == 200
     created_prompt = create_response.json()
     assert created_prompt["role_name"] == "system"
     assert created_prompt["is_active"] is True
 
-    list_response = client.get("/admin/prompts", params={"role_name": "system"})
+    list_response = client.get("/admin/prompts", params={"role_name": "system"}, headers=headers)
     assert list_response.status_code == 200
     items = list_response.json()["items"]
     assert len(items) == 1
     assert items[0]["prompt_text"] == "Be concise"
 
-    activate_response = client.post("/admin/prompts/activate", json={"prompt_id": created_prompt["id"]})
+    activate_response = client.post("/admin/prompts/activate", json={"prompt_id": created_prompt["id"]}, headers=headers)
     assert activate_response.status_code == 200
     assert activate_response.json()["id"] == created_prompt["id"]
 
-    missing_prompt = client.post("/admin/prompts/activate", json={"prompt_id": 9999})
+    missing_prompt = client.post("/admin/prompts/activate", json={"prompt_id": 9999}, headers=headers)
     assert missing_prompt.status_code == 404
