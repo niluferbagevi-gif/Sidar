@@ -36,6 +36,8 @@ async def fake_redis():
             await redis.aclose()
         else:
             await redis.close()
+        if hasattr(server, "connected"):
+            server.connected = False
 
 
 @pytest.fixture
