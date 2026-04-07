@@ -14,6 +14,14 @@ from tests.conftest import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
+async def _dummy_async(*_args, **_kwargs):
+    return None
+
+
+async def _async_value(value):
+    return value
+
+
 async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
@@ -957,9 +965,11 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
 
 
 async def test_init_and_initialize_guards_and_parse_non_dict(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    base_dir = Path("/tmp/base")
+    base_dir.mkdir(parents=True, exist_ok=True)
 
     class _Cfg:
-        BASE_DIR = "/tmp/base"
+        BASE_DIR = str(base_dir)
         DOCKER_PYTHON_IMAGE = "img"
         DOCKER_EXEC_TIMEOUT = 3
         USE_GPU = False
