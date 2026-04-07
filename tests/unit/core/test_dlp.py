@@ -84,7 +84,7 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
         "credit_card",
         "long_hex",
     }.issubset(names)
-    assert any("DLP:" in rec.message for rec in caplog.records)
+    assert any("DLP Maskeleme" in rec.message for rec in caplog.records)
 
 
 def test_mask_leaves_invalid_tckn_untouched():
