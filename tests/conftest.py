@@ -64,8 +64,8 @@ class FakePipe:
     def expire(self, key: str, ttl: int):
         self.ops.append(("expire", key, ttl))
 
-    def lrem(self, _index_key: str, _count: int, key: str):
-        self.ops.append(("lrem", key))
+    def lrem(self, key: str, count: int, value: str):
+        self.ops.append(("lrem", key, count, value))
 
     def lpush(self, _index_key: str, key: str):
         self.ops.append(("lpush", key))
@@ -78,7 +78,27 @@ class FakePipe:
             if op[0] == "hset":
                 self.redis.hashes[op[1]] = op[2]
             elif op[0] == "lrem":
-                self.redis.index = [k for k in self.redis.index if k != op[1]]
+                _, _key, count, value = op
+                if count == 0:
+                    self.redis.index = [k for k in self.redis.index if k != value]
+                elif count > 0:
+                    removed = 0
+                    next_index = []
+                    for item in self.redis.index:
+                        if item == value and removed < count:
+                            removed += 1
+                            continue
+                        next_index.append(item)
+                    self.redis.index = next_index
+                else:
+                    removed = 0
+                    next_index = []
+                    for item in reversed(self.redis.index):
+                        if item == value and removed < abs(count):
+                            removed += 1
+                            continue
+                        next_index.append(item)
+                    self.redis.index = list(reversed(next_index))
             elif op[0] == "lpush":
                 self.redis.index.insert(0, op[1])
             elif op[0] == "ltrim":
