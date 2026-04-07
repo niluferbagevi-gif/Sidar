@@ -396,44 +396,49 @@ async def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
-    respx = pytest.importorskip("respx")
+async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, fake_httpx_classes) -> None:
     no_key_cfg = _make_config(OPENAI_API_KEY="")
     c1 = llm_client.OpenAIClient(no_key_cfg)
     assert "OPENAI_API_KEY" in await c1.chat([{"role": "user", "content": "x"}], stream=False)
 
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", OPENAI_TIMEOUT=20, ENABLE_TRACING=False)
     c2 = llm_client.OpenAIClient(cfg)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
 
     metrics = []
     monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kw: metrics.append(kw))
-    with respx.mock(assert_all_called=True) as router:
-        router.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200,
-                json={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]},
+
+    class _AC(fake_async_client_cls):
+        async def post(self, *_a, **_kw):
+            return fake_response_cls(
+                payload={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]}
             )
-        )
-        out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert out == "ok"
     assert metrics[-1]["success"] is True
 
 
 @pytest.mark.asyncio
-async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
-    respx = pytest.importorskip("respx")
+async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch, fake_httpx_classes) -> None:
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
+    fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
     stream_bytes = (
         b'data: {"choices":[{"delta":{"content":"A"}}]}\n'
         b"data: invalid\n"
         b"data: [DONE]\n"
     )
-    with respx.mock(assert_all_called=True) as router:
-        router.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(200, content=stream_bytes)
-        )
-        chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
+
+    class _AC(fake_async_client_cls):
+        async def post(self, *_a, **_kw):
+            return fake_response_cls(bytes_chunks=[stream_bytes])
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
     assert chunks == ["A"]
 
 
