@@ -426,16 +426,17 @@ async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch, fake_httpx_
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
     fake_response_cls = fake_httpx_classes.FakeResponse
+    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
     fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-    stream_bytes = (
-        b'data: {"choices":[{"delta":{"content":"A"}}]}\n'
-        b"data: invalid\n"
-        b"data: [DONE]\n"
-    )
 
     class _AC(fake_async_client_cls):
-        async def post(self, *_a, **_kw):
-            return fake_response_cls(bytes_chunks=[stream_bytes])
+        def stream(self, *_a, **_kw):
+            lines = [
+                'data: {"choices":[{"delta":{"content":"A"}}]}',
+                'data: invalid',
+                'data: [DONE]',
+            ]
+            return fake_stream_cm_cls(fake_response_cls(lines=lines))
 
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
@@ -883,13 +884,37 @@ async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.Mo
 async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
 
-    class _BrokenPipe(_FakePipe):
+    class _BrokenPipe:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def hset(self, *args, **kwargs):
+            pass
+
+        def expire(self, *args, **kwargs):
+            pass
+
+        def lrem(self, *args, **kwargs):
+            pass
+
+        def lpush(self, *args, **kwargs):
+            pass
+
+        def ltrim(self, *args, **kwargs):
+            pass
+
         async def execute(self):
             raise RuntimeError("write failed")
 
     class _BrokenRedis(_FakeRedis):
         def pipeline(self, transaction: bool = True):
-            return _BrokenPipe(self)
+            return _BrokenPipe()
 
     fake = _BrokenRedis()
     errors = {"n": 0}
@@ -900,7 +925,9 @@ async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.Mo
     monkeypatch.setattr(manager, "_get_redis", _redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
     monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+
     await manager.set("prompt", "resp")
+
     assert errors["n"] == 1
 
 
