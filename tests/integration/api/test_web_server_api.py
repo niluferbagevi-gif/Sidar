@@ -178,14 +178,18 @@ def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None
 def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
     client, _ = web_api_client
 
-    app.dependency_overrides.pop(web_server._require_admin_user, None)
-    app.dependency_overrides[web_server._get_request_user] = (
-        lambda: _FakeUser(id="user-1", username="normal_user", role="user")
-    )
+    original_overrides = app.dependency_overrides.copy()
+    try:
+        app.dependency_overrides.pop(web_server._require_admin_user, None)
+        app.dependency_overrides[web_server._get_request_user] = (
+            lambda: _FakeUser(id="user-1", username="normal_user", role="user")
+        )
 
-    create_response = client.post(
-        "/admin/prompts",
-        json={"role_name": "system", "prompt_text": "Hacked", "activate": True},
-    )
+        create_response = client.post(
+            "/admin/prompts",
+            json={"role_name": "system", "prompt_text": "Hacked", "activate": True},
+        )
 
-    assert create_response.status_code in {401, 403}
+        assert create_response.status_code in {401, 403}
+    finally:
+        app.dependency_overrides = original_overrides
