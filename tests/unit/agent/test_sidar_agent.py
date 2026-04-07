@@ -1,6 +1,7 @@
 import sys
 import types
 import asyncio
+import importlib
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 pytest.importorskip("pydantic")
 
 from agent.core.contracts import ExternalTrigger
+from tests.conftest import collect_async_chunks as _collect_stream
 
 
 class _Dummy:
@@ -64,7 +66,8 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _load_sidar_agent_module(monkeypatch: pytest.MonkeyPatch):
     _install_stub_modules(monkeypatch)
-    import agent.sidar_agent as sidar_agent
+    sys.modules.pop("agent.sidar_agent", None)
+    sidar_agent = importlib.import_module("agent.sidar_agent")
 
     return sidar_agent
 
@@ -502,13 +505,6 @@ def test_respond_handles_empty_and_success(monkeypatch: pytest.MonkeyPatch) -> N
     ok = list(asyncio.run(_collect_stream(agent.respond("hello"))))
     assert ok == ["ok:hello"]
     assert added == [("user", "hello"), ("assistant", "ok:hello")]
-
-
-async def _collect_stream(stream):
-    items = []
-    async for piece in stream:
-        items.append(piece)
-    return items
 
 
 def test_append_autonomy_history_caps_to_50(monkeypatch: pytest.MonkeyPatch) -> None:

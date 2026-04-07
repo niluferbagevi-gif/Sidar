@@ -18,6 +18,7 @@ from tests.conftest import FakeAsyncClient as _FakeAsyncClient
 from tests.conftest import FakeRedis as _FakeRedis
 from tests.conftest import FakeResponse as _FakeResponse
 from tests.conftest import FakeStreamCM as _FakeStreamCM
+from tests.conftest import collect_async_chunks as _collect
 from tests.conftest import make_test_config as _make_config
 
 
@@ -349,10 +350,6 @@ async def test_ollama_client_chat_non_stream_and_stream(monkeypatch: pytest.Monk
     monkeypatch.setattr(client, "_stream_response", fake_stream)
     streamed = await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
     assert await _collect(streamed) == ["a"]
-
-
-async def _collect(gen):
-    return [x async for x in gen]
 
 
 @pytest.mark.asyncio

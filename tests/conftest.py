@@ -162,3 +162,7 @@ class FakeAsyncClient:
 
     async def aclose(self):
         return None
+
+
+async def collect_async_chunks(gen):
+    return [chunk async for chunk in gen]
