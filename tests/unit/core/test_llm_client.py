@@ -5,7 +5,6 @@ import builtins
 import importlib.util
 import json
 import pathlib
-import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -22,6 +21,37 @@ from tests.conftest import collect_async_chunks as _collect
 from tests.conftest import make_test_config as _make_config
 
 
+
+
+def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object]) -> None:
+    real_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in module_map:
+            module = module_map[name]
+            if isinstance(module, Exception):
+                raise module
+            return module
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+
+def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_types: object) -> None:
+    google_mod = types.SimpleNamespace(genai=types.SimpleNamespace(Client=client_cls))
+    google_genai_mod = types.SimpleNamespace(types=fake_types)
+    _patch_imports(
+        monkeypatch,
+        {
+            "google": google_mod,
+            "google.genai": google_genai_mod,
+            "google.genai.types": fake_types,
+        },
+    )
+
+
+def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) -> None:
+    _patch_imports(monkeypatch, {"anthropic": types.SimpleNamespace(AsyncAnthropic=async_anthropic_cls)})
 
 @pytest.mark.parametrize(
     ("provider", "key"),
@@ -510,9 +540,7 @@ async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch
             self.aio = SimpleNamespace(models=_Models())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
-    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
-    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
-    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    _mock_google_genai(monkeypatch, _Client, fake_types)
     cfg2 = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c2 = llm_client.GeminiClient(cfg2)
     assert await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "hello"
@@ -556,8 +584,7 @@ async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    mod = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
-    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     cfg = mock_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
     c2 = llm_client.AnthropicClient(cfg)
     assert await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "ok"
@@ -753,9 +780,7 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
             self.aio = SimpleNamespace(models=_Models())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
-    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
-    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
-    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    _mock_google_genai(monkeypatch, _Client, fake_types)
 
     c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="", GEMINI_MODEL="g"))
     assert "GEMINI_API_KEY" in await c.chat([{"role": "user", "content": "x"}], stream=False)
@@ -771,7 +796,7 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
-    monkeypatch.setitem(sys.modules, "anthropic", None)
+    _patch_imports(monkeypatch, {"anthropic": ImportError("anthropic not installed")})
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "anthropic paketi" in msg
 
@@ -790,7 +815,7 @@ async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.Monke
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c2 = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     out = await _collect(c2._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
     assert "Anthropic" in out[0]
@@ -853,7 +878,7 @@ async def test_semantic_cache_cosine_similarity_zero_norm() -> None:
 async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
     fake_mod = types.SimpleNamespace(embed_texts_for_semantic_cache=lambda _texts, cfg=None: [[1, 2, 3]])
-    monkeypatch.setitem(sys.modules, "core.rag", fake_mod)
+    _patch_imports(monkeypatch, {"core.rag": fake_mod})
     assert manager._embed_prompt("hello") == [1.0, 2.0, 3.0]
 
 
@@ -1037,9 +1062,7 @@ async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.Monke
             self.aio = SimpleNamespace(models=_Models())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
-    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
-    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
-    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    _mock_google_genai(monkeypatch, _Client, fake_types)
     c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
     out = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert "final_answer" in out
@@ -1083,7 +1106,7 @@ async def test_anthropic_json_mode_and_fallback_conversation(monkeypatch: pytest
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude"))
     out = await c.chat([{"role": "system", "content": "s"}], stream=False, json_mode=True)
     assert "final_answer" in out
@@ -1161,9 +1184,7 @@ async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.Monk
             self.aio = SimpleNamespace(models=_Models())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
-    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
-    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
-    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    _mock_google_genai(monkeypatch, _Client, fake_types)
     span = _Span()
     tracer = SimpleNamespace(start_span=lambda _n: span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
@@ -1209,7 +1230,7 @@ async def test_anthropic_nonstream_error_paths(monkeypatch: pytest.MonkeyPatch) 
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True))
     span = _Span()
     span_cm = _SpanCM(span)
@@ -1394,7 +1415,7 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m", ENABLE_TRACING=True))
     with pytest.raises(llm_client.LLMAPIError):
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
@@ -1433,7 +1454,7 @@ async def test_llmclient_truncation_remaining_branches() -> None:
 @pytest.mark.asyncio
 async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
-    monkeypatch.setitem(sys.modules, "core.rag", types.SimpleNamespace(embed_texts_for_semantic_cache=lambda *_a, **_kw: []))
+    _patch_imports(monkeypatch, {"core.rag": types.SimpleNamespace(embed_texts_for_semantic_cache=lambda *_a, **_kw: [])})
     assert manager._embed_prompt("hello") == []
 
 
@@ -1471,9 +1492,7 @@ async def test_gemini_tracing_nonstream_and_empty_stream_chunk(monkeypatch: pyte
             self.aio = SimpleNamespace(models=_Models())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
-    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(genai=types.SimpleNamespace(Client=_Client)))
-    monkeypatch.setitem(sys.modules, "google.genai", types.SimpleNamespace(types=fake_types))
-    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    _mock_google_genai(monkeypatch, _Client, fake_types)
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm))
@@ -1552,7 +1571,7 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm))
@@ -1659,7 +1678,7 @@ async def test_anthropic_errors_without_span(monkeypatch: pytest.MonkeyPatch) ->
         def __init__(self, **_kw):
             self.messages = _Messages()
 
-    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m", ENABLE_TRACING=False))
 
     async def _llm(*_a, **_kw):
