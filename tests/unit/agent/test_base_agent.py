@@ -207,3 +207,28 @@ def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
     assert summary.task_id == "existing-task"
     assert summary.parent_task_id == "existing-parent"
     assert summary.handoff_depth == 7
+
+
+def test_handle_uses_context_delegation_task_id_when_missing(monkeypatch):
+    base_agent = _load_base_agent_module(monkeypatch)
+    agent = _make_dummy_agent(base_agent, role_name="coder")
+    agent.next_result = DelegationRequest(
+        task_id="",
+        reply_to="coder",
+        target_agent="qa",
+        payload="validate",
+    )
+
+    envelope = TaskEnvelope(
+        task_id="task-envelope",
+        sender="sup",
+        receiver="coder",
+        goal="validate",
+        context={"delegation_task_id": "task-from-context"},
+    )
+
+    result = asyncio.run(agent.handle(envelope))
+    summary = result.summary
+
+    assert isinstance(summary, DelegationRequest)
+    assert summary.task_id == "task-from-context"

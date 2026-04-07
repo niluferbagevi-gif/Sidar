@@ -92,7 +92,11 @@ class BaseAgent(ABC):
         summary = await self.run_task(envelope.goal)
         if is_delegation_request(summary):
             if not getattr(summary, "task_id", ""):
-                summary.task_id = envelope.task_id
+                summary.task_id = str(
+                    envelope.context.get("delegation_task_id", "")
+                    or envelope.context.get("task_id", "")
+                    or envelope.task_id
+                )
             if not getattr(summary, "parent_task_id", None):
                 summary.parent_task_id = envelope.parent_task_id or envelope.task_id
             summary.handoff_depth = max(

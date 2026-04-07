@@ -193,12 +193,16 @@ def test_apply_summary_and_clear(mem):
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
+        old_sid = mem.active_session_id
         await mem.add("user", "m1")
         await mem.add("assistant", "m2")
         await mem.add("user", "m3")
+        previous_contents = [turn["content"] for turn in mem._turns]
 
         await mem.apply_summary("kisa ozet")
+        assert mem.active_session_id != old_sid
         assert mem._turns[1]["content"].startswith("[KONUŞMA ÖZETİ]")
+        assert previous_contents[0] not in [turn["content"] for turn in mem._turns]
         assert any(m.content == "kisa ozet" or "KONUŞMA ÖZETİ" in m.content for m in mem.db.messages[mem.active_session_id])
 
         old_sid = mem.active_session_id
@@ -352,6 +356,17 @@ def test_estimate_tokens_importerror_and_misc_branches(monkeypatch, mem):
     mem._dirty = True
     mem._save(force=False)
     assert mem._dirty is True
+
+
+def test_estimate_tokens_provider_independent(mem):
+    mem._turns = [{"role": "u", "content": "a" * 21}]
+    mem.cfg.AI_PROVIDER = "openai"
+    openai_estimate = mem._estimate_tokens()
+
+    mem.cfg.AI_PROVIDER = "ollama"
+    ollama_estimate = mem._estimate_tokens()
+
+    assert openai_estimate == ollama_estimate
 
 
 def test_nightly_consolidation_skip_and_non_compacted_report(mem):

@@ -471,7 +471,7 @@ def test_run_and_parallel_and_pipeline_methods(monkeypatch):
 
 
 def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
-    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=0)
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=40)
     orch = SwarmOrchestrator(cfg=cfg)
     spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
     monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
@@ -490,6 +490,7 @@ def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
 
     # retry path where first call fails, second returns None -> re-raises last exception
     state = {"n": 0}
+    sleep_calls = []
 
     class _FlakyAgent:
         async def handle(self, _env):
@@ -498,10 +499,16 @@ def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
                 raise RuntimeError("temporary")
             return None
 
+    async def _sleep(delay):
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(swarm.asyncio, "sleep", _sleep)
     monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _FlakyAgent())
     retry_failed = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
     assert retry_failed.status == "failed"
     assert "temporary" in retry_failed.summary
+    assert state["n"] == 2
+    assert sleep_calls == [0.04]
 
 
 def test_execute_task_handles_empty_retry_iteration(monkeypatch):

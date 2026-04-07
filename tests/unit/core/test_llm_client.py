@@ -115,8 +115,13 @@ def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
-    monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
+    sleep_calls = []
+
+    async def fake_sleep(delay):
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(llm_client.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.12)
     state = {"n": 0}
 
     async def op():
@@ -130,6 +135,7 @@ async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.Monke
     result = await llm_client._retry_with_backoff("openai", op, config=_make_config(), retry_hint="retry")
     assert result == "done"
     assert state["n"] == 2
+    assert sleep_calls == [pytest.approx(0.17)]  # min base_delay(0.05) + jitter(0.12)
 
 
 def test_retry_with_backoff_raises_llm_api_error() -> None:
@@ -248,6 +254,56 @@ def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
 
     assert _run(manager.get("hello")) == "cached"
+
+
+def test_semantic_cache_get_returns_none_on_empty_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    fake = _FakeRedis()
+
+    async def _get_redis():
+        return fake
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
+
+    assert _run(manager.get("hello")) is None
+
+
+def test_semantic_cache_get_below_similarity_threshold_records_miss(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.95))
+    fake = _FakeRedis()
+    fake.index = ["k1"]
+    fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
+    misses = {"n": 0}
+
+    async def _get_redis():
+        return fake
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.7, 0.7])  # similarity ~0.707
+    monkeypatch.setattr(llm_client, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
+
+    assert _run(manager.get("hello")) is None
+    assert misses["n"] == 1
+
+
+def test_semantic_cache_get_redis_error_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    redis_errors = {"n": 0}
+
+    class _BrokenRedis:
+        async def lrange(self, *_args, **_kwargs):
+            raise RuntimeError("redis down")
+
+    async def _get_redis():
+        return _BrokenRedis()
+
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
+    monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: redis_errors.__setitem__("n", redis_errors["n"] + 1))
+
+    assert _run(manager.get("hello")) is None
+    assert redis_errors["n"] == 1
 
 
 def test_semantic_cache_get_returns_none_without_prompt() -> None:
