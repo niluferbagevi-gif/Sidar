@@ -113,7 +113,8 @@ def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
     assert llm_client.SIDAR_TOOL_JSON_INSTRUCTION in out2[0]["content"]
 
 
-def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
     monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
@@ -126,7 +127,7 @@ def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.MonkeyPatch
             raise err
         return "done"
 
-    result = _run(llm_client._retry_with_backoff("openai", op, config=_make_config(), retry_hint="retry"))
+    result = await llm_client._retry_with_backoff("openai", op, config=_make_config(), retry_hint="retry")
     assert result == "done"
     assert state["n"] == 2
 
@@ -495,11 +496,12 @@ def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPatch) ->
     assert _run(client.is_available()) is True
 
 
-def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     respx = pytest.importorskip("respx")
     no_key_cfg = _make_config(OPENAI_API_KEY="")
     c1 = llm_client.OpenAIClient(no_key_cfg)
-    assert "OPENAI_API_KEY" in _run(c1.chat([{"role": "user", "content": "x"}], stream=False))
+    assert "OPENAI_API_KEY" in await c1.chat([{"role": "user", "content": "x"}], stream=False)
 
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", OPENAI_TIMEOUT=20, ENABLE_TRACING=False)
     c2 = llm_client.OpenAIClient(cfg)
@@ -513,12 +515,13 @@ def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch) -> None:
                 json={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]},
             )
         )
-        out = _run(c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
+        out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert out == "ok"
     assert metrics[-1]["success"] is True
 
 
-def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
     respx = pytest.importorskip("respx")
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
@@ -531,7 +534,7 @@ def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch) -> None:
         router.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=httpx.Response(200, content=stream_bytes)
         )
-        chunks = _run(_collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)))
+        chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
     assert chunks == ["A"]
 
 
@@ -651,7 +654,8 @@ def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _run(_collect(s)) == ["A"]
 
 
-def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _make_config(OLLAMA_URL="http://localhost:11434/api")
     client = llm_client.LLMClient("ollama", cfg)
     assert "11434" in client._ollama_base_url
@@ -670,10 +674,10 @@ def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value=None))
     monkeypatch.setattr(client._semantic_cache, "set", AsyncMock(return_value=None))
     monkeypatch.setattr(client._client, "chat", fake_chat)
-    assert _run(client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False)) == "resp"
+    assert await client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False) == "resp"
 
     monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value="cached"))
-    assert _run(client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False)) == "cached"
+    assert await client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False) == "cached"
 
     async def fake_stream_chat(**_kw):
         async def g():
@@ -681,13 +685,14 @@ def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
         return g()
 
     monkeypatch.setattr(client._client, "chat", fake_stream_chat)
-    chunks = _run(_collect(_run(client.chat([{"role": "user", "content": "hello"}], stream=True, json_mode=False))))
+    stream = await client.chat([{"role": "user", "content": "hello"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
     assert chunks == ["x"]
 
     monkeypatch.setattr(client._client, "list_models", AsyncMock(return_value=["model-a"]))
     monkeypatch.setattr(client._client, "is_available", AsyncMock(return_value=True))
-    assert _run(client.list_ollama_models()) == ["model-a"]
-    assert _run(client.is_ollama_available()) is True
+    assert await client.list_ollama_models() == ["model-a"]
+    assert await client.is_ollama_available() is True
 
 
 def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch) -> None:
