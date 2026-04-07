@@ -1448,7 +1448,7 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
 
-    monkeypatch.setattr(Path, "rglob", lambda self, _name: [str(instruction)])
+    monkeypatch.setattr(Path, "rglob", lambda self, _name: [instruction])
 
     loaded = agent._load_instruction_files()
     assert "SIDAR.md" in loaded
