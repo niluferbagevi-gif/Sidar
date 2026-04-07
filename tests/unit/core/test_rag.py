@@ -662,7 +662,15 @@ async def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: py
     ef = rag._build_embedding_function(use_gpu=True, gpu_device=1, mixed_precision=True)
     assert ef is not None
 
-    monkeypatch.delitem(__import__("sys").modules, "chromadb.utils.embedding_functions", raising=False)
+    class _BrokenEF:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("factory unavailable")
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "chromadb.utils.embedding_functions",
+        SimpleNamespace(SentenceTransformerEmbeddingFunction=_BrokenEF),
+    )
     assert rag._build_embedding_function(use_gpu=True) is None
 
 
