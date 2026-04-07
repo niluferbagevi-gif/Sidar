@@ -13,11 +13,69 @@ import httpx
 import pytest
 
 import core.llm_client as llm_client
-from tests.conftest import FakeAsyncClient as _FakeAsyncClient
-from tests.conftest import FakeResponse as _FakeResponse
-from tests.conftest import FakeStreamCM as _FakeStreamCM
 from tests.conftest import collect_async_chunks as _collect
 from tests.conftest import make_test_config as _make_config
+
+
+class _FakeResponse:
+    def __init__(self, *, payload=None, lines=None, bytes_chunks=None, status_ok=True):
+        self._payload = payload or {}
+        self._lines = lines or []
+        self._bytes_chunks = bytes_chunks or []
+        self._status_ok = status_ok
+
+    def raise_for_status(self):
+        if not self._status_ok:
+            err = Exception("http")
+            setattr(err, "status_code", 500)
+            raise err
+
+    def json(self):
+        return self._payload
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+    async def aiter_bytes(self):
+        for chunk in self._bytes_chunks:
+            yield chunk
+
+
+class _FakeStreamCM:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
+class _FakeAsyncClient:
+    def __init__(self, *args, **kwargs):
+        self._post_response = kwargs.pop("_post_response", None)
+        self._get_response = kwargs.pop("_get_response", None)
+        self._stream_response = kwargs.pop("_stream_response", None)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    async def post(self, *_args, **_kwargs):
+        return self._post_response or _FakeResponse(payload={})
+
+    async def get(self, *_args, **_kwargs):
+        return self._get_response or _FakeResponse(payload={})
+
+    def stream(self, *_args, **_kwargs):
+        return _FakeStreamCM(self._stream_response or _FakeResponse())
+
+    async def aclose(self):
+        return None
 
 
 
@@ -371,17 +429,14 @@ async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ollama_client_chat_non_stream_and_stream(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+async def test_ollama_client_chat_non_stream_and_stream(
+    monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
+) -> None:
     cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
     client = llm_client.OllamaClient(cfg)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        async def post(self, *_a, **_kw):
-            return fake_response_cls(payload={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
+    )
     out = await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert "final_answer" in out
 
@@ -394,95 +449,79 @@ async def test_ollama_client_chat_non_stream_and_stream(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
-async def test_ollama_stream_response_parses_and_handles_error(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+async def test_ollama_stream_response_parses_and_handles_error(
+    monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
+) -> None:
     cfg = mock_config()
     client = llm_client.OllamaClient(cfg)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        def stream(self, *_a, **_kw):
-            lines = b'{"message":{"content":"A"}}\ninvalid\n{"message":{"content":"B"}}'
-            return fake_stream_cm_cls(fake_response_cls(bytes_chunks=[lines]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    chunks = await _collect(client._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1)))
+    stream_payload = "{\"message\":{\"content\":\"A\"}}\ninvalid\n{\"message\":{\"content\":\"B\"}}"
+    stream_endpoint = "http://localhost:11434/api/chat"
+    respx_mock_router.post(stream_endpoint).mock(
+        return_value=httpx.Response(200, text=stream_payload)
+    )
+    chunks = await _collect(client._stream_response(stream_endpoint, {}, llm_client.httpx.Timeout(10, connect=1)))
     assert chunks == ["A", "B"]
 
     async def broken(*_a, **_k):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
-    fallback = await _collect(client._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1)))
+    fallback = await _collect(client._stream_response(stream_endpoint, {}, llm_client.httpx.Timeout(10, connect=1)))
     assert "HATA" in fallback[0]
 
 
 @pytest.mark.asyncio
-async def test_ollama_list_models_and_availability(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+async def test_ollama_list_models_and_availability(mock_config, respx_mock_router) -> None:
     client = llm_client.OllamaClient(mock_config())
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        async def get(self, *_a, **_kw):
-            return fake_response_cls(payload={"models": [{"name": "m1"}]})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.get("http://localhost:11434/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": [{"name": "m1"}]})
+    )
     assert await client.list_models() == ["m1"]
     assert await client.is_available() is True
 
 
 @pytest.mark.asyncio
-async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, fake_httpx_classes) -> None:
+async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     no_key_cfg = _make_config(OPENAI_API_KEY="")
     c1 = llm_client.OpenAIClient(no_key_cfg)
     assert "OPENAI_API_KEY" in await c1.chat([{"role": "user", "content": "x"}], stream=False)
 
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", OPENAI_TIMEOUT=20, ENABLE_TRACING=False)
     c2 = llm_client.OpenAIClient(cfg)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
     metrics = []
     monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kw: metrics.append(kw))
-
-    class _AC(fake_async_client_cls):
-        async def post(self, *_a, **_kw):
-            return fake_response_cls(
-                payload={"usage": {"prompt_tokens": 1, "completion_tokens": 2}, "choices": [{"message": {"content": "ok"}}]}
-            )
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+                "choices": [{"message": {"content": "ok"}}],
+            },
+        )
+    )
     out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert out == "ok"
     assert metrics[-1]["success"] is True
 
 
 @pytest.mark.asyncio
-async def test_openai_stream_parser(monkeypatch: pytest.MonkeyPatch, fake_httpx_classes) -> None:
+async def test_openai_stream_parser(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        def stream(self, *_a, **_kw):
-            lines = [
-                'data: {"choices":[{"delta":{"content":"A"}}]}',
-                'data: invalid',
-                'data: [DONE]',
-            ]
-            return fake_stream_cm_cls(fake_response_cls(lines=lines))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    stream_text = "\n".join([
+        'data: {"choices":[{"delta":{"content":"A"}}]}',
+        'data: invalid',
+        'data: [DONE]',
+    ])
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, text=stream_text)
+    )
     chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
     assert chunks == ["A"]
 
 
 @pytest.mark.asyncio
-async def test_litellm_candidate_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> None:
     cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)
     assert c._candidate_models(None) == ["m"]
@@ -490,39 +529,32 @@ async def test_litellm_candidate_and_chat(monkeypatch: pytest.MonkeyPatch, mock_
 
     cfg2 = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c2 = llm_client.LiteLLMClient(cfg2)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        async def post(self, *_a, **_kw):
-            return fake_response_cls(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
+    )
     out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert out == "ok"
 
 
 @pytest.mark.asyncio
-async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_config, fake_httpx_classes) -> None:
+async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router) -> None:
     cfg = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c = llm_client.LiteLLMClient(cfg)
-    fake_response_cls = fake_httpx_classes.FakeResponse
-    fake_stream_cm_cls = fake_httpx_classes.FakeStreamCM
-    fake_async_client_cls = fake_httpx_classes.FakeAsyncClient
-
-    class _AC(fake_async_client_cls):
-        def stream(self, *_a, **_kw):
-            return fake_stream_cm_cls(fake_response_cls(lines=["data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}", "data: [DONE]"]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    got = await _collect(c._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False))
+    stream_text = "\n".join(["data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}", "data: [DONE]"])
+    stream_endpoint = "http://gw/chat/completions"
+    respx_mock_router.post(stream_endpoint).mock(return_value=httpx.Response(200, text=stream_text))
+    got = await _collect(
+        c._stream_openai_compatible(stream_endpoint, {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
+    )
     assert got == ["A"]
 
     async def broken(*_a, **_kw):
         raise Exception("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
-    got2 = await _collect(c._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), True))
+    got2 = await _collect(
+        c._stream_openai_compatible(stream_endpoint, {}, {}, llm_client.httpx.Timeout(10, connect=1), True)
+    )
     assert "LiteLLM" in got2[0]
 
 

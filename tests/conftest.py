@@ -35,13 +35,15 @@ async def fake_redis():
                 await maybe
 
 
+
+
 @pytest.fixture
-def fake_httpx_classes():
-    return SimpleNamespace(
-        FakeResponse=FakeResponse,
-        FakeStreamCM=FakeStreamCM,
-        FakeAsyncClient=FakeAsyncClient,
-    )
+def respx_mock_router():
+    respx = pytest.importorskip("respx")
+    with respx.mock(assert_all_called=False) as router:
+        yield router
+
+
 def make_test_config(**overrides):
     base = {
         "LLM_MAX_RETRIES": 2,
@@ -57,66 +59,6 @@ def make_test_config(**overrides):
     base.update(overrides)
     return SimpleNamespace(**base)
 
-
-class FakeResponse:
-    def __init__(self, *, payload=None, lines=None, bytes_chunks=None, status_ok=True):
-        self._payload = payload or {}
-        self._lines = lines or []
-        self._bytes_chunks = bytes_chunks or []
-        self._status_ok = status_ok
-
-    def raise_for_status(self):
-        if not self._status_ok:
-            err = Exception("http")
-            setattr(err, "status_code", 500)
-            raise err
-
-    def json(self):
-        return self._payload
-
-    async def aiter_lines(self):
-        for line in self._lines:
-            yield line
-
-    async def aiter_bytes(self):
-        for chunk in self._bytes_chunks:
-            yield chunk
-
-
-class FakeStreamCM:
-    def __init__(self, response):
-        self._response = response
-
-    async def __aenter__(self):
-        return self._response
-
-    async def __aexit__(self, *_exc):
-        return False
-
-
-class FakeAsyncClient:
-    def __init__(self, *args, **kwargs):
-        self._post_response = kwargs.pop("_post_response", None)
-        self._get_response = kwargs.pop("_get_response", None)
-        self._stream_response = kwargs.pop("_stream_response", None)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return False
-
-    async def post(self, *_args, **_kwargs):
-        return self._post_response or FakeResponse(payload={})
-
-    async def get(self, *_args, **_kwargs):
-        return self._get_response or FakeResponse(payload={})
-
-    def stream(self, *_args, **_kwargs):
-        return FakeStreamCM(self._stream_response or FakeResponse())
-
-    async def aclose(self):
-        return None
 
 
 async def collect_async_chunks(gen):
