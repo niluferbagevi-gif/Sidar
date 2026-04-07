@@ -14,7 +14,6 @@ import pytest
 
 import core.llm_client as llm_client
 from tests.conftest import FakeAsyncClient as _FakeAsyncClient
-from tests.conftest import FakeRedis as _FakeRedis
 from tests.conftest import FakeResponse as _FakeResponse
 from tests.conftest import FakeStreamCM as _FakeStreamCM
 from tests.conftest import collect_async_chunks as _collect
@@ -52,6 +51,11 @@ def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_t
 
 def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) -> None:
     _patch_imports(monkeypatch, {"anthropic": types.SimpleNamespace(AsyncAnthropic=async_anthropic_cls)})
+
+
+async def _cache_put(redis, manager: llm_client._SemanticCacheManager, key: str, embedding: list[float], response: str) -> None:
+    await redis.hset(key, mapping={"embedding": json.dumps(embedding), "response": response})
+    await redis.lpush(manager.index_key, key)
 
 @pytest.mark.parametrize(
     ("provider", "key"),
@@ -212,8 +216,7 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
 async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(mock_config())
     fake = fake_redis
-    fake.index = ["k1"]
-    fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
+    await _cache_put(fake, manager, "k1", [1.0, 0.0], "cached")
 
     async def _get_redis():
         return fake
@@ -234,8 +237,7 @@ async def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> No
 async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
     fake = fake_redis
-    fake.index = ["k1"]
-    fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "cached"}
+    await _cache_put(fake, manager, "k1", [1.0, 0.0], "cached")
     misses = {"n": 0}
 
     async def _get_redis():
@@ -252,7 +254,10 @@ async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, 
 async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(mock_config())
     fake = fake_redis
-    fake.index = ["old1", "old2"]
+    await fake.lpush(manager.index_key, "old2")
+    await fake.lpush(manager.index_key, "old1")
+    await fake.hset("old1", mapping={"embedding": json.dumps([0.9, 0.1]), "response": "old"})
+    await fake.hset("old2", mapping={"embedding": json.dumps([0.8, 0.2]), "response": "old"})
 
     async def _get_redis():
         return fake
@@ -264,8 +269,14 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
 
     await manager.set("prompt", "resp")
 
-    assert len(fake.index) == 2
-    assert any(v.get("response") == "resp" for v in fake.hashes.values())
+    assert await fake.llen(manager.index_key) == 2
+    keys = await fake.lrange(manager.index_key, 0, -1)
+    has_resp = False
+    for key in keys:
+        if (await fake.hgetall(key)).get("response") == "resp":
+            has_resp = True
+            break
+    assert has_resp is True
     assert counters["eviction"] == 1
 
 
@@ -680,9 +691,9 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
-    fake = _FakeRedis()
+    fake = fake_redis
 
     async def _redis():
         return fake
@@ -691,9 +702,43 @@ async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
     assert await manager.get("x") is None
 
-    class _BrokenRedis(_FakeRedis):
+    class _BrokenRedis:
         async def lrange(self, *_a, **_kw):
             raise RuntimeError("boom")
+
+        async def hgetall(self, *_a, **_kw):
+            return {}
+
+        async def llen(self, *_a, **_kw):
+            return 0
+
+        def pipeline(self, transaction: bool = True):
+            class _Pipe:
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *_exc):
+                    return False
+
+                def hset(self, *args, **kwargs):
+                    return None
+
+                def expire(self, *args, **kwargs):
+                    return None
+
+                def lrem(self, *args, **kwargs):
+                    return None
+
+                def lpush(self, *args, **kwargs):
+                    return None
+
+                def ltrim(self, *args, **kwargs):
+                    return None
+
+                async def execute(self):
+                    return None
+
+            return _Pipe()
 
     br = _BrokenRedis()
 
@@ -883,13 +928,14 @@ async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
-    fake = _FakeRedis()
-    fake.index = ["k1", "k2", "k3"]
-    fake.hashes["k1"] = {}
-    fake.hashes["k2"] = {"embedding": "not-json", "response": "r2"}
-    fake.hashes["k3"] = {"embedding": json.dumps([1.0, 0.0]), "response": "r3"}
+    fake = fake_redis
+    await fake.lpush(manager.index_key, "k3")
+    await fake.lpush(manager.index_key, "k2")
+    await fake.lpush(manager.index_key, "k1")
+    await fake.hset("k2", mapping={"embedding": "not-json", "response": "r2"})
+    await fake.hset("k3", mapping={"embedding": json.dumps([1.0, 0.0]), "response": "r3"})
     misses = {"n": 0}
 
     async def _redis():
@@ -934,7 +980,7 @@ async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.Mo
         async def execute(self):
             raise RuntimeError("write failed")
 
-    class _BrokenRedis(_FakeRedis):
+    class _BrokenRedis:
         def pipeline(self, transaction: bool = True):
             return _BrokenPipe()
 
@@ -1294,12 +1340,11 @@ async def test_llmclient_stream_gemini_generator_client_branch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
-    fake = _FakeRedis()
-    fake.index = ["k1", "k2"]
-    fake.hashes["k1"] = {"embedding": json.dumps([1.0, 0.0]), "response": "r1"}
-    fake.hashes["k2"] = {"embedding": json.dumps([1.0, 0.0]), "response": "r2"}
+    fake = fake_redis
+    await _cache_put(fake, manager, "k2", [1.0, 0.0], "r2")
+    await _cache_put(fake, manager, "k1", [1.0, 0.0], "r1")
 
     async def _redis():
         return fake
@@ -1314,9 +1359,10 @@ async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatc
 
     # mevcut anahtar yeniden yazıldığında eviction artmamalı
     manager2 = llm_client._SemanticCacheManager(_make_config())
-    fake2 = _FakeRedis()
+    fake2 = fake_redis
     key = "sidar:semantic_cache:item:" + __import__("hashlib").sha256("p".encode("utf-8")).hexdigest()
-    fake2.index = [key]
+    await fake2.flushall()
+    await fake2.lpush(manager2.index_key, key)
 
     async def _redis2():
         return fake2

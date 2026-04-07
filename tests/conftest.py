@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+import fakeredis
+import fakeredis.aioredis
 import pytest
 
 
@@ -20,8 +22,17 @@ def mock_config():
 
 
 @pytest.fixture
-def fake_redis():
-    return FakeRedis()
+async def fake_redis():
+    server = fakeredis.FakeServer()
+    redis = fakeredis.aioredis.FakeRedis(server=server, decode_responses=True)
+    try:
+        yield redis
+    finally:
+        close = getattr(redis, "aclose", None) or getattr(redis, "close", None)
+        if callable(close):
+            maybe = close()
+            if hasattr(maybe, "__await__"):
+                await maybe
 
 
 @pytest.fixture
@@ -45,82 +56,6 @@ def make_test_config(**overrides):
     }
     base.update(overrides)
     return SimpleNamespace(**base)
-
-
-class FakePipe:
-    def __init__(self, redis):
-        self.redis = redis
-        self.ops = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return False
-
-    def hset(self, key: str, mapping: dict[str, str]):
-        self.ops.append(("hset", key, mapping))
-
-    def expire(self, key: str, ttl: int):
-        self.ops.append(("expire", key, ttl))
-
-    def lrem(self, key: str, count: int, value: str):
-        self.ops.append(("lrem", key, count, value))
-
-    def lpush(self, _index_key: str, key: str):
-        self.ops.append(("lpush", key))
-
-    def ltrim(self, _index_key: str, _start: int, end: int):
-        self.ops.append(("ltrim", end))
-
-    async def execute(self):
-        for op in self.ops:
-            if op[0] == "hset":
-                self.redis.hashes[op[1]] = op[2]
-            elif op[0] == "lrem":
-                _, _key, count, value = op
-                if count == 0:
-                    self.redis.index = [k for k in self.redis.index if k != value]
-                elif count > 0:
-                    removed = 0
-                    next_index = []
-                    for item in self.redis.index:
-                        if item == value and removed < count:
-                            removed += 1
-                            continue
-                        next_index.append(item)
-                    self.redis.index = next_index
-                else:
-                    removed = 0
-                    next_index = []
-                    for item in reversed(self.redis.index):
-                        if item == value and removed < abs(count):
-                            removed += 1
-                            continue
-                        next_index.append(item)
-                    self.redis.index = list(reversed(next_index))
-            elif op[0] == "lpush":
-                self.redis.index.insert(0, op[1])
-            elif op[0] == "ltrim":
-                self.redis.index = self.redis.index[: op[1] + 1]
-
-
-class FakeRedis:
-    def __init__(self):
-        self.hashes: dict[str, dict[str, str]] = {}
-        self.index: list[str] = []
-
-    async def lrange(self, _key: str, _start: int, _end: int):
-        return list(self.index)
-
-    async def hgetall(self, key: str):
-        return self.hashes.get(key, {})
-
-    async def llen(self, _key: str):
-        return len(self.index)
-
-    def pipeline(self, transaction: bool = True):
-        return FakePipe(self)
 
 
 class FakeResponse:
