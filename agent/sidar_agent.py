@@ -997,7 +997,16 @@ class SidarAgent:
             found_files.extend(root.rglob(name))
 
         # Aynı dosya iki kez gelmesin, deterministik sırada olsun
-        unique_files = sorted({p.resolve() for p in found_files if p.is_file()})
+        normalized_files = []
+        for candidate in found_files:
+            path_obj = candidate if isinstance(candidate, Path) else Path(str(candidate))
+            try:
+                if path_obj.is_file():
+                    normalized_files.append(path_obj.resolve())
+            except Exception:
+                continue
+
+        unique_files = sorted(set(normalized_files))
 
         # Mevcut mtime'ları topla
         current_mtimes: Dict[str, float] = {}

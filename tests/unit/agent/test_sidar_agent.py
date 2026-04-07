@@ -1373,7 +1373,7 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
         ],
         "validation_commands": ["pytest -q"],
     }
-    assert await agent._execute_self_heal_plan(remediation_loop={}, plan=plan)["status"] == "applied"
+    assert (await agent._execute_self_heal_plan(remediation_loop={}, plan=plan))["status"] == "applied"
 
     # _tool_subtask(): generic exception path with metrics enabled
     metrics_calls = []
@@ -1510,3 +1510,20 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
     assert "Maksimum adım" in await agent._tool_subtask("job")
+
+
+async def test_load_instruction_files_handles_string_candidates(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    agent = sidar_agent_factory()
+    instruction = tmp_path / "SIDAR.md"
+    instruction.write_text("Talimat", encoding="utf-8")
+
+    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    agent._instructions_cache = None
+    agent._instructions_mtimes = {}
+    agent._instructions_lock = __import__("threading").Lock()
+
+    monkeypatch.setattr(Path, "rglob", lambda self, _name: [str(instruction)])
+
+    loaded = agent._load_instruction_files()
+    assert "SIDAR.md" in loaded
+    assert "Talimat" in loaded
