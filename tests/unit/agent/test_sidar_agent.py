@@ -3,6 +3,7 @@ import types
 import asyncio
 import importlib
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -19,6 +20,10 @@ class _Dummy:
 
 async def _dummy_async(*args, **kwargs):
     return None
+
+
+async def _async_value(value):
+    return value
 
 
 def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,37 +291,26 @@ def test_handle_external_trigger_success_and_failure(monkeypatch: pytest.MonkeyP
     sidar_agent = _load_sidar_agent_module(monkeypatch)
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     records = []
-    memory_rows = []
-    agent.initialize = _dummy_async
+    agent.initialize = AsyncMock()
     agent._ensure_autonomy_runtime_state = lambda: None
     agent.mark_activity = lambda source="runtime": None
     agent._build_trigger_correlation = lambda trigger, payload: {"correlation_id": "cid"}
     agent._build_trigger_prompt = lambda trigger, payload, ci: "PROMPT"
 
-    async def _append(record):
-        records.append(record)
-    agent._append_autonomy_history = _append
-
-    async def _memory_add(role, content):
-        memory_rows.append((role, content))
-    agent._memory_add = _memory_add
-
-    async def _ok(prompt):
-        return "summary"
-    agent._try_multi_agent = _ok
+    agent._append_autonomy_history = AsyncMock(side_effect=lambda record: records.append(record))
+    agent._memory_add = AsyncMock()
+    agent._try_multi_agent = AsyncMock(return_value="summary")
 
     result = asyncio.run(agent.handle_external_trigger({"trigger_id": "tr-1", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
     assert result["status"] == "success"
     assert records and records[0]["summary"] == "summary"
-    assert memory_rows[0][0] == "user"
-    assert memory_rows[1][0] == "assistant"
+    agent._memory_add.assert_any_await("user", "PROMPT")
+    agent._memory_add.assert_any_await("assistant", "summary")
 
-    async def _fail(prompt):
-        raise RuntimeError("x")
-    agent._try_multi_agent = _fail
+    agent._try_multi_agent = AsyncMock(side_effect=RuntimeError("x"))
     failed = asyncio.run(agent.handle_external_trigger({"trigger_id": "tr-2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
     assert failed["status"] == "failed"
-    assert "işlenemedi" in failed["summary"]
+    assert "x" in failed["summary"]
 
 
 def test_run_nightly_memory_maintenance_disabled_and_completed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -409,30 +403,27 @@ def test_load_instruction_files_reads_and_caches(tmp_path: Path, monkeypatch: py
 def test_set_access_level_changed_and_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     sidar_agent = _load_sidar_agent_module(monkeypatch)
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
-    added = []
+    memory = AsyncMock()
+    security = Mock()
+    security.level_name = "safe"
 
-    class _Memory:
-        async def add(self, role, content):
-            added.append((role, content))
+    def _set_level(new_level):
+        if new_level == "strict" and security.level_name != "strict":
+            security.level_name = "strict"
+            return True
+        return False
 
-    class _Security:
-        level_name = "safe"
-
-        def set_level(self, new_level):
-            if new_level == "strict" and self.level_name != "strict":
-                self.level_name = "strict"
-                return True
-            return False
-
-    agent.memory = _Memory()
-    agent.security = _Security()
+    security.set_level.side_effect = _set_level
+    agent.memory = memory
+    agent.security = security
     agent.cfg = types.SimpleNamespace(ACCESS_LEVEL="safe")
 
     changed = asyncio.run(agent.set_access_level("strict"))
     unchanged = asyncio.run(agent.set_access_level("strict"))
-    assert "güncellendi" in changed
-    assert "zaten" in unchanged
-    assert len(added) == 2
+    assert changed.startswith("✓")
+    assert unchanged.startswith("ℹ")
+    assert security.level_name == "strict"
+    assert memory.add.await_count == 2
 
 
 def test_status_renders_all_sections(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -561,18 +552,12 @@ def test_attempt_autonomous_self_heal_blocked_and_applied(monkeypatch: pytest.Mo
 
     agent.code = object()
     agent.llm = object()
-    agent._build_self_heal_plan = _dummy_async
-    agent._execute_self_heal_plan = _dummy_async
-    agent._build_self_heal_plan = lambda **_k: _async_value({"operations": [{"path": "a.py"}]})
-    agent._execute_self_heal_plan = lambda **_k: _async_value({"status": "applied", "summary": "ok", "operations_applied": ["a.py"]})
+    agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
+    agent._execute_self_heal_plan = AsyncMock(return_value={"status": "applied", "summary": "ok", "operations_applied": ["a.py"]})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}, {"name": "validate"}, {"name": "handoff"}]}}
     applied = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
     assert applied["status"] == "applied"
     assert remediation["remediation_loop"]["status"] == "applied"
-
-
-async def _async_value(value):
-    return value
 
 
 def test_build_trigger_prompt_fallback_to_trigger_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -586,20 +571,20 @@ def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypat
     sidar_agent = _load_sidar_agent_module(monkeypatch)
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     history = []
-    agent.initialize = _dummy_async
+    agent.initialize = AsyncMock()
     agent.mark_activity = lambda *_a, **_k: None
     agent._ensure_autonomy_runtime_state = lambda: None
     agent._build_trigger_correlation = lambda *_a, **_k: {}
     agent._build_trigger_prompt = lambda *_a, **_k: "PROMPT"
-    agent._append_autonomy_history = lambda record: _async_value(history.append(record))
-    agent._memory_add = _dummy_async
-    agent._try_multi_agent = lambda *_a, **_k: _async_value(" ")
+    agent._append_autonomy_history = AsyncMock(side_effect=lambda record: history.append(record))
+    agent._memory_add = AsyncMock()
+    agent._try_multi_agent = AsyncMock(return_value=" ")
     empty = asyncio.run(agent.handle_external_trigger({"trigger_id": "t1", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
     assert empty["status"] == "empty"
 
     monkeypatch.setattr(sidar_agent, "build_ci_failure_context", lambda *_a, **_k: {"workflow_name": "ci", "workflow": "ci"})
     monkeypatch.setattr(sidar_agent, "build_ci_remediation_payload", lambda *_a, **_k: {"remediation_loop": {"status": "planned"}})
-    agent._try_multi_agent = lambda *_a, **_k: _async_value("diag")
+    agent._try_multi_agent = AsyncMock(return_value="diag")
 
     async def _self_heal(**_kwargs):
         raise RuntimeError("boom")
