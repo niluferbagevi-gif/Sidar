@@ -7,7 +7,6 @@ import sys
 from typing import Any, AsyncGenerator, Callable
 from unittest.mock import MagicMock
 
-import fakeredis
 import pytest
 
 from agent.core.event_stream import AgentEvent
@@ -25,6 +24,7 @@ def mock_config():
 
 @pytest.fixture
 async def fake_redis():
+    fakeredis = pytest.importorskip("fakeredis")
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     try:
