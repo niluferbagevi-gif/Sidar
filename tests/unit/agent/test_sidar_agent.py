@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("pydantic")
+
 from agent.core.contracts import ExternalTrigger
 
 
@@ -61,7 +63,6 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _load_sidar_agent_module(monkeypatch: pytest.MonkeyPatch):
-    pytest.importorskip("pydantic")
     _install_stub_modules(monkeypatch)
     import agent.sidar_agent as sidar_agent
 

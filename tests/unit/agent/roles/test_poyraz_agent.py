@@ -189,7 +189,7 @@ def poyraz_module(monkeypatch: pytest.MonkeyPatch):
         payload = json.loads(raw)
         return _Payload(**payload)
 
-    module.parse_tool_argument = parse_arg
+    monkeypatch.setattr(module, "parse_tool_argument", parse_arg)
     return module
 
 
