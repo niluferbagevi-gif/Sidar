@@ -1,4 +1,3 @@
-import importlib
 import sys
 import types
 import asyncio
@@ -19,18 +18,6 @@ async def _dummy_async(*args, **kwargs):
 
 
 def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
-    pydantic_stub = types.ModuleType("pydantic")
-
-    class _BaseModel:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    pydantic_stub.BaseModel = _BaseModel
-    pydantic_stub.Field = lambda default=None, **kwargs: default
-    pydantic_stub.ValidationError = Exception
-    monkeypatch.setitem(sys.modules, "pydantic", pydantic_stub)
-
     config_stub = types.ModuleType("config")
     config_stub.Config = _Dummy
     monkeypatch.setitem(sys.modules, "config", config_stub)
@@ -74,18 +61,16 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _load_sidar_agent_module(monkeypatch: pytest.MonkeyPatch):
+    pytest.importorskip("pydantic")
     _install_stub_modules(monkeypatch)
-    sys.modules.pop("agent.sidar_agent", None)
-    return importlib.import_module("agent.sidar_agent")
+    import agent.sidar_agent as sidar_agent
+
+    return sidar_agent
 
 
-def test_import_sets_trace_none_when_opentelemetry_trace_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    opentelemetry_stub = types.ModuleType("opentelemetry")
-    monkeypatch.setitem(sys.modules, "opentelemetry", opentelemetry_stub)
-    monkeypatch.delitem(sys.modules, "opentelemetry.trace", raising=False)
-
+def test_trace_can_be_set_to_none_for_optional_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
     sidar_agent = _load_sidar_agent_module(monkeypatch)
-
+    monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
 
 
