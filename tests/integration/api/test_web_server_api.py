@@ -95,8 +95,14 @@ def web_api_client(monkeypatch: pytest.MonkeyPatch):
     async def _fake_issue_auth_token(_agent, user):
         return f"token-for-{user.username}"
 
+    async def _fake_resolve(agent, token):
+        if token == "token-for-admin":
+            return _FakeUser(id="admin_id", username="admin", role="admin")
+        return None
+
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_issue_auth_token", _fake_issue_auth_token)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
     app.dependency_overrides[web_server._require_admin_user] = (
         lambda: _FakeUser(id="admin-1", username="default_admin", role="admin")
     )
@@ -134,27 +140,37 @@ def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
 @pytest.mark.integration
 def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
     client, _fake_db = web_api_client
+    admin_headers = {"Authorization": "Bearer token-for-admin"}
 
     create_response = client.post(
         "/admin/prompts",
         json={"role_name": "system", "prompt_text": "Be concise", "activate": True},
+        headers=admin_headers,
     )
     assert create_response.status_code == 200
     created_prompt = create_response.json()
     assert created_prompt["role_name"] == "system"
     assert created_prompt["is_active"] is True
 
-    list_response = client.get("/admin/prompts", params={"role_name": "system"})
+    list_response = client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
     assert list_response.status_code == 200
     items = list_response.json()["items"]
     assert len(items) == 1
     assert items[0]["prompt_text"] == "Be concise"
 
-    activate_response = client.post("/admin/prompts/activate", json={"prompt_id": created_prompt["id"]})
+    activate_response = client.post(
+        "/admin/prompts/activate",
+        json={"prompt_id": created_prompt["id"]},
+        headers=admin_headers,
+    )
     assert activate_response.status_code == 200
     assert activate_response.json()["id"] == created_prompt["id"]
 
-    missing_prompt = client.post("/admin/prompts/activate", json={"prompt_id": 9999})
+    missing_prompt = client.post(
+        "/admin/prompts/activate",
+        json={"prompt_id": 9999},
+        headers=admin_headers,
+    )
     assert missing_prompt.status_code == 404
 
 
