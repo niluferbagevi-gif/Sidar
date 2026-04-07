@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+pytestmark = pytest.mark.asyncio
+
 pytest.importorskip("pydantic")
 
 from agent.core.contracts import ExternalTrigger
@@ -13,18 +15,18 @@ from tests.conftest import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
-def test_trace_can_be_set_to_none_for_optional_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_trace_can_be_set_to_none_for_optional_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
 
 
-def test_default_derive_correlation_id_returns_first_non_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_default_derive_correlation_id_returns_first_non_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
     result = sidar_agent._default_derive_correlation_id("", "   ", None, "corr-123", "corr-456")
     assert result == "corr-123"
     assert sidar_agent._default_derive_correlation_id("", "   ", None) == ""
 
 
-def test_fallback_federation_task_envelope_builds_prompt_and_correlation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_fallback_federation_task_envelope_builds_prompt_and_correlation(monkeypatch: pytest.MonkeyPatch) -> None:
     envelope = sidar_agent._FallbackFederationTaskEnvelope(
         task_id="task-9",
         source_system="crm",
@@ -42,7 +44,7 @@ def test_fallback_federation_task_envelope_builds_prompt_and_correlation(monkeyp
     assert "goal=Sync roadmap" in prompt
 
 
-def test_fallback_action_feedback_uses_related_ids_for_correlation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_fallback_action_feedback_uses_related_ids_for_correlation(monkeypatch: pytest.MonkeyPatch) -> None:
     feedback = sidar_agent._FallbackActionFeedback(
         feedback_id="fb-1",
         action_name="create_ticket",
@@ -63,7 +65,7 @@ def test_fallback_action_feedback_uses_related_ids_for_correlation(monkeypatch: 
         ("this is not json", "final_answer", "this is not json"),
     ],
 )
-def test_parse_tool_call_handles_json_markdown_and_invalid_input(
+async def test_parse_tool_call_handles_json_markdown_and_invalid_input(
     monkeypatch: pytest.MonkeyPatch,
     raw: str,
     expected_tool: str,
@@ -76,14 +78,14 @@ def test_parse_tool_call_handles_json_markdown_and_invalid_input(
     assert parsed["argument"] == expected_argument
 
 
-def test_build_trigger_prompt_prioritizes_ci_context(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_prioritizes_ci_context(monkeypatch: pytest.MonkeyPatch) -> None:
     trigger = ExternalTrigger(trigger_id="t-1", source="github", event_name="workflow_run", payload={})
     monkeypatch.setattr(sidar_agent, "build_ci_failure_prompt", lambda ctx: f"CI::{ctx['workflow']}")
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(trigger, {"kind": "federation_task"}, {"workflow": "backend-ci"})
     assert prompt == "CI::backend-ci"
 
 
-def test_build_trigger_prompt_formats_federation_and_action_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_formats_federation_and_action_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
     federation_trigger = ExternalTrigger(trigger_id="t-2", source="crm", event_name="sync", payload={})
     federation_prompt = sidar_agent.SidarAgent._build_trigger_prompt(
         federation_trigger,
@@ -102,7 +104,7 @@ def test_build_trigger_prompt_formats_federation_and_action_feedback(monkeypatch
     assert "status=completed" in action_prompt
 
 
-def test_build_trigger_correlation_matches_history_without_duplicate_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_correlation_matches_history_without_duplicate_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._autonomy_history = [
         {"trigger_id": "trig-1", "status": "success", "source": "github", "payload": {"task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}},
@@ -121,7 +123,7 @@ def test_build_trigger_correlation_matches_history_without_duplicate_ids(monkeyp
     assert correlation["latest_related_status"] == "failed"
 
 
-def test_execute_self_heal_plan_success_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_self_heal_plan_success_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     writes = {}
 
@@ -150,7 +152,7 @@ def test_execute_self_heal_plan_success_and_validation(monkeypatch: pytest.Monke
         "validation_commands": ["pytest -q"],
     }
     remediation_loop = {"validation_commands": ["pytest -q"]}
-    result = asyncio.run(agent._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan))
+    result = await agent._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan)
 
     assert result["status"] == "applied"
     assert result["operations_applied"] == ["a.py"]
@@ -158,7 +160,7 @@ def test_execute_self_heal_plan_success_and_validation(monkeypatch: pytest.Monke
     assert writes["a.py"] == ("A", "B")
 
 
-def test_execute_self_heal_plan_reverts_on_patch_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_self_heal_plan_reverts_on_patch_error(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     restored = {}
 
@@ -182,22 +184,22 @@ def test_execute_self_heal_plan_reverts_on_patch_error(monkeypatch: pytest.Monke
         "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
         "validation_commands": ["pytest -q"],
     }
-    result = asyncio.run(agent._execute_self_heal_plan(remediation_loop={}, plan=plan))
+    result = await agent._execute_self_heal_plan(remediation_loop={}, plan=plan)
     assert result["status"] == "reverted"
     assert result["reverted"] is True
     assert restored == {"a.py": "old:a.py"}
 
 
-def test_attempt_autonomous_self_heal_core_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_autonomous_self_heal_core_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=False)
     remediation = {"remediation_loop": {"status": "planned"}}
-    disabled = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
+    disabled = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert disabled["status"] == "disabled"
 
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "queued"}}
-    skipped = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
+    skipped = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert skipped["status"] == "skipped"
 
     remediation = {
@@ -207,12 +209,12 @@ def test_attempt_autonomous_self_heal_core_branches(monkeypatch: pytest.MonkeyPa
             "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
         }
     }
-    hitl = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
+    hitl = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert hitl["status"] == "awaiting_hitl"
     assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
 
 
-def test_handle_external_trigger_success_and_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_external_trigger_success_and_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     records = []
     agent.initialize = AsyncMock()
@@ -225,19 +227,19 @@ def test_handle_external_trigger_success_and_failure(monkeypatch: pytest.MonkeyP
     agent._memory_add = AsyncMock()
     agent._try_multi_agent = AsyncMock(return_value="summary")
 
-    result = asyncio.run(agent.handle_external_trigger({"trigger_id": "tr-1", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
+    result = await agent.handle_external_trigger({"trigger_id": "tr-1", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
     assert result["status"] == "success"
     assert records and records[0]["summary"] == "summary"
     agent._memory_add.assert_any_await("user", "[AUTONOMY_TRIGGER] PROMPT")
     agent._memory_add.assert_any_await("assistant", "summary")
 
     agent._try_multi_agent = AsyncMock(side_effect=RuntimeError("x"))
-    failed = asyncio.run(agent.handle_external_trigger({"trigger_id": "tr-2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
+    failed = await agent.handle_external_trigger({"trigger_id": "tr-2", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
     assert failed["status"] == "failed"
     assert "x" in failed["summary"]
 
 
-def test_run_nightly_memory_maintenance_disabled_and_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_nightly_memory_maintenance_disabled_and_completed(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.initialize = _dummy_async
     agent._append_autonomy_history = _dummy_async
@@ -250,7 +252,7 @@ def test_run_nightly_memory_maintenance_disabled_and_completed(monkeypatch: pyte
         NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
         NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
     )
-    disabled = asyncio.run(agent.run_nightly_memory_maintenance())
+    disabled = await agent.run_nightly_memory_maintenance()
     assert disabled["status"] == "disabled"
 
     agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = True
@@ -259,13 +261,13 @@ def test_run_nightly_memory_maintenance_disabled_and_completed(monkeypatch: pyte
         return {"session_ids": ["s1"], "sessions_compacted": 1}
     agent.memory.run_nightly_consolidation = _consolidate
     agent.docs = types.SimpleNamespace(consolidate_session_documents=lambda session_id, keep_recent_docs=0: {"removed_docs": 2})
-    completed = asyncio.run(agent.run_nightly_memory_maintenance(force=True, reason="test"))
+    completed = await agent.run_nightly_memory_maintenance(force=True, reason="test")
     assert completed["status"] == "completed"
     assert completed["sessions_compacted"] == 1
     assert completed["rag_docs_pruned"] == 2
 
 
-def test_get_memory_archive_context_sync_filters_by_source_and_score(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_memory_archive_context_sync_filters_by_source_and_score(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
 
     class _Collection:
@@ -287,20 +289,20 @@ def test_get_memory_archive_context_sync_filters_by_source_and_score(monkeypatch
     assert "T3" not in text
 
 
-def test_tool_docs_search_handles_empty_and_async_result(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_docs_search_handles_empty_and_async_result(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
-    empty = asyncio.run(agent._tool_docs_search(""))
+    empty = await agent._tool_docs_search("")
     assert "sorgusu belirtilmedi" in empty
 
     async def _search(query, *_args):
         return True, f"found:{query}"
 
     agent.docs = types.SimpleNamespace(search=lambda *a, **k: _search(*a, **k))
-    found = asyncio.run(agent._tool_docs_search("abc|strict"))
+    found = await agent._tool_docs_search("abc|strict")
     assert found == "found:abc"
 
 
-def test_load_instruction_files_reads_and_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_instruction_files_reads_and_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path
     (root / "SIDAR.md").write_text("root rules", encoding="utf-8")
     nested = root / "sub"
@@ -320,7 +322,7 @@ def test_load_instruction_files_reads_and_caches(tmp_path: Path, monkeypatch: py
     assert second == first
 
 
-def test_set_access_level_changed_and_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_set_access_level_changed_and_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     memory = AsyncMock()
     security = Mock()
@@ -337,15 +339,15 @@ def test_set_access_level_changed_and_unchanged(monkeypatch: pytest.MonkeyPatch)
     agent.security = security
     agent.cfg = types.SimpleNamespace(ACCESS_LEVEL="safe")
 
-    changed = asyncio.run(agent.set_access_level("strict"))
-    unchanged = asyncio.run(agent.set_access_level("strict"))
+    changed = await agent.set_access_level("strict")
+    unchanged = await agent.set_access_level("strict")
     assert changed.startswith("✓")
     assert unchanged.startswith("ℹ")
     assert security.level_name == "strict"
     assert memory.add.await_count == 2
 
 
-def test_status_renders_all_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_status_renders_all_sections(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(AI_PROVIDER="x", CODING_MODEL="m", ACCESS_LEVEL="safe")
     class _Memory:
@@ -364,7 +366,7 @@ def test_status_renders_all_sections(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "github" in text and "web" in text and "pkg" in text and "docs" in text and "health" in text
 
 
-def test_initialize_uses_active_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_initialize_uses_active_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._initialized = False
     agent._init_lock = None
@@ -384,12 +386,12 @@ def test_initialize_uses_active_system_prompt(monkeypatch: pytest.MonkeyPatch) -
             return None
 
     agent.memory = _Memory()
-    asyncio.run(agent.initialize())
+    await agent.initialize()
     assert agent._initialized is True
     assert agent.system_prompt == "live prompt"
 
 
-def test_respond_handles_empty_and_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_respond_handles_empty_and_success(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._lock = None
     agent.initialize = _dummy_async
@@ -406,24 +408,24 @@ def test_respond_handles_empty_and_success(monkeypatch: pytest.MonkeyPatch) -> N
     agent._memory_add = _memory_add
     agent._try_multi_agent = _multi
 
-    empty = list(asyncio.run(_collect_stream(agent.respond("   "))))
+    empty = list(await _collect_stream(agent.respond("   ")))
     assert "Boş girdi" in empty[0]
 
-    ok = list(asyncio.run(_collect_stream(agent.respond("hello"))))
+    ok = list(await _collect_stream(agent.respond("hello")))
     assert ok == ["ok:hello"]
     assert added == [("user", "hello"), ("assistant", "ok:hello")]
 
 
-def test_append_autonomy_history_caps_to_50(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_append_autonomy_history_caps_to_50(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._autonomy_history = [{"i": i} for i in range(60)]
     agent._autonomy_lock = None
-    asyncio.run(agent._append_autonomy_history({"i": 999}))
+    await agent._append_autonomy_history({"i": 999})
     assert len(agent._autonomy_history) == 50
     assert agent._autonomy_history[-1]["i"] == 999
 
 
-def test_collect_and_build_self_heal_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_collect_and_build_self_heal_plan(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     reads = {}
 
@@ -442,25 +444,23 @@ def test_collect_and_build_self_heal_plan(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
     monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", lambda raw_plan, **kwargs: {"operations": [{"path": "a.py"}], "from": raw_plan, "kwargs": kwargs})
 
-    empty = asyncio.run(agent._build_self_heal_plan(ci_context={}, diagnosis="d", remediation_loop={"scope_paths": []}))
+    empty = await agent._build_self_heal_plan(ci_context={}, diagnosis="d", remediation_loop={"scope_paths": []})
     assert empty["operations"] == []
 
-    plan = asyncio.run(
-        agent._build_self_heal_plan(
-            ci_context={},
-            diagnosis="d",
-            remediation_loop={"scope_paths": ["a.py", "x.py"], "validation_commands": ["pytest"]},
-        )
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={"scope_paths": ["a.py", "x.py"], "validation_commands": ["pytest"]},
     )
     assert "a.py" in reads and "x.py" in reads
     assert plan["kwargs"]["scope_paths"] == ["a.py", "x.py"]
 
 
-def test_attempt_autonomous_self_heal_blocked_and_applied(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_autonomous_self_heal_blocked_and_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "planned"}}
-    blocked = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
+    blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert blocked["status"] == "blocked"
 
     agent.code = object()
@@ -468,18 +468,18 @@ def test_attempt_autonomous_self_heal_blocked_and_applied(monkeypatch: pytest.Mo
     agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
     agent._execute_self_heal_plan = AsyncMock(return_value={"status": "applied", "summary": "ok", "operations_applied": ["a.py"]})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}, {"name": "validate"}, {"name": "handoff"}]}}
-    applied = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation))
+    applied = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert applied["status"] == "applied"
     assert remediation["remediation_loop"]["status"] == "applied"
 
 
-def test_build_trigger_prompt_fallback_to_trigger_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_fallback_to_trigger_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     trigger = ExternalTrigger(trigger_id="tid", source="cron", event_name="run", payload={}, meta={})
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(trigger, {"kind": "other"}, None)
     assert "correlation_id=tid" in prompt
 
 
-def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     history = []
     agent.initialize = AsyncMock()
@@ -490,7 +490,7 @@ def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypat
     agent._append_autonomy_history = AsyncMock(side_effect=lambda record: history.append(record))
     agent._memory_add = AsyncMock()
     agent._try_multi_agent = AsyncMock(return_value=" ")
-    empty = asyncio.run(agent.handle_external_trigger({"trigger_id": "t1", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
+    empty = await agent.handle_external_trigger({"trigger_id": "t1", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
     assert empty["status"] == "empty"
 
     monkeypatch.setattr(sidar_agent, "build_ci_failure_context", lambda *_a, **_k: {"workflow_name": "ci", "workflow": "ci"})
@@ -501,7 +501,7 @@ def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypat
         raise RuntimeError("boom")
 
     agent._attempt_autonomous_self_heal = _self_heal
-    ci = asyncio.run(agent.handle_external_trigger({"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
+    ci = await agent.handle_external_trigger({"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
     assert ci["status"] == "success"
     assert ci["remediation"]["self_heal_execution"]["status"] == "failed"
     assert "boom" in ci["remediation"]["self_heal_execution"].get("detail", str(ci)), (
@@ -509,24 +509,24 @@ def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypat
     )
 
 
-def test_run_nightly_memory_maintenance_skipped_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_nightly_memory_maintenance_skipped_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.initialize = _dummy_async
     agent.seconds_since_last_activity = lambda: 5.0
     agent.cfg = types.SimpleNamespace(ENABLE_NIGHTLY_MEMORY_PRUNING=True, NIGHTLY_MEMORY_IDLE_SECONDS=100)
     agent._nightly_maintenance_lock = None
-    not_idle = asyncio.run(agent.run_nightly_memory_maintenance())
+    not_idle = await agent.run_nightly_memory_maintenance()
     assert not_idle["reason"] == "not_idle"
 
     lock = asyncio.Lock()
-    asyncio.run(lock.acquire())
+    await lock.acquire()
     agent._nightly_maintenance_lock = lock
-    running = asyncio.run(agent.run_nightly_memory_maintenance(force=True))
+    running = await agent.run_nightly_memory_maintenance(force=True)
     assert running["reason"] == "already_running"
     lock.release()
 
 
-def test_get_autonomy_activity_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_autonomy_activity_counts(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._ensure_autonomy_runtime_state = lambda: None
     agent._autonomy_history = [
@@ -540,7 +540,7 @@ def test_get_autonomy_activity_counts(monkeypatch: pytest.MonkeyPatch) -> None:
     assert activity["latest_trigger_id"] == "c"
 
 
-def test_try_multi_agent_and_archive_context_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_try_multi_agent_and_archive_context_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
 
     class _Sup:
@@ -548,7 +548,7 @@ def test_try_multi_agent_and_archive_context_error_paths(monkeypatch: pytest.Mon
             return ""
 
     agent._supervisor = _Sup()
-    warning = asyncio.run(agent._try_multi_agent("x"))
+    warning = await agent._try_multi_agent("x")
     assert "geçerli bir çıktı" in warning
 
     class _Collection:
@@ -559,7 +559,7 @@ def test_try_multi_agent_and_archive_context_error_paths(monkeypatch: pytest.Mon
     assert agent._get_memory_archive_context_sync("x", 1, 0.1, 1000) == ""
 
 
-def test_build_context_and_instruction_absence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_context_and_instruction_absence(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(
         AI_PROVIDER="ollama",
@@ -592,12 +592,12 @@ def test_build_context_and_instruction_absence(monkeypatch: pytest.MonkeyPatch) 
     agent.memory = _Memory()
     agent.todo = _Todo()
     agent._load_instruction_files = lambda: "abcdefghi"
-    text = asyncio.run(agent._build_context())
+    text = await agent._build_context()
     assert "AI Sağlayıcı : OLLAMA" in text
     assert "abcdefghi" in text
 
 
-def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
@@ -622,12 +622,12 @@ def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(monkeypatch: pyt
             return types.SimpleNamespace(tool="final_answer", argument="done")
 
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
-    done = asyncio.run(agent._tool_subtask("job"))
+    done = await agent._tool_subtask("job")
     assert "Tamamlandı" in done
-    assert "belirtilmedi" in asyncio.run(agent._tool_subtask(""))
+    assert "belirtilmedi" in await agent._tool_subtask("")
 
     agent.github = types.SimpleNamespace(is_available=lambda: False)
-    assert "token" in asyncio.run(agent._tool_github_smart_pr("x"))
+    assert "token" in await agent._tool_github_smart_pr("x")
 
     class _Code:
         def run_shell(self, command):
@@ -652,7 +652,7 @@ def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(monkeypatch: pyt
 
     agent.code = _Code()
     agent.github = _Git()
-    assert "oluşturuldu" in asyncio.run(agent._tool_github_smart_pr("title|||main|||note"))
+    assert "oluşturuldu" in await agent._tool_github_smart_pr("title|||main|||note")
 
     agent.memory = types.SimpleNamespace(
         get_history=lambda: _async_value([{"role": "user", "content": "a", "timestamp": 1}, {"role": "assistant", "content": "b", "timestamp": 1}, {"role": "user", "content": "c", "timestamp": 1}, {"role": "assistant", "content": "d", "timestamp": 1}]),
@@ -661,17 +661,17 @@ def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(monkeypatch: pyt
     )
     agent.docs = types.SimpleNamespace(add_document=_dummy_async)
     agent.llm = types.SimpleNamespace(chat=lambda **_k: _async_value("sum"))
-    asyncio.run(agent._summarize_memory())
-    assert "temizlendi" in asyncio.run(agent.clear_memory())
+    await agent._summarize_memory()
+    assert "temizlendi" in await agent.clear_memory()
 
 
-def test_update_remediation_step_no_match_keeps_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_remediation_step_no_match_keeps_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     remediation_loop = {"steps": [{"name": "patch", "status": "planned", "detail": "x"}]}
     sidar_agent.SidarAgent._update_remediation_step(remediation_loop, "validate", status="completed", detail="ok")
     assert remediation_loop["steps"][0]["status"] == "planned"
 
 
-def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
 
     class _Code:
@@ -681,11 +681,11 @@ def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(monkeypatch: p
             return True, f"content:{path}"
 
     agent.code = _Code()
-    snapshots = asyncio.run(agent._collect_self_heal_snapshots(["", "./ok.py", "bad.py"]))
+    snapshots = await agent._collect_self_heal_snapshots(["", "./ok.py", "bad.py"])
     assert snapshots == [{"path": "ok.py", "content": "content:ok.py"}]
 
 
-def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/project")
 
@@ -704,28 +704,24 @@ def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(monkeypatch: 
 
     agent.code = _Code()
 
-    skipped = asyncio.run(agent._execute_self_heal_plan(remediation_loop={}, plan={"operations": []}))
+    skipped = await agent._execute_self_heal_plan(remediation_loop={}, plan={"operations": []})
     assert skipped["status"] == "skipped"
 
-    blocked = asyncio.run(
-        agent._execute_self_heal_plan(
-            remediation_loop={},
-            plan={"operations": [{"path": "a.py", "target": "x", "replacement": "y"}], "validation_commands": []},
-        )
+    blocked = await agent._execute_self_heal_plan(
+        remediation_loop={},
+        plan={"operations": [{"path": "a.py", "target": "x", "replacement": "y"}], "validation_commands": []},
     )
     assert blocked["status"] == "blocked"
 
-    reverted = asyncio.run(
-        agent._execute_self_heal_plan(
-            remediation_loop={},
-            plan={"operations": [{"path": "a.py", "target": "x", "replacement": "y"}], "validation_commands": ["pytest -q"]},
-        )
+    reverted = await agent._execute_self_heal_plan(
+        remediation_loop={},
+        plan={"operations": [{"path": "a.py", "target": "x", "replacement": "y"}], "validation_commands": ["pytest -q"]},
     )
     assert reverted["status"] == "reverted"
     assert "yedekleme" in reverted["summary"]
 
 
-def test_build_trigger_prompt_prefers_federation_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_prefers_federation_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     trigger = ExternalTrigger(trigger_id="tid", source="crm", event_name="sync", payload={}, meta={})
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(
         trigger,
@@ -735,7 +731,7 @@ def test_build_trigger_prompt_prefers_federation_prompt(monkeypatch: pytest.Monk
     assert prompt == "PRESET"
 
 
-def test_build_trigger_correlation_matches_related_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_correlation_matches_related_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._autonomy_history = [
         {"trigger_id": "t-old", "status": "success", "source": "cron", "payload": {"task_id": "T"}, "meta": {}},
@@ -748,7 +744,7 @@ def test_build_trigger_correlation_matches_related_ids(monkeypatch: pytest.Monke
     assert corr["latest_related_status"] == "failed"
 
 
-def test_try_multi_agent_imports_supervisor_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_try_multi_agent_imports_supervisor_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace()
     agent._supervisor = None
@@ -764,11 +760,11 @@ def test_try_multi_agent_imports_supervisor_when_missing(monkeypatch: pytest.Mon
     supervisor_mod.SupervisorAgent = _Supervisor
     monkeypatch.setitem(sys.modules, "agent.core.supervisor", supervisor_mod)
 
-    result = asyncio.run(agent._try_multi_agent("hello"))
+    result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
 
 
-def test_get_memory_archive_context_async_and_sync_edges(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_memory_archive_context_async_and_sync_edges(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(MEMORY_ARCHIVE_TOP_K=1, MEMORY_ARCHIVE_MIN_SCORE=0.3, MEMORY_ARCHIVE_MAX_CHARS=1200)
 
@@ -788,11 +784,11 @@ def test_get_memory_archive_context_async_and_sync_edges(monkeypatch: pytest.Mon
     assert "Long" in sync_text
     assert "..." in sync_text
 
-    async_text = asyncio.run(agent._get_memory_archive_context("x"))
+    async_text = await agent._get_memory_archive_context("x")
     assert "Geçmiş Sohbet" in async_text
 
 
-def test_build_context_non_ollama_and_truncations(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_context_non_ollama_and_truncations(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(
         AI_PROVIDER="openai",
@@ -826,18 +822,18 @@ def test_build_context_non_ollama_and_truncations(monkeypatch: pytest.MonkeyPatc
     agent.todo = _Todo()
     agent._load_instruction_files = lambda: "instructions"
 
-    text = asyncio.run(agent._build_context())
+    text = await agent._build_context()
     assert "Gemini Modeli" in text
     assert "Bağlı — org/repo" in text
     assert "Aktif Görev Listesi" in text
 
     agent.cfg.AI_PROVIDER = "ollama"
     agent._load_instruction_files = lambda: "i" * 5000
-    short = asyncio.run(agent._build_context())
+    short = await agent._build_context()
     assert "yerel model" in short
 
 
-def test_load_instruction_files_no_files_and_read_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_instruction_files_no_files_and_read_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
@@ -859,7 +855,7 @@ def test_load_instruction_files_no_files_and_read_error(tmp_path: Path, monkeypa
     assert agent._load_instruction_files() == ""
 
 
-def test_tool_subtask_non_string_and_tool_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_non_string_and_tool_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
@@ -884,11 +880,11 @@ def test_tool_subtask_non_string_and_tool_exception(monkeypatch: pytest.MonkeyPa
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail-tool"))
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
 
-    output = asyncio.run(agent._tool_subtask("job"))
+    output = await agent._tool_subtask("job")
     assert "Maksimum adım" in output
 
 
-def test_tool_github_smart_pr_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_github_smart_pr_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.github = types.SimpleNamespace(is_available=lambda: True, default_branch="main", create_pull_request=lambda *_a: (False, "err"))
 
@@ -899,7 +895,7 @@ def test_tool_github_smart_pr_error_branches(monkeypatch: pytest.MonkeyPatch) ->
             return True, ""
 
     agent.code = _NoHeadCode()
-    assert "Aktif branch" in asyncio.run(agent._tool_github_smart_pr("x"))
+    assert "Aktif branch" in await agent._tool_github_smart_pr("x")
 
     class _NoChangesCode:
         def run_shell(self, command):
@@ -910,7 +906,7 @@ def test_tool_github_smart_pr_error_branches(monkeypatch: pytest.MonkeyPatch) ->
             return True, ""
 
     agent.code = _NoChangesCode()
-    assert "oluşturulmadı" in asyncio.run(agent._tool_github_smart_pr("x"))
+    assert "oluşturulmadı" in await agent._tool_github_smart_pr("x")
 
     class _FailPrCode:
         def run_shell(self, command):
@@ -925,10 +921,10 @@ def test_tool_github_smart_pr_error_branches(monkeypatch: pytest.MonkeyPatch) ->
             return True, ""
 
     agent.code = _FailPrCode()
-    assert "oluşturulamadı" in asyncio.run(agent._tool_github_smart_pr("title|||base|||note"))
+    assert "oluşturulamadı" in await agent._tool_github_smart_pr("title|||base|||note")
 
 
-def test_summarize_memory_exception_paths_and_memory_add(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_summarize_memory_exception_paths_and_memory_add(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     added = []
 
@@ -956,12 +952,12 @@ def test_summarize_memory_exception_paths_and_memory_add(monkeypatch: pytest.Mon
     agent.llm = types.SimpleNamespace(chat=lambda **_k: _async_value("summary"))
     agent.cfg = types.SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    asyncio.run(agent._summarize_memory())
-    asyncio.run(agent._memory_add("user", "hello"))
+    await agent._summarize_memory()
+    await agent._memory_add("user", "hello")
     assert added == [("user", "hello")]
 
 
-def test_init_and_initialize_guards_and_parse_non_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_init_and_initialize_guards_and_parse_non_dict(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class _Cfg:
         BASE_DIR = "/tmp/base"
@@ -993,11 +989,11 @@ def test_init_and_initialize_guards_and_parse_non_dict(monkeypatch: pytest.Monke
     assert parsed == {"tool": "final_answer", "argument": "[1,2,3]"}
 
     agent._initialized = True
-    asyncio.run(agent.initialize())
+    await agent.initialize()
 
 
 
-def test_runtime_helpers_and_self_heal_validation_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_runtime_helpers_and_self_heal_validation_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent._last_activity_ts = 0
     agent.mark_activity("test")
@@ -1023,18 +1019,16 @@ def test_runtime_helpers_and_self_heal_validation_failure(monkeypatch: pytest.Mo
 
     agent.code = _Code()
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/x")
-    reverted = asyncio.run(
-        agent._execute_self_heal_plan(
-            remediation_loop={"validation_commands": ["pytest -q"]},
-            plan={"operations": [{"path": "a.py", "target": "a", "replacement": "b"}]},
-        )
+    reverted = await agent._execute_self_heal_plan(
+        remediation_loop={"validation_commands": ["pytest -q"]},
+        plan={"operations": [{"path": "a.py", "target": "a", "replacement": "b"}]},
     )
     assert reverted["status"] == "reverted"
     assert "Sandbox doğrulaması" in reverted["summary"]
 
 
 
-def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = object()
@@ -1042,7 +1036,7 @@ def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(monkeypatch: 
     agent._build_self_heal_plan = lambda **_k: _async_value({"operations": [{"path": "a.py"}]})
     agent._execute_self_heal_plan = lambda **_k: _async_value({"status": "reverted", "summary": "bad", "operations_applied": []})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}, {"name": "validate"}]}}
-    failed = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="d", remediation=remediation))
+    failed = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="d", remediation=remediation)
     assert failed["status"] == "reverted"
     assert remediation["remediation_loop"]["status"] == "reverted"
 
@@ -1065,13 +1059,13 @@ def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(monkeypatch: 
         "workflow_name": "ci",
         "workflow": "ci",
     }
-    out = asyncio.run(agent.handle_external_trigger({"trigger_id": "w1", "source": "gh", "event_name": "workflow_run", "payload": payload, "meta": {}}))
+    out = await agent.handle_external_trigger({"trigger_id": "w1", "source": "gh", "event_name": "workflow_run", "payload": payload, "meta": {}})
     assert out["status"] == "success"
     assert out["payload"]["workflow_name"] == "ci"
 
 
 
-def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.initialize = _dummy_async
     agent._append_autonomy_history = _dummy_async
@@ -1095,7 +1089,7 @@ def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(tmp_pat
     monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: _Entity())
     agent.memory = types.SimpleNamespace(run_nightly_consolidation=lambda **_k: _async_value({"session_ids": [], "sessions_compacted": 0}))
     agent.docs = types.SimpleNamespace(consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 0})
-    report = asyncio.run(agent.run_nightly_memory_maintenance(force=True))
+    report = await agent.run_nightly_memory_maintenance(force=True)
     assert report["entity_report"]["status"] == "failed"
 
     class _Collection:
@@ -1149,7 +1143,7 @@ def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(tmp_pat
 
 
 
-def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(
         AI_PROVIDER="openai",
@@ -1180,16 +1174,16 @@ def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.
 
     agent.todo = _Todo()
     agent._load_instruction_files = lambda: ""
-    ctx = asyncio.run(agent._build_context())
+    ctx = await agent._build_context()
     assert "Aktif Görev Listesi" not in ctx
 
-    assert asyncio.run(agent._tool_docs_search("q")) == "plain"
+    assert await agent._tool_docs_search("q") == "plain"
 
     agent.cfg.AI_PROVIDER = "ollama"
     agent.cfg.LOCAL_INSTRUCTION_MAX_CHARS = 5000
     agent.cfg.LOCAL_AGENT_CONTEXT_MAX_CHARS = 1
     agent._load_instruction_files = lambda: "x" * 5000
-    tiny = asyncio.run(agent._build_context())
+    tiny = await agent._build_context()
     assert "Bağlam yerel model için kırpıldı" in tiny
 
     metrics_calls = []
@@ -1212,7 +1206,7 @@ def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.
 
     agent.llm = _LLM()
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
-    out = asyncio.run(agent._tool_subtask("job"))
+    out = await agent._tool_subtask("job")
     assert "Maksimum adım" in out
     assert metrics_calls
 
@@ -1232,13 +1226,13 @@ def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.
     agent.llm = _ToolLLM()
     monkeypatch.setattr(sidar_agent, "ToolCall", _PassToolCall)
     agent._execute_tool = AsyncMock(return_value="ok")
-    assert "Maksimum adım" in asyncio.run(agent._tool_subtask("job"))
+    assert "Maksimum adım" in await agent._tool_subtask("job")
 
     broken_metrics = types.ModuleType("core.agent_metrics")
     monkeypatch.setitem(sys.modules, "core.agent_metrics", broken_metrics)
     agent.llm = _ToolLLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
-    assert "Maksimum adım" in asyncio.run(agent._tool_subtask("job"))
+    assert "Maksimum adım" in await agent._tool_subtask("job")
 
     metrics_mod2 = types.ModuleType("core.agent_metrics")
     metrics_mod2.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(("err",) + a))
@@ -1249,10 +1243,10 @@ def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.
             raise RuntimeError("llm-boom")
 
     agent.llm = _BoomLLM()
-    assert "Maksimum adım" in asyncio.run(agent._tool_subtask("job"))
+    assert "Maksimum adım" in await agent._tool_subtask("job")
 
     agent.memory = types.SimpleNamespace(get_history=lambda: _async_value([{"role": "u", "content": "x", "timestamp": 1}]))
-    asyncio.run(agent._summarize_memory())
+    await agent._summarize_memory()
 
     class _Git:
         def is_available(self):
@@ -1279,18 +1273,18 @@ def test_context_docs_search_subtask_metrics_and_misc_edges(monkeypatch: pytest.
 
     agent.github = _Git()
     agent.code = _Code()
-    msg = asyncio.run(agent._tool_github_smart_pr("title"))
+    msg = await agent._tool_github_smart_pr("title")
     assert "oluşturuldu" in msg
 
 
-def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = object()
     agent.llm = object()
     agent._build_self_heal_plan = lambda **_k: _async_value({"operations": []})
     remediation = {"remediation_loop": {"status": "planned", "steps": [{"name": "patch"}]}}
-    blocked = asyncio.run(agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="d", remediation=remediation))
+    blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="d", remediation=remediation)
     assert blocked["status"] == "blocked"
     assert remediation["remediation_loop"]["steps"][0]["status"] == "blocked"
 
@@ -1310,11 +1304,11 @@ def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(monk
             return None
 
     agent2.memory = _Memory()
-    asyncio.run(agent2.initialize())
+    await agent2.initialize()
     assert agent2.system_prompt == "default"
 
 
-def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # initialize(): hit inner early-return branch (line 255)
     agent_init = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
@@ -1330,7 +1324,7 @@ def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.Monke
 
     agent_init._init_lock = _FlipLock()
     agent_init.memory = types.SimpleNamespace(initialize=_dummy_async)
-    asyncio.run(agent_init.initialize())
+    await agent_init.initialize()
 
     # respond(): hit branch where lock already exists
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
@@ -1340,12 +1334,12 @@ def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.Monke
     mem = []
     agent._memory_add = lambda role, content: _async_value(mem.append((role, content)))
     agent._try_multi_agent = lambda *_a, **_k: _async_value("ok")
-    assert list(asyncio.run(_collect_stream(agent.respond("hi")))) == ["ok"]
+    assert list(await _collect_stream(agent.respond("hi"))) == ["ok"]
 
     # _append_autonomy_history(): existing lock branch
     agent._autonomy_history = []
     agent._autonomy_lock = asyncio.Lock()
-    asyncio.run(agent._append_autonomy_history({"x": 1}))
+    await agent._append_autonomy_history({"x": 1})
 
     # _execute_self_heal_plan(): backup reuse branch
     class _Code:
@@ -1370,7 +1364,7 @@ def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.Monke
         ],
         "validation_commands": ["pytest -q"],
     }
-    assert asyncio.run(agent._execute_self_heal_plan(remediation_loop={}, plan=plan))["status"] == "applied"
+    assert await agent._execute_self_heal_plan(remediation_loop={}, plan=plan)["status"] == "applied"
 
     # _tool_subtask(): generic exception path with metrics enabled
     metrics_calls = []
@@ -1397,12 +1391,12 @@ def test_tool_subtask_exception_path_and_lock_branches(monkeypatch: pytest.Monke
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
-    out = asyncio.run(agent._tool_subtask("job"))
+    out = await agent._tool_subtask("job")
     assert "Maksimum adım" in out
     assert any(call[3] == "failed" for call in metrics_calls)
 
 
-def test_handle_external_trigger_instance_path_and_correlation_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_external_trigger_instance_path_and_correlation_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.initialize = _dummy_async
     agent.mark_activity = lambda *_a, **_k: None
@@ -1413,7 +1407,7 @@ def test_handle_external_trigger_instance_path_and_correlation_loop(monkeypatch:
     monkeypatch.setattr(sidar_agent, "build_ci_failure_context", lambda *_a, **_k: None)
 
     trigger = ExternalTrigger(trigger_id="t", source="s", event_name="e", payload={}, meta={})
-    out = asyncio.run(agent.handle_external_trigger(trigger))
+    out = await agent.handle_external_trigger(trigger)
     assert out["status"] == "success"
 
     agent._autonomy_history = [{"trigger_id": "x", "payload": {}}]
@@ -1422,7 +1416,7 @@ def test_handle_external_trigger_instance_path_and_correlation_loop(monkeypatch:
     assert corr["matched_records"] == 0
 
 
-def test_initialize_without_db_and_tool_subtask_remaining_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_initialize_without_db_and_tool_subtask_remaining_branches(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # initialize branch where memory has no db
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
@@ -1435,7 +1429,7 @@ def test_initialize_without_db_and_tool_subtask_remaining_branches(monkeypatch: 
 
     agent.memory = _MemoryNoDb()
     agent.system_prompt = "default"
-    asyncio.run(agent.initialize())
+    await agent.initialize()
     assert agent._initialized is True
 
     # Make ValidationError distinct so generic exception branch can execute
@@ -1465,7 +1459,7 @@ def test_initialize_without_db_and_tool_subtask_remaining_branches(monkeypatch: 
     agent.llm = _LLM()
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
     agent._execute_tool = AsyncMock(return_value="ok")
-    assert "Maksimum adım" in asyncio.run(agent._tool_subtask("job"))
+    assert "Maksimum adım" in await agent._tool_subtask("job")
 
     # generic exception branch with metrics enabled (1125-1137)
     calls = []
@@ -1474,12 +1468,12 @@ def test_initialize_without_db_and_tool_subtask_remaining_branches(monkeypatch: 
     monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod)
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-fail"))
-    out = asyncio.run(agent._tool_subtask("job"))
+    out = await agent._tool_subtask("job")
     assert "Maksimum adım" in out
     assert any(c[3] == "failed" for c in calls)
 
 
-def test_tool_subtask_generic_exception_without_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_generic_exception_without_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class _VErr(Exception):
         pass
@@ -1506,4 +1500,4 @@ def test_tool_subtask_generic_exception_without_metrics(monkeypatch: pytest.Monk
     agent.llm = _LLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
     monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
-    assert "Maksimum adım" in asyncio.run(agent._tool_subtask("job"))
+    assert "Maksimum adım" in await agent._tool_subtask("job")

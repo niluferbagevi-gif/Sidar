@@ -2,6 +2,10 @@ import asyncio
 import importlib
 import sys
 import types
+import pytest
+
+pytestmark = pytest.mark.asyncio
+
 
 from agent.core.contracts import DelegationRequest, TaskEnvelope
 
@@ -50,7 +54,7 @@ def _make_dummy_agent(base_agent_module, role_name="base"):
     return DummyAgent(role_name=role_name)
 
 
-def test_init_register_and_call_tool(monkeypatch):
+async def test_init_register_and_call_tool(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="qa")
 
@@ -58,19 +62,19 @@ def test_init_register_and_call_tool(monkeypatch):
     assert agent.role_name == "qa"
     assert agent.llm.provider == "dummy-provider"
 
-    missing = asyncio.run(agent.call_tool("unknown", "x"))
+    missing = await agent.call_tool("unknown", "x")
     assert "tanımlı değil" in missing
 
     agent.register_tool("echo", _tool_echo)
-    result = asyncio.run(agent.call_tool("echo", "hello"))
+    result = await agent.call_tool("echo", "hello")
     assert result == "echo:hello"
 
 
-def test_call_llm_uses_default_and_override_prompt(monkeypatch):
+async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
 
-    response_default = asyncio.run(agent.call_llm(messages=["msg-1"]))
+    response_default = await agent.call_llm(messages=["msg-1"])
     assert response_default == "msg-1"
     first_call = agent.llm.calls[0]
     assert first_call["system_prompt"] == agent.SYSTEM_PROMPT
@@ -78,14 +82,12 @@ def test_call_llm_uses_default_and_override_prompt(monkeypatch):
     assert first_call["stream"] is False
     assert first_call["json_mode"] is False
 
-    response_override = asyncio.run(
-        agent.call_llm(
-            messages=["msg-2"],
-            system_prompt="custom",
-            temperature=0.9,
-            json_mode=True,
-            model="gpt-test",
-        )
+    response_override = await agent.call_llm(
+        messages=["msg-2"],
+        system_prompt="custom",
+        temperature=0.9,
+        json_mode=True,
+        model="gpt-test",
     )
     assert response_override == "msg-2"
     second_call = agent.llm.calls[1]
@@ -95,7 +97,7 @@ def test_call_llm_uses_default_and_override_prompt(monkeypatch):
     assert second_call["model"] == "gpt-test"
 
 
-def test_delegate_to_and_is_delegation_message(monkeypatch):
+async def test_delegate_to_and_is_delegation_message(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="reviewer")
 
@@ -130,7 +132,7 @@ def test_delegate_to_and_is_delegation_message(monkeypatch):
     assert agent.is_delegation_message("not-a-delegation") is False
 
 
-def test_handle_returns_task_result_for_plain_summary(monkeypatch):
+async def test_handle_returns_task_result_for_plain_summary(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="researcher")
     agent.next_result = "plain-summary"
@@ -142,7 +144,7 @@ def test_handle_returns_task_result_for_plain_summary(monkeypatch):
         goal="collect context",
     )
 
-    result = asyncio.run(agent.handle(envelope))
+    result = await agent.handle(envelope)
 
     assert result.task_id == "task-11"
     assert result.status == "success"
@@ -150,7 +152,7 @@ def test_handle_returns_task_result_for_plain_summary(monkeypatch):
     assert result.evidence == []
 
 
-def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
+async def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
     agent.next_result = DelegationRequest(
@@ -170,7 +172,7 @@ def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
         context={"p2p_handoff_depth": "3"},
     )
 
-    result = asyncio.run(agent.handle(envelope))
+    result = await agent.handle(envelope)
     summary = result.summary
 
     assert isinstance(summary, DelegationRequest)
@@ -179,7 +181,7 @@ def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
     assert summary.handoff_depth == 3
 
 
-def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
+async def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
     agent.next_result = DelegationRequest(
@@ -200,7 +202,7 @@ def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
         context={"p2p_handoff_depth": "2"},
     )
 
-    result = asyncio.run(agent.handle(envelope))
+    result = await agent.handle(envelope)
     summary = result.summary
 
     assert isinstance(summary, DelegationRequest)
