@@ -1055,7 +1055,7 @@ async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(sidar_a
     agent.mark_activity = lambda *_a, **_k: None
     agent._build_trigger_correlation = lambda *_a, **_k: {}
     agent._build_trigger_prompt = lambda *_a, **_k: "PROMPT"
-    agent._append_autonomy_history = lambda record: _async_value(history.append(record))
+    agent._append_autonomy_history = AsyncMock(side_effect=lambda record: history.append(record))
     agent._memory_add = _dummy_async
     agent._try_multi_agent = lambda *_a, **_k: _async_value("diag")
 
