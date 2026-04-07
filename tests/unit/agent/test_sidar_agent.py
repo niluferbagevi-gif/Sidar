@@ -585,16 +585,13 @@ async def test_build_context_and_instruction_absence(sidar_agent_factory, monkey
     agent.web = types.SimpleNamespace(is_available=lambda: False)
     agent.docs = types.SimpleNamespace(status=lambda: "docs")
     agent.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0})
-    class _Memory:
-        def get_last_file(self):
-            return ""
+    memory = Mock()
+    memory.get_last_file.return_value = ""
+    todo = Mock()
+    todo.__len__ = Mock(return_value=0)
 
-    class _Todo:
-        def __len__(self):
-            return 0
-
-    agent.memory = _Memory()
-    agent.todo = _Todo()
+    agent.memory = memory
+    agent.todo = todo
     agent._load_instruction_files = lambda: "abcdefghi"
     text = await agent._build_context()
     assert "AI Sağlayıcı : OLLAMA" in text
@@ -605,17 +602,9 @@ async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agen
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    class _LLM:
-        def __init__(self):
-            self.i = 0
-
-        async def chat(self, **_k):
-            self.i += 1
-            if self.i == 1:
-                return '{"thought":"t","tool":"final_answer","argument":"done"}'
-            return "x"
-
-    agent.llm = _LLM()
+    llm = AsyncMock()
+    llm.chat = AsyncMock(side_effect=['{"thought":"t","tool":"final_answer","argument":"done"}', "x"])
+    agent.llm = llm
     done = await agent._tool_subtask("job")
     assert "Tamamlandı" in done
     assert "belirtilmedi" in await agent._tool_subtask("")
@@ -623,29 +612,25 @@ async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agen
     agent.github = types.SimpleNamespace(is_available=lambda: False)
     assert "token" in await agent._tool_github_smart_pr("x")
 
-    class _Code:
-        def run_shell(self, command):
-            if "branch" in command:
-                return True, "feat/x"
-            if "status" in command:
-                return True, "M a.py"
-            if "log" in command:
-                return True, "c1"
-            if "diff --no-color" in command:
-                return True, "diff"
-            return True, ""
+    code = Mock()
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/x")
+        if "branch" in command
+        else (True, "M a.py")
+        if "status" in command
+        else (True, "c1")
+        if "log" in command
+        else (True, "diff")
+        if "diff --no-color" in command
+        else (True, "")
+    )
+    git = Mock()
+    git.default_branch = "main"
+    git.is_available.return_value = True
+    git.create_pull_request.return_value = (True, "url")
 
-    class _Git:
-        default_branch = "main"
-
-        def is_available(self):
-            return True
-
-        def create_pull_request(self, *_a):
-            return True, "url"
-
-    agent.code = _Code()
-    agent.github = _Git()
+    agent.code = code
+    agent.github = git
     assert "oluşturuldu" in await agent._tool_github_smart_pr("title|||main|||note")
 
     agent.memory = types.SimpleNamespace(
@@ -669,13 +654,9 @@ async def test_update_remediation_step_no_match_keeps_steps(sidar_agent_factory,
 async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
 
-    class _Code:
-        def read_file(self, path, _safe):
-            if path == "bad.py":
-                return False, "missing"
-            return True, f"content:{path}"
-
-    agent.code = _Code()
+    code = Mock()
+    code.read_file.side_effect = lambda path, _safe: (False, "missing") if path == "bad.py" else (True, f"content:{path}")
+    agent.code = code
     snapshots = await agent._collect_self_heal_snapshots(["", "./ok.py", "bad.py"])
     assert snapshots == [{"path": "ok.py", "content": "content:ok.py"}]
 
@@ -684,20 +665,13 @@ async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(sidar_a
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/project")
 
-    class _Code:
-        def read_file(self, _path, _safe):
-            return False, "nope"
+    code = Mock()
+    code.read_file.return_value = (False, "nope")
+    code.patch_file.return_value = (True, "ok")
+    code.write_file.return_value = (True, "ok")
+    code.run_shell_in_sandbox.return_value = (True, "ok")
 
-        def patch_file(self, *_a, **_k):
-            return True, "ok"
-
-        def write_file(self, *_a, **_k):
-            return True, "ok"
-
-        def run_shell_in_sandbox(self, *_a, **_k):
-            return True, "ok"
-
-    agent.code = _Code()
+    agent.code = code
 
     skipped = await agent._execute_self_heal_plan(remediation_loop={}, plan={"operations": []})
     assert skipped["status"] == "skipped"
@@ -904,28 +878,24 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
 async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     added = []
+    memory = AsyncMock()
+    memory.get_history.return_value = [
+        {"role": "user", "content": "a", "timestamp": 1},
+        {"role": "assistant", "content": "b", "timestamp": 1},
+        {"role": "user", "content": "c", "timestamp": 1},
+        {"role": "assistant", "content": "d", "timestamp": 1},
+    ]
+    memory.apply_summary.side_effect = RuntimeError("sum-fail")
 
-    class _Memory:
-        async def get_history(self):
-            return [
-                {"role": "user", "content": "a", "timestamp": 1},
-                {"role": "assistant", "content": "b", "timestamp": 1},
-                {"role": "user", "content": "c", "timestamp": 1},
-                {"role": "assistant", "content": "d", "timestamp": 1},
-            ]
+    async def _capture_add(role, content):
+        added.append((role, content))
 
-        async def apply_summary(self, _s):
-            raise RuntimeError("sum-fail")
+    memory.add.side_effect = _capture_add
+    docs = AsyncMock()
+    docs.add_document.side_effect = RuntimeError("rag-fail")
 
-        async def add(self, role, content):
-            added.append((role, content))
-
-    class _Docs:
-        async def add_document(self, **_kwargs):
-            raise RuntimeError("rag-fail")
-
-    agent.memory = _Memory()
-    agent.docs = _Docs()
+    agent.memory = memory
+    agent.docs = docs
     agent.llm = types.SimpleNamespace(chat=lambda **_k: _async_value("summary"))
     agent.cfg = types.SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
 
