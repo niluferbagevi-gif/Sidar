@@ -111,6 +111,14 @@ def test_init_path_and_database_url_resolution(monkeypatch, tmp_path: Path):
     assert "sidar_memory.db" in m2.cfg.DATABASE_URL
 
 
+def test_init_replaces_placeholder_sqlite_database_url_from_config(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    monkeypatch.setattr(memory_module, "get_config", lambda: types.SimpleNamespace(DATABASE_URL="sqlite:///x"))
+
+    mem = ConversationMemory(base_dir=tmp_path)
+    assert "sidar_memory.db" in mem.cfg.DATABASE_URL
+
+
 def test_user_required_and_repr_len(mem):
     assert "session=None" in repr(mem)
     assert len(mem) == 0

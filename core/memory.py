@@ -64,9 +64,19 @@ class ConversationMemory:
         if not resolved_database_url:
             resolved_database_url = getattr(self.cfg, "DATABASE_URL", "")
 
-        if not resolved_database_url:
-            resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
-        elif str(resolved_database_url).endswith("data/sidar.db"):
+        normalized_database_url = str(resolved_database_url or "").strip()
+        placeholder_sqlite_urls = {
+            "sqlite:///x",
+            "sqlite+aiosqlite:///x",
+            "sqlite:///x.db",
+            "sqlite+aiosqlite:///x.db",
+        }
+        should_use_memory_default = (
+            not normalized_database_url
+            or normalized_database_url in placeholder_sqlite_urls
+            or normalized_database_url.endswith("data/sidar.db")
+        )
+        if should_use_memory_default:
             resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
 
         self.cfg.DATABASE_URL = resolved_database_url
