@@ -1,6 +1,7 @@
 """Smoke tests for application boot sanity."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -32,6 +33,13 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
     async def _fake_get_agent():
         return fake_agent
 
+    close_redis = AsyncMock(return_value=None)
+    shutdown_local_llm = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: None)
+    monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
+    monkeypatch.setattr(web_server, "_close_redis_client", close_redis)
+    monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", shutdown_local_llm)
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
     with TestClient(web_server.app) as client:
@@ -41,3 +49,5 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
     payload = response.json()
     assert payload["status"] == "ok"
     assert "uptime_seconds" in payload
+    assert close_redis.await_count == 1
+    assert shutdown_local_llm.await_count == 1
