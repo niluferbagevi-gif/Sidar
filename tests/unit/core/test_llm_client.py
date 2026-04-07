@@ -51,6 +51,7 @@ def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_t
     google_mod.genai = genai_api
     google_genai_mod.types = types_api
     google_genai_types_mod.GenerateContentConfig = types_api.GenerateContentConfig
+    monkeypatch.setattr(llm_client, "google", google_mod, raising=False)
     _patch_imports(
         monkeypatch,
         {
@@ -66,6 +67,7 @@ def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) 
     anthropic_api = MagicMock(spec_set=_AnthropicModuleSpec)
     anthropic_api.AsyncAnthropic = async_anthropic_cls
     anthropic_mod.AsyncAnthropic = anthropic_api.AsyncAnthropic
+    monkeypatch.setattr(llm_client, "anthropic", anthropic_mod, raising=False)
     _patch_imports(monkeypatch, {"anthropic": anthropic_mod})
 
 
@@ -805,6 +807,7 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(llm_client, "anthropic", ImportError("anthropic not installed"), raising=False)
     _patch_imports(monkeypatch, {"anthropic": ImportError("anthropic not installed")})
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "anthropic paketi" in msg
