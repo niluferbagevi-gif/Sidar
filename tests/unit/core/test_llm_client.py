@@ -130,6 +130,17 @@ async def test_is_retryable_exception_for_timeout_and_status() -> None:
 
 
 @pytest.mark.asyncio
+async def test_is_retryable_exception_for_network_errors() -> None:
+    retryable, status = llm_client._is_retryable_exception(httpx.ConnectError("Connection refused"))
+    assert retryable is True
+    assert status is None
+
+    retryable, status = llm_client._is_retryable_exception(httpx.ReadError("Read timeout"))
+    assert retryable is True
+    assert status is None
+
+
+@pytest.mark.asyncio
 async def test_is_retryable_exception_for_non_retryable_status() -> None:
     exc = Exception("bad request")
     setattr(exc, "status_code", 400)
