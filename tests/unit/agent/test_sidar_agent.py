@@ -5,10 +5,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import pydantic
 
 pytestmark = pytest.mark.asyncio
-
-pytest.importorskip("pydantic")
 
 from agent.core.contracts import ExternalTrigger
 from tests.conftest import collect_async_chunks as _collect_stream
