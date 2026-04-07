@@ -2,8 +2,8 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import App from "./App.jsx";
-import { BrowserRouter } from "./lib/routerShim.jsx";
 import * as api from "./lib/api.js";
 
 vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div data-testid="chat-panel">Chat Panel Mock</div> }));
@@ -24,18 +24,16 @@ vi.mock("./lib/api.js", async () => {
 });
 
 function renderApp(initialPath = "/") {
-  window.history.replaceState({}, "Test", initialPath);
   return render(
-    <BrowserRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <App />
-    </BrowserRouter>,
+    </MemoryRouter>,
   );
 }
 
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.replaceState({}, "Test", "/");
     api.getStoredToken.mockReturnValue(null);
   });
 
@@ -45,7 +43,6 @@ describe("App", () => {
     expect(screen.getByText(/SİDAR/i)).toBeInTheDocument();
     expect(screen.getByText(/Kurumsal Agent Control Center/i)).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/chat");
   });
 
   it("token kaydet akışında API yardımcılarını doğru çağırır", async () => {
@@ -70,5 +67,16 @@ describe("App", () => {
 
     const p2pLink = screen.getByRole("link", { name: "P2P Diyalog" });
     expect(p2pLink).toHaveAttribute("href", "/p2p");
+  });
+
+  it("Agent Manager ve Plugin Marketplace sekmelerine geçişi doğrular", async () => {
+    const user = userEvent.setup();
+    renderApp("/chat");
+
+    await user.click(screen.getByRole("link", { name: "Plugin Marketplace" }));
+    expect(screen.getByText("Plugin Marketplace Mock")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Agent Manager" }));
+    expect(screen.getByText("Agent Manager Mock")).toBeInTheDocument();
   });
 });

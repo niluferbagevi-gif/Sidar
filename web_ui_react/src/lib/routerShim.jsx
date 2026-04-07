@@ -11,7 +11,7 @@ function normalizePath(path) {
   return normalized.replace(/\/+$/, "") || "/";
 }
 
-function useRouterState() {
+function useBrowserRouterState() {
   const [location, setLocation] = useState(() => normalizePath(window.location.pathname));
 
   useEffect(() => {
@@ -30,8 +30,25 @@ function useRouterState() {
   return useMemo(() => ({ location, navigate }), [location]);
 }
 
+function useMemoryRouterState(initialEntries = ["/"]) {
+  const [location, setLocation] = useState(() => normalizePath(initialEntries[0] || "/"));
+
+  const navigate = (to) => {
+    const nextPath = normalizePath(to);
+    if (nextPath === location) return;
+    setLocation(nextPath);
+  };
+
+  return useMemo(() => ({ location, navigate }), [location]);
+}
+
 export function BrowserRouter({ children }) {
-  const value = useRouterState();
+  const value = useBrowserRouterState();
+  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
+}
+
+export function MemoryRouter({ children, initialEntries }) {
+  const value = useMemoryRouterState(initialEntries);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
 
