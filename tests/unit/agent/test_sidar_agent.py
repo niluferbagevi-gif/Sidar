@@ -608,6 +608,9 @@ def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(monkeypat
     ci = asyncio.run(agent.handle_external_trigger({"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}))
     assert ci["status"] == "success"
     assert ci["remediation"]["self_heal_execution"]["status"] == "failed"
+    assert "boom" in ci["remediation"]["self_heal_execution"].get("detail", str(ci)), (
+        "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
+    )
 
 
 def test_run_nightly_memory_maintenance_skipped_paths(monkeypatch: pytest.MonkeyPatch) -> None:
