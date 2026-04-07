@@ -837,16 +837,8 @@ async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factor
 
     assert agent._load_instruction_files() == ""
 
-    p = tmp_path / "SIDAR.md"
-    p.write_text("ok", encoding="utf-8")
-    original_read_text = Path.read_text
-
-    def _boom(self, *args, **kwargs):
-        if self.name == "SIDAR.md":
-            raise OSError("no read")
-        return original_read_text(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", _boom)
+    unreadable_path = tmp_path / "SIDAR.md"
+    unreadable_path.mkdir()
     assert agent._load_instruction_files() == ""
 
 
@@ -1120,12 +1112,27 @@ async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(s
         def read_text(self, **_kwargs):
             return "x"
 
-    original_rglob = Path.rglob
-    monkeypatch.setattr(Path, "rglob", lambda self, _name: [_BadPath()])
+    real_path_cls = sidar_agent.Path
+
+    class _PathProxy:
+        def __init__(self, raw: str):
+            self._inner = real_path_cls(raw)
+
+        def rglob(self, name):
+            if name == "SIDAR.md":
+                return [_BadPath()]
+            return self._inner.rglob(name)
+
+        def __getattr__(self, attr):
+            return getattr(self._inner, attr)
+
+    monkeypatch.setattr(sidar_agent, "Path", _PathProxy)
     assert "SIDAR.md" in agent._load_instruction_files()
 
+    agent._instructions_cache = None
+    agent._instructions_mtimes = {}
+    monkeypatch.setattr(sidar_agent, "Path", real_path_cls)
     (tmp_path / "CLAUDE.md").write_text("   ", encoding="utf-8")
-    monkeypatch.setattr(Path, "rglob", original_rglob)
     assert agent._load_instruction_files() == ""
 
 
@@ -1467,8 +1474,6 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
-
-    monkeypatch.setattr(Path, "rglob", lambda self, _name: [instruction])
 
     loaded = agent._load_instruction_files()
     assert "SIDAR.md" in loaded
