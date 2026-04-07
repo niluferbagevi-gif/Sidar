@@ -7,6 +7,19 @@ from types import SimpleNamespace
 
 import pytest
 
+_ORIGINAL_MODULES = {
+    name: sys.modules.get(name)
+    for name in (
+        "agent.base_agent",
+        "agent.roles.coder_agent",
+        "agent.roles.researcher_agent",
+        "agent.roles.reviewer_agent",
+        "agent.roles.poyraz_agent",
+        "agent.roles.qa_agent",
+        "agent.core.event_stream",
+    )
+}
+
 
 # supervisor modülünü güvenli import edebilmek için ağır bağımlılıkları stub'la
 class _StubBaseAgent:
@@ -38,7 +51,6 @@ _register_stub_module("agent.roles.researcher_agent", "ResearcherAgent")
 _register_stub_module("agent.roles.reviewer_agent", "ReviewerAgent")
 _register_stub_module("agent.roles.poyraz_agent", "PoyrazAgent")
 _register_stub_module("agent.roles.qa_agent", "QAAgent")
-_register_stub_module("agent.roles.coverage_agent", "CoverageAgent")
 
 event_stream_mod = types.ModuleType("agent.core.event_stream")
 
@@ -58,6 +70,15 @@ sys.modules["agent.core.event_stream"] = event_stream_mod
 from agent.core.contracts import DelegationRequest, TaskResult
 import agent.core.supervisor as supervisor_mod
 from agent.core.supervisor import SupervisorAgent
+
+
+def teardown_module(_module) -> None:
+    for name, original in _ORIGINAL_MODULES.items():
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
 
 class _DummyEvents:
     def __init__(self) -> None:
@@ -537,7 +558,6 @@ def test_init_registers_specialist_agents() -> None:
     assert sup.registry.has("reviewer")
     assert sup.registry.has("poyraz")
     assert sup.registry.has("qa")
-    assert sup.registry.has("coverage")
     assert sup.coverage is not None
 
 

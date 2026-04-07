@@ -406,6 +406,9 @@ def test_module_sets_agentcatalog_get_fallback(monkeypatch):
         monkeypatch.delattr(RealCatalog, "get", raising=False)
 
     try:
+        base_agent_mod = ModuleType("agent.base_agent")
+        base_agent_mod.BaseAgent = type("BaseAgent", (), {})
+        monkeypatch.setitem(sys.modules, "agent.base_agent", base_agent_mod)
         spec = importlib.util.spec_from_file_location("coverage_agent_no_get", module_path)
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
