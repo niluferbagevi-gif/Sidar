@@ -270,20 +270,17 @@ async def test_run_nightly_memory_maintenance_disabled_and_completed(sidar_agent
 
 async def test_get_memory_archive_context_sync_filters_by_source_and_score(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-
-    class _Collection:
-        def query(self, **kwargs):
-            return {
-                "documents": [["doc-1\nline", "doc-2", "doc-3"]],
-                "metadatas": [[
-                    {"source": "memory_archive", "title": "T1"},
-                    {"source": "other", "title": "T2"},
-                    {"source": "memory_archive", "title": "T3"},
-                ]],
-                "distances": [[0.1, 0.1, 0.9]],
-            }
-
-    agent.docs = types.SimpleNamespace(collection=_Collection())
+    collection = Mock()
+    collection.query.return_value = {
+        "documents": [["doc-1\nline", "doc-2", "doc-3"]],
+        "metadatas": [[
+            {"source": "memory_archive", "title": "T1"},
+            {"source": "other", "title": "T2"},
+            {"source": "memory_archive", "title": "T3"},
+        ]],
+        "distances": [[0.1, 0.1, 0.9]],
+    }
+    agent.docs = types.SimpleNamespace(collection=collection)
     text = agent._get_memory_archive_context_sync("q", top_k=3, min_score=0.2, max_chars=500)
     assert "T1" in text
     assert "T2" not in text
@@ -351,10 +348,9 @@ async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monke
 async def test_status_renders_all_sections(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(AI_PROVIDER="x", CODING_MODEL="m", ACCESS_LEVEL="safe")
-    class _Memory:
-        def __len__(self):
-            return 3
-    agent.memory = _Memory()
+    memory = Mock()
+    memory.__len__ = Mock(return_value=3)
+    agent.memory = memory
     agent._autonomy_history = [{"id": 1}]
     agent._ensure_autonomy_runtime_state = lambda: None
     agent.github = types.SimpleNamespace(status=lambda: "github")
@@ -373,20 +369,11 @@ async def test_initialize_uses_active_system_prompt(sidar_agent_factory, monkeyp
     agent._init_lock = None
     agent.system_prompt = "default"
 
-    class _Prompt:
-        prompt_text = "live prompt"
-
-    class _DB:
-        async def get_active_prompt(self, _name):
-            return _Prompt()
-
-    class _Memory:
-        db = _DB()
-
-        async def initialize(self):
-            return None
-
-    agent.memory = _Memory()
+    db = AsyncMock()
+    db.get_active_prompt.return_value = types.SimpleNamespace(prompt_text="live prompt")
+    memory = AsyncMock()
+    memory.db = db
+    agent.memory = memory
     await agent.initialize()
     assert agent._initialized is True
     assert agent.system_prompt == "live prompt"
@@ -429,18 +416,15 @@ async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypat
 async def test_collect_and_build_self_heal_plan(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     reads = {}
+    code = Mock()
+    code.read_file.side_effect = lambda path, _safe: (
+        reads.__setitem__(path, True) or (not path.startswith("x"), f"C:{path}")
+    )
+    llm = AsyncMock()
+    llm.chat.side_effect = lambda **kwargs: _async_value({"raw": kwargs["messages"][0]["content"]})
 
-    class _Code:
-        def read_file(self, path, _safe):
-            reads[path] = True
-            return (not path.startswith("x"), f"C:{path}")
-
-    class _LLM:
-        async def chat(self, **kwargs):
-            return {"raw": kwargs["messages"][0]["content"]}
-
-    agent.code = _Code()
-    agent.llm = _LLM()
+    agent.code = code
+    agent.llm = llm
     agent.cfg = types.SimpleNamespace(CODING_MODEL="m", SELF_HEAL_MAX_PATCHES=2)
     monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
     monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", lambda raw_plan, **kwargs: {"operations": [{"path": "a.py"}], "from": raw_plan, "kwargs": kwargs})
@@ -545,20 +529,15 @@ async def test_get_autonomy_activity_counts(sidar_agent_factory, monkeypatch: py
 
 async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-
-    class _Sup:
-        async def run_task(self, _u):
-            return ""
-
-    agent._supervisor = _Sup()
+    supervisor = AsyncMock()
+    supervisor.run_task.return_value = ""
+    agent._supervisor = supervisor
     warning = await agent._try_multi_agent("x")
     assert "geçerli bir çıktı" in warning
 
-    class _Collection:
-        def query(self, **_k):
-            raise RuntimeError("bad")
-
-    agent.docs = types.SimpleNamespace(collection=_Collection())
+    collection = Mock()
+    collection.query.side_effect = RuntimeError("bad")
+    agent.docs = types.SimpleNamespace(collection=collection)
     assert agent._get_memory_archive_context_sync("x", 1, 0.1, 1000) == ""
 
 
@@ -597,20 +576,24 @@ async def test_build_context_and_instruction_absence(sidar_agent_factory, monkey
     assert "abcdefghi" in text
 
 
-async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_returns_done_and_empty_warning(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    llm = AsyncMock()
-    llm.chat = AsyncMock(side_effect=['{"thought":"t","tool":"final_answer","argument":"done"}', "x"])
-    agent.llm = llm
+    agent.llm = AsyncMock(chat=AsyncMock(side_effect=['{"thought":"t","tool":"final_answer","argument":"done"}', "x"]))
     done = await agent._tool_subtask("job")
     assert "Tamamlandı" in done
     assert "belirtilmedi" in await agent._tool_subtask("")
 
+
+async def test_tool_github_smart_pr_requires_token(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: False)
     assert "token" in await agent._tool_github_smart_pr("x")
 
+
+async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     code = Mock()
     code.run_shell.side_effect = lambda command: (
         (True, "feat/x")
@@ -632,6 +615,9 @@ async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agen
     agent.github = git
     assert "oluşturuldu" in await agent._tool_github_smart_pr("title|||main|||note")
 
+
+async def test_summarize_memory_and_clear_memory_success(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     agent.memory = types.SimpleNamespace(
         get_history=lambda: _async_value([{"role": "user", "content": "a", "timestamp": 1}, {"role": "assistant", "content": "b", "timestamp": 1}, {"role": "user", "content": "c", "timestamp": 1}, {"role": "assistant", "content": "d", "timestamp": 1}]),
         apply_summary=_dummy_async,
@@ -717,16 +703,12 @@ async def test_try_multi_agent_imports_supervisor_when_missing(sidar_agent_facto
     agent.cfg = types.SimpleNamespace()
     agent._supervisor = None
 
-    class _Supervisor:
-        def __init__(self, _cfg):
-            self._cfg = _cfg
-
-        async def run_task(self, user_input):
-            return f"ok:{user_input}"
-
     from agent.core import supervisor as supervisor_mod
-
-    monkeypatch.setattr(supervisor_mod, "SupervisorAgent", _Supervisor)
+    supervisor_cls = Mock()
+    supervisor_instance = AsyncMock()
+    supervisor_instance.run_task.return_value = "ok:hello"
+    supervisor_cls.return_value = supervisor_instance
+    monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
 
     result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
@@ -739,15 +721,13 @@ async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_facto
     agent.docs = types.SimpleNamespace(collection=None)
     assert agent._get_memory_archive_context_sync("x", 1, 0.2, 300) == ""
 
-    class _Collection:
-        def query(self, **_kwargs):
-            return {
-                "documents": [["x" * 700, ""]],
-                "metadatas": [[{"source": "memory_archive", "title": "Long"}, {"source": "memory_archive", "title": "Empty"}]],
-                "distances": [[0.0, 0.0]],
-            }
-
-    agent.docs = types.SimpleNamespace(collection=_Collection())
+    collection = Mock()
+    collection.query.return_value = {
+        "documents": [["x" * 700, ""]],
+        "metadatas": [[{"source": "memory_archive", "title": "Long"}, {"source": "memory_archive", "title": "Empty"}]],
+        "distances": [[0.0, 0.0]],
+    }
+    agent.docs = types.SimpleNamespace(collection=collection)
     sync_text = agent._get_memory_archive_context_sync("x", 1, 0.2, 1200)
     assert "Long" in sync_text
     assert "..." in sync_text
@@ -780,14 +760,10 @@ async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, mon
     agent.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 2, "files_written": 1})
     agent.memory = types.SimpleNamespace(get_last_file=lambda: "/tmp/work/demo.py")
 
-    class _Todo:
-        def __len__(self):
-            return 1
-
-        def list_tasks(self):
-            return "task-1"
-
-    agent.todo = _Todo()
+    todo = Mock()
+    todo.__len__ = Mock(return_value=1)
+    todo.list_tasks.return_value = "task-1"
+    agent.todo = todo
     agent._load_instruction_files = lambda: "instructions"
 
     text = await agent._build_context()
@@ -819,15 +795,7 @@ async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, m
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    class _LLM:
-        def __init__(self):
-            self.i = 0
-
-        async def chat(self, **_kwargs):
-            self.i += 1
-            return {"not": "string"} if self.i == 1 else '{"tool":"x","argument":"a","thought":"t"}'
-
-    agent.llm = _LLM()
+    agent.llm = AsyncMock(chat=AsyncMock(side_effect=[{"not": "string"}, '{"tool":"x","argument":"a","thought":"t"}']))
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail-tool"))
 
     output = await agent._tool_subtask("job")
@@ -838,39 +806,27 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: True, default_branch="main", create_pull_request=lambda *_a: (False, "err"))
 
-    class _NoHeadCode:
-        def run_shell(self, command):
-            if "branch" in command:
-                return False, ""
-            return True, ""
-
-    agent.code = _NoHeadCode()
+    code = Mock()
+    code.run_shell.side_effect = lambda command: (False, "") if "branch" in command else (True, "")
+    agent.code = code
     assert "Aktif branch" in await agent._tool_github_smart_pr("x")
 
-    class _NoChangesCode:
-        def run_shell(self, command):
-            if "branch" in command:
-                return True, "feat/a"
-            if "status" in command:
-                return True, ""
-            return True, ""
-
-    agent.code = _NoChangesCode()
+    code.run_shell.side_effect = lambda command: (True, "feat/a") if "branch" in command else ((True, "") if "status" in command else (True, ""))
+    agent.code = code
     assert "oluşturulmadı" in await agent._tool_github_smart_pr("x")
 
-    class _FailPrCode:
-        def run_shell(self, command):
-            if "branch" in command:
-                return True, "feat/a"
-            if "status" in command:
-                return True, "M a.py"
-            if "diff --no-color" in command:
-                return True, "x" * 12000
-            if "log" in command:
-                return True, "c1"
-            return True, ""
-
-    agent.code = _FailPrCode()
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/a")
+        if "branch" in command
+        else (True, "M a.py")
+        if "status" in command
+        else (True, "x" * 12000)
+        if "diff --no-color" in command
+        else (True, "c1")
+        if "log" in command
+        else (True, "")
+    )
+    agent.code = code
     assert "oluşturulamadı" in await agent._tool_github_smart_pr("title|||base|||note")
 
 
@@ -903,39 +859,45 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
     assert added == [("user", "hello")]
 
 
-async def test_init_and_initialize_guards_and_parse_non_dict(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_init_accepts_namespace_cfg(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     base_dir = Path("/tmp/base")
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    class _Cfg:
-        BASE_DIR = str(base_dir)
-        DOCKER_PYTHON_IMAGE = "img"
-        DOCKER_EXEC_TIMEOUT = 3
-        USE_GPU = False
-        GITHUB_TOKEN = "t"
-        GITHUB_REPO = "org/repo"
-        DATABASE_URL = "sqlite:///x"
-        MEMORY_FILE = "mem.json"
-        MAX_MEMORY_TURNS = 7
-        MEMORY_ENCRYPTION_KEY = ""
-        MEMORY_SUMMARY_KEEP_LAST = 2
-        AI_PROVIDER = "openai"
-        RAG_DIR = "rag"
-        RAG_TOP_K = 2
-        RAG_CHUNK_SIZE = 100
-        RAG_CHUNK_OVERLAP = 5
-        GPU_DEVICE = 0
-        GPU_MIXED_PRECISION = False
-        ENABLE_TRACING = False
-        CODING_MODEL = "cm"
-        ACCESS_LEVEL = "safe"
-
-    agent = sidar_agent.SidarAgent(_Cfg())
+    cfg = types.SimpleNamespace(
+        BASE_DIR=str(base_dir),
+        DOCKER_PYTHON_IMAGE="img",
+        DOCKER_EXEC_TIMEOUT=3,
+        USE_GPU=False,
+        GITHUB_TOKEN="t",
+        GITHUB_REPO="org/repo",
+        DATABASE_URL="sqlite:///x",
+        MEMORY_FILE="mem.json",
+        MAX_MEMORY_TURNS=7,
+        MEMORY_ENCRYPTION_KEY="",
+        MEMORY_SUMMARY_KEEP_LAST=2,
+        AI_PROVIDER="openai",
+        RAG_DIR="rag",
+        RAG_TOP_K=2,
+        RAG_CHUNK_SIZE=100,
+        RAG_CHUNK_OVERLAP=5,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+        ENABLE_TRACING=False,
+        CODING_MODEL="cm",
+        ACCESS_LEVEL="safe",
+    )
+    agent = sidar_agent.SidarAgent(cfg)
     assert agent.cfg.BASE_DIR == "/tmp/base"
 
+
+async def test_parse_tool_call_non_dict_returns_final_answer(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     parsed = agent._parse_tool_call("[1,2,3]")
     assert parsed == {"tool": "final_answer", "argument": "[1,2,3]"}
 
+
+async def test_initialize_returns_immediately_when_already_initialized(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     agent._initialized = True
     await agent.initialize()
 
@@ -952,20 +914,12 @@ async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_fact
     agent._ensure_autonomy_runtime_state()
     assert agent._autonomy_history == [] and agent._autonomy_lock is None
 
-    class _Code:
-        def read_file(self, path, _safe):
-            return True, "old"
-
-        def patch_file(self, path, target, replacement):
-            return True, "ok"
-
-        def write_file(self, path, content, _safe):
-            return True, "ok"
-
-        def run_shell_in_sandbox(self, command, base_dir):
-            return False, "bad"
-
-    agent.code = _Code()
+    code = Mock()
+    code.read_file.return_value = (True, "old")
+    code.patch_file.return_value = (True, "ok")
+    code.write_file.return_value = (True, "ok")
+    code.run_shell_in_sandbox.return_value = (False, "bad")
+    agent.code = code
     agent.cfg = types.SimpleNamespace(BASE_DIR="/tmp/x")
     reverted = await agent._execute_self_heal_plan(
         remediation_loop={"validation_commands": ["pytest -q"]},
@@ -1027,28 +981,22 @@ async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(s
         NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
    )
 
-    class _Entity:
-        async def initialize(self):
-            raise RuntimeError("entity-boom")
-
-        async def purge_expired(self):
-            return 0
-
-    monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: _Entity())
+    entity = AsyncMock()
+    entity.initialize.side_effect = RuntimeError("entity-boom")
+    entity.purge_expired.return_value = 0
+    monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: entity)
     agent.memory = types.SimpleNamespace(run_nightly_consolidation=lambda **_k: _async_value({"session_ids": [], "sessions_compacted": 0}))
     agent.docs = types.SimpleNamespace(consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 0})
     report = await agent.run_nightly_memory_maintenance(force=True)
     assert report["entity_report"]["status"] == "failed"
 
-    class _Collection:
-        def query(self, **_k):
-            return {
-                "documents": [["", "ok"]],
-                "metadatas": [[{"source": "memory_archive", "title": "E"}, {"source": "memory_archive", "title": "T"}]],
-                "distances": [[0.1, 0.1]],
-            }
-
-    agent.docs = types.SimpleNamespace(collection=_Collection())
+    collection = Mock()
+    collection.query.return_value = {
+        "documents": [["", "ok"]],
+        "metadatas": [[{"source": "memory_archive", "title": "E"}, {"source": "memory_archive", "title": "T"}]],
+        "distances": [[0.1, 0.1]],
+    }
+    agent.docs = types.SimpleNamespace(collection=collection)
     assert agent._get_memory_archive_context_sync("q", 3, 0.2, 1) == ""
 
     agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
@@ -1056,51 +1004,8 @@ async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(s
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
 
-    class _BadPath:
-        def resolve(self):
-            return self
-
-        def __hash__(self):
-            return 1
-
-        def __eq__(self, other):
-            return isinstance(other, _BadPath)
-
-        def __lt__(self, other):
-            return False
-
-        def is_file(self):
-            return True
-
-        def stat(self):
-            raise OSError("stat-fail")
-
-        def relative_to(self, _root):
-            return "SIDAR.md"
-
-        def read_text(self, **_kwargs):
-            return "x"
-
-    real_path_cls = sidar_agent.Path
-
-    class _PathProxy:
-        def __init__(self, raw: str):
-            self._inner = real_path_cls(raw)
-
-        def rglob(self, name):
-            if name == "SIDAR.md":
-                return [_BadPath()]
-            return self._inner.rglob(name)
-
-        def __getattr__(self, attr):
-            return getattr(self._inner, attr)
-
-    monkeypatch.setattr(sidar_agent, "Path", _PathProxy)
-    assert "SIDAR.md" in agent._load_instruction_files()
-
-    agent._instructions_cache = None
-    agent._instructions_mtimes = {}
-    monkeypatch.setattr(sidar_agent, "Path", real_path_cls)
+    # stat/read hatası için gerçek dosya sistemi: klasör adı SIDAR.md olduğunda read_text başarısız olur.
+    (tmp_path / "SIDAR.md").mkdir()
     (tmp_path / "CLAUDE.md").write_text("   ", encoding="utf-8")
     assert agent._load_instruction_files() == ""
 
@@ -1208,17 +1113,11 @@ async def test_attempt_self_heal_plan_without_operations_and_initialize_no_promp
     agent2._init_lock = asyncio.Lock()
     agent2.system_prompt = "default"
 
-    class _DB:
-        async def get_active_prompt(self, _name):
-            return types.SimpleNamespace(prompt_text="   ")
-
-    class _Memory:
-        db = _DB()
-
-        async def initialize(self):
-            return None
-
-    agent2.memory = _Memory()
+    db = AsyncMock()
+    db.get_active_prompt.return_value = types.SimpleNamespace(prompt_text="   ")
+    memory = AsyncMock()
+    memory.db = db
+    agent2.memory = memory
     await agent2.initialize()
     assert agent2.system_prompt == "default"
 
@@ -1227,15 +1126,13 @@ async def test_initialize_inner_early_return_branch(sidar_agent_factory) -> None
     agent_init = sidar_agent_factory()
     agent_init._initialized = False
 
-    class _FlipLock:
-        async def __aenter__(self):
-            agent_init._initialized = True
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    agent_init._init_lock = _FlipLock()
+    lock = AsyncMock()
+    async def _enter():
+        agent_init._initialized = True
+        return lock
+    lock.__aenter__.side_effect = _enter
+    lock.__aexit__.return_value = False
+    agent_init._init_lock = lock
     agent_init.memory = types.SimpleNamespace(initialize=_dummy_async)
     await agent_init.initialize()
 
@@ -1320,20 +1217,14 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
     agent._initialized = False
     agent._init_lock = None
 
-    class _MemoryNoDb:
-        async def initialize(self):
-            return None
-
-    agent.memory = _MemoryNoDb()
+    agent.memory = AsyncMock(initialize=AsyncMock(return_value=None))
     agent.system_prompt = "default"
     await agent.initialize()
     assert agent._initialized is True
 
     # Make ValidationError distinct so generic exception branch can execute
-    class _VErr(Exception):
-        pass
-
-    monkeypatch.setattr(sidar_agent, "ValidationError", _VErr)
+    validation_err = type("ValidationErr", (Exception,), {})
+    monkeypatch.setattr(sidar_agent, "ValidationError", validation_err)
 
     # _metrics None + successful tool execution branch (1106->1114)
     monkeypatch.setattr(
@@ -1342,12 +1233,8 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
         lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
     )
 
-    class _LLM:
-        async def chat(self, **_k):
-            return '{"tool":"docs_search","argument":"arg","thought":"x"}'
-
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent.llm = _LLM()
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
     agent._execute_tool = AsyncMock(return_value="ok")
     assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
@@ -1366,11 +1253,8 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
 
 
 async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    class _VErr(Exception):
-        pass
-
-    monkeypatch.setattr(sidar_agent, "ValidationError", _VErr)
+    validation_err = type("ValidationErr", (Exception,), {})
+    monkeypatch.setattr(sidar_agent, "ValidationError", validation_err)
     monkeypatch.setattr(
         sidar_agent,
         "get_agent_metrics_collector",
@@ -1380,11 +1264,7 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
     agent = sidar_agent_factory()
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    class _LLM:
-        async def chat(self, **_k):
-            return '{"tool":"docs_search","argument":"arg","thought":"x"}'
-
-    agent.llm = _LLM()
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
     assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
