@@ -230,16 +230,18 @@ Her sprintte aşağıdaki tablo güncellenmelidir:
 
 | Modül | Mevcut Line% | Mevcut Branch% | Hedef | Sorumlu | Hedef Sprint | Durum |
 |---|---:|---:|---:|---|---|---|
-| `agent/*` | N/A* | N/A* | 90+ | TBD | S1-S2 | planned |
+| `agent/*` | N/A* | N/A* | 90+ | TBD | S1-S2 | in-progress |
 | `core/llm_client.py` | N/A* | N/A* | 90+ | TBD | S2 | planned |
 | `core/rag.py` | N/A* | N/A* | 90+ | TBD | S2 | planned |
-| `core/entity_memory.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
-| `core/cost_routing.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
+| `core/entity_memory.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | in-progress |
+| `core/cost_routing.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | in-progress |
 | `core/lsp.py` | N/A* | N/A* | 85-90+ | TBD | S3 | planned |
 | `core/semantic_cache.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
 | `managers/*` (kritik) | N/A* | N/A* | 85-90+ | TBD | S1-S3 | planned |
 
 \* `N/A`: Bu revizyon anında depoda güncel `coverage.xml/htmlcov` artefaktı bulunmadığı için yüzde değerleri dokümana gömülmedi. İlk sprint adımında CI artefaktından otomatik çekilip doldurulmalıdır.
+
+> Operasyon notu (2026-04-07): `tests/conftest.py` içine Sprint-1 ortak fixture setinin ilk sürümü eklendi (`fake_llm_response`, `fake_event_stream`, `agent_factory`, `fake_social_api`, `fake_video_stream`) ve v5.x konfig anahtarları test config'e dahil edildi. `run_tests.sh` içinde coverage çağrısı açık hedeflerle sertleştirildi; benchmark için fail-safe davranış `RUN_BENCHMARKS=required` modu ile aktif edilebilir.
 
 ---
 

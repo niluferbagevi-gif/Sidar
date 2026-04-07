@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from typing import Any, AsyncGenerator, Callable
 from unittest.mock import MagicMock
 
 import fakeredis
 import pytest
+
+from agent.core.event_stream import AgentEvent
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +37,63 @@ async def fake_redis():
                 await maybe
 
 
+@pytest.fixture
+def fake_llm_response() -> Callable[..., Any]:
+    """LLM istemcisi için deterministik, başarılı bir async yanıt döner."""
+
+    async def _mock_response(prompt: str, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "content": f"mock-response:{prompt[:32]}",
+            "usage": {"total_tokens": 10},
+            "meta": kwargs,
+        }
+
+    return _mock_response
+
+
+@pytest.fixture
+def fake_event_stream() -> Callable[[], AsyncGenerator[AgentEvent, None]]:
+    """Ajan event stream çıktılarını deterministik olarak simüle eder."""
+
+    async def _stream() -> AsyncGenerator[AgentEvent, None]:
+        yield AgentEvent(ts=1.0, source="system", message="initializing")
+        yield AgentEvent(ts=2.0, source="assistant", message="İşlem tamam.")
+
+    return _stream
+
+
+@pytest.fixture
+def fake_social_api() -> MagicMock:
+    """Sosyal medya API çağrıları için ortak fake adaptör."""
+    api = MagicMock()
+    api.fetch_profile.return_value = {"id": "user-1", "username": "mock_user", "followers": 42}
+    api.fetch_posts.return_value = [{"id": "post-1", "text": "mock post", "likes": 7}]
+    api.publish.return_value = {"ok": True, "post_id": "published-1"}
+    return api
+
+
+@pytest.fixture
+def fake_video_stream() -> MagicMock:
+    """Video analiz pipeline'ı için deterministik fake akış."""
+    stream = MagicMock()
+    stream.read_frames.return_value = [
+        {"frame_id": 1, "timestamp": 0.0},
+        {"frame_id": 2, "timestamp": 0.04},
+    ]
+    stream.metadata.return_value = {"fps": 25, "duration_sec": 2}
+    return stream
+
+
+@pytest.fixture
+def agent_factory(mock_config: MagicMock) -> Callable[..., Any]:
+    """Testler için standartlaştırılmış ajan üretim fabrikası."""
+
+    def _create_agent(agent_class: type, **kwargs: Any) -> Any:
+        return agent_class(config=mock_config, **kwargs)
+
+    return _create_agent
+
+
 
 
 @pytest.fixture
@@ -52,6 +112,10 @@ def make_test_config(**overrides):
         "SEMANTIC_CACHE_THRESHOLD": 0.9,
         "SEMANTIC_CACHE_TTL": 60,
         "SEMANTIC_CACHE_MAX_ITEMS": 2,
+        "COST_ROUTING_ENABLED": True,
+        "COST_ROUTING_THRESHOLD": 0.05,
+        "ENTITY_MEMORY_TTL": 3600,
+        "MAX_MEMORY_ENTITIES": 100,
         "REDIS_URL": "redis://localhost:6379/0",
         "REDIS_MAX_CONNECTIONS": 5,
     }

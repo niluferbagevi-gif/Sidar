@@ -35,7 +35,7 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  local pytest_cmd=(pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_cmd=(pytest --cov=. --cov-report=xml --cov-report=term --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
@@ -74,6 +74,10 @@ elif [ -f "tests/performance/test_benchmark.py" ]; then
   BENCHMARK_EXIT_CODE=$?
 else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py veya tests/performance/test_benchmark.py bulunamadı."
+  if [ "${RUN_BENCHMARKS}" = "required" ]; then
+    echo "❌ RUN_BENCHMARKS=required iken benchmark dosyası bulunamadı."
+    BENCHMARK_EXIT_CODE=1
+  fi
 fi
 
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
