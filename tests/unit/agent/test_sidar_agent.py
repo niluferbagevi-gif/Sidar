@@ -14,6 +14,14 @@ from tests.conftest import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
+async def _dummy_async(*_args, **_kwargs):
+    return None
+
+
+async def _async_value(value):
+    return value
+
+
 async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
@@ -956,7 +964,11 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
     assert added == [("user", "hello")]
 
 
-async def test_init_and_initialize_guards_and_parse_non_dict(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_init_and_initialize_guards_and_parse_non_dict(
+    sidar_agent_factory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
 
     class _Cfg:
         BASE_DIR = "/tmp/base"
@@ -981,8 +993,10 @@ async def test_init_and_initialize_guards_and_parse_non_dict(sidar_agent_factory
         CODING_MODEL = "cm"
         ACCESS_LEVEL = "safe"
 
+    _Cfg.BASE_DIR = str(tmp_path)
+    (tmp_path / "temp").mkdir(parents=True, exist_ok=True)
     agent = sidar_agent.SidarAgent(_Cfg())
-    assert agent.cfg.BASE_DIR == "/tmp/base"
+    assert agent.cfg.BASE_DIR == str(tmp_path)
 
     parsed = agent._parse_tool_call("[1,2,3]")
     assert parsed == {"tool": "final_answer", "argument": "[1,2,3]"}
