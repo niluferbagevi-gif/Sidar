@@ -88,6 +88,7 @@ class _FakeMemoryDB:
 def web_api_client(monkeypatch: pytest.MonkeyPatch):
     fake_db = _FakeMemoryDB()
     fake_agent = SimpleNamespace(memory=SimpleNamespace(db=fake_db), system_prompt="")
+    original_overrides = app.dependency_overrides.copy()
 
     async def _fake_get_agent():
         return fake_agent
@@ -111,7 +112,7 @@ def web_api_client(monkeypatch: pytest.MonkeyPatch):
     try:
         yield client, fake_db
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides = original_overrides
 
 
 @pytest.mark.integration
@@ -127,6 +128,7 @@ def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
     assert register_payload["user"]["username"] == "alice"
     assert register_payload["access_token"] == "token-for-alice"
 
+    # /auth/login endpoint'i OAuth2 form yerine Pydantic body (_LoginRequest) ile JSON bekliyor.
     login_response = client.post("/auth/login", json={"username": "alice", "password": "secret123"})
     assert login_response.status_code == 200
     assert login_response.json()["access_token"] == "token-for-alice"
