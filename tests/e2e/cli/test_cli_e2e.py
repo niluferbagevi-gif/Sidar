@@ -1,72 +1,91 @@
+import json
+import os
+import socketserver
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 
 
-def _run_cli_with_stubbed_agent(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run cli.main() in a subprocess with lightweight stub modules."""
-    script = r'''
-import asyncio
-import sys
-import types
+def _ollama_response_payload(argument: str) -> dict:
+    tool_payload = {
+        "thought": "CLI e2e mock response",
+        "tool": "final_answer",
+        "argument": argument,
+    }
+    return {"message": {"content": json.dumps(tool_payload)}}
 
-fake_config = types.ModuleType("config")
 
-class Config:
-    ACCESS_LEVEL = "full"
-    AI_PROVIDER = "ollama"
-    CODING_MODEL = "stub-model"
-    LOG_LEVEL = "INFO"
+class _MockOllamaHandler(BaseHTTPRequestHandler):
+    response_argument = "CLI_E2E_OK"
 
-    def initialize_directories(self):
-        return True
+    def do_POST(self):  # noqa: N802 - stdlib interface
+        if self.path != "/api/chat":
+            self.send_response(404)
+            self.end_headers()
+            return
 
-    def validate_critical_settings(self):
-        return True
+        content_length = int(self.headers.get("Content-Length", "0") or 0)
+        if content_length:
+            self.rfile.read(content_length)
 
-fake_config.Config = Config
-sys.modules["config"] = fake_config
+        payload = _ollama_response_payload(self.response_argument)
+        encoded = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
 
-fake_agent_module = types.ModuleType("agent.sidar_agent")
+    def log_message(self, format, *args):  # noqa: A003
+        return
 
-class SidarAgent:
-    VERSION = "e2e"
 
-    def __init__(self, cfg):
-        self.cfg = cfg
+class _ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
 
-    async def initialize(self):
-        return None
 
-    def status(self):
-        return "AGENT_STATUS_OK"
 
-fake_agent_module.SidarAgent = SidarAgent
-sys.modules["agent.sidar_agent"] = fake_agent_module
+def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Path) -> None:
+    server = _ThreadedTCPServer(("127.0.0.1", 0), _MockOllamaHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
 
-import cli
-sys.argv = ["cli.py"] + ARGS
-cli.main()
-'''.replace("ARGS", repr(list(args)))
-
-    return subprocess.run(
-        [sys.executable, "-c", script],
-        text=True,
-        capture_output=True,
-        check=False,
+    db_path = tmp_path / "sidar_cli_e2e.db"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3]),
+            "USE_GPU": "false",
+            "OLLAMA_URL": f"http://127.0.0.1:{server.server_address[1]}",
+            "DATABASE_URL": f"sqlite:///{db_path}",
+        }
     )
 
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "cli.py",
+                "--provider",
+                "ollama",
+                "--model",
+                "mocked-model",
+                "--command",
+                "e2e health",
+            ],
+            cwd=Path(__file__).resolve().parents[3],
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
-def test_cli_status_mode_runs_end_to_end() -> None:
-    result = _run_cli_with_stubbed_agent("--status")
-
-    assert result.returncode == 0
-    assert "AGENT_STATUS_OK" in result.stdout
-    assert result.stderr == ""
-
-
-def test_cli_help_output_is_printed_by_real_argument_parser() -> None:
-    result = _run_cli_with_stubbed_agent("--help")
-
-    assert result.returncode == 0
-    assert "Sidar — Yazılım Mühendisi AI Asistanı (CLI)" in result.stdout
-    assert "--status" in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "Sidar >" in result.stdout
+    assert "CLI_E2E_OK" in result.stdout
