@@ -1,24 +1,12 @@
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
-
-if "coverage_agent_under_test" not in sys.modules:
-    if "httpx" not in sys.modules:
-        sys.modules["httpx"] = ModuleType("httpx")
-    module_path = Path("agent/roles/coverage_agent.py")
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("coverage_agent_under_test", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    sys.modules["coverage_agent_under_test"] = module
-    spec.loader.exec_module(module)
-
-_COVERAGE_MODULE = sys.modules["coverage_agent_under_test"]
-CoverageAgent = _COVERAGE_MODULE.CoverageAgent
+import agent.roles.coverage_agent as _COVERAGE_MODULE
+from agent.roles.coverage_agent import CoverageAgent
 
 
 class DummyCode:
