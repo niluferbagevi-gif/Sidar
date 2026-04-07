@@ -15,69 +15,6 @@ from tests.conftest import collect_async_chunks as _collect
 from tests.conftest import make_test_config as _make_config
 
 
-class _FakeResponse:
-    def __init__(self, *, payload=None, lines=None, bytes_chunks=None, status_ok=True):
-        self._payload = payload or {}
-        self._lines = lines or []
-        self._bytes_chunks = bytes_chunks or []
-        self._status_ok = status_ok
-
-    def raise_for_status(self):
-        if not self._status_ok:
-            err = Exception("http")
-            setattr(err, "status_code", 500)
-            raise err
-
-    def json(self):
-        return self._payload
-
-    async def aiter_lines(self):
-        for line in self._lines:
-            yield line
-
-    async def aiter_bytes(self):
-        for chunk in self._bytes_chunks:
-            yield chunk
-
-
-class _FakeStreamCM:
-    def __init__(self, response):
-        self._response = response
-
-    async def __aenter__(self):
-        return self._response
-
-    async def __aexit__(self, *_exc):
-        return False
-
-
-class _FakeAsyncClient:
-    def __init__(self, *args, **kwargs):
-        self._post_response = kwargs.pop("_post_response", None)
-        self._get_response = kwargs.pop("_get_response", None)
-        self._stream_response = kwargs.pop("_stream_response", None)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc):
-        return False
-
-    async def post(self, *_args, **_kwargs):
-        return self._post_response or _FakeResponse(payload={})
-
-    async def get(self, *_args, **_kwargs):
-        return self._get_response or _FakeResponse(payload={})
-
-    def stream(self, *_args, **_kwargs):
-        return _FakeStreamCM(self._stream_response or _FakeResponse())
-
-    async def aclose(self):
-        return None
-
-
-
-
 def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object]) -> None:
     for name, module in module_map.items():
         if isinstance(module, Exception):
@@ -521,7 +458,7 @@ async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> Non
 
     cfg2 = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_API_KEY="k", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c2 = llm_client.LiteLLMClient(cfg2)
-    respx_mock_router.post("http://gw/chat/completions").mock(
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
     )
     out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
@@ -771,23 +708,15 @@ async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_ollama_and_openai_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ollama_and_openai_error_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x")
     oc = llm_client.OllamaClient(cfg)
 
-    class _ACBoom(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            raise RuntimeError("fail")
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ACBoom)
+    respx_mock_router.post("http://x/api/chat").mock(side_effect=RuntimeError("fail"))
     with pytest.raises(llm_client.LLMAPIError):
         await oc.chat([{"role": "user", "content": "x"}], stream=False)
 
-    class _ACFailGet(_FakeAsyncClient):
-        async def get(self, *_a, **_kw):
-            raise RuntimeError("x")
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ACFailGet)
+    respx_mock_router.get("http://x/api/tags").mock(side_effect=RuntimeError("x"))
     assert await oc.list_models() == []
     assert await oc.is_available() is False
 
@@ -803,26 +732,15 @@ async def test_ollama_and_openai_error_paths(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
-async def test_litellm_fallback_raise_and_successive_model(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_litellm_fallback_raise_and_successive_model(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
     c = llm_client.LiteLLMClient(cfg)
-    state = {"n": 0}
-
-    class _AC(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            state["n"] += 1
-            if state["n"] == 1:
-                raise RuntimeError("first failed")
-            return _FakeResponse(payload={"choices": [{"message": {"content": "ok"}}], "usage": {}})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        side_effect=[RuntimeError("first failed"), httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})]
+    )
     assert await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "ok"
 
-    class _ACAllFail(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            raise RuntimeError("all failed")
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ACAllFail)
+    respx_mock_router.post("http://gw/chat/completions").mock(side_effect=RuntimeError("all failed"))
     with pytest.raises(llm_client.LLMAPIError):
         await c.chat([{"role": "user", "content": "x"}], stream=False)
 
@@ -1042,19 +960,17 @@ class _SpanCM:
 
 
 @pytest.mark.asyncio
-async def test_ollama_chat_with_tracing_sets_span_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ollama_chat_with_tracing_sets_span_attrs(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", ENABLE_TRACING=True)
     client = llm_client.OllamaClient(cfg)
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
 
-    class _AC(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
-
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}})
+    )
     out = await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert "final_answer" in out
     assert span.attrs["sidar.llm.provider"] == "ollama"
@@ -1081,7 +997,7 @@ async def test_openai_chat_stream_with_tracing(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
-async def test_litellm_stream_and_nonstream_tracing_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_litellm_stream_and_nonstream_tracing_attrs(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True)
     c = llm_client.LiteLLMClient(cfg)
     span = _Span()
@@ -1089,11 +1005,9 @@ async def test_litellm_stream_and_nonstream_tracing_attrs(monkeypatch: pytest.Mo
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm, start_span=lambda _n: span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
 
-    class _AC(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
+    )
     assert await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "ok"
     assert span.attrs["sidar.llm.provider"] == "litellm"
     assert span.attrs["sidar.llm.model"] == "m1"
@@ -1134,18 +1048,15 @@ async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_openai_and_litellm_stream_skip_non_data_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_and_litellm_stream_skip_non_data_lines(respx_mock_router) -> None:
     oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
     llm = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1"))
+    stream_body = "\n".join(["", "event: ping", 'data: {"choices":[{"delta":{"content":"X"}}]}', "data: [DONE]"])
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
+    respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            lines = ["", "event: ping", "data: {\"choices\":[{\"delta\":{\"content\":\"X\"}}]}", "data: [DONE]"]
-            return _FakeStreamCM(_FakeResponse(lines=lines))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     assert await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)) == ["X"]
-    assert await _collect(llm._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == ["X"]
+    assert await _collect(llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == ["X"]
 
 
 @pytest.mark.asyncio
@@ -1259,18 +1170,14 @@ async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
-async def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True))
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
 
-    class _ACFail(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            raise RuntimeError("fail")
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ACFail)
+    respx_mock_router.post("http://gw/chat/completions").mock(side_effect=RuntimeError("fail"))
     with pytest.raises(llm_client.LLMAPIError):
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
 
@@ -1393,7 +1300,7 @@ async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_ollama_stream_trailing_decoder_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ollama_stream_trailing_decoder_branch(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OllamaClient(_make_config())
 
     class _Decoder:
@@ -1404,36 +1311,27 @@ async def test_ollama_stream_trailing_decoder_branch(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(bytes_chunks=[b"x"]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
     out = await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1)))
     assert out == ["TAIL"]
 
 
 @pytest.mark.asyncio
-async def test_openai_and_litellm_stream_empty_delta_and_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_and_litellm_stream_empty_delta_and_cleanup(respx_mock_router) -> None:
     oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
     llm = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1"))
+    stream_body = "\n".join(
+        [
+            'data: {"choices":[{"delta":{}}]}',
+            'data: {"choices":[{"delta":{"content":"Z"}}]}',
+            "data: [DONE]",
+        ]
+    )
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
+    respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
 
-    class _Resp(_FakeResponse):
-        async def aiter_lines(self):
-            for line in [
-                "data: {\"choices\":[{\"delta\":{}}]}",
-                "data: {\"choices\":[{\"delta\":{\"content\":\"Z\"}}]}",
-                "data: [DONE]",
-            ]:
-                yield line
-
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_Resp())
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     assert await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)) == ["Z"]
-    assert await _collect(llm._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == ["Z"]
+    assert await _collect(llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == ["Z"]
 
 
 @pytest.mark.asyncio
@@ -1487,17 +1385,15 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_openai_tracing_nonstream_success_and_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_tracing_nonstream_success_and_error(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm))
 
-    class _AC(_FakeAsyncClient):
-        async def post(self, *_a, **_kw):
-            return _FakeResponse(payload={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]})
+    )
     assert await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False) == "ok"
     assert "sidar.llm.total_ms" in span.attrs
 
@@ -1522,7 +1418,7 @@ async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_ollama_stream_additional_json_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ollama_stream_additional_json_branches(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OllamaClient(_make_config())
 
     class _Decoder:
@@ -1533,11 +1429,7 @@ async def test_ollama_stream_additional_json_branches(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(bytes_chunks=[b"x"]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
     assert await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))) == ["ok"]
 
 
@@ -1572,7 +1464,7 @@ async def test_gemini_tracing_nonstream_and_empty_stream_chunk(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_openai_stream_empty_and_error_branches_with_span(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_stream_empty_and_error_branches_with_span(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
     span = _Span()
     span_cm = _SpanCM(span)
@@ -1592,28 +1484,20 @@ async def test_openai_stream_empty_and_error_branches_with_span(monkeypatch: pyt
     with pytest.raises(llm_client.LLMAPIError):
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(lines=[]))
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=""))
 
     async def _retry_ok(_provider, operation, **_kw):
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_ok)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
     assert await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)) == []
 
 
 @pytest.mark.asyncio
-async def test_litellm_stream_empty_and_invalid_line(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_litellm_stream_empty_and_invalid_line(respx_mock_router) -> None:
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
-
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(lines=["data: invalid", "data: [DONE]"]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    assert await _collect(c._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == []
+    respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text="data: invalid\ndata: [DONE]"))
+    assert await _collect(c._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == []
 
 
 @pytest.mark.asyncio
@@ -1671,7 +1555,7 @@ async def test_truncation_branch_without_system_insert_and_small_message() -> No
 
 
 @pytest.mark.asyncio
-async def test_ollama_stream_buffer_tail_invalid_and_empty_content(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ollama_stream_buffer_tail_invalid_and_empty_content(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OllamaClient(_make_config())
 
     class _DecoderA:
@@ -1680,11 +1564,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(monkeypatch: 
 
     monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderA()))
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(bytes_chunks=[b"x"]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
+    respx_mock_router.post("u").mock(return_value=httpx.Response(200, content=b"x"))
     assert await _collect(c._stream_response("u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
 
     class _DecoderB:
@@ -1715,7 +1595,7 @@ async def test_openai_error_without_tracing_span_branches(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_litellm_stream_no_lines_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_litellm_stream_no_lines_branch(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
 
     async def _retry_ok(_provider, operation, **_kw):
@@ -1723,12 +1603,8 @@ async def test_litellm_stream_no_lines_branch(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_ok)
 
-    class _AC(_FakeAsyncClient):
-        def stream(self, *_a, **_kw):
-            return _FakeStreamCM(_FakeResponse(lines=[]))
-
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _AC)
-    assert await _collect(c._stream_openai_compatible("e", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == []
+    respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text=""))
+    assert await _collect(c._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == []
 
 
 @pytest.mark.asyncio
