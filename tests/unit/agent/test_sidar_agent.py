@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-import pydantic
 
 pytestmark = pytest.mark.asyncio
 
@@ -619,16 +618,6 @@ async def test_tool_subtask_and_github_smart_pr_and_summary_and_clear(sidar_agen
             return "x"
 
     agent.llm = _LLM()
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            return types.SimpleNamespace(tool="final_answer", argument="done")
-
-        @staticmethod
-        def model_validate(_obj):
-            return types.SimpleNamespace(tool="final_answer", argument="done")
-
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
     done = await agent._tool_subtask("job")
     assert "Tamamlandı" in done
     assert "belirtilmedi" in await agent._tool_subtask("")
@@ -792,7 +781,7 @@ async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_facto
     assert "..." in sync_text
 
     async_text = await agent._get_memory_archive_context("x")
-    assert "Geçmiş Sohbet" in async_text
+    assert sidar_agent.ARCHIVE_CONTEXT_HEADER in async_text
 
 
 async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -874,21 +863,11 @@ async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, m
             self.i += 1
             return {"not": "string"} if self.i == 1 else '{"tool":"x","argument":"a","thought":"t"}'
 
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(raw):
-            return types.SimpleNamespace(tool="x", argument="a")
-
-        @staticmethod
-        def model_validate(obj):
-            return types.SimpleNamespace(tool="x", argument="a")
-
     agent.llm = _LLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail-tool"))
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
 
     output = await agent._tool_subtask("job")
-    assert "Maksimum adım" in output
+    assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
 
 
 async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1008,8 +987,8 @@ async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_fact
     agent.mark_activity("test")
     assert agent.seconds_since_last_activity() >= 0
 
-    delattr(agent, "_autonomy_history") if hasattr(agent, "_autonomy_history") else None
-    delattr(agent, "_autonomy_lock") if hasattr(agent, "_autonomy_lock") else None
+    agent._autonomy_history = []
+    agent._autonomy_lock = None
     agent._ensure_autonomy_runtime_state()
     assert agent._autonomy_history == [] and agent._autonomy_lock is None
 
@@ -1204,44 +1183,24 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
         async def chat(self, **_k):
             return '{"bad": 1}'
 
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            raise sidar_agent.ValidationError("bad")
-
-        @staticmethod
-        def model_validate(_obj):
-            raise sidar_agent.ValidationError("bad2")
-
     agent.llm = _LLM()
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
     out = await agent._tool_subtask("job")
-    assert "Maksimum adım" in out
+    assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert metrics_calls
 
     class _ToolLLM:
         async def chat(self, **_k):
             return '{"tool":"docs_search","argument":"arg","thought":"x"}'
 
-    class _PassToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
-        @staticmethod
-        def model_validate(_obj):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
     agent.llm = _ToolLLM()
-    monkeypatch.setattr(sidar_agent, "ToolCall", _PassToolCall)
     agent._execute_tool = AsyncMock(return_value="ok")
-    assert "Maksimum adım" in await agent._tool_subtask("job")
+    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
     broken_metrics = types.ModuleType("core.agent_metrics")
     monkeypatch.setitem(sys.modules, "core.agent_metrics", broken_metrics)
     agent.llm = _ToolLLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
-    assert "Maksimum adım" in await agent._tool_subtask("job")
+    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
     metrics_mod2 = types.ModuleType("core.agent_metrics")
     metrics_mod2.get_agent_metrics_collector = lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(("err",) + a))
@@ -1252,7 +1211,7 @@ async def test_context_docs_search_subtask_metrics_and_misc_edges(sidar_agent_fa
             raise RuntimeError("llm-boom")
 
     agent.llm = _BoomLLM()
-    assert "Maksimum adım" in await agent._tool_subtask("job")
+    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
     agent.memory = types.SimpleNamespace(get_history=lambda: _async_value([{"role": "u", "content": "x", "timestamp": 1}]))
     await agent._summarize_memory()
@@ -1387,21 +1346,11 @@ async def test_tool_subtask_exception_path_and_lock_branches(sidar_agent_factory
         async def chat(self, **_k):
             return '{"tool":"docs_search","argument":"arg","thought":"x"}'
 
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
-        @staticmethod
-        def model_validate(_obj):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
     agent.llm = _LLM()
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
     out = await agent._tool_subtask("job")
-    assert "Maksimum adım" in out
+    assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert any(call[3] == "failed" for call in metrics_calls)
 
 
@@ -1455,20 +1404,10 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
         async def chat(self, **_k):
             return '{"tool":"docs_search","argument":"arg","thought":"x"}'
 
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
-        @staticmethod
-        def model_validate(_obj):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
     agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.llm = _LLM()
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
     agent._execute_tool = AsyncMock(return_value="ok")
-    assert "Maksimum adım" in await agent._tool_subtask("job")
+    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
     # generic exception branch with metrics enabled (1125-1137)
     calls = []
@@ -1478,7 +1417,7 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-fail"))
     out = await agent._tool_subtask("job")
-    assert "Maksimum adım" in out
+    assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert any(c[3] == "failed" for c in calls)
 
 
@@ -1497,19 +1436,9 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
         async def chat(self, **_k):
             return '{"tool":"docs_search","argument":"arg","thought":"x"}'
 
-    class _ToolCall:
-        @staticmethod
-        def model_validate_json(_raw):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
-        @staticmethod
-        def model_validate(_obj):
-            return types.SimpleNamespace(tool="docs_search", argument="arg")
-
     agent.llm = _LLM()
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
-    monkeypatch.setattr(sidar_agent, "ToolCall", _ToolCall)
-    assert "Maksimum adım" in await agent._tool_subtask("job")
+    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
 
 async def test_load_instruction_files_handles_string_candidates(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

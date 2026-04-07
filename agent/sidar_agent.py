@@ -134,6 +134,9 @@ ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedb
 
 logger = logging.getLogger(__name__)
 
+ARCHIVE_CONTEXT_HEADER = "[Geçmiş Sohbet Arşivinden İlgili Notlar]"
+SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
+
 
 class ToolCall(BaseModel):
     """Ajanın LLM çıktısındaki tekil araç çağrısı şeması."""
@@ -897,7 +900,7 @@ class SidarAgent:
         if not selected:
             return ""
 
-        return "\n\n[Geçmiş Sohbet Arşivinden İlgili Notlar]\n" + "\n".join(selected) + "\n"
+        return f"\n\n{ARCHIVE_CONTEXT_HEADER}\n" + "\n".join(selected) + "\n"
 
     # ─────────────────────────────────────────────
     #  BAĞLAM OLUŞTURMA
@@ -1150,7 +1153,7 @@ class SidarAgent:
                     )
                 feedback = f"Araç çağrısı başarısız: {exc}"
 
-        return "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
+        return SUBTASK_MAX_STEPS_MESSAGE
 
     async def _tool_github_smart_pr(self, arg: str) -> str:
         if not self.github.is_available():
