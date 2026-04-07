@@ -73,7 +73,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
                 "--model",
                 "mocked-model",
                 "--command",
-                "e2e health",
+                "test_echo",
             ],
             cwd=Path(__file__).resolve().parents[3],
             text=True,
