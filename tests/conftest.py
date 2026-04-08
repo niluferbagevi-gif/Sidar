@@ -118,21 +118,23 @@ def fake_video_stream_error() -> MagicMock:
 
 
 @pytest.fixture
-def fake_db_session() -> AsyncGenerator[Any, None]:
-    """In-memory SQLite DB oturumu sağlar (entegrasyon benzeri testler için)."""
-    sqlalchemy = pytest.importorskip("sqlalchemy")
-    create_engine = sqlalchemy.create_engine
+async def fake_db_session() -> AsyncGenerator[Any, None]:
+    """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
+    asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
     orm = pytest.importorskip("sqlalchemy.orm")
-    sessionmaker = orm.sessionmaker
 
-    engine = create_engine("sqlite:///:memory:")
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        engine.dispose()
+    create_async_engine = asyncio_sqla.create_async_engine
+    async_sessionmaker = asyncio_sqla.async_sessionmaker
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    async with SessionLocal() as db:
+        try:
+            yield db
+        finally:
+            await db.close()
+            await engine.dispose()
 
 
 @pytest.fixture
