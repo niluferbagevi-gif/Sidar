@@ -392,6 +392,23 @@ def test_ensure_db_returns_existing_db_inside_lock(tmp_path):
     assert db is existing_db
 
 
+def test_ensure_db_concurrency(tmp_path, monkeypatch):
+    agent = make_agent(tmp_path)
+    core_pkg = ModuleType("core")
+    core_db = ModuleType("core.db")
+    core_db.Database = FakeDB
+    monkeypatch.setitem(sys.modules, "core", core_pkg)
+    monkeypatch.setitem(sys.modules, "core.db", core_db)
+
+    async def run_concurrent():
+        return await asyncio.gather(agent._ensure_db(), agent._ensure_db())
+
+    db_a, db_b = asyncio.run(run_concurrent())
+    assert db_a is db_b
+    assert db_a.connected == 1
+    assert db_a.inited == 1
+
+
 def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     class FakeMatch:
         @staticmethod
