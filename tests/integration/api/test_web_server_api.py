@@ -116,6 +116,8 @@ def web_api_client(monkeypatch: pytest.MonkeyPatch):
     async def _fake_resolve(agent, token):
         if token == "token-for-admin":
             return _FakeUser(id="admin_id", username="admin", role="admin")
+        if token == "token-for-user":
+            return _FakeUser(id="user-1", username="normal_user", role="user")
         return None
 
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
@@ -200,13 +202,10 @@ def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
     original_overrides = app.dependency_overrides.copy()
     try:
         app.dependency_overrides.pop(web_server._require_admin_user, None)
-        app.dependency_overrides[web_server._get_request_user] = (
-            lambda: _FakeUser(id="user-1", username="normal_user", role="user")
-        )
-
         create_response = client.post(
             "/admin/prompts",
             json={"role_name": "system", "prompt_text": "Hacked", "activate": True},
+            headers={"Authorization": "Bearer token-for-user"},
         )
 
         assert create_response.status_code == 403
