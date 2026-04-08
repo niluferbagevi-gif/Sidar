@@ -401,6 +401,52 @@ async def test_respond_handles_empty_and_success(sidar_agent_factory, monkeypatc
     assert added == [("user", "hello"), ("assistant", "ok:hello")]
 
 
+async def test_concurrent_respond(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._lock = None
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_a, **_k: None
+
+    active_multi = 0
+    max_active_multi = 0
+    memory_events: list[tuple[str, str]] = []
+
+    async def _multi(prompt):
+        nonlocal active_multi, max_active_multi
+        active_multi += 1
+        max_active_multi = max(max_active_multi, active_multi)
+        await asyncio.sleep(0.01)
+        active_multi -= 1
+        return f"ok:{prompt}"
+
+    async def _memory_add(role, content):
+        await asyncio.sleep(0.005)
+        memory_events.append((role, content))
+
+    agent._try_multi_agent = _multi
+    agent._memory_add = _memory_add
+
+    async def _ask(prompt: str) -> list[str]:
+        return list(await _collect_stream(agent.respond(prompt)))
+
+    first, second = await asyncio.wait_for(
+        asyncio.gather(_ask("alpha"), _ask("beta")),
+        timeout=1.0,
+    )
+
+    assert first == ["ok:alpha"]
+    assert second == ["ok:beta"]
+    assert max_active_multi >= 2
+    assert sorted(memory_events) == sorted(
+        [
+            ("user", "alpha"),
+            ("assistant", "ok:alpha"),
+            ("user", "beta"),
+            ("assistant", "ok:beta"),
+        ]
+    )
+
+
 async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     agent._autonomy_history = [{"i": i} for i in range(60)]
