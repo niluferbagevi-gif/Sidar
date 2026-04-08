@@ -14,6 +14,12 @@ from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
+
+
+def _override_cfg(agent, **overrides):
+    for key, value in overrides.items():
+        setattr(agent.cfg, key, value)
+
 async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
@@ -645,7 +651,8 @@ async def test_handle_external_trigger_llm_timeout_and_rate_limit_errors_are_cap
 
 async def test_build_context_and_instruction_absence(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(
+    _override_cfg(
+        agent,
         AI_PROVIDER="ollama",
         PROJECT_NAME="p",
         VERSION="1",
@@ -659,7 +666,7 @@ async def test_build_context_and_instruction_absence(sidar_agent_factory, monkey
         GITHUB_REPO="owner/repo",
         LOCAL_INSTRUCTION_MAX_CHARS=5,
         LOCAL_AGENT_CONTEXT_MAX_CHARS=50,
-   )
+    )
     agent.security = types.SimpleNamespace(level_name="safe")
     agent.github = types.SimpleNamespace(is_available=lambda: False)
     agent.web = types.SimpleNamespace(is_available=lambda: False)
@@ -849,7 +856,8 @@ async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_facto
 
 async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(
+    _override_cfg(
+        agent,
         AI_PROVIDER="openai",
         PROJECT_NAME="proj",
         VERSION="2",
@@ -863,7 +871,7 @@ async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, mon
         GITHUB_REPO="org/repo",
         LOCAL_INSTRUCTION_MAX_CHARS=20,
         LOCAL_AGENT_CONTEXT_MAX_CHARS=120,
-   )
+    )
     agent.security = types.SimpleNamespace(level_name="strict")
     agent.github = types.SimpleNamespace(is_available=lambda: True)
     agent.web = types.SimpleNamespace(is_available=lambda: True)
@@ -920,11 +928,13 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     code = Mock()
     code.run_shell.side_effect = lambda command: (False, "") if "branch" in command else (True, "")
     agent.code = code
-    assert "Aktif branch" in await agent._tool_github_smart_pr("x")
+    no_branch = await agent._tool_github_smart_pr("x")
+    assert no_branch == "✗ Aktif branch bulunamadı."
 
     code.run_shell.side_effect = lambda command: (True, "feat/a") if "branch" in command else ((True, "") if "status" in command else (True, ""))
     agent.code = code
-    assert "oluşturulmadı" in await agent._tool_github_smart_pr("x")
+    no_changes = await agent._tool_github_smart_pr("x")
+    assert no_changes == "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
 
     code.run_shell.side_effect = lambda command: (
         (True, "feat/a")
