@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from freezegun import freeze_time
+from freezegun.api import FrozenDateTimeFactory
 
 from agent.core.event_stream import AgentEvent
 import agent.sidar_agent as sidar_agent_module
@@ -185,7 +186,7 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
 
 
 @pytest.fixture
-def frozen_time():
+def frozen_time() -> Generator[FrozenDateTimeFactory, None, None]:
     """Tüm zaman bağımlı operasyonları deterministik hale getirmek için ortak fixture."""
     # freezegun, loaded modüllerin attribute'larını gezerken transformers'ın lazy
     # import zincirini tetikleyebiliyor; bu da opsiyonel sentencepiece bağımlılığı
@@ -224,7 +225,7 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @pytest.fixture
-def respx_mock_router():
+def respx_mock_router() -> Generator[Any, None, None]:
     respx = pytest.importorskip("respx")
     with respx.mock(assert_all_called=False) as router:
         yield router
@@ -247,24 +248,24 @@ def fake_lsp_client() -> AsyncMock:
 
 
 @pytest.fixture
-def fake_coverage_code_manager():
+def fake_coverage_code_manager() -> Any:
     class _FakeCoverageCodeManager:
-        def __init__(self):
-            self.calls = []
+        def __init__(self) -> None:
+            self.calls: list[tuple[Any, ...]] = []
 
-        def run_pytest_and_collect(self, command, cwd):
+        def run_pytest_and_collect(self, command: str, cwd: str) -> dict[str, Any]:
             self.calls.append(("run_pytest_and_collect", command, cwd))
             return {"analysis": {"summary": "ok", "findings": []}, "output": "OUT"}
 
-        def analyze_pytest_output(self, output):
+        def analyze_pytest_output(self, output: str) -> dict[str, Any]:
             self.calls.append(("analyze_pytest_output", output))
             return {"summary": f"ANALYZED:{output}", "findings": [{"target_path": "src/m.py"}]}
 
-        def read_file(self, path):
+        def read_file(self, path: str) -> tuple[bool, str]:
             self.calls.append(("read_file", path))
             return True, f"SOURCE:{path}"
 
-        def write_generated_test(self, path, content, append=True):
+        def write_generated_test(self, path: str, content: str, append: bool = True) -> tuple[bool, str]:
             self.calls.append(("write_generated_test", path, content, append))
             return True, f"WROTE:{path}:{append}"
 
@@ -272,26 +273,26 @@ def fake_coverage_code_manager():
 
 
 @pytest.fixture
-def fake_coverage_db_class():
+def fake_coverage_db_class() -> type:
     class _FakeCoverageDB:
-        def __init__(self, cfg):
+        def __init__(self, cfg: Any) -> None:
             self.cfg = cfg
             self.connected = 0
             self.inited = 0
-            self.created = []
-            self.findings = []
+            self.created: list[dict[str, Any]] = []
+            self.findings: list[dict[str, Any]] = []
 
-        async def connect(self):
+        async def connect(self) -> None:
             self.connected += 1
 
-        async def init_schema(self):
+        async def init_schema(self) -> None:
             self.inited += 1
 
-        async def create_coverage_task(self, **kwargs):
+        async def create_coverage_task(self, **kwargs: Any) -> SimpleNamespace:
             self.created.append(kwargs)
             return SimpleNamespace(id=123)
 
-        async def add_coverage_finding(self, **kwargs):
+        async def add_coverage_finding(self, **kwargs: Any) -> None:
             self.findings.append(kwargs)
 
     return _FakeCoverageDB
