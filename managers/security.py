@@ -63,7 +63,7 @@ class SecurityManager:
         self.level_name: str = normalized_level
         self.base_dir: Path = Path(raw_base_dir).resolve()
         self.temp_dir: Path = (self.base_dir / "temp").resolve()
-        self.temp_dir.mkdir(exist_ok=True)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
 
     # ─────────────────────────────────────────────
