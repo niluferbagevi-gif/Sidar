@@ -477,6 +477,17 @@ def test_clean_code_output_handles_multiple_and_nested_like_fences():
     assert "Açıklama" not in cleaned
 
 
+def test_complex_code_sanitization():
+    raw = (
+        "Giriş metni\n"
+        "```python\nx = 1\n```\n"
+        "```js\nconsole.log('x')\n```\n"
+        "```python\ny = 2\n```"
+    )
+    cleaned = CoverageAgent._clean_code_output(raw)
+    assert cleaned == "x = 1\n\ny = 2"
+
+
 def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     xml_path = tmp_path / "coverage_full_branch.xml"
     xml_path.write_text(

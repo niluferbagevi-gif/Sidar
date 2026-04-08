@@ -280,6 +280,13 @@ def test_publish_social_text_format_with_missing_segments_uses_unknown(poyraz_mo
     assert "platform=unknown" in result
 
 
+def test_social_media_invalid_text_format(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._tool_publish_social("only-platform|||only-text"))
+    assert result.startswith("[SOCIAL:")
+    assert "platform=unknown" in result
+
+
 def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     sentinel_db = object()

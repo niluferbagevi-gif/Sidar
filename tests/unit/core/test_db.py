@@ -870,6 +870,18 @@ def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database):
     assert run(sqlite_db.get_user_by_token("not-a-token")) is None
 
 
+def test_jwt_edge_cases(sqlite_db: Database):
+    invalid_cases = [
+        {"sub": "", "role": "admin", "username": "x", "tenant_id": "default"},
+        {"sub": "u1", "role": "", "username": "x", "tenant_id": "default"},
+        {"sub": "u1", "role": " ", "username": "x", "tenant_id": "default"},
+    ]
+
+    for payload in invalid_cases:
+        token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
+        assert sqlite_db.verify_auth_token(token) is None
+
+
 def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path):
     cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'ac.db'}", BASE_DIR=str(tmp_path))
     db = Database(cfg)

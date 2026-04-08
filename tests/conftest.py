@@ -148,6 +148,43 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
 
 
 @pytest.fixture
+async def pg_db_session() -> AsyncGenerator[Any, None]:
+    """Docker üzerinde geçici PostgreSQL ile asenkron DB oturumu sağlar."""
+    testcontainers = pytest.importorskip("testcontainers.postgres")
+    asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
+
+    PostgresContainer = testcontainers.PostgresContainer
+    create_async_engine = asyncio_sqla.create_async_engine
+    async_sessionmaker = asyncio_sqla.async_sessionmaker
+
+    try:
+        container = PostgresContainer("postgres:16-alpine")
+        container.start()
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
+
+    try:
+        sync_url = container.get_connection_url()
+        async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
+            "postgresql://",
+            "postgresql+asyncpg://",
+            1,
+        )
+        engine = create_async_engine(async_url)
+        SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+        async with SessionLocal() as db:
+            try:
+                yield db
+            finally:
+                await db.rollback()
+                await db.close()
+                await engine.dispose()
+    finally:
+        container.stop()
+
+
+@pytest.fixture
 def frozen_time():
     """Tüm zaman bağımlı operasyonları deterministik hale getirmek için ortak fixture."""
     # freezegun, loaded modüllerin attribute'larını gezerken transformers'ın lazy
