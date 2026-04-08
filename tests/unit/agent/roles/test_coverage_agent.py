@@ -520,6 +520,8 @@ def test_run_task_routes_and_flows(tmp_path):
     written_data = json.loads(written)
     assert written_data["status"] == "tests_written"
     assert written_data["target_path"] == "src/a.py"
+    assert written_data["is_approved"] is False
+    assert written_data["approval_status"] == "pending_reviewer_or_human"
     assert recorded["called"] is True
 
     # record exception path is swallowed

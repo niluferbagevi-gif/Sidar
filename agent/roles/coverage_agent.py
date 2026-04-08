@@ -485,6 +485,8 @@ class CoverageAgent(BaseAgent):
             "suggested_test_path": suggested_test_path,
             "target_path": target_path,
             "pytest_output": str(pytest_result.get("output", "") or "")[:4000],
+            "is_approved": False,
+            "approval_status": "pending_reviewer_or_human",
         }
         write_ok, write_message = await asyncio.to_thread(
             self.code.write_generated_test,
@@ -516,6 +518,8 @@ class CoverageAgent(BaseAgent):
                 "suggested_test_path": suggested_test_path,
                 "analysis": analysis,
                 "generated_test_candidate": generated_test,
+                "is_approved": False,
+                "approval_status": "pending_reviewer_or_human",
                 "write_message": write_message,
             },
             ensure_ascii=False,

@@ -1,6 +1,7 @@
 import asyncio
 import types
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -165,6 +166,42 @@ def test_purge_expired_returns_zero_when_nothing_to_delete(sqlite_db_url: str):
         assert await em.upsert("u1", "k1", "v1") is True
         removed = await em.purge_expired()
         assert removed == 0
+        await em.close()
+
+    asyncio.run(scenario())
+
+
+@requires_sqlalchemy
+def test_entity_memory_ttl_and_corrupted_record_recovery(
+    sqlite_db_url: str,
+    fake_redis: Any,
+    frozen_time,
+):
+    async def scenario():
+        # Ortak fake_redis fixture'ının hazır olduğunu doğrula (dış bağımlılık izolasyonu).
+        assert await fake_redis.ping() is True
+
+        em = EntityMemory(database_url=sqlite_db_url, ttl_days=1)
+        await em.initialize()
+        assert await em.upsert("u-ttl", "coding_style", "functional") is True
+
+        # metadata alanını boz; okuma patlamadan kurtarılmalı.
+        async with em._engine.begin() as conn:
+            await conn.execute(
+                em_module.sql_text(
+                    "UPDATE entity_memory SET metadata = '{bad-json' "
+                    "WHERE user_id = 'u-ttl' AND key = 'coding_style'"
+                )
+            )
+
+        profile = await em.get_profile("u-ttl")
+        assert profile["coding_style"] == "functional"
+
+        # frozen_time ile 2 gün ileri sarıp TTL temizliği doğrula.
+        frozen_time.move_to("2026-04-03 12:00:00")
+        removed = await em.purge_expired()
+        assert removed == 1
+        assert await em.get("u-ttl", "coding_style") is None
         await em.close()
 
     asyncio.run(scenario())
