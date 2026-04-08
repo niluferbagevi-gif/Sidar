@@ -145,7 +145,17 @@ class CoverageAgent(BaseAgent):
                 "findings": [],
             }
 
-        root = ET.parse(path).getroot()
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            return {
+                "path": str(path),
+                "exists": True,
+                "summary": "coverage.xml ayrıştırılamadı.",
+                "files": [],
+                "findings": [],
+                "total_findings": 0,
+            }
         findings: list[dict[str, Any]] = []
         files: list[dict[str, Any]] = []
 

@@ -186,6 +186,20 @@ def test_parse_coverage_xml_and_terminal(tmp_path):
     xml_missing = CoverageAgent._parse_coverage_xml(str(tmp_path / "missing.xml"))
     assert xml_missing["exists"] is False
 
+    xml_empty = tmp_path / "coverage_empty.xml"
+    xml_empty.write_text("", encoding="utf-8")
+    empty_data = CoverageAgent._parse_coverage_xml(str(xml_empty))
+    assert empty_data["exists"] is True
+    assert empty_data["summary"] == "coverage.xml ayrıştırılamadı."
+    assert empty_data["findings"] == []
+
+    xml_invalid = tmp_path / "coverage_invalid.xml"
+    xml_invalid.write_text("<coverage><packages>", encoding="utf-8")
+    invalid_data = CoverageAgent._parse_coverage_xml(str(xml_invalid))
+    assert invalid_data["exists"] is True
+    assert invalid_data["summary"] == "coverage.xml ayrıştırılamadı."
+    assert invalid_data["findings"] == []
+
     xml_blank_filename = tmp_path / "coverage_blank_filename.xml"
     xml_blank_filename.write_text(
         """
@@ -433,24 +447,9 @@ def test_clean_code_output_handles_closing_fence_without_opening_hint():
     assert CoverageAgent._clean_code_output(WeirdStringable()) == ""
 
 
-def test_clean_code_output_when_first_split_line_is_not_fence(monkeypatch):
-    class FakeCleanText:
-        def __init__(self, value):
-            self.value = value
-
-        def strip(self):
-            return self
-
-        def startswith(self, prefix):
-            return self.value.startswith(prefix)
-
-        def splitlines(self):
-            return ["not-a-fence-line", "body", "```"]
-
-    monkeypatch.setattr(_COVERAGE_MODULE, "str", lambda value: FakeCleanText(value), raising=False)
-
-    cleaned = CoverageAgent._clean_code_output("```python\nbody\n```")
-    assert cleaned == "not-a-fence-line\nbody"
+def test_clean_code_output_real_markdown_fence_cleanup():
+    cleaned = CoverageAgent._clean_code_output(" ```python\nprint('hi')\n``` ")
+    assert cleaned == "print('hi')"
 
 
 def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
