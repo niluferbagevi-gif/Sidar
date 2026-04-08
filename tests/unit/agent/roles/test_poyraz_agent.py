@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import inspect
 import json
 import sys
 import types
@@ -27,7 +28,14 @@ class _StubBaseAgent:
 
     async def call_llm(self, messages, **kwargs):
         self.llm_calls.append((messages, kwargs))
-        return f"LLM::{messages[0]['content'][:20]}"
+        content = messages[0]["content"] if messages else ""
+        extracted_mode = "default"
+        for line in content.splitlines():
+            if line.lower().startswith("görev modu:"):
+                extracted_mode = line.split(":", 1)[1].strip() or "default"
+                break
+        system_prompt = kwargs.get("system_prompt", "default")
+        return f"LLM_RESPONSE::{extracted_mode}::{system_prompt}"
 
 
 class _StubAgentCatalog:
@@ -226,6 +234,7 @@ def test_init_registers_tools(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     assert agent.role_name == "poyraz"
     assert {"web_search", "fetch_url", "search_docs", "publish_social", "publish_instagram_post", "publish_facebook_post", "send_whatsapp_message", "build_landing_page", "generate_campaign_copy", "ingest_video_insights", "create_marketing_campaign", "store_content_asset", "create_operation_checklist", "plan_service_operations"} == set(agent.tools)
+    assert all(inspect.iscoroutinefunction(tool) for tool in agent.tools.values())
 
 
 def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
@@ -377,8 +386,8 @@ def test_landing_and_campaign_copy_tools_with_and_without_persist(poyraz_module,
         )
     )
 
-    assert plain.startswith("LLM::") and with_payload.startswith("LLM::")
-    assert copy_plain.startswith("LLM::") and copy_payload.startswith("LLM::")
+    assert plain.startswith("LLM_RESPONSE::") and with_payload.startswith("LLM_RESPONSE::")
+    assert copy_plain.startswith("LLM_RESPONSE::") and copy_payload.startswith("LLM_RESPONSE::")
     assert DummyDatabase.instances[-1].add_content_asset_calls
 
 
@@ -506,7 +515,7 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
     agent = _agent(poyraz_module, fake_cfg)
 
     output = asyncio.run(agent._generate_marketing_output("Task", "modex"))
-    assert output.startswith("LLM::")
+    assert output.startswith("LLM_RESPONSE::")
 
     empty = asyncio.run(agent.run_task("   "))
     assert empty.startswith("[UYARI]")
@@ -515,9 +524,9 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
         "web_search|q": "web:q",
         "fetch_url|u": "fetch:u",
         "search_docs|k": "docs:k:auto:marketing",
-        "build_landing_page|brief": "LLM::",
-        "landing_page|brief": "LLM::",
-        "generate_campaign_copy|brief": "LLM::",
+        "build_landing_page|brief": "LLM_RESPONSE::",
+        "landing_page|brief": "LLM_RESPONSE::",
+        "generate_campaign_copy|brief": "LLM_RESPONSE::",
         "publish_instagram_post|" + json.dumps({"caption": "c", "image_url": "i"}): "[INSTAGRAM:PUBLISHED]",
         "publish_facebook_post|" + json.dumps({"message": "m", "link_url": "l"}): "[FACEBOOK:PUBLISHED]",
         "send_whatsapp_message|" + json.dumps({"to": "1", "text": "t", "preview_url": 0}): "[WHATSAPP:SENT]",
@@ -525,14 +534,14 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
         "store_content_asset|" + json.dumps({"campaign_id": 1, "tenant_id": "", "asset_type": "a", "title": "t", "content": "c", "channel": "ch", "metadata": {}}): '{"success": true',
         "create_operation_checklist|" + json.dumps({"tenant_id": "", "title": "t", "items": [], "status": "", "owner_user_id": "u", "campaign_id": None}): '{"success": true',
         "plan_service_operations|" + json.dumps({"campaign_name": "c", "service_name": "s", "audience": "a", "menu_plan": {}, "vendor_assignments": {}, "timeline": [], "notes": "", "persist_checklist": False, "tenant_id": "", "checklist_title": "", "owner_user_id": "u", "campaign_id": None}): '{"success": true',
-        "seo_audit|x": "LLM::",
-        "campaign_copy|x": "LLM::",
-        "audience_ops|x": "LLM::",
-        "research_to_marketing|x": "LLM::",
+        "seo_audit|x": "LLM_RESPONSE::",
+        "campaign_copy|x": "LLM_RESPONSE::",
+        "audience_ops|x": "LLM_RESPONSE::",
+        "research_to_marketing|x": "LLM_RESPONSE::",
         "publish_social|instagram|||x|||d|||m|||l": "[SOCIAL:PUBLISHED]",
-        "we need landing page": "LLM::",
-        "seo kampanya hedef kitle": "LLM::",
-        "other": "LLM::",
+        "we need landing page": "LLM_RESPONSE::",
+        "seo kampanya hedef kitle": "LLM_RESPONSE::",
+        "other": "LLM_RESPONSE::",
     }
 
     # set up db/mm imports for route paths that need them
@@ -552,3 +561,9 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
     for prompt, expected in routed.items():
         got = asyncio.run(agent.run_task(prompt))
         assert expected in got
+
+
+def test_poyraz_output_format(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._generate_marketing_output("test", "seo"))
+    assert "seo" in result
