@@ -91,10 +91,16 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 | Nightly memory maintenance | `tests/test_nightly_memory_maintenance.py` | Hazır |
 | Dependency resilience / chaos checks | `tests/test_system_health_dependency_checks.py` | Hazır |
 
-> Coverage politikası dokümantasyonda `%100 hard gate` olarak korunmaktadır; bu güncellemede audit metrikleri yeniden hesaplanmış, `main.py` launcher sertleştirmeleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan Redis fallback, async cancel, `tempfile.mkdtemp` hata yolu ve GitHub API arıza senaryolarının tam regresyon güvenliğine dahil olduğu açıkça belgelenmiş, Coverage/Poyraz ajanlarının bu güvenli omurga üstünde çalıştığı doğrulanmıştır.
+> Düzeltme (2026-04-08): Çalışan teknik kalite geçidi `%100` değil, `.coveragerc` ve CI konfigürasyonlarında tanımlı global `fail_under = 90` eşiğidir. `%100` ifadesi hedef vizyon olarak yorumlanmalı, merge-blocking kural olarak değil. Bu güncellemede audit metrikleri yeniden hesaplanmış, `main.py` launcher sertleştirmeleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan Redis fallback, async cancel, `tempfile.mkdtemp` hata yolu ve GitHub API arıza senaryolarının regresyon güvenliğine dahil olduğu belgelenmiş, Coverage/Poyraz ajanlarının bu güvenli omurga üstünde çalıştığı doğrulanmıştır.
+
+### 4.1 Proje Ekibi için Uygulama Notu (Quality Gate uyumu)
+
+- Test geliştirme sprintlerinde `%100` hedefe kilitlenmeyin; modül bazlı kademeli hedefleri izleyin (`%70 -> %80 -> %90+`).
+- Kapsam dışı dosyalar için (`.coveragerc` `omit` listesi; örn. `core/vision.py`, `core/voice.py`) coverage artırma işi planlamayın.
+- Sprint kapanışında kalite kapısı değerlendirmesi, yalnızca çalışan konfigürasyon kaynaklarına göre yapılmalıdır (`.coveragerc`, `run_tests.sh`, CI workflow).
 
 ---
 
 ## 5. Zero Debt Beyanı
 
-Bu revizyon kapsamında yeni açık teknik borç kaydı oluşturulmamıştır. v5.1.1 revizyonu ile sistemdeki tüm bağımlılık kopmaları (Redis, veritabanı), asenkron iptal durumları (`WebSocketDisconnect`) ve yetkilendirme bypass girişimleri mock testleriyle coverage alanına %100 oranında dahil edilmiş; güncel belgeler de Faz D modüllerinin güvenlik kapıları (sandbox, HITL, health checks, allowlist, rollback, auth) ile uyumlu biçimde entegre edildiğini ve Faz E hedeflerinin mevcut mimari üzerine kontrollü şekilde oturtulduğunu göstermektedir. Bu nedenle proje için **Zero Debt / Production-Ready alpha** beyanı sürdürülmektedir.
+Bu revizyon kapsamında yeni açık teknik borç kaydı oluşturulmamıştır. v5.1.1 sonrası bağımlılık kopmaları (Redis, veritabanı), asenkron iptal durumları (`WebSocketDisconnect`) ve yetkilendirme bypass girişimleri için regresyon testleri genişletilmiş; güvenlik kapıları (sandbox, HITL, health checks, allowlist, rollback, auth) ile Faz E hedeflerinin uyumu korunmuştur. `Zero Debt` beyanı, tüm satırlarda `%100` coverage anlamına gelmez; çalışan kalite kapısı eşiği global `%90` olarak uygulanmaktadır.

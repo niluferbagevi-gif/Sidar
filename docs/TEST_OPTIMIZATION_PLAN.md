@@ -23,6 +23,12 @@ Bu belge, mevcut coverage seviyesinden kalite geçidini güvenli şekilde geçec
 - Bazı üst seviye raporlarda `%100` kalite geçidi ifadesi geçse bile, **çalışan teknik doğruluk kaynağı** CI çalıştırdığı dosyalardır (`.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`).
 - Bu nedenle aşağıdaki “kademeli hedefler”, global gate’in alternatifi değil; **modül bazlı iyileştirme hedefi** olarak yorumlanmalıdır.
 
+### Proje Ekibine Aksiyon Notu (2026-04-08)
+
+- Test yazarken `%100` geneline odaklanarak sprint kapasitesini tüketmeyin; modül bazlı kademeli hedefleri takip edin (`%70 -> %80 -> %90+`).
+- `.coveragerc` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`) için coverage artırma işi açmayın; yalnızca fonksiyonel/regresyon ihtiyacı varsa test ekleyin.
+- Sprint başında hedef modül listesi oluşturun, sprint sonunda sadece bu modüller için line/branch ilerleme raporu çıkarın.
+
 ### Testleri sıfırdan yazma (greenfield) yaklaşımı
 
 Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
