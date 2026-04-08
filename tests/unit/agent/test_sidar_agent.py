@@ -19,7 +19,7 @@ async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_facto
     assert sidar_agent.trace is None
 
 
-async def test_default_derive_correlation_id_returns_first_non_empty_value(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_default_derive_correlation_id_returns_first_non_empty_value() -> None:
     result = sidar_agent._default_derive_correlation_id("", "   ", None, "corr-123", "corr-456")
     assert result == "corr-123"
     assert sidar_agent._default_derive_correlation_id("", "   ", None) == ""
@@ -73,8 +73,8 @@ async def test_init_accepts_config_alias_and_prefers_config(monkeypatch: pytest.
         ("this is not json", "final_answer", "this is not json"),
     ],
 )
-async def test_parse_tool_call_handles_json_markdown_and_invalid_input(sidar_agent_factory, 
-    monkeypatch: pytest.MonkeyPatch,
+async def test_parse_tool_call_handles_json_markdown_and_invalid_input(
+    sidar_agent_factory,
     raw: str,
     expected_tool: str,
     expected_argument: str,
@@ -970,7 +970,7 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
     assert added == [("user", "hello")]
 
 
-async def test_init_accepts_namespace_cfg(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_init_accepts_namespace_cfg(tmp_path: Path) -> None:
     base_dir = tmp_path / "base"
     base_dir.mkdir(parents=True, exist_ok=True)
 
