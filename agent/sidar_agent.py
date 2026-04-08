@@ -1012,7 +1012,20 @@ class SidarAgent:
                 lines.append(f"  Son dosya  : {Path(last_file).name}")
 
         # ── Görev Listesi (aktif görev varsa ekle) ──────────────────────
-        if len(self.todo) > 0:
+        todo_count = 0
+        try:
+            todo_count = int(len(self.todo))
+        except TypeError:
+            dynamic_len = getattr(self.todo, "__len__", None)
+            if callable(dynamic_len):
+                try:
+                    todo_count = int(dynamic_len())
+                except Exception:
+                    todo_count = 0
+        except Exception:
+            todo_count = 0
+
+        if todo_count > 0:
             lines.append("")
             lines.append("[Aktif Görev Listesi]")
             lines.append(self.todo.list_tasks())
