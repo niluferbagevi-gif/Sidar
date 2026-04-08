@@ -29,8 +29,14 @@ class CoderAgent(BaseAgent):
         "tehlikeli komutlardan kaçınırsın."
     )
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
-        super().__init__(cfg=cfg, role_name="coder")
+    def __init__(
+        self,
+        cfg: Optional[Config] = None,
+        *,
+        config: Optional[Config] = None,
+    ) -> None:
+        resolved_cfg = cfg or config
+        super().__init__(cfg=resolved_cfg, role_name="coder")
         self.security = SecurityManager(
             cfg=self.cfg,
             access_level=getattr(self.cfg, "ACCESS_LEVEL", "full"),

@@ -34,8 +34,14 @@ class QAAgent(BaseAgent):
         "Yanıtında markdown çiti veya açıklama olmasın."
     )
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
-        super().__init__(cfg=cfg, role_name="qa")
+    def __init__(
+        self,
+        cfg: Optional[Config] = None,
+        *,
+        config: Optional[Config] = None,
+    ) -> None:
+        resolved_cfg = cfg or config
+        super().__init__(cfg=resolved_cfg, role_name="qa")
         self.security = SecurityManager(cfg=self.cfg)
         self.code = CodeManager(self.security, base_dir=self.cfg.BASE_DIR)
         self.register_tool("read_file", self._tool_read_file)

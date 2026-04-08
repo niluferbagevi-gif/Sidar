@@ -24,8 +24,14 @@ class ResearcherAgent(BaseAgent):
         "Kod yazma/değiştirme yapmazsın; web ve doküman kaynaklarından doğrulanabilir çıktı üretirsin."
     )
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
-        super().__init__(cfg=cfg, role_name="researcher")
+    def __init__(
+        self,
+        cfg: Optional[Config] = None,
+        *,
+        config: Optional[Config] = None,
+    ) -> None:
+        resolved_cfg = cfg or config
+        super().__init__(cfg=resolved_cfg, role_name="researcher")
         self.web = WebSearchManager(self.cfg)
         self.docs = DocumentStore(
             Path(self.cfg.RAG_DIR),

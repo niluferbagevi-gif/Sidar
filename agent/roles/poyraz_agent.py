@@ -39,8 +39,14 @@ class PoyrazAgent(BaseAgent):
         "SEO, kampanya mesajı, funnel optimizasyonu ve hedef kitle operasyonlarına odaklanırsın."
     )
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
-        super().__init__(cfg=cfg, role_name="poyraz")
+    def __init__(
+        self,
+        cfg: Optional[Config] = None,
+        *,
+        config: Optional[Config] = None,
+    ) -> None:
+        resolved_cfg = cfg or config
+        super().__init__(cfg=resolved_cfg, role_name="poyraz")
         self.web = WebSearchManager(self.cfg)
         self.social = SocialMediaManager(
             graph_api_token=getattr(self.cfg, "META_GRAPH_API_TOKEN", ""),

@@ -40,8 +40,14 @@ class ReviewerAgent(BaseAgent):
         "Dinamik import gerekiyorsa standart kütüphane ile güvenli yaklaşım kullan."
     )
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
-        super().__init__(cfg=cfg, role_name="reviewer")
+    def __init__(
+        self,
+        cfg: Optional[Config] = None,
+        *,
+        config: Optional[Config] = None,
+    ) -> None:
+        resolved_cfg = cfg or config
+        super().__init__(cfg=resolved_cfg, role_name="reviewer")
         self.config = self.cfg
         github_token = getattr(self.config, "GITHUB_TOKEN", None)
         github_repo = getattr(self.config, "GITHUB_REPO", None)
