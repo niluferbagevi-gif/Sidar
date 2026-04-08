@@ -164,7 +164,7 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
     assert "doc-123" in ingested
 
 
-async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monkeypatch) -> None:
+async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monkeypatch, frozen_time) -> None:
     health_cfg = SimpleNamespace(
         ENABLE_DEPENDENCY_HEALTHCHECKS=True,
         REDIS_URL="",
