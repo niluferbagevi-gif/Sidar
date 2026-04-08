@@ -755,8 +755,9 @@ async def test_ollama_and_openai_error_paths(monkeypatch: pytest.MonkeyPatch, re
     oc = llm_client.OllamaClient(cfg)
 
     respx_mock_router.post("http://x/api/chat").mock(side_effect=RuntimeError("fail"))
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="fail") as exc:
         await oc.chat([{"role": "user", "content": "x"}], stream=False)
+    assert exc.value.provider == "ollama"
 
     respx_mock_router.get("http://x/api/tags").mock(side_effect=RuntimeError("x"))
     assert await oc.list_models() == []
@@ -783,8 +784,9 @@ async def test_litellm_fallback_raise_and_successive_model(monkeypatch: pytest.M
     assert await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "ok"
 
     respx_mock_router.post("http://gw/chat/completions").mock(side_effect=RuntimeError("all failed"))
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="all failed") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert exc.value.provider == "litellm"
 
 
 @pytest.mark.asyncio
@@ -1166,15 +1168,17 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
         raise llm_client.LLMAPIError("openai", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_llm)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
+    assert exc.value.provider == "openai"
 
     async def raise_other(*_a, **_kw):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_other)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
+    assert exc.value.provider == "openai"
     assert span.attrs["sidar.llm.provider"] == "openai"
 
 
@@ -1186,8 +1190,9 @@ async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> Non
         raise RuntimeError("down")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="down") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert exc.value.provider == "ollama"
 
 
 @pytest.mark.asyncio
@@ -1221,8 +1226,9 @@ async def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch, res
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
 
     respx_mock_router.post("http://gw/chat/completions").mock(side_effect=RuntimeError("fail"))
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="fail") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert exc.value.provider == "litellm"
 
 
 @pytest.mark.asyncio
@@ -1254,15 +1260,17 @@ async def test_anthropic_nonstream_error_paths(monkeypatch: pytest.MonkeyPatch) 
         raise llm_client.LLMAPIError("anthropic", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", llm_err)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=True)
+    assert exc.value.provider == "anthropic"
 
     async def oth_err(*_a, **_kw):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", oth_err)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=True)
+    assert exc.value.provider == "anthropic"
 
 
 @pytest.mark.asyncio
@@ -1384,8 +1392,9 @@ async def test_litellm_empty_models_and_candidate_dedup(monkeypatch: pytest.Monk
     assert c.json_mode_config() == {"response_format": {"type": "json_object"}}
 
     monkeypatch.setattr(c, "_candidate_models", lambda _m: [])
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="LiteLLM hata") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert exc.value.provider == "litellm"
 
 
 @pytest.mark.asyncio
@@ -1421,8 +1430,9 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m", ENABLE_TRACING=True))
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
     chunks = await _collect(c._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, False))
     assert chunks == ["C"]
 
@@ -1517,15 +1527,17 @@ async def test_openai_stream_empty_and_error_branches_with_span(monkeypatch: pyt
         raise llm_client.LLMAPIError("openai", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_llm)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "openai"
 
     async def _raise_other(*_a, **_kw):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_other)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "openai"
 
     respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=""))
 
@@ -1574,15 +1586,17 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
         raise llm_client.LLMAPIError("anthropic", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _llm)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
 
     async def _oth(*_a, **_kw):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _oth)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
 
 
 @pytest.mark.asyncio
@@ -1626,15 +1640,17 @@ async def test_openai_error_without_tracing_span_branches(monkeypatch: pytest.Mo
         raise llm_client.LLMAPIError("openai", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_llm)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "openai"
 
     async def _raise_other(*_a, **_kw):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_other)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "openai"
 
 
 @pytest.mark.asyncio
@@ -1667,15 +1683,17 @@ async def test_anthropic_errors_without_span(monkeypatch: pytest.MonkeyPatch) ->
         raise llm_client.LLMAPIError("anthropic", "x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _llm)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
 
     async def _oth(*_a, **_kw):
         raise RuntimeError("x")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _oth)
-    with pytest.raises(llm_client.LLMAPIError):
+    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
 
 
 @pytest.mark.asyncio
