@@ -1019,12 +1019,18 @@ async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(sidar_a
 
 
 
-async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(
+    sidar_agent_factory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._append_autonomy_history = AsyncMock()
     agent._nightly_maintenance_lock = None
-    agent.seconds_since_last_activity = lambda: 9999.0
+    frozen_time.tick(delta=9999.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 9999.0
     agent.cfg = types.SimpleNamespace(
         ENABLE_NIGHTLY_MEMORY_PRUNING=True,
         NIGHTLY_MEMORY_IDLE_SECONDS=100,
