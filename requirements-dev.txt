@@ -104,6 +104,8 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+freezegun==1.5.5
+    # via sidar (pyproject.toml)
 fsspec==2026.2.0
     # via
     #   huggingface-hub

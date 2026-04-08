@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Callable
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
 
 from agent.core.event_stream import AgentEvent
 import agent.sidar_agent as sidar_agent_module
@@ -85,6 +86,13 @@ def fake_video_stream() -> MagicMock:
     ]
     stream.metadata.return_value = {"fps": 25, "duration_sec": 2}
     return stream
+
+
+@pytest.fixture
+def frozen_time():
+    """Tüm zaman bağımlı operasyonları deterministik hale getirmek için ortak fixture."""
+    with freeze_time("2026-04-01 12:00:00") as frozen:
+        yield frozen
 
 
 @pytest.fixture
