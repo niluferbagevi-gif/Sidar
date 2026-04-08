@@ -326,6 +326,11 @@ def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database):
         run(sqlite_db._run_sqlite_op(_failing_op))
 
     assert run(sqlite_db.load_session("s1")) is None
+    healthy_session = run(sqlite_db.create_session(user.id, "after-rollback"))
+    assert run(sqlite_db.load_session(healthy_session.id, user_id=user.id)) is not None
+    sessions = run(sqlite_db.list_sessions(user.id))
+    assert len(sessions) == 1
+    assert sessions[0].id == healthy_session.id
 
 
 def test_jwt_token_flow_prefers_db_user(sqlite_db: Database):
@@ -853,6 +858,15 @@ def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database):
     payload = {"sub": "u1", "role": "", "username": "x", "tenant_id": "default"}
     bad_token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
     assert sqlite_db.verify_auth_token(bad_token) is None
+
+    invalid_sub_payload = {"sub": "", "role": "admin", "username": "x", "tenant_id": "default"}
+    invalid_sub_token = jwt.encode(
+        invalid_sub_payload,
+        sqlite_db.cfg.JWT_SECRET_KEY,
+        algorithm=sqlite_db.cfg.JWT_ALGORITHM,
+    )
+    assert sqlite_db.verify_auth_token(invalid_sub_token) is None
+
     assert run(sqlite_db.get_user_by_token("not-a-token")) is None
 
 
