@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -33,10 +34,9 @@ RED_ZONE_MODULES = {
 }
 
 
-def test_red_zone_module_inventory_is_explicit_and_complete() -> None:
-    assert len(RED_ZONE_MODULES) == 10
-    assert "agent/roles/poyraz_agent.py" in RED_ZONE_MODULES
-    assert "managers/package_info.py" in RED_ZONE_MODULES
+def test_red_zone_modules_exist() -> None:
+    for module_path in RED_ZONE_MODULES:
+        assert Path(module_path).exists(), f"{module_path} dosyası bulunamadı!"
 
 
 async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
