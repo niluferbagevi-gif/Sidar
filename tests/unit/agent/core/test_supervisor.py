@@ -72,6 +72,15 @@ import agent.core.supervisor as supervisor_mod
 from agent.core.supervisor import SupervisorAgent
 
 
+# Stub'lar sadece supervisor import'u için gerekli.
+# Import tamamlandıktan sonra global sys.modules kirlenmesini hemen geri al.
+for name, original in _ORIGINAL_MODULES.items():
+    if original is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = original
+
+
 def teardown_module(_module) -> None:
     for name, original in _ORIGINAL_MODULES.items():
         if original is None:

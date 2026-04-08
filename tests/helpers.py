@@ -39,7 +39,14 @@ def make_test_config(**overrides: Any) -> MagicMock:
     except ImportError:
         AppConfig = None
 
-    mock_cfg = MagicMock(spec=AppConfig) if AppConfig is not None else MagicMock()
+    if AppConfig is not None and all(
+        hasattr(AppConfig, attr) for attr in ("initialize_directories", "validate_critical_settings")
+    ):
+        mock_cfg = MagicMock(spec=AppConfig)
+    else:
+        # Bazı testler geçici stub Config sınıfları enjekte ediyor olabilir.
+        # Bu durumda katı spec, ortak fixture kurulumunda AttributeError üretir.
+        mock_cfg = MagicMock()
     for key, value in base.items():
         setattr(mock_cfg, key, value)
 
