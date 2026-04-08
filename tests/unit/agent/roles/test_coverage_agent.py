@@ -458,6 +458,25 @@ def test_clean_code_output_real_markdown_fence_cleanup():
     assert cleaned == "print('hi')"
 
 
+def test_clean_code_output_handles_multiple_and_nested_like_fences():
+    multi_block = (
+        "```python\n"
+        "def test_a():\n"
+        "    assert True\n"
+        "```\n"
+        "Açıklama\n"
+        "```python\n"
+        "def test_b():\n"
+        "    code = \"\"\"```not-a-fence```\"\"\"\n"
+        "    assert code\n"
+        "```"
+    )
+    cleaned = CoverageAgent._clean_code_output(multi_block)
+    assert "def test_a():" in cleaned
+    assert "def test_b():" in cleaned
+    assert "Açıklama" not in cleaned
+
+
 def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     xml_path = tmp_path / "coverage_full_branch.xml"
     xml_path.write_text(
@@ -536,3 +555,27 @@ def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
     agent._record_task = boom_record
     written2 = asyncio.run(agent.run_task('{"command":"pytest --cov=.","cwd":"."}'))
     assert json.loads(written2)["success"] is True
+
+
+def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    agent.register_tool("analyze_coverage_report", agent._tool_analyze_coverage_report)
+
+    invalid_xml = tmp_path / "broken.xml"
+    invalid_xml.write_text("<coverage><packages>", encoding="utf-8")
+
+    payload = json.dumps(
+        {
+            "coverage_xml": str(invalid_xml),
+            "coverage_output": (
+                "Name Stmts Miss Branch BrPart Cover Missing\n"
+                "src/app.py 10 2 0 0 80% 3-4\n"
+            ),
+        }
+    )
+    result = asyncio.run(agent.run_task(f"analyze_coverage_report|{payload}"))
+    data = json.loads(result)
+
+    assert data["coverage_xml"]["summary"] == "coverage.xml ayrıştırılamadı."
+    assert data["coverage_terminal"]["total_findings"] == 1
+    assert data["findings"][0]["target_path"] == "src/app.py"

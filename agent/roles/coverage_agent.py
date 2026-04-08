@@ -102,11 +102,17 @@ class CoverageAgent(BaseAgent):
         if not clean_text.startswith("```"):
             return clean_text
 
+        block_pattern = re.compile(r"```(?P<lang>[^\n`]*)\n(?P<code>.*?)```", re.DOTALL)
+        blocks = list(block_pattern.finditer(clean_text))
+        if blocks:
+            python_blocks = [m.group("code").strip() for m in blocks if m.group("lang").strip().lower() == "python"]
+            selected_blocks = python_blocks or [m.group("code").strip() for m in blocks]
+            return "\n\n".join([b for b in selected_blocks if b]).strip()
+
+        # Kapanış çiti eksikse en azından açılış çitini temizleyip kalan kodu döndür.
         lines = clean_text.splitlines()
-        if lines[0].strip().startswith("```"):
+        if lines and lines[0].strip().startswith("```"):
             lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
         return "\n".join(lines).strip()
 
     @staticmethod
