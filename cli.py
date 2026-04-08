@@ -293,7 +293,11 @@ def main() -> None:
                 print(chunk, end="", flush=True)
             print()
 
-        asyncio.run(_run_command())
+        command_timeout = max(5, int(getattr(cfg, "CLI_COMMAND_TIMEOUT", 25) or 25))
+        try:
+            asyncio.run(asyncio.wait_for(_run_command(), timeout=command_timeout))
+        except asyncio.TimeoutError:
+            print(f"\nSidar > ⚠ Komut zaman aşımına uğradı ({command_timeout}s).")
         return
 
     interactive_loop(agent)
