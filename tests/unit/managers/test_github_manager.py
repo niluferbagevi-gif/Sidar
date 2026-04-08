@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -461,18 +462,8 @@ def test_methods_when_repo_or_connection_missing(monkeypatch):
 
 
 def test_init_client_import_error_and_generic_error(monkeypatch):
-    def bad_import(*args, **kwargs):
-        raise ImportError("no github")
-
-    monkeypatch.setitem(__import__("sys").modules, "github", None)
-    real_import = __import__("builtins").__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "github":
-            raise ImportError("missing")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(__import__("builtins"), "__import__", fake_import)
+    # ImportError branch: inject a non-module sentinel into sys.modules.
+    monkeypatch.setitem(sys.modules, "github", None)
     GitHubManager(token="tok")
 
     class _FakeAuth:
@@ -484,8 +475,7 @@ def test_init_client_import_error_and_generic_error(monkeypatch):
         def __init__(self, auth):
             raise RuntimeError("connect boom")
 
-    monkeypatch.setattr(__import__("builtins"), "__import__", real_import)
-    monkeypatch.setitem(__import__("sys").modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_BadGithub))
+    monkeypatch.setitem(sys.modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_BadGithub))
     GitHubManager(token="tok")
 
 
@@ -503,7 +493,7 @@ def test_init_client_success_with_repo_load(monkeypatch):
         def get_repo(self, name):
             return SimpleNamespace(full_name=name, default_branch="main")
 
-    monkeypatch.setitem(__import__("sys").modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_FakeGithub))
+    monkeypatch.setitem(sys.modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_FakeGithub))
     m = GitHubManager(token=" tok ", repo_name="octo/demo")
     assert m.is_available() is True
     assert m.repo_name == "octo/demo"
