@@ -56,6 +56,17 @@ def fake_llm_response() -> Callable[..., Any]:
 
 
 @pytest.fixture
+def fake_llm_error() -> Callable[..., Any]:
+    """LLM istemcisi için deterministik hata (rate-limit/timeout) döner."""
+
+    async def _mock_error(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        _ = (args, kwargs)
+        raise RuntimeError("rate limit exceeded")
+
+    return _mock_error
+
+
+@pytest.fixture
 def fake_event_stream() -> Callable[[], AsyncGenerator[AgentEvent, None]]:
     """Ajan event stream çıktılarını deterministik olarak simüle eder."""
 
@@ -73,6 +84,15 @@ def fake_social_api() -> MagicMock:
     api.fetch_profile.return_value = {"id": "user-1", "username": "mock_user", "followers": 42}
     api.fetch_posts.return_value = [{"id": "post-1", "text": "mock post", "likes": 7}]
     api.publish.return_value = {"ok": True, "post_id": "published-1"}
+
+    def set_rate_limit_error() -> None:
+        api.fetch_profile.side_effect = RuntimeError("API Rate Limit")
+
+    def set_timeout_error() -> None:
+        api.fetch_posts.side_effect = TimeoutError("API request timed out")
+
+    api.set_rate_limit_error = set_rate_limit_error
+    api.set_timeout_error = set_timeout_error
     return api
 
 
@@ -86,6 +106,33 @@ def fake_video_stream() -> MagicMock:
     ]
     stream.metadata.return_value = {"fps": 25, "duration_sec": 2}
     return stream
+
+
+@pytest.fixture
+def fake_video_stream_error() -> MagicMock:
+    """Video analiz pipeline'ı için bozuk akış/hata senaryosu."""
+    stream = MagicMock()
+    stream.read_frames.side_effect = RuntimeError("corrupted video stream")
+    stream.metadata.return_value = {"fps": 0, "duration_sec": 0}
+    return stream
+
+
+@pytest.fixture
+def fake_db_session() -> AsyncGenerator[Any, None]:
+    """In-memory SQLite DB oturumu sağlar (entegrasyon benzeri testler için)."""
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    create_engine = sqlalchemy.create_engine
+    orm = pytest.importorskip("sqlalchemy.orm")
+    sessionmaker = orm.sessionmaker
+
+    engine = create_engine("sqlite:///:memory:")
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
 
 
 @pytest.fixture
