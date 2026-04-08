@@ -80,7 +80,15 @@ def fake_event_stream() -> Callable[[], AsyncGenerator[AgentEvent, None]]:
 @pytest.fixture
 def fake_social_api() -> AsyncMock:
     """Sosyal medya API çağrıları için ortak asenkron fake adaptör."""
-    api = AsyncMock()
+    api = AsyncMock(
+        spec=[
+            "fetch_profile",
+            "fetch_posts",
+            "publish",
+            "set_rate_limit_error",
+            "set_timeout_error",
+        ]
+    )
     api.fetch_profile.return_value = {"id": "user-1", "username": "mock_user", "followers": 42}
     api.fetch_posts.return_value = [{"id": "post-1", "text": "mock post", "likes": 7}]
     api.publish.return_value = {"ok": True, "post_id": "published-1"}
@@ -99,7 +107,7 @@ def fake_social_api() -> AsyncMock:
 @pytest.fixture
 def fake_video_stream() -> AsyncMock:
     """Video analiz pipeline'ı için deterministik asenkron fake akış."""
-    stream = AsyncMock()
+    stream = AsyncMock(spec=["read_frames", "metadata"])
     stream.read_frames.return_value = [
         {"frame_id": 1, "timestamp": 0.0},
         {"frame_id": 2, "timestamp": 0.04},
@@ -111,7 +119,7 @@ def fake_video_stream() -> AsyncMock:
 @pytest.fixture
 def fake_video_stream_error() -> AsyncMock:
     """Video analiz pipeline'ı için bozuk akış/hata senaryosu."""
-    stream = AsyncMock()
+    stream = AsyncMock(spec=["read_frames", "metadata"])
     stream.read_frames.side_effect = RuntimeError("corrupted video stream")
     stream.metadata.return_value = {"fps": 0, "duration_sec": 0}
     return stream
