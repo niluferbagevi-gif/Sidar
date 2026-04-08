@@ -320,6 +320,13 @@ class SupervisorAgent(BaseAgent):
             code_result = await self._route_p2p(code_result.summary, parent_task_id=code_result.task_id)
 
         code_summary = str(code_result.summary)
+        if bool(getattr(getattr(self, "cfg", None), "CLI_FAST_MODE", False)):
+            await self.events.publish(
+                "supervisor",
+                "CLI fast mode aktif: reviewer kalite kapısı atlandı, coder çıktısı döndürülüyor...",
+            )
+            return code_summary
+
         review_goal = f"review_code|{code_summary[:800]}"
         await self.events.publish("supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor...")
         review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)

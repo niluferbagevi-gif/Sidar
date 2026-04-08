@@ -322,6 +322,29 @@ def test_run_task_code_flow_stops_after_retry_limit() -> None:
     assert "ikinci kod" in result
 
 
+def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    sup.cfg.CLI_FAST_MODE = True
+    calls: list[tuple[str, str]] = []
+
+    async def _delegate(receiver: str, goal: str, intent: str, **_kwargs):
+        calls.append((receiver, intent))
+        if receiver == "reviewer":
+            raise AssertionError("reviewer should be skipped in CLI fast mode")
+        return TaskResult(task_id="c1", status="done", summary="hızlı kod çıktısı")
+
+    async def _route_p2p(*_args, **_kwargs):
+        raise AssertionError("_route_p2p should not be called in this scenario")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("hızlı bir komut çalıştır"))
+
+    assert result == "hızlı kod çıktısı"
+    assert calls == [("coder", "code")]
+
+
 def test_ensure_delegation_request_shape_uses_existing_class(monkeypatch: pytest.MonkeyPatch) -> None:
     contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
     monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
