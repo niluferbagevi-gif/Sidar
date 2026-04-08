@@ -126,12 +126,21 @@ def test_user_required_and_repr_len(mem):
         mem._require_active_user()
 
 
-def test_sync_api_helpers(mem):
+def test_sync_api_helpers(monkeypatch, mem):
     mem._turns = [{"role": "user", "content": "merhaba"}]
     assert mem.get_messages_for_llm() == [{"role": "user", "content": "merhaba"}]
 
     mem.set_last_file("a.py")
     assert mem.get_last_file() == "a.py"
+
+    # tiktoken ağ isteği yapmadan çalışsın diye mock'la
+    class _FakeEnc:
+        @staticmethod
+        def encode(text):
+            return list(text)
+
+    fake_tiktoken = types.SimpleNamespace(get_encoding=lambda _: _FakeEnc())
+    monkeypatch.setitem(sys.modules, "tiktoken", fake_tiktoken)
 
     assert isinstance(mem._estimate_tokens(), int)
     assert mem.needs_summarization() is False
