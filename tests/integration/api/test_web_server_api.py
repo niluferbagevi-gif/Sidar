@@ -209,7 +209,7 @@ def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
             json={"role_name": "system", "prompt_text": "Hacked", "activate": True},
         )
 
-        assert create_response.status_code in {401, 403}
+        assert create_response.status_code == 403
     finally:
         app.dependency_overrides = original_overrides
 
