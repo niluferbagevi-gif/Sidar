@@ -291,6 +291,25 @@ def test_dataset_exporter_rejects_unknown_format(tmp_path):
         run(al.DatasetExporter(store).export(str(tmp_path / "x"), fmt="unknown"))
 
 
+def test_export_file_error(monkeypatch):
+    """_write_file içinde PermissionError oluştuğunda export metodu onu çağırana fırlatmalı."""
+    store = InMemoryStore([{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}])
+    exporter = al.DatasetExporter(store)
+
+    async def fake_to_thread(func, *args, **kwargs):
+        func(*args, **kwargs)
+
+    def raise_permission(*args, **kwargs):
+        raise PermissionError("Erişim engellendi")
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(al.Path, "mkdir", lambda *args, **kwargs: None)
+    monkeypatch.setattr(al.Path, "write_text", raise_permission)
+
+    with pytest.raises(PermissionError):
+        run(exporter.export("/root/secret.jsonl"))
+
+
 def test_pipeline_helpers_and_example_builders():
     pipe = al.ContinuousLearningPipeline(InMemoryStore(), config=DummyConfig())
 
