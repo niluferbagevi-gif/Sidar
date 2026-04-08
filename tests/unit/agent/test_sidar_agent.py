@@ -571,11 +571,19 @@ async def test_build_context_and_instruction_absence(sidar_agent_factory, monkey
     assert "abcdefghi" in text
 
 
-async def test_tool_subtask_returns_done_and_empty_warning(sidar_agent_factory) -> None:
-    agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+async def test_tool_subtask_returns_done_and_empty_warning(
+    sidar_agent_factory,
+    fake_llm_response,
+) -> None:
+    cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+    agent = sidar_agent_factory(cfg=cfg)
 
-    agent.llm = AsyncMock(chat=AsyncMock(side_effect=['{"thought":"t","tool":"final_answer","argument":"done"}', "x"]))
+    async def _tool_done_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"thought":"t","tool":"final_answer","argument":"done"}'
+
+    agent.llm = AsyncMock()
+    agent.llm.chat = AsyncMock(side_effect=_tool_done_response)
     done = await agent._tool_subtask("job")
     assert "Tamamlandı" in done
     assert "belirtilmedi" in await agent._tool_subtask("")
@@ -611,15 +619,16 @@ async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
     assert "oluşturuldu" in await agent._tool_github_smart_pr("title|||main|||note")
 
 
-async def test_summarize_memory_and_clear_memory_success(sidar_agent_factory) -> None:
-    agent = sidar_agent_factory()
+async def test_summarize_memory_and_clear_memory_success(sidar_agent_factory, fake_llm_response) -> None:
+    cfg = types.SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+    agent = sidar_agent_factory(cfg=cfg)
     agent.memory = types.SimpleNamespace(
         get_history=AsyncMock(return_value=[{"role": "user", "content": "a", "timestamp": 1}, {"role": "assistant", "content": "b", "timestamp": 1}, {"role": "user", "content": "c", "timestamp": 1}, {"role": "assistant", "content": "d", "timestamp": 1}]),
         apply_summary=AsyncMock(),
         clear=AsyncMock(),
    )
     agent.docs = types.SimpleNamespace(add_document=AsyncMock())
-    agent.llm = types.SimpleNamespace(chat=AsyncMock(return_value="sum"))
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
     await agent._summarize_memory()
     assert "temizlendi" in await agent.clear_memory()
 
