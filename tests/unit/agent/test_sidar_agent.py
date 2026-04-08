@@ -150,7 +150,7 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, f"ok:{command}:{base_dir}")
     agent.code = code_mock
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
 
     plan = {
         "summary": "patching",
@@ -178,7 +178,7 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, "ok")
     agent.code = code_mock
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
     plan = {
         "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
         "validation_commands": ["pytest -q"],
@@ -191,12 +191,12 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory
 
 async def test_attempt_autonomous_self_heal_core_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=False)
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=False)
     remediation = {"remediation_loop": {"status": "planned"}}
     disabled = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert disabled["status"] == "disabled"
 
-    agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "queued"}}
     skipped = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert skipped["status"] == "skipped"
@@ -249,13 +249,14 @@ async def test_run_nightly_memory_maintenance_disabled_and_completed(
     agent._nightly_maintenance_lock = None
     frozen_time.tick(delta=9999.0)
     agent._last_activity_ts = sidar_agent.time.time() - 9999.0
-    agent.cfg = types.SimpleNamespace(
+    _override_cfg(
+        agent,
         ENABLE_NIGHTLY_MEMORY_PRUNING=False,
         NIGHTLY_MEMORY_IDLE_SECONDS=100,
         NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=2,
         NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
         NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
-   )
+    )
     disabled = await agent.run_nightly_memory_maintenance()
     assert disabled["status"] == "disabled"
 
@@ -311,7 +312,7 @@ async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_
     (nested / "CLAUDE.md").write_text("child rules", encoding="utf-8")
 
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(root))
+    _override_cfg(agent, BASE_DIR=str(root))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
@@ -338,7 +339,7 @@ async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monke
     security.set_level.side_effect = _set_level
     agent.memory = memory
     agent.security = security
-    agent.cfg = types.SimpleNamespace(ACCESS_LEVEL="safe")
+    _override_cfg(agent, ACCESS_LEVEL="safe")
 
     changed = await agent.set_access_level("strict")
     unchanged = await agent.set_access_level("strict")
@@ -350,7 +351,7 @@ async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monke
 
 async def test_status_renders_all_sections(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(AI_PROVIDER="x", CODING_MODEL="m", ACCESS_LEVEL="safe")
+    _override_cfg(agent, AI_PROVIDER="x", CODING_MODEL="m", ACCESS_LEVEL="safe")
     memory = Mock()
     memory.__len__ = Mock(return_value=3)
     agent.memory = memory
@@ -490,7 +491,7 @@ async def test_collect_and_build_self_heal_plan(sidar_agent_factory, monkeypatch
 
     agent.code = code
     agent.llm = llm
-    agent.cfg = types.SimpleNamespace(CODING_MODEL="m", SELF_HEAL_MAX_PATCHES=2)
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_MAX_PATCHES=2)
     monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
     monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", lambda raw_plan, **kwargs: {"operations": [{"path": "a.py"}], "from": raw_plan, "kwargs": kwargs})
 
@@ -508,7 +509,7 @@ async def test_collect_and_build_self_heal_plan(sidar_agent_factory, monkeypatch
 
 async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "planned"}}
     blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert blocked["status"] == "blocked"
@@ -568,7 +569,7 @@ async def test_run_nightly_memory_maintenance_skipped_paths(
     agent.initialize = AsyncMock()
     frozen_time.tick(delta=5.0)
     agent._last_activity_ts = sidar_agent.time.time() - 5.0
-    agent.cfg = types.SimpleNamespace(ENABLE_NIGHTLY_MEMORY_PRUNING=True, NIGHTLY_MEMORY_IDLE_SECONDS=100)
+    _override_cfg(agent, ENABLE_NIGHTLY_MEMORY_PRUNING=True, NIGHTLY_MEMORY_IDLE_SECONDS=100)
     agent._nightly_maintenance_lock = None
     not_idle = await agent.run_nightly_memory_maintenance()
     assert not_idle["reason"] == "not_idle"
@@ -689,8 +690,8 @@ async def test_tool_subtask_returns_done_and_empty_warning(
     sidar_agent_factory,
     fake_llm_response,
 ) -> None:
-    cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent = sidar_agent_factory(cfg=cfg)
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     async def _tool_done_response(*_args, **_kwargs) -> str:
         await fake_llm_response("subtask")
@@ -706,7 +707,7 @@ async def test_tool_subtask_returns_done_and_empty_warning(
 async def test_tool_github_smart_pr_requires_token(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: False)
-    assert "token" in await agent._tool_github_smart_pr("x")
+    assert await agent._tool_github_smart_pr("x") == sidar_agent.GITHUB_SMART_PR_NO_TOKEN_MESSAGE
 
 
 async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
@@ -730,12 +731,12 @@ async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
 
     agent.code = code
     agent.github = git
-    assert "oluşturuldu" in await agent._tool_github_smart_pr("title|||main|||note")
+    assert await agent._tool_github_smart_pr("title|||main|||note") == f"{sidar_agent.GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} url"
 
 
 async def test_summarize_memory_and_clear_memory_success(sidar_agent_factory, fake_llm_response) -> None:
-    cfg = types.SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent = sidar_agent_factory(cfg=cfg)
+    agent = sidar_agent_factory()
+    _override_cfg(agent, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.memory = types.SimpleNamespace(
         get_history=AsyncMock(return_value=[{"role": "user", "content": "a", "timestamp": 1}, {"role": "assistant", "content": "b", "timestamp": 1}, {"role": "user", "content": "c", "timestamp": 1}, {"role": "assistant", "content": "d", "timestamp": 1}]),
         apply_summary=AsyncMock(),
@@ -766,7 +767,7 @@ async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_ag
 
 async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
 
     code = Mock()
     code.read_file.return_value = (False, "nope")
@@ -818,7 +819,6 @@ async def test_build_trigger_correlation_matches_related_ids(sidar_agent_factory
 
 async def test_try_multi_agent_imports_supervisor_when_missing(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace()
     agent._supervisor = None
 
     from agent.core import supervisor as supervisor_mod
@@ -834,7 +834,7 @@ async def test_try_multi_agent_imports_supervisor_when_missing(sidar_agent_facto
 
 async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(MEMORY_ARCHIVE_TOP_K=1, MEMORY_ARCHIVE_MIN_SCORE=0.3, MEMORY_ARCHIVE_MAX_CHARS=1200)
+    _override_cfg(agent, MEMORY_ARCHIVE_TOP_K=1, MEMORY_ARCHIVE_MIN_SCORE=0.3, MEMORY_ARCHIVE_MAX_CHARS=1200)
 
     agent.docs = types.SimpleNamespace(collection=None)
     assert agent._get_memory_archive_context_sync("x", 1, 0.2, 300) == ""
@@ -898,7 +898,7 @@ async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, mon
 
 async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
@@ -912,7 +912,7 @@ async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factor
 
 async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     agent.llm = AsyncMock(chat=AsyncMock(side_effect=[{"not": "string"}, '{"tool":"x","argument":"a","thought":"t"}']))
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail-tool"))
@@ -929,12 +929,12 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     code.run_shell.side_effect = lambda command: (False, "") if "branch" in command else (True, "")
     agent.code = code
     no_branch = await agent._tool_github_smart_pr("x")
-    assert no_branch == "✗ Aktif branch bulunamadı."
+    assert no_branch == sidar_agent.GITHUB_SMART_PR_NO_BRANCH_MESSAGE
 
     code.run_shell.side_effect = lambda command: (True, "feat/a") if "branch" in command else ((True, "") if "status" in command else (True, ""))
     agent.code = code
     no_changes = await agent._tool_github_smart_pr("x")
-    assert no_changes == "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
+    assert no_changes == sidar_agent.GITHUB_SMART_PR_NO_CHANGES_MESSAGE
 
     code.run_shell.side_effect = lambda command: (
         (True, "feat/a")
@@ -948,7 +948,7 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
         else (True, "")
     )
     agent.code = code
-    assert "oluşturulamadı" in await agent._tool_github_smart_pr("title|||base|||note")
+    assert (await agent._tool_github_smart_pr("title|||base|||note")).startswith(sidar_agent.GITHUB_SMART_PR_CREATE_FAILED_PREFIX)
 
 
 async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -973,7 +973,7 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
     agent.memory = memory
     agent.docs = docs
     agent.llm = types.SimpleNamespace(chat=AsyncMock(return_value="summary"))
-    agent.cfg = types.SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     await agent._summarize_memory()
     await agent._memory_add("user", "hello")
@@ -1055,7 +1055,7 @@ async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_fact
     code.write_file.return_value = (True, "ok")
     code.run_shell_in_sandbox.return_value = (False, "bad")
     agent.code = code
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
     reverted = await agent._execute_self_heal_plan(
         remediation_loop={"validation_commands": ["pytest -q"]},
         plan={"operations": [{"path": "a.py", "target": "a", "replacement": "b"}]},
@@ -1067,7 +1067,7 @@ async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_fact
 
 async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
     agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
     agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
@@ -1113,13 +1113,14 @@ async def test_nightly_maintenance_handles_entity_failure(
     agent._nightly_maintenance_lock = None
     frozen_time.tick(delta=9999.0)
     agent._last_activity_ts = sidar_agent.time.time() - 9999.0
-    agent.cfg = types.SimpleNamespace(
+    _override_cfg(
+        agent,
         ENABLE_NIGHTLY_MEMORY_PRUNING=True,
         NIGHTLY_MEMORY_IDLE_SECONDS=100,
         NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=2,
         NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
         NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
-   )
+    )
 
     entity = AsyncMock()
     entity.initialize.side_effect = RuntimeError("entity-boom")
@@ -1167,7 +1168,8 @@ async def test_tool_docs_search_returns_plain_text(sidar_agent_factory) -> None:
 
 async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(
+    _override_cfg(
+        agent,
         AI_PROVIDER="openai",
         PROJECT_NAME="p",
         VERSION="1",
@@ -1182,7 +1184,7 @@ async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> 
         LOCAL_INSTRUCTION_MAX_CHARS=10,
         LOCAL_AGENT_CONTEXT_MAX_CHARS=9999,
         SUBTASK_MAX_STEPS=1,
-   )
+    )
     agent.security = types.SimpleNamespace(level_name="safe")
     agent.github = types.SimpleNamespace(is_available=lambda: True, status=lambda: "g")
     agent.web = types.SimpleNamespace(is_available=lambda: True, status=lambda: "w")
@@ -1203,7 +1205,7 @@ async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> 
 
 async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     metrics_calls = []
     monkeypatch.setattr(
         sidar_agent,
@@ -1247,7 +1249,7 @@ async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory)
 
 async def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
     agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
     agent._build_self_heal_plan = AsyncMock(return_value={"operations": []})
@@ -1309,7 +1311,7 @@ async def test_execute_self_heal_plan_applied_with_existing_backup(sidar_agent_f
     code.run_shell_in_sandbox.return_value = (True, "ok")
     code.write_file.return_value = (True, "ok")
     agent.code = code
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
     plan = {
         "operations": [
             {"path": "a.py", "target": "x", "replacement": "y"},
@@ -1329,7 +1331,7 @@ async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_fa
         lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a)),
     )
 
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
 
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
@@ -1381,7 +1383,7 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
         lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
     )
 
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
     agent._execute_tool = AsyncMock(return_value="ok")
     assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
@@ -1410,7 +1412,7 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
     )
 
     agent = sidar_agent_factory()
-    agent.cfg = types.SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
     agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
@@ -1422,7 +1424,7 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     instruction = tmp_path / "SIDAR.md"
     instruction.write_text("Talimat", encoding="utf-8")
 
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
