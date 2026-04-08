@@ -942,6 +942,20 @@ async def test_init_accepts_namespace_cfg(sidar_agent_factory, monkeypatch: pyte
     assert agent.cfg.BASE_DIR == str(base_dir)
 
 
+async def test_normalize_config_defaults_reverts_invalid_types() -> None:
+    invalid_cfg = types.SimpleNamespace(
+        MAX_MEMORY_TURNS="beş",
+        ENABLE_TRACING="evet",
+        AI_PROVIDER=123,
+    )
+
+    agent = sidar_agent.SidarAgent(cfg=invalid_cfg)
+
+    assert isinstance(agent.cfg.MAX_MEMORY_TURNS, int)
+    assert isinstance(agent.cfg.ENABLE_TRACING, bool)
+    assert isinstance(agent.cfg.AI_PROVIDER, str)
+
+
 async def test_parse_tool_call_non_dict_returns_final_answer(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     parsed = agent._parse_tool_call("[1,2,3]")
@@ -1019,9 +1033,8 @@ async def test_attempt_self_heal_failed_branch_and_workflow_payload_dict(sidar_a
 
 
 
-async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(
+async def test_nightly_maintenance_handles_entity_failure(
     sidar_agent_factory,
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
@@ -1048,24 +1061,32 @@ async def test_nightly_entity_failure_archive_edges_and_instruction_stat_error(
     report = await agent.run_nightly_memory_maintenance(force=True)
     assert report["entity_report"]["status"] == "failed"
 
+async def test_get_memory_archive_context_sync_filters_distances(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
     collection = Mock()
     collection.query.return_value = {
         "documents": [["", "ok"]],
         "metadatas": [[{"source": "memory_archive", "title": "E"}, {"source": "memory_archive", "title": "T"}]],
-        "distances": [[0.1, 0.1]],
+        "distances": [[0.9, 0.1]],
     }
     agent.docs = types.SimpleNamespace(collection=collection)
-    assert agent._get_memory_archive_context_sync("q", 3, 0.2, 1) == ""
 
-    agent.cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+    result = agent._get_memory_archive_context_sync("q", 3, 0.2, 100)
+    assert "T" in result
+    assert "E" not in result
+
+
+async def test_load_instruction_files_handles_fs_errors(sidar_agent_factory, tmp_path: Path) -> None:
+    agent = sidar_agent_factory(cfg=types.SimpleNamespace(BASE_DIR=str(tmp_path)))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
     agent._instructions_lock = __import__("threading").Lock()
 
-    # stat/read hatası için gerçek dosya sistemi: klasör adı SIDAR.md olduğunda read_text başarısız olur.
     (tmp_path / "SIDAR.md").mkdir()
-    (tmp_path / "CLAUDE.md").write_text("   ", encoding="utf-8")
-    assert agent._load_instruction_files() == ""
+    (tmp_path / "CLAUDE.md").write_text("ok-content", encoding="utf-8")
+
+    content = agent._load_instruction_files()
+    assert "ok-content" in content
 
 
 
