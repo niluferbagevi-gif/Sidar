@@ -181,3 +181,19 @@ def respx_mock_router():
     respx = pytest.importorskip("respx")
     with respx.mock(assert_all_called=False) as router:
         yield router
+
+
+@pytest.fixture
+def fake_lsp_client() -> AsyncMock:
+    """v5.x core/lsp.py testleri için deterministik Language Server Fake adaptörü."""
+    client = AsyncMock()
+    client.request_hover.return_value = {"contents": "mocked LSP hover documentation"}
+    client.request_diagnostics.return_value = [
+        {"line": 10, "message": "mocked error", "severity": 1},
+    ]
+
+    def set_timeout() -> None:
+        client.request_hover.side_effect = TimeoutError("LSP connection timed out")
+
+    client.set_timeout = set_timeout
+    return client
