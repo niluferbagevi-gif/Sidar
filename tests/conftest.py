@@ -107,21 +107,21 @@ def fake_social_api() -> AsyncMock:
 @pytest.fixture
 def fake_video_stream() -> AsyncMock:
     """Video analiz pipeline'ı için deterministik asenkron fake akış."""
-    stream = AsyncMock(spec=["read_frames", "metadata"])
-    stream.read_frames.return_value = [
+    stream = AsyncMock()
+    stream.read_frames = AsyncMock(return_value=[
         {"frame_id": 1, "timestamp": 0.0},
         {"frame_id": 2, "timestamp": 0.04},
-    ]
-    stream.metadata.return_value = {"fps": 25, "duration_sec": 2}
+    ])
+    stream.metadata = AsyncMock(return_value={"fps": 25, "duration_sec": 2})
     return stream
 
 
 @pytest.fixture
 def fake_video_stream_error() -> AsyncMock:
     """Video analiz pipeline'ı için bozuk akış/hata senaryosu."""
-    stream = AsyncMock(spec=["read_frames", "metadata"])
-    stream.read_frames.side_effect = RuntimeError("corrupted video stream")
-    stream.metadata.return_value = {"fps": 0, "duration_sec": 0}
+    stream = AsyncMock()
+    stream.read_frames = AsyncMock(side_effect=RuntimeError("corrupted video stream"))
+    stream.metadata = AsyncMock(return_value={"fps": 0, "duration_sec": 0})
     return stream
 
 
