@@ -9,7 +9,7 @@ import json
 import time
 import threading
 import sys
-from importlib import import_module
+from importlib import import_module, reload
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List, Any
 
@@ -870,7 +870,11 @@ class SidarAgent:
     async def _try_multi_agent(self, user_input: str) -> str:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
-            from agent.core.supervisor import SupervisorAgent
+            supervisor_mod = import_module("agent.core.supervisor")
+            # Test koleksiyonunda supervisor modülü stub role sınıflarıyla import edilmiş olabilir.
+            # İlk gerçek kullanımda modülü yeniden yükleyerek güncel role importlarını garantile.
+            supervisor_mod = reload(supervisor_mod)
+            SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
             self._supervisor = SupervisorAgent(self.cfg)
 
         result = await self._supervisor.run_task(user_input)
