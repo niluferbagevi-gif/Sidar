@@ -36,7 +36,7 @@ def make_test_config(**overrides: Any) -> MagicMock:
 
     try:
         from config import Config as AppConfig
-    except Exception:
+    except ImportError:
         AppConfig = None
 
     mock_cfg = MagicMock(spec=AppConfig) if AppConfig is not None else MagicMock()
