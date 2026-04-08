@@ -486,7 +486,7 @@ def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkey
     assert "checklist" not in json.loads(plan_no_persist)["service_plan"]
 
 
-def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg):
+def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, monkeypatch):
     agent = _agent(poyraz_module, fake_cfg)
 
     output = asyncio.run(agent._generate_marketing_output("Task", "modex"))
@@ -524,8 +524,8 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg):
     db_mod.Database = DummyDatabase
     mm_mod = types.ModuleType("core.multimodal")
     mm_mod.MultimodalPipeline = DummyMultimodalPipeline
-    sys.modules["core.db"] = db_mod
-    sys.modules["core.multimodal"] = mm_mod
+    monkeypatch.setitem(sys.modules, "core.db", db_mod)
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
 
     # include ingest route aliases
     ingest1 = asyncio.run(agent.run_task("ingest_video_insights|https://video|||p|||tr|||s|||2"))
