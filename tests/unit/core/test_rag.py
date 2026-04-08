@@ -188,6 +188,21 @@ async def test_graph_index_collect_bfs_and_extract_dependencies_non_python(tmp_p
     assert calls[0]["path"] == "/ok"
 
 
+async def test_graph_index_circular(tmp_path: Path) -> None:
+    graph = rag.GraphIndex(tmp_path)
+    graph.add_node("a.py", node_type="file")
+    graph.add_node("b.py", node_type="file")
+    graph.add_node("c.py", node_type="file")
+    graph.add_edge("a.py", "b.py", kind="imports")
+    graph.add_edge("b.py", "a.py", kind="imports")
+    graph.add_edge("b.py", "c.py", kind="imports")
+
+    assert graph.explain_dependency_path("a.py", "a.py") == ["a.py"]
+    assert graph.explain_dependency_path("a.py", "b.py") == ["a.py", "b.py"]
+    assert graph.explain_dependency_path("a.py", "c.py") == ["a.py", "b.py", "c.py"]
+    assert graph.explain_dependency_path("c.py", "a.py") == []
+
+
 async def test_embed_texts_for_semantic_cache_empty() -> None:
     assert rag.embed_texts_for_semantic_cache([]) == []
 
@@ -220,6 +235,18 @@ async def test_document_store_validate_url_safe_accepts_and_blocks() -> None:
         rag.DocumentStore._validate_url_safe("http://127.0.0.1/a")
     with pytest.raises(ValueError):
         rag.DocumentStore._validate_url_safe("https://localhost/a")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://10.0.0.8/admin")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://172.16.5.4/internal")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://192.168.1.10/debug")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://169.254.10.10/meta")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://[::1]/loopback")
+    with pytest.raises(ValueError):
+        rag.DocumentStore._validate_url_safe("http://[fd00::1]/private-v6")
 
 
 async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> None:
