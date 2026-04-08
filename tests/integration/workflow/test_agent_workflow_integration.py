@@ -28,15 +28,15 @@ async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_ag
             timeline.append(("code", command))
             return True, "lint:ok"
 
-    async def _workflow(prompt: str) -> str:
+    async def _run_task(prompt: str) -> str:
         docs_result = await agent._tool_docs_search("workflow")
         _ok, shell_result = agent.code.run_shell("python -m compileall .")
         return f"{docs_result} | {shell_result} | final:{prompt}"
 
     agent._memory_add = _memory_add
-    agent._try_multi_agent = _workflow
-    agent.docs = types.SimpleNamespace(search=lambda *args, **kwargs: _search(*args, **kwargs))
+    agent.docs = types.SimpleNamespace(search=AsyncMock(side_effect=_search))
     agent.code = _Code()
+    agent._supervisor = types.SimpleNamespace(run_task=AsyncMock(side_effect=_run_task))
 
     out = await _collect_stream(agent.respond("Görevi tamamla"))
 
@@ -44,4 +44,3 @@ async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_ag
     assert ("code", "python -m compileall .") in timeline
     assert ("user", "Görevi tamamla") in timeline
     assert ("assistant", "docs:workflow | lint:ok | final:Görevi tamamla") in timeline
-
