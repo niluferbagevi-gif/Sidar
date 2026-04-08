@@ -1,46 +1,36 @@
 import types
 
 import pytest
-from unittest.mock import AsyncMock
 
+from managers.web_search import WebSearchManager
 from tests.helpers import collect_async_chunks as _collect_stream
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_sidar_agent_workflow_runs_search_code_and_final_response(sidar_agent_factory) -> None:
-    """Görev -> arama -> kod adımı -> nihai yanıt akışını entegre olarak doğrular."""
-    agent = sidar_agent_factory()
-    agent._lock = None
-    agent.initialize = AsyncMock()
-    agent.mark_activity = lambda *_args, **_kwargs: None
+async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Gerçek supervisor + researcher akışını, yalnızca dış web bağımlılığını izole ederek doğrular."""
+    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    agent = sidar_agent_factory(cfg=cfg)
 
     timeline: list[tuple[str, str]] = []
 
     async def _memory_add(role: str, content: str) -> None:
         timeline.append((role, content))
 
-    async def _search(query: str, *_args):
-        return True, f"docs:{query}"
-
-    class _Code:
-        def run_shell(self, command: str):
-            timeline.append(("code", command))
-            return True, "lint:ok"
-
-    async def _run_task(prompt: str) -> str:
-        docs_result = await agent._tool_docs_search("workflow")
-        _ok, shell_result = agent.code.run_shell("python -m compileall .")
-        return f"{docs_result} | {shell_result} | final:{prompt}"
+    async def _fake_web_search(_self, query: str):
+        return True, f"docs:ok:{query}"
 
     agent._memory_add = _memory_add
-    agent.docs = types.SimpleNamespace(search=AsyncMock(side_effect=_search))
-    agent.code = _Code()
-    agent._supervisor = types.SimpleNamespace(run_task=AsyncMock(side_effect=_run_task))
+    monkeypatch.setattr(WebSearchManager, "search", _fake_web_search)
 
-    out = await _collect_stream(agent.respond("Görevi tamamla"))
+    out = await _collect_stream(agent.respond("docs için araştırma yap"))
 
-    assert out == ["docs:workflow | lint:ok | final:Görevi tamamla"]
-    assert ("code", "python -m compileall .") in timeline
-    assert ("user", "Görevi tamamla") in timeline
-    assert ("assistant", "docs:workflow | lint:ok | final:Görevi tamamla") in timeline
+    assert out == ["docs:ok:docs için araştırma yap"]
+    assert ("user", "docs için araştırma yap") in timeline
+    assert ("assistant", "docs:ok:docs için araştırma yap") in timeline
+    assert agent._supervisor is not None
