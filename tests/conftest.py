@@ -91,7 +91,10 @@ def fake_video_stream() -> MagicMock:
 @pytest.fixture
 def frozen_time():
     """Tüm zaman bağımlı operasyonları deterministik hale getirmek için ortak fixture."""
-    with freeze_time("2026-04-01 12:00:00") as frozen:
+    # freezegun, loaded modüllerin attribute'larını gezerken transformers'ın lazy
+    # import zincirini tetikleyebiliyor; bu da opsiyonel sentencepiece bağımlılığı
+    # yoksa test setup sırasında patlamaya neden oluyor.
+    with freeze_time("2026-04-01 12:00:00", ignore=["transformers"]) as frozen:
         yield frozen
 
 
