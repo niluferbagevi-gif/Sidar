@@ -9,54 +9,11 @@ import agent.roles.coverage_agent as _COVERAGE_MODULE
 from agent.roles.coverage_agent import CoverageAgent
 
 
-class DummyCode:
-    def __init__(self):
-        self.calls = []
-
-    def run_pytest_and_collect(self, command, cwd):
-        self.calls.append(("run_pytest_and_collect", command, cwd))
-        return {"analysis": {"summary": "ok", "findings": []}, "output": "OUT"}
-
-    def analyze_pytest_output(self, output):
-        self.calls.append(("analyze_pytest_output", output))
-        return {"summary": f"ANALYZED:{output}", "findings": [{"target_path": "src/m.py"}]}
-
-    def read_file(self, path):
-        self.calls.append(("read_file", path))
-        return True, f"SOURCE:{path}"
-
-    def write_generated_test(self, path, content, append=True):
-        self.calls.append(("write_generated_test", path, content, append))
-        return True, f"WROTE:{path}:{append}"
-
-
-class FakeDB:
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.connected = 0
-        self.inited = 0
-        self.created = []
-        self.findings = []
-
-    async def connect(self):
-        self.connected += 1
-
-    async def init_schema(self):
-        self.inited += 1
-
-    async def create_coverage_task(self, **kwargs):
-        self.created.append(kwargs)
-        return SimpleNamespace(id=123)
-
-    async def add_coverage_finding(self, **kwargs):
-        self.findings.append(kwargs)
-
-
-def make_agent(tmp_path):
+def make_agent(tmp_path, code_manager):
     a = CoverageAgent.__new__(CoverageAgent)
     a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
     a.role_name = "coverage"
-    a.code = DummyCode()
+    a.code = code_manager
     a.tools = {}
     a._db = None
     a._db_lock = None
@@ -244,8 +201,8 @@ def test_build_dynamic_prompt():
     assert ".coveragerc include: src/*" in prompt
 
 
-def test_tool_methods(tmp_path):
-    agent = make_agent(tmp_path)
+def test_tool_methods(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     run_json = asyncio.run(agent._tool_run_pytest('{"command":"pytest -q","cwd":"/tmp"}'))
     assert json.loads(run_json)["analysis"]["summary"] == "ok"
 
@@ -334,11 +291,11 @@ def test_tool_methods(tmp_path):
     assert write_data["suggested_test_path"] == "tests/a.py"
 
 
-def test_ensure_db_and_record_task(tmp_path, monkeypatch):
-    agent = make_agent(tmp_path)
+def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
-    core_db.Database = FakeDB
+    core_db.Database = fake_coverage_db_class
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
@@ -361,12 +318,12 @@ def test_ensure_db_and_record_task(tmp_path, monkeypatch):
     assert db1.created and db1.findings
 
 
-def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch):
-    agent = make_agent(tmp_path)
+def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent._db_lock = asyncio.Lock()
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
-    core_db.Database = FakeDB
+    core_db.Database = fake_coverage_db_class
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
@@ -375,8 +332,8 @@ def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch):
     assert db.inited == 1
 
 
-def test_ensure_db_returns_existing_db_inside_lock(tmp_path):
-    agent = make_agent(tmp_path)
+def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     existing_db = SimpleNamespace(name="already-ready")
 
     class LockThatInjectsDB:
@@ -392,11 +349,11 @@ def test_ensure_db_returns_existing_db_inside_lock(tmp_path):
     assert db is existing_db
 
 
-def test_ensure_db_concurrency(tmp_path, monkeypatch):
-    agent = make_agent(tmp_path)
+def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
-    core_db.Database = FakeDB
+    core_db.Database = fake_coverage_db_class
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
@@ -495,8 +452,8 @@ def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     assert data["files"][0]["missing_branches_count"] == 0
 
 
-def test_run_task_routes_and_flows(tmp_path):
-    agent = make_agent(tmp_path)
+def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def fake_tool(name, arg):
         return f"TOOL:{name}:{arg}"

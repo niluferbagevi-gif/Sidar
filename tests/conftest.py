@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable
 from unittest.mock import AsyncMock, MagicMock
 
@@ -206,3 +207,54 @@ def fake_lsp_client() -> AsyncMock:
 
     client.set_timeout = set_timeout
     return client
+
+
+@pytest.fixture
+def fake_coverage_code_manager():
+    class _FakeCoverageCodeManager:
+        def __init__(self):
+            self.calls = []
+
+        def run_pytest_and_collect(self, command, cwd):
+            self.calls.append(("run_pytest_and_collect", command, cwd))
+            return {"analysis": {"summary": "ok", "findings": []}, "output": "OUT"}
+
+        def analyze_pytest_output(self, output):
+            self.calls.append(("analyze_pytest_output", output))
+            return {"summary": f"ANALYZED:{output}", "findings": [{"target_path": "src/m.py"}]}
+
+        def read_file(self, path):
+            self.calls.append(("read_file", path))
+            return True, f"SOURCE:{path}"
+
+        def write_generated_test(self, path, content, append=True):
+            self.calls.append(("write_generated_test", path, content, append))
+            return True, f"WROTE:{path}:{append}"
+
+    return _FakeCoverageCodeManager()
+
+
+@pytest.fixture
+def fake_coverage_db_class():
+    class _FakeCoverageDB:
+        def __init__(self, cfg):
+            self.cfg = cfg
+            self.connected = 0
+            self.inited = 0
+            self.created = []
+            self.findings = []
+
+        async def connect(self):
+            self.connected += 1
+
+        async def init_schema(self):
+            self.inited += 1
+
+        async def create_coverage_task(self, **kwargs):
+            self.created.append(kwargs)
+            return SimpleNamespace(id=123)
+
+        async def add_coverage_finding(self, **kwargs):
+            self.findings.append(kwargs)
+
+    return _FakeCoverageDB
