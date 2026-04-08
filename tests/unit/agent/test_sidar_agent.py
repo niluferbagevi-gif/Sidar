@@ -420,8 +420,11 @@ async def test_collect_and_build_self_heal_plan(sidar_agent_factory, monkeypatch
     code.read_file.side_effect = lambda path, _safe: (
         reads.__setitem__(path, True) or (not path.startswith("x"), f"C:{path}")
     )
+    async def _chat_side_effect(**kwargs):
+        return {"raw": kwargs["messages"][0]["content"]}
+
     llm = AsyncMock()
-    llm.chat.side_effect = lambda **kwargs: _async_value({"raw": kwargs["messages"][0]["content"]})
+    llm.chat.side_effect = _chat_side_effect
 
     agent.code = code
     agent.llm = llm
@@ -1217,7 +1220,7 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
     agent._initialized = False
     agent._init_lock = None
 
-    agent.memory = AsyncMock(initialize=AsyncMock(return_value=None))
+    agent.memory = types.SimpleNamespace(initialize=AsyncMock(return_value=None))
     agent.system_prompt = "default"
     await agent.initialize()
     assert agent._initialized is True
