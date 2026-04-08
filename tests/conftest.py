@@ -47,12 +47,19 @@ async def fake_redis() -> AsyncGenerator[Any, None]:
 def fake_llm_response() -> Callable[..., Any]:
     """LLM istemcisi için deterministik, başarılı bir async yanıt döner."""
 
-    async def _mock_response(prompt: str, **kwargs: Any) -> dict[str, Any]:
-        return {
+    async def _mock_response(
+        prompt: str,
+        mock_tool_calls: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        response: dict[str, Any] = {
             "content": f"mock-response:{prompt[:32]}",
             "usage": {"total_tokens": 10},
             "meta": kwargs,
         }
+        if mock_tool_calls:
+            response["tool_calls"] = mock_tool_calls
+        return response
 
     return _mock_response
 

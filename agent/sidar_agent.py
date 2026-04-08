@@ -143,6 +143,11 @@ logger = logging.getLogger(__name__)
 
 ARCHIVE_CONTEXT_HEADER = "[Geçmiş Sohbet Arşivinden İlgili Notlar]"
 SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
+GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."
+GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
+GITHUB_SMART_PR_NO_CHANGES_MESSAGE = "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
+GITHUB_SMART_PR_CREATE_FAILED_PREFIX = "✗ PR oluşturulamadı:"
+GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX = "✓ PR oluşturuldu:"
 
 
 class ToolCall(BaseModel):
@@ -1241,7 +1246,7 @@ class SidarAgent:
 
     async def _tool_github_smart_pr(self, arg: str) -> str:
         if not self.github.is_available():
-            return "⚠ GitHub token bulunamadı."
+            return GITHUB_SMART_PR_NO_TOKEN_MESSAGE
 
         parts = [p.strip() for p in (arg or "").split("|||")]
         title = parts[0] if len(parts) > 0 and parts[0] else "Otomatik PR"
@@ -1251,7 +1256,7 @@ class SidarAgent:
         ok, branch = self.code.run_shell("git branch --show-current")
         head = (branch or "").strip() if ok else ""
         if not head:
-            return "✗ Aktif branch bulunamadı."
+            return GITHUB_SMART_PR_NO_BRANCH_MESSAGE
 
         if not base:
             try:
@@ -1261,7 +1266,7 @@ class SidarAgent:
 
         ok_status, status_out = self.code.run_shell("git status --short")
         if not ok_status or not str(status_out).strip():
-            return "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
+            return GITHUB_SMART_PR_NO_CHANGES_MESSAGE
 
         self.code.run_shell("git diff --stat HEAD")
         ok_diff, diff_out = self.code.run_shell("git diff --no-color HEAD")
@@ -1278,8 +1283,8 @@ class SidarAgent:
         )
         ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
         if not ok_pr:
-            return f"✗ PR oluşturulamadı: {pr_out}"
-        return f"✓ PR oluşturuldu: {pr_out}"
+            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {pr_out}"
+        return f"{GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} {pr_out}"
 
 
     # ─────────────────────────────────────────────
