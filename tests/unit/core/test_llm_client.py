@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from redis import exceptions as redis_exceptions
 
 import core.llm_client as llm_client
 from tests.helpers import collect_async_chunks as _collect
@@ -36,6 +37,33 @@ class _GoogleGenaiTypesSpec:
 
 class _AnthropicModuleSpec:
     AsyncAnthropic = object
+
+
+class DummyGeminiResponse:
+    def __init__(self, text: str = "ok") -> None:
+        self.text = text
+
+
+class DummyGeminiModels:
+    def __init__(self, text: str = "ok", stream_texts: tuple[str, ...] = ("A",)) -> None:
+        self._text = text
+        self._stream_texts = stream_texts
+
+    async def generate_content(self, **_kw):
+        return DummyGeminiResponse(self._text)
+
+    async def generate_content_stream(self, **_kw):
+        async def gen():
+            for text in self._stream_texts:
+                yield SimpleNamespace(text=text)
+
+        return gen()
+
+
+class DummyGeminiClient:
+    def __init__(self, api_key: str, text: str = "ok", stream_texts: tuple[str, ...] = ("A",)) -> None:
+        self.api_key = api_key
+        self.aio = SimpleNamespace(models=DummyGeminiModels(text=text, stream_texts=stream_texts))
 
 
 def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_types: object) -> None:
@@ -536,22 +564,9 @@ async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "Gemini istemcisi kurulu" in msg or "GEMINI_API_KEY" in msg
 
-    class _Resp:
-        text = "hello"
-
-    class _Models:
-        async def generate_content(self, **_kw):
-            return _Resp()
-
-        async def generate_content_stream(self, **_kw):
-            async def gen():
-                yield SimpleNamespace(text="A")
-            return gen()
-
-    class _Client:
+    class _Client(DummyGeminiClient):
         def __init__(self, api_key):
-            self.api_key = api_key
-            self.aio = SimpleNamespace(models=_Models())
+            super().__init__(api_key, text="hello", stream_texts=("A",))
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
@@ -791,17 +806,9 @@ async def test_litellm_fallback_raise_and_successive_model(monkeypatch: pytest.M
 
 @pytest.mark.asyncio
 async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _Resp:
-        text = "ok"
-
-    class _Models:
-        async def generate_content(self, **_kw):
-            return _Resp()
-
-    class _Client:
+    class _Client(DummyGeminiClient):
         def __init__(self, api_key):
-            self.api_key = api_key
-            self.aio = SimpleNamespace(models=_Models())
+            super().__init__(api_key, text="ok", stream_texts=())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
@@ -958,7 +965,7 @@ async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.Mo
             pass
 
         async def execute(self):
-            raise RuntimeError("write failed")
+            raise redis_exceptions.ConnectionError("write failed")
 
     class _BrokenRedis:
         def pipeline(self, transaction: bool = True):
@@ -1071,15 +1078,12 @@ async def test_litellm_stream_and_nonstream_tracing_attrs(monkeypatch: pytest.Mo
 async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = {}
 
-    class _Resp:
-        text = '{"tool":"final_answer","argument":"ok","thought":"t"}'
-
-    class _Models:
+    class _Models(DummyGeminiModels):
         async def generate_content(self, **kwargs):
             captured.update(kwargs)
-            return _Resp()
+            return DummyGeminiResponse('{"tool":"final_answer","argument":"ok","thought":"t"}')
 
-    class _Client:
+    class _Client(DummyGeminiClient):
         def __init__(self, api_key):
             self.aio = SimpleNamespace(models=_Models())
 
@@ -1335,7 +1339,7 @@ async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatc
     # mevcut anahtar yeniden yazıldığında eviction artmamalı
     manager2 = llm_client._SemanticCacheManager(_make_config())
     fake2 = fake_redis
-    key = "sidar:semantic_cache:item:" + __import__("hashlib").sha256("p".encode("utf-8")).hexdigest()
+    key = "sidar:semantic_cache:item:" + hashlib.sha256("p".encode("utf-8")).hexdigest()
     await fake2.flushall()
     await fake2.lpush(manager2.index_key, key)
 
@@ -1488,16 +1492,9 @@ async def test_ollama_stream_additional_json_branches(monkeypatch: pytest.Monkey
 
 @pytest.mark.asyncio
 async def test_gemini_tracing_nonstream_and_empty_stream_chunk(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _Resp:
-        text = "ok"
-
-    class _Models:
-        async def generate_content(self, **_kw):
-            return _Resp()
-
-    class _Client:
+    class _Client(DummyGeminiClient):
         def __init__(self, api_key):
-            self.aio = SimpleNamespace(models=_Models())
+            super().__init__(api_key, text="ok", stream_texts=())
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
@@ -1723,14 +1720,8 @@ async def test_truncation_system_empty_and_empty_history_content() -> None:
 
 @pytest.mark.asyncio
 async def test_llm_client_optional_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name in {"redis.asyncio", "opentelemetry"}:
-            raise ImportError("blocked")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", None)
+    monkeypatch.setitem(sys.modules, "opentelemetry", None)
     module_path = pathlib.Path(llm_client.__file__)
     spec = importlib.util.spec_from_file_location("core.llm_client_no_optional", module_path)
     module = importlib.util.module_from_spec(spec)
