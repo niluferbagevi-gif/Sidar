@@ -18,6 +18,7 @@ async def collect_async_chunks(gen: AsyncGenerator[Any, None]) -> list[Any]:
 def make_test_config(**overrides: Any) -> MagicMock:
     """Create a configurable MagicMock test config object."""
     base = {
+        "AI_PROVIDER": "openai",
         "LLM_MAX_RETRIES": 2,
         "LLM_RETRY_BASE_DELAY": 0.01,
         "LLM_RETRY_MAX_DELAY": 0.02,
