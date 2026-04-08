@@ -258,6 +258,11 @@ def test_publish_tools_variants(poyraz_module, fake_cfg):
     assert "[WHATSAPP:SENT]" in wa_ok and "[WHATSAPP:ERROR]" in wa_err
 
 
+def test_publish_social_invalid_json(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+
+    result = asyncio.run(agent._tool_publish_social("{invalid:json}"))
+    assert "[SOCIAL:ERROR]" in result
 
 
 def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
