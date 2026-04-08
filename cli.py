@@ -277,17 +277,18 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
 
     agent = SidarAgent(cfg)
-    asyncio.run(agent.initialize())
 
     if args.status:
+        asyncio.run(agent.initialize())
         print(agent.status())
         return
 
-    asyncio.run(_ensure_cli_memory_user(agent))
-
     if args.command:
-        # respond() async generator olduğu için asyncio.run() ile çalıştırılır
-        async def _run_command() -> None:
+        # Komut modunda init + kullanıcı bağlamı + yanıt zincirini
+        # tek timeout penceresinde çalıştır.
+        async def _run_command_with_setup() -> None:
+            await agent.initialize()
+            await _ensure_cli_memory_user(agent)
             print("Sidar > ", end="", flush=True)
             async for chunk in agent.respond(args.command):
                 print(chunk, end="", flush=True)
@@ -295,11 +296,13 @@ def main() -> None:
 
         command_timeout = max(5, int(getattr(cfg, "CLI_COMMAND_TIMEOUT", 25) or 25))
         try:
-            asyncio.run(asyncio.wait_for(_run_command(), timeout=command_timeout))
+            asyncio.run(asyncio.wait_for(_run_command_with_setup(), timeout=command_timeout))
         except asyncio.TimeoutError:
             print(f"\nSidar > ⚠ Komut zaman aşımına uğradı ({command_timeout}s).")
         return
 
+    asyncio.run(agent.initialize())
+    asyncio.run(_ensure_cli_memory_user(agent))
     interactive_loop(agent)
 
 
