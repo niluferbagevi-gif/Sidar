@@ -136,13 +136,19 @@ class DummyDatabase:
         self.add_checklist_calls.append(kwargs)
         return SimpleNamespace(id=13, items_json=json.dumps(kwargs.get("items", [])), **kwargs)
 
+    async def get_active_prompt(self, role_name):
+        return SimpleNamespace(role_name=role_name, prompt_text="")
+
 
 class DummyMultimodalPipeline:
+    last_kwargs = None
+
     def __init__(self, llm, cfg):
         self.llm = llm
         self.cfg = cfg
 
     async def analyze_media_source(self, **kwargs):
+        DummyMultimodalPipeline.last_kwargs = kwargs
         source = kwargs["media_source"]
         if source == "bad://video":
             return {"success": False, "reason": "broken"}
@@ -371,12 +377,13 @@ def test_landing_and_campaign_copy_tools_with_and_without_persist(poyraz_module,
     assert DummyDatabase.instances[-1].add_content_asset_calls
 
 
-def test_video_ingest_success_and_error(poyraz_module, fake_cfg, monkeypatch):
+def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
     mm_mod = types.ModuleType("core.multimodal")
     mm_mod.MultimodalPipeline = DummyMultimodalPipeline
     monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
 
     agent = _agent(poyraz_module, fake_cfg)
+    DummyMultimodalPipeline.last_kwargs = None
 
     ok = asyncio.run(
         agent._tool_ingest_video_insights(
@@ -394,6 +401,10 @@ def test_video_ingest_success_and_error(poyraz_module, fake_cfg, monkeypatch):
     )
     err = asyncio.run(agent._tool_ingest_video_insights("bad://video|||prompt|||tr|||sess|||3"))
 
+    assert DummyMultimodalPipeline.last_kwargs is not None
+    assert DummyMultimodalPipeline.last_kwargs["ingest_document_store"] is agent.docs
+    assert DummyMultimodalPipeline.last_kwargs["ingest_session_id"] == "sess"
+    assert DummyMultimodalPipeline.last_kwargs["ingest_tags"] == ["video", "multimodal", "marketing", "poyraz"]
     assert ok.startswith("[VIDEO:INGESTED]")
     assert err.startswith("[VIDEO:ERROR]")
 
