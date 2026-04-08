@@ -92,7 +92,7 @@ def agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
     """Testler için standartlaştırılmış ajan üretim fabrikası."""
 
     def _create_agent(agent_class: type, **kwargs: Any) -> Any:
-        return agent_class(config=mock_config, **kwargs)
+        return agent_class(config=mock_config(), **kwargs)
 
     return _create_agent
 
