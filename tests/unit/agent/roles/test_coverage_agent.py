@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 import agent.roles.coverage_agent as _COVERAGE_MODULE
 from agent.roles.coverage_agent import CoverageAgent
 
@@ -291,9 +293,9 @@ def test_tool_methods(tmp_path, fake_coverage_code_manager):
     assert write_data["suggested_test_path"] == "tests/a.py"
 
 
-def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager):
+def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
-    agent.code.write_generated_test = lambda *a, **k: (False, "Permission Denied")
+    mocker.patch.object(agent.code, "write_generated_test", return_value=(False, "Permission Denied"))
 
     write_json = asyncio.run(
         agent._tool_write_missing_tests(
@@ -303,6 +305,22 @@ def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager):
     write_data = json.loads(write_json)
     assert write_data["success"] is False
     assert "Permission Denied" in write_data["message"]
+
+
+def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    class BlockingLock:
+        async def __aenter__(self):
+            await asyncio.Future()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    agent._db_lock = BlockingLock()
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(asyncio.wait_for(agent._ensure_db(), timeout=0.01))
 
 
 def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):

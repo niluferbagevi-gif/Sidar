@@ -290,6 +290,23 @@ def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg
 
     assert asyncio.run(agent._ensure_db()) is sentinel_db
 
+
+def test_ensure_db_timeout_guard(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+
+    class BlockingLock:
+        async def __aenter__(self):
+            await asyncio.Future()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    agent._db_lock = BlockingLock()
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(asyncio.wait_for(agent._ensure_db(), timeout=0.01))
+
+
 def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypatch):
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
