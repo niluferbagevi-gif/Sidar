@@ -133,6 +133,7 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
         try:
             yield db
         finally:
+            await db.rollback()
             await db.close()
             await engine.dispose()
 
