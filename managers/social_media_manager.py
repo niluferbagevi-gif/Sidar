@@ -68,6 +68,18 @@ class SocialMediaManager:
             if isinstance(body, dict):
                 err = body.get("error") or {}
                 message = str(err.get("message") or body)
+                code = err.get("code")
+                subcode = err.get("error_subcode")
+                err_type = err.get("type")
+                details = []
+                if code is not None:
+                    details.append(f"code={code}")
+                if subcode is not None:
+                    details.append(f"subcode={subcode}")
+                if err_type:
+                    details.append(f"type={err_type}")
+                if details:
+                    message = f"Meta API hatası ({' '.join(details)}): {message}"
             else:
                 message = str(body)
             return False, message

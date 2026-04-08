@@ -153,6 +153,31 @@ def test_post_success_and_error_variants() -> None:
     assert body == {"raw": "raw-body"}
 
 
+def test_post_error_includes_meta_error_code_details() -> None:
+    client = _FakeAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=401,
+                payload={
+                    "error": {
+                        "message": "Error validating access token: Session has expired",
+                        "code": 190,
+                        "error_subcode": 463,
+                        "type": "OAuthException",
+                    }
+                },
+            )
+        ]
+    )
+    mgr = SocialMediaManager(graph_api_token="tkn", http_client_factory=_ClientFactory(client))
+    ok, err = _run(mgr._post("abc", {}))
+    assert ok is False
+    assert "Meta API hatası" in err
+    assert "code=190" in err
+    assert "subcode=463" in err
+    assert "OAuthException" in err
+
+
 def test_post_timeout_and_request_errors() -> None:
     timeout_client = _FakeAsyncClient(error=httpx.TimeoutException("late"))
     mgr_timeout = SocialMediaManager(graph_api_token="tkn", http_client_factory=_ClientFactory(timeout_client))
@@ -299,3 +324,31 @@ def test_publish_content_router(monkeypatch: pytest.MonkeyPatch) -> None:
     ok, err = _run(mgr.publish_content(platform="x", text="t"))
     assert ok is False
     assert "Desteklenmeyen" in err
+
+
+def test_publish_content_meta_token_expired_errors_by_platform() -> None:
+    mgr = SocialMediaManager(
+        graph_api_token="tkn",
+        instagram_business_account_id="ig",
+        facebook_page_id="fb",
+        whatsapp_phone_number_id="wa",
+    )
+
+    async def expired_token(*_args, **_kwargs):
+        return False, "Meta API hatası (code=190 subcode=463): Error validating access token"
+
+    mgr._post = expired_token  # type: ignore[method-assign]
+
+    ok_ig, err_ig = _run(
+        mgr.publish_content(platform="instagram", text="caption", media_url="https://img")
+    )
+    ok_fb, err_fb = _run(
+        mgr.publish_content(platform="facebook", text="message")
+    )
+    ok_wa, err_wa = _run(
+        mgr.publish_content(platform="whatsapp", text="text", destination="905")
+    )
+
+    assert ok_ig is False and "code=190" in err_ig
+    assert ok_fb is False and "code=190" in err_fb
+    assert ok_wa is False and "code=190" in err_wa
