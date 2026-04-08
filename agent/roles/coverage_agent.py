@@ -99,21 +99,37 @@ class CoverageAgent(BaseAgent):
     def _clean_code_output(raw_output: str) -> str:
         """LLM çıktısından gelebilecek markdown kod çitlerini temizler."""
         clean_text = str(raw_output or "").strip()
-        if not clean_text.startswith("```"):
-            return clean_text
-
-        block_pattern = re.compile(r"```(?P<lang>[^\n`]*)\n(?P<code>.*?)```", re.DOTALL)
-        blocks = list(block_pattern.finditer(clean_text))
-        if blocks:
-            python_blocks = [m.group("code").strip() for m in blocks if m.group("lang").strip().lower() == "python"]
-            selected_blocks = python_blocks or [m.group("code").strip() for m in blocks]
-            return "\n\n".join([b for b in selected_blocks if b]).strip()
-
-        # Kapanış çiti eksikse en azından açılış çitini temizleyip kalan kodu döndür.
         lines = clean_text.splitlines()
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
-        return "\n".join(lines).strip()
+        blocks: list[tuple[str, str]] = []
+        in_fence = False
+        current_lang = ""
+        current_code: list[str] = []
+
+        for line in lines:
+            marker = line.strip()
+            if marker.startswith("```"):
+                if not in_fence:
+                    in_fence = True
+                    current_lang = marker[3:].strip().lower()
+                    current_code = []
+                    continue
+                blocks.append((current_lang, "\n".join(current_code).strip()))
+                in_fence = False
+                current_lang = ""
+                current_code = []
+                continue
+            if in_fence:
+                current_code.append(line)
+
+        if blocks:
+            python_blocks = [code for lang, code in blocks if lang == "python" and code]
+            selected_blocks = python_blocks or [code for _, code in blocks if code]
+            return "\n\n".join(selected_blocks).strip()
+
+        if in_fence:
+            return "\n".join(current_code).strip()
+
+        return clean_text
 
     @staticmethod
     def _normalize_analysis(raw: Any) -> dict[str, Any]:
