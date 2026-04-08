@@ -232,12 +232,17 @@ async def test_handle_external_trigger_success_and_failure(sidar_agent_factory, 
     assert "x" in failed["summary"]
 
 
-async def test_run_nightly_memory_maintenance_disabled_and_completed(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_nightly_memory_maintenance_disabled_and_completed(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._append_autonomy_history = AsyncMock()
     agent._nightly_maintenance_lock = None
-    agent.seconds_since_last_activity = lambda: 9999.0
+    frozen_time.tick(delta=9999.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 9999.0
     agent.cfg = types.SimpleNamespace(
         ENABLE_NIGHTLY_MEMORY_PRUNING=False,
         NIGHTLY_MEMORY_IDLE_SECONDS=100,
@@ -489,10 +494,15 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(sid
    )
 
 
-async def test_run_nightly_memory_maintenance_skipped_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_nightly_memory_maintenance_skipped_paths(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
-    agent.seconds_since_last_activity = lambda: 5.0
+    frozen_time.tick(delta=5.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 5.0
     agent.cfg = types.SimpleNamespace(ENABLE_NIGHTLY_MEMORY_PRUNING=True, NIGHTLY_MEMORY_IDLE_SECONDS=100)
     agent._nightly_maintenance_lock = None
     not_idle = await agent.run_nightly_memory_maintenance()
@@ -534,6 +544,44 @@ async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_facto
     collection.query.side_effect = RuntimeError("bad")
     agent.docs = types.SimpleNamespace(collection=collection)
     assert agent._get_memory_archive_context_sync("x", 1, 0.1, 1000) == ""
+
+
+@pytest.mark.parametrize(
+    ("error_side_effect", "needle"),
+    [
+        (TimeoutError("timeout exceeded"), "timeout exceeded"),
+        (RuntimeError("rate limit exceeded"), "rate limit exceeded"),
+    ],
+)
+async def test_handle_external_trigger_llm_timeout_and_rate_limit_errors_are_captured(
+    sidar_agent_factory,
+    fake_llm_error,
+    error_side_effect: Exception,
+    needle: str,
+) -> None:
+    agent = sidar_agent_factory()
+    history = []
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_a, **_k: None
+    agent._ensure_autonomy_runtime_state = lambda: None
+    agent._build_trigger_correlation = lambda *_a, **_k: {}
+    agent._build_trigger_prompt = lambda *_a, **_k: "PROMPT"
+    agent._append_autonomy_history = AsyncMock(side_effect=lambda record: history.append(record))
+    agent._memory_add = AsyncMock()
+
+    async def _raise_timeout(*_args, **_kwargs):
+        raise error_side_effect
+
+    agent._try_multi_agent = AsyncMock(
+        side_effect=(fake_llm_error if isinstance(error_side_effect, RuntimeError) else _raise_timeout)
+    )
+
+    result = await agent.handle_external_trigger(
+        {"trigger_id": "t-llm-1", "source": "ci", "event_name": "workflow_run", "payload": {}, "meta": {}}
+    )
+    assert result["status"] == "failed"
+    assert needle in result["summary"]
+    assert history and history[-1]["status"] == "failed"
 
 
 async def test_build_context_and_instruction_absence(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
