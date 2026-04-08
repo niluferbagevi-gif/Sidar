@@ -447,6 +447,19 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     )
 
 
+async def test_respond_memory_failure_graceful(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._lock = None
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_a, **_k: None
+    agent._memory_add = AsyncMock(side_effect=RuntimeError("Memory DB Down"))
+    agent._try_multi_agent = AsyncMock(return_value="Kritik Yanıt")
+
+    responses = list(await _collect_stream(agent.respond("test input")))
+
+    assert "Kritik Yanıt" in responses
+
+
 async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     agent._autonomy_history = [{"i": i} for i in range(60)]

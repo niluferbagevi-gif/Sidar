@@ -335,8 +335,11 @@ class SidarAgent:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
-            await self._memory_add("user", user_input)
-            await self._memory_add("assistant", multi_result)
+            try:
+                await self._memory_add("user", user_input)
+                await self._memory_add("assistant", multi_result)
+            except Exception as exc:
+                logger.warning("Memory add failed during respond flow: %s", exc)
 
         yield multi_result
 
