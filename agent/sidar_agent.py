@@ -218,6 +218,7 @@ class SidarAgent:
             gpu_device=getattr(self.cfg, "GPU_DEVICE", 0),
             mixed_precision=getattr(self.cfg, "GPU_MIXED_PRECISION", False),
             cfg=self.cfg,
+            initialize_vector=not bool(getattr(self.cfg, "CLI_FAST_MODE", False)),
         )
 
         self.todo = TodoManager(self.cfg)

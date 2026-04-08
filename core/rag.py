@@ -576,6 +576,7 @@ class DocumentStore:
         gpu_device: int = 0,
         mixed_precision: bool = False,
         cfg: Optional[Config] = None,
+        initialize_vector: bool = True,
     ) -> None:
         self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
@@ -624,12 +625,17 @@ class DocumentStore:
         self._pg_embedding_model_name = str(
             getattr(self.cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2"
         )
+        self._vector_initialization_enabled = bool(initialize_vector)
 
-        if self._vector_backend == "pgvector":
+        if self._vector_initialization_enabled:
+            if self._vector_backend == "pgvector":
+                self._chroma_available = False
+                self._init_pgvector()
+            elif self._chroma_available:
+                self._init_chroma()
+        else:
             self._chroma_available = False
-            self._init_pgvector()
-        elif self._chroma_available:
-            self._init_chroma()
+            logger.info("DocumentStore vektör başlatması devre dışı (initialize_vector=False).")
 
         # BM25 (SQLite FTS5) Başlatma
         self._bm25_available = True

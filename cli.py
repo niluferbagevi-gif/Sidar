@@ -275,6 +275,8 @@ def main() -> None:
         cfg.AI_PROVIDER = args.provider
     if args.model:
         cfg.CODING_MODEL = args.model
+    if args.command:
+        cfg.CLI_FAST_MODE = True
 
     agent = SidarAgent(cfg)
 
