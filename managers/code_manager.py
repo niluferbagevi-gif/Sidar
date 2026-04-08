@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path, PureWindowsPath, PosixPath
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, unquote, urlparse
 
 try:
@@ -100,13 +100,13 @@ class CodeManager:
     def __init__(
         self,
         security: SecurityManager,
-        base_dir: Path,
+        base_dir: Union[Path, str],
         docker_image: Optional[str] = None,
         docker_exec_timeout: Optional[int] = None,
         cfg: Optional[Config] = None,
     ) -> None:
         self.security = security
-        self.base_dir = base_dir.resolve()
+        self.base_dir = Path(base_dir).resolve()
         self.cfg = cfg or Config()
         self.docker_runtime = str(
             getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or ""

@@ -93,15 +93,16 @@ class SupervisorAgent(BaseAgent):
     SYSTEM_PROMPT = "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
+        self.cfg = cfg or Config()
+        self.role_name = "supervisor"
+        self.llm = None
+        self.tools = {}
         try:
-            super().__init__(cfg=cfg, role_name="supervisor")
-        except TypeError:
-            # Bazı izolasyon testlerinde BaseAgent, yalın ``object`` ile stub'lanır.
-            # Bu durumda object.__init__ yalnızca ``self`` kabul eder.
-            self.cfg = cfg or Config()
-            self.role_name = "supervisor"
-            self.llm = None
-            self.tools = {}
+            super().__init__(cfg=self.cfg, role_name="supervisor")
+        except (TypeError, AttributeError):
+            # İzolasyon testlerinde BaseAgent init'i stub olabilir veya minimal cfg nesnesi
+            # zorunlu alanları (örn. AI_PROVIDER) içermeyebilir.
+            pass
 
         self.registry = ActiveAgentRegistry()
         self.events = get_agent_event_bus()

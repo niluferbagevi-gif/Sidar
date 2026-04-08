@@ -9,7 +9,7 @@ import json
 import time
 import threading
 import sys
-from importlib import import_module, reload
+from importlib import import_module
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List, Any
 
@@ -871,9 +871,6 @@ class SidarAgent:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             supervisor_mod = import_module("agent.core.supervisor")
-            # Test koleksiyonunda supervisor modülü stub role sınıflarıyla import edilmiş olabilir.
-            # İlk gerçek kullanımda modülü yeniden yükleyerek güncel role importlarını garantile.
-            supervisor_mod = reload(supervisor_mod)
             SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
             self._supervisor = SupervisorAgent(self.cfg)
 
