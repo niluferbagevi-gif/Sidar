@@ -34,7 +34,12 @@ def make_test_config(**overrides: Any) -> MagicMock:
     }
     base.update(overrides)
 
-    mock_cfg = MagicMock()
+    try:
+        from config import Config as AppConfig
+    except Exception:
+        AppConfig = None
+
+    mock_cfg = MagicMock(spec=AppConfig) if AppConfig is not None else MagicMock()
     for key, value in base.items():
         setattr(mock_cfg, key, value)
 
