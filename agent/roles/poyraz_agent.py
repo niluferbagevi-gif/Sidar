@@ -116,12 +116,15 @@ class PoyrazAgent(BaseAgent):
     async def _tool_publish_social(self, arg: str) -> str:
         raw = (arg or "").strip()
         if raw.startswith("{"):
-            payload = parse_tool_argument("publish_social", raw)
-            platform = payload.platform.strip()
-            text = payload.text.strip()
-            destination = payload.destination.strip()
-            media_url = payload.media_url.strip()
-            link_url = payload.link_url.strip()
+            try:
+                payload = parse_tool_argument("publish_social", raw)
+                platform = payload.platform.strip()
+                text = payload.text.strip()
+                destination = payload.destination.strip()
+                media_url = payload.media_url.strip()
+                link_url = payload.link_url.strip()
+            except Exception as exc:
+                return f"[SOCIAL:ERROR] platform=unknown reason=geçersiz JSON girişi: {exc}"
         else:
             parts = (raw.split("|||", 4) + ["", "", "", "", ""])[:5]
             platform, text, destination, media_url, link_url = (part.strip() for part in parts)

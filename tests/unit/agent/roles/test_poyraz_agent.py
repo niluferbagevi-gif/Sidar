@@ -238,6 +238,14 @@ def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
     assert asyncio.run(agent2._tool_search_docs("k2")) == "adocs:k2:auto:marketing"
 
 
+def test_publish_social_invalid_json(poyraz_module, fake_cfg):
+    """Geçersiz JSON girişinde _tool_publish_social çökmemeli, [SOCIAL:ERROR] dönmeli."""
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._tool_publish_social("{invalid:json}"))
+    assert isinstance(result, str)
+    assert "[SOCIAL:ERROR]" in result
+
+
 def test_publish_tools_variants(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
 

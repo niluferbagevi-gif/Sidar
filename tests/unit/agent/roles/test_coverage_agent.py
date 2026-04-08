@@ -478,6 +478,30 @@ def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     assert data["files"][0]["missing_branches_count"] == 0
 
 
+async def test_ensure_db_concurrency(tmp_path, monkeypatch):
+    """Eş zamanlı _ensure_db çağrılarında lock, DB'nin sadece bir kez başlatılmasını sağlamalı."""
+    agent = make_agent(tmp_path)
+
+    class SlowFakeDB(FakeDB):
+        """connect() sırasında event loop'a yield yaparak yarış durumunu simüle eder."""
+
+        async def connect(self):
+            await asyncio.sleep(0)  # Diğer coroutine'lere çalışma fırsatı ver
+            self.connected += 1
+
+    core_pkg = ModuleType("core")
+    core_db = ModuleType("core.db")
+    core_db.Database = SlowFakeDB
+    monkeypatch.setitem(sys.modules, "core", core_pkg)
+    monkeypatch.setitem(sys.modules, "core.db", core_db)
+
+    results = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
+
+    assert results[0] is results[1]
+    assert results[0].connected == 1  # Sadece bir kez bağlanmalı
+    assert results[0].inited == 1  # Sadece bir kez init_schema çağrılmalı
+
+
 def test_run_task_routes_and_flows(tmp_path):
     agent = make_agent(tmp_path)
 
