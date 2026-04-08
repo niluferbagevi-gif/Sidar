@@ -291,6 +291,20 @@ def test_tool_methods(tmp_path, fake_coverage_code_manager):
     assert write_data["suggested_test_path"] == "tests/a.py"
 
 
+def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    agent.code.write_generated_test = lambda *a, **k: (False, "Permission Denied")
+
+    write_json = asyncio.run(
+        agent._tool_write_missing_tests(
+            '{"suggested_test_path":"tests/fail.py","generated_test":"print(1)","append":false}'
+        )
+    )
+    write_data = json.loads(write_json)
+    assert write_data["success"] is False
+    assert "Permission Denied" in write_data["message"]
+
+
 def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
