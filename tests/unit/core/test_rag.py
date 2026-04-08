@@ -203,6 +203,24 @@ async def test_graph_index_circular(tmp_path: Path) -> None:
     assert graph.explain_dependency_path("c.py", "a.py") == []
 
 
+async def test_graph_index_deep_dependency_path(tmp_path: Path) -> None:
+    graph = rag.GraphIndex(tmp_path)
+    for node in ("entry.py", "service.py", "repo.py", "client.py", "adapter.py"):
+        graph.add_node(node, node_type="file")
+    graph.add_edge("entry.py", "service.py", kind="imports")
+    graph.add_edge("service.py", "repo.py", kind="imports")
+    graph.add_edge("repo.py", "client.py", kind="imports")
+    graph.add_edge("client.py", "adapter.py", kind="imports")
+
+    assert graph.explain_dependency_path("entry.py", "adapter.py") == [
+        "entry.py",
+        "service.py",
+        "repo.py",
+        "client.py",
+        "adapter.py",
+    ]
+
+
 async def test_embed_texts_for_semantic_cache_empty() -> None:
     assert rag.embed_texts_for_semantic_cache([]) == []
 
