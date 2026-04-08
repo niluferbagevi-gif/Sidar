@@ -97,9 +97,9 @@ async def test_swarm_execute_task_and_auto_handle_are_isolated(monkeypatch) -> N
 
 async def test_reviewer_and_coverage_agent_generate_candidates_with_fake_llm(
     fake_llm_response,
+    agent_factory,
 ) -> None:
-    reviewer = ReviewerAgent.__new__(ReviewerAgent)
-    reviewer.TEST_GENERATION_PROMPT = ReviewerAgent.TEST_GENERATION_PROMPT
+    reviewer = agent_factory(ReviewerAgent)
 
     async def _reviewer_llm(*_args, **_kwargs):
         _ = await fake_llm_response("reviewer")
@@ -109,8 +109,7 @@ async def test_reviewer_and_coverage_agent_generate_candidates_with_fake_llm(
     dynamic_test = await reviewer._build_dynamic_test_content("diff --git a/x.py b/x.py")
     assert "def test_generated_reviewer_case" in dynamic_test
 
-    coverage = CoverageAgent.__new__(CoverageAgent)
-    coverage.TEST_GENERATION_PROMPT = CoverageAgent.TEST_GENERATION_PROMPT
+    coverage = agent_factory(CoverageAgent)
 
     async def _coverage_llm(*_args, **_kwargs):
         payload = await fake_llm_response("coverage")
@@ -135,8 +134,9 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
     fake_social_api,
     fake_video_stream,
     monkeypatch,
+    agent_factory,
 ) -> None:
-    agent = PoyrazAgent.__new__(PoyrazAgent)
+    agent = agent_factory(PoyrazAgent)
     agent.social = fake_social_api
     agent.docs = SimpleNamespace()
     agent.llm = object()
@@ -212,3 +212,48 @@ async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monk
     ok, latest = await pkg.pypi_latest_version("sidar")
     assert ok is True
     assert latest == "sidar==1.2.3"
+
+
+async def test_sidar_agent_llm_error_flow(
+    agent_factory,
+    fake_llm_error,
+    fake_event_stream,
+) -> None:
+    _ = fake_event_stream
+    agent = agent_factory(SidarAgent)
+    agent.initialize = AsyncMock()
+    agent._try_multi_agent = AsyncMock(side_effect=fake_llm_error)
+
+    with pytest.raises(RuntimeError, match="rate limit exceeded"):
+        _chunks = [chunk async for chunk in agent.respond("hata tetikle")]
+
+
+async def test_poyraz_agent_error_flows(
+    agent_factory,
+    fake_social_api,
+    fake_video_stream_error,
+    monkeypatch,
+) -> None:
+    agent = agent_factory(PoyrazAgent)
+    agent.social = fake_social_api
+    agent.docs = SimpleNamespace()
+    agent.llm = object()
+    agent.cfg = SimpleNamespace()
+
+    agent.social.set_rate_limit_error()
+    agent.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))
+
+    with pytest.raises(RuntimeError, match="API Rate Limit"):
+        await agent._tool_publish_social("instagram|||hata testi|||sidar")
+
+    class _FakeErrorPipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.stream = fake_video_stream_error
+
+        async def analyze_media_source(self, **_kwargs):
+            await self.stream.read_frames()
+
+    monkeypatch.setattr("core.multimodal.MultimodalPipeline", _FakeErrorPipeline)
+
+    with pytest.raises(RuntimeError, match="corrupted video stream"):
+        await agent._tool_ingest_video_insights("https://video.example/broken.mp4|||analiz")
