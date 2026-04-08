@@ -23,9 +23,10 @@ def _make_config(**overrides: object) -> SimpleNamespace:
 
 
 @pytest.fixture(autouse=True)
-def reset_budget_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(router._budget_tracker, "_daily_cost", 0.0)
-    monkeypatch.setattr(router._budget_tracker, "_day_start", 0.0)
+def reset_budget_tracker() -> None:
+    with router._budget_tracker._lock:
+        router._budget_tracker._daily_cost = 0.0
+        router._budget_tracker._day_start = router.time.time()
 
 
 def test_query_complexity_score_returns_zero_without_user_messages() -> None:
@@ -102,13 +103,12 @@ def test_daily_budget_tracker_add_daily_usage_and_exceeded() -> None:
     assert tracker.exceeded(1.0) is False
 
 
-def test_daily_budget_tracker_resets_when_new_day(monkeypatch: pytest.MonkeyPatch) -> None:
-    timeline = iter([1000.0, 1001.0, 1001.0 + 86401.0])
-    monkeypatch.setattr(router.time, "time", lambda: next(timeline))
-
+def test_daily_budget_tracker_resets_when_new_day(frozen_time) -> None:
     tracker = router._DailyBudgetTracker()
     tracker.add(0.5)
 
+    assert tracker.daily_usage() == 0.5
+    frozen_time.tick(delta=86401.0)
     assert tracker.daily_usage() == 0.0
 
 
