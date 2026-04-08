@@ -449,7 +449,7 @@ async def test_ollama_client_chat_non_stream_and_stream(
 
 @pytest.mark.asyncio
 async def test_ollama_stream_response_parses_and_handles_error(
-    monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
+    mock_config, respx_mock_router
 ) -> None:
     cfg = mock_config()
     client = llm_client.OllamaClient(cfg)
@@ -461,10 +461,7 @@ async def test_ollama_stream_response_parses_and_handles_error(
     chunks = await _collect(client._stream_response(stream_endpoint, {}, llm_client.httpx.Timeout(10, connect=1)))
     assert chunks == ["A", "B"]
 
-    async def broken(*_a, **_k):
-        raise RuntimeError("x")
-
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
+    respx_mock_router.post(stream_endpoint).mock(side_effect=httpx.ConnectTimeout("connect timeout"))
     fallback = await _collect(client._stream_response(stream_endpoint, {}, llm_client.httpx.Timeout(10, connect=1)))
     assert "HATA" in fallback[0]
 
@@ -501,6 +498,30 @@ async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_r
     out = await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert out == "ok"
     assert metrics[-1]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False)
+    client = llm_client.OpenAIClient(cfg)
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "maximum context length reached",
+                    "type": "invalid_request_error",
+                    "code": "context_length_exceeded",
+                }
+            },
+        )
+    )
+    with pytest.raises(llm_client.LLMAPIError) as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "openai"
+    assert exc.value.status_code == 400
+    assert exc.value.retryable is False
 
 
 @pytest.mark.asyncio
@@ -622,6 +643,31 @@ async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_
 
 
 @pytest.mark.asyncio
+async def test_anthropic_context_limit_error_is_non_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _ContextLimitError(Exception):
+        def __init__(self):
+            super().__init__("context length exceeded")
+            self.status_code = 413
+
+    class _Messages:
+        async def create(self, **_kw):
+            raise _ContextLimitError()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kw):
+            self.messages = _Messages()
+
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude"))
+    with pytest.raises(llm_client.LLMAPIError) as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "anthropic"
+    assert exc.value.status_code == 413
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _make_config(OLLAMA_URL="http://localhost:11434/api")
     client = llm_client.LLMClient("ollama", cfg)
@@ -713,50 +759,11 @@ async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
     assert await manager.get("x") is None
 
-    class _BrokenRedis:
-        async def lrange(self, *_a, **_kw):
-            raise RuntimeError("boom")
-
-        async def hgetall(self, *_a, **_kw):
-            return {}
-
-        async def llen(self, *_a, **_kw):
-            return 0
-
-        def pipeline(self, transaction: bool = True):
-            class _Pipe:
-                async def __aenter__(self):
-                    return self
-
-                async def __aexit__(self, *_exc):
-                    return False
-
-                def hset(self, *args, **kwargs):
-                    return None
-
-                def expire(self, *args, **kwargs):
-                    return None
-
-                def lrem(self, *args, **kwargs):
-                    return None
-
-                def lpush(self, *args, **kwargs):
-                    return None
-
-                def ltrim(self, *args, **kwargs):
-                    return None
-
-                async def execute(self):
-                    return None
-
-            return _Pipe()
-
-    br = _BrokenRedis()
-
     async def _redis2():
-        return br
+        return fake
 
     monkeypatch.setattr(manager, "_get_redis", _redis2)
+    monkeypatch.setattr(fake, "lrange", AsyncMock(side_effect=redis_exceptions.ConnectionError("boom")))
     assert await manager.get("x") is None
 
     # set: vector boş -> no-op
@@ -936,50 +943,23 @@ async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
-
-    class _BrokenPipe:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            pass
-
-        def hset(self, *args, **kwargs):
-            pass
-
-        def expire(self, *args, **kwargs):
-            pass
-
-        def lrem(self, *args, **kwargs):
-            pass
-
-        def lpush(self, *args, **kwargs):
-            pass
-
-        def ltrim(self, *args, **kwargs):
-            pass
-
-        async def execute(self):
-            raise redis_exceptions.ConnectionError("write failed")
-
-    class _BrokenRedis:
-        def pipeline(self, transaction: bool = True):
-            return _BrokenPipe()
-
-    fake = _BrokenRedis()
     errors = {"n": 0}
 
     async def _redis():
-        return fake
+        return fake_redis
 
     monkeypatch.setattr(manager, "_get_redis", _redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
     monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+    pipeline = fake_redis.pipeline(transaction=True)
+    monkeypatch.setattr(
+        pipeline,
+        "execute",
+        AsyncMock(side_effect=redis_exceptions.ConnectionError("write failed")),
+    )
+    monkeypatch.setattr(fake_redis, "pipeline", lambda transaction=True: pipeline)
 
     await manager.set("prompt", "resp")
 
