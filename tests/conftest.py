@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 from typing import Any, AsyncGenerator, Callable
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from freezegun import freeze_time
@@ -78,9 +78,9 @@ def fake_event_stream() -> Callable[[], AsyncGenerator[AgentEvent, None]]:
 
 
 @pytest.fixture
-def fake_social_api() -> MagicMock:
-    """Sosyal medya API çağrıları için ortak fake adaptör."""
-    api = MagicMock()
+def fake_social_api() -> AsyncMock:
+    """Sosyal medya API çağrıları için ortak asenkron fake adaptör."""
+    api = AsyncMock()
     api.fetch_profile.return_value = {"id": "user-1", "username": "mock_user", "followers": 42}
     api.fetch_posts.return_value = [{"id": "post-1", "text": "mock post", "likes": 7}]
     api.publish.return_value = {"ok": True, "post_id": "published-1"}
@@ -97,9 +97,9 @@ def fake_social_api() -> MagicMock:
 
 
 @pytest.fixture
-def fake_video_stream() -> MagicMock:
-    """Video analiz pipeline'ı için deterministik fake akış."""
-    stream = MagicMock()
+def fake_video_stream() -> AsyncMock:
+    """Video analiz pipeline'ı için deterministik asenkron fake akış."""
+    stream = AsyncMock()
     stream.read_frames.return_value = [
         {"frame_id": 1, "timestamp": 0.0},
         {"frame_id": 2, "timestamp": 0.04},
@@ -109,9 +109,9 @@ def fake_video_stream() -> MagicMock:
 
 
 @pytest.fixture
-def fake_video_stream_error() -> MagicMock:
+def fake_video_stream_error() -> AsyncMock:
     """Video analiz pipeline'ı için bozuk akış/hata senaryosu."""
-    stream = MagicMock()
+    stream = AsyncMock()
     stream.read_frames.side_effect = RuntimeError("corrupted video stream")
     stream.metadata.return_value = {"fps": 0, "duration_sec": 0}
     return stream
