@@ -1,7 +1,6 @@
 import asyncio
 import types
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -174,13 +173,9 @@ def test_purge_expired_returns_zero_when_nothing_to_delete(sqlite_db_url: str):
 @requires_sqlalchemy
 def test_entity_memory_ttl_and_corrupted_record_recovery(
     sqlite_db_url: str,
-    fake_redis: Any,
     frozen_time,
 ):
     async def scenario():
-        # Ortak fake_redis fixture'ının hazır olduğunu doğrula (dış bağımlılık izolasyonu).
-        assert await fake_redis.ping() is True
-
         em = EntityMemory(database_url=sqlite_db_url, ttl_days=1)
         await em.initialize()
         assert await em.upsert("u-ttl", "coding_style", "functional") is True
