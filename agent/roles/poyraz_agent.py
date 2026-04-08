@@ -126,8 +126,12 @@ class PoyrazAgent(BaseAgent):
             except Exception as exc:
                 return f"[SOCIAL:ERROR] platform=unknown reason=invalid_payload:{exc}"
         else:
-            parts = (raw.split("|||", 4) + ["", "", "", "", ""])[:5]
-            platform, text, destination, media_url, link_url = (part.strip() for part in parts)
+            raw_parts = raw.split("|||")
+            if len(raw_parts) < 5:
+                platform, text, destination, media_url, link_url = ("unknown", "", "", "", "")
+            else:
+                parts = (raw_parts[:5] + ["", "", "", "", ""])[:5]
+                platform, text, destination, media_url, link_url = (part.strip() for part in parts)
         ok, result = await self.social.publish_content(
             platform=platform,
             text=text,
@@ -294,15 +298,15 @@ class PoyrazAgent(BaseAgent):
             prompt = payload.prompt.strip()
             language = payload.language.strip() or None
             session_id = payload.session_id.strip() or "marketing"
-            max_frames = int(payload.max_frames or 6)
-            frame_interval_seconds = float(payload.frame_interval_seconds or 5.0)
+            max_frames = max(1, int(payload.max_frames or 6))
+            frame_interval_seconds = max(0.1, float(payload.frame_interval_seconds or 5.0))
         else:
             parts = (raw.split("|||", 4) + ["", "", "", "", ""])[:5]
             source_url = parts[0].strip()
             prompt = parts[1].strip()
             language = parts[2].strip() or None
             session_id = parts[3].strip() or "marketing"
-            max_frames = int(parts[4].strip() or 6)
+            max_frames = max(1, int(parts[4].strip() or 6))
             frame_interval_seconds = 5.0
 
         pipeline = MultimodalPipeline(self.llm, self.cfg)

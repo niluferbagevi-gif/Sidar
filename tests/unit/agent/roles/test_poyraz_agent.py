@@ -274,6 +274,12 @@ def test_publish_social_invalid_json(poyraz_module, fake_cfg):
     assert "[SOCIAL:ERROR]" in result
 
 
+def test_publish_social_text_format_with_missing_segments_uses_unknown(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._tool_publish_social("instagram|||only-text"))
+    assert "platform=unknown" in result
+
+
 def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     sentinel_db = object()
@@ -438,6 +444,35 @@ def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
     assert DummyMultimodalPipeline.last_kwargs["ingest_tags"] == ["video", "multimodal", "marketing", "poyraz"]
     assert ok.startswith("[VIDEO:INGESTED]")
     assert err.startswith("[VIDEO:ERROR]")
+
+
+def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fake_cfg, monkeypatch):
+    mm_mod = types.ModuleType("core.multimodal")
+    mm_mod.MultimodalPipeline = DummyMultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
+
+    agent = _agent(poyraz_module, fake_cfg)
+    DummyMultimodalPipeline.last_kwargs = None
+
+    result = asyncio.run(
+        agent._tool_ingest_video_insights(
+            json.dumps(
+                {
+                    "source_url": "https://video-negative",
+                    "prompt": "analyze",
+                    "language": "tr",
+                    "session_id": "neg-session",
+                    "max_frames": -4,
+                    "frame_interval_seconds": -1.5,
+                }
+            )
+        )
+    )
+
+    assert result.startswith("[VIDEO:INGESTED]")
+    assert DummyMultimodalPipeline.last_kwargs is not None
+    assert DummyMultimodalPipeline.last_kwargs["max_frames"] == 1
+    assert DummyMultimodalPipeline.last_kwargs["frame_interval_seconds"] == 0.1
 
 
 def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkeypatch):
