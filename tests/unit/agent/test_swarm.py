@@ -3,6 +3,8 @@ import sys
 import types
 from types import SimpleNamespace
 
+import pytest
+
 from agent.core.contracts import DelegationRequest, TaskResult
 from agent.registry import AgentSpec
 import agent.swarm as swarm
@@ -55,6 +57,15 @@ class _RunTaskAgent:
 
 class _NoHandlerAgent:
     pass
+
+
+def test_fake_catalog_get_returns_match_and_none():
+    coder = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    catalog = _FakeCatalog([coder, reviewer])
+
+    assert catalog.get("coder") == coder
+    assert catalog.get("missing") is None
 
 
 def test_task_router_routes_by_intent_capability(monkeypatch):
@@ -187,6 +198,9 @@ def test_execute_task_handles_delegation_request_and_handoff_chain(monkeypatch):
             return _RunTaskAgent("patch hazir")
         raise KeyError(role_name)
 
+    with pytest.raises(KeyError):
+        _create("unknown")
+
     monkeypatch.setattr("agent.swarm.AgentCatalog.create", _create)
 
     result = __import__("asyncio").run(
@@ -299,19 +313,13 @@ def test_dispatch_distributed_requires_backend_and_matching_agent(monkeypatch):
     orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
     task = SwarmTask(goal="x", intent="unknown")
 
-    try:
+    with pytest.raises(RuntimeError, match="(?i)backend"):
         __import__("asyncio").run(orchestrator.dispatch_distributed(task))
-        assert False, "Expected RuntimeError when backend is missing"
-    except RuntimeError as exc:
-        assert "backend" in str(exc).lower()
 
     orchestrator.configure_delegation_backend(InMemoryDelegationBackend())
     monkeypatch.setattr(orchestrator.router, "route", lambda _intent: None)
-    try:
+    with pytest.raises(RuntimeError, match="(?i)uygun ajan"):
         __import__("asyncio").run(orchestrator.dispatch_distributed(task))
-        assert False, "Expected RuntimeError when no matching agent is found"
-    except RuntimeError as exc:
-        assert "uygun ajan" in str(exc).lower()
 
 
 def test_loop_repeat_limit_honors_provider_and_floor():
@@ -349,7 +357,7 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
             return "   "
 
     monkeypatch.setitem(sys.modules, "agent.core.supervisor", types.SimpleNamespace(SupervisorAgent=_EmptySupervisor))
-    try:
+    with pytest.raises(RuntimeError, match="geçerli bir çıktı"):
         __import__("asyncio").run(
             orch._run_supervisor_fallback(
                 task,
@@ -361,9 +369,6 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
                 reason="fallback:JSONDecodeError",
             )
         )
-        assert False, "Expected invalid fallback output"
-    except RuntimeError as exc:
-        assert "geçerli bir çıktı" in str(exc)
 
 
 def test_run_autonomous_feedback_low_score_flags_and_handles_errors(monkeypatch):
@@ -427,7 +432,7 @@ def test_schedule_autonomous_feedback_outside_event_loop_noop():
 def test_direct_handoff_requires_target_agent():
     orch = SwarmOrchestrator(cfg=SimpleNamespace())
     bad = DelegationRequest(task_id="t", reply_to="reviewer", target_agent="", payload="x")
-    try:
+    with pytest.raises(RuntimeError, match="target_agent"):
         __import__("asyncio").run(
             orch._direct_handoff(
                 SwarmTask(goal="g"),
@@ -438,9 +443,6 @@ def test_direct_handoff_requires_target_agent():
                 handoff_chain=[],
             )
         )
-        assert False, "Expected missing target_agent RuntimeError"
-    except RuntimeError as exc:
-        assert "target_agent" in str(exc)
 
 
 def test_run_and_parallel_and_pipeline_methods(monkeypatch):
@@ -610,6 +612,7 @@ def test_contract_health_check_handles_constructor_exceptions():
         def TaskResult(**_kwargs):
             return None
 
+    assert _ExplodingModule.TaskResult() is None
     assert swarm._is_contracts_module_healthy(_ExplodingModule) is False
 
 
@@ -808,4 +811,3 @@ def test_swarm_execute_task_is_isolated(monkeypatch):
 
     assert result.status == "success"
     assert result.summary == "isolated-ok"
-
