@@ -505,7 +505,7 @@ def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(poyraz_modu
 
 def test_ingest_video_insights_returns_error_when_pipeline_unavailable(poyraz_module, fake_cfg, monkeypatch):
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
-    monkeypatch.delitem(sys.modules, "core.multimodal", raising=False)
+    monkeypatch.setattr(poyraz_module.importlib, "import_module", lambda _: (_ for _ in ()).throw(ImportError("missing")))
 
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt"))
