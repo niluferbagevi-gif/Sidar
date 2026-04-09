@@ -88,6 +88,18 @@ def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch: pytest.MonkeyPatc
     assert "httpx" in sys.modules
 
 
+def test_httpx_stub_async_client_context_manager_methods(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+
+    client = sys.modules["httpx"].AsyncClient()
+    entered = _run(client.__aenter__())
+    exited = _run(client.__aexit__(None, None, None))
+
+    assert entered is client
+    assert exited is False
+
+
 def test_init_client_sdk_other_exception_falls_back_to_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
     class BrokenWebClient:
         def __init__(self, token: str) -> None:
