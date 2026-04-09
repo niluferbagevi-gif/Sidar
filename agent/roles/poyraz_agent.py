@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 from pathlib import Path
 from typing import Optional
@@ -294,7 +295,13 @@ class PoyrazAgent(BaseAgent):
         return output
 
     async def _tool_ingest_video_insights(self, arg: str) -> str:
-        if MultimodalPipeline is None:
+        runtime_pipeline_cls = MultimodalPipeline
+        try:
+            runtime_pipeline_cls = importlib.import_module("core.multimodal").MultimodalPipeline
+        except Exception:
+            pass
+
+        if runtime_pipeline_cls is None:
             return "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"
 
         raw = (arg or "").strip()
@@ -315,7 +322,7 @@ class PoyrazAgent(BaseAgent):
             max_frames = max(1, int(parts[4].strip() or 6))
             frame_interval_seconds = 5.0
 
-        pipeline = MultimodalPipeline(self.llm, self.cfg)
+        pipeline = runtime_pipeline_cls(self.llm, self.cfg)
         result = await pipeline.analyze_media_source(
             media_source=source_url,
             prompt=prompt,
