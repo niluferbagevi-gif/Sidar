@@ -60,9 +60,9 @@ async def test_static_helpers_and_parsers(tmp_path):
         "command": "pytest --cov=. --cov-report=xml --cov-report=term",
     }
 
-    assert CoverageAgent._suggest_test_path("") == "tests/test_generated_coverage_agent.py"
-    assert CoverageAgent._suggest_test_path("module.py") == "tests/test_module_coverage.py"
-    assert CoverageAgent._suggest_test_path("./pkg/module.py") == "tests/pkg/test_module_coverage.py"
+    assert CoverageAgent._suggest_test_path("") == "tests/test_generated.py"
+    assert CoverageAgent._suggest_test_path("module.py") == "tests/test_module.py"
+    assert CoverageAgent._suggest_test_path("./pkg/module.py") == "tests/pkg/test_module.py"
 
     assert CoverageAgent._clean_code_output("plain") == "plain"
     assert CoverageAgent._clean_code_output("```python\na=1\n```") == "a=1"
@@ -601,4 +601,3 @@ async def test_coverage_agent_run_task_marks_pending_approval(tmp_path, monkeypa
     run_task_payload = json.loads(await agent.run_task("pytest --cov=. --cov-report=xml"))
     assert run_task_payload["approval_status"] == "pending_reviewer_or_human"
     assert run_task_payload["is_approved"] is False
-

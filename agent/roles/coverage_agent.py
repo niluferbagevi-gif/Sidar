@@ -87,13 +87,13 @@ class CoverageAgent(BaseAgent):
     def _suggest_test_path(target_path: str) -> str:
         normalized = str(target_path or "").strip().lstrip("./")
         if not normalized:
-            return "tests/test_generated_coverage_agent.py"
+            return "tests/test_generated.py"
         path_obj = Path(normalized)
         parent_dir = str(path_obj.parent).strip(".").strip("/")
         stem = path_obj.stem
         if parent_dir:
-            return f"tests/{parent_dir}/test_{stem}_coverage.py"
-        return f"tests/test_{stem}_coverage.py"
+            return f"tests/{parent_dir}/test_{stem}.py"
+        return f"tests/test_{stem}.py"
 
     @staticmethod
     def _clean_code_output(raw_output: str) -> str:
