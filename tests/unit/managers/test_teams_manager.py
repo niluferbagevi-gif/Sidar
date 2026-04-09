@@ -75,6 +75,18 @@ def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch: pytest.MonkeyPatc
     assert "httpx" in sys.modules
 
 
+def test_httpx_stub_async_client_context_manager_methods(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+
+    client = sys.modules["httpx"].AsyncClient()
+    entered = _run(client.__aenter__())
+    exited = _run(client.__aexit__(None, None, None))
+
+    assert entered is client
+    assert exited is False
+
+
 def test_send_message_requires_webhook() -> None:
     ok, err = _run(TeamsManager().send_message("hello"))
     assert ok is False
