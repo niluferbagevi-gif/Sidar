@@ -203,28 +203,27 @@ def test_build_dynamic_prompt():
     assert ".coveragerc include: src/*" in prompt
 
 
-def test_tool_methods(tmp_path, fake_coverage_code_manager):
+@pytest.mark.asyncio
+async def test_tool_methods(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
-    run_json = asyncio.run(agent._tool_run_pytest('{"command":"pytest -q","cwd":"/tmp"}'))
+    run_json = await agent._tool_run_pytest('{"command":"pytest -q","cwd":"/tmp"}')
     assert json.loads(run_json)["analysis"]["summary"] == "ok"
 
-    analyze_json = asyncio.run(agent._tool_analyze_pytest_output('{"output":"ERR"}'))
+    analyze_json = await agent._tool_analyze_pytest_output('{"output":"ERR"}')
     assert json.loads(analyze_json)["summary"] == "ANALYZED:ERR"
 
     cov_xml = tmp_path / "coverage.xml"
     cov_xml.write_text("<coverage></coverage>", encoding="utf-8")
     rc = tmp_path / ".coveragerc"
     rc.write_text("[run]\ninclude=src/*\n", encoding="utf-8")
-    cov_json = asyncio.run(
-        agent._tool_analyze_coverage_report(
-            json.dumps(
-                {
-                    "coverage_xml": str(cov_xml),
-                    "coveragerc": str(rc),
-                    "coverage_output": "not parsable",
-                    "limit": 3,
-                }
-            )
+    cov_json = await agent._tool_analyze_coverage_report(
+        json.dumps(
+            {
+                "coverage_xml": str(cov_xml),
+                "coveragerc": str(rc),
+                "coverage_output": "not parsable",
+                "limit": 3,
+            }
         )
     )
     cov_data = json.loads(cov_json)
@@ -245,8 +244,8 @@ def test_tool_methods(tmp_path, fake_coverage_code_manager):
         """.strip(),
         encoding="utf-8",
     )
-    cov_json2 = asyncio.run(
-        agent._tool_analyze_coverage_report(json.dumps({"coverage_xml": str(cov_xml2), "coverage_output": ""}))
+    cov_json2 = await agent._tool_analyze_coverage_report(
+        json.dumps({"coverage_xml": str(cov_xml2), "coverage_output": ""})
     )
     cov_data2 = json.loads(cov_json2)
     assert cov_data2["findings"][0]["target_path"] == "src/covered.py"
@@ -257,57 +256,53 @@ def test_tool_methods(tmp_path, fake_coverage_code_manager):
         return "```python\ndef test_ok():\n    assert True\n```"
 
     agent.call_llm = fake_llm
-    gen_cov = asyncio.run(
-        agent._tool_generate_missing_tests(
-            json.dumps(
-                {
-                    "coverage_finding": {"target_path": "src/m.py", "missing_lines": [5], "missing_branches": []},
-                    "coveragerc": {"run": {"include": "src/*"}},
-                }
-            )
+    gen_cov = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {"target_path": "src/m.py", "missing_lines": [5], "missing_branches": []},
+                "coveragerc": {"run": {"include": "src/*"}},
+            }
         )
     )
     assert "test_ok" in gen_cov
 
-    gen_from_output = asyncio.run(agent._tool_generate_missing_tests(json.dumps({"target_path": "src/m.py", "pytest_output": "FAIL"})))
+    gen_from_output = await agent._tool_generate_missing_tests(
+        json.dumps({"target_path": "src/m.py", "pytest_output": "FAIL"})
+    )
     assert "test_ok" in gen_from_output
-    gen_from_analysis = asyncio.run(
-        agent._tool_generate_missing_tests(
-            json.dumps(
-                {
-                    "target_path": "src/m.py",
-                    "analysis": {"summary": "ready", "findings": [{"target_path": "src/m.py"}]},
-                }
-            )
+    gen_from_analysis = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "target_path": "src/m.py",
+                "analysis": {"summary": "ready", "findings": [{"target_path": "src/m.py"}]},
+            }
         )
     )
     assert "test_ok" in gen_from_analysis
 
-    write_json = asyncio.run(
-        agent._tool_write_missing_tests(
-            '{"suggested_test_path":"tests/a.py","generated_test":"```python\\na=1\\n```","append":false}'
-        )
+    write_json = await agent._tool_write_missing_tests(
+        '{"suggested_test_path":"tests/a.py","generated_test":"```python\\na=1\\n```","append":false}'
     )
     write_data = json.loads(write_json)
     assert write_data["success"] is True
     assert write_data["suggested_test_path"] == "tests/a.py"
 
 
-def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
+@pytest.mark.asyncio
+async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     mocker.patch.object(agent.code, "write_generated_test", return_value=(False, "Permission Denied"))
 
-    write_json = asyncio.run(
-        agent._tool_write_missing_tests(
-            '{"suggested_test_path":"tests/fail.py","generated_test":"print(1)","append":false}'
-        )
+    write_json = await agent._tool_write_missing_tests(
+        '{"suggested_test_path":"tests/fail.py","generated_test":"print(1)","append":false}'
     )
     write_data = json.loads(write_json)
     assert write_data["success"] is False
     assert "Permission Denied" in write_data["message"]
 
 
-def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
+@pytest.mark.asyncio
+async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     class BlockingLock:
@@ -320,10 +315,11 @@ def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
     agent._db_lock = BlockingLock()
 
     with pytest.raises(asyncio.TimeoutError):
-        asyncio.run(asyncio.wait_for(agent._ensure_db(), timeout=0.01))
+        await asyncio.wait_for(agent._ensure_db(), timeout=0.01)
 
 
-def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+@pytest.mark.asyncio
+async def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -331,26 +327,25 @@ def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_man
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
-    db1 = asyncio.run(agent._ensure_db())
-    db2 = asyncio.run(agent._ensure_db())
+    db1 = await agent._ensure_db()
+    db2 = await agent._ensure_db()
     assert db1 is db2
     assert db1.connected == 1
     assert db1.inited == 1
 
-    asyncio.run(
-        agent._record_task(
-            command="pytest",
-            pytest_output="OUT",
-            analysis={"findings": [{"finding_type": "gap", "target_path": "a.py", "summary": "s"}]},
-            generated_test="def test_x(): pass",
-            review_payload={"target_path": "a.py", "suggested_test_path": "tests/test_a.py"},
-            status="tests_written",
-        )
+    await agent._record_task(
+        command="pytest",
+        pytest_output="OUT",
+        analysis={"findings": [{"finding_type": "gap", "target_path": "a.py", "summary": "s"}]},
+        generated_test="def test_x(): pass",
+        review_payload={"target_path": "a.py", "suggested_test_path": "tests/test_a.py"},
+        status="tests_written",
     )
     assert db1.created and db1.findings
 
 
-def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+@pytest.mark.asyncio
+async def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent._db_lock = asyncio.Lock()
     core_pkg = ModuleType("core")
@@ -359,12 +354,13 @@ def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_coverage
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
-    db = asyncio.run(agent._ensure_db())
+    db = await agent._ensure_db()
     assert db.connected == 1
     assert db.inited == 1
 
 
-def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage_code_manager):
+@pytest.mark.asyncio
+async def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     existing_db = SimpleNamespace(name="already-ready")
 
@@ -377,11 +373,12 @@ def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage_code_
             return False
 
     agent._db_lock = LockThatInjectsDB()
-    db = asyncio.run(agent._ensure_db())
+    db = await agent._ensure_db()
     assert db is existing_db
 
 
-def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+@pytest.mark.asyncio
+async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -389,10 +386,7 @@ def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_manager
     monkeypatch.setitem(sys.modules, "core", core_pkg)
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
-    async def run_concurrent():
-        return await asyncio.gather(agent._ensure_db(), agent._ensure_db())
-
-    db_a, db_b = asyncio.run(run_concurrent())
+    db_a, db_b = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
     assert db_a is db_b
     assert db_a.connected == 1
     assert db_a.inited == 1
@@ -514,22 +508,23 @@ def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     assert data["files"][0]["missing_branches_count"] == 0
 
 
-def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
+@pytest.mark.asyncio
+async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def fake_tool(name, arg):
         return f"TOOL:{name}:{arg}"
 
     agent.call_tool = fake_tool
-    assert asyncio.run(agent.run_task("")) == "[UYARI] Boş coverage görevi verildi."
-    assert asyncio.run(agent.run_task("run_pytest|{}")) == "TOOL:run_pytest:{}"
-    assert asyncio.run(agent.run_task("analyze_pytest_output|X")) == "TOOL:analyze_pytest_output:X"
-    assert asyncio.run(agent.run_task("analyze_coverage_report|Y")) == "TOOL:analyze_coverage_report:Y"
-    assert asyncio.run(agent.run_task("generate_missing_tests|Z")) == "TOOL:generate_missing_tests:Z"
-    assert asyncio.run(agent.run_task("write_missing_tests|W")) == "TOOL:write_missing_tests:W"
+    assert await agent.run_task("") == "[UYARI] Boş coverage görevi verildi."
+    assert await agent.run_task("run_pytest|{}") == "TOOL:run_pytest:{}"
+    assert await agent.run_task("analyze_pytest_output|X") == "TOOL:analyze_pytest_output:X"
+    assert await agent.run_task("analyze_coverage_report|Y") == "TOOL:analyze_coverage_report:Y"
+    assert await agent.run_task("generate_missing_tests|Z") == "TOOL:generate_missing_tests:Z"
+    assert await agent.run_task("write_missing_tests|W") == "TOOL:write_missing_tests:W"
 
     # no gaps path
-    no_gap = asyncio.run(agent.run_task('{"command":"pytest -q","cwd":"."}'))
+    no_gap = await agent.run_task('{"command":"pytest -q","cwd":"."}')
     no_gap_data = json.loads(no_gap)
     assert no_gap_data["status"] == "no_gaps_detected"
 
@@ -551,7 +546,7 @@ def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
         recorded["called"] = True
 
     agent._record_task = fake_record
-    written = asyncio.run(agent.run_task('{"command":"pytest --cov=.","cwd":"."}'))
+    written = await agent.run_task('{"command":"pytest --cov=.","cwd":"."}')
     written_data = json.loads(written)
     assert written_data["status"] == "tests_written"
     assert written_data["target_path"] == "src/a.py"
@@ -564,11 +559,12 @@ def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
         raise RuntimeError("db down")
 
     agent._record_task = boom_record
-    written2 = asyncio.run(agent.run_task('{"command":"pytest --cov=.","cwd":"."}'))
+    written2 = await agent.run_task('{"command":"pytest --cov=.","cwd":"."}')
     assert json.loads(written2)["success"] is True
 
 
-def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tmp_path, fake_coverage_code_manager):
+@pytest.mark.asyncio
+async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent.register_tool("analyze_coverage_report", agent._tool_analyze_coverage_report)
 
@@ -584,7 +580,7 @@ def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tmp_path
             ),
         }
     )
-    result = asyncio.run(agent.run_task(f"analyze_coverage_report|{payload}"))
+    result = await agent.run_task(f"analyze_coverage_report|{payload}")
     data = json.loads(result)
 
     assert data["coverage_xml"]["summary"] == "coverage.xml ayrıştırılamadı."
