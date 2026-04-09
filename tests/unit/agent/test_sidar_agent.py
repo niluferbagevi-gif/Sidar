@@ -459,12 +459,23 @@ async def test_respond_memory_failure_graceful(sidar_agent_factory) -> None:
     agent._lock = None
     agent.initialize = AsyncMock()
     agent.mark_activity = lambda *_a, **_k: None
-    agent._memory_add = AsyncMock(side_effect=RuntimeError("Memory DB Down"))
+    error_msg = "Memory DB Down"
+    agent._memory_add = AsyncMock(side_effect=RuntimeError(error_msg))
     agent._try_multi_agent = AsyncMock(return_value="Kritik Yanıt")
+    warning_mock = Mock()
+    original_warning = sidar_agent.logger.warning
+    sidar_agent.logger.warning = warning_mock
 
-    responses = list(await _collect_stream(agent.respond("test input")))
+    try:
+        responses = list(await _collect_stream(agent.respond("test input")))
+    finally:
+        sidar_agent.logger.warning = original_warning
 
     assert "Kritik Yanıt" in responses
+    agent._memory_add.assert_awaited_once_with("user", "test input")
+    warning_mock.assert_called_once()
+    assert "Memory add failed during respond flow" in warning_mock.call_args.args[0]
+    assert error_msg in str(warning_mock.call_args.args[1])
 
 
 async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -584,18 +595,24 @@ async def test_run_nightly_memory_maintenance_skipped_paths(
         lock.release()
 
 
-async def test_get_autonomy_activity_counts(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_autonomy_activity_counts(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent._ensure_autonomy_runtime_state = lambda: None
+    current_time = sidar_agent.time.time()
     agent._autonomy_history = [
-        {"trigger_id": "a", "status": "success", "source": "web"},
-        {"trigger_id": "b", "status": "failed", "source": "web"},
-        {"trigger_id": "c", "status": "success", "source": "cron"},
+        {"trigger_id": "old", "status": "success", "source": "cron", "timestamp": current_time - 10000},
+        {"trigger_id": "a", "status": "success", "source": "web", "timestamp": current_time - 3600},
+        {"trigger_id": "b", "status": "failed", "source": "web", "timestamp": current_time - 1800},
     ]
     activity = agent.get_autonomy_activity(2)
     assert activity["total"] == 3
     assert activity["returned"] == 2
-    assert activity["latest_trigger_id"] == "c"
+    assert activity["latest_trigger_id"] == "b"
+    assert [item["trigger_id"] for item in activity["items"]] == ["a", "b"]
 
 
 async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
