@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 import sys
-import time
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
@@ -205,7 +205,7 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
             except sqlalchemy.exc.OperationalError:
                 if attempt == max_retries - 1:
                     pytest.fail("PostgreSQL container başlatılamadı veya hazır değil.")
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
 
         async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
             "postgresql://",
