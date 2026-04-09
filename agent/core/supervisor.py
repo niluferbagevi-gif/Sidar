@@ -125,8 +125,9 @@ class SupervisorAgent(BaseAgent):
                 self.coverage = self.registry.get("coverage")
             except Exception:
                 self.coverage = self.qa
-        except TypeError:
+        except (TypeError, AttributeError):
             # BaseAgent stub'ının object olduğu test ortamlarında alt ajan kurulumunu atla.
+            # Bazı izolasyon testlerinde BaseAgent init'i AttributeError da yükseltebilir.
             self.researcher = None
             self.coder = None
             self.reviewer = None
