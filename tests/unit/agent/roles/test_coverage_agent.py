@@ -31,7 +31,7 @@ def make_agent(tmp_path, code_manager):
     return a
 
 
-def test_init_registers_tools(monkeypatch, tmp_path):
+def test_init_registers_tools(mocker, tmp_path):
     events = []
 
     def fake_base_init(self, cfg=None, role_name="base"):
@@ -43,30 +43,16 @@ def test_init_registers_tools(monkeypatch, tmp_path):
         self.tools[name] = func
         events.append(name)
 
-    class FakeSecurity:
-        def __init__(self, cfg=None):
-            self.cfg = cfg
-
-    class FakeCode:
-        def __init__(self, security, base_dir):
-            self.security = security
-            self.base_dir = base_dir
-
-    managers_pkg = ModuleType("managers")
-    managers_code = ModuleType("managers.code_manager")
-    managers_security = ModuleType("managers.security")
-    managers_code.CodeManager = FakeCode
-    managers_security.SecurityManager = FakeSecurity
-
-    monkeypatch.setitem(sys.modules, "managers", managers_pkg)
-    monkeypatch.setitem(sys.modules, "managers.code_manager", managers_code)
-    monkeypatch.setitem(sys.modules, "managers.security", managers_security)
-    monkeypatch.setattr(_COVERAGE_MODULE.BaseAgent, "__init__", fake_base_init, raising=False)
-    monkeypatch.setattr(_COVERAGE_MODULE.BaseAgent, "register_tool", fake_register_tool, raising=False)
+    security_cls = mocker.patch("managers.security.SecurityManager", autospec=True)
+    code_cls = mocker.patch("managers.code_manager.CodeManager", autospec=True)
+    mocker.patch.object(_COVERAGE_MODULE.BaseAgent, "__init__", side_effect=fake_base_init, autospec=True)
+    mocker.patch.object(_COVERAGE_MODULE.BaseAgent, "register_tool", side_effect=fake_register_tool, autospec=True)
 
     created = CoverageAgent(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert created.role_name == "coverage"
-    assert isinstance(created.code, FakeCode)
+    security_cls.assert_called_once_with(cfg=created.cfg)
+    code_cls.assert_called_once_with(security_cls.return_value, base_dir=created.cfg.BASE_DIR)
+    assert created.code is code_cls.return_value
     assert events == [
         "run_pytest",
         "analyze_pytest_output",
