@@ -29,6 +29,12 @@ class BrokenSetAttrConfig:
         object.__setattr__(self, name, value)
 
 
+async def test_broken_setattr_config_allows_non_extra_attributes():
+    cfg = BrokenSetAttrConfig()
+    cfg.dynamic_value = 42
+    assert cfg.dynamic_value == 42
+
+
 class DummyLLMClient:
     def __init__(self, provider, cfg):
         self.provider = provider
