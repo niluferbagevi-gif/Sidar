@@ -250,14 +250,17 @@ def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(r
     agent.call_tool = fake_call_tool
 
     result = asyncio.run(agent.run_task("initial prompt"))
+    unexpected = asyncio.run(fake_call_tool("fetch_url", "ignored"))
 
     assert result == "web:web:iter-next"
+    assert unexpected == "unexpected"
     assert call_tool_spy == [
         ("web_search", "iter-next"),
         ("web_search", "iter-next"),
         ("web_search", "iter-next"),
         ("web_search", "iter-next"),
         ("web_search", "web:iter-next"),
+        ("fetch_url", "ignored"),
     ]
 
 
