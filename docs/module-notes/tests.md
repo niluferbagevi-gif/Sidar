@@ -1,100 +1,35 @@
 # tests/ klasörü özeti
 
-- **Kapsam:** `tests/` altındaki tüm test dosyaları tek bir notta özetlenmiştir.
-- **Toplam test dosyası:** 93
-- **Not:** Kullanıcı talebi doğrultusunda her test dosyası için ayrı not yerine tek dosya kullanıldı.
+Bu not, **mevcut depo durumunu** (2026-04-09) yansıtır ve eski “coverage push” döneminden kalan
+tek seferlik/geçici dosya adlarını referans almaz.
 
-## Dahil edilen test dosyaları
-- `tests/__init__.py`
-- `tests/conftest.py`
-- `tests/test_agent_and_anthropic_coverage.py`
-- `tests/test_agent_core_components.py`
-- `tests/test_agent_core_lazy_and_base_extra.py`
-- `tests/test_agent_init_improvements.py`
-- `tests/test_agent_subtask.py`
-- `tests/test_anthropic_provider_runtime.py`
-- `tests/test_auto_handle_improvements.py`
-- `tests/test_auto_handle_runtime.py`
-- `tests/test_benchmark.py`
-- `tests/test_claude_md_improvements.py`
-- `tests/test_cli_banner.py`
-- `tests/test_cli_runtime_full.py`
-- `tests/test_cli_runtime_improvements.py`
-- `tests/test_code_manager_improvements.py`
-- `tests/test_code_manager_runtime.py`
-- `tests/test_coder_agent.py`
-- `tests/test_config_env_helpers.py`
-- `tests/test_config_env_profiles.py`
-- `tests/test_config_hardware_runtime.py`
-- `tests/test_config_improvements.py`
-- `tests/test_config_runtime.py`
-- `tests/test_core_init_improvements.py`
-- `tests/test_core_memory.py`
-- `tests/test_core_runtime_focus.py`
-- `tests/test_coverage_final_push.py`
-- `tests/test_coverage_gap_closers.py`
-- `tests/test_coverage_policy.py`
-- `tests/test_db_additional_coverage.py`
-- `tests/test_db_postgresql_branches.py`
-- `tests/test_db_runtime.py`
-- `tests/test_definitions_prompt.py`
-- `tests/test_dockerfile_runtime_improvements.py`
-- `tests/test_event_stream_runtime.py`
-- `tests/test_final_push_runtime.py`
-- `tests/test_github_manager_improvements.py`
-- `tests/test_github_manager_runtime.py`
-- `tests/test_github_upload_improvements.py`
-- `tests/test_github_upload_runtime.py`
-- `tests/test_github_webhook.py`
-- `tests/test_grafana_dashboard_provisioning.py`
-- `tests/test_host_sandbox_installer_assets.py`
-- `tests/test_llm_client_improvements.py`
-- `tests/test_llm_client_retry_helpers.py`
-- `tests/test_llm_client_runtime.py`
-- `tests/test_llm_metrics_runtime.py`
-- `tests/test_main_launcher_improvements.py`
-- `tests/test_main_runtime.py`
-- `tests/test_managers_init_improvements.py`
-- `tests/test_memory_db_runtime.py`
-- `tests/test_memory_improvements.py`
-- `tests/test_memory_runtime_extended.py`
-- `tests/test_migration_assets.py`
-- `tests/test_migration_ci_guards.py`
-- `tests/test_missing_edge_case_coverage.py`
-- `tests/test_missing_edge_case_coverage_final.py`
-- `tests/test_package_info_extended.py`
-- `tests/test_package_info_improvements.py`
-- `tests/test_package_info_runtime.py`
-- `tests/test_parallel_react_improvements.py`
-- `tests/test_quality_tooling_config.py`
-- `tests/test_quick_100.py`
-- `tests/test_quick_coverage_push.py`
-- `tests/test_rag_improvements.py`
-- `tests/test_rag_runtime_extended.py`
-- `tests/test_rag_ultimate_edge_cases.py`
-- `tests/test_release_version_bump.py`
-- `tests/test_researcher_agent.py`
-- `tests/test_reviewer_agent.py`
-- `tests/test_runtime_gap_closers.py`
-- `tests/test_sandbox_runtime_profiles.py`
-- `tests/test_security_improvements.py`
-- `tests/test_security_level_transition.py`
-- `tests/test_sidar.py`
-- `tests/test_sidar_agent_runtime.py`
-- `tests/test_sidar_improvements.py`
-- `tests/test_sidar_md_improvements.py`
-- `tests/test_supervisor_agent.py`
-- `tests/test_system_health_improvements.py`
-- `tests/test_system_health_runtime.py`
-- `tests/test_targeted_coverage_additions.py`
-- `tests/test_todo_manager_improvements.py`
-- `tests/test_todo_manager_runtime.py`
-- `tests/test_tooling_registry.py`
-- `tests/test_tooling_runtime.py`
-- `tests/test_ultimate_coverage.py`
-- `tests/test_web_search_improvements.py`
-- `tests/test_web_search_runtime.py`
-- `tests/test_web_server_improvements.py`
-- `tests/test_web_server_runtime.py`
-- `tests/test_web_ui_runtime_improvements.py`
-- `tests/test_web_ui_security_improvements.py`
+## Güncel metrikler
+
+- `test_*.py` desenine uyan toplam test dosyası: **90**
+- Katman dağılımı:
+  - `tests/unit`: **77**
+  - `tests/integration`: **7**
+  - `tests/quality`: **2**
+  - `tests/smoke`: **2**
+  - `tests/e2e`: **1**
+  - `tests/performance`: **1**
+
+## Mimari kural: anti-fragmentation
+
+- Test dosyaları modül bazlı isimlendirilir: `tests/unit/<modul>/test_<davranis>.py`
+- Geçici/acele coverage dosyaları (`test_quick_*`, `test_*_improvements`, `test_*_runtime` gibi)
+  kalıcı test mimarisine dahil edilmez.
+- Aynı modül için tekrar eden test dosyaları yerine tek odaklı dosya kullanılır.
+
+## Sidar agent özel notu
+
+- Sidar davranış testleri tek bir dosyada toplanmıştır:
+  - `tests/unit/agent/test_sidar_agent.py`
+- Eski parçalı adlandırma örnekleri (`test_sidar.py`, `test_sidar_improvements.py`,
+  `test_sidar_md_improvements.py`, `test_sidar_agent_runtime.py`) güncel test ağacında yoktur.
+
+## Operasyonel takip
+
+- Bu doküman sprint başında test ağacından yeniden üretilmeli/güncellenmelidir.
+- Yeni test eklerken önce modül klasörü belirlenmeli, sonra mevcut dosyaya genişletme
+  mümkünse yeni dosya açılmamalıdır.

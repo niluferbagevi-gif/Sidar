@@ -45,6 +45,17 @@ Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
 - `tests/integration/<modul>/test_<akis>.py`
 - Ortak fixture: `tests/conftest.py`
 
+Parçalanmayı önleme kuralları (zorunlu):
+- Aynı modül için `test_*_improvements.py`, `test_*_runtime.py`, `test_quick_*` benzeri
+  ad-hoc dosyalar açılmamalıdır.
+- Mevcut bir modül dosyası varken yeni testler önce o dosyaya eklenmeli; sadece açık bir
+  sorumluluk ayrımı varsa ikinci dosya açılmalıdır.
+- Geçici coverage artırma dosyaları kalıcı hale getirilmeden önce modül bazlı dosyaya
+  taşınmalı ve eski dosya silinmelidir.
+
+> Uygulama notu (2026-04-09): `sidar_agent` testleri tekilleştirilmiş yapı olarak
+> `tests/unit/agent/test_sidar_agent.py` altında tutulur.
+
 ---
 
 ## 1) Stratejik Hedefler
