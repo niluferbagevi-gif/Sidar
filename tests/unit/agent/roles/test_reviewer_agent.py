@@ -632,3 +632,14 @@ def test_run_task_decision_branches(reviewer):
     res4 = asyncio.run(reviewer.run_task("review_code|ctx"))
     data4 = json.loads(res4.payload.split("qa_feedback|", 1)[1])
     assert data4["risk"] == "orta"
+
+
+def test_build_dynamic_test_content_with_fake_llm_response(reviewer, fake_llm_response):
+    async def _reviewer_llm(*_args, **_kwargs):
+        _ = await fake_llm_response("reviewer")
+        return "def test_generated_reviewer_case():\n    assert True\n"
+
+    reviewer.call_llm = _reviewer_llm
+    dynamic_test = asyncio.run(reviewer._build_dynamic_test_content("diff --git a/x.py b/x.py"))
+    assert "def test_generated_reviewer_case" in dynamic_test
+

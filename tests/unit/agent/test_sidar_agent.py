@@ -1458,3 +1458,45 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     loaded = agent._load_instruction_files()
     assert "SIDAR.md" in loaded
     assert "Talimat" in loaded
+
+
+@pytest.mark.asyncio
+async def test_respond_critical_flow_uses_shared_fixtures(
+    agent_factory,
+    fake_llm_response,
+    fake_event_stream,
+) -> None:
+    agent = agent_factory(sidar_agent.SidarAgent)
+    agent.initialize = AsyncMock()
+    agent._memory_add = AsyncMock()
+
+    async def _fake_multi(user_input: str) -> str:
+        llm_payload = await fake_llm_response(user_input)
+        last_event = ""
+        async for event in fake_event_stream():
+            last_event = event.message
+        return f"{llm_payload['content']}::{last_event}"
+
+    agent._try_multi_agent = AsyncMock(side_effect=_fake_multi)
+
+    chunks = [chunk async for chunk in agent.respond("kritik akış testi")]
+
+    assert len(chunks) == 1
+    assert "mock-response" in chunks[0]
+    assert "İşlem tamam." in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_llm_error_flow_raises_runtime_error(
+    agent_factory,
+    fake_llm_error,
+    fake_event_stream,
+) -> None:
+    _ = fake_event_stream
+    agent = agent_factory(sidar_agent.SidarAgent)
+    agent.initialize = AsyncMock()
+    agent._try_multi_agent = AsyncMock(side_effect=fake_llm_error)
+
+    with pytest.raises(RuntimeError, match="rate limit exceeded"):
+        _chunks = [chunk async for chunk in agent.respond("hata tetikle")]
+

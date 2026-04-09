@@ -6,6 +6,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -628,3 +629,75 @@ def test_poyraz_output_format(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._generate_marketing_output("test", "seo"))
     assert "seo" in result
+
+
+@pytest.mark.asyncio
+async def test_social_and_video_flows_use_shared_fakes(
+    fake_social_api,
+    fake_video_stream,
+    monkeypatch,
+    agent_factory,
+) -> None:
+    from agent.roles.poyraz_agent import PoyrazAgent
+
+    agent = agent_factory(PoyrazAgent)
+    agent.social = fake_social_api
+    agent.docs = SimpleNamespace()
+    agent.llm = object()
+    agent.cfg = SimpleNamespace()
+
+    agent.social.publish_content = AsyncMock(return_value=(True, {"id": "post-1"}))
+    social_result = await agent._tool_publish_social("instagram|||Merhaba dünya|||sidar")
+    assert "[SOCIAL:PUBLISHED]" in social_result
+
+    class _FakePipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.stream = fake_video_stream
+
+        async def analyze_media_source(self, **_kwargs):
+            frames = await self.stream.read_frames()
+            return {
+                "success": True,
+                "scene_summary": f"frames={len(frames)}",
+                "document_ingest": {"doc_id": "doc-123"},
+            }
+
+    monkeypatch.setattr("agent.roles.poyraz_agent.MultimodalPipeline", _FakePipeline)
+    ingested = await agent._tool_ingest_video_insights("https://video.example/test.mp4|||ürün analizi")
+    assert "[VIDEO:INGESTED]" in ingested
+    assert "doc-123" in ingested
+
+
+@pytest.mark.asyncio
+async def test_poyraz_agent_error_flows(
+    agent_factory,
+    fake_social_api,
+    fake_video_stream_error,
+    monkeypatch,
+) -> None:
+    from agent.roles.poyraz_agent import PoyrazAgent
+
+    agent = agent_factory(PoyrazAgent)
+    agent.social = fake_social_api
+    agent.docs = SimpleNamespace()
+    agent.llm = object()
+    agent.cfg = SimpleNamespace()
+
+    agent.social.set_rate_limit_error()
+    agent.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))
+
+    with pytest.raises(RuntimeError, match="API Rate Limit"):
+        await agent._tool_publish_social("instagram|||hata testi|||sidar")
+
+    class _FakeErrorPipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.stream = fake_video_stream_error
+
+        async def analyze_media_source(self, **_kwargs):
+            await self.stream.read_frames()
+
+    monkeypatch.setattr("agent.roles.poyraz_agent.MultimodalPipeline", _FakeErrorPipeline)
+
+    with pytest.raises(RuntimeError, match="corrupted video stream"):
+        await agent._tool_ingest_video_insights("https://video.example/broken.mp4|||analiz")
+

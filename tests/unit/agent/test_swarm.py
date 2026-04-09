@@ -789,3 +789,23 @@ def test_execute_task_sets_reply_to_and_skips_feedback_for_non_success(monkeypat
     result = __import__("asyncio").run(orch2._execute_task(SwarmTask(goal="x", intent="code")))
     assert result.status == "failed"
     assert called["scheduled"] is False
+
+
+def test_execute_task_isolated_success_path(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="researcher", capabilities=["web_search"])
+
+    class _RunTaskAgent:
+        async def run_task(self, _goal: str) -> str:
+            return "isolated-ok"
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_args, **_kwargs: _RunTaskAgent())
+
+    result = __import__("asyncio").run(
+        orchestrator._execute_task(SwarmTask(goal="araştır", intent="research"), session_id="s-1")
+    )
+
+    assert result.status == "success"
+    assert result.summary == "isolated-ok"
+

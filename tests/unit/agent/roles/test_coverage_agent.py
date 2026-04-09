@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -553,3 +554,45 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tm
     assert data["coverage_xml"]["summary"] == "coverage.xml ayrıştırılamadı."
     assert data["coverage_terminal"]["total_findings"] == 1
     assert data["findings"][0]["target_path"] == "src/app.py"
+
+
+@pytest.mark.asyncio
+async def test_run_task_returns_pending_approval_status(tmp_path, monkeypatch, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    async def _coverage_llm(*_args, **_kwargs):
+        return "# mock-response:coverage\ndef test_generated_coverage_case():\n    assert 1 == 1\n"
+
+    agent.call_llm = _coverage_llm
+
+    generated = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {
+                    "target_path": "core/vision.py",
+                    "missing_lines": [10, 11],
+                },
+                "coveragerc": {"fail_under": 90},
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        agent.code,
+        "run_pytest_and_collect",
+        lambda *_args, **_kwargs: {
+            "analysis": {
+                "summary": "coverage gap",
+                "findings": [{"target_path": "core/vision.py", "summary": "line gaps"}],
+            },
+            "output": "pytest output",
+        },
+    )
+    monkeypatch.setattr(agent, "_generate_test_candidate", AsyncMock(return_value=generated))
+    monkeypatch.setattr(agent.code, "write_generated_test", lambda *_args, **_kwargs: (True, "ok"))
+    monkeypatch.setattr(agent, "_record_task", AsyncMock(return_value=None))
+
+    run_task_payload = json.loads(await agent.run_task("pytest --cov=. --cov-report=xml"))
+    assert run_task_payload["approval_status"] == "pending_reviewer_or_human"
+    assert run_task_payload["is_approved"] is False
+

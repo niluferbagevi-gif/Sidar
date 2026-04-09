@@ -503,3 +503,26 @@ def test_clean_html_docs_stackoverflow_and_helpers(monkeypatch):
     assert m._is_actionable_result(True, marked) is False
     assert m._normalize_result_text(marked) == "n"
     assert m._normalize_result_text("plain") == "plain"
+
+
+def test_web_search_manager_isolated(monkeypatch):
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
+    web = WebSearchManager(
+        SimpleNamespace(
+            SEARCH_ENGINE="tavily",
+            TAVILY_API_KEY="test-key",
+            GOOGLE_SEARCH_API_KEY="",
+            GOOGLE_SEARCH_CX="",
+            WEB_SEARCH_MAX_RESULTS=5,
+            WEB_FETCH_TIMEOUT=5,
+            WEB_SCRAPE_MAX_CHARS=1000,
+        )
+    )
+
+    async def _fake_tavily(_query, _n):
+        return True, "web-ok"
+
+    web._search_tavily = _fake_tavily
+    ok, text = run(web.search("sidar"))
+    assert ok is True and text == "web-ok"
+

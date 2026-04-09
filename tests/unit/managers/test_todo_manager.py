@@ -228,3 +228,9 @@ def test_scan_project_todos_ignores_file_read_errors(manager: TodoManager, tmp_p
     monkeypatch.setattr(Path, "read_text", _read_text)
     msg = manager.scan_project_todos(extensions=[".py"])
     assert "TODO veya FIXME" in msg
+
+
+def test_todo_manager_isolated(tmp_path):
+    todo = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
+    assert "eklendi" in todo.add_task("kritik test görevi")
+

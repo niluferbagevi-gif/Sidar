@@ -603,3 +603,21 @@ def test_full_report_gpu_line_optional_fields(monkeypatch):
     report2 = manager.full_report()
     assert "%77 GPU" in report2
     assert metrics["gpu_utilization_pct"] == 77
+
+
+def test_get_health_summary_isolated(monkeypatch):
+    health_cfg = SimpleNamespace(
+        ENABLE_DEPENDENCY_HEALTHCHECKS=True,
+        REDIS_URL="",
+        DATABASE_URL="",
+        HEALTHCHECK_CONNECT_TIMEOUT_MS=50,
+    )
+    health = SystemHealthManager(cfg=health_cfg)
+    monkeypatch.setattr(health, "get_cpu_usage", lambda interval=None: 12.5)
+    monkeypatch.setattr(health, "get_memory_info", lambda: {"percent": 34.0})
+    monkeypatch.setattr(health, "get_gpu_info", lambda: {"available": False})
+    monkeypatch.setattr(health, "check_ollama", lambda: True)
+    summary = health.get_health_summary()
+    assert summary["status"] in {"healthy", "degraded"}
+    assert "dependencies" in summary
+
