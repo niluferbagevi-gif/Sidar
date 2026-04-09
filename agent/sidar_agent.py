@@ -911,6 +911,19 @@ class SidarAgent:
             SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
             self._supervisor = SupervisorAgent(self.cfg)
             self._supervisor.llm = self.llm
+
+            # Supervisor altında açılan role-agent'ların, üst ajanın paylaşılan
+            # kaynak yöneticilerini (özellikle web arama yöneticisini) kullanmasını sağla.
+            # Böylece testlerde class-level monkeypatch edilen async mock'lar,
+            # beklenen örnek üzerinden doğrulanabilir ve çalışma zamanı davranışı
+            # tekil manager örneği etrafında deterministik kalır.
+            researcher = getattr(self._supervisor, "researcher", None)
+            if researcher is not None:
+                if hasattr(researcher, "web"):
+                    researcher.web = self.web
+                if hasattr(researcher, "docs"):
+                    researcher.docs = self.docs
+
             for role_name in ("researcher", "coder", "reviewer", "poyraz", "qa", "coverage"):
                 role_agent = getattr(self._supervisor, role_name, None)
                 if role_agent is not None and hasattr(role_agent, "llm"):
