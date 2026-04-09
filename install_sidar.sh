@@ -153,8 +153,13 @@ setup_uv() {
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
-    REQ_FILE="$SCRIPT_DIR/requirements.txt"
-    [[ -f "$REQ_FILE" ]] || fail "requirements.txt bulunamadı: $REQ_FILE"
+    cd "$SCRIPT_DIR"
+
+    # pyproject.toml tek doğruluk kaynağıdır.
+    INSTALL_SPEC=(-e .)
+    if [[ "$INSTALL_DEV" == true ]]; then
+        INSTALL_SPEC=(-e ".[dev]")
+    fi
 
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         # CUDA major version'ı belirle (örn. 13.2 → cu130)
@@ -168,29 +173,25 @@ install_python_deps() {
         else TORCH_CU=""
         fi
 
+        info "GPU tespit edildi — pyproject extras [rag,gpu] kurulacak."
+        if [[ "$INSTALL_DEV" == true ]]; then
+            INSTALL_SPEC=(-e ".[dev,rag,gpu]")
+        else
+            INSTALL_SPEC=(-e ".[rag,gpu]")
+        fi
+
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
             uv pip install \
                 --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
-                -r "$REQ_FILE"
+                "${INSTALL_SPEC[@]}"
         else
             warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — PyPI'dan kuruluyor."
-            uv pip install -r "$REQ_FILE"
+            uv pip install "${INSTALL_SPEC[@]}"
         fi
     else
-        info "CPU modu — requirements.txt'ten kuruluyor..."
-        uv pip install -r "$REQ_FILE"
-    fi
-
-    if [[ "$INSTALL_DEV" == true ]]; then
-        DEV_REQ_FILE="$SCRIPT_DIR/requirements-dev.txt"
-        if [[ -f "$DEV_REQ_FILE" ]]; then
-            info "Geliştirici bağımlılıkları kuruluyor..."
-            uv pip install -r "$DEV_REQ_FILE"
-            ok "Geliştirici bağımlılıkları kuruldu."
-        else
-            warn "requirements-dev.txt bulunamadı — dev kurulumu atlandı."
-        fi
+        info "CPU modu — pyproject üzerinden temel bağımlılıklar kuruluyor."
+        uv pip install "${INSTALL_SPEC[@]}"
     fi
 
     ok "Python bağımlılıkları kuruldu."
