@@ -12,6 +12,8 @@ def _load_cli_module_with_stubbed_agent(monkeypatch):
         def __init__(self, *_args, **_kwargs):
             raise RuntimeError("test should monkeypatch SidarAgent before use")
 
+    with pytest.raises(RuntimeError, match="test should monkeypatch SidarAgent before use"):
+        _ImportStubAgent()
     fake_agent_module.SidarAgent = _ImportStubAgent
     monkeypatch.setitem(sys.modules, "agent.sidar_agent", fake_agent_module)
 
