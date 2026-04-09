@@ -118,12 +118,17 @@ async def test_build_trigger_prompt_formats_federation_and_action_feedback(sidar
     assert "status=completed" in action_prompt
 
 
-async def test_build_trigger_correlation_matches_history_without_duplicate_ids(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_correlation_matches_history_without_duplicate_ids(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
+    now = sidar_agent.time.time()
     agent._autonomy_history = [
-        {"trigger_id": "trig-1", "status": "success", "source": "github", "payload": {"task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}},
-        {"trigger_id": "trig-1", "status": "success", "source": "github", "payload": {"task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}},
-        {"trigger_id": "trig-2", "status": "failed", "source": "jira", "payload": {"related_task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}},
+        {"trigger_id": "trig-1", "status": "success", "source": "github", "payload": {"task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}, "timestamp": now - 120},
+        {"trigger_id": "trig-1", "status": "success", "source": "github", "payload": {"task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}, "timestamp": now - 60},
+        {"trigger_id": "trig-2", "status": "failed", "source": "jira", "payload": {"related_task_id": "task-100"}, "correlation": {"correlation_id": "corr-100"}, "meta": {}, "timestamp": now - 10},
     ]
     agent._autonomy_lock = None
 
@@ -355,7 +360,7 @@ async def test_status_renders_all_sections(sidar_agent_factory, monkeypatch: pyt
     memory = Mock()
     memory.__len__ = Mock(return_value=3)
     agent.memory = memory
-    agent._autonomy_history = [{"id": 1}]
+    agent._autonomy_history = [{"id": 1, "timestamp": sidar_agent.time.time()}]
     agent._ensure_autonomy_runtime_state = lambda: None
     agent.github = types.SimpleNamespace(status=lambda: "github")
     agent.web = types.SimpleNamespace(status=lambda: "web")
@@ -480,7 +485,8 @@ async def test_respond_memory_failure_graceful(sidar_agent_factory) -> None:
 
 async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
-    agent._autonomy_history = [{"i": i} for i in range(60)]
+    base = sidar_agent.time.time()
+    agent._autonomy_history = [{"i": i, "timestamp": base - (60 - i)} for i in range(60)]
     agent._autonomy_lock = None
     await agent._append_autonomy_history({"i": 999})
     assert len(agent._autonomy_history) == 50
@@ -821,11 +827,16 @@ async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factor
     assert prompt == "PRESET"
 
 
-async def test_build_trigger_correlation_matches_related_ids(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_correlation_matches_related_ids(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
+    now = sidar_agent.time.time()
     agent._autonomy_history = [
-        {"trigger_id": "t-old", "status": "success", "source": "cron", "payload": {"task_id": "T"}, "meta": {}},
-        {"trigger_id": "t-rel", "status": "failed", "source": "api", "payload": {}, "meta": {}},
+        {"trigger_id": "t-old", "status": "success", "source": "cron", "payload": {"task_id": "T"}, "meta": {}, "timestamp": now - 180},
+        {"trigger_id": "t-rel", "status": "failed", "source": "api", "payload": {}, "meta": {}, "timestamp": now - 30},
     ]
     agent._autonomy_lock = None
     trigger = ExternalTrigger(trigger_id="t-new", source="api", event_name="e", payload={}, meta={})
@@ -1317,7 +1328,7 @@ async def test_respond_and_append_history_with_existing_locks(sidar_agent_factor
     # _append_autonomy_history(): existing lock branch
     agent._autonomy_history = []
     agent._autonomy_lock = asyncio.Lock()
-    await agent._append_autonomy_history({"x": 1})
+    await agent._append_autonomy_history({"x": 1, "timestamp": sidar_agent.time.time()})
 
 
 async def test_execute_self_heal_plan_applied_with_existing_backup(sidar_agent_factory, tmp_path: Path) -> None:
@@ -1371,7 +1382,7 @@ async def test_handle_external_trigger_instance_path_and_correlation_loop(sidar_
     out = await agent.handle_external_trigger(trigger)
     assert out["status"] == "success"
 
-    agent._autonomy_history = [{"trigger_id": "x", "payload": {}}]
+    agent._autonomy_history = [{"trigger_id": "x", "payload": {}, "timestamp": sidar_agent.time.time()}]
     agent._autonomy_lock = None
     corr = agent._build_trigger_correlation(trigger, {})
     assert corr["matched_records"] == 0
