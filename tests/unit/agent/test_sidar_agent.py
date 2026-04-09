@@ -1,7 +1,7 @@
 import types
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, create_autospec
+from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
 import pytest
 
@@ -362,6 +362,16 @@ async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_ag
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (True, "   "))
     empty_msg = await agent._tool_docs_search("query")
     assert "boş yanıt" in empty_msg
+
+
+async def test_execute_tool_routes_to_handler_and_handles_unknown_tool(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (True, "found"))
+
+    assert await agent._execute_tool("docs_search", "hello") == "found"
+
+    with pytest.raises(ValueError, match="Bilinmeyen araç"):
+        await agent._execute_tool("not_real_tool", "arg")
 
 
 async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1054,9 +1064,9 @@ async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, m
     _override_cfg(agent, SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     agent.llm = AsyncMock(chat=AsyncMock(side_effect=[{"not": "string"}, '{"tool":"x","argument":"a","thought":"t"}']))
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail-tool"))
-
-    output = await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.side_effect = RuntimeError("fail-tool")
+        output = await agent._tool_subtask("job")
     assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
 
 
@@ -1404,8 +1414,9 @@ async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monk
     )
 
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
-    out = await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.side_effect = RuntimeError("tool-boom")
+        out = await agent._tool_subtask("job")
     assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert any(call[3] == "failed" for call in metrics_calls)
 
@@ -1551,8 +1562,9 @@ async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_fa
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
 
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-boom"))
-    out = await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.side_effect = RuntimeError("tool-boom")
+        out = await agent._tool_subtask("job")
     assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert any(call[3] == "failed" for call in metrics_calls)
 
@@ -1602,8 +1614,9 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
 
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
-    agent._execute_tool = AsyncMock(return_value="ok")
-    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.return_value = "ok"
+        assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
     # generic exception branch with metrics enabled (1125-1137)
     calls = []
@@ -1613,8 +1626,9 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
         lambda: types.SimpleNamespace(record_step=lambda *a: calls.append(a)),
     )
 
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool-fail"))
-    out = await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.side_effect = RuntimeError("tool-fail")
+        out = await agent._tool_subtask("job")
     assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
     assert any(c[3] == "failed" for c in calls)
 
@@ -1632,8 +1646,9 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
 
     agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
-    agent._execute_tool = AsyncMock(side_effect=RuntimeError("fail"))
-    assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
+        execute_tool_mock.side_effect = RuntimeError("fail")
+        assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
 
 async def test_load_instruction_files_handles_string_candidates(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

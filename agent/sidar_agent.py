@@ -1181,6 +1181,23 @@ class SidarAgent:
             return "ℹ Doküman araması boş yanıt döndürdü."
         return text
 
+    async def _execute_tool(self, tool: str, argument: str) -> str:
+        normalized_tool = str(tool or "").strip().lower()
+        if not normalized_tool:
+            raise ValueError("Araç adı boş olamaz.")
+
+        handler_name = f"_tool_{normalized_tool}"
+        handler = getattr(self, handler_name, None)
+        if handler is None:
+            raise ValueError(f"Bilinmeyen araç: {normalized_tool}")
+        if not callable(handler):
+            raise TypeError(f"Araç işleyicisi çağrılabilir değil: {handler_name}")
+
+        result = handler(argument)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return str(result)
+
     async def _tool_subtask(self, arg: str) -> str:
         task = (arg or "").strip()
         if not task:
