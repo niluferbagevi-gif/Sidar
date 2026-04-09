@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 import sys
 import time
@@ -12,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import fakeredis
 import pytest
+import pytest_asyncio
 import sqlalchemy
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
@@ -156,8 +156,8 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
         await engine.dispose()
 
 
-@pytest.fixture
-def sqlite_db(tmp_path, request):
+@pytest_asyncio.fixture
+async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
     cfg = SimpleNamespace(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",
         BASE_DIR=str(tmp_path),
@@ -169,14 +169,13 @@ def sqlite_db(tmp_path, request):
         JWT_TTL_DAYS=3,
     )
     db = Database(cfg)
-    asyncio.run(db.connect())
-    asyncio.run(db.init_schema())
+    await db.connect()
+    await db.init_schema()
 
-    def _close():
-        asyncio.run(db.close())
-
-    request.addfinalizer(_close)
-    return db
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 @pytest.fixture
