@@ -32,6 +32,12 @@ class _StubAgentCatalog:
         return _decorator
 
 
+def test_stub_base_agent_call_tool_returns_error_for_unknown_tool():
+    agent = _StubBaseAgent()
+    result = asyncio.run(agent.call_tool("unknown_tool", "payload"))
+    assert result.startswith("[HATA]")
+
+
 class DummyWebSearchManager:
     def __init__(self, cfg):
         self.cfg = cfg
