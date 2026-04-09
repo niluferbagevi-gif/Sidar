@@ -386,3 +386,17 @@ async def test_postgresql_adapter_disconnect_path() -> None:
 
     with pytest.raises(ConnectionError):
         await db.update_session_title("s1", "updated")
+
+
+@pytest.mark.asyncio
+async def test_postgresql_adapter_conflict_and_close_path() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    fake_pg.set_conflict_error()
+    db._pg_pool = fake_pg
+
+    with pytest.raises(RuntimeError, match="conflict"):
+        await db.update_session_title("s1", "updated")
+
+    await db.close()
+    assert fake_pg.closed is True
