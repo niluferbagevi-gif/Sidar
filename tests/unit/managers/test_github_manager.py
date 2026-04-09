@@ -7,152 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from managers.github_manager import GitHubManager, _is_not_found_error
-
-
-class _Err404(Exception):
-    status = 404
-
-
-class _File:
-    def __init__(self, name, file_type="file", decoded_content=b"hello", sha="sha1", patch="@@"):
-        self.name = name
-        self.type = file_type
-        self.decoded_content = decoded_content
-        self.sha = sha
-        self.patch = patch
-        self.filename = name
-        self.status = "modified"
-        self.additions = 3
-        self.deletions = 1
-
-
-class _Issue:
-    def __init__(self, number=1, title="Issue", state="open", user="u", created=None, is_pr=False):
-        self.number = number
-        self.title = title
-        self.state = state
-        self.user = SimpleNamespace(login=user)
-        self.created_at = created or datetime(2026, 1, 1, 10, 0)
-        self.pull_request = object() if is_pr else None
-        self.comments = []
-        self.edited_state = None
-
-    def create_comment(self, body):
-        self.comments.append(body)
-        return SimpleNamespace(html_url="https://example/comment/1")
-
-    def edit(self, state):
-        self.edited_state = state
-
-
-class _Repo:
-    def __init__(self):
-        self.full_name = "octo/demo"
-        self.description = "Demo"
-        self.language = "Python"
-        self.stargazers_count = 10
-        self.forks_count = 2
-        self.default_branch = "main"
-        self._pulls = []
-        self._issues = []
-        self._contents = {}
-        self.update_calls = []
-        self.create_calls = []
-
-    def get_pulls(self, **kwargs):
-        if kwargs.get("state") == "open" and "sort" not in kwargs:
-            return SimpleNamespace(totalCount=7)
-        return self._pulls
-
-    def get_issues(self, **kwargs):
-        return self._issues
-
-    def get_commits(self, **kwargs):
-        if kwargs.get("raise_exc"):
-            raise RuntimeError("commit boom")
-        mk = lambda i: SimpleNamespace(
-            sha=f"abcdef{i}",
-            commit=SimpleNamespace(
-                message=f"msg-{i}\nbody",
-                author=SimpleNamespace(name=f"a{i}", date=datetime(2026, 1, i, 9, 0)),
-            ),
-        )
-        return [mk(i) for i in range(1, 6)]
-
-    def get_contents(self, path, **kwargs):
-        key = (path, kwargs.get("ref") or kwargs.get("branch"))
-        value = self._contents.get(key, self._contents.get((path, None)))
-        if isinstance(value, Exception):
-            raise value
-        if value is None:
-            raise RuntimeError("missing")
-        return value
-
-    def update_file(self, **kwargs):
-        self.update_calls.append(kwargs)
-
-    def create_file(self, **kwargs):
-        self.create_calls.append(kwargs)
-
-    def get_branch(self, name):
-        if name == "boom":
-            raise RuntimeError("branch boom")
-        return SimpleNamespace(commit=SimpleNamespace(sha="base123"))
-
-    def create_git_ref(self, **kwargs):
-        self.git_ref_call = kwargs
-
-    def create_pull(self, **kwargs):
-        if kwargs.get("title") == "boom":
-            raise RuntimeError("pr boom")
-        return SimpleNamespace(title=kwargs["title"], html_url="https://example/pr/1", number=1)
-
-    def get_pull(self, number):
-        if number == 999:
-            raise RuntimeError("no pr")
-        return self._pulls[0]
-
-    def get_issue(self, number=None):
-        if number == 999:
-            raise RuntimeError("no issue")
-        return self._issues[0]
-
-    def create_issue(self, title, body):
-        if title == "boom":
-            raise RuntimeError("create issue boom")
-        return SimpleNamespace(number=9, title=title)
-
-    def get_branches(self):
-        return [SimpleNamespace(name="dev"), SimpleNamespace(name="main")]
-
-
-class _PR:
-    def __init__(self, many_files=False):
-        self.number = 5
-        self.title = "Fix bug"
-        self.state = "open"
-        self.user = SimpleNamespace(login="alice")
-        self.head = SimpleNamespace(ref="feature")
-        self.base = SimpleNamespace(ref="main")
-        self.created_at = datetime(2026, 1, 2, 10, 0)
-        self.updated_at = datetime(2026, 1, 3, 11, 0)
-        self.additions = 12
-        self.deletions = 3
-        self.changed_files = 2
-        self.comments = 1
-        self.html_url = "https://example/pr/5"
-        self.body = "details"
-        if many_files:
-            self._files = [_File(f"f{i}.py") for i in range(25)]
-        else:
-            self._files = [_File("a.py", patch="@@ -1 +1 @@"), _File("b.bin", patch=None)]
-        self.edits = []
-
-    def get_files(self):
-        return self._files
-
-    def edit(self, state):
-        self.edits.append(state)
+from tests.fixtures.github_mocks import Err404, FileMock, IssueMock, PRMock, RepoMock
 
 
 @pytest.fixture
@@ -161,12 +16,12 @@ def manager(monkeypatch):
     m = GitHubManager(token=" token\u00f6 ", repo_name="", require_token=False)
     m._available = True
     m._gh = SimpleNamespace()
-    m._repo = _Repo()
+    m._repo = RepoMock()
     return m
 
 
 def test_is_not_found_error_variants():
-    assert _is_not_found_error(_Err404("x")) is True
+    assert _is_not_found_error(Err404("x")) is True
     assert _is_not_found_error(RuntimeError("404 gone")) is True
     assert _is_not_found_error(RuntimeError("Not Found")) is True
     assert _is_not_found_error(RuntimeError("boom")) is False
@@ -261,16 +116,33 @@ def test_list_commits_and_read_remote_file(manager):
     assert ok is True and "Son 2 Commit" in text
     manager._repo.get_commits = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.list_commits()[0] is False
-    manager._repo = _Repo()
+    manager._repo = RepoMock()
     manager._repo._contents[("dir", None)] = [SimpleNamespace(type="dir", name="src"), SimpleNamespace(type="file", name="a.py")]
     ok, text = manager.read_remote_file("dir")
     assert ok is True and "📂 src" in text
-    manager._repo._contents[("bad.bin", None)] = _File("bad.bin")
+    manager._repo._contents[("bad.bin", None)] = FileMock("bad.bin")
     assert manager.read_remote_file("bad.bin")[0] is False
-    manager._repo._contents[("Makefile", None)] = _File("Makefile", decoded_content=b"all:\n")
+    manager._repo._contents[("Makefile", None)] = FileMock("Makefile", decoded_content=b"all:\n")
     assert manager.read_remote_file("Makefile") == (True, "all:\n")
-    manager._repo._contents[("NOEXT", None)] = _File("NOEXT")
+    manager._repo._contents[("NOEXT", None)] = FileMock("NOEXT")
     assert manager.read_remote_file("NOEXT")[0] is False
+
+
+def test_list_commits_handles_large_volume(manager):
+    manager._repo.get_commits = lambda **kwargs: [
+        SimpleNamespace(
+            sha=str(i),
+            commit=SimpleNamespace(
+                message="msg",
+                author=SimpleNamespace(name="a", date=datetime.now()),
+            ),
+        )
+        for i in range(150)
+    ]
+    ok, text = manager.list_commits(limit=50, branch="main")
+    assert ok is True
+    commit_lines = [line for line in text.splitlines() if line.startswith("  ")]
+    assert len(commit_lines) == 50
 
 
 def test_read_remote_file_decode_and_exception_paths(manager):
@@ -288,7 +160,7 @@ def test_read_remote_file_decode_and_exception_paths(manager):
 
 
 def test_read_remote_file_with_ref_kwarg(manager):
-    manager._repo._contents[("ok.txt", "feat/x")] = _File("ok.txt", decoded_content=b"hello ref")
+    manager._repo._contents[("ok.txt", "feat/x")] = FileMock("ok.txt", decoded_content=b"hello ref")
     ok, content = manager.read_remote_file("ok.txt", ref="feat/x")
     assert (ok, content) == (True, "hello ref")
 
@@ -298,7 +170,7 @@ def test_branches_and_files_listing(manager):
     assert ok is True and "* main" in text
     manager._repo.get_branches = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.list_branches()[0] is False
-    manager._repo = _Repo()
+    manager._repo = RepoMock()
     manager._repo._contents[("", None)] = [SimpleNamespace(type="file", name="z.py"), SimpleNamespace(type="dir", name="a")]
     ok, text = manager.list_files()
     assert ok is True and text.splitlines()[1].endswith("a")
@@ -307,16 +179,16 @@ def test_branches_and_files_listing(manager):
 
 
 def test_list_files_branch_and_single_item(manager):
-    manager._repo._contents[("README.md", "dev")] = _File("README.md")
+    manager._repo._contents[("README.md", "dev")] = FileMock("README.md")
     ok, text = manager.list_files(path="README.md", branch="dev")
     assert ok is True and "README.md" in text
 
 
 def test_create_or_update_file_paths(manager):
-    manager._repo._contents[("x.txt", None)] = _File("x.txt", sha="s1")
+    manager._repo._contents[("x.txt", None)] = FileMock("x.txt", sha="s1")
     ok, msg = manager.create_or_update_file("x.txt", "new", "m")
     assert ok is True and "güncellendi" in msg and manager._repo.update_calls
-    manager._repo._contents[("y.txt", None)] = _Err404("no")
+    manager._repo._contents[("y.txt", None)] = Err404("no")
     ok, msg = manager.create_or_update_file("y.txt", "new", "m", branch="dev")
     assert ok is True and "oluşturuldu" in msg and manager._repo.create_calls[-1]["branch"] == "dev"
     manager._repo._contents[("z.txt", None)] = RuntimeError("other")
@@ -324,7 +196,7 @@ def test_create_or_update_file_paths(manager):
 
 
 def test_create_or_update_file_write_exception(manager):
-    manager._repo._contents[("x.txt", None)] = _File("x.txt", sha="s1")
+    manager._repo._contents[("x.txt", None)] = FileMock("x.txt", sha="s1")
     manager._repo.update_file = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("write boom"))
     ok, msg = manager.create_or_update_file("x.txt", "new", "msg")
     assert ok is False and "GitHub dosya yazma hatası" in msg
@@ -342,7 +214,7 @@ def test_branch_and_pr_operations(manager):
 
 
 def test_list_and_get_prs_and_comments(manager):
-    pr = _PR(many_files=True)
+    pr = PRMock(many_files=True)
     manager._repo._pulls = [pr]
     ok, text = manager.list_pull_requests(state="OPEN", limit=1)
     assert ok is True and "PR Listesi (OPEN)" in text
@@ -352,13 +224,13 @@ def test_list_and_get_prs_and_comments(manager):
     manager._repo.get_pulls = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.list_pull_requests()[0] is False
 
-    manager._repo = _Repo()
+    manager._repo = RepoMock()
     manager._repo._pulls = [pr]
     ok, detail = manager.get_pull_request(5)
     assert ok is True and "(+5 dosya daha)" in detail
     assert manager.get_pull_request(999)[0] is False
 
-    manager._repo._issues = [_Issue(number=5)]
+    manager._repo._issues = [IssueMock(number=5)]
     ok, msg = manager.add_pr_comment(5, "LGTM")
     assert ok is True and "Yorum eklendi" in msg
     assert manager.add_pr_comment(999, "x")[0] is False
@@ -370,8 +242,8 @@ def test_list_and_get_prs_and_comments(manager):
 
 
 def test_issue_related_methods(manager):
-    issue = _Issue(number=1, title="bug")
-    manager._repo._issues = [issue, _Issue(number=2, is_pr=True)]
+    issue = IssueMock(number=1, title="bug")
+    manager._repo._issues = [issue, IssueMock(number=2, is_pr=True)]
     ok, items = manager.list_issues(state="OPEN", limit=10)
     assert ok is True and len(items) == 1 and items[0]["number"] == 1
     manager._repo.get_issues = lambda state: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -389,7 +261,7 @@ def test_issue_related_methods(manager):
 
 
 def test_diff_files_search_status_and_repr(manager, caplog):
-    pr = _PR(many_files=False)
+    pr = PRMock(many_files=False)
     manager._repo._pulls = [pr]
     ok, diff = manager.get_pull_request_diff(5)
     assert ok is True and "ikili/binary" in diff
@@ -398,7 +270,7 @@ def test_diff_files_search_status_and_repr(manager, caplog):
     manager._repo.get_pull = lambda n: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.get_pull_request_diff(1)[0] is False
 
-    manager._repo = _Repo()
+    manager._repo = RepoMock()
     manager._repo._pulls = [pr]
     ok, files = manager.get_pr_files(5)
     assert ok is True and "Değişen Dosyalar" in files
@@ -425,7 +297,7 @@ def test_diff_files_search_status_and_repr(manager, caplog):
 
 
 def test_get_pull_requests_detailed_and_unavailable(manager):
-    pr = _PR()
+    pr = PRMock()
     manager._repo._pulls = [pr]
     ok, data, err = manager.get_pull_requests_detailed(state="open", limit=1)
     assert ok is True and err == "" and data[0]["author"] == "alice"
