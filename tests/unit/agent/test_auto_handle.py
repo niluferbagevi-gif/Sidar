@@ -12,6 +12,10 @@ class Dummy:
         pass
 
 
+def test_dummy_constructor_accepts_any_args():
+    Dummy(1, 2, key="value")
+
+
 def _load_auto_handle(monkeypatch: pytest.MonkeyPatch):
     for module_name, class_name in [
         ("managers.code_manager", "CodeManager"),
@@ -573,4 +577,3 @@ def test_auto_handle_try_web_search_isolated(monkeypatch):
 
     assert handled is True
     assert out == "search:sidar"
-
