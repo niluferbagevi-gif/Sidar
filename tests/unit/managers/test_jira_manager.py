@@ -4,9 +4,14 @@ import types
 
 import pytest
 
-if "httpx" not in sys.modules:
-    httpx_stub = types.SimpleNamespace(AsyncClient=None)
-    sys.modules["httpx"] = httpx_stub
+
+def _ensure_httpx_stub() -> None:
+    if "httpx" not in sys.modules:
+        httpx_stub = types.SimpleNamespace(AsyncClient=None)
+        sys.modules["httpx"] = httpx_stub
+
+
+_ensure_httpx_stub()
 
 from managers.jira_manager import JiraManager
 
@@ -278,6 +283,14 @@ def test_transition_issue_fails_when_transition_not_found(monkeypatch):
     assert ok is False
     assert "Geçiş bulunamadı" in err
     assert "To Do" in err
+    with pytest.raises(BaseException):
+        _run(_fake_request("POST", "issue/PROJ-1/transitions"))
+
+
+def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch):
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+    assert "httpx" in sys.modules
 
 
 def test_transition_issue_success_with_case_insensitive_match(monkeypatch):
