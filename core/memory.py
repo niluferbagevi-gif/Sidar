@@ -215,6 +215,9 @@ class ConversationMemory:
 
     async def set_active_user(self, user_id: str, username: Optional[str] = None) -> None:
         await self._ensure_initialized()
+        ensure_user_with_id = getattr(self.db, "ensure_user_id", None)
+        if callable(ensure_user_with_id):
+            await ensure_user_with_id(user_id=user_id, username=username or user_id)
         self.active_user_id = user_id
         self.active_username = username
         sessions = await self.db.list_sessions(user_id)

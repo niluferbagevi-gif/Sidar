@@ -886,6 +886,8 @@ class SidarAgent:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             supervisor_mod = import_module("agent.core.supervisor")
+            supervisor_symbol = getattr(supervisor_mod, "SupervisorAgent", None)
+            supervisor_symbol_module = str(getattr(supervisor_symbol, "__module__", ""))
             # Bazı izolasyon testleri `agent.core.supervisor` modülünü stub rol sınıflarıyla
             # import eder ve modülü cache'te bırakabilir. Bu durumda gerçek role-agent
             # zinciri yerine `stub:*` çıktıları dönebilir. Role sınıflarının kaynak modülünü
@@ -902,7 +904,9 @@ class SidarAgent:
                 not str(getattr(getattr(supervisor_mod, symbol, None), "__module__", "")).startswith("agent.roles.")
                 for symbol in role_symbols
             )
-            if needs_reload:
+            # Testlerde SupervisorAgent monkeypatch edilebilir; bu durumda mock sınıfını
+            # korumak için reload yapılmamalıdır.
+            if needs_reload and supervisor_symbol_module.startswith("agent.core.supervisor"):
                 supervisor_mod = importlib.reload(supervisor_mod)
             SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
             self._supervisor = SupervisorAgent(self.cfg)

@@ -1440,6 +1440,62 @@ class Database:
             return None
         return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
 
+    async def ensure_user_id(
+        self,
+        user_id: str,
+        username: Optional[str] = None,
+        role: str = "user",
+        tenant_id: str = "default",
+    ) -> UserRecord:
+        """Belirli `user_id` için kullanıcı kaydının varlığını garanti eder."""
+        existing = await self._get_user_by_id(user_id)
+        if existing:
+            return existing
+
+        created_at = _utc_now_iso()
+        normalized_username = str(username or user_id).strip() or str(user_id)
+        normalized_role = str(role or "user").strip() or "user"
+        normalized_tenant_id = str(tenant_id or "default").strip() or "default"
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                    user_id,
+                    normalized_username,
+                    None,
+                    normalized_role,
+                    normalized_tenant_id,
+                    created_at,
+                )
+            return UserRecord(
+                id=user_id,
+                username=normalized_username,
+                role=normalized_role,
+                created_at=created_at,
+                tenant_id=normalized_tenant_id,
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, normalized_username, None, normalized_role, normalized_tenant_id, created_at),
+            )
+            self._sqlite_conn.commit()
+
+        await self._run_sqlite_op(_run)
+        return UserRecord(
+            id=user_id,
+            username=normalized_username,
+            role=normalized_role,
+            created_at=created_at,
+            tenant_id=normalized_tenant_id,
+        )
+
     async def create_auth_token(
         self,
         user_id: str,

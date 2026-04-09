@@ -1511,6 +1511,7 @@ class DocumentStore:
         if mode == "keyword": return self._keyword_search(query, top_k, session_id)
 
         has_vector = getattr(self, "_pgvector_available", False) or (self._chroma_available and self.collection)
+        preferred_vector_backend = str(getattr(self, "_vector_backend", "") or "").strip().lower()
 
         # Yerel LLM + RAG birlikte çalışırken default olarak hibrid sorguyu kapatıp
         # tek motorlu akışla CPU/SQLite baskısını azalt.
@@ -1523,6 +1524,18 @@ class DocumentStore:
             if self._bm25_available:
                 return self._bm25_search(query, top_k, session_id)
             return self._keyword_search(query, top_k, session_id)
+
+        if mode == "auto" and preferred_vector_backend == "pgvector" and getattr(self, "_pgvector_available", False):
+            try:
+                return self._pgvector_search(query, top_k, session_id)
+            except Exception as exc:
+                logger.warning("Tercih edilen pgvector araması hatası (fallback yapılıyor): %s", exc)
+
+        if mode == "auto" and preferred_vector_backend == "chroma" and self._chroma_available and self.collection:
+            try:
+                return self._chroma_search(query, top_k, session_id)
+            except Exception as exc:
+                logger.warning("Tercih edilen Chroma araması hatası (fallback yapılıyor): %s", exc)
 
         if has_vector and self._bm25_available:
             try: return self._rrf_search(query, top_k, session_id)
