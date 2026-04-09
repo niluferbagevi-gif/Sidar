@@ -14,6 +14,21 @@ class DummyConfig:
     AI_PROVIDER = "dummy-provider"
 
 
+class BrokenSetAttrConfig:
+    AI_PROVIDER = "broken-provider"
+    EXTRA_FLAG = "extra"
+
+    def __getattribute__(self, name):
+        if name == "EXTRA_FLAG":
+            raise AttributeError("EXTRA_FLAG unavailable")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name, value):
+        if name == "EXTRA_FLAG":
+            raise RuntimeError("cannot set EXTRA_FLAG")
+        object.__setattr__(self, name, value)
+
+
 class DummyLLMClient:
     def __init__(self, provider, cfg):
         self.provider = provider
@@ -38,11 +53,24 @@ def _load_base_agent_module(monkeypatch):
     return importlib.import_module("agent.base_agent")
 
 
+def _load_base_agent_module_with_config(monkeypatch, config_cls):
+    config_stub = types.ModuleType("config")
+    config_stub.Config = config_cls
+    monkeypatch.setitem(sys.modules, "config", config_stub)
+
+    llm_stub = types.ModuleType("core.llm_client")
+    llm_stub.LLMClient = DummyLLMClient
+    monkeypatch.setitem(sys.modules, "core.llm_client", llm_stub)
+
+    sys.modules.pop("agent.base_agent", None)
+    return importlib.import_module("agent.base_agent")
+
+
 async def _tool_echo(arg: str) -> str:
     return f"echo:{arg}"
 
 
-def _make_dummy_agent(base_agent_module, role_name="base"):
+def _make_dummy_agent(base_agent_module, role_name="base", **kwargs):
     class DummyAgent(base_agent_module.BaseAgent):
         def __init__(self, *args, **kwargs):
             self.next_result = "ok"
@@ -51,7 +79,7 @@ def _make_dummy_agent(base_agent_module, role_name="base"):
         async def run_task(self, task_prompt: str):
             return self.next_result
 
-    return DummyAgent(role_name=role_name)
+    return DummyAgent(role_name=role_name, **kwargs)
 
 
 async def test_init_register_and_call_tool(monkeypatch):
@@ -68,6 +96,15 @@ async def test_init_register_and_call_tool(monkeypatch):
     agent.register_tool("echo", _tool_echo)
     result = await agent.call_tool("echo", "hello")
     assert result == "echo:hello"
+
+
+async def test_init_ignores_config_attr_copy_errors(monkeypatch):
+    base_agent = _load_base_agent_module_with_config(monkeypatch, BrokenSetAttrConfig)
+    agent = _make_dummy_agent(base_agent, role_name="qa", cfg=BrokenSetAttrConfig())
+
+    assert isinstance(agent.cfg, BrokenSetAttrConfig)
+    assert agent.llm.provider == "broken-provider"
+    assert "EXTRA_FLAG" not in vars(agent.cfg)
 
 
 async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
