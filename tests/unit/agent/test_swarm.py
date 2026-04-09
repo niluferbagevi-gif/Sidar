@@ -791,7 +791,7 @@ def test_execute_task_sets_reply_to_and_skips_feedback_for_non_success(monkeypat
     assert called["scheduled"] is False
 
 
-def test_execute_task_isolated_success_path(monkeypatch):
+def test_swarm_execute_task_is_isolated(monkeypatch):
     orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
     spec = AgentSpec(role_name="researcher", capabilities=["web_search"])
 

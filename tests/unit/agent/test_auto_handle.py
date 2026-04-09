@@ -567,7 +567,7 @@ def test_remaining_auto_handle_branches(monkeypatch):
     assert asyncio.run(h._try_fetch_url("url fetch", "url fetch")) == (True, "⚠ Geçerli bir URL bulunamadı.")
 
 
-def test_try_web_search_returns_success(monkeypatch):
+def test_auto_handle_try_web_search_isolated(monkeypatch):
     h = _build_handler(monkeypatch)
     handled, out = asyncio.run(h._try_web_search("web'de ara sidar", "web'de ara sidar"))
 

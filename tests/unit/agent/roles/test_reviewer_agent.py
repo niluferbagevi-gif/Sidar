@@ -634,7 +634,7 @@ def test_run_task_decision_branches(reviewer):
     assert data4["risk"] == "orta"
 
 
-def test_build_dynamic_test_content_with_fake_llm_response(reviewer, fake_llm_response):
+def test_reviewer_generate_candidate_with_fake_llm(reviewer, fake_llm_response):
     async def _reviewer_llm(*_args, **_kwargs):
         _ = await fake_llm_response("reviewer")
         return "def test_generated_reviewer_case():\n    assert True\n"

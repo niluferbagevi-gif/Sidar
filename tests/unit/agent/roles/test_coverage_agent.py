@@ -557,14 +557,13 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tm
 
 
 @pytest.mark.asyncio
-async def test_run_task_returns_pending_approval_status(tmp_path, monkeypatch, fake_coverage_code_manager):
+async def test_coverage_agent_generate_candidate_with_fake_llm(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def _coverage_llm(*_args, **_kwargs):
         return "# mock-response:coverage\ndef test_generated_coverage_case():\n    assert 1 == 1\n"
 
     agent.call_llm = _coverage_llm
-
     generated = await agent._tool_generate_missing_tests(
         json.dumps(
             {
@@ -577,6 +576,12 @@ async def test_run_task_returns_pending_approval_status(tmp_path, monkeypatch, f
         )
     )
 
+    assert "test_generated_coverage_case" in generated
+
+
+@pytest.mark.asyncio
+async def test_coverage_agent_run_task_marks_pending_approval(tmp_path, monkeypatch, fake_coverage_code_manager):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
     monkeypatch.setattr(
         agent.code,
         "run_pytest_and_collect",
@@ -588,7 +593,7 @@ async def test_run_task_returns_pending_approval_status(tmp_path, monkeypatch, f
             "output": "pytest output",
         },
     )
-    monkeypatch.setattr(agent, "_generate_test_candidate", AsyncMock(return_value=generated))
+    monkeypatch.setattr(agent, "_generate_test_candidate", AsyncMock(return_value="def test_generated_coverage_case():\n    assert True\n"))
     monkeypatch.setattr(agent.code, "write_generated_test", lambda *_args, **_kwargs: (True, "ok"))
     monkeypatch.setattr(agent, "_record_task", AsyncMock(return_value=None))
 
