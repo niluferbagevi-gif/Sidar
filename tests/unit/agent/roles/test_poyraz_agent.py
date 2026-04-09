@@ -169,6 +169,11 @@ class DummyMultimodalPipeline:
 
 @pytest.fixture
 def poyraz_module(monkeypatch: pytest.MonkeyPatch):
+    # WARNING: This fixture mutates `sys.modules` to inject lightweight doubles
+    # for import-time dependencies. This is intentionally local and cleaned up by
+    # `monkeypatch`, but remains risky for parallel test execution patterns that
+    # share interpreter state (thread-based runners). Prefer dependency injection
+    # in production code for long-term xdist/thread safety.
     config_mod = types.ModuleType("config")
     config_mod.Config = object
     core_rag_mod = types.ModuleType("core.rag")
@@ -182,12 +187,12 @@ def poyraz_module(monkeypatch: pytest.MonkeyPatch):
     registry_mod = types.ModuleType("agent.registry")
     registry_mod.AgentCatalog = _StubAgentCatalog
 
-    monkeypatch.setitem(sys.modules, "config", config_mod)
-    monkeypatch.setitem(sys.modules, "core.rag", core_rag_mod)
-    monkeypatch.setitem(sys.modules, "managers.web_search", web_search_mod)
-    monkeypatch.setitem(sys.modules, "managers.social_media_manager", social_mod)
-    monkeypatch.setitem(sys.modules, "agent.base_agent", base_agent_mod)
-    monkeypatch.setitem(sys.modules, "agent.registry", registry_mod)
+    monkeypatch.setitem(sys.modules, "config", config_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(sys.modules, "core.rag", core_rag_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(sys.modules, "managers.web_search", web_search_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(sys.modules, "managers.social_media_manager", social_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(sys.modules, "agent.base_agent", base_agent_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(sys.modules, "agent.registry", registry_mod)  # WARNING: global module table mutation
 
     file_path = Path(__file__).resolve().parents[4] / "agent" / "roles" / "poyraz_agent.py"
     spec = importlib.util.spec_from_file_location("poyraz_under_test", file_path)
