@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -35,6 +36,12 @@ def mock_config() -> Callable[..., Any]:
     return make_test_config
 
 
+def _resolve_db_schema_target_version() -> int | None:
+    """Test config'te tanımlıysa hedef şema versiyonunu döndürür; yoksa head kullanır."""
+    cfg = make_test_config()
+    return cfg.DB_SCHEMA_TARGET_VERSION if hasattr(cfg, "DB_SCHEMA_TARGET_VERSION") else None
+
+
 @pytest_asyncio.fixture
 async def fake_redis() -> AsyncGenerator[Any, None]:
     server = fakeredis.FakeServer()
@@ -59,9 +66,10 @@ def fake_llm_response() -> Callable[..., Any]:
         mock_tool_calls: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        mock_tokens = kwargs.pop("mock_tokens", 10)
         response: dict[str, Any] = {
             "content": f"mock-response:{prompt[:32]}",
-            "usage": {"total_tokens": 10},
+            "usage": {"total_tokens": mock_tokens},
             "meta": kwargs,
         }
         if mock_tool_calls:
@@ -168,7 +176,7 @@ async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
         BASE_DIR=str(tmp_path),
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
-        DB_SCHEMA_TARGET_VERSION=2,
+        DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
         JWT_SECRET_KEY="test-secret",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
@@ -190,6 +198,8 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
         container = PostgresContainer("postgres:16-alpine")
         container.start()
     except Exception as exc:
+        if os.getenv("CI"):
+            pytest.fail(f"CI ortamında PostgreSQL container zorunludur! Başlatılamadı: {exc}")
         pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
 
     try:
@@ -219,7 +229,7 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
             BASE_DIR=".",
             DB_POOL_SIZE=2,
             DB_SCHEMA_VERSION_TABLE="schema_versions",
-            DB_SCHEMA_TARGET_VERSION=2,
+            DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
             JWT_SECRET_KEY="test-secret",
             JWT_ALGORITHM="HS256",
             JWT_TTL_DAYS=3,
