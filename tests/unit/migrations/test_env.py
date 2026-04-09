@@ -78,3 +78,9 @@ def test_load_database_url_falls_back_to_env(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://env/value")
 
     assert module._load_database_url() == "postgresql://env/value"
+
+
+def test_fake_config_fallback_values():
+    config = _FakeConfig()
+    assert config.get_main_option("sqlalchemy.url") == "sqlite:///fallback.db"
+    assert config.get_section("alembic") == {"sqlalchemy.url": "sqlite:///fallback.db"}
