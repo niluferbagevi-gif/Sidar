@@ -391,7 +391,7 @@ async def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
         def match(_line):
             return FakeMatch()
 
-    monkeypatch.setattr(_COVERAGE_MODULE.re, "compile", lambda _pattern: FakePattern())
+    monkeypatch.setattr(_COVERAGE_MODULE.re, "compile", lambda _pattern, *_args, **_kwargs: FakePattern())
     data = CoverageAgent._parse_terminal_coverage_output("dummy")
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
