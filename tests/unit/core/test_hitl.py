@@ -159,6 +159,7 @@ def test_request_approval_approved_path(monkeypatch: pytest.MonkeyPatch) -> None
         if pending:
             await gate.respond(pending[0].request_id, approved=True, decided_by="alice")
 
+    run(fast_sleep(0))
     monkeypatch.setattr(hitl.asyncio, "sleep", fast_sleep)
 
     approved = run(
@@ -188,6 +189,7 @@ def test_request_approval_rejected_path(monkeypatch: pytest.MonkeyPatch) -> None
                 rejection_reason="riskli işlem",
             )
 
+    run(fast_sleep(0))
     monkeypatch.setattr(hitl.asyncio, "sleep", fast_sleep)
 
     approved = run(gate.request_approval(action="file_delete", description="Delete file"))
@@ -206,6 +208,7 @@ def test_request_approval_returns_false_when_request_missing(monkeypatch: pytest
         if pending:
             store._index.pop(pending[0].request_id, None)
 
+    run(remove_request_and_sleep(0))
     monkeypatch.setattr(hitl.asyncio, "sleep", remove_request_and_sleep)
 
     approved = run(gate.request_approval(action="danger", description="will disappear"))
@@ -253,6 +256,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_chan
             pending[0].decision = hitl.HITLDecision.REJECTED
         now[0] = 11.0
 
+    run(jump_and_decide(0))
     monkeypatch.setattr(hitl.time, "time", fake_time)
     monkeypatch.setattr(hitl.asyncio, "sleep", jump_and_decide)
 
