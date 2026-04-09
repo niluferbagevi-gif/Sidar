@@ -29,6 +29,13 @@ class _StubBaseAgent:
         self.role_name = role_name
 
 
+def test_stub_base_agent_initializes_cfg_and_role_name() -> None:
+    agent = _StubBaseAgent(cfg={"x": 1}, role_name="tester")
+
+    assert agent.cfg == {"x": 1}
+    assert agent.role_name == "tester"
+
+
 def _register_stub_module(module_name: str, class_name: str) -> None:
     mod = types.ModuleType(module_name)
 
