@@ -43,7 +43,14 @@ def make_test_config(**overrides: Any) -> MagicMock:
     if AppConfig is not None and all(
         hasattr(AppConfig, attr) for attr in ("initialize_directories", "validate_critical_settings")
     ):
-        mock_cfg = MagicMock(spec=AppConfig)
+        known_attrs = set(dir(AppConfig))
+        # Test override'larında AppConfig üzerinde henüz bulunmayan yeni/deneysel
+        # flag'ler gelebilir (örn. v5.x modül bayrakları). Böyle bir durumda katı
+        # spec kullanımı AttributeError üreteceği için esnek moda düş.
+        if all(key in known_attrs for key in base):
+            mock_cfg = MagicMock(spec_set=AppConfig)
+        else:
+            mock_cfg = MagicMock()
     else:
         # Bazı testler geçici stub Config sınıfları enjekte ediyor olabilir.
         # Bu durumda katı spec, ortak fixture kurulumunda AttributeError üretir.
