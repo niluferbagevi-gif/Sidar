@@ -1025,9 +1025,9 @@ async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, mon
     agent._load_instruction_files = lambda: "instructions"
 
     text = await agent._build_context()
-    assert "Gemini Modeli" in text
-    assert "Bağlı — org/repo" in text
-    assert "Aktif Görev Listesi" in text
+    assert sidar_agent.CONTEXT_GEMINI_MODEL_LABEL in text
+    assert f"{sidar_agent.CONTEXT_GITHUB_CONNECTED_PREFIX}org/repo" in text
+    assert sidar_agent.CONTEXT_TASK_LIST_HEADER in text
 
     agent.cfg.AI_PROVIDER = "ollama"
     agent._load_instruction_files = lambda: "i" * 5000
@@ -1384,7 +1384,7 @@ async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> 
     agent.todo = types.SimpleNamespace(__len__=lambda *_a: 0)
     agent._load_instruction_files = lambda: ""
     ctx = await agent._build_context()
-    assert "Aktif Görev Listesi" not in ctx
+    assert sidar_agent.CONTEXT_TASK_LIST_HEADER not in ctx
 
     agent.cfg.AI_PROVIDER = "ollama"
     agent.cfg.LOCAL_INSTRUCTION_MAX_CHARS = 5000

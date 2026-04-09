@@ -143,6 +143,9 @@ ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedb
 logger = logging.getLogger(__name__)
 
 ARCHIVE_CONTEXT_HEADER = "[Geçmiş Sohbet Arşivinden İlgili Notlar]"
+CONTEXT_GEMINI_MODEL_LABEL = "Gemini Modeli"
+CONTEXT_GITHUB_CONNECTED_PREFIX = "Bağlı — "
+CONTEXT_TASK_LIST_HEADER = "[Aktif Görev Listesi]"
 SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
 GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."
 GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
@@ -1013,7 +1016,7 @@ class SidarAgent:
             lines.append(f"  Coding Modeli: {self.cfg.CODING_MODEL}")
             lines.append(f"  Text Modeli  : {self.cfg.TEXT_MODEL}")
         else:
-            lines.append(f"  Gemini Modeli: {self.cfg.GEMINI_MODEL}")
+            lines.append(f"  {CONTEXT_GEMINI_MODEL_LABEL}: {self.cfg.GEMINI_MODEL}")
         lines.append(f"  Erişim Seviye: {self.cfg.ACCESS_LEVEL.upper()}")
         gpu_str = f"{self.cfg.GPU_INFO} (CUDA {self.cfg.CUDA_VERSION})" if self.cfg.USE_GPU else f"Yok ({self.cfg.GPU_INFO})"
         if include_verbose_runtime:
@@ -1027,7 +1030,7 @@ class SidarAgent:
         if self.github.is_available():
             _repo_raw = str(self.cfg.GITHUB_REPO or "")
             _repo_display = _repo_raw.split("/")[-2] + "/" + _repo_raw.split("/")[-1] if "/" in _repo_raw else _repo_raw
-            gh_status = f"Bağlı — {_repo_display}"
+            gh_status = f"{CONTEXT_GITHUB_CONNECTED_PREFIX}{_repo_display}"
         else:
             gh_status = "Bağlı değil"
         lines.append(f"  GitHub     : {gh_status}")
@@ -1059,7 +1062,7 @@ class SidarAgent:
 
         if todo_count > 0:
             lines.append("")
-            lines.append("[Aktif Görev Listesi]")
+            lines.append(CONTEXT_TASK_LIST_HEADER)
             lines.append(self.todo.list_tasks())
 
         # ── SIDAR.md / CLAUDE.md (Claude Code uyumlu) ──────────────────
