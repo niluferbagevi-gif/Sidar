@@ -204,3 +204,71 @@ def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_mod
     agent = researcher_module.ResearcherAgent(fake_cfg)
 
     assert set(agent.tools) == {"web_search", "fetch_url", "search_docs", "docs_search"}
+
+
+def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return "not-json"
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("state of python packaging"))
+
+    assert result == "web:state of python packaging"
+
+
+def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return '{"tool":"unknown_tool","argument":"x"}'
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("mlops trendleri"))
+
+    assert result == "web:mlops trendleri"
+
+
+def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return '{"tool":"web_search","argument":"iter-next"}'
+
+    call_tool_spy = []
+
+    async def fake_call_tool(name, arg):
+        call_tool_spy.append((name, arg))
+        if name == "web_search":
+            return f"web:{arg}"
+        return "unexpected"
+
+    agent.call_llm = fake_call_llm
+    agent.call_tool = fake_call_tool
+
+    result = asyncio.run(agent.run_task("initial prompt"))
+
+    assert result == "web:web:iter-next"
+    assert call_tool_spy == [
+        ("web_search", "iter-next"),
+        ("web_search", "iter-next"),
+        ("web_search", "iter-next"),
+        ("web_search", "iter-next"),
+        ("web_search", "web:iter-next"),
+    ]
+
+
+def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return '{"tool":"final_answer","content":"özet: tamamlandı"}'
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("bir özet üret"))
+
+    assert result == "özet: tamamlandı"
