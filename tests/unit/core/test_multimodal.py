@@ -66,6 +66,13 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def test_response_stub_raise_for_status_raises_configured_error():
+    stub = ResponseStub(raise_error=RuntimeError("http failure"))
+
+    with pytest.raises(RuntimeError, match="http failure"):
+        stub.raise_for_status()
+
+
 def test_detect_media_kind_and_sources():
     assert multimodal.detect_media_kind(mime_type="video/mp4") == "video"
     assert multimodal.detect_media_kind(path="sound.mp3") == "audio"
