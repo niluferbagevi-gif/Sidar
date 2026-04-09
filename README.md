@@ -282,6 +282,16 @@ conda activate sidar
 uv pip install -e ".[dev]"
 ```
 
+### Test ortamı senkronizasyonu (Lokal / Codex / Gitpod)
+
+Testleri çalıştırmadan önce geliştirme bağımlılıklarının gerçekten kurulu olduğunu doğrulayın:
+
+```bash
+pip install -r requirements-dev.txt
+# veya opsiyonel olarak pyproject.toml üzerinden:
+pip install -e ".[dev]"
+```
+
 ### Opsiyonel: Masaüstü GUI Launcher
 
 `main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.

@@ -5,6 +5,7 @@ echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
+RUN_TESTS_IN_DOCKER="${RUN_TESTS_IN_DOCKER:-0}"
 
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
 RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
@@ -19,6 +20,37 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (pytest --cov-fail-under ile .coveragerc fail_under değerini override eder)"
+
+if [ "${RUN_TESTS_IN_DOCKER}" = "1" ]; then
+  echo "🐳 Testler Docker dev stage içinde çalıştırılacak..."
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "❌ RUN_TESTS_IN_DOCKER=1 ama docker komutu bulunamadı."
+    exit 1
+  fi
+
+  docker build --target dev -t sidar-tests-dev .
+  docker run --rm \
+    -v "$PWD:/app" \
+    -w /app \
+    -e RUN_TESTS_IN_DOCKER=0 \
+    -e COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER}" \
+    -e AUTO_OPEN_ARTIFACTS=0 \
+    -e PYTEST_WORKERS="${PYTEST_WORKERS}" \
+    -e RUN_BENCHMARKS="${RUN_BENCHMARKS}" \
+    sidar-tests-dev \
+    bash run_tests.sh
+  exit $?
+fi
+
+if ! python -c "import fakeredis" >/dev/null 2>&1; then
+  echo "❌ Test bağımlılıkları eksik görünüyor (fakeredis import edilemedi)."
+  echo "   Test ortamını senkronize etmek için:"
+  echo "   pip install -r requirements-dev.txt"
+  echo "   # veya:"
+  echo "   pip install -e \".[dev]\""
+  exit 1
+fi
 
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
