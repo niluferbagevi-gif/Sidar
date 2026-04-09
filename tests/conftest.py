@@ -354,64 +354,60 @@ def fake_vector_store() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_httpx(monkeypatch: pytest.MonkeyPatch) -> Callable[..., SimpleNamespace]:
-    """httpx modülünü testte kontrollü şekilde enjekte eden yardımcı fixture."""
+def mock_httpx(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """httpx bağımlılığını gerçek modül üstünden güvenli şekilde patch eder."""
 
     def _install(
         *,
         client_factory: Callable[..., Any],
         timeout_exception: type[Exception] | None = None,
         request_error: type[Exception] | None = None,
-    ) -> SimpleNamespace:
-        module = SimpleNamespace(
-            AsyncClient=client_factory,
-            TimeoutException=timeout_exception or type("TimeoutException", (Exception,), {}),
-            RequestError=request_error or type("RequestError", (Exception,), {}),
-        )
-        monkeypatch.setitem(sys.modules, "httpx", module)
-        return module
+    ) -> None:
+        httpx = pytest.importorskip("httpx")
+        monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+        if timeout_exception is not None:
+            monkeypatch.setattr(httpx, "TimeoutException", timeout_exception)
+        if request_error is not None:
+            monkeypatch.setattr(httpx, "RequestError", request_error)
 
     return _install
 
 
 @pytest.fixture
 def mock_chromadb(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """chromadb/chromadb.config modüllerini tek noktadan enjekte eder."""
+    """chromadb/chromadb.config bağımlılıklarını gerçek modüller üstünden patch eder."""
 
     def _install(
         *,
         persistent_client_factory: Callable[..., Any],
         settings_factory: Callable[..., Any] | None = None,
     ) -> None:
-        monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=persistent_client_factory))
-        monkeypatch.setitem(
-            sys.modules,
-            "chromadb.config",
-            SimpleNamespace(Settings=settings_factory or (lambda **_kwargs: object())),
-        )
+        chromadb = pytest.importorskip("chromadb")
+        chromadb_config = pytest.importorskip("chromadb.config")
+        monkeypatch.setattr(chromadb, "PersistentClient", persistent_client_factory)
+        if settings_factory is not None:
+            monkeypatch.setattr(chromadb_config, "Settings", settings_factory)
 
     return _install
 
 
 @pytest.fixture
 def mock_sentence_transformers(monkeypatch: pytest.MonkeyPatch) -> Callable[[type], None]:
-    """sentence_transformers modülünü merkezi fixture ile taklit eder."""
+    """sentence_transformers bağımlılığını gerçek modül üstünden patch eder."""
 
     def _install(sentence_transformer_cls: type) -> None:
-        monkeypatch.setitem(
-            sys.modules,
-            "sentence_transformers",
-            SimpleNamespace(SentenceTransformer=sentence_transformer_cls),
-        )
+        sentence_transformers = pytest.importorskip("sentence_transformers")
+        monkeypatch.setattr(sentence_transformers, "SentenceTransformer", sentence_transformer_cls)
 
     return _install
 
 
 @pytest.fixture
 def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """requests modülünü testte belirli davranışlarla enjekte eder."""
+    """requests bağımlılığını gerçek modül üstünden patch eder."""
 
     def _install(*, get_impl: Callable[..., Any]) -> None:
-        monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(get=get_impl))
+        requests = pytest.importorskip("requests")
+        monkeypatch.setattr(requests, "get", get_impl)
 
     return _install
