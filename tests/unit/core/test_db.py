@@ -63,6 +63,9 @@ class FakePgAdapter:
     def set_conflict_error(self) -> None:
         self.conn.execute.side_effect = RuntimeError("conflict")
 
+    def set_disconnect_error(self) -> None:
+        self.conn.execute.side_effect = ConnectionError("database connection lost")
+
 
 def test_helper_functions_basic_contracts() -> None:
     now = _utc_now_iso()
@@ -371,4 +374,15 @@ async def test_postgresql_adapter_timeout_path() -> None:
     db._pg_pool = fake_pg
 
     with pytest.raises(TimeoutError):
+        await db.update_session_title("s1", "updated")
+
+
+@pytest.mark.asyncio
+async def test_postgresql_adapter_disconnect_path() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    fake_pg.set_disconnect_error()
+    db._pg_pool = fake_pg
+
+    with pytest.raises(ConnectionError):
         await db.update_session_title("s1", "updated")
