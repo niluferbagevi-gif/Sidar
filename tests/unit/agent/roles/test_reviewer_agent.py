@@ -34,6 +34,38 @@ def _load_reviewer_agent():
     return module.ReviewerAgent
 
 
+def test_load_reviewer_agent_returns_cached_module(monkeypatch):
+    sentinel = object()
+    cached_module = SimpleNamespace(ReviewerAgent=sentinel)
+    monkeypatch.setitem(sys.modules, "reviewer_agent_under_test", cached_module)
+
+    assert _load_reviewer_agent() is sentinel
+
+
+def test_load_reviewer_agent_injects_httpx_and_redis_when_missing(monkeypatch):
+    sentinel = object()
+
+    class _Loader:
+        def exec_module(self, module):
+            module.ReviewerAgent = sentinel
+
+    fake_spec = SimpleNamespace(loader=_Loader())
+    monkeypatch.delitem(sys.modules, "reviewer_agent_under_test", raising=False)
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    monkeypatch.delitem(sys.modules, "redis", raising=False)
+    monkeypatch.delitem(sys.modules, "redis.asyncio", raising=False)
+    monkeypatch.delitem(sys.modules, "redis.exceptions", raising=False)
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec)
+    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: ModuleType("reviewer_agent_under_test"))
+
+    loaded = _load_reviewer_agent()
+    assert loaded is sentinel
+    assert "httpx" in sys.modules
+    assert "redis" in sys.modules
+    assert "redis.asyncio" in sys.modules
+    assert "redis.exceptions" in sys.modules
+
+
 ReviewerAgent = _load_reviewer_agent()
 
 
@@ -568,6 +600,7 @@ def test_run_task_decision_branches(reviewer):
         if name == "lsp_diagnostics":
             return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
         return ""
+    assert asyncio.run(call_tool_fail("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_fail
     res = asyncio.run(reviewer.run_task("review_code|ctx"))
@@ -586,6 +619,7 @@ def test_run_task_decision_branches(reviewer):
         if name == "lsp_diagnostics":
             return json.dumps({"summary": "s", "status": "clean", "risk": "orta", "decision": "APPROVE", "counts": {}, "issues": []})
         return ""
+    assert asyncio.run(call_tool_risk("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_risk
     res2 = asyncio.run(reviewer.run_task("review_code|ctx"))
@@ -602,6 +636,7 @@ def test_run_task_decision_branches(reviewer):
         if name == "lsp_diagnostics":
             return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
         return ""
+    assert asyncio.run(call_tool_graph_medium("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_graph_medium
     res3 = asyncio.run(reviewer.run_task("review_code|ctx"))
@@ -618,6 +653,7 @@ def test_run_task_decision_branches(reviewer):
         if name == "lsp_diagnostics":
             return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
         return ""
+    assert asyncio.run(call_tool_low_signals("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_low_signals
     reviewer._build_combined_impact_report = lambda *_a, **_k: {  # type: ignore[method-assign]
@@ -642,4 +678,3 @@ def test_reviewer_generate_candidate_with_fake_llm(reviewer, fake_llm_response):
     reviewer.call_llm = _reviewer_llm
     dynamic_test = asyncio.run(reviewer._build_dynamic_test_content("diff --git a/x.py b/x.py"))
     assert "def test_generated_reviewer_case" in dynamic_test
-
