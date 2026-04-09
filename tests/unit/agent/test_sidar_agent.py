@@ -845,17 +845,19 @@ async def test_tool_github_smart_pr_requires_token(sidar_agent_factory) -> None:
 async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     code = Mock()
-    code.run_shell.side_effect = lambda command: (
-        (True, "feat/x")
-        if "branch" in command
-        else (True, "M a.py")
-        if "status" in command
-        else (True, "c1")
-        if "log" in command
-        else (True, "diff")
-        if "diff --no-color" in command
-        else (True, "")
-    )
+
+    def _run_shell_success(command: str) -> tuple[bool, str]:
+        if "branch" in command:
+            return True, "feat/x"
+        if "status" in command:
+            return True, "M a.py"
+        if "diff --no-color" in command:
+            return True, "diff"
+        if "log" in command:
+            return True, "c1"
+        return True, ""
+
+    code.run_shell.side_effect = _run_shell_success
     git = Mock()
     git.default_branch = "main"
     git.is_available.return_value = True
@@ -1118,17 +1120,18 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     no_changes = await agent._tool_github_smart_pr("x")
     assert no_changes == sidar_agent.GITHUB_SMART_PR_NO_CHANGES_MESSAGE
 
-    code.run_shell.side_effect = lambda command: (
-        (True, "feat/a")
-        if "branch" in command
-        else (True, "M a.py")
-        if "status" in command
-        else (True, "x" * 12000)
-        if "diff --no-color" in command
-        else (True, "c1")
-        if "log" in command
-        else (True, "")
-    )
+    def _run_shell_large_diff(command: str) -> tuple[bool, str]:
+        if "branch" in command:
+            return True, "feat/a"
+        if "status" in command:
+            return True, "M a.py"
+        if "diff --no-color" in command:
+            return True, "x" * 12000
+        if "log" in command:
+            return True, "c1"
+        return True, ""
+
+    code.run_shell.side_effect = _run_shell_large_diff
     agent.code = code
     assert (await agent._tool_github_smart_pr("title|||base|||note")).startswith(sidar_agent.GITHUB_SMART_PR_CREATE_FAILED_PREFIX)
 
@@ -1147,17 +1150,19 @@ async def test_tool_github_smart_pr_handles_create_pr_exceptions(
 ) -> None:
     agent = sidar_agent_factory()
     code = Mock()
-    code.run_shell.side_effect = lambda command: (
-        (True, "feat/x")
-        if "branch" in command
-        else (True, "M a.py")
-        if "status" in command
-        else (True, "diff")
-        if "diff --no-color" in command
-        else (True, "c1")
-        if "log" in command
-        else (True, "")
-    )
+
+    def _run_shell_success(command: str) -> tuple[bool, str]:
+        if "branch" in command:
+            return True, "feat/x"
+        if "status" in command:
+            return True, "M a.py"
+        if "diff --no-color" in command:
+            return True, "diff"
+        if "log" in command:
+            return True, "c1"
+        return True, ""
+
+    code.run_shell.side_effect = _run_shell_success
     github = Mock()
     github.is_available.return_value = True
     github.default_branch = "main"
@@ -1479,17 +1484,19 @@ async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory)
     github.default_branch = "main"
 
     code = Mock()
-    code.run_shell.side_effect = lambda command: (
-        (True, "feat/a")
-        if "branch" in command
-        else (True, "M a.py")
-        if "status" in command
-        else (True, "diff")
-        if "diff --no-color" in command
-        else (True, "c1")
-        if "log" in command
-        else (True, "")
-    )
+
+    def _run_shell_success(command: str) -> tuple[bool, str]:
+        if "branch" in command:
+            return True, "feat/a"
+        if "status" in command:
+            return True, "M a.py"
+        if "diff --no-color" in command:
+            return True, "diff"
+        if "log" in command:
+            return True, "c1"
+        return True, ""
+
+    code.run_shell.side_effect = _run_shell_success
 
     agent.github = github
     agent.code = code
