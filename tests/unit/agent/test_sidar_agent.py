@@ -14,11 +14,10 @@ from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
 
 
-
-
 def _override_cfg(agent, **overrides):
     for key, value in overrides.items():
         setattr(agent.cfg, key, value)
+
 
 async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
@@ -147,8 +146,14 @@ async def test_build_trigger_correlation_matches_history_without_duplicate_ids(
     assert correlation["latest_related_status"] == "failed"
 
 
-async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    agent = sidar_agent_factory()
+async def test_execute_self_heal_plan_success_and_validation(
+    sidar_agent_factory,
+    mock_config,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = mock_config(BASE_DIR=str(tmp_path))
+    agent = sidar_agent_factory(cfg=cfg)
     writes = {}
     code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
     code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
@@ -163,8 +168,6 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, f"ok:{command}:{base_dir}")
     agent.code = code_mock
-    _override_cfg(agent, BASE_DIR=str(tmp_path))
-
     plan = {
         "summary": "patching",
         "confidence": "high",
@@ -180,8 +183,14 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
     assert writes["a.py"] == ("A", "B")
 
 
-async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    agent = sidar_agent_factory()
+async def test_execute_self_heal_plan_reverts_on_patch_error(
+    sidar_agent_factory,
+    mock_config,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = mock_config(BASE_DIR=str(tmp_path))
+    agent = sidar_agent_factory(cfg=cfg)
     restored = {}
     code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
     code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
@@ -191,7 +200,6 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory
     )
     code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, "ok")
     agent.code = code_mock
-    _override_cfg(agent, BASE_DIR=str(tmp_path))
     plan = {
         "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
         "validation_commands": ["pytest -q"],
@@ -220,14 +228,18 @@ async def test_restore_self_heal_backups(sidar_agent_factory) -> None:
     write_mock.assert_any_call("src/utils.py", "print('old utils')", False)
 
 
-async def test_attempt_autonomous_self_heal_core_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
-    agent = sidar_agent_factory()
-    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=False)
+async def test_attempt_autonomous_self_heal_core_branches(
+    sidar_agent_factory,
+    mock_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg_disabled = mock_config(ENABLE_AUTONOMOUS_SELF_HEAL=False)
+    agent = sidar_agent_factory(cfg=cfg_disabled)
     remediation = {"remediation_loop": {"status": "planned"}}
     disabled = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert disabled["status"] == "disabled"
 
-    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.cfg = mock_config(ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "queued"}}
     skipped = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
     assert skipped["status"] == "skipped"
@@ -465,17 +477,22 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     active_multi = 0
     max_active_multi = 0
     memory_events: list[tuple[str, str]] = []
+    step1_event = asyncio.Event()
+    step2_event = asyncio.Event()
 
     async def _multi(prompt):
         nonlocal active_multi, max_active_multi
         active_multi += 1
         max_active_multi = max(max_active_multi, active_multi)
-        await asyncio.sleep(0.01)
+
+        if prompt == "alpha":
+            step1_event.set()
+            await step2_event.wait()
+
         active_multi -= 1
         return f"ok:{prompt}"
 
     async def _memory_add(role, content):
-        await asyncio.sleep(0.005)
         memory_events.append((role, content))
 
     agent._try_multi_agent = _multi
@@ -484,10 +501,12 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     async def _ask(prompt: str) -> list[str]:
         return list(await _collect_stream(agent.respond(prompt)))
 
-    first, second = await asyncio.wait_for(
-        asyncio.gather(_ask("alpha"), _ask("beta")),
-        timeout=1.0,
-    )
+    task_alpha = asyncio.create_task(_ask("alpha"))
+    await step1_event.wait()
+    task_beta = asyncio.create_task(_ask("beta"))
+    step2_event.set()
+
+    first, second = await asyncio.wait_for(asyncio.gather(task_alpha, task_beta), timeout=1.0)
 
     assert first == ["ok:alpha"]
     assert second == ["ok:beta"]
