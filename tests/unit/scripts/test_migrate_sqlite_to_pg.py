@@ -77,6 +77,33 @@ def test_copy_table_dry_run_reports_row_count(monkeypatch, tmp_path: Path):
     assert fake_conn.executed == []
 
 
+def test_copy_table_writes_rows_inside_transaction(tmp_path: Path):
+    db_path = tmp_path / "sample.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)")
+        conn.execute("INSERT INTO users (email) VALUES (?)", ("alice@example.com",))
+        conn.execute("INSERT INTO users (email) VALUES (?)", ("bob@example.com",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    fake_conn = _FakeConn()
+    count = asyncio.run(migrate_sqlite_to_pg._copy_table(fake_conn, db_path, "users", dry_run=False))
+
+    assert count == 2
+    assert len(fake_conn.executed) == 3
+    truncate_query, truncate_params = fake_conn.executed[0]
+    first_query, first_params = fake_conn.executed[1]
+    second_query, second_params = fake_conn.executed[2]
+    assert "TRUNCATE TABLE users" in truncate_query
+    assert truncate_params == ()
+    assert "INSERT INTO users" in first_query
+    assert first_params == (1, "alice@example.com")
+    assert "INSERT INTO users" in second_query
+    assert second_params == (2, "bob@example.com")
+
+
 def test_migrate_raises_when_sqlite_file_missing(monkeypatch, tmp_path: Path):
     fake_conn = _FakeAsyncPgConn()
     monkeypatch.setitem(__import__("sys").modules, "asyncpg", _FakeAsyncPg(fake_conn))
