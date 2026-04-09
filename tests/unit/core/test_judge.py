@@ -449,6 +449,7 @@ def test_record_judge_metrics_variants(monkeypatch):
     async def async_sink(payload):
         return None
 
+    assert __import__("asyncio").run(async_sink({"type": "judge"})) is None
     metrics_mod.get_llm_metrics_collector = lambda: Collector(async_sink)
 
     def no_loop():
@@ -471,6 +472,8 @@ def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
 
     async def async_sink(payload):
         return None
+
+    assert __import__("asyncio").run(async_sink({"type": "judge"})) is None
 
     class _Loop:
         def create_task(self, coro):
