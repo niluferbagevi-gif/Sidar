@@ -337,6 +337,8 @@ class SidarAgent:
 
         # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
+        if asyncio.iscoroutine(multi_result):
+            multi_result = await multi_result
 
         if self._lock is None:
             self._lock = asyncio.Lock()
