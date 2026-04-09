@@ -79,6 +79,23 @@ def fake_llm_response() -> Callable[..., Any]:
 
 
 @pytest.fixture
+def fake_llm_tool_sequence_response() -> Callable[..., Any]:
+    """Araç çağrısı gerektiren entegrasyon akışı için sıralı LLM yanıtları döner."""
+
+    responses = iter(
+        [
+            '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}',
+            '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}',
+        ]
+    )
+
+    async def _mock_tool_sequence(*_args: Any, **_kwargs: Any) -> str:
+        return next(responses)
+
+    return _mock_tool_sequence
+
+
+@pytest.fixture
 def fake_llm_error() -> Callable[..., Any]:
     """LLM istemcisi için deterministik hata (rate-limit/timeout) döner."""
 
