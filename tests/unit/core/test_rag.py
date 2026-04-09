@@ -695,9 +695,11 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(monkeypatch: p
 
 async def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Cuda:
+        enabled = False
+
         @staticmethod
         def is_available() -> bool:
-            return False
+            return _Cuda.enabled
 
     class _Torch:
         cuda = _Cuda()
@@ -733,6 +735,12 @@ async def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: py
 
     ef = rag._build_embedding_function(use_gpu=True, gpu_device=1, mixed_precision=True)
     assert ef is not None
+    assert ef(["chunk"]) == [[1.0]]
+
+    _Cuda.enabled = True
+    ef_cuda = rag._build_embedding_function(use_gpu=True, gpu_device=1, mixed_precision=True)
+    assert ef_cuda is not None
+    assert ef_cuda(["chunk"]) == [[1.0]]
 
     class _BrokenEF:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -937,6 +945,7 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
         raise RuntimeError("pg-runtime")
 
     mock_sentence_transformers(_SentenceTransformer)
+    _SentenceTransformer("mini")
     monkeypatch.setitem(sys.modules, "pgvector", SimpleNamespace(__name__="pgvector"))
     monkeypatch.setitem(
         sys.modules,
@@ -1034,6 +1043,7 @@ async def test_document_store_upsert_pgvector_chunks_rolls_back_on_transaction_f
 
     store.pg_engine = _Engine()
     store._upsert_pgvector_chunks("d1", "p1", "s1", "title", "src", ["content"])
+    assert _Tx().__exit__(None, None, None) is False
 
     assert state["calls"] >= 2
     assert state["rollback"] is True
@@ -1277,6 +1287,11 @@ async def test_document_store_init_chroma_and_fts_error_branches(monkeypatch: py
 
         def commit(self) -> None:
             return None
+
+    assert _BrokenCursor().fetchone() == {"c": 0}
+    conn_probe = _BrokenConn()
+    assert isinstance(conn_probe.execute("SELECT count(*) as c FROM bm25_index"), _BrokenCursor)
+    assert conn_probe.commit() is None
 
     monkeypatch.setattr("sqlite3.connect", lambda *_a, **_k: _BrokenConn())
     store._index = {"doc1": {"session_id": "s1"}}
@@ -1651,6 +1666,7 @@ obj.session.post("/y")
         return original_read_text(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", _boom)
+    assert other.read_text(encoding="utf-8") == "print('ok')\n"
     rebuilt = gi.rebuild(root)
     assert rebuilt["nodes"] >= 1
 
@@ -2330,6 +2346,8 @@ async def test_document_store_search_fallbacks_when_fake_vector_store_empty_or_e
     ok_empty, result_empty = store._search_sync("pytest", top_k=2, mode="auto", session_id="s1")
     assert ok_empty is True
     assert result_empty == "keyword-fallback"
+    fake_vector_store.search.return_value = [{"content": "present"}]
+    assert _pgvector_empty("pytest", 2, "s1") == (True, "unused")
 
     fake_vector_store.set_db_error()
 
@@ -2344,3 +2362,5 @@ async def test_document_store_search_fallbacks_when_fake_vector_store_empty_or_e
     ok_err, result_err = store._search_sync("pytest", top_k=2, mode="auto", session_id="s1")
     assert ok_err is True
     assert result_err == "keyword-fallback"
+    fake_vector_store.search.side_effect = None
+    assert _pgvector_error("pytest", 2, "s1") == (True, "unused")
