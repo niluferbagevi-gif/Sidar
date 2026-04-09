@@ -292,6 +292,7 @@ async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
 
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(agent._ensure_db(), timeout=0.01)
+    assert await agent._db_lock.__aexit__(None, None, None) is False
 
 
 @pytest.mark.asyncio
@@ -398,11 +399,23 @@ async def test_parse_terminal_coverage_skips_empty_path():
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
 
-async def test_module_sets_agentcatalog_get_fallback(monkeypatch):
+@pytest.mark.parametrize("mode", ["normal", "missing_seed", "missing_no_seed", "none_get"])
+async def test_module_sets_agentcatalog_get_fallback(monkeypatch, mode):
     module_path = Path("agent/roles/coverage_agent.py")
     import importlib.util
 
     from agent.registry import AgentCatalog as RealCatalog
+
+    if mode in {"missing_seed", "missing_no_seed"}:
+        monkeypatch.delattr(RealCatalog, "get", raising=False)
+    if mode == "none_get":
+        setattr(RealCatalog, "get", None)
+
+    existed_initially = hasattr(RealCatalog, "get")
+    initial_get = getattr(RealCatalog, "get", None)
+
+    if mode == "missing_seed" and not existed_initially:
+        setattr(RealCatalog, "get", lambda _role_name: None)
 
     had_get = hasattr(RealCatalog, "get")
     original_get = getattr(RealCatalog, "get", None)
@@ -423,6 +436,10 @@ async def test_module_sets_agentcatalog_get_fallback(monkeypatch):
     finally:
         if had_get and original_get is not None:
             RealCatalog.get = original_get
+        if existed_initially and initial_get is not None:
+            RealCatalog.get = initial_get
+        elif not existed_initially:
+            monkeypatch.delattr(RealCatalog, "get", raising=False)
 
 
 async def test_clean_code_output_handles_closing_fence_without_opening_hint():
@@ -435,6 +452,7 @@ async def test_clean_code_output_handles_closing_fence_without_opening_hint():
             return FakeStr("```synthetic")
 
     assert CoverageAgent._clean_code_output(WeirdStringable()) == ""
+    assert FakeStr("```synthetic").splitlines() == []
 
 
 async def test_clean_code_output_real_markdown_fence_cleanup():
