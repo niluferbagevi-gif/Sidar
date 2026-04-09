@@ -92,6 +92,9 @@ async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> No
 async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
     client, _sqlite_db, _fake_agent = web_api_client
     admin_headers = {"Authorization": "Bearer token-for-admin"}
+    baseline_list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
+    assert baseline_list_response.status_code == 200
+    baseline_items = baseline_list_response.json()["items"]
 
     create_response = await client.post(
         "/admin/prompts",
@@ -106,7 +109,7 @@ async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -
     list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
     assert list_response.status_code == 200
     items = list_response.json()["items"]
-    assert len(items) == 1
+    assert len(items) == len(baseline_items) + 1
     assert items[0]["prompt_text"] == "Be concise"
 
     activate_response = await client.post(

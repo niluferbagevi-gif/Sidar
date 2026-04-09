@@ -43,8 +43,9 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
-            response = await client.get("/healthz")
+        async with web_server.app.router.lifespan_context(web_server.app):
+            async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
+                response = await client.get("/healthz")
 
         assert response.status_code == 200
         payload = response.json()
