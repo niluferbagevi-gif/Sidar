@@ -357,6 +357,27 @@ def fake_coverage_db_class() -> type:
     return _FakeCoverageDB
 
 
+
+
+@pytest.fixture
+def fake_llm_tool_sequence() -> Callable[[list[str]], AsyncMock]:
+    """Araç çağrısı akışları için sıralı LLM çıktısı üreten yardımcı fixture."""
+
+    def _build(responses: list[str]) -> AsyncMock:
+        return AsyncMock(side_effect=list(responses))
+
+    return _build
+
+
+@pytest.fixture
+def fake_web_search_result() -> Callable[[bool, str], AsyncMock]:
+    """Web arama katmanı için deterministik sonuç üreten yardımcı fixture."""
+
+    def _build(ok: bool, payload: str) -> AsyncMock:
+        return AsyncMock(return_value=(ok, payload))
+
+    return _build
+
 @pytest.fixture
 def fake_vector_store() -> AsyncMock:
     """core/rag.py testleri için deterministik vector DB adaptörü."""

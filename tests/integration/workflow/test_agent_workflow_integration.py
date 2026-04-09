@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     sidar_agent_factory,
     fake_llm_response,
+    fake_web_search_result,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -24,10 +25,8 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
 
     await agent.memory.set_active_user("integration-user", "Integration User")
 
-    async def _fake_web_search(_self, query: str):
-        return True, f"docs:ok:{query}"
-
-    monkeypatch.setattr(WebSearchManager, "search", _fake_web_search)
+    search_mock = fake_web_search_result(True, "docs:ok:docs için araştırma yap")
+    monkeypatch.setattr(WebSearchManager, "search", search_mock)
 
     out = await _collect_stream(agent.respond("docs için araştırma yap"))
 
@@ -42,6 +41,7 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
 async def test_sidar_agent_workflow_handles_search_failure(
     sidar_agent_factory,
     fake_llm_response,
+    fake_web_search_result,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -54,10 +54,8 @@ async def test_sidar_agent_workflow_handles_search_failure(
 
     await agent.memory.set_active_user("integration-user", "Integration User")
 
-    async def _fake_web_search_fail(_self, query: str):
-        return False, f"Arama sırasında hata oluştu: {query}"
-
-    monkeypatch.setattr(WebSearchManager, "search", _fake_web_search_fail)
+    search_mock = fake_web_search_result(False, "Arama sırasında hata oluştu: docs için araştırma yap")
+    monkeypatch.setattr(WebSearchManager, "search", search_mock)
 
     out = await _collect_stream(agent.respond("docs için araştırma yap"))
 
@@ -73,6 +71,8 @@ async def test_sidar_agent_workflow_handles_search_failure(
 @pytest.mark.integration
 async def test_sidar_agent_workflow_executes_tool_sequence(
     sidar_agent_factory,
+    fake_llm_tool_sequence,
+    fake_web_search_result,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -80,20 +80,18 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
-    call_count = 0
-
-    async def mock_llm_chat(*_args, **_kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}'
-        return '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}'
-
-    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=mock_llm_chat))
+    agent.llm = types.SimpleNamespace(
+        chat=fake_llm_tool_sequence(
+            [
+                '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}',
+                '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}',
+            ]
+        )
+    )
 
     await agent.memory.set_active_user("integration-user", "Integration User")
 
-    search_mock = AsyncMock(return_value=(True, "bulunan sonuc: pytest harikadır"))
+    search_mock = fake_web_search_result(True, "bulunan sonuc: pytest harikadır")
     monkeypatch.setattr(WebSearchManager, "search", search_mock)
 
     out = await _collect_stream(agent.respond("Pytest entegrasyonunu araştır"))
