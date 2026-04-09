@@ -114,6 +114,11 @@ def test_record_usage_sink_closes_awaitable_without_running_loop(monkeypatch: py
             self.closed = True
 
     awaitable = ClosableAwaitable()
+
+    async def _await_closable() -> None:
+        return await awaitable
+
+    assert asyncio.run(_await_closable()) is None
     collector.set_usage_sink(lambda _event: awaitable)
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
 
@@ -134,6 +139,11 @@ def test_record_usage_sink_awaitable_without_close_and_without_running_loop(
             return None
 
     awaitable = NonClosableAwaitable()
+
+    async def _await_non_closable() -> None:
+        return await awaitable
+
+    assert asyncio.run(_await_non_closable()) is None
     collector.set_usage_sink(lambda _event: awaitable)
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
 
@@ -209,6 +219,7 @@ def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(monk
         return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert builtins.__import__("json").__name__ == "json"
 
     snap = collector.snapshot()
 
