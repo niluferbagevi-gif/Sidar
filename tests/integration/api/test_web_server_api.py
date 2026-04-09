@@ -223,6 +223,9 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
     async def _never_rate_limited(*_args, **_kwargs):
         return False
 
+    resolved_admin = asyncio.run(_fake_resolve(fake_agent, "token-for-admin"))
+    assert resolved_admin is not None
+    assert resolved_admin.role == "admin"
     assert asyncio.run(_fake_resolve(fake_agent, "invalid-token")) is None
     assert asyncio.run(_never_rate_limited()) is False
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
