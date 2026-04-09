@@ -10,6 +10,8 @@ import pytest
 import agent.roles.coverage_agent as _COVERAGE_MODULE
 from agent.roles.coverage_agent import CoverageAgent
 
+pytestmark = pytest.mark.asyncio
+
 
 def make_agent(tmp_path, code_manager):
     a = CoverageAgent.__new__(CoverageAgent)
@@ -31,7 +33,7 @@ def make_agent(tmp_path, code_manager):
     return a
 
 
-def test_init_registers_tools(mocker, tmp_path):
+async def test_init_registers_tools(mocker, tmp_path):
     events = []
 
     def fake_base_init(self, cfg=None, role_name="base"):
@@ -62,7 +64,7 @@ def test_init_registers_tools(mocker, tmp_path):
     ]
 
 
-def test_static_helpers_and_parsers(tmp_path):
+async def test_static_helpers_and_parsers(tmp_path):
     assert CoverageAgent._parse_payload("") == {}
     assert CoverageAgent._parse_payload('{"k":1}') == {"k": 1}
     assert CoverageAgent._parse_payload("[1]") == {"command": "[1]"}
@@ -96,7 +98,7 @@ def test_static_helpers_and_parsers(tmp_path):
     assert missing_cfg["exists"] is False
 
 
-def test_parse_coverage_xml_and_terminal(tmp_path):
+async def test_parse_coverage_xml_and_terminal(tmp_path):
     xml_path = tmp_path / "coverage.xml"
     xml_path.write_text(
         """
@@ -179,7 +181,7 @@ agent/roles/ok.py                 100      0      0      0 100%
     assert CoverageAgent._parse_terminal_coverage_output("not parsable")["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
 
-def test_build_dynamic_prompt():
+async def test_build_dynamic_prompt():
     prompt = CoverageAgent._build_dynamic_pytest_prompt(
         finding={"target_path": "src/a.py", "missing_lines": [1, 2], "missing_branches": ["3:50%"]},
         coveragerc={"run": {"include": "src/*"}, "report": {"omit": "tests/*"}},
@@ -378,7 +380,7 @@ async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_m
     assert db_a.inited == 1
 
 
-def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
+async def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     class FakeMatch:
         @staticmethod
         def groupdict():
@@ -394,7 +396,7 @@ def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
 
-def test_module_sets_agentcatalog_get_fallback(monkeypatch):
+async def test_module_sets_agentcatalog_get_fallback(monkeypatch):
     module_path = Path("agent/roles/coverage_agent.py")
     import importlib.util
 
@@ -421,7 +423,7 @@ def test_module_sets_agentcatalog_get_fallback(monkeypatch):
             RealCatalog.get = original_get
 
 
-def test_clean_code_output_handles_closing_fence_without_opening_hint():
+async def test_clean_code_output_handles_closing_fence_without_opening_hint():
     class FakeStr(str):
         def splitlines(self):
             return []
@@ -433,12 +435,12 @@ def test_clean_code_output_handles_closing_fence_without_opening_hint():
     assert CoverageAgent._clean_code_output(WeirdStringable()) == ""
 
 
-def test_clean_code_output_real_markdown_fence_cleanup():
+async def test_clean_code_output_real_markdown_fence_cleanup():
     cleaned = CoverageAgent._clean_code_output(" ```python\nprint('hi')\n``` ")
     assert cleaned == "print('hi')"
 
 
-def test_clean_code_output_handles_multiple_and_nested_like_fences():
+async def test_clean_code_output_handles_multiple_and_nested_like_fences():
     multi_block = (
         "```python\n"
         "def test_a():\n"
@@ -457,7 +459,7 @@ def test_clean_code_output_handles_multiple_and_nested_like_fences():
     assert "Açıklama" not in cleaned
 
 
-def test_complex_code_sanitization():
+async def test_complex_code_sanitization():
     raw = (
         "Giriş metni\n"
         "```python\nx = 1\n```\n"
@@ -468,7 +470,7 @@ def test_complex_code_sanitization():
     assert cleaned == "x = 1\n\ny = 2"
 
 
-def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
+async def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     xml_path = tmp_path / "coverage_full_branch.xml"
     xml_path.write_text(
         """
