@@ -1462,11 +1462,11 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
 
 @pytest.mark.asyncio
 async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
-    agent_factory,
+    sidar_agent_factory,
     fake_llm_response,
     fake_event_stream,
 ) -> None:
-    agent = agent_factory(sidar_agent.SidarAgent)
+    agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._memory_add = AsyncMock()
 
@@ -1488,12 +1488,12 @@ async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
 
 @pytest.mark.asyncio
 async def test_sidar_agent_llm_error_flow(
-    agent_factory,
+    sidar_agent_factory,
     fake_llm_error,
     fake_event_stream,
 ) -> None:
     _ = fake_event_stream
-    agent = agent_factory(sidar_agent.SidarAgent)
+    agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._try_multi_agent = AsyncMock(side_effect=fake_llm_error)
 
