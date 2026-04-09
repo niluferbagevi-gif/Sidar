@@ -258,51 +258,35 @@ def fake_lsp_client() -> AsyncMock:
 
 
 @pytest.fixture
-def fake_coverage_code_manager() -> Any:
-    class _FakeCoverageCodeManager:
-        def __init__(self) -> None:
-            self.calls: list[tuple[Any, ...]] = []
-
-        def run_pytest_and_collect(self, command: str, cwd: str) -> dict[str, Any]:
-            self.calls.append(("run_pytest_and_collect", command, cwd))
-            return {"analysis": {"summary": "ok", "findings": []}, "output": "OUT"}
-
-        def analyze_pytest_output(self, output: str) -> dict[str, Any]:
-            self.calls.append(("analyze_pytest_output", output))
-            return {"summary": f"ANALYZED:{output}", "findings": [{"target_path": "src/m.py"}]}
-
-        def read_file(self, path: str) -> tuple[bool, str]:
-            self.calls.append(("read_file", path))
-            return True, f"SOURCE:{path}"
-
-        def write_generated_test(self, path: str, content: str, append: bool = True) -> tuple[bool, str]:
-            self.calls.append(("write_generated_test", path, content, append))
-            return True, f"WROTE:{path}:{append}"
-
-    return _FakeCoverageCodeManager()
+def fake_coverage_code_manager() -> MagicMock:
+    """Coverage testleri için standart MagicMock kullanan code manager."""
+    mock_manager = MagicMock()
+    mock_manager.run_pytest_and_collect.return_value = {
+        "analysis": {"summary": "ok", "findings": []},
+        "output": "OUT",
+    }
+    mock_manager.analyze_pytest_output.side_effect = lambda output: {
+        "summary": f"ANALYZED:{output}",
+        "findings": [{"target_path": "src/m.py"}],
+    }
+    mock_manager.read_file.side_effect = lambda path: (True, f"SOURCE:{path}")
+    mock_manager.write_generated_test.side_effect = lambda path, content, append=True: (
+        True,
+        f"WROTE:{path}:{append}",
+    )
+    return mock_manager
 
 
 @pytest.fixture
 def fake_coverage_db_class() -> type:
+    """Coverage DB için AsyncMock kullanan factory sınıfı."""
+
     class _FakeCoverageDB:
         def __init__(self, cfg: Any) -> None:
             self.cfg = cfg
-            self.connected = 0
-            self.inited = 0
-            self.created: list[dict[str, Any]] = []
-            self.findings: list[dict[str, Any]] = []
-
-        async def connect(self) -> None:
-            self.connected += 1
-
-        async def init_schema(self) -> None:
-            self.inited += 1
-
-        async def create_coverage_task(self, **kwargs: Any) -> SimpleNamespace:
-            self.created.append(kwargs)
-            return SimpleNamespace(id=123)
-
-        async def add_coverage_finding(self, **kwargs: Any) -> None:
-            self.findings.append(kwargs)
+            self.connect = AsyncMock()
+            self.init_schema = AsyncMock()
+            self.create_coverage_task = AsyncMock(return_value=SimpleNamespace(id=123))
+            self.add_coverage_finding = AsyncMock()
 
     return _FakeCoverageDB
