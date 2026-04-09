@@ -459,7 +459,10 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     )
 
 
-async def test_respond_memory_failure_graceful(sidar_agent_factory) -> None:
+async def test_respond_memory_failure_graceful(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     agent = sidar_agent_factory()
     agent._lock = None
     agent.initialize = AsyncMock()
@@ -468,13 +471,8 @@ async def test_respond_memory_failure_graceful(sidar_agent_factory) -> None:
     agent._memory_add = AsyncMock(side_effect=RuntimeError(error_msg))
     agent._try_multi_agent = AsyncMock(return_value="Kritik Yanıt")
     warning_mock = Mock()
-    original_warning = sidar_agent.logger.warning
-    sidar_agent.logger.warning = warning_mock
-
-    try:
-        responses = list(await _collect_stream(agent.respond("test input")))
-    finally:
-        sidar_agent.logger.warning = original_warning
+    monkeypatch.setattr(sidar_agent.logger, "warning", warning_mock)
+    responses = list(await _collect_stream(agent.respond("test input")))
 
     assert "Kritik Yanıt" in responses
     agent._memory_add.assert_awaited_once_with("user", "test input")
