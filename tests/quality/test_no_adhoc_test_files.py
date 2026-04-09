@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_ROOT = REPO_ROOT / "tests"
@@ -29,3 +31,31 @@ def test_no_adhoc_test_files_in_repo() -> None:
         "Ad-hoc test dosyaları tespit edildi. Dosyaları ilgili ana modül testlerine taşıyın: "
         + ", ".join(sorted(violations))
     )
+
+
+def test_no_adhoc_test_files_passes_when_no_forbidden_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forbidden pattern eşleşmesi yoksa test guardrail'i geçmelidir."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_valid_name.py").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(__import__(__name__), "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(__import__(__name__), "TESTS_ROOT", tmp_path / "tests")
+
+    test_no_adhoc_test_files_in_repo()
+
+
+def test_no_adhoc_test_files_fails_when_forbidden_file_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forbidden pattern eşleşmesinde ihlal listesi assert mesajına yansımalıdır."""
+    (tmp_path / "tests").mkdir()
+    forbidden = tmp_path / "tests" / "test_quick_regression.py"
+    forbidden.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(__import__(__name__), "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(__import__(__name__), "TESTS_ROOT", tmp_path / "tests")
+
+    with pytest.raises(AssertionError, match=r"test_quick_regression\.py"):
+        test_no_adhoc_test_files_in_repo()
