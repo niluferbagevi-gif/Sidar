@@ -17,6 +17,7 @@ _ORIGINAL_MODULES = {
         "agent.roles.poyraz_agent",
         "agent.roles.qa_agent",
         "agent.core.event_stream",
+        "agent.roles._missing_stub_for_coverage",
     )
 }
 
@@ -87,6 +88,25 @@ def teardown_module(_module) -> None:
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = original
+
+
+def test_register_stub_module_creates_runnable_role() -> None:
+    module_name = "agent.roles._temporary_stub_role"
+    _register_stub_module(module_name, "TempAgent")
+    stub_module = sys.modules[module_name]
+    role_cls = getattr(stub_module, "TempAgent")
+    role = role_cls(cfg={"mode": "test"})
+
+    assert role.cfg == {"mode": "test"}
+    assert asyncio.run(role.run_task("hedef")) == "stub:TempAgent:hedef"
+
+    sys.modules.pop(module_name, None)
+
+
+def test_stub_event_bus_factory_returns_publishable_bus() -> None:
+    bus = get_agent_event_bus()
+    assert isinstance(bus, _StubEventBus)
+    assert asyncio.run(bus.publish("supervisor", "hello")) is None
 
 
 class _DummyEvents:
