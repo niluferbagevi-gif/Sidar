@@ -370,11 +370,31 @@ async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_m
 
 
 async def test_parse_terminal_coverage_skips_empty_path():
-    coverage_output = (
-        "Name Stmts Miss Branch BrPart Cover Missing\n"
-        "   10 1 0 0 90% 1\n"
-    )
-    data = CoverageAgent._parse_terminal_coverage_output(coverage_output)
+    class FakeMatch:
+        @staticmethod
+        def groupdict():
+            return {
+                "path": "   ",
+                "stmts": "10",
+                "miss": "1",
+                "branch": "0",
+                "brpart": "0",
+                "cover": "90",
+                "missing": "1",
+            }
+
+    class FakePattern:
+        @staticmethod
+        def match(_line):
+            return FakeMatch()
+
+    original_compile = _COVERAGE_MODULE.re.compile
+    _COVERAGE_MODULE.re.compile = lambda _pattern: FakePattern()
+    try:
+        coverage_output = "agent/roles/coverage_agent.py 10 1 0 0 90% 1\n"
+        data = CoverageAgent._parse_terminal_coverage_output(coverage_output)
+    finally:
+        _COVERAGE_MODULE.re.compile = original_compile
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
 
