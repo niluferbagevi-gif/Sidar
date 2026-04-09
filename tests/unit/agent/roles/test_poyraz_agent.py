@@ -427,6 +427,7 @@ def test_landing_and_campaign_copy_tools_with_and_without_persist(poyraz_module,
 
 
 def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
+    # Düzeltilen Kısım: Dinamik yüklenen modül üzerindeki referansı doğrudan patch et.
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     agent = _agent(poyraz_module, fake_cfg)
@@ -457,6 +458,7 @@ def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
 
 
 def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fake_cfg, monkeypatch):
+    # Düzeltilen Kısım
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     agent = _agent(poyraz_module, fake_cfg)
