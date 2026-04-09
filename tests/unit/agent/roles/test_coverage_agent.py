@@ -1,7 +1,6 @@
 import asyncio
 import json
 import sys
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -397,50 +396,6 @@ async def test_parse_terminal_coverage_skips_empty_path():
     finally:
         _COVERAGE_MODULE.re.compile = original_compile
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
-
-
-@pytest.mark.skip(reason="Obsolete test causing state leak. AgentCatalog.get is now native.")
-@pytest.mark.parametrize("mode", ["normal", "missing_seed", "missing_no_seed", "none_get"])
-async def test_module_sets_agentcatalog_get_fallback(monkeypatch, mode):
-    module_path = Path("agent/roles/coverage_agent.py")
-    import importlib.util
-
-    from agent.registry import AgentCatalog as RealCatalog
-
-    if mode in {"missing_seed", "missing_no_seed"}:
-        monkeypatch.delattr(RealCatalog, "get", raising=False)
-    if mode == "none_get":
-        setattr(RealCatalog, "get", None)
-
-    existed_initially = hasattr(RealCatalog, "get")
-    initial_get = getattr(RealCatalog, "get", None)
-
-    if mode == "missing_seed" and not existed_initially:
-        setattr(RealCatalog, "get", lambda _role_name: None)
-
-    had_get = hasattr(RealCatalog, "get")
-    original_get = getattr(RealCatalog, "get", None)
-    if had_get:
-        monkeypatch.delattr(RealCatalog, "get", raising=False)
-
-    try:
-        base_agent_mod = ModuleType("agent.base_agent")
-        base_agent_mod.BaseAgent = type("BaseAgent", (), {})
-        monkeypatch.setitem(sys.modules, "agent.base_agent", base_agent_mod)
-        spec = importlib.util.spec_from_file_location("coverage_agent_no_get", module_path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec and spec.loader
-        sys.modules["coverage_agent_no_get"] = module
-        spec.loader.exec_module(module)
-        assert hasattr(RealCatalog, "get")
-        assert RealCatalog.get("anything") is None
-    finally:
-        if had_get and original_get is not None:
-            RealCatalog.get = original_get
-        if existed_initially and initial_get is not None:
-            RealCatalog.get = initial_get
-        elif not existed_initially:
-            monkeypatch.delattr(RealCatalog, "get", raising=False)
 
 
 async def test_clean_code_output_handles_closing_fence_without_opening_hint():
