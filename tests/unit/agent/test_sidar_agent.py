@@ -977,6 +977,20 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     assert (await agent._tool_github_smart_pr("title|||base|||note")).startswith(sidar_agent.GITHUB_SMART_PR_CREATE_FAILED_PREFIX)
 
 
+@pytest.mark.parametrize("branch_output", ["", False])
+async def test_tool_github_smart_pr_no_branch_when_branch_output_empty_or_false(
+    sidar_agent_factory,
+    branch_output,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.github = types.SimpleNamespace(is_available=lambda: True, default_branch="main")
+    agent.code = Mock()
+    agent.code.run_shell.return_value = (True, branch_output)
+
+    result = await agent._tool_github_smart_pr("PR Title|||main|||notes")
+    assert sidar_agent.GITHUB_SMART_PR_NO_BRANCH_MESSAGE in result
+
+
 async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     added = []
@@ -1313,6 +1327,19 @@ async def test_initialize_inner_early_return_branch(sidar_agent_factory) -> None
     await agent_init.initialize()
 
 
+async def test_initialize_lazy_init_lock_handles_concurrent_calls(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._initialized = False
+    agent._init_lock = None
+    agent.memory = types.SimpleNamespace(initialize=AsyncMock())
+
+    await asyncio.gather(*(agent.initialize() for _ in range(8)))
+
+    assert agent._initialized is True
+    assert isinstance(agent._init_lock, asyncio.Lock)
+    agent.memory.initialize.assert_awaited_once()
+
+
 async def test_respond_and_append_history_with_existing_locks(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent._lock = asyncio.Lock()
@@ -1327,6 +1354,20 @@ async def test_respond_and_append_history_with_existing_locks(sidar_agent_factor
     agent._autonomy_history = []
     agent._autonomy_lock = asyncio.Lock()
     await agent._append_autonomy_history({"x": 1, "timestamp": sidar_agent.time.time()})
+
+
+async def test_append_autonomy_history_lazy_lock_handles_concurrency(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._autonomy_lock = None
+    agent._autonomy_history = []
+
+    await asyncio.gather(
+        *(agent._append_autonomy_history({"idx": idx, "timestamp": float(idx)}) for idx in range(20))
+    )
+
+    assert isinstance(agent._autonomy_lock, asyncio.Lock)
+    assert len(agent._autonomy_history) == 20
+    assert sorted(item["idx"] for item in agent._autonomy_history) == list(range(20))
 
 
 async def test_execute_self_heal_plan_applied_with_existing_backup(sidar_agent_factory, tmp_path: Path) -> None:
@@ -1499,4 +1540,3 @@ async def test_sidar_agent_llm_error_flow(
 
     with pytest.raises(RuntimeError, match="rate limit exceeded"):
         _chunks = [chunk async for chunk in agent.respond("hata tetikle")]
-
