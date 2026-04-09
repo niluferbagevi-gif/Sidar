@@ -195,6 +195,7 @@ install_python_deps() {
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
             uv pip install \
+                --index-strategy unsafe-best-match \
                 --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
                 "${INSTALL_SPEC[@]}"
         else
