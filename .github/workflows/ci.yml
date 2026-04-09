@@ -75,6 +75,8 @@ jobs:
         run: pytest -q -m quality_gate tests/quality/test_llm_quality_gate.py
 
       - name: Run test suite (single pass + coverage gate)
+        env:
+          RUN_TESTS_IN_DOCKER: "0"
         run: bash run_tests.sh
 
       - name: Upload Backend Coverage Report
