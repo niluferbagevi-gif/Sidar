@@ -1,4 +1,10 @@
 services:
+  # Not: Development'ta varsayılan bind-mount kullanılır.
+  # Production'ta host permission/chown sorunlarını azaltmak için aşağıdaki
+  # env değişkenlerini named volume ile override edin:
+  #   SIDAR_DATA_MOUNT=sidar_data_prod
+  #   SIDAR_LOGS_MOUNT=sidar_logs_prod
+  #   SIDAR_TEMP_MOUNT=sidar_temp_prod
 
   redis:
     image: redis:alpine
@@ -50,9 +56,9 @@ services:
       - .env
 
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./temp:/app/temp
+      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
+      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
+      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
       - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
@@ -112,9 +118,9 @@ services:
       - .env
 
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./temp:/app/temp
+      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
+      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
+      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
       - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
@@ -169,9 +175,9 @@ services:
       - .env
 
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./temp:/app/temp
+      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
+      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
+      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -229,9 +235,9 @@ services:
       - .env
 
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./temp:/app/temp
+      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
+      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
+      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -274,3 +280,6 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  sidar_data_prod:
+  sidar_logs_prod:
+  sidar_temp_prod:

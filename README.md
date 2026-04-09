@@ -336,12 +336,25 @@ ollama serve
 
 ### Docker ile
 
+> **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
+> Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
+> Sürücü daha eskiyse konteyner GPU ile ayağa kalkmayabilir.
+
 ```bash
 # CPU modu
 docker compose up --build sidar-web
 
 # GPU modu (NVIDIA)
 docker compose up --build sidar-web-gpu
+```
+
+Production ortamında host izin (uid/gid/chown) sorunlarını azaltmak için bind mount yerine named volume kullanabilirsiniz:
+
+```bash
+export SIDAR_DATA_MOUNT=sidar_data_prod
+export SIDAR_LOGS_MOUNT=sidar_logs_prod
+export SIDAR_TEMP_MOUNT=sidar_temp_prod
+docker compose up -d sidar-web
 ```
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
