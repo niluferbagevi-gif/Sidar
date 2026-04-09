@@ -486,6 +486,33 @@ def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fak
     assert DummyMultimodalPipeline.last_kwargs["frame_interval_seconds"] == 0.1
 
 
+def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(poyraz_module, fake_cfg, monkeypatch):
+    class FallbackPipeline(DummyMultimodalPipeline):
+        pass
+
+    fake_mm_mod = types.ModuleType("core.multimodal")
+    fake_mm_mod.MultimodalPipeline = FallbackPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", fake_mm_mod)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt|||tr|||sess|||3"))
+
+    assert result.startswith("[VIDEO:INGESTED]")
+    assert DummyMultimodalPipeline.last_kwargs is not None
+    assert DummyMultimodalPipeline.last_kwargs["media_source"] == "https://video"
+
+
+def test_ingest_video_insights_returns_error_when_pipeline_unavailable(poyraz_module, fake_cfg, monkeypatch):
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+    monkeypatch.delitem(sys.modules, "core.multimodal", raising=False)
+
+    agent = _agent(poyraz_module, fake_cfg)
+    result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt"))
+
+    assert result == "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"
+
+
 def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkeypatch):
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
@@ -700,4 +727,3 @@ async def test_poyraz_agent_error_flows(
 
     with pytest.raises(RuntimeError, match="corrupted video stream"):
         await agent._tool_ingest_video_insights("https://video.example/broken.mp4|||analiz")
-
