@@ -16,6 +16,11 @@ from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 
 try:
+    from core.multimodal import MultimodalPipeline
+except Exception:  # pragma: no cover - test/stub ortamlarda opsiyonel olabilir
+    MultimodalPipeline = None  # type: ignore[assignment]
+
+try:
     from agent.tooling import parse_tool_argument
 except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabilir
     class _FallbackPayload:
@@ -289,7 +294,8 @@ class PoyrazAgent(BaseAgent):
         return output
 
     async def _tool_ingest_video_insights(self, arg: str) -> str:
-        from core.multimodal import MultimodalPipeline
+        if MultimodalPipeline is None:
+            return "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"
 
         raw = (arg or "").strip()
         if raw.startswith("{"):

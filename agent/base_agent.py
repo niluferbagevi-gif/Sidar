@@ -19,9 +19,19 @@ class BaseAgent(ABC):
     SYSTEM_PROMPT = "You are a specialist agent."
 
     def __init__(self, cfg: Optional[Config] = None, *, role_name: str = "base") -> None:
-        self.cfg = cfg or Config()
+        resolved_cfg = cfg or Config()
+        if cfg is not None:
+            for attr in dir(Config):
+                if not attr.isupper() or hasattr(resolved_cfg, attr):
+                    continue
+                try:
+                    setattr(resolved_cfg, attr, getattr(Config, attr))
+                except Exception:
+                    continue
+
+        self.cfg = resolved_cfg
         self.role_name = role_name
-        self.llm = LLMClient(self.cfg.AI_PROVIDER, self.cfg)
+        self.llm = LLMClient(getattr(self.cfg, "AI_PROVIDER", "ollama"), self.cfg)
         self.tools: Dict[str, ToolFunc] = {}
 
     def register_tool(self, name: str, func: ToolFunc) -> None:
