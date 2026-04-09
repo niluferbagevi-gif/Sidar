@@ -56,6 +56,8 @@ def test_mock_adapter_available():
 
 def test_pyttsx3_adapter_not_available_when_import_fails(monkeypatch):
     # pyttsx3'ü import edilemez hale getir
+    if "pyttsx3" not in sys.modules:
+        sys.modules["pyttsx3"] = types.ModuleType("pyttsx3")
     real = sys.modules.pop("pyttsx3", None)
     monkeypatch.setitem(sys.modules, "pyttsx3", None)
     try:
