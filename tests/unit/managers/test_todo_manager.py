@@ -189,6 +189,10 @@ def test_load_handles_locked_todo_file(tmp_path: Path, monkeypatch):
             raise PermissionError("file is locked")
         return real_open(path, mode, *args, **kwargs)
 
+    probe = tmp_path / "probe.txt"
+    probe.write_text("ok", encoding="utf-8")
+    with _open_with_lock(probe, "r", encoding="utf-8") as handle:
+        assert handle.read() == "ok"
     monkeypatch.setattr("builtins.open", _open_with_lock)
     manager = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert len(manager) == 0
@@ -202,6 +206,9 @@ def test_add_task_raises_when_todo_file_not_writable(manager: TodoManager, monke
             raise PermissionError("readonly filesystem")
         return real_open(path, mode, *args, **kwargs)
 
+    manager.todo_path.write_text("[]", encoding="utf-8")
+    with _open_readonly(manager.todo_path, "r", encoding="utf-8") as handle:
+        assert handle.read() == "[]"
     monkeypatch.setattr("builtins.open", _open_readonly)
     with pytest.raises(PermissionError):
         manager.add_task("persist me", status=STATUS_PENDING)
@@ -254,6 +261,9 @@ def test_scan_project_todos_ignores_file_read_errors(manager: TodoManager, tmp_p
             raise OSError("cannot read")
         return real_read_text(self, *args, **kwargs)
 
+    ok_file = tmp_path / "ok.py"
+    ok_file.write_text("# noop", encoding="utf-8")
+    assert _read_text(ok_file, encoding="utf-8") == "# noop"
     monkeypatch.setattr(Path, "read_text", _read_text)
     msg = manager.scan_project_todos(extensions=[".py"])
     assert "TODO veya FIXME" in msg
