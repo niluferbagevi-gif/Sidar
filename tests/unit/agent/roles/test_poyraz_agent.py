@@ -610,6 +610,7 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
     db_mod = types.ModuleType("core.db")
     db_mod.Database = DummyDatabase
     monkeypatch.setitem(sys.modules, "core.db", db_mod)
+    # Düzeltilen Kısım: MultimodalPipeline için setattr kullanıyoruz
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     # include ingest route aliases
