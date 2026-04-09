@@ -252,6 +252,31 @@ setup_env_file() {
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
 
+    # API_KEY boşsa güçlü rastgele değer üret
+    if ! grep -q '^API_KEY=' "$ENV_FILE" || grep -q '^API_KEY=$' "$ENV_FILE"; then
+        GENERATED_API_KEY=""
+        if command -v python3 &>/dev/null; then
+            GENERATED_API_KEY=$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+)
+        elif command -v openssl &>/dev/null; then
+            GENERATED_API_KEY=$(openssl rand -base64 32 | tr -d '\n')
+        fi
+
+        if [[ -n "$GENERATED_API_KEY" ]]; then
+            if grep -q '^API_KEY=' "$ENV_FILE"; then
+                sed -i "s|^API_KEY=.*|API_KEY=${GENERATED_API_KEY}|" "$ENV_FILE"
+            else
+                echo "API_KEY=${GENERATED_API_KEY}" >> "$ENV_FILE"
+            fi
+            ok ".env: API_KEY otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # GPU tespiti varsa .env içinde USE_GPU=true yap
     if [[ "$GPU_AVAILABLE" == true ]]; then
         if command -v sed &>/dev/null; then
