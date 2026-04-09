@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 from managers.package_info import PackageInfoManager
 
@@ -45,6 +46,13 @@ class DummyAsyncClient:
         if self.exc:
             raise self.exc
         return self.response
+
+
+def test_dummy_response_raise_for_status_raises_http_status_error():
+    response = DummyResponse(status_code=500)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        response.raise_for_status()
 
 
 def test_init_defaults_and_config_variants(monkeypatch):
@@ -425,4 +433,3 @@ def test_package_info_manager_isolated(monkeypatch):
     ok, latest = run(pkg.pypi_latest_version("sidar"))
     assert ok is True
     assert latest == "sidar==1.2.3"
-
