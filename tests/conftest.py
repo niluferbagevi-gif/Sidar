@@ -138,7 +138,6 @@ def fake_video_stream_error() -> AsyncMock:
 async def fake_db_session() -> AsyncGenerator[Any, None]:
     """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
     asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
-    orm = pytest.importorskip("sqlalchemy.orm")
 
     create_async_engine = asyncio_sqla.create_async_engine
     async_sessionmaker = asyncio_sqla.async_sessionmaker
@@ -146,13 +145,14 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    async with SessionLocal() as db:
-        try:
-            yield db
-        finally:
-            await db.rollback()
-            await db.close()
-            await engine.dispose()
+    try:
+        async with SessionLocal() as db:
+            try:
+                yield db
+            finally:
+                await db.rollback()
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture
@@ -181,13 +181,14 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
         engine = create_async_engine(async_url)
         SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-        async with SessionLocal() as db:
-            try:
-                yield db
-            finally:
-                await db.rollback()
-                await db.close()
-                await engine.dispose()
+        try:
+            async with SessionLocal() as db:
+                try:
+                    yield db
+                finally:
+                    await db.rollback()
+        finally:
+            await engine.dispose()
     finally:
         container.stop()
 
