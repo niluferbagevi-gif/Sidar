@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -58,18 +59,18 @@ class ResearcherAgent(BaseAgent):
                 self.tools[name] = func
 
     async def _tool_web_search(self, arg: str) -> str:
-        _ok, result = await self.web.search(arg)
+        _ok, result = await WebSearchManager.search(self.web, arg)
         return result
 
     async def _tool_fetch_url(self, arg: str) -> str:
-        _ok, result = await self.web.fetch_url(arg)
+        _ok, result = await WebSearchManager.fetch_url(self.web, arg)
         return result
 
     async def _tool_search_docs(self, arg: str) -> str:
         parts = arg.split(" ", 1)
         lib = parts[0].strip() if parts else ""
         topic = parts[1].strip() if len(parts) > 1 else ""
-        _ok, result = await self.web.search_docs(lib, topic)
+        _ok, result = await WebSearchManager.search_docs(self.web, lib, topic)
         return result
 
     async def _tool_docs_search(self, arg: str) -> str:
@@ -92,5 +93,27 @@ class ResearcherAgent(BaseAgent):
             return await self.call_tool("search_docs", prompt.split("|", 1)[1].strip())
         if lower.startswith("docs_search|"):
             return await self.call_tool("docs_search", prompt.split("|", 1)[1].strip())
+
+        for _ in range(4):
+            try:
+                decision = await self.call_llm(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    json_mode=True,
+                )
+            except Exception:
+                break
+            try:
+                parsed = json.loads(str(decision))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                break
+            tool = str(parsed.get("tool", "")).strip().lower()
+            argument = str(parsed.get("argument", "")).strip()
+            if tool in ("", "final_answer"):
+                final_answer = argument or str(parsed.get("content", "")).strip()
+                return final_answer or str(decision)
+            if tool not in self.tools:
+                break
+            prompt = await self.call_tool(tool, argument)
 
         return await self.call_tool("web_search", prompt)

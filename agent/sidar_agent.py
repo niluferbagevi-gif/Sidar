@@ -315,7 +315,11 @@ class SidarAgent:
         async with self._init_lock:
             if self._initialized:
                 return
-            await self.memory.initialize()
+            ensure_initialized = getattr(self.memory, "_ensure_initialized", None)
+            if callable(ensure_initialized):
+                await ensure_initialized()
+            else:
+                await self.memory.initialize()
             if hasattr(self.memory, "db") and hasattr(self.memory.db, "get_active_prompt"):
                 active_prompt = await self.memory.db.get_active_prompt("system")
                 if active_prompt and active_prompt.prompt_text.strip():
@@ -886,8 +890,6 @@ class SidarAgent:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             supervisor_mod = import_module("agent.core.supervisor")
-            supervisor_symbol = getattr(supervisor_mod, "SupervisorAgent", None)
-            supervisor_symbol_module = str(getattr(supervisor_symbol, "__module__", ""))
             # Bazı izolasyon testleri `agent.core.supervisor` modülünü stub rol sınıflarıyla
             # import eder ve modülü cache'te bırakabilir. Bu durumda gerçek role-agent
             # zinciri yerine `stub:*` çıktıları dönebilir. Role sınıflarının kaynak modülünü
@@ -904,12 +906,15 @@ class SidarAgent:
                 not str(getattr(getattr(supervisor_mod, symbol, None), "__module__", "")).startswith("agent.roles.")
                 for symbol in role_symbols
             )
-            # Testlerde SupervisorAgent monkeypatch edilebilir; bu durumda mock sınıfını
-            # korumak için reload yapılmamalıdır.
-            if needs_reload and supervisor_symbol_module.startswith("agent.core.supervisor"):
+            if needs_reload:
                 supervisor_mod = importlib.reload(supervisor_mod)
             SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
             self._supervisor = SupervisorAgent(self.cfg)
+            self._supervisor.llm = self.llm
+            for role_name in ("researcher", "coder", "reviewer", "poyraz", "qa", "coverage"):
+                role_agent = getattr(self._supervisor, role_name, None)
+                if role_agent is not None and hasattr(role_agent, "llm"):
+                    role_agent.llm = self.llm
 
         result = await self._supervisor.run_task(user_input)
         if not isinstance(result, str) or not result.strip():
