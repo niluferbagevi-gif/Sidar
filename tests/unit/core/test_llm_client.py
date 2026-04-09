@@ -186,6 +186,13 @@ class _DummyClient(llm_client.BaseLLMClient):
 
 
 @pytest.mark.asyncio
+async def test_dummy_client_methods_are_callable() -> None:
+    client = _DummyClient(_make_config())
+    assert client.json_mode_config() == {}
+    assert await client.chat([{"role": "user", "content": "u"}]) == "ok"
+
+
+@pytest.mark.asyncio
 async def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
     with_system = [{"role": "system", "content": "base"}, {"role": "user", "content": "u"}]
     out = _DummyClient._inject_json_instruction(with_system)
@@ -338,6 +345,12 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
             has_resp = True
             break
     assert has_resp is True
+    has_missing = False
+    for key in keys:
+        if (await fake_redis.hgetall(key)).get("response") == "not-found":
+            has_missing = True
+            break
+    assert has_missing is False
     assert counters["eviction"] == 1
 
 
@@ -876,6 +889,7 @@ async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.Monke
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c2 = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    assert await _Messages().stream().__aexit__(None, None, None) is False
     out = await _collect(c2._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
     assert "Anthropic" in out[0]
 
@@ -1263,6 +1277,7 @@ async def test_anthropic_nonstream_error_paths(
             self.messages = _Messages()
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    assert isinstance(await _Messages().create(), SimpleNamespace)
     c = llm_client.AnthropicClient(
         _make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=enable_tracing)
     )
