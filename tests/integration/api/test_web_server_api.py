@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -182,6 +183,7 @@ def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) ->
         return False
 
     fake_agent.respond = mock_respond
+    assert asyncio.run(_fake_resolve(fake_agent, "invalid-token")) is None
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
@@ -221,6 +223,8 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
     async def _never_rate_limited(*_args, **_kwargs):
         return False
 
+    assert asyncio.run(_fake_resolve(fake_agent, "invalid-token")) is None
+    assert asyncio.run(_never_rate_limited()) is False
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
