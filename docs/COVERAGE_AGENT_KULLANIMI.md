@@ -1,6 +1,6 @@
 # Coverage Agent ile Eksik Testleri Otomatik Üretme Rehberi
 
-Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre **yeni bir test dosyası (`x`) oluşturma / doldurma** akışını adım adım anlatır.
+Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre **mevcut ana test dosyasını güncelleme / doldurma** akışını adım adım anlatır.
 
 ## 1) Ön koşullar
 
@@ -54,14 +54,12 @@ python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"cor
 ```
 
 ### Aşama C — Üretilen testi hedef dosyaya yaz
+Geçici veya ad-hoc (örn: `_coverage_x.py`) dosyalar oluşturmak proje kurallarına aykırıdır. Üretilen testi her zaman mevcut ana test dosyasına **append (ekleme)** yaparak yazdırın.
 
-`x` dosyasını burada belirliyorsun. Örn: `tests/core/test_llm_client_coverage_x.py`
-
+Örnek:
 ```bash
-python cli.py -c 'write_missing_tests|{"suggested_test_path":"tests/core/test_llm_client_coverage_x.py","generated_test":"def test_x():\n    assert True","append":true}'
+python cli.py -c 'write_missing_tests|{"suggested_test_path":"tests/unit/core/test_llm_client.py","generated_test":"def test_x():\n    assert True","append":true}'
 ```
-
-> `append=true` mevcut dosyaya ekler, `append=false` dosyayı yeniden yazar.
 
 ---
 
@@ -73,7 +71,7 @@ Aşağıdaki gibi tek prompt da verebilirsin; agent pytest çalıştırır, bulg
 python cli.py -c '{"command":"pytest --cov-fail-under=90","cwd":"."}'
 ```
 
-Bu mod hızlıdır ama kontrol seviyesi düşüktür. Özellikle “`x` isimli özel dosya” istiyorsan 3 aşamalı prefix akışı daha doğru.
+Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu ilerlemek için 3 aşamalı prefix akışı daha doğrudur.
 
 ## 5) Pratik öneri (senin mevcut çıktına göre)
 
@@ -90,7 +88,7 @@ Büyük dosyalar (`web_server.py`, `core/rag.py`, `core/db.py`) tek seferde yük
 Her üretimden sonra:
 
 ```bash
-pytest -q tests/core/test_llm_client_coverage_x.py
+pytest -q tests/unit/core/test_llm_client.py
 pytest --cov-fail-under=90
 ```
 
@@ -107,9 +105,9 @@ Coverage agent’in kendi coverage’inin `%81` olması, projenin toplam `%90` o
 
 ## Kısa cevap (TL;DR)
 
-Evet, `coverage_agent` ile `x` dosyası oluşturup doldurabilirsin. En iyi yöntem:
+Coverage agent ile en doğru yaklaşım mevcut ana test dosyasına append ederek ilerlemektir. En iyi yöntem:
 1. `analyze_coverage_report|...`
 2. `generate_missing_tests|...`
-3. `write_missing_tests|{"suggested_test_path":"tests/.../x.py",...}`
+3. `write_missing_tests|{"suggested_test_path":"tests/unit/.../test_<module>.py",...}`
 
 İstersen bir sonraki adımda senin coverage çıktına göre **ilk 3 hedef dosya + hazır komutları** birebir üretebilirim.
