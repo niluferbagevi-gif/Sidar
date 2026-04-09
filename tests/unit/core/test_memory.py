@@ -88,6 +88,19 @@ def mem(monkeypatch, tmp_path: Path):
     return m
 
 
+def test_fake_db_delete_and_update_noop_branches() -> None:
+    db = FakeDB()
+
+    async def scenario() -> None:
+        row = await db.create_session("u1", "ilk")
+        db.user_sessions.pop("u1")
+        assert await db.delete_session(row.id, "u1") is True
+
+        await db.update_session_title("missing", "noop")
+
+    asyncio.run(scenario())
+
+
 def test_get_config_variants(monkeypatch):
     cfg = types.SimpleNamespace(DATABASE_URL="sqlite+aiosqlite:///x.db")
     monkeypatch.setattr(memory_module, "_config_get_config", lambda: cfg)
@@ -343,6 +356,7 @@ def test_estimate_tokens_importerror_and_misc_branches(monkeypatch, mem):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
+    assert __import__("json").__name__ == "json"
     mem._turns = [{"role": "u", "content": "x" * 35}]
     assert mem._estimate_tokens() == 10
 
