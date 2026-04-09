@@ -369,3 +369,13 @@ def test_init_client_success_with_repo_load(monkeypatch):
     m = GitHubManager(token=" tok ", repo_name="octo/demo")
     assert m.is_available() is True
     assert m.repo_name == "octo/demo"
+
+
+def test_repo_mock_error_branches_for_coverage():
+    repo = RepoMock()
+
+    with pytest.raises(RuntimeError, match="commit boom"):
+        repo.get_commits(raise_exc=True)
+
+    with pytest.raises(RuntimeError, match="missing"):
+        repo.get_contents("does-not-exist")
