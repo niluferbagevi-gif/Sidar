@@ -212,6 +212,23 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
             "postgresql+asyncpg://",
             1,
         )
+        # PostgreSQL fixture'ı da sqlite_db ile aynı davranışı göstermeli:
+        # oturum yield edilmeden önce gerekli şema/tablolar oluşturulmalı.
+        schema_cfg = SimpleNamespace(
+            DATABASE_URL=async_url,
+            BASE_DIR=".",
+            DB_POOL_SIZE=2,
+            DB_SCHEMA_VERSION_TABLE="schema_versions",
+            DB_SCHEMA_TARGET_VERSION=2,
+            JWT_SECRET_KEY="test-secret",
+            JWT_ALGORITHM="HS256",
+            JWT_TTL_DAYS=3,
+        )
+        schema_db = Database(schema_cfg)
+        await schema_db.connect()
+        await schema_db.init_schema()
+        await schema_db.close()
+
         engine = create_async_engine(async_url)
         SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
