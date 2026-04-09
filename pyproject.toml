@@ -155,6 +155,7 @@ asyncio_default_fixture_loop_scope = "session"
 markers = [
   "asyncio: run coroutine test",
   "slow: yavaş entegrasyon testleri (CI'da -m \"not slow\" ile atlanabilir)",
+  "gpu: Gerçek GPU donanımı gerektiren testler (CI ortamlarında atlanmalıdır)",
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
   "integration: harici sistem entegrasyonları",
