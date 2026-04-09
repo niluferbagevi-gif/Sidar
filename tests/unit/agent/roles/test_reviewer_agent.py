@@ -635,7 +635,7 @@ def test_run_task_decision_branches(reviewer):
 
 
 @pytest.mark.asyncio
-async def test_reviewer_builds_dynamic_candidate_with_fake_llm(fake_llm_response, agent_factory) -> None:
+async def test_reviewer_generate_candidate_with_fake_llm(fake_llm_response, agent_factory) -> None:
     reviewer = agent_factory(ReviewerAgent)
 
     async def _reviewer_llm(*_args, **_kwargs):

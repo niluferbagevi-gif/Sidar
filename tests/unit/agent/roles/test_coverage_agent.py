@@ -557,10 +557,9 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tm
 
 
 @pytest.mark.asyncio
-async def test_coverage_agent_generate_and_run_task_with_fake_llm(
+async def test_coverage_agent_generate_candidate_with_fake_llm(
     fake_llm_response,
     agent_factory,
-    monkeypatch,
 ) -> None:
     coverage = agent_factory(CoverageAgent)
 
@@ -581,6 +580,15 @@ async def test_coverage_agent_generate_and_run_task_with_fake_llm(
         )
     )
     assert "test_generated_coverage_case" in generated
+
+
+@pytest.mark.asyncio
+async def test_coverage_agent_run_task_marks_generated_tests_pending_approval(
+    agent_factory,
+    monkeypatch,
+) -> None:
+    coverage = agent_factory(CoverageAgent)
+    generated = "def test_generated_coverage_case():\n    assert 1 == 1\n"
 
     monkeypatch.setattr(
         coverage.code,
