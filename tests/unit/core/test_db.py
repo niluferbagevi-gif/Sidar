@@ -8,6 +8,7 @@ from datetime import datetime
 
 import jwt
 import pytest
+from unittest.mock import AsyncMock
 
 from core.db import (
     Database,
@@ -30,6 +31,37 @@ class DummyCfg:
     JWT_SECRET_KEY: str = "test-secret"
     JWT_ALGORITHM: str = "HS256"
     JWT_TTL_DAYS: int = 3
+
+
+class _FakeAcquire:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakePgAdapter:
+    """DB testleri için davranış odaklı, kırılgan olmayan fake PostgreSQL adaptörü."""
+
+    def __init__(self) -> None:
+        self.conn = AsyncMock()
+        self.closed = False
+
+    def acquire(self) -> _FakeAcquire:
+        return _FakeAcquire(self.conn)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def set_timeout_error(self) -> None:
+        self.conn.execute.side_effect = TimeoutError("db request timed out")
+
+    def set_conflict_error(self) -> None:
+        self.conn.execute.side_effect = RuntimeError("conflict")
 
 
 def test_helper_functions_basic_contracts() -> None:
@@ -306,3 +338,37 @@ async def test_campaign_content_checklist_coverage_workflow(sqlite_db: Database)
         details={"line": 10},
     )
     assert len(await sqlite_db.list_coverage_tasks(tenant_id="t1", status="pending_review")) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgresql_session_ops_with_fake_adapter() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    fake_pg.conn.fetch.side_effect = [
+        [{"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}],
+        [{"id": 1, "session_id": "s1", "role": "assistant", "content": "hi", "tokens_used": 1, "created_at": "c"}],
+    ]
+    fake_pg.conn.fetchrow.return_value = {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}
+    fake_pg.conn.execute.side_effect = ["UPDATE 1", "DELETE 1", "DELETE BAD"]
+
+    sessions = await db.list_sessions("u1")
+    assert len(sessions) == 1
+    assert await db.update_session_title("s1", "updated") is True
+    assert await db.delete_session("s1") is True
+    assert await db.delete_session("s1") is False
+
+    messages = await db.get_session_messages("s1")
+    assert len(messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgresql_adapter_timeout_path() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    fake_pg.set_timeout_error()
+    db._pg_pool = fake_pg
+
+    with pytest.raises(TimeoutError):
+        await db.update_session_title("s1", "updated")
