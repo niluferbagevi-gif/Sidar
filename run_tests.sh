@@ -44,6 +44,15 @@ run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   local pytest_cmd=(pytest --cov=. --cov-report=xml --cov-report=term --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
+  # Varsayılan: CI uyumluluğu için GPU testlerini hariç tut.
+  # ENABLE_GPU_TESTS=1 verilirse GPU testleri de çalıştırılır.
+  if [ "${ENABLE_GPU_TESTS:-0}" != "1" ]; then
+    echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
+    pytest_cmd+=(-m "not gpu")
+  else
+    echo "🔥 GPU testleri de dahil ediliyor!"
+  fi
+
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
