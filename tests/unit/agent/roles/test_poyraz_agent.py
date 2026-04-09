@@ -427,9 +427,7 @@ def test_landing_and_campaign_copy_tools_with_and_without_persist(poyraz_module,
 
 
 def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
-    mm_mod = types.ModuleType("core.multimodal")
-    mm_mod.MultimodalPipeline = DummyMultimodalPipeline
-    monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     agent = _agent(poyraz_module, fake_cfg)
     DummyMultimodalPipeline.last_kwargs = None
@@ -459,9 +457,7 @@ def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
 
 
 def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fake_cfg, monkeypatch):
-    mm_mod = types.ModuleType("core.multimodal")
-    mm_mod.MultimodalPipeline = DummyMultimodalPipeline
-    monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     agent = _agent(poyraz_module, fake_cfg)
     DummyMultimodalPipeline.last_kwargs = None
@@ -611,10 +607,8 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
     # set up db/mm imports for route paths that need them
     db_mod = types.ModuleType("core.db")
     db_mod.Database = DummyDatabase
-    mm_mod = types.ModuleType("core.multimodal")
-    mm_mod.MultimodalPipeline = DummyMultimodalPipeline
     monkeypatch.setitem(sys.modules, "core.db", db_mod)
-    monkeypatch.setitem(sys.modules, "core.multimodal", mm_mod)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
     # include ingest route aliases
     ingest1 = asyncio.run(agent.run_task("ingest_video_insights|https://video|||p|||tr|||s|||2"))
