@@ -99,7 +99,9 @@ class SupervisorAgent(BaseAgent):
         self.tools = {}
         base_init_failed = False
         try:
-            super().__init__(cfg=self.cfg, role_name="supervisor")
+            # `super()` zincirinin testlerde farklı bir BaseAgent referansına bağlı kalabildiği
+            # durumlarda monkeypatch beklentisini deterministic tutmak için doğrudan çağır.
+            BaseAgent.__init__(self, cfg=self.cfg, role_name="supervisor")
         except (TypeError, AttributeError):
             # İzolasyon testlerinde BaseAgent init'i stub olabilir veya minimal cfg nesnesi
             # zorunlu alanları (örn. AI_PROVIDER) içermeyebilir.

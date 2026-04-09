@@ -139,5 +139,9 @@ def _import_builtin_roles() -> None:
 
 _import_builtin_roles()
 
+# Yerleşik rol importları sırasında geriye dönük uyumluluk yamaları `get` metodunu
+# bozmuşsa kanonik sınıf davranışını geri yükle.
+AgentCatalog.get = classmethod(lambda cls, role_name: cls._registry.get(role_name))
+
 # Geriye dönük uyumluluk
 AgentRegistry = AgentCatalog
