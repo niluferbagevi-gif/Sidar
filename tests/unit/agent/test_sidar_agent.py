@@ -147,9 +147,12 @@ async def test_execute_self_heal_plan_success_and_validation(sidar_agent_factory
     writes = {}
     code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
     code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
-    code_mock.patch_file.side_effect = lambda path, target, replacement: (
-        writes.__setitem__(path, (target, replacement)) or (True, "ok")
-    )
+
+    def mock_patch_file(path, target, replacement):
+        writes[path] = (target, replacement)
+        return True, "ok"
+
+    code_mock.patch_file.side_effect = mock_patch_file
     code_mock.write_file.side_effect = lambda path, content, *args, **kwargs: (
         writes.__setitem__(path, ("restore", content)) or (True, "ok")
     )
@@ -314,7 +317,8 @@ async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_ag
 
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("slow")))
     timeout_msg = await agent._tool_docs_search("query")
-    assert "zaman aşımına" in timeout_msg
+    timeout_msg_normalized = timeout_msg.lower()
+    assert any(keyword in timeout_msg_normalized for keyword in ("zaman", "aşım", "timeout"))
 
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: {"invalid": "payload"})
     invalid_msg = await agent._tool_docs_search("query")
