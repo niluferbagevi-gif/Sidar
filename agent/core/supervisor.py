@@ -97,16 +97,28 @@ class SupervisorAgent(BaseAgent):
         self.role_name = "supervisor"
         self.llm = None
         self.tools = {}
+        base_init_failed = False
         try:
             super().__init__(cfg=self.cfg, role_name="supervisor")
         except (TypeError, AttributeError):
             # İzolasyon testlerinde BaseAgent init'i stub olabilir veya minimal cfg nesnesi
             # zorunlu alanları (örn. AI_PROVIDER) içermeyebilir.
-            pass
+            base_init_failed = True
 
         self.registry = ActiveAgentRegistry()
         self.events = get_agent_event_bus()
         self.memory_hub = MemoryHub()
+
+        if base_init_failed:
+            # Base init başarısızsa, alt ajanlar da aynı sebeple kırılabilir.
+            # Bu durumda supervisor minimal ama güvenli state ile ayağa kalkar.
+            self.researcher = None
+            self.coder = None
+            self.reviewer = None
+            self.poyraz = None
+            self.qa = None
+            self.coverage = None
+            return
 
         try:
             self.registry.register("researcher", ResearcherAgent(self.cfg))
