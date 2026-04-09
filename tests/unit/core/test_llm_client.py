@@ -339,18 +339,20 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
     expire_spy.assert_called_once_with(item_key, manager.ttl)
     assert await fake_redis.llen(manager.index_key) == 2
     keys = await fake_redis.lrange(manager.index_key, 0, -1)
-    has_resp = False
-    for key in keys:
-        if (await fake_redis.hgetall(key)).get("response") == "resp":
-            has_resp = True
-            break
-    assert has_resp is True
-    has_missing = False
-    for key in keys:
-        if (await fake_redis.hgetall(key)).get("response") == "not-found":
-            has_missing = True
-            break
-    assert has_missing is False
+
+    async def _scan_response(entries: list[str], needle: str) -> bool:
+        for key in entries:
+            if (await fake_redis.hgetall(key)).get("response") == needle:
+                return True
+        return False
+
+    assert await _scan_response(keys, "resp") is True
+    assert await _scan_response(keys, "not-found") is False
+
+    await fake_redis.hset("manual-not-found", mapping={"embedding": json.dumps([0.2, 0.8]), "response": "not-found"})
+    await fake_redis.lpush(manager.index_key, "manual-not-found")
+    keys_with_manual = await fake_redis.lrange(manager.index_key, 0, -1)
+    assert await _scan_response(keys_with_manual, "not-found") is True
     assert counters["eviction"] == 1
 
 
