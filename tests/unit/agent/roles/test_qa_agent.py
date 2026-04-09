@@ -27,6 +27,32 @@ _load_qa_agent()
 _QA_MODULE = sys.modules["qa_agent_under_test"]
 QAAgent = _QA_MODULE.QAAgent
 
+
+def test_load_qa_agent_returns_cached_module(monkeypatch):
+    sentinel = object()
+    cached_module = SimpleNamespace(QAAgent=sentinel)
+    monkeypatch.setitem(sys.modules, "qa_agent_under_test", cached_module)
+
+    assert _load_qa_agent() is sentinel
+
+
+def test_load_qa_agent_injects_httpx_when_missing(monkeypatch):
+    sentinel = object()
+
+    class _Loader:
+        def exec_module(self, module):
+            module.QAAgent = sentinel
+
+    fake_spec = SimpleNamespace(loader=_Loader())
+    monkeypatch.delitem(sys.modules, "qa_agent_under_test", raising=False)
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec)
+    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: ModuleType("qa_agent_under_test"))
+
+    loaded = _load_qa_agent()
+    assert loaded is sentinel
+    assert "httpx" in sys.modules
+
 class DummyCode:
     def __init__(self):
         self.calls = []
@@ -68,6 +94,14 @@ def qa(tmp_path):
     agent.register_tool = register_tool
     agent.call_tool = call_tool
     return agent
+
+
+def test_qa_fixture_register_tool_and_call_tool(qa):
+    async def _tool(arg):
+        return f"T:{arg}"
+
+    qa.register_tool("x_tool", _tool)
+    assert asyncio.run(qa.call_tool("x_tool", "arg")) == "T:arg"
 
 
 def test_init_registers_tools(monkeypatch, tmp_path):
