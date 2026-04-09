@@ -401,6 +401,31 @@ def test_supervisor_init_falls_back_when_base_agent_init_raises_attribute_error(
     assert sup.tools == {}
 
 
+@pytest.mark.parametrize("exc", [TypeError("stub"), AttributeError("missing AI_PROVIDER")])
+def test_supervisor_init_keeps_minimal_state_when_base_init_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    exc: Exception,
+) -> None:
+    calls: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
+
+    def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((self, args, kwargs))
+        raise exc
+
+    monkeypatch.setattr(supervisor_mod.BaseAgent, "__init__", _broken_base_init)
+
+    sup = SupervisorAgent()
+
+    assert len(calls) >= 1
+    called_self, called_args, called_kwargs = calls[0]
+    assert called_self is sup
+    assert called_args == ()
+    assert called_kwargs == {"cfg": sup.cfg, "role_name": "supervisor"}
+    assert sup.role_name == "supervisor"
+    assert sup.llm is None
+    assert sup.tools == {}
+
+
 def test_supervisor_init_sets_agents_none_when_role_instantiation_type_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
