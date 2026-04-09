@@ -468,6 +468,7 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
                 raise RuntimeError("bad")
 
     monkeypatch.setattr(cm.os, "stat", lambda p: _Stat(stat.S_IFREG if "var/run" in p else stat.S_IFSOCK))
+    assert FakeDocker.DockerClient("unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock").ping() is None
     assert manager._try_wsl_socket_fallback(FakeDocker) is True
     assert manager.docker_available is True
 
@@ -482,6 +483,8 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
 
     fake_cached_docker = ModuleType("docker")
     monkeypatch.setitem(sys.modules, "docker", fake_cached_docker)
+    with pytest.raises(ImportError):
+        _import_without_docker("docker")
     monkeypatch.setattr(builtins, "__import__", _import_without_docker)
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is fake_cached_docker)
     monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
@@ -501,6 +504,8 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
             raise RuntimeError("daemon down")
 
     err_docker = _ErrDocker("docker")
+    with pytest.raises(RuntimeError):
+        err_docker.from_env()
     monkeypatch.setitem(sys.modules, "docker", err_docker)
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is err_docker)
     manager._init_docker()
@@ -852,6 +857,8 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
             return b"", b"boom"
         def kill(self):
             return None
+
+    assert P().kill() is None
 
     monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: P())
     with pytest.raises(RuntimeError):
@@ -1261,6 +1268,8 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
             raise ImportError("docker missing")
         return real_import(name, *args, **kwargs)
 
+    with pytest.raises(ImportError):
+        _fake_import("docker")
     monkeypatch.setattr(builtins, "__import__", _fake_import)
     monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda *_a, **_k: False)
