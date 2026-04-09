@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import inspect
 import sys
 import time
 from types import SimpleNamespace
@@ -236,24 +235,16 @@ def agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
 def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
     """SidarAgent için test örneği üreticisi."""
 
-    def _create_agent(**overrides: Any) -> Any:
-        # Technical debt düzeltildi: Ajan standart inisyalizasyonla başlatılır.
-        config = overrides.pop("cfg", overrides.pop("config", mock_config()))
-        agent = sidar_agent_module.SidarAgent(config=config)
+    def _create_agent(**kwargs: Any) -> Any:
+        # Config yalnızca cfg/config ile geçirilebilir; diğer override yollarını engelle.
+        config = kwargs.pop("cfg", kwargs.pop("config", mock_config()))
+        if kwargs:
+            raise ValueError(
+                "Lütfen config parametrelerini mock_config() üzerinden geçin. "
+                "Örn: sidar_agent_factory(cfg=mock_config(USE_GPU=True))"
+            )
 
-        # Yalnızca mevcut ve güvenli attribute'ları override et; sessiz typo'ları engelle.
-        for key, value in overrides.items():
-            if not hasattr(agent, key):
-                raise AttributeError(f"SidarAgent üzerinde '{key}' attribute'u bulunamadı.")
-            if key.startswith("__"):
-                raise AttributeError(f"Dunder attribute override engellendi: '{key}'")
-
-            descriptor = inspect.getattr_static(type(agent), key, None)
-            if isinstance(descriptor, property) and descriptor.fset is None:
-                raise AttributeError(f"Salt-okunur property override edilemez: '{key}'")
-
-            setattr(agent, key, value)
-        return agent
+        return sidar_agent_module.SidarAgent(config=config)
 
     return _create_agent
 
