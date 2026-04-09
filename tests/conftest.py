@@ -80,6 +80,17 @@ def fake_llm_response() -> Callable[..., Any]:
 
 
 @pytest.fixture
+def fake_llm_client(fake_llm_response: Callable[..., Any]) -> Any:
+    """SidarAgent.llm arayüzüyle uyumlu deterministik LLM istemci adaptörü.
+
+    ``fake_llm_response`` fixture'ını ``agent.llm = fake_llm_client`` ile
+    doğrudan atanabilecek bir ``SimpleNamespace`` içinde sarmalar.
+    Her test fonksiyonuna bağımsız bir AsyncMock nesnesi verilir.
+    """
+    return SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
+
+
+@pytest.fixture
 def fake_llm_error() -> Callable[..., Any]:
     """LLM istemcisi için deterministik hata (rate-limit/timeout) döner."""
 

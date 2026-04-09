@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 @pytest.mark.integration
 async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     sidar_agent_factory,
-    fake_llm_response,
+    fake_llm_client,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -19,8 +19,8 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
-    # LLM bağımlılığını izole ederek testi deterministik hale getir.
-    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
+    # Dış bağımlılık: LLM servisi conftest.fake_llm_client ile izole edildi.
+    agent.llm = fake_llm_client
 
     timeline: list[tuple[str, str]] = []
 
@@ -44,7 +44,7 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
 @pytest.mark.integration
 async def test_sidar_agent_workflow_handles_search_failure(
     sidar_agent_factory,
-    fake_llm_response,
+    fake_llm_client,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -52,8 +52,8 @@ async def test_sidar_agent_workflow_handles_search_failure(
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
-    # LLM bağımlılığını izole ederek testi deterministik hale getir.
-    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
+    # Dış bağımlılık: LLM servisi conftest.fake_llm_client ile izole edildi.
+    agent.llm = fake_llm_client
 
     timeline: list[tuple[str, str]] = []
 
