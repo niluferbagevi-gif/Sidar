@@ -57,9 +57,9 @@ dependencies = [
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
-  "openai==1.109.1",
-  "anthropic==0.40.0",
-  "google-genai==0.5.0",
+  "openai~=1.109.1",
+  "anthropic~=0.40.0",
+  "google-genai~=0.5.0",
   "websockets<15.0",
   "pillow<12.0.0",
   "litellm==1.74.15.post2",
@@ -83,13 +83,13 @@ Issues = "https://github.com/niluferbagevi-gif/Sidar/issues"
 [project.optional-dependencies]
 # ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
 gemini = [
-  "google-genai==0.5.0",
+  "google-genai~=0.5.0",
 ]
 anthropic = [
-  "anthropic==0.40.0",
+  "anthropic~=0.40.0",
 ]
 openai = [
-  "openai==1.109.1",
+  "openai~=1.109.1",
 ]
 litellm = [
   "litellm==1.74.15.post2",
