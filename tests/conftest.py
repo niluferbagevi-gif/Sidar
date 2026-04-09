@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import inspect
 import sys
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
@@ -222,10 +223,17 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
         config = overrides.pop("cfg", overrides.pop("config", mock_config()))
         agent = sidar_agent_module.SidarAgent(config=config)
 
-        # Yalnızca mevcut attribute'ları override et; sessiz typo'ları engelle.
+        # Yalnızca mevcut ve güvenli attribute'ları override et; sessiz typo'ları engelle.
         for key, value in overrides.items():
             if not hasattr(agent, key):
                 raise AttributeError(f"SidarAgent üzerinde '{key}' attribute'u bulunamadı.")
+            if key.startswith("__"):
+                raise AttributeError(f"Dunder attribute override engellendi: '{key}'")
+
+            descriptor = inspect.getattr_static(type(agent), key, None)
+            if isinstance(descriptor, property) and descriptor.fset is None:
+                raise AttributeError(f"Salt-okunur property override edilemez: '{key}'")
+
             setattr(agent, key, value)
         return agent
 
