@@ -387,6 +387,20 @@ def test_supervisor_init_falls_back_when_base_agent_init_raises_type_error(
     assert sup.tools == {}
 
 
+def test_supervisor_init_falls_back_when_base_agent_init_raises_attribute_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AttributeError("missing AI_PROVIDER")
+
+    monkeypatch.setattr(supervisor_mod.BaseAgent, "__init__", _broken_base_init)
+    sup = SupervisorAgent()
+
+    assert sup.role_name == "supervisor"
+    assert sup.llm is None
+    assert sup.tools == {}
+
+
 def test_supervisor_init_sets_agents_none_when_role_instantiation_type_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
