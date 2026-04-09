@@ -452,6 +452,21 @@ async def test_ollama_client_chat_non_stream_and_stream(
 
 
 @pytest.mark.asyncio
+async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(mock_config, respx_mock_router) -> None:
+    cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=True, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
+    client = llm_client.OllamaClient(cfg)
+    route = respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    _ = await client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False)
+
+    payload = json.loads(route.calls.last.request.content.decode("utf-8"))
+    assert "options" in payload
+    assert payload["options"].get("num_gpu") == -1
+
+
+@pytest.mark.asyncio
 async def test_ollama_stream_response_parses_and_handles_error(
     mock_config, respx_mock_router
 ) -> None:
