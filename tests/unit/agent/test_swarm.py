@@ -219,6 +219,24 @@ def test_execute_task_loop_guard_triggers_on_repeated_step(monkeypatch):
     assert "loop guard" in result.summary.lower()
 
 
+def test_swarm_execute_task_isolated(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="researcher", capabilities=["web_search"])
+
+    class _RunTaskAgentIsolated:
+        async def run_task(self, _goal: str) -> str:
+            return "isolated-ok"
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_args, **_kwargs: _RunTaskAgentIsolated())
+
+    result = __import__("asyncio").run(
+        orchestrator._execute_task(SwarmTask(goal="araştır", intent="research"), session_id="s-1")
+    )
+    assert result.status == "success"
+    assert result.summary == "isolated-ok"
+
+
 def test_dispatch_distributed_pushes_task_to_backend(monkeypatch):
     orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
     backend = InMemoryDelegationBackend()
