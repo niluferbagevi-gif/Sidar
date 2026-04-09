@@ -40,14 +40,17 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
     monkeypatch.setattr(web_server, "_close_redis_client", close_redis)
     monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", shutdown_local_llm)
-    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    web_server.app.dependency_overrides[web_server.get_agent] = _fake_get_agent
 
-    with TestClient(web_server.app) as client:
-        response = client.get("/healthz")
+    try:
+        with TestClient(web_server.app) as client:
+            response = client.get("/healthz")
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "ok"
-    assert "uptime_seconds" in payload
-    assert close_redis.await_count == 1
-    assert shutdown_local_llm.await_count == 1
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "ok"
+        assert "uptime_seconds" in payload
+        assert close_redis.await_count == 1
+        assert shutdown_local_llm.await_count == 1
+    finally:
+        web_server.app.dependency_overrides.clear()
