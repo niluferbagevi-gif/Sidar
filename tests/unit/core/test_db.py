@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import sqlite3
 import sys
@@ -12,46 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import pytest
-
-if "jwt" not in sys.modules:
-    jwt_module = types.ModuleType("jwt")
-
-    class _PyJWTError(Exception):
-        pass
-
-    def _b64(data: bytes) -> str:
-        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-    def _b64d(data: str) -> bytes:
-        padding = "=" * (-len(data) % 4)
-        return base64.urlsafe_b64decode((data + padding).encode("ascii"))
-
-    def _encode(payload, secret, algorithm="HS256"):
-        if algorithm != "HS256":
-            raise _PyJWTError("unsupported algorithm")
-        header = {"alg": algorithm, "typ": "JWT"}
-        part1 = _b64(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-        part2 = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-        signing_input = f"{part1}.{part2}".encode("ascii")
-        sig = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-        return f"{part1}.{part2}.{_b64(sig)}"
-
-    def _decode(token, secret, algorithms=None):
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise _PyJWTError("invalid token")
-        part1, part2, sig = parts
-        signing_input = f"{part1}.{part2}".encode("ascii")
-        expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-        if not hmac.compare_digest(_b64(expected), sig):
-            raise _PyJWTError("bad signature")
-        payload = json.loads(_b64d(part2).decode("utf-8"))
-        return payload
-
-    jwt_module.encode = _encode
-    jwt_module.decode = _decode
-    jwt_module.PyJWTError = _PyJWTError
-    sys.modules["jwt"] = jwt_module
 
 from core.db import Database, _expires_in, _hash_password, _json_dumps, _quote_sql_identifier, _utc_now_iso, _verify_password
 import jwt
