@@ -51,11 +51,14 @@ banner() {
 check_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    # Conda
-    if ! command -v conda &>/dev/null; then
-        fail "Conda bulunamadı. Miniconda veya Anaconda kurduğunuzdan emin olun.\n   İndirme: https://docs.conda.io/en/latest/miniconda.html"
+    # Conda (opsiyonel)
+    if command -v conda &>/dev/null; then
+        USE_CONDA=true
+        ok "Conda $(conda --version | cut -d' ' -f2)"
+    else
+        USE_CONDA=false
+        warn "Conda bulunamadı — uv venv fallback kullanılacak."
     fi
-    ok "Conda $(conda --version | cut -d' ' -f2)"
 
     # Git
     if ! command -v git &>/dev/null; then
@@ -116,26 +119,41 @@ detect_gpu() {
 }
 
 # ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
-setup_conda_env() {
-    step "Conda Ortamı: $CONDA_ENV_NAME"
+setup_python_env() {
+    if [[ "$USE_CONDA" == true ]]; then
+        step "Conda Ortamı: $CONDA_ENV_NAME"
 
-    # Conda init scriptini kaynak al (conda activate çalışması için gerekli)
-    CONDA_BASE=$(conda info --base 2>/dev/null) || fail "conda info başarısız oldu."
-    # shellcheck disable=SC1091
-    source "$CONDA_BASE/etc/profile.d/conda.sh"
+        # Conda init scriptini kaynak al (conda activate çalışması için gerekli)
+        CONDA_BASE=$(conda info --base 2>/dev/null) || fail "conda info başarısız oldu."
+        # shellcheck disable=SC1091
+        source "$CONDA_BASE/etc/profile.d/conda.sh"
 
-    if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
-        info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
-        conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
-        ok "Conda ortamı güncellendi."
+        if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
+            info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
+            conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
+            ok "Conda ortamı güncellendi."
+        else
+            info "Yeni conda ortamı oluşturuluyor: $CONDA_ENV_NAME (Python $PYTHON_VERSION)..."
+            conda env create -f "$SCRIPT_DIR/environment.yml"
+            ok "Conda ortamı oluşturuldu."
+        fi
+
+        conda activate "$CONDA_ENV_NAME"
+        ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
     else
-        info "Yeni conda ortamı oluşturuluyor: $CONDA_ENV_NAME (Python $PYTHON_VERSION)..."
-        conda env create -f "$SCRIPT_DIR/environment.yml"
-        ok "Conda ortamı oluşturuldu."
+        step "uv venv Ortamı"
+        VENV_DIR="$SCRIPT_DIR/.venv"
+        if [[ -d "$VENV_DIR" ]]; then
+            info "Mevcut uv venv bulundu: $VENV_DIR"
+        else
+            info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
+            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+            ok "uv venv oluşturuldu."
+        fi
+        # shellcheck disable=SC1091
+        source "$VENV_DIR/bin/activate"
+        ok "Ortam aktif: $VENV_DIR"
     fi
-
-    conda activate "$CONDA_ENV_NAME"
-    ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
 }
 
 # ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
@@ -155,12 +173,6 @@ install_python_deps() {
 
     cd "$SCRIPT_DIR"
 
-    # pyproject.toml tek doğruluk kaynağıdır.
-    INSTALL_SPEC=(-e .)
-    if [[ "$INSTALL_DEV" == true ]]; then
-        INSTALL_SPEC=(-e ".[dev]")
-    fi
-
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         # CUDA major version'ı belirle (örn. 13.2 → cu130)
         CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
@@ -173,11 +185,11 @@ install_python_deps() {
         else TORCH_CU=""
         fi
 
-        info "GPU tespit edildi — pyproject extras [rag,gpu] kurulacak."
+        info "GPU kurulumu yapılıyor..."
         if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[dev,rag,gpu]")
+            INSTALL_SPEC=(-e ".[all,dev]")
         else
-            INSTALL_SPEC=(-e ".[rag,gpu]")
+            INSTALL_SPEC=(-e ".[all]")
         fi
 
         if [[ -n "$TORCH_CU" ]]; then
@@ -190,7 +202,12 @@ install_python_deps() {
             uv pip install "${INSTALL_SPEC[@]}"
         fi
     else
-        info "CPU modu — pyproject üzerinden temel bağımlılıklar kuruluyor."
+        info "CPU modu kuruluyor..."
+        if [[ "$INSTALL_DEV" == true ]]; then
+            INSTALL_SPEC=(-e ".[dev]")
+        else
+            INSTALL_SPEC=(-e ".")
+        fi
         uv pip install "${INSTALL_SPEC[@]}"
     fi
 
@@ -302,8 +319,13 @@ print_summary() {
     echo -e "  1️⃣  .env dosyasını düzenle:"
     echo "       nano .env"
     echo ""
-    echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
-    echo "       conda activate $CONDA_ENV_NAME"
+    if [[ "$USE_CONDA" == true ]]; then
+        echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
+        echo "       conda activate $CONDA_ENV_NAME"
+    else
+        echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
+        echo "       source .venv/bin/activate"
+    fi
     echo ""
     echo -e "  3️⃣  CLI ile başlat:"
     echo "       python main.py"
@@ -333,8 +355,8 @@ main() {
     banner
     check_prerequisites
     detect_gpu
-    setup_conda_env
     setup_uv
+    setup_python_env
     install_python_deps
     check_pyaudio_wsl2
     create_directories
