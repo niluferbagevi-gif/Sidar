@@ -267,6 +267,33 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_chan
     assert requests[0].decided_at is None
 
 
+def test_request_approval_timeout_branch_skips_timeout_update_when_request_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HITL_ENABLED", "true")
+    monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
+    gate = hitl.HITLGate()
+    now = [0.0]
+
+    def fake_time() -> float:
+        return now[0]
+
+    async def remove_request_and_jump(_: float) -> None:
+        store = hitl.get_hitl_store()
+        pending = await store.pending()
+        if pending:
+            store._index.pop(pending[0].request_id, None)
+        now[0] = 11.0
+
+    monkeypatch.setattr(hitl.time, "time", fake_time)
+    monkeypatch.setattr(hitl.asyncio, "sleep", remove_request_and_jump)
+
+    approved = run(gate.request_approval(action="file_overwrite", description="Overwrite file"))
+
+    assert approved is False
+    latest = run(hitl.get_hitl_store().all_recent(limit=1))[0]
+    assert latest.decision == hitl.HITLDecision.PENDING
+    assert latest.decided_at is None
+
+
 def test_respond_none_already_decided_and_rejected_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HITL_ENABLED", "true")
     gate = hitl.HITLGate()
