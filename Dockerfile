@@ -69,7 +69,7 @@ ENV TORCH_INDEX_URL=${TORCH_INDEX_URL}
 # Bağımlılık Yönetimi — requirements.txt doğrudan kullanılır
 # GPU torch wheel'i TORCH_INDEX_URL üzerinden ek index olarak eklenir.
 COPY requirements.txt .
-RUN pip install --upgrade pip setuptools wheel && \
+RUN python3 -m pip install --upgrade "pip>=26.0.1" setuptools wheel && \
     pip install \
         --extra-index-url ${TORCH_INDEX_URL} \
         -r requirements.txt

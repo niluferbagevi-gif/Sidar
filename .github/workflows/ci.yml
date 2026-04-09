@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.0.1"
           pip install -r requirements-dev.txt
 
       - name: Set up Node.js (with npm cache)
@@ -139,7 +139,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.0.1"
           pip install -r requirements-dev.txt asyncpg
 
       - name: Run DB schema migration
