@@ -471,3 +471,14 @@ def test_write_dead_letter_local_and_redis(bus: AgentEventBus) -> None:
 def test_get_agent_event_bus_singleton() -> None:
     assert get_agent_event_bus() is event_stream._BUS
     assert isinstance(get_agent_event_bus(), AgentEventBus)
+
+
+def test_test_doubles_cover_default_stub_paths() -> None:
+    with pytest.raises(RuntimeError, match="stub"):
+        _StubRedis.from_url("redis://localhost:6379/0")
+
+    redis = DummyRedis()
+    asyncio.run(redis.xgroup_create(name="stream", groupname="group"))
+    assert redis.group_created is True
+
+    assert asyncio.run(redis.xreadgroup()) == []
