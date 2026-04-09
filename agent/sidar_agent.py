@@ -4,6 +4,7 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 """
 
 import logging
+import contextlib
 import asyncio
 import json
 import time
@@ -1114,7 +1115,12 @@ class SidarAgent:
             except Exception:
                 pass
 
-        with self._instructions_lock:
+        lock_cm = (
+            self._instructions_lock
+            if hasattr(self._instructions_lock, "__enter__") and hasattr(self._instructions_lock, "__exit__")
+            else contextlib.nullcontext()
+        )
+        with lock_cm:
             # Cache geçerli mi? Hem içerik hem mtime eşleşmeli
             if self._instructions_cache is not None and current_mtimes == self._instructions_mtimes:
                 return self._instructions_cache

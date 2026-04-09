@@ -320,7 +320,7 @@ async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_
     _override_cfg(agent, BASE_DIR=str(root))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
-    agent._instructions_lock = __import__("threading").Lock()
+    agent._instructions_lock = asyncio.Lock()
 
     first = agent._load_instruction_files()
     second = agent._load_instruction_files()
@@ -927,7 +927,7 @@ async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factor
     _override_cfg(agent, BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
-    agent._instructions_lock = __import__("threading").Lock()
+    agent._instructions_lock = asyncio.Lock()
 
     assert agent._load_instruction_files() == ""
 
@@ -1176,7 +1176,7 @@ async def test_load_instruction_files_handles_fs_errors(sidar_agent_factory, tmp
     agent = sidar_agent_factory(cfg=types.SimpleNamespace(BASE_DIR=str(tmp_path)))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
-    agent._instructions_lock = __import__("threading").Lock()
+    agent._instructions_lock = asyncio.Lock()
 
     (tmp_path / "SIDAR.md").mkdir()
     (tmp_path / "CLAUDE.md").write_text("ok-content", encoding="utf-8")
@@ -1453,7 +1453,7 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     _override_cfg(agent, BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
     agent._instructions_mtimes = {}
-    agent._instructions_lock = __import__("threading").Lock()
+    agent._instructions_lock = asyncio.Lock()
 
     loaded = agent._load_instruction_files()
     assert "SIDAR.md" in loaded
