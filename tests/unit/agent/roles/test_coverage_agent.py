@@ -63,6 +63,8 @@ async def test_static_helpers_and_parsers(tmp_path):
     assert CoverageAgent._suggest_test_path("") == "tests/test_generated.py"
     assert CoverageAgent._suggest_test_path("module.py") == "tests/test_module.py"
     assert CoverageAgent._suggest_test_path("./pkg/module.py") == "tests/pkg/test_module.py"
+    assert "_coverage" not in CoverageAgent._suggest_test_path("module.py")
+    assert "_coverage" not in CoverageAgent._suggest_test_path("./pkg/module.py")
 
     assert CoverageAgent._clean_code_output("plain") == "plain"
     assert CoverageAgent._clean_code_output("```python\na=1\n```") == "a=1"
