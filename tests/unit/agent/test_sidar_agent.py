@@ -662,6 +662,28 @@ async def test_get_autonomy_activity_counts(
     assert [item["trigger_id"] for item in activity["items"]] == ["a", "b"]
 
 
+async def test_get_autonomy_activity_handles_limit_edge_cases(sidar_agent_factory) -> None:
+    """limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
+    agent = sidar_agent_factory()
+    agent._ensure_autonomy_runtime_state = lambda: None
+    current_time = sidar_agent.time.time()
+    agent._autonomy_history = [
+        {"trigger_id": "1", "status": "success", "source": "cron", "timestamp": current_time},
+        {"trigger_id": "2", "status": "failed", "source": "api", "timestamp": current_time},
+        {"trigger_id": "3", "status": "success", "source": "web", "timestamp": current_time},
+    ]
+
+    res_none = agent.get_autonomy_activity(limit=None)
+    assert res_none["returned"] == 3
+
+    res_negative = agent.get_autonomy_activity(limit=-5)
+    assert res_negative["returned"] == 1
+    assert res_negative["items"][0]["trigger_id"] == "3"
+
+    res_str = agent.get_autonomy_activity(limit="2")
+    assert res_str["returned"] == 2
+
+
 async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     supervisor = AsyncMock()
