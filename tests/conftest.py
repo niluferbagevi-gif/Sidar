@@ -219,11 +219,13 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
 
     def _create_agent(**overrides: Any) -> Any:
         # Technical debt düzeltildi: Ajan standart inisyalizasyonla başlatılır.
-        config = overrides.pop("cfg", mock_config())
+        config = overrides.pop("cfg", overrides.pop("config", mock_config()))
         agent = sidar_agent_module.SidarAgent(config=config)
 
-        # Yalnızca testin ezmesi gereken alanları override et.
+        # Yalnızca mevcut attribute'ları override et; sessiz typo'ları engelle.
         for key, value in overrides.items():
+            if not hasattr(agent, key):
+                raise AttributeError(f"SidarAgent üzerinde '{key}' attribute'u bulunamadı.")
             setattr(agent, key, value)
         return agent
 
