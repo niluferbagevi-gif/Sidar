@@ -565,3 +565,22 @@ def test_remaining_auto_handle_branches(monkeypatch):
 
     # _try_fetch_url: URL bulunamadı dalı
     assert asyncio.run(h._try_fetch_url("url fetch", "url fetch")) == (True, "⚠ Geçerli bir URL bulunamadı.")
+
+
+def test_auto_handle_try_web_search_isolated():
+    from agent.auto_handle import AutoHandle
+
+    web = types.SimpleNamespace(search=AsyncMock(return_value=(True, "aranan-sonuç")))
+    auto = AutoHandle(
+        code=types.SimpleNamespace(),
+        health=types.SimpleNamespace(),
+        github=types.SimpleNamespace(),
+        memory=types.SimpleNamespace(),
+        web=web,
+        pkg=types.SimpleNamespace(),
+        docs=types.SimpleNamespace(),
+        cfg=types.SimpleNamespace(),
+    )
+    handled, out = asyncio.run(auto._try_web_search("web'de ara sidar", "web'de ara sidar"))
+    assert handled is True
+    assert out == "aranan-sonuç"

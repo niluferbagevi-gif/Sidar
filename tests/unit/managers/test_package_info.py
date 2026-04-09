@@ -413,3 +413,15 @@ def test_get_json_success_without_cache_key(monkeypatch):
 
     ok, data, err = run(manager._get_json("https://example.com/no-cache", cache_key=""))
     assert (ok, data, err) == (True, {"x": 1}, "")
+
+
+def test_package_info_manager_isolated() -> None:
+    pkg = PackageInfoManager()
+
+    async def _fake_fetch(_package):
+        return True, {"info": {"version": "1.2.3"}, "releases": {"1.2.3": {}}}, ""
+
+    pkg._fetch_pypi_json = _fake_fetch
+    ok, latest = run(pkg.pypi_latest_version("sidar"))
+    assert ok is True
+    assert latest == "sidar==1.2.3"
