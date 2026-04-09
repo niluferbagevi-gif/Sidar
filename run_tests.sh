@@ -43,6 +43,15 @@ if [ "${RUN_TESTS_IN_DOCKER}" = "1" ]; then
   exit $?
 fi
 
+if ! python -c "import fakeredis" >/dev/null 2>&1; then
+  echo "❌ Test bağımlılıkları eksik görünüyor (fakeredis import edilemedi)."
+  echo "   Test ortamını senkronize etmek için:"
+  echo "   pip install -r requirements-dev.txt"
+  echo "   # veya:"
+  echo "   pip install -e \".[dev]\""
+  exit 1
+fi
+
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
 
