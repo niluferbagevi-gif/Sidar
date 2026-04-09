@@ -46,7 +46,7 @@ run_pytest_coverage_report() {
 
   # Varsayılan: CI uyumluluğu için GPU testlerini hariç tut.
   # ENABLE_GPU_TESTS=1 verilirse GPU testleri de çalıştırılır.
-  if [ "${ENABLE_GPU_TESTS:-0}" != "1" ]; then
+  if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
   else
