@@ -1394,7 +1394,11 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def clear_memory(self) -> str:
-        await self.memory.clear()
+        try:
+            await self.memory.clear()
+        except Exception as exc:
+            logger.warning("Bellek temizleme başarısız: %s", exc)
+            return f"✗ Konuşma belleği temizlenemedi: {exc}"
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     async def set_access_level(self, new_level: str) -> str:

@@ -819,6 +819,37 @@ async def test_tool_subtask_returns_done_and_empty_warning(
     assert "belirtilmedi" in await agent._tool_subtask("")
 
 
+async def test_tool_subtask_recovers_via_json_loads_after_validation_error(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"final_answer","argument":"recovered","thought":"x"}'))
+
+    class _ValidationErr(Exception):
+        pass
+
+    class _FakeToolCall:
+        @staticmethod
+        def model_validate_json(_raw: str):
+            raise _ValidationErr("boom")
+
+        @staticmethod
+        def model_validate(data):
+            return types.SimpleNamespace(
+                tool=str(data["tool"]),
+                argument=str(data["argument"]),
+                thought=str(data["thought"]),
+            )
+
+    monkeypatch.setattr(sidar_agent, "ValidationError", _ValidationErr)
+    monkeypatch.setattr(sidar_agent, "ToolCall", _FakeToolCall)
+
+    output = await agent._tool_subtask("job")
+    assert "recovered" in output
+
+
 async def test_tool_github_smart_pr_requires_token(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: False)
@@ -863,11 +894,32 @@ async def test_summarize_memory_and_clear_memory_success(sidar_agent_factory, fa
     assert "temizlendi" in await agent.clear_memory()
 
 
+async def test_clear_memory_returns_error_message_on_exception(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    agent.memory = types.SimpleNamespace(clear=AsyncMock(side_effect=RuntimeError("disk locked")))
+    warning_mock = Mock()
+    monkeypatch.setattr(sidar_agent.logger, "warning", warning_mock)
+
+    result = await agent.clear_memory()
+
+    assert "temizlenemedi" in result
+    assert "disk locked" in result
+    warning_mock.assert_called_once()
+
+
 async def test_update_remediation_step_no_match_keeps_steps(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     remediation_loop = {"steps": [{"name": "patch", "status": "planned", "detail": "x"}]}
     agent = sidar_agent_factory()
     agent._update_remediation_step(remediation_loop, "validate", status="completed", detail="ok")
     assert remediation_loop["steps"][0]["status"] == "planned"
+
+
+async def test_update_remediation_step_updates_matching_step(sidar_agent_factory) -> None:
+    remediation_loop = {"steps": [{"name": "patch", "status": "planned", "detail": "x"}]}
+    agent = sidar_agent_factory()
+    agent._update_remediation_step(remediation_loop, "patch", status="completed", detail="done")
+    assert remediation_loop["steps"][0]["status"] == "completed"
+    assert remediation_loop["steps"][0]["detail"] == "done"
 
 
 async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1178,6 +1230,26 @@ async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_facto
     await agent._summarize_memory()
     await agent._memory_add("user", "hello")
     assert added == [("user", "hello")]
+
+
+async def test_summarize_memory_early_return_when_history_is_short(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    memory = AsyncMock()
+    memory.get_history.return_value = [
+        {"role": "user", "content": "a", "timestamp": 1},
+        {"role": "assistant", "content": "b", "timestamp": 1},
+        {"role": "user", "content": "c", "timestamp": 1},
+    ]
+    memory.apply_summary = AsyncMock()
+    agent.memory = memory
+    agent.docs = AsyncMock()
+    agent.llm = AsyncMock()
+
+    await agent._summarize_memory()
+
+    agent.docs.add_document.assert_not_awaited()
+    agent.llm.chat.assert_not_awaited()
+    memory.apply_summary.assert_not_awaited()
 
 
 async def test_init_accepts_namespace_cfg(tmp_path: Path) -> None:
