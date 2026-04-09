@@ -58,6 +58,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     docker.io \
+    portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
@@ -101,4 +102,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Varsayılan başlatma (CLI)
 # Web için (ENTRYPOINT argümanı olarak): docker run ... --quick web --host 0.0.0.0 --port 7860
-ENTRYPOINT ["python", "main.py"] 
+ENTRYPOINT ["python", "main.py"]

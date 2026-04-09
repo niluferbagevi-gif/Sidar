@@ -25,6 +25,11 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements-dev.txt
 
+      - name: Install system dependencies (PortAudio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -126,6 +131,11 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: requirements-dev.txt
+
+      - name: Install system dependencies (PortAudio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev
 
       - name: Install dependencies
         run: |
