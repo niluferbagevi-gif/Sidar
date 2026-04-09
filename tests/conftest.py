@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
-import fakeredis
 import pytest
 import pytest_asyncio
 import sqlalchemy
@@ -18,7 +17,6 @@ from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from testcontainers.postgres import PostgresContainer
 
 from core.db import Database
 from agent.core.event_stream import AgentEvent
@@ -44,6 +42,7 @@ def _resolve_db_schema_target_version() -> int | None:
 
 @pytest_asyncio.fixture
 async def fake_redis() -> AsyncGenerator[Any, None]:
+    fakeredis = pytest.importorskip("fakeredis")
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     try:
@@ -194,8 +193,9 @@ async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
 @pytest_asyncio.fixture
 async def pg_db_session() -> AsyncGenerator[Any, None]:
     """Docker üzerinde geçici PostgreSQL ile asenkron DB oturumu sağlar."""
+    postgres = pytest.importorskip("testcontainers.postgres")
     try:
-        container = PostgresContainer("postgres:16-alpine")
+        container = postgres.PostgresContainer("postgres:16-alpine")
         container.start()
     except Exception as exc:
         if os.getenv("CI"):
