@@ -283,6 +283,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_request_missi
             store._index.pop(pending[0].request_id, None)
         now[0] = 11.0
 
+    run(remove_request_and_jump(0))
     monkeypatch.setattr(hitl.time, "time", fake_time)
     monkeypatch.setattr(hitl.asyncio, "sleep", remove_request_and_jump)
 
