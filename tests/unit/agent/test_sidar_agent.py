@@ -202,6 +202,24 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(sidar_agent_factory
     assert restored == {"a.py": "old:a.py"}
 
 
+async def test_restore_self_heal_backups(sidar_agent_factory) -> None:
+    """Yedek dosyaların thread üzerinden asenkron biçimde geri yüklendiğini doğrular."""
+    agent = sidar_agent_factory()
+    write_mock = Mock(return_value=(True, "ok"))
+    agent.code = types.SimpleNamespace(write_file=write_mock)
+
+    backups = {
+        "src/main.py": "print('old main')",
+        "src/utils.py": "print('old utils')",
+    }
+
+    await agent._restore_self_heal_backups(backups)
+
+    assert write_mock.call_count == 2
+    write_mock.assert_any_call("src/main.py", "print('old main')", False)
+    write_mock.assert_any_call("src/utils.py", "print('old utils')", False)
+
+
 async def test_attempt_autonomous_self_heal_core_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=False)
