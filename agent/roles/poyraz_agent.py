@@ -295,11 +295,12 @@ class PoyrazAgent(BaseAgent):
         return output
 
     async def _tool_ingest_video_insights(self, arg: str) -> str:
-        runtime_pipeline_cls = None
-        try:
-            runtime_pipeline_cls = importlib.import_module("core.multimodal").MultimodalPipeline
-        except Exception:
-            runtime_pipeline_cls = MultimodalPipeline
+        runtime_pipeline_cls = MultimodalPipeline
+        if runtime_pipeline_cls is None:
+            try:
+                runtime_pipeline_cls = importlib.import_module("core.multimodal").MultimodalPipeline
+            except Exception:
+                runtime_pipeline_cls = None
 
         if runtime_pipeline_cls is None:
             return "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"
