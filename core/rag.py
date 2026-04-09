@@ -1529,11 +1529,19 @@ class DocumentStore:
             except Exception as exc: logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
 
         if getattr(self, "_pgvector_available", False):
-            try: return self._pgvector_search(query, top_k, session_id)
+            try:
+                ok, result = self._pgvector_search(query, top_k, session_id)
+                if ok:
+                    return ok, result
+                logger.info("pgvector sonuç üretmedi, fallback zinciri devam ediyor: %s", result)
             except Exception as exc: logger.warning("pgvector arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._chroma_available and self.collection:
-            try: return self._chroma_search(query, top_k, session_id)
+            try:
+                ok, result = self._chroma_search(query, top_k, session_id)
+                if ok:
+                    return ok, result
+                logger.info("ChromaDB sonuç üretmedi, fallback zinciri devam ediyor: %s", result)
             except Exception as exc: logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._bm25_available: return self._bm25_search(query, top_k, session_id)

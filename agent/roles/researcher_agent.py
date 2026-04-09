@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -84,6 +85,42 @@ class ResearcherAgent(BaseAgent):
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş araştırma görevi verildi."
+
+        # LLM karar verebiliyorsa (tool json çıktısı) kısa bir ReAct döngüsü çalıştır.
+        # JSON üretemeyen / farklı tip dönen modellerde mevcut deterministic fallback korunur.
+        max_steps = max(1, int(getattr(self.cfg, "RESEARCH_MAX_STEPS", 4) or 4))
+        feedback = prompt
+        for _ in range(max_steps):
+            try:
+                raw = await self.llm.chat(
+                    messages=[{"role": "user", "content": feedback}],
+                    model=getattr(self.cfg, "TEXT_MODEL", getattr(self.cfg, "CODING_MODEL", None)),
+                    temperature=0.1,
+                    stream=False,
+                    json_mode=True,
+                )
+            except Exception:
+                break
+
+            if not isinstance(raw, str):
+                break
+
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                break
+            if not isinstance(parsed, dict):
+                break
+
+            tool = str(parsed.get("tool", "")).strip().lower()
+            arg = str(parsed.get("argument", "")).strip()
+            if tool == "final_answer":
+                return arg or "Araştırma tamamlandı."
+            if tool not in self.tools:
+                break
+
+            tool_result = await self.call_tool(tool, arg)
+            feedback = f"Araç sonucu: {tool_result}"
 
         lower = prompt.lower()
         if lower.startswith("fetch_url|"):

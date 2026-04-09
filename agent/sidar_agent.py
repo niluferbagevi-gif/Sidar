@@ -316,6 +316,17 @@ class SidarAgent:
             if self._initialized:
                 return
             await self.memory.initialize()
+            # CLI/yerel çalışma akışlarında kullanıcı bağlamı explicit olarak
+            # ayarlanmadığında bellek yazımı MemoryAuthError ile düşmesin.
+            # Web/API katmanları kendi kullanıcı bağlamını ayrıca set edebilir.
+            if (
+                hasattr(self.memory, "set_active_user")
+                and getattr(self.memory, "active_user_id", None) in (None, "")
+            ):
+                try:
+                    await self.memory.set_active_user("local-user", "local")
+                except Exception as exc:
+                    logger.debug("Varsayılan bellek kullanıcısı atanamadı: %s", exc)
             if hasattr(self.memory, "db") and hasattr(self.memory.db, "get_active_prompt"):
                 active_prompt = await self.memory.db.get_active_prompt("system")
                 if active_prompt and active_prompt.prompt_text.strip():
