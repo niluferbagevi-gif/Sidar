@@ -292,3 +292,26 @@ def fake_coverage_db_class() -> type:
             self.add_coverage_finding = AsyncMock()
 
     return _FakeCoverageDB
+
+
+@pytest.fixture
+def fake_vector_store() -> AsyncMock:
+    """core/rag.py testleri için deterministik vector DB adaptörü."""
+    mock_store = AsyncMock(spec=["search", "add_documents", "delete", "set_empty_result", "set_db_error"])
+
+    mock_store.search.return_value = [
+        {"id": "doc-1", "content": "mock context for RAG", "score": 0.95},
+        {"id": "doc-2", "content": "secondary context", "score": 0.88},
+    ]
+    mock_store.add_documents.return_value = True
+
+    def set_empty_result() -> None:
+        mock_store.search.side_effect = None
+        mock_store.search.return_value = []
+
+    def set_db_error() -> None:
+        mock_store.search.side_effect = ConnectionError("Vector DB connection lost")
+
+    mock_store.set_empty_result = set_empty_result
+    mock_store.set_db_error = set_db_error
+    return mock_store
