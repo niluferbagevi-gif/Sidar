@@ -2,6 +2,7 @@ import asyncio
 import builtins
 import sys
 import types
+from types import SimpleNamespace
 
 import httpx
 
@@ -525,4 +526,3 @@ def test_web_search_manager_isolated(monkeypatch):
     web._search_tavily = _fake_tavily
     ok, text = run(web.search("sidar"))
     assert ok is True and text == "web-ok"
-
