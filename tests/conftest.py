@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import inspect
 import sys
+import time
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
@@ -160,6 +161,7 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
 async def pg_db_session() -> AsyncGenerator[Any, None]:
     """Docker üzerinde geçici PostgreSQL ile asenkron DB oturumu sağlar."""
     testcontainers = pytest.importorskip("testcontainers.postgres")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
     asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
 
     PostgresContainer = testcontainers.PostgresContainer
@@ -174,6 +176,19 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
 
     try:
         sync_url = container.get_connection_url()
+        max_retries = 10
+        for attempt in range(max_retries):
+            try:
+                sync_engine = sqlalchemy.create_engine(sync_url)
+                with sync_engine.connect():
+                    pass
+                sync_engine.dispose()
+                break
+            except sqlalchemy.exc.OperationalError:
+                if attempt == max_retries - 1:
+                    pytest.fail("PostgreSQL container başlatılamadı veya hazır değil.")
+                time.sleep(0.5)
+
         async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
             "postgresql://",
             "postgresql+asyncpg://",
@@ -200,7 +215,10 @@ def frozen_time() -> Generator[FrozenDateTimeFactory, None, None]:
     # freezegun, loaded modüllerin attribute'larını gezerken transformers'ın lazy
     # import zincirini tetikleyebiliyor; bu da opsiyonel sentencepiece bağımlılığı
     # yoksa test setup sırasında patlamaya neden oluyor.
-    with freeze_time("2026-04-01 12:00:00", ignore=["transformers"]) as frozen:
+    with freeze_time(
+        "2026-04-01 12:00:00",
+        ignore=["transformers", "tiktoken", "pydantic"],
+    ) as frozen:
         yield frozen
 
 
