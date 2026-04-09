@@ -98,6 +98,12 @@ def test_ensure_httpx_stub_and_fake_async_client_guard(monkeypatch: pytest.Monke
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
     _ensure_httpx_stub()
     assert "httpx" in sys.modules
+    client = sys.modules["httpx"].AsyncClient()
+    entered = _run(client.__aenter__())
+    exited = _run(client.__aexit__(None, None, None))
+
+    assert entered is client
+    assert exited is False
 
     with pytest.raises(RuntimeError, match="No fake response configured"):
         _run(_FakeAsyncClient().post("https://graph.example/test", json={}))
