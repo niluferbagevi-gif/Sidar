@@ -149,6 +149,18 @@ async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
+async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callable(web_api_client) -> None:
+    client, _sqlite_db, fake_agent = web_api_client
+
+    unauthorized_response = await client.get("/auth/me", headers={"Authorization": "Bearer invalid-token"})
+    assert unauthorized_response.status_code == 401
+    assert unauthorized_response.json()["error"] == "Oturum geçersiz veya süresi dolmuş"
+
+    await fake_agent.memory.update_title("Başlık")
+
+
+@pytest.mark.integration
 def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
@@ -191,3 +203,30 @@ def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) ->
                 done = bool(event.get("done"))
 
     assert "".join(chunks) == "Merhaba, size nasıl yardımcı olabilirim?"
+
+
+@pytest.mark.integration
+def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_db = Mock(spec=Database)
+    fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-admin":
+            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+        return None
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"action": "auth", "token": "invalid-token"})
+                websocket.receive_json()
