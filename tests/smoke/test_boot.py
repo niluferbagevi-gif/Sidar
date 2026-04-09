@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from agent.registry import AgentCatalog
 
@@ -19,11 +20,10 @@ def test_boot_agent_catalog_unknown_role_returns_none() -> None:
     assert AgentCatalog.get("__missing_role__") is None
 
 
-def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     """FastAPI uygulamasının temel boot akışında çökmeden ayağa kalktığını doğrular."""
-    testclient_mod = pytest.importorskip("fastapi.testclient")
     web_server = pytest.importorskip("web_server")
-    TestClient = testclient_mod.TestClient
 
     fake_agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="ollama"),
@@ -43,8 +43,8 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
     try:
-        with TestClient(web_server.app) as client:
-            response = client.get("/healthz")
+        async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
+            response = await client.get("/healthz")
 
         assert response.status_code == 200
         payload = response.json()
