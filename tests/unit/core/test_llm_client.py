@@ -1740,3 +1740,49 @@ async def test_semantic_cache_get_set_return_none_when_redis_unavailable(monkeyp
     monkeypatch.setattr(manager, "_get_redis", no_redis)
     assert await manager.get("prompt") is None
     assert await manager.set("prompt", "response") is None
+
+
+@pytest.mark.asyncio
+async def test_llmclient_openai_handles_empty_and_long_prompt_with_fake_fixture(
+    mock_config,
+    fake_llm_response,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = mock_config(AI_PROVIDER="openai")
+    client = llm_client.LLMClient("openai", cfg)
+
+    monkeypatch.setattr(client._router, "select", lambda *_args: ("openai", None))
+    client._semantic_cache.get = AsyncMock(return_value=None)
+    client._semantic_cache.set = AsyncMock(return_value=None)
+
+    async def _chat_adapter(*, messages, **_kwargs):
+        prompt = str(messages[-1].get("content") or "")
+        payload = await fake_llm_response(prompt)
+        return str(payload["content"])
+
+    client._client.chat = AsyncMock(side_effect=_chat_adapter)
+
+    empty_out = await client.chat(messages=[{"role": "user", "content": ""}], stream=False)
+    long_prompt = "x" * 6000
+    long_out = await client.chat(messages=[{"role": "user", "content": long_prompt}], stream=False)
+
+    assert isinstance(empty_out, str) and empty_out.startswith("mock-response:")
+    assert isinstance(long_out, str) and long_out.startswith("mock-response:")
+    client._semantic_cache.set.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_llmclient_openai_surfaces_rate_limit_error_with_fake_fixture(
+    mock_config,
+    fake_llm_error,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = mock_config(AI_PROVIDER="openai")
+    client = llm_client.LLMClient("openai", cfg)
+
+    monkeypatch.setattr(client._router, "select", lambda *_args: ("openai", None))
+    client._semantic_cache.get = AsyncMock(return_value=None)
+    client._client.chat = AsyncMock(side_effect=fake_llm_error)
+
+    with pytest.raises(RuntimeError, match="rate limit exceeded"):
+        await client.chat(messages=[{"role": "user", "content": "fiyatlandırma nedir?"}], stream=False)

@@ -2248,3 +2248,72 @@ async def test_rag_almost_final_branches_for_parser_impact_and_fts(tmp_path: Pat
     # file intentionally missing -> line 738 except/pass branch
     store._init_fts()
     assert store._bm25_available is True
+
+
+async def test_document_store_search_uses_vector_hits_from_fake_vector_store(
+    tmp_path: Path,
+    fake_vector_store,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {"doc-1": {"session_id": "s1"}}
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = True
+    store._vector_backend = "pgvector"
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+
+    def _pgvector_search(_query: str, _top_k: int, _session_id: str):
+        rows = list(fake_vector_store.search.return_value)
+        return True, "\n".join(item["content"] for item in rows)
+
+    store._pgvector_search = _pgvector_search  # type: ignore[method-assign]
+    store._keyword_search = lambda *_args, **_kwargs: (True, "keyword-fallback")  # type: ignore[method-assign]
+
+    ok, result = store._search_sync("pytest", top_k=2, mode="auto", session_id="s1")
+
+    assert ok is True
+    assert "mock context for RAG" in result
+
+
+async def test_document_store_search_fallbacks_when_fake_vector_store_empty_or_error(
+    tmp_path: Path,
+    fake_vector_store,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {"doc-1": {"session_id": "s1"}}
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = True
+    store._vector_backend = "pgvector"
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store._keyword_search = lambda *_args, **_kwargs: (True, "keyword-fallback")  # type: ignore[method-assign]
+
+    fake_vector_store.set_empty_result()
+
+    def _pgvector_empty(_query: str, _top_k: int, _session_id: str):
+        rows = list(fake_vector_store.search.return_value)
+        if not rows:
+            raise RuntimeError("empty vector results")
+        return True, "unused"
+
+    store._pgvector_search = _pgvector_empty  # type: ignore[method-assign]
+
+    ok_empty, result_empty = store._search_sync("pytest", top_k=2, mode="auto", session_id="s1")
+    assert ok_empty is True
+    assert result_empty == "keyword-fallback"
+
+    fake_vector_store.set_db_error()
+
+    def _pgvector_error(_query: str, _top_k: int, _session_id: str):
+        side_effect = fake_vector_store.search.side_effect
+        if isinstance(side_effect, BaseException):
+            raise side_effect
+        return True, "unused"
+
+    store._pgvector_search = _pgvector_error  # type: ignore[method-assign]
+
+    ok_err, result_err = store._search_sync("pytest", top_k=2, mode="auto", session_id="s1")
+    assert ok_err is True
+    assert result_err == "keyword-fallback"

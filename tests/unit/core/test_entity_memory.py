@@ -205,3 +205,24 @@ def test_entity_memory_ttl_and_corrupted_record_recovery(
         await em.close()
 
     asyncio.run(scenario())
+
+
+@requires_sqlalchemy
+def test_get_survives_corrupted_metadata_row(sqlite_db_url: str):
+    async def scenario():
+        em = EntityMemory(database_url=sqlite_db_url)
+        await em.initialize()
+        assert await em.upsert("u-corrupt", "preferred_language", "Python") is True
+
+        async with em._engine.begin() as conn:
+            await conn.execute(
+                em_module.sql_text(
+                    "UPDATE entity_memory SET metadata = 'not-json' "
+                    "WHERE user_id = 'u-corrupt' AND key = 'preferred_language'"
+                )
+            )
+
+        assert await em.get("u-corrupt", "preferred_language") == "Python"
+        await em.close()
+
+    asyncio.run(scenario())

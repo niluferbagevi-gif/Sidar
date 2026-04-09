@@ -62,3 +62,30 @@ def test_cost_routing_fail_closed_when_cloud_provider_missing() -> None:
 
     # Fail-closed: bulut provider konfigürasyonu yoksa varsayılan korunur.
     assert (provider, model) == ("anthropic", "claude-3-5-sonnet")
+
+
+def test_cost_routing_budget_exceeded_forces_local(monkeypatch) -> None:
+    from core import router as router_module
+
+    router = CostAwareRouter(_cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.0, COST_ROUTING_DAILY_BUDGET_USD=0.01))
+    monkeypatch.setattr(router_module._budget_tracker, "exceeded", lambda _limit: True)
+
+    provider, model = router.select(
+        [{"role": "user", "content": "çok karmaşık analiz yap"}],
+        default_provider="openai",
+        default_model="gpt-4o",
+    )
+
+    assert (provider, model) == ("ollama", "llama3")
+
+
+def test_cost_routing_disabled_keeps_defaults() -> None:
+    router = CostAwareRouter(_cfg(ENABLE_COST_ROUTING=False))
+
+    provider, model = router.select(
+        [{"role": "user", "content": "herhangi bir metin"}],
+        default_provider="openai",
+        default_model="gpt-4o-mini",
+    )
+
+    assert (provider, model) == ("openai", "gpt-4o-mini")
