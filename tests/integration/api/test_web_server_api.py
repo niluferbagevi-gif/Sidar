@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+import pytest_asyncio
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
@@ -30,7 +32,7 @@ class _DbBackedMemory:
         return None
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def web_api_client(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database):
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(sqlite_db), system_prompt="")
     original_overrides = app.dependency_overrides.copy()
@@ -147,8 +149,9 @@ async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
 
 
 @pytest.mark.integration
-def test_chat_websocket_streams_agent_chunks(sqlite_db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_agent = SimpleNamespace(memory=_DbBackedMemory(sqlite_db), system_prompt="")
+def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_db = Mock(spec=Database)
+    fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
 
     async def _fake_get_agent():
         return fake_agent
