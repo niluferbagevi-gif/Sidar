@@ -6,6 +6,14 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 
+def _import_coder_module(module_name: str):
+    module = importlib.import_module(module_name)
+    required_attrs = ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
+    if not all(hasattr(module, attr) for attr in required_attrs):
+        module = importlib.reload(module)
+    return module
+
+
 @pytest.fixture
 def coder_module(monkeypatch: pytest.MonkeyPatch):
     module_name = "agent.roles.coder_agent"
@@ -22,11 +30,30 @@ def coder_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "redis.asyncio", redis_asyncio)
     monkeypatch.setitem(sys.modules, "redis.exceptions", redis_exceptions)
 
-    module = importlib.import_module(module_name)
-    required_attrs = ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
-    if not all(hasattr(module, attr) for attr in required_attrs):
-        module = importlib.reload(module)
-    return module
+    return _import_coder_module(module_name)
+
+
+def test_import_coder_module_reloads_when_required_attrs_are_missing(monkeypatch):
+    module_name = "agent.roles.coder_agent"
+    imported = ModuleType(module_name)
+    reloaded = ModuleType(module_name)
+    reloaded.CoderAgent = object
+    reloaded.BaseAgent = object
+    reloaded.CodeManager = object
+    reloaded.SecurityManager = object
+
+    monkeypatch.setattr(importlib, "import_module", lambda _name: imported)
+    calls = []
+
+    def _reload(mod):
+        calls.append(mod)
+        return reloaded
+
+    monkeypatch.setattr(importlib, "reload", _reload)
+
+    module = _import_coder_module(module_name)
+    assert module is reloaded
+    assert calls == [imported]
 
 
 class DummyEvents:
