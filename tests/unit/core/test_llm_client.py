@@ -318,12 +318,18 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
         return fake_redis
 
     counters = {"eviction": 0}
+    pipeline = fake_redis.pipeline(transaction=True)
+    expire_spy = MagicMock(wraps=pipeline.expire)
     monkeypatch.setattr(manager, "_get_redis", _get_redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.1, 0.2])
     monkeypatch.setattr(llm_client, "record_cache_eviction", lambda: counters.__setitem__("eviction", counters["eviction"] + 1))
+    monkeypatch.setattr(pipeline, "expire", expire_spy)
+    monkeypatch.setattr(fake_redis, "pipeline", lambda transaction=True: pipeline)
 
     await manager.set("prompt", "resp")
 
+    item_key = "sidar:semantic_cache:item:" + hashlib.sha256("prompt".encode("utf-8")).hexdigest()
+    expire_spy.assert_called_once_with(item_key, manager.ttl)
     assert await fake_redis.llen(manager.index_key) == 2
     keys = await fake_redis.lrange(manager.index_key, 0, -1)
     has_resp = False
