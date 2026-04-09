@@ -222,11 +222,12 @@ async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
     async def op():
         raise ValueError("fatal")
 
-    with pytest.raises(llm_client.LLMAPIError) as exc:
+    with pytest.raises(llm_client.LLMAPIError, match="fatal") as exc:
         await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
 
     assert exc.value.provider == "openai"
     assert exc.value.retryable is False
+    assert "fatal" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -513,12 +514,13 @@ async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) ->
             },
         )
     )
-    with pytest.raises(llm_client.LLMAPIError) as exc:
+    with pytest.raises(llm_client.LLMAPIError, match="maximum context length reached") as exc:
         await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
 
     assert exc.value.provider == "openai"
     assert exc.value.status_code == 400
     assert exc.value.retryable is False
+    assert "maximum context length reached" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -656,12 +658,13 @@ async def test_anthropic_context_limit_error_is_non_retryable(monkeypatch: pytes
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude"))
-    with pytest.raises(llm_client.LLMAPIError) as exc:
+    with pytest.raises(llm_client.LLMAPIError, match="context length exceeded") as exc:
         await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
 
     assert exc.value.provider == "anthropic"
     assert exc.value.status_code == 413
     assert exc.value.retryable is False
+    assert "context length exceeded" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -1158,6 +1161,7 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
     with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert exc.value.provider == "openai"
+    assert "boom" in str(exc.value)
     assert span.attrs["sidar.llm.provider"] == "openai"
 
 
@@ -1244,12 +1248,13 @@ async def test_anthropic_nonstream_error_paths(monkeypatch: pytest.MonkeyPatch) 
     assert exc.value.provider == "anthropic"
 
     async def oth_err(*_a, **_kw):
-        raise RuntimeError("x")
+        raise RuntimeError("boom")
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", oth_err)
-    with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
+    with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=True)
     assert exc.value.provider == "anthropic"
+    assert "boom" in str(exc.value)
 
 
 @pytest.mark.asyncio
