@@ -9,9 +9,13 @@ from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
+import fakeredis
 import pytest
+import sqlalchemy
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from testcontainers.postgres import PostgresContainer
 
 from agent.core.event_stream import AgentEvent
 import agent.sidar_agent as sidar_agent_module
@@ -30,7 +34,6 @@ def mock_config() -> Callable[..., Any]:
 
 @pytest.fixture
 async def fake_redis() -> AsyncGenerator[Any, None]:
-    fakeredis = pytest.importorskip("fakeredis")
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     try:
@@ -138,11 +141,6 @@ def fake_video_stream_error() -> AsyncMock:
 @pytest.fixture
 async def fake_db_session() -> AsyncGenerator[Any, None]:
     """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
-    asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
-
-    create_async_engine = asyncio_sqla.create_async_engine
-    async_sessionmaker = asyncio_sqla.async_sessionmaker
-
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -159,14 +157,6 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
 @pytest.fixture
 async def pg_db_session() -> AsyncGenerator[Any, None]:
     """Docker üzerinde geçici PostgreSQL ile asenkron DB oturumu sağlar."""
-    testcontainers = pytest.importorskip("testcontainers.postgres")
-    sqlalchemy = pytest.importorskip("sqlalchemy")
-    asyncio_sqla = pytest.importorskip("sqlalchemy.ext.asyncio")
-
-    PostgresContainer = testcontainers.PostgresContainer
-    create_async_engine = asyncio_sqla.create_async_engine
-    async_sessionmaker = asyncio_sqla.async_sessionmaker
-
     try:
         container = PostgresContainer("postgres:16-alpine")
         container.start()
