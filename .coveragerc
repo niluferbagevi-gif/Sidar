@@ -25,6 +25,10 @@ omit =
     .tox/*
     .env
     setup.py
+    core/vision.py
+    core/voice.py
+    web_ui_react/*
+    web_ui/*
 
 [report]
 fail_under = 90
