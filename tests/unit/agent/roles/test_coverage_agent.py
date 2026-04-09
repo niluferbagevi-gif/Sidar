@@ -304,8 +304,8 @@ async def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_co
     db1 = await agent._ensure_db()
     db2 = await agent._ensure_db()
     assert db1 is db2
-    assert db1.connected == 1
-    assert db1.inited == 1
+    db1.connect.assert_awaited_once()
+    db1.init_schema.assert_awaited_once()
 
     await agent._record_task(
         command="pytest",
@@ -315,7 +315,8 @@ async def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_co
         review_payload={"target_path": "a.py", "suggested_test_path": "tests/test_a.py"},
         status="tests_written",
     )
-    assert db1.created and db1.findings
+    db1.create_coverage_task.assert_awaited_once()
+    db1.add_coverage_finding.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -329,8 +330,8 @@ async def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_co
     monkeypatch.setitem(sys.modules, "core.db", core_db)
 
     db = await agent._ensure_db()
-    assert db.connected == 1
-    assert db.inited == 1
+    db.connect.assert_awaited_once()
+    db.init_schema.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -362,8 +363,8 @@ async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_m
 
     db_a, db_b = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
     assert db_a is db_b
-    assert db_a.connected == 1
-    assert db_a.inited == 1
+    db_a.connect.assert_awaited_once()
+    db_a.init_schema.assert_awaited_once()
 
 
 async def test_parse_terminal_coverage_skips_empty_path():
