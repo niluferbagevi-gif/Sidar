@@ -1740,3 +1740,46 @@ async def test_semantic_cache_get_set_return_none_when_redis_unavailable(monkeyp
     monkeypatch.setattr(manager, "_get_redis", no_redis)
     assert await manager.get("prompt") is None
     assert await manager.set("prompt", "response") is None
+
+
+@pytest.mark.asyncio
+async def test_llm_client_non_stream_uses_fake_llm_response_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
+) -> None:
+    client = llm_client.LLMClient("openai", _make_config())
+
+    async def _chat(**kwargs):
+        prompt = str((kwargs.get("messages") or [{"content": ""}])[-1].get("content", ""))
+        response = await fake_llm_response(prompt=prompt, mock_tokens=42)
+        return response["content"]
+
+    client._client.chat = _chat  # type: ignore[method-assign]
+    monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value=None))
+    monkeypatch.setattr(client._semantic_cache, "set", AsyncMock(return_value=None))
+
+    out = await client.chat(
+        [{"role": "user", "content": "uzun prompt örneği"}],
+        stream=False,
+        json_mode=False,
+    )
+
+    assert isinstance(out, str)
+    assert out.startswith("mock-response:")
+
+
+@pytest.mark.asyncio
+async def test_llm_client_rate_limit_error_path_uses_fake_llm_error_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_error,
+) -> None:
+    client = llm_client.LLMClient("openai", _make_config())
+    client._client.chat = fake_llm_error  # type: ignore[method-assign]
+    monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value=None))
+
+    with pytest.raises(RuntimeError, match="rate limit exceeded"):
+        await client.chat(
+            [{"role": "user", "content": "rate limit testi"}],
+            stream=False,
+            json_mode=False,
+        )

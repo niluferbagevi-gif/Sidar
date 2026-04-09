@@ -2248,3 +2248,64 @@ async def test_rag_almost_final_branches_for_parser_impact_and_fts(tmp_path: Pat
     # file intentionally missing -> line 738 except/pass branch
     store._init_fts()
     assert store._bm25_available is True
+
+
+async def test_document_store_auto_mode_fallbacks_when_vector_store_empty(
+    tmp_path: Path,
+    fake_vector_store,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"doc-1": {"session_id": "s1", "title": "Doc"}}
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = False
+
+    fake_vector_store.set_empty_result()
+
+    def _chroma_via_fake(_query: str, _top_k: int, _session_id: str):
+        if fake_vector_store.search.side_effect:
+            raise fake_vector_store.search.side_effect
+        rows = fake_vector_store.search.return_value or []
+        if not rows:
+            return False, "vector boş"
+        return True, "vector dolu"
+
+    store._chroma_search = _chroma_via_fake  # type: ignore[method-assign]
+    store._keyword_search = lambda q, *_args: (True, f"keyword:{q}")  # type: ignore[method-assign]
+
+    ok, msg = store._search_sync("pytest", mode="auto", session_id="s1")
+
+    assert ok is True
+    assert msg == "keyword:pytest"
+
+
+async def test_document_store_auto_mode_fallbacks_on_vector_store_error(
+    tmp_path: Path,
+    fake_vector_store,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"doc-1": {"session_id": "s1", "title": "Doc"}}
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = False
+
+    fake_vector_store.set_db_error()
+
+    def _chroma_via_fake(_query: str, _top_k: int, _session_id: str):
+        if fake_vector_store.search.side_effect:
+            raise fake_vector_store.search.side_effect
+        return True, "vector dolu"
+
+    store._chroma_search = _chroma_via_fake  # type: ignore[method-assign]
+    store._keyword_search = lambda q, *_args: (True, f"keyword:{q}")  # type: ignore[method-assign]
+
+    ok, msg = store._search_sync("pytest", mode="auto", session_id="s1")
+
+    assert ok is True
+    assert msg == "keyword:pytest"

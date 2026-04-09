@@ -158,6 +158,19 @@ def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(monkeyp
     asyncio.run(scenario())
 
 
+def test_entity_memory_reads_ttl_and_capacity_from_config(sqlite_db_url: str):
+    cfg = types.SimpleNamespace(
+        ENABLE_ENTITY_MEMORY=True,
+        ENTITY_MEMORY_TTL_DAYS=7,
+        ENTITY_MEMORY_MAX_PER_USER=12,
+    )
+    em = EntityMemory(database_url=sqlite_db_url, config=cfg)
+
+    assert em.enabled is True
+    assert em.ttl_days == 7
+    assert em.max_per_user == 12
+
+
 @requires_sqlalchemy
 def test_purge_expired_returns_zero_when_nothing_to_delete(sqlite_db_url: str):
     async def scenario():
