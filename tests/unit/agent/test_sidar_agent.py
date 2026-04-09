@@ -901,6 +901,35 @@ async def test_try_multi_agent_imports_supervisor_when_missing(sidar_agent_facto
     assert result == "ok:hello"
 
 
+async def test_try_multi_agent_triggers_reload_if_module_corrupted(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Supervisor rol sembolleri stub ise modül reload dalına girildiğini doğrular."""
+    agent = sidar_agent_factory()
+    agent._supervisor = None
+
+    from agent.core import supervisor as supervisor_mod
+
+    corrupted_role = Mock()
+    corrupted_role.__module__ = "tests.stub.roles"
+    monkeypatch.setattr(supervisor_mod, "ResearcherAgent", corrupted_role, raising=False)
+
+    reload_mock = Mock(return_value=supervisor_mod)
+    monkeypatch.setattr(sidar_agent.importlib, "reload", reload_mock)
+
+    supervisor_cls = Mock()
+    supervisor_instance = AsyncMock()
+    supervisor_instance.run_task.return_value = "ok:reloaded"
+    supervisor_cls.return_value = supervisor_instance
+    monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
+
+    result = await agent._try_multi_agent("hello")
+
+    assert result == "ok:reloaded"
+    reload_mock.assert_called_once_with(supervisor_mod)
+
+
 async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, MEMORY_ARCHIVE_TOP_K=1, MEMORY_ARCHIVE_MIN_SCORE=0.3, MEMORY_ARCHIVE_MAX_CHARS=1200)
