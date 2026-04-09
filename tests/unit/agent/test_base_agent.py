@@ -1,17 +1,12 @@
-import asyncio
-import importlib
-import sys
-import types
+from unittest.mock import AsyncMock
+
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
-
+from agent.base_agent import BaseAgent
 from agent.core.contracts import DelegationRequest, TaskEnvelope
 
 
-class DummyConfig:
-    AI_PROVIDER = "dummy-provider"
+pytestmark = pytest.mark.asyncio
 
 
 class DummyLLMClient:
@@ -25,40 +20,29 @@ class DummyLLMClient:
         return kwargs.get("messages", ["empty"])[0]
 
 
-def _load_base_agent_module(monkeypatch):
-    config_stub = types.ModuleType("config")
-    config_stub.Config = DummyConfig
-    monkeypatch.setitem(sys.modules, "config", config_stub)
-
-    llm_stub = types.ModuleType("core.llm_client")
-    llm_stub.LLMClient = DummyLLMClient
-    monkeypatch.setitem(sys.modules, "core.llm_client", llm_stub)
-
-    sys.modules.pop("agent.base_agent", None)
-    return importlib.import_module("agent.base_agent")
-
-
 async def _tool_echo(arg: str) -> str:
     return f"echo:{arg}"
 
 
-def _make_dummy_agent(base_agent_module, role_name="base"):
-    class DummyAgent(base_agent_module.BaseAgent):
-        def __init__(self, *args, **kwargs):
-            self.next_result = "ok"
-            super().__init__(*args, **kwargs)
+class DummyAgent(BaseAgent):
+    def __init__(self, *args, **kwargs):
+        self.next_result = "ok"
+        super().__init__(*args, **kwargs)
 
-        async def run_task(self, task_prompt: str):
-            return self.next_result
-
-    return DummyAgent(role_name=role_name)
+    async def run_task(self, task_prompt: str):
+        return self.next_result
 
 
-async def test_init_register_and_call_tool(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="qa")
+def _make_dummy_agent(mock_config, monkeypatch: pytest.MonkeyPatch, role_name: str = "base") -> DummyAgent:
+    cfg = mock_config(AI_PROVIDER="dummy-provider")
+    monkeypatch.setattr("agent.base_agent.LLMClient", DummyLLMClient)
+    return DummyAgent(cfg=cfg, role_name=role_name)
 
-    assert isinstance(agent.cfg, DummyConfig)
+
+async def test_init_register_and_call_tool(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="qa")
+
+    assert agent.cfg.AI_PROVIDER == "dummy-provider"
     assert agent.role_name == "qa"
     assert agent.llm.provider == "dummy-provider"
 
@@ -70,9 +54,9 @@ async def test_init_register_and_call_tool(monkeypatch):
     assert result == "echo:hello"
 
 
-async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="coder")
+async def test_call_llm_uses_default_and_override_prompt(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="coder")
+    monkeypatch.setattr(agent.llm, "chat", AsyncMock(side_effect=agent.llm.chat))
 
     response_default = await agent.call_llm(messages=["msg-1"])
     assert response_default == "msg-1"
@@ -97,9 +81,8 @@ async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
     assert second_call["model"] == "gpt-test"
 
 
-async def test_delegate_to_and_is_delegation_message(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="reviewer")
+async def test_delegate_to_and_is_delegation_message(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="reviewer")
 
     delegated = agent.delegate_to(
         target_agent="qa",
@@ -132,9 +115,8 @@ async def test_delegate_to_and_is_delegation_message(monkeypatch):
     assert agent.is_delegation_message("not-a-delegation") is False
 
 
-async def test_handle_returns_task_result_for_plain_summary(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="researcher")
+async def test_handle_returns_task_result_for_plain_summary(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="researcher")
     agent.next_result = "plain-summary"
 
     envelope = TaskEnvelope(
@@ -152,9 +134,8 @@ async def test_handle_returns_task_result_for_plain_summary(monkeypatch):
     assert result.evidence == []
 
 
-async def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="coder")
+async def test_handle_enriches_delegation_defaults_from_envelope(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="coder")
     agent.next_result = DelegationRequest(
         task_id="",
         reply_to="coder",
@@ -181,9 +162,8 @@ async def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
     assert summary.handoff_depth == 3
 
 
-async def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
-    base_agent = _load_base_agent_module(monkeypatch)
-    agent = _make_dummy_agent(base_agent, role_name="coder")
+async def test_handle_preserves_existing_delegation_ids_and_depth(mock_config, monkeypatch: pytest.MonkeyPatch):
+    agent = _make_dummy_agent(mock_config, monkeypatch, role_name="coder")
     agent.next_result = DelegationRequest(
         task_id="existing-task",
         reply_to="coder",
