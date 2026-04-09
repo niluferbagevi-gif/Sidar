@@ -4,7 +4,7 @@ import pytest
 
 from managers.web_search import WebSearchManager
 from tests.helpers import collect_async_chunks as _collect_stream
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.mark.asyncio
@@ -82,7 +82,11 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """LLM araç kararı + araç icrası + memory kaydını uçtan uca doğrular."""
+    """_tool_subtask ReAct döngüsü: LLM araç kararı → docs_search icrası → final_answer zincirini doğrular.
+
+    Sadece dış bağımlılıklar (LLM servisi + vektör DB) izole edilir; iç dispatch
+    mekanizması (_execute_tool) gerçekte çalıştırılır.
+    """
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
@@ -92,32 +96,22 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}'
+            return '{"thought": "Önce doküman araması yapmalıyım.", "tool": "docs_search", "argument": "pytest entegrasyon"}'
         return '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}'
 
+    # Dış bağımlılık: LLM servisi izole edildi.
     agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=mock_llm_chat))
 
-    timeline: list[tuple[str, str]] = []
+    # Dış bağımlılık: vektör veritabanı (DocumentStore) izole edildi.
+    docs_search_mock = MagicMock(return_value=(True, "pytest entegrasyon harikadır"))
+    monkeypatch.setattr(agent.docs, "search", docs_search_mock)
 
-    async def _memory_add(role: str, content: str) -> None:
-        timeline.append((role, content))
+    result = await agent._tool_subtask("Pytest entegrasyonunu araştır")
 
-    search_mock = AsyncMock(return_value=(True, "bulunan sonuc: pytest harikadır"))
-    monkeypatch.setattr(WebSearchManager, "search", search_mock)
-
-    async def _execute_tool(tool: str, argument: str) -> str:
-        if tool == "web_search":
-            ok, result = await WebSearchManager.search(agent.web, argument)
-            return result if ok else f"hata:{result}"
-        return f"unsupported:{tool}"
-
-    agent._execute_tool = AsyncMock(side_effect=_execute_tool)
-    agent._memory_add = _memory_add
-    agent._try_multi_agent = AsyncMock(side_effect=lambda user_input: agent._tool_subtask(user_input))
-
-    out = await _collect_stream(agent.respond("Pytest entegrasyonunu araştır"))
-
-    search_mock.assert_awaited_once_with(agent.web, "pytest integration")
-    assert "Araştırma tamamlandı." in out[-1]
-    assert ("user", "Pytest entegrasyonunu araştır") in timeline
-    assert any(role == "assistant" and "Araştırma tamamlandı." in content for role, content in timeline)
+    # LLM iki kez çağrıldı: araç kararı (1) + nihai yanıt (2).
+    assert call_count == 2
+    # Gerçek _execute_tool dispatch'i docs_search'ü çalıştırdı — iç metot ezilmedi.
+    docs_search_mock.assert_called_once()
+    assert docs_search_mock.call_args[0][0] == "pytest entegrasyon"
+    # ReAct döngüsü final_answer ile tamamlandı.
+    assert "Araştırma tamamlandı." in result
