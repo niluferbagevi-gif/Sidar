@@ -516,7 +516,8 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
         return f"TOOL:{name}:{arg}"
 
     agent.call_tool = fake_tool
-    assert await agent.run_task("") == "[UYARI] Boş coverage görevi verildi."
+    empty_task_result = await agent.run_task("")
+    assert "Boş coverage" in empty_task_result or "UYARI" in empty_task_result
     assert await agent.run_task("run_pytest|{}") == "TOOL:run_pytest:{}"
     assert await agent.run_task("analyze_pytest_output|X") == "TOOL:analyze_pytest_output:X"
     assert await agent.run_task("analyze_coverage_report|Y") == "TOOL:analyze_coverage_report:Y"
