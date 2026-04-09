@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
@@ -13,18 +11,6 @@ from httpx import ASGITransport, AsyncClient
 from core.db import Database
 import web_server
 from web_server import app
-
-
-@dataclass
-class _TestCfg:
-    DATABASE_URL: str
-    BASE_DIR: str
-    DB_POOL_SIZE: int = 2
-    DB_SCHEMA_VERSION_TABLE: str = "schema_versions"
-    DB_SCHEMA_TARGET_VERSION: int = 2
-    JWT_SECRET_KEY: str = "test-secret"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_TTL_DAYS: int = 3
 
 
 class _DbBackedMemory:
@@ -42,27 +28,6 @@ class _DbBackedMemory:
 
     async def update_title(self, _title: str) -> None:
         return None
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-@pytest.fixture
-def sqlite_db(tmp_path, request):
-    cfg = _TestCfg(
-        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_web_api_test.db'}",
-        BASE_DIR=str(tmp_path),
-    )
-    db = Database(cfg)
-    _run(db.connect())
-    _run(db.init_schema())
-
-    def _close():
-        _run(db.close())
-
-    request.addfinalizer(_close)
-    return db
 
 
 @pytest.fixture

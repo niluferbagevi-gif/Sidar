@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 import sys
 import time
@@ -17,6 +18,7 @@ from freezegun.api import FrozenDateTimeFactory
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from core.db import Database
 from agent.core.event_stream import AgentEvent
 import agent.sidar_agent as sidar_agent_module
 from tests.helpers import make_test_config
@@ -152,6 +154,29 @@ async def fake_db_session() -> AsyncGenerator[Any, None]:
                 await db.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+def sqlite_db(tmp_path, request):
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",
+        BASE_DIR=str(tmp_path),
+        DB_POOL_SIZE=2,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=2,
+        JWT_SECRET_KEY="test-secret",
+        JWT_ALGORITHM="HS256",
+        JWT_TTL_DAYS=3,
+    )
+    db = Database(cfg)
+    asyncio.run(db.connect())
+    asyncio.run(db.init_schema())
+
+    def _close():
+        asyncio.run(db.close())
+
+    request.addfinalizer(_close)
+    return db
 
 
 @pytest.fixture
