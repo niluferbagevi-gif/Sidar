@@ -1381,8 +1381,15 @@ async def test_openai_and_litellm_stream_empty_delta_and_cleanup(respx_mock_rout
     respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
     respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
 
-    assert await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)) == ["Z"]
-    assert await _collect(llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)) == ["Z"]
+    openai_chunks = await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
+    litellm_chunks = await _collect(
+        llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
+    )
+
+    assert openai_chunks == ["Z"]
+    assert litellm_chunks == ["Z"]
+    assert "" not in openai_chunks
+    assert "" not in litellm_chunks
 
 
 @pytest.mark.asyncio
