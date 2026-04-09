@@ -53,8 +53,10 @@ run_pytest_coverage_report() {
   "${pytest_cmd[@]}"
   BACKEND_EXIT_CODE=$?
 
-  # parallel=True nedeniyle oluşan .coverage.* dosyalarını birleştir
-  coverage combine || true
+  # parallel=True nedeniyle oluşan .coverage.* dosyalarını yalnızca varsa birleştir
+  if ls .coverage.* 1>/dev/null 2>&1; then
+    coverage combine || true
+  fi
 
   # pytest başarısız olsa bile HTML raporunu üretmeyi dene
   coverage html >/dev/null 2>&1 || true
