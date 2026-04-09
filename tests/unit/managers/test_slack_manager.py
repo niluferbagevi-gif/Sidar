@@ -5,24 +5,28 @@ import types
 import pytest
 
 
-if "httpx" not in sys.modules:
-    fake_httpx = types.ModuleType("httpx")
+def _ensure_httpx_stub() -> None:
+    if "httpx" not in sys.modules:
+        fake_httpx = types.ModuleType("httpx")
 
-    class _DummyAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
+        class _DummyAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        async def __aenter__(self):
-            return self
+            async def __aenter__(self):
+                return self
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
 
-        async def post(self, *args, **kwargs):  # pragma: no cover
-            raise RuntimeError("dummy client should be patched in tests")
+            async def post(self, *args, **kwargs):  # pragma: no cover
+                raise RuntimeError("dummy client should be patched in tests")
 
-    fake_httpx.AsyncClient = _DummyAsyncClient
-    sys.modules["httpx"] = fake_httpx
+        fake_httpx.AsyncClient = _DummyAsyncClient
+        sys.modules["httpx"] = fake_httpx
+
+
+_ensure_httpx_stub()
 
 from managers.slack_manager import SlackManager, _is_valid_webhook_url
 
@@ -68,6 +72,7 @@ def test_init_client_sdk_import_error_falls_back_to_webhook(monkeypatch: pytest.
             raise ImportError("missing slack sdk")
         return original_import(name, globals, locals, fromlist, level)
 
+    assert fake_import("json").__name__ == "json"
     monkeypatch.setattr("builtins.__import__", fake_import)
 
     manager = SlackManager(token="xoxb-token", webhook_url="https://hooks.slack.com/services/T/B/X")
@@ -75,6 +80,12 @@ def test_init_client_sdk_import_error_falls_back_to_webhook(monkeypatch: pytest.
     assert manager._client is None
     assert manager.is_available() is True
     assert manager._webhook_only is True
+
+
+def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+    assert "httpx" in sys.modules
 
 
 def test_init_client_sdk_other_exception_falls_back_to_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
