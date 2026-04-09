@@ -40,7 +40,7 @@ def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.M
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
     monkeypatch.setattr(web_server, "_close_redis_client", close_redis)
     monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", shutdown_local_llm)
-    web_server.app.dependency_overrides[web_server.get_agent] = _fake_get_agent
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
     try:
         with TestClient(web_server.app) as client:
