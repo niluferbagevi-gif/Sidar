@@ -52,6 +52,3 @@ exclude_lines =
 
 [html]
 directory = htmlcov
-
-[xml]
-output = coverage.xml
