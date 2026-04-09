@@ -387,6 +387,8 @@ def test_optimize_gpu_memory_gpu_paths_and_ollama(monkeypatch):
         def empty_cache():
             raise RuntimeError("cuda err")
 
+    with pytest.raises(RuntimeError, match="cuda err"):
+        BadCuda.empty_cache()
     monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=BadCuda()))
     output2 = manager.optimize_gpu_memory()
     assert "GPU cache hatası" in output2
