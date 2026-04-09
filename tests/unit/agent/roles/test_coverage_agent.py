@@ -571,7 +571,7 @@ async def test_coverage_agent_generate_candidate_with_fake_llm(tmp_path, fake_co
         json.dumps(
             {
                 "coverage_finding": {
-                    "target_path": "core/vision.py",
+                    "target_path": "core/llm_client.py",
                     "missing_lines": [10, 11],
                 },
                 "coveragerc": {"fail_under": 90},
@@ -591,7 +591,7 @@ async def test_coverage_agent_run_task_marks_pending_approval(tmp_path, monkeypa
         lambda *_args, **_kwargs: {
             "analysis": {
                 "summary": "coverage gap",
-                "findings": [{"target_path": "core/vision.py", "summary": "line gaps"}],
+                "findings": [{"target_path": "core/llm_client.py", "summary": "line gaps"}],
             },
             "output": "pytest output",
         },
