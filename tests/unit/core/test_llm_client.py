@@ -452,6 +452,41 @@ async def test_ollama_client_chat_non_stream_and_stream(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("use_gpu", "expected_num_gpu"),
+    [
+        (True, -1),
+        (False, None),
+    ],
+)
+async def test_ollama_client_sets_gpu_option_from_config(
+    use_gpu: bool,
+    expected_num_gpu: int | None,
+    mock_config,
+    respx_mock_router,
+) -> None:
+    cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=use_gpu, ENABLE_TRACING=False)
+    client = llm_client.OllamaClient(cfg)
+    captured_payload: dict[str, object] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_payload
+        captured_payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}},
+        )
+
+    respx_mock_router.post("http://x/api/chat").mock(side_effect=_handler)
+    _ = await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
+
+    options = captured_payload.get("options")
+    assert isinstance(options, dict)
+    assert options.get("temperature") == 0.3
+    assert options.get("num_gpu") == expected_num_gpu
+
+
+@pytest.mark.asyncio
 async def test_ollama_stream_response_parses_and_handles_error(
     mock_config, respx_mock_router
 ) -> None:
