@@ -24,16 +24,18 @@
 ARG BASE_IMAGE=python:3.11-slim
 ARG GPU_ENABLED=false
 
-FROM ${BASE_IMAGE}
+# ── Stage 1: Base (ortak bağımlılıklar) ────────────────────────
+FROM ${BASE_IMAGE} AS base
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
-LABEL version="5.2.0"
+LABEL version="5.3.0"
 LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 
 # Çevresel değişkenler
 # GPU_ENABLED build-arg çalışma zamanında USE_GPU env değişkenine dönüşür
 # MEMORY_ENCRYPTION_KEY: docker run -e MEMORY_ENCRYPTION_KEY=<fernet_key> ile iletilebilir
+ARG GPU_ENABLED
 ARG MEMORY_ENCRYPTION_KEY=""
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -66,8 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ENV TORCH_INDEX_URL=${TORCH_INDEX_URL}
 
-# Bağımlılık Yönetimi — requirements.txt doğrudan kullanılır
-# GPU torch wheel'i TORCH_INDEX_URL üzerinden ek index olarak eklenir.
+# Production bağımlılıkları
 COPY requirements.txt .
 RUN python3 -m pip install --upgrade "pip>=26.0.1" setuptools wheel && \
     pip install \
@@ -83,6 +84,15 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
     else \
       echo "RAG model pre-cache atlandı"; \
     fi
+
+# ── Stage 2: Dev/Test (requirements-dev dahil) ─────────────────
+FROM base AS dev
+COPY requirements-dev.txt .
+RUN pip install -r requirements-dev.txt
+COPY . .
+
+# ── Stage 3: Production (minimum runtime katmanı) ─────────────
+FROM base AS prod
 
 # Uygulama kodlarını kopyala
 COPY . .
