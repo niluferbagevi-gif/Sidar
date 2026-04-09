@@ -35,7 +35,7 @@ def mock_config() -> Callable[..., Any]:
     return make_test_config
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def fake_redis() -> AsyncGenerator[Any, None]:
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
@@ -141,7 +141,7 @@ def fake_video_stream_error() -> AsyncMock:
     return stream
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def fake_db_session() -> AsyncGenerator[Any, None]:
     """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
     engine = create_async_engine(
@@ -183,7 +183,7 @@ async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
         await db.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def pg_db_session() -> AsyncGenerator[Any, None]:
     """Docker üzerinde geçici PostgreSQL ile asenkron DB oturumu sağlar."""
     try:
