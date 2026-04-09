@@ -178,7 +178,7 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
                 "document_ingest": {"doc_id": "doc-123"},
             }
 
-    monkeypatch.setattr("core.multimodal.MultimodalPipeline", _FakePipeline)
+    monkeypatch.setattr("agent.roles.poyraz_agent.MultimodalPipeline", _FakePipeline)
     ingested = await agent._tool_ingest_video_insights("https://video.example/test.mp4|||ürün analizi")
     assert "[VIDEO:INGESTED]" in ingested
     assert "doc-123" in ingested
@@ -279,7 +279,7 @@ async def test_poyraz_agent_error_flows(
         async def analyze_media_source(self, **_kwargs):
             await self.stream.read_frames()
 
-    monkeypatch.setattr("core.multimodal.MultimodalPipeline", _FakeErrorPipeline)
+    monkeypatch.setattr("agent.roles.poyraz_agent.MultimodalPipeline", _FakeErrorPipeline)
 
     with pytest.raises(RuntimeError, match="corrupted video stream"):
         await agent._tool_ingest_video_insights("https://video.example/broken.mp4|||analiz")

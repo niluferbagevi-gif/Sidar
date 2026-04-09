@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -14,22 +13,8 @@ pytestmark = pytest.mark.asyncio
 
 
 def make_agent(tmp_path, code_manager):
-    a = CoverageAgent.__new__(CoverageAgent)
-    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
-    a.role_name = "coverage"
+    a = CoverageAgent(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     a.code = code_manager
-    a.tools = {}
-    a._db = None
-    a._db_lock = None
-
-    def register_tool(name, func):
-        a.tools[name] = func
-
-    async def call_tool(name, arg):
-        return await a.tools[name](arg)
-
-    a.register_tool = register_tool
-    a.call_tool = call_tool
     return a
 
 
@@ -380,19 +365,14 @@ async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_m
     assert db_a.inited == 1
 
 
-async def test_parse_terminal_coverage_skips_empty_path(monkeypatch):
-    class FakeMatch:
-        @staticmethod
-        def groupdict():
-            return {"path": "", "miss": "1", "branch": "0", "brpart": "0", "cover": "90", "missing": ""}
-
-    class FakePattern:
-        @staticmethod
-        def match(_line):
-            return FakeMatch()
-
-    monkeypatch.setattr(_COVERAGE_MODULE.re, "compile", lambda _pattern, *_args, **_kwargs: FakePattern())
-    data = CoverageAgent._parse_terminal_coverage_output("dummy")
+async def test_parse_terminal_coverage_returns_unparseable_for_invalid_lines():
+    data = CoverageAgent._parse_terminal_coverage_output(
+        """
+Name                               Stmts   Miss Branch BrPart   Cover   Missing
+                                   260    217     80      1  12%   20
+TOTAL                               260    217     80      1  12%
+""".strip()
+    )
     assert data["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
 
 

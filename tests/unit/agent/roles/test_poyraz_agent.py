@@ -169,6 +169,9 @@ class DummyMultimodalPipeline:
 
 @pytest.fixture
 def poyraz_module(monkeypatch: pytest.MonkeyPatch):
+    # WARNING: Bu fixture sys.modules üzerinde global patch uygular;
+    # thread-safe değildir ve paralel thread tabanlı test yürütümünde kırılgan olabilir.
+    # (pytest-xdist process tabanlı çalıştığı için worker izolasyonu sağlar.)
     config_mod = types.ModuleType("config")
     config_mod.Config = object
     core_rag_mod = types.ModuleType("core.rag")
