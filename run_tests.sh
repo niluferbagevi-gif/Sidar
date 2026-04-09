@@ -20,6 +20,32 @@ fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (pytest --cov-fail-under ile .coveragerc fail_under değerini override eder)"
 
+check_python_module() {
+  local module_name="$1"
+  python - <<PY >/dev/null 2>&1
+import importlib.util
+import sys
+sys.exit(0 if importlib.util.find_spec("${module_name}") else 1)
+PY
+}
+
+REQUIRED_DEV_MODULES=("pytest" "fakeredis" "pytest_cov")
+MISSING_DEV_MODULES=()
+
+for module_name in "${REQUIRED_DEV_MODULES[@]}"; do
+  if ! check_python_module "${module_name}"; then
+    MISSING_DEV_MODULES+=("${module_name}")
+  fi
+done
+
+if [ "${#MISSING_DEV_MODULES[@]}" -gt 0 ]; then
+  echo "❌ Test ortamında eksik geliştirme bağımlılıkları bulundu: ${MISSING_DEV_MODULES[*]}"
+  echo "   Testleri çalıştırmadan önce dev bağımlılıklarını kurun:"
+  echo "   - uv pip install -r requirements-dev.txt"
+  echo "   - veya uv pip install -e \".[dev]\""
+  exit 1
+fi
+
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
 
