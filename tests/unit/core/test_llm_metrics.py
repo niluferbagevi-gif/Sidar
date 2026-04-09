@@ -122,6 +122,26 @@ def test_record_usage_sink_closes_awaitable_without_running_loop(monkeypatch: py
     assert awaitable.closed is True
 
 
+def test_record_usage_sink_awaitable_without_close_and_without_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collector = LLMMetricsCollector()
+
+    class NonClosableAwaitable:
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    awaitable = NonClosableAwaitable()
+    collector.set_usage_sink(lambda _event: awaitable)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+
+    collector.record(provider="openai", model="gpt-4o", latency_ms=1)
+
+    assert len(list(collector._events)) == 1
+
+
 def test_record_usage_sink_errors_are_swallowed() -> None:
     collector = LLMMetricsCollector()
     collector.set_usage_sink(lambda _event: (_ for _ in ()).throw(RuntimeError("sink failed")))
