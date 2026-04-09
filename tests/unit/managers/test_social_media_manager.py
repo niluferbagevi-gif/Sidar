@@ -9,33 +9,38 @@ import types
 
 import pytest
 
-if "httpx" not in sys.modules:
-    fake_httpx = types.ModuleType("httpx")
 
-    class TimeoutException(Exception):
-        pass
+def _ensure_httpx_stub() -> None:
+    if "httpx" not in sys.modules:
+        fake_httpx = types.ModuleType("httpx")
 
-    class RequestError(Exception):
-        pass
-
-    class _DummyAsyncClient:
-        def __init__(self, *args, **kwargs):
+        class TimeoutException(Exception):
             pass
 
-        async def __aenter__(self):
-            return self
+        class RequestError(Exception):
+            pass
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+        class _DummyAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        async def post(self, *args, **kwargs):  # pragma: no cover
-            raise RuntimeError("dummy client should be patched in tests")
+            async def __aenter__(self):
+                return self
 
-    fake_httpx.TimeoutException = TimeoutException
-    fake_httpx.RequestError = RequestError
-    fake_httpx.AsyncClient = _DummyAsyncClient
-    fake_httpx.Request = lambda method, url: (method, url)
-    sys.modules["httpx"] = fake_httpx
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, *args, **kwargs):  # pragma: no cover
+                raise RuntimeError("dummy client should be patched in tests")
+
+        fake_httpx.TimeoutException = TimeoutException
+        fake_httpx.RequestError = RequestError
+        fake_httpx.AsyncClient = _DummyAsyncClient
+        fake_httpx.Request = lambda method, url: (method, url)
+        sys.modules["httpx"] = fake_httpx
+
+
+_ensure_httpx_stub()
 
 import httpx
 
@@ -87,6 +92,15 @@ class _ClientFactory:
     def __call__(self, **kwargs):
         self.kwargs = kwargs
         return self.client
+
+
+def test_ensure_httpx_stub_and_fake_async_client_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+    assert "httpx" in sys.modules
+
+    with pytest.raises(RuntimeError, match="No fake response configured"):
+        _run(_FakeAsyncClient().post("https://graph.example/test", json={}))
 
 
 def test_is_available_by_platform_and_ids() -> None:
