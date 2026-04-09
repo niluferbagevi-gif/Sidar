@@ -1629,6 +1629,8 @@ async def test_graph_index_additional_branch_coverage(tmp_path: Path, monkeypatc
     (root / "node_modules" / "ignored.py").write_text("x=1", encoding="utf-8")
     keep = root / "keep.py"
     keep.write_text("x=1", encoding="utf-8")
+    other = root / "other.py"
+    other.write_text("print('ok')\n", encoding="utf-8")
 
     gi = rag.GraphIndex(root)
     files = gi._iter_source_files(root)
