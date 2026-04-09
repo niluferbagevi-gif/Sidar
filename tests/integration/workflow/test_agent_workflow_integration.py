@@ -18,26 +18,22 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     """Gerçek supervisor + researcher akışını, yalnızca dış web bağımlılığını izole ederek doğrular."""
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
+    await agent.memory.set_active_user("integration-user")
 
     # LLM bağımlılığını izole ederek testi deterministik hale getir.
     agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
 
-    timeline: list[tuple[str, str]] = []
-
-    async def _memory_add(role: str, content: str) -> None:
-        timeline.append((role, content))
-
     async def _fake_web_search(_self, query: str):
         return True, f"docs:ok:{query}"
 
-    agent._memory_add = _memory_add
     monkeypatch.setattr(WebSearchManager, "search", _fake_web_search)
 
     out = await _collect_stream(agent.respond("docs için araştırma yap"))
+    history = await agent.memory.get_history()
 
     assert len(out) > 0
-    assert ("user", "docs için araştırma yap") in timeline
-    assert any(role == "assistant" for role, _ in timeline)
+    assert any(turn["role"] == "user" and turn["content"] == "docs için araştırma yap" for turn in history)
+    assert any(turn["role"] == "assistant" for turn in history)
 
 
 @pytest.mark.asyncio
@@ -51,27 +47,23 @@ async def test_sidar_agent_workflow_handles_search_failure(
     """Arama başarısız olduğunda supervisor'ın çökmediğini ve durumu yönettiğini doğrular."""
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
+    await agent.memory.set_active_user("integration-user")
 
     # LLM bağımlılığını izole ederek testi deterministik hale getir.
     agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=fake_llm_response))
 
-    timeline: list[tuple[str, str]] = []
-
-    async def _memory_add(role: str, content: str) -> None:
-        timeline.append((role, content))
-
     async def _fake_web_search_fail(_self, query: str):
         return False, f"Arama sırasında hata oluştu: {query}"
 
-    agent._memory_add = _memory_add
     monkeypatch.setattr(WebSearchManager, "search", _fake_web_search_fail)
 
     out = await _collect_stream(agent.respond("docs için araştırma yap"))
+    history = await agent.memory.get_history()
 
     assert len(out) > 0
     assert any("hata" in msg.lower() or "yapılamadı" in msg.lower() for msg in out)
-    assert ("user", "docs için araştırma yap") in timeline
-    assert any(role == "assistant" for role, _ in timeline)
+    assert any(turn["role"] == "user" and turn["content"] == "docs için araştırma yap" for turn in history)
+    assert any(turn["role"] == "assistant" for turn in history)
     assert agent._supervisor is not None
 
 
@@ -85,6 +77,7 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     """LLM araç kararı + araç icrası + memory kaydını uçtan uca doğrular."""
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
+    await agent.memory.set_active_user("integration-user")
 
     call_count = 0
 
@@ -97,27 +90,16 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
 
     agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=mock_llm_chat))
 
-    timeline: list[tuple[str, str]] = []
-
-    async def _memory_add(role: str, content: str) -> None:
-        timeline.append((role, content))
-
     search_mock = AsyncMock(return_value=(True, "bulunan sonuc: pytest harikadır"))
     monkeypatch.setattr(WebSearchManager, "search", search_mock)
-
-    async def _execute_tool(tool: str, argument: str) -> str:
-        if tool == "web_search":
-            ok, result = await WebSearchManager.search(agent.web, argument)
-            return result if ok else f"hata:{result}"
-        return f"unsupported:{tool}"
-
-    agent._execute_tool = AsyncMock(side_effect=_execute_tool)
-    agent._memory_add = _memory_add
-    agent._try_multi_agent = AsyncMock(side_effect=lambda user_input: agent._tool_subtask(user_input))
+    monkeypatch.setattr(agent, "_try_multi_agent", agent._tool_subtask)
 
     out = await _collect_stream(agent.respond("Pytest entegrasyonunu araştır"))
+    history = await agent.memory.get_history()
 
     search_mock.assert_awaited_once_with(agent.web, "pytest integration")
     assert "Araştırma tamamlandı." in out[-1]
-    assert ("user", "Pytest entegrasyonunu araştır") in timeline
-    assert any(role == "assistant" and "Araştırma tamamlandı." in content for role, content in timeline)
+    assert any(turn["role"] == "user" and turn["content"] == "Pytest entegrasyonunu araştır" for turn in history)
+    assert any(
+        turn["role"] == "assistant" and "Araştırma tamamlandı." in turn["content"] for turn in history
+    )
