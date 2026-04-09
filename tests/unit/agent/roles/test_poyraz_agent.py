@@ -168,6 +168,28 @@ class DummyMultimodalPipeline:
         }
 
 
+def test_stub_base_agent_tool_error_and_llm_mode_parsing_paths():
+    agent = _StubBaseAgent()
+
+    missing_tool = asyncio.run(agent.call_tool("bilinmeyen", "arg"))
+    assert missing_tool.startswith("[HATA]")
+
+    no_mode = asyncio.run(agent.call_llm([{"content": "ilk satır\nikinci satır"}], system_prompt="SYS"))
+    assert no_mode == "LLM_RESPONSE::default::SYS"
+
+    multi_line_mode = asyncio.run(
+        agent.call_llm([{"content": "başlık\nGörev Modu: kampanya"}], system_prompt="SYS2")
+    )
+    assert multi_line_mode == "LLM_RESPONSE::kampanya::SYS2"
+
+
+def test_dummy_database_get_active_prompt_defaults_to_empty_prompt():
+    db = DummyDatabase(cfg=SimpleNamespace())
+    prompt = asyncio.run(db.get_active_prompt("poyraz"))
+    assert prompt.role_name == "poyraz"
+    assert prompt.prompt_text == ""
+
+
 @pytest.fixture
 def poyraz_module(monkeypatch: pytest.MonkeyPatch):
     # WARNING: This fixture mutates `sys.modules` to inject lightweight doubles
@@ -324,6 +346,7 @@ def test_ensure_db_timeout_guard(poyraz_module, fake_cfg):
 
     with pytest.raises(asyncio.TimeoutError):
         asyncio.run(asyncio.wait_for(agent._ensure_db(), timeout=0.01))
+    assert asyncio.run(agent._db_lock.__aexit__(None, None, None)) is False
 
 
 def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypatch):
