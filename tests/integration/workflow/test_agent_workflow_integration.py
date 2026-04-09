@@ -92,8 +92,8 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return '{"tool": "web_search", "argument": "pytest integration"}'
-        return '{"tool": "final_answer", "argument": "Araştırma tamamlandı."}'
+            return '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}'
+        return '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}'
 
     agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=mock_llm_chat))
 
