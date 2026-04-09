@@ -352,8 +352,7 @@ async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_ag
 
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("slow")))
     timeout_msg = await agent._tool_docs_search("query")
-    timeout_msg_normalized = timeout_msg.lower()
-    assert any(keyword in timeout_msg_normalized for keyword in ("zaman", "aşım", "timeout"))
+    assert any(keyword in timeout_msg.lower() for keyword in ("zaman", "aşım", "timeout"))
 
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: {"invalid": "payload"})
     invalid_msg = await agent._tool_docs_search("query")
