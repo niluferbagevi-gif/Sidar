@@ -632,7 +632,7 @@ def test_poyraz_output_format(poyraz_module, fake_cfg):
 
 
 @pytest.mark.asyncio
-async def test_social_and_video_flows_use_shared_fakes(
+async def test_poyraz_social_and_video_flows_use_shared_fakes(
     fake_social_api,
     fake_video_stream,
     monkeypatch,

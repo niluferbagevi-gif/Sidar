@@ -605,7 +605,7 @@ def test_full_report_gpu_line_optional_fields(monkeypatch):
     assert metrics["gpu_utilization_pct"] == 77
 
 
-def test_get_health_summary_isolated(monkeypatch):
+def test_system_health_manager_isolated(monkeypatch):
     health_cfg = SimpleNamespace(
         ENABLE_DEPENDENCY_HEALTHCHECKS=True,
         REDIS_URL="",

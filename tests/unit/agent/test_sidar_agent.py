@@ -1461,7 +1461,7 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
 
 
 @pytest.mark.asyncio
-async def test_respond_critical_flow_uses_shared_fixtures(
+async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
     agent_factory,
     fake_llm_response,
     fake_event_stream,
@@ -1487,7 +1487,7 @@ async def test_respond_critical_flow_uses_shared_fixtures(
 
 
 @pytest.mark.asyncio
-async def test_llm_error_flow_raises_runtime_error(
+async def test_sidar_agent_llm_error_flow(
     agent_factory,
     fake_llm_error,
     fake_event_stream,
