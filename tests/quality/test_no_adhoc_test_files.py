@@ -13,6 +13,7 @@ FORBIDDEN_FILENAME_PATTERNS = (
     re.compile(r"^test_.*_improvements\.py$"),
     re.compile(r"^test_.*_runtime\.py$"),
     re.compile(r"^test_quick_.*\.py$"),
+    re.compile(r"^test_.*_coverage.*\.py$"),
 )
 
 
