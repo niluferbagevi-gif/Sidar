@@ -16,6 +16,7 @@ import sqlalchemy
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 from testcontainers.postgres import PostgresContainer
 
 from core.db import Database
@@ -143,7 +144,11 @@ def fake_video_stream_error() -> AsyncMock:
 @pytest.fixture
 async def fake_db_session() -> AsyncGenerator[Any, None]:
     """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     try:
