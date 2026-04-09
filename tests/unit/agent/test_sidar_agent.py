@@ -71,6 +71,11 @@ async def test_init_accepts_config_alias_and_prefers_config(monkeypatch: pytest.
     assert agent.cfg is cfg_alias
 
 
+async def test_init_rejects_unexpected_kwargs() -> None:
+    with pytest.raises(TypeError, match="Unexpected keyword argument"):
+        sidar_agent.SidarAgent(invalid_param="123", another_param="456")
+
+
 @pytest.mark.parametrize(
     ("raw", "expected_tool", "expected_argument"),
     [
