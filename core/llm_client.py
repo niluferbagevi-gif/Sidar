@@ -843,6 +843,23 @@ class OpenAIClient(BaseLLMClient):
                         json=payload,
                         headers=headers,
                     )
+                    if resp.is_error:
+                        detail = ""
+                        try:
+                            err = resp.json().get("error", {})
+                            detail = str(err.get("message") or "").strip()
+                        except Exception:
+                            detail = ""
+                        if not detail:
+                            detail = (resp.text or "").strip()
+                        if detail:
+                            retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
+                            raise LLMAPIError(
+                                "openai",
+                                detail,
+                                status_code=resp.status_code,
+                                retryable=retryable,
+                            )
                     resp.raise_for_status()
                     return resp.json()
 
