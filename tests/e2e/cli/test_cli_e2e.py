@@ -1,4 +1,6 @@
 import json
+import http.client
+import importlib.util
 import os
 import socketserver
 import subprocess
@@ -64,6 +66,9 @@ def mock_ollama_server():
 
 
 def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Path, mock_ollama_server) -> None:
+    if importlib.util.find_spec("pydantic") is None:
+        pytest.skip("pydantic kurulu değil; gerçek ajan CLI e2e testi atlanıyor.")
+
     db_path = tmp_path / "sidar_cli_e2e.db"
     env = os.environ.copy()
     env.update(
@@ -99,3 +104,49 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
     assert result.returncode == 0, result.stderr
     assert "Sidar >" in result.stdout
     assert result.stdout.strip(), "CLI komutu bir çıktı üretmelidir."
+
+
+def test_ollama_response_payload_wraps_argument() -> None:
+    payload = _ollama_response_payload("echo-value")
+    content = json.loads(payload["message"]["content"])
+    assert content["thought"] == "CLI e2e mock response"
+    assert content["tool"] == "final_answer"
+    assert content["argument"] == "echo-value"
+
+
+def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) -> None:
+    host, port = mock_ollama_server.server_address
+    conn = http.client.HTTPConnection(host, port, timeout=3)
+    try:
+        conn.request("POST", "/not-found")
+        response = conn.getresponse()
+        response.read()
+    finally:
+        conn.close()
+
+    assert response.status == 404
+
+
+def test_mock_ollama_handler_returns_chat_payload(mock_ollama_server) -> None:
+    host, port = mock_ollama_server.server_address
+    previous_argument = _MockOllamaHandler.response_argument
+    _MockOllamaHandler.response_argument = "EXPECTED_E2E_ARG"
+    conn = http.client.HTTPConnection(host, port, timeout=3)
+
+    try:
+        body = json.dumps({"messages": [{"role": "user", "content": "hello"}]})
+        conn.request(
+            "POST",
+            "/api/chat",
+            body=body,
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        data = json.loads(response.read().decode("utf-8"))
+    finally:
+        _MockOllamaHandler.response_argument = previous_argument
+        conn.close()
+
+    parsed = json.loads(data["message"]["content"])
+    assert response.status == 200
+    assert parsed["argument"] == "EXPECTED_E2E_ARG"
