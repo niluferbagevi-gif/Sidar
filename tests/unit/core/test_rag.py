@@ -111,13 +111,20 @@ def health():
 
 def call_it():
     requests.get('/api/ping')
+    client.router.get('/ignored')
+    client.api.get('/api/pong')
+    build_client().get('/api/factory')
 """
     graph = rag.GraphIndex(root)
     deps, defs, calls = graph._parse_python_source(app_file, content)
 
     assert dep.resolve() in deps
     assert defs[0]["endpoint_id"] == "endpoint:GET /health"
-    assert calls[0]["endpoint_id"] == "endpoint:GET /api/ping"
+    ids = {call["endpoint_id"] for call in calls}
+    assert "endpoint:GET /api/ping" in ids
+    assert "endpoint:GET /api/pong" in ids
+    assert "endpoint:GET /api/factory" in ids
+    assert "endpoint:GET /ignored" not in ids
 
 
 async def test_graph_index_parse_python_source_handles_syntax_error(tmp_path: Path) -> None:
@@ -617,6 +624,26 @@ async def test_document_store_search_sync_fallback_chain_and_graph_not_found(tmp
     ok, result = graph_store.search_graph("unknown-module", top_k=2)
     assert ok is False
     assert "ilgili modül bulunamadı" in result
+
+
+async def test_document_store_search_sync_preferred_chroma_fallbacks_to_rrf(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1", "title": "A"}}
+    store._bm25_available = True
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._vector_backend = "chroma"
+    store._is_local_llm_provider = False
+    store._local_hybrid_enabled = True
+    store._chroma_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("preferred-chroma"))  # type: ignore[method-assign]
+    store._rrf_search = lambda q, k, s: (True, f"rrf:{q}:{k}:{s}")  # type: ignore[method-assign]
+
+    ok, result = store._search_sync("needle", mode="auto", session_id="s1")
+    assert ok is True
+    assert result == "rrf:needle:2:s1"
 
 
 async def test_document_store_search_sync_empty_session_and_analyze_graph_impact(tmp_path: Path) -> None:
