@@ -53,6 +53,21 @@ Bu komut sana şunları döndürür:
 python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
 ```
 
+> Kritik kural (fixture uyumu): `generate_missing_tests` promptuna mutlaka ortak fixture kullanım direktifi ekleyin.  
+> Aksi halde Coverage Agent kendi ad-hoc mock sınıflarını üretmeye çalışabilir ve proje test standardından sapar.
+
+Önerilen direktif (hazır kopyala/yapıştır):
+
+```text
+Eksik testleri üretirken unittest.mock yerine conftest.py içinde bulunan fake_llm_response, fake_event_stream, agent_factory, fake_social_api ve fake_db_session fixture'larını kullan. Kendi mock objeni oluşturma.
+```
+
+Pratik örnek:
+
+```bash
+python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"extra_instructions":"Eksik testleri üretirken unittest.mock yerine conftest.py içinde bulunan fake_llm_response, fake_event_stream, agent_factory, fake_social_api ve fake_db_session fixture'larını kullan. Kendi mock objeni oluşturma.","coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
+```
+
 ### Aşama C — Üretilen testi hedef dosyaya yaz
 Geçici veya ad-hoc (örn: `_coverage_x.py`) dosyalar oluşturmak proje kurallarına aykırıdır. Üretilen testi her zaman mevcut ana test dosyasına **append (ekleme)** yaparak yazdırın.
 
