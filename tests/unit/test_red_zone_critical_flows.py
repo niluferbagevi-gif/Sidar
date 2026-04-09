@@ -98,6 +98,7 @@ async def test_swarm_execute_task_and_auto_handle_are_isolated(monkeypatch) -> N
 async def test_reviewer_and_coverage_agent_generate_candidates_with_fake_llm(
     fake_llm_response,
     agent_factory,
+    monkeypatch,
 ) -> None:
     reviewer = agent_factory(ReviewerAgent)
 
@@ -128,6 +129,25 @@ async def test_reviewer_and_coverage_agent_generate_candidates_with_fake_llm(
         )
     )
     assert "test_generated_coverage_case" in generated
+
+    monkeypatch.setattr(
+        coverage.code,
+        "run_pytest_and_collect",
+        lambda *_args, **_kwargs: {
+            "analysis": {
+                "summary": "coverage gap",
+                "findings": [{"target_path": "core/vision.py", "summary": "line gaps"}],
+            },
+            "output": "pytest output",
+        },
+    )
+    monkeypatch.setattr(coverage, "_generate_test_candidate", AsyncMock(return_value=generated))
+    monkeypatch.setattr(coverage.code, "write_generated_test", lambda *_args, **_kwargs: (True, "ok"))
+    monkeypatch.setattr(coverage, "_record_task", AsyncMock(return_value=None))
+
+    run_task_payload = json.loads(await coverage.run_task("pytest --cov=. --cov-report=xml"))
+    assert run_task_payload["approval_status"] == "pending_reviewer_or_human"
+    assert run_task_payload["is_approved"] is False
 
 
 async def test_poyraz_social_and_video_flows_use_shared_fakes(
@@ -164,7 +184,7 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
     assert "doc-123" in ingested
 
 
-async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monkeypatch, frozen_time) -> None:
+async def test_system_health_manager_isolated(monkeypatch) -> None:
     health_cfg = SimpleNamespace(
         ENABLE_DEPENDENCY_HEALTHCHECKS=True,
         REDIS_URL="",
@@ -180,9 +200,13 @@ async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monk
     assert summary["status"] in {"healthy", "degraded"}
     assert "dependencies" in summary
 
+
+async def test_todo_manager_isolated(tmp_path) -> None:
     todo = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert "eklendi" in todo.add_task("kritik test görevi")
 
+
+async def test_web_search_manager_isolated(monkeypatch) -> None:
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     web = WebSearchManager(
         SimpleNamespace(
@@ -203,6 +227,8 @@ async def test_external_managers_smoke_with_isolated_dependencies(tmp_path, monk
     ok, text = await web.search("sidar")
     assert ok is True and text == "web-ok"
 
+
+async def test_package_info_manager_isolated() -> None:
     pkg = PackageInfoManager()
 
     async def _fake_fetch(_package):
