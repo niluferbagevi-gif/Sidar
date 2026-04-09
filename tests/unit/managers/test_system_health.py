@@ -621,3 +621,18 @@ def test_system_health_manager_isolated(monkeypatch):
     assert summary["status"] in {"healthy", "degraded"}
     assert "dependencies" in summary
 
+
+def test_check_ollama_non_200_and_timeout(monkeypatch):
+    manager = _build_manager(monkeypatch, cfg=SimpleNamespace(OLLAMA_URL="http://ollama.local/api", OLLAMA_TIMEOUT=1))
+
+    class _Resp:
+        status_code = 503
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=lambda *_a, **_k: _Resp()))
+    assert manager.check_ollama() is False
+
+    def _raise_timeout(*_args, **_kwargs):
+        raise TimeoutError("request timeout")
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=_raise_timeout))
+    assert manager.check_ollama() is False

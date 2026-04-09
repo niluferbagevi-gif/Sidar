@@ -323,3 +323,57 @@ def fake_vector_store() -> AsyncMock:
     mock_store.set_empty_result = set_empty_result
     mock_store.set_db_error = set_db_error
     return mock_store
+
+
+@pytest.fixture
+def mock_httpx(monkeypatch: pytest.MonkeyPatch) -> Callable[..., SimpleNamespace]:
+    """httpx modülünü testte kontrollü şekilde enjekte eden yardımcı fixture."""
+
+    def _install(
+        *,
+        client_factory: Callable[..., Any],
+        timeout_exception: type[Exception] | None = None,
+        request_error: type[Exception] | None = None,
+    ) -> SimpleNamespace:
+        module = SimpleNamespace(
+            AsyncClient=client_factory,
+            TimeoutException=timeout_exception or type("TimeoutException", (Exception,), {}),
+            RequestError=request_error or type("RequestError", (Exception,), {}),
+        )
+        monkeypatch.setitem(sys.modules, "httpx", module)
+        return module
+
+    return _install
+
+
+@pytest.fixture
+def mock_chromadb(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """chromadb/chromadb.config modüllerini tek noktadan enjekte eder."""
+
+    def _install(
+        *,
+        persistent_client_factory: Callable[..., Any],
+        settings_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=persistent_client_factory))
+        monkeypatch.setitem(
+            sys.modules,
+            "chromadb.config",
+            SimpleNamespace(Settings=settings_factory or (lambda **_kwargs: object())),
+        )
+
+    return _install
+
+
+@pytest.fixture
+def mock_sentence_transformers(monkeypatch: pytest.MonkeyPatch) -> Callable[[type], None]:
+    """sentence_transformers modülünü merkezi fixture ile taklit eder."""
+
+    def _install(sentence_transformer_cls: type) -> None:
+        monkeypatch.setitem(
+            sys.modules,
+            "sentence_transformers",
+            SimpleNamespace(SentenceTransformer=sentence_transformer_cls),
+        )
+
+    return _install

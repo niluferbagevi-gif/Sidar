@@ -178,6 +178,35 @@ def test_load_handles_non_list_json_and_decode_error(tmp_path: Path):
     assert len(m2) == 0
 
 
+def test_load_handles_locked_todo_file(tmp_path: Path, monkeypatch):
+    todo_file = tmp_path / "todos.json"
+    todo_file.write_text("[]", encoding="utf-8")
+
+    real_open = open
+
+    def _open_with_lock(path, mode="r", *args, **kwargs):
+        if str(path).endswith("todos.json") and "r" in mode:
+            raise PermissionError("file is locked")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", _open_with_lock)
+    manager = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
+    assert len(manager) == 0
+
+
+def test_add_task_raises_when_todo_file_not_writable(manager: TodoManager, monkeypatch):
+    real_open = open
+
+    def _open_readonly(path, mode="r", *args, **kwargs):
+        if str(path).endswith("todos.json") and "w" in mode:
+            raise PermissionError("readonly filesystem")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", _open_readonly)
+    with pytest.raises(PermissionError):
+        manager.add_task("persist me", status=STATUS_PENDING)
+
+
 def test_scan_project_todos_branches(manager: TodoManager, tmp_path: Path):
     # invalid directory input
     assert "Geçersiz dizin" in manager.scan_project_todos(directory="\0bad")
@@ -233,4 +262,3 @@ def test_scan_project_todos_ignores_file_read_errors(manager: TodoManager, tmp_p
 def test_todo_manager_isolated(tmp_path):
     todo = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert "eklendi" in todo.add_task("kritik test görevi")
-

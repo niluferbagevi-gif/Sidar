@@ -783,7 +783,10 @@ async def test_document_store_add_document_and_search_helpers(tmp_path: Path) ->
     assert "Kelime Eşleşmesi" in text
 
 
-async def test_document_store_add_document_from_url_success_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_document_store_add_document_from_url_success_and_failure(
+    mock_httpx,
+    tmp_path: Path,
+) -> None:
     store = _make_store_stub(tmp_path)
 
     async def _fake_add(title: str, content: str, source: str, tags: list[str] | None, session_id: str) -> str:
@@ -809,7 +812,7 @@ async def test_document_store_add_document_from_url_success_and_failure(monkeypa
         async def get(self, _url: str) -> _Resp:
             return _Resp()
 
-    monkeypatch.setitem(__import__("sys").modules, "httpx", SimpleNamespace(AsyncClient=lambda **_k: _Client()))
+    mock_httpx(client_factory=lambda **_k: _Client())
 
     ok, msg = await store.add_document_from_url("https://example.com/docs", session_id="s-url")
     assert ok is True
@@ -828,7 +831,7 @@ async def test_document_store_add_document_from_url_success_and_failure(monkeypa
     ],
 )
 async def test_document_store_add_document_from_url_handles_httpx_transport_errors(
-    monkeypatch: pytest.MonkeyPatch,
+    mock_httpx,
     tmp_path: Path,
     exc_name: str,
     expected_hint: str,
@@ -853,14 +856,10 @@ async def test_document_store_add_document_from_url_handles_httpx_transport_erro
         async def get(self, _url: str):
             raise error_cls(expected_hint)
 
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "httpx",
-        SimpleNamespace(
-            AsyncClient=lambda **_k: _Client(),
-            TimeoutException=_TimeoutException,
-            RequestError=_RequestError,
-        ),
+    mock_httpx(
+        client_factory=lambda **_k: _Client(),
+        timeout_exception=_TimeoutException,
+        request_error=_RequestError,
     )
 
     ok, msg = await store.add_document_from_url("https://example.com/docs", session_id="s-url")
@@ -871,15 +870,14 @@ async def test_document_store_add_document_from_url_handles_httpx_transport_erro
 
 async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     monkeypatch: pytest.MonkeyPatch,
+    mock_chromadb,
+    mock_sentence_transformers,
     tmp_path: Path,
 ) -> None:
     # Chroma runtime failure (import hatası değil): PersistentClient patlasa da BM25 devam etmeli.
-    monkeypatch.setitem(
-        sys.modules,
-        "chromadb",
-        SimpleNamespace(PersistentClient=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("chroma-runtime"))),
+    mock_chromadb(
+        persistent_client_factory=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("chroma-runtime")),
     )
-    monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=lambda **_kwargs: object()))
 
     chroma_cfg = SimpleNamespace(
         RAG_TOP_K=3,
@@ -911,7 +909,7 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     def _broken_create_engine(*_args: object, **_kwargs: object):
         raise RuntimeError("pg-runtime")
 
-    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_SentenceTransformer))
+    mock_sentence_transformers(_SentenceTransformer)
     monkeypatch.setitem(sys.modules, "pgvector", SimpleNamespace(__name__="pgvector"))
     monkeypatch.setitem(
         sys.modules,
