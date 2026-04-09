@@ -309,6 +309,22 @@ async def test_tool_docs_search_handles_empty_and_async_result(sidar_agent_facto
     assert found == "found:abc"
 
 
+async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+
+    agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("slow")))
+    timeout_msg = await agent._tool_docs_search("query")
+    assert "zaman aşımına" in timeout_msg
+
+    agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: {"invalid": "payload"})
+    invalid_msg = await agent._tool_docs_search("query")
+    assert "geçersiz yanıt" in invalid_msg
+
+    agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (True, "   "))
+    empty_msg = await agent._tool_docs_search("query")
+    assert "boş yanıt" in empty_msg
+
+
 async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path
     (root / "SIDAR.md").write_text("root rules", encoding="utf-8")
@@ -975,6 +991,43 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypa
     )
     agent.code = code
     assert (await agent._tool_github_smart_pr("title|||base|||note")).startswith(sidar_agent.GITHUB_SMART_PR_CREATE_FAILED_PREFIX)
+
+
+@pytest.mark.parametrize(
+    "create_pr_side_effect, expected_fragment",
+    [
+        (TimeoutError("network timeout"), "zaman aşımı"),
+        (RuntimeError("404 Not Found"), "404 Not Found"),
+    ],
+)
+async def test_tool_github_smart_pr_handles_create_pr_exceptions(
+    sidar_agent_factory,
+    create_pr_side_effect,
+    expected_fragment: str,
+) -> None:
+    agent = sidar_agent_factory()
+    code = Mock()
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/x")
+        if "branch" in command
+        else (True, "M a.py")
+        if "status" in command
+        else (True, "diff")
+        if "diff --no-color" in command
+        else (True, "c1")
+        if "log" in command
+        else (True, "")
+    )
+    github = Mock()
+    github.is_available.return_value = True
+    github.default_branch = "main"
+    github.create_pull_request.side_effect = create_pr_side_effect
+    agent.code = code
+    agent.github = github
+
+    result = await agent._tool_github_smart_pr("title|||main|||note")
+    assert sidar_agent.GITHUB_SMART_PR_CREATE_FAILED_PREFIX in result
+    assert expected_fragment in result
 
 
 @pytest.mark.parametrize("branch_output", ["", False])

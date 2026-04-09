@@ -1158,11 +1158,23 @@ class SidarAgent:
             query = parts[0]
             mode = parts[1] or "auto"
         session_id = "global"
-        result_obj = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
-        if asyncio.iscoroutine(result_obj):
-            result_obj = await result_obj
+        try:
+            result_obj = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
+            if asyncio.iscoroutine(result_obj):
+                result_obj = await result_obj
+        except TimeoutError:
+            return "✗ Doküman araması zaman aşımına uğradı."
+        except Exception as exc:
+            return f"✗ Doküman araması başarısız: {exc}"
+
+        if not isinstance(result_obj, tuple) or len(result_obj) != 2:
+            return "✗ Doküman araması geçersiz yanıt döndürdü."
+
         _ok, result = result_obj
-        return result
+        text = str(result or "").strip()
+        if not text:
+            return "ℹ Doküman araması boş yanıt döndürdü."
+        return text
 
     async def _tool_subtask(self, arg: str) -> str:
         task = (arg or "").strip()
@@ -1287,9 +1299,16 @@ class SidarAgent:
             f"### Commitler\n{commits}\n\n"
             f"### Diff Özeti\n```diff\n{diff_text}\n```"
         )
-        ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
+        try:
+            ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
+        except TimeoutError:
+            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} zaman aşımı"
+        except Exception as exc:
+            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {exc}"
+
         if not ok_pr:
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {pr_out}"
+            reason = str(pr_out or "bilinmeyen hata")
+            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {reason}"
         return f"{GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} {pr_out}"
 
 

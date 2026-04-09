@@ -377,3 +377,13 @@ def mock_sentence_transformers(monkeypatch: pytest.MonkeyPatch) -> Callable[[typ
         )
 
     return _install
+
+
+@pytest.fixture
+def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """requests modülünü testte belirli davranışlarla enjekte eder."""
+
+    def _install(*, get_impl: Callable[..., Any]) -> None:
+        monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(get=get_impl))
+
+    return _install
