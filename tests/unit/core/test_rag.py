@@ -820,6 +820,128 @@ async def test_document_store_add_document_from_url_success_and_failure(monkeypa
     assert "URL belge eklenemedi" in msg
 
 
+@pytest.mark.parametrize(
+    ("exc_name", "expected_hint"),
+    [
+        ("TimeoutException", "timeout"),
+        ("RequestError", "network"),
+    ],
+)
+async def test_document_store_add_document_from_url_handles_httpx_transport_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    exc_name: str,
+    expected_hint: str,
+) -> None:
+    store = _make_store_stub(tmp_path)
+
+    class _TimeoutException(Exception):
+        pass
+
+    class _RequestError(Exception):
+        pass
+
+    error_cls = _TimeoutException if exc_name == "TimeoutException" else _RequestError
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _url: str):
+            raise error_cls(expected_hint)
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "httpx",
+        SimpleNamespace(
+            AsyncClient=lambda **_k: _Client(),
+            TimeoutException=_TimeoutException,
+            RequestError=_RequestError,
+        ),
+    )
+
+    ok, msg = await store.add_document_from_url("https://example.com/docs", session_id="s-url")
+    assert ok is False
+    assert "URL belge eklenemedi" in msg
+    assert expected_hint in msg
+
+
+async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Chroma runtime failure (import hatası değil): PersistentClient patlasa da BM25 devam etmeli.
+    monkeypatch.setitem(
+        sys.modules,
+        "chromadb",
+        SimpleNamespace(PersistentClient=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("chroma-runtime"))),
+    )
+    monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=lambda **_kwargs: object()))
+
+    chroma_cfg = SimpleNamespace(
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=32,
+        RAG_CHUNK_OVERLAP=8,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=False,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=32,
+        PGVECTOR_TABLE="rag_embeddings",
+        PGVECTOR_EMBEDDING_DIM=3,
+        PGVECTOR_EMBEDDING_MODEL="mini",
+        DATABASE_URL="",
+    )
+    chroma_store = rag.DocumentStore(tmp_path / "chroma_runtime_fail", cfg=chroma_cfg)
+    assert chroma_store._chroma_available is False
+    doc_id = chroma_store._add_document_sync("Chroma Fallback", "fallback body", source="test://runtime", session_id="s1")
+    bm25_ok, bm25_msg = chroma_store._bm25_search("fallback", 2, "s1")
+    assert bm25_ok is True
+    assert doc_id in bm25_msg
+
+    # pgvector runtime failure (import hatası değil): create_engine patlasa da BM25 devam etmeli.
+    class _SentenceTransformer:
+        def __init__(self, _name: str) -> None:
+            pass
+
+    def _broken_create_engine(*_args: object, **_kwargs: object):
+        raise RuntimeError("pg-runtime")
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_SentenceTransformer))
+    monkeypatch.setitem(sys.modules, "pgvector", SimpleNamespace(__name__="pgvector"))
+    monkeypatch.setitem(
+        sys.modules,
+        "sqlalchemy",
+        SimpleNamespace(create_engine=_broken_create_engine, text=lambda sql: sql),
+    )
+
+    pg_cfg = SimpleNamespace(
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=32,
+        RAG_CHUNK_OVERLAP=8,
+        RAG_VECTOR_BACKEND="pgvector",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=False,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=32,
+        PGVECTOR_TABLE="rag_embeddings",
+        PGVECTOR_EMBEDDING_DIM=3,
+        PGVECTOR_EMBEDDING_MODEL="mini",
+        DATABASE_URL="postgresql://user:pass@localhost/db",
+    )
+    pg_store = rag.DocumentStore(tmp_path / "pg_runtime_fail", cfg=pg_cfg)
+    assert pg_store._pgvector_available is False
+    pg_doc_id = pg_store._add_document_sync("PG Fallback", "vector backend down", source="test://runtime", session_id="s2")
+    pg_bm25_ok, pg_bm25_msg = pg_store._bm25_search("backend", 2, "s2")
+    assert pg_bm25_ok is True
+    assert pg_doc_id in pg_bm25_msg
+
+
 async def test_document_store_schedule_judge_and_search_with_otel(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class _Judge:
         enabled = True
@@ -856,6 +978,53 @@ async def test_document_store_schedule_judge_and_search_with_otel(monkeypatch: p
     monkeypatch.setattr(rag, "_otel_trace", SimpleNamespace(get_tracer=lambda _name: _Tracer()))
     ok, txt = await store.search("query", session_id="s1")
     assert ok is True and txt == "ok"
+
+
+async def test_document_store_upsert_pgvector_chunks_rolls_back_on_transaction_failure(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = True
+    store._pg_table = "rag_embeddings"
+    store._pgvector_embed_texts = lambda _chunks: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+
+    state = {"rollback": False, "calls": 0}
+
+    class _Conn:
+        def execute(self, _sql: object, _params: object = None) -> None:
+            state["calls"] += 1
+            if state["calls"] >= 2:
+                raise RuntimeError("insert failed")
+
+    class _Tx:
+        def __enter__(self) -> _Conn:
+            return _Conn()
+
+        def __exit__(self, exc_type, _exc, _tb) -> bool:
+            if exc_type is not None:
+                state["rollback"] = True
+            return False
+
+    class _Engine:
+        def begin(self) -> _Tx:
+            return _Tx()
+
+    store.pg_engine = _Engine()
+    store._upsert_pgvector_chunks("d1", "p1", "s1", "title", "src", ["content"])
+
+    assert state["calls"] >= 2
+    assert state["rollback"] is True
+
+
+async def test_document_store_recursive_chunk_text_overlap_preserves_continuity(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    chunks = store._recursive_chunk_text("supercalifragilistic", size=6, overlap=2)
+
+    assert chunks
+    assert all(chunk for chunk in chunks)
+    assert all(len(chunk) <= 6 for chunk in chunks)
+    assert all(chunks[idx].startswith(chunks[idx - 1][-2:]) for idx in range(1, len(chunks)))
+
+    reconstructed = chunks[0] + "".join(chunk[2:] for chunk in chunks[1:])
+    assert reconstructed == "supercalifragilistic"
 
 
 async def test_document_store_init_backends_and_import_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
