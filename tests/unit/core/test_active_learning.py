@@ -443,7 +443,7 @@ def test_pipeline_schedule_cycle(monkeypatch):
 
         def create_task(self, coro, name=None):
             self.created.append((coro, name))
-            coro.close()
+            asyncio.run(coro)
             return object()
 
     loop = FakeLoop()
@@ -539,6 +539,7 @@ def test_lora_trainer_check_peft_importerror(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert builtins.__import__("json").__name__ == "json"
     assert trainer._check_peft() is False
 
 
@@ -672,7 +673,7 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
     fake_datasets = types.ModuleType("datasets")
     fake_datasets.load_dataset = lambda *args, **kwargs: types.SimpleNamespace(
         column_names=["prompt", "completion"],
-        map=lambda fn, remove_columns=None: [{"ok": 1}],
+        map=lambda fn, remove_columns=None: [fn({"prompt": "p", "completion": "c"})],
     )
 
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
