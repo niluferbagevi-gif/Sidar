@@ -1452,6 +1452,21 @@ async def test_openai_tracing_nonstream_success_and_error(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
+async def test_openai_invalid_model_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="invalid-model"))
+
+    async def _raise_invalid_model(_provider, _operation, **_kw):
+        raise llm_client.LLMAPIError("openai", "model_not_found", status_code=404, retryable=False)
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_invalid_model)
+    with pytest.raises(llm_client.LLMAPIError, match="model_not_found") as exc:
+        await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "openai"
+    assert exc.value.status_code == 404
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_llmclient_truncation_remaining_branches() -> None:
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
@@ -1594,6 +1609,34 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_empty_prompt_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {"messages": None}
+
+    class _Messages:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs.get("messages")
+            raise llm_client.LLMAPIError("anthropic", "model_not_found", status_code=404, retryable=False)
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kw):
+            self.messages = _Messages()
+
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="invalid-model"))
+
+    async def _retry_passthrough(_provider, operation, **_kw):
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_passthrough)
+    with pytest.raises(llm_client.LLMAPIError, match="model_not_found") as exc:
+        await c.chat([], stream=False, json_mode=False)
+    assert exc.value.provider == "anthropic"
+    assert exc.value.status_code == 404
+    assert exc.value.retryable is False
+    assert captured["messages"] == [{"role": "user", "content": "Merhaba"}]
 
 
 @pytest.mark.asyncio
