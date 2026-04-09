@@ -456,6 +456,8 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
     class _Stat:
         def __init__(self, mode):
             self.st_mode = mode
+            self.st_size = 0
+            self.st_mtime = 0.0
 
     class FakeDocker:
         class DockerClient:
@@ -467,8 +469,14 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
                     return None
                 raise RuntimeError("bad")
 
-    monkeypatch.setattr(cm.os, "stat", lambda p: _Stat(stat.S_IFREG if "var/run" in p else stat.S_IFSOCK))
+    monkeypatch.setattr(
+        cm.os,
+        "stat",
+        lambda p, *_args, **_kwargs: _Stat(stat.S_IFREG if "var/run" in str(p) else stat.S_IFSOCK),
+    )
     assert FakeDocker.DockerClient("unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock").ping() is None
+    with pytest.raises(RuntimeError, match="bad"):
+        FakeDocker.DockerClient("unix:///tmp/other.sock").ping()
     assert manager._try_wsl_socket_fallback(FakeDocker) is True
     assert manager.docker_available is True
 
