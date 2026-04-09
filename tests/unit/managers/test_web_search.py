@@ -68,6 +68,27 @@ class DummyAsyncClient:
         return self.response
 
 
+def test_dummy_response_raise_for_status_and_fail_import_passthrough():
+    ok_resp = DummyResponse(status_code=200)
+    ok_resp.raise_for_status()
+
+    bad_resp = DummyResponse(status_code=500)
+    try:
+        bad_resp.raise_for_status()
+        assert False, "HTTPStatusError bekleniyordu"
+    except httpx.HTTPStatusError as exc:
+        assert exc.response.status_code == 500
+
+    real_import = builtins.__import__
+
+    def fail_import(name, *args, **kwargs):
+        if name == "duckduckgo_search":
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    assert fail_import("math").__name__ == "math"
+
+
 def test_init_with_config(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager(DummyConfig())
