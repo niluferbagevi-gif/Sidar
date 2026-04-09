@@ -16,10 +16,6 @@ from config import Config
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 
-if not callable(getattr(AgentCatalog, "get", None)):
-    AgentCatalog.get = classmethod(lambda cls, role_name: cls._registry.get(role_name))  # type: ignore[attr-defined]
-
-
 @AgentCatalog.register(capabilities=['coverage_analysis', 'pytest_output_analysis', 'autonomous_test_generation'], is_builtin=True)
 class CoverageAgent(BaseAgent):
     """Pytest çıktısını okuyup eksik senaryoları belirleyen ve reviewer onayına sunan ajan."""
