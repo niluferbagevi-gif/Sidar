@@ -8,24 +8,29 @@ import types
 
 import pytest
 
-if "httpx" not in sys.modules:
-    fake_httpx = types.ModuleType("httpx")
 
-    class _DummyAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
+def _ensure_httpx_stub() -> None:
+    if "httpx" not in sys.modules:
+        fake_httpx = types.ModuleType("httpx")
 
-        async def __aenter__(self):
-            return self
+        class _DummyAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+            async def __aenter__(self):
+                return self
 
-        async def post(self, *args, **kwargs):  # pragma: no cover
-            raise RuntimeError("dummy client should be patched in tests")
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
 
-    fake_httpx.AsyncClient = _DummyAsyncClient
-    sys.modules["httpx"] = fake_httpx
+            async def post(self, *args, **kwargs):  # pragma: no cover
+                raise RuntimeError("dummy client should be patched in tests")
+
+        fake_httpx.AsyncClient = _DummyAsyncClient
+        sys.modules["httpx"] = fake_httpx
+
+
+_ensure_httpx_stub()
 
 from managers.teams_manager import TeamsManager
 
@@ -62,6 +67,12 @@ class _FakeAsyncClient:
 def test_init_and_is_available_flag() -> None:
     assert TeamsManager().is_available() is False
     assert TeamsManager(webhook_url=" https://example.test/hook ").is_available() is True
+
+
+def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    _ensure_httpx_stub()
+    assert "httpx" in sys.modules
 
 
 def test_send_message_requires_webhook() -> None:
