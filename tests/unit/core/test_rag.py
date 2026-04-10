@@ -742,6 +742,11 @@ async def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: py
     assert ef_cuda is not None
     assert ef_cuda(["chunk"]) == [[1.0]]
 
+    # Instance-level __call__ monkeypatching does not intercept special method
+    # lookup for callables, so the test explicitly exercises our autocast stub.
+    with _Torch.autocast(device_type="cuda", dtype="fp16"):
+        pass
+
     class _BrokenEF:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise RuntimeError("factory unavailable")
