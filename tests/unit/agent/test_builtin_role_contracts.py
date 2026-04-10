@@ -117,3 +117,34 @@ class ExampleRole:
 
     with pytest.raises(AssertionError, match="No AgentCatalog.register"):
         _extract_capabilities_from_role_file(role_file)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # "register" çağrısı attribute değilse atlanmalı.
+        """
+@register(capabilities=["x"])
+class ExampleRole:
+    pass
+""",
+        # capabilities dışındaki keyword'ler atlanmalı.
+        """
+@AgentCatalog.register(tags=["x"])
+class ExampleRole:
+    pass
+""",
+        # capabilities listesi boşsa değer dönmemeli.
+        """
+@AgentCatalog.register(capabilities=[])
+class ExampleRole:
+    pass
+""",
+    ],
+)
+def test_extract_capabilities_raises_for_non_contract_decorators(tmp_path: Path, source: str) -> None:
+    role_file = tmp_path / "non_contract_role.py"
+    role_file.write_text(source.strip(), encoding="utf-8")
+
+    with pytest.raises(AssertionError, match="No AgentCatalog.register"):
+        _extract_capabilities_from_role_file(role_file)
