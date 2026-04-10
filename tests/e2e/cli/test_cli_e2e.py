@@ -114,6 +114,13 @@ def test_ollama_response_payload_wraps_argument() -> None:
     assert content["argument"] == "echo-value"
 
 
+def test_cli_command_skips_when_pydantic_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server) -> None:
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
+
+    with pytest.raises(pytest.skip.Exception):
+        test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path, mock_ollama_server)
+
+
 def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) -> None:
     host, port = mock_ollama_server.server_address
     conn = http.client.HTTPConnection(host, port, timeout=3)
@@ -125,6 +132,25 @@ def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) ->
         conn.close()
 
     assert response.status == 404
+
+
+def test_mock_ollama_handler_returns_chat_payload_without_request_body(mock_ollama_server) -> None:
+    host, port = mock_ollama_server.server_address
+    conn = http.client.HTTPConnection(host, port, timeout=3)
+    previous_argument = _MockOllamaHandler.response_argument
+    _MockOllamaHandler.response_argument = "NO_BODY_ARG"
+
+    try:
+        conn.request("POST", "/api/chat")
+        response = conn.getresponse()
+        data = json.loads(response.read().decode("utf-8"))
+    finally:
+        _MockOllamaHandler.response_argument = previous_argument
+        conn.close()
+
+    parsed = json.loads(data["message"]["content"])
+    assert response.status == 200
+    assert parsed["argument"] == "NO_BODY_ARG"
 
 
 def test_mock_ollama_handler_returns_chat_payload(mock_ollama_server) -> None:
