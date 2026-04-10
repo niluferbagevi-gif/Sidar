@@ -777,6 +777,13 @@ def test_sqlite_triple_slash_url_branch(tmp_path) -> None:
     assert db._sqlite_path == tmp_path / "triple.db"
 
 
+def test_sqlite_plain_path_url_branch(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="plain_relative.db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    assert db._backend == "sqlite"
+    assert db._sqlite_path == tmp_path / "plain_relative.db"
+
+
 @pytest.mark.asyncio
 async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
