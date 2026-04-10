@@ -578,6 +578,25 @@ def test_check_hardware_cpu_count_fallback(monkeypatch):
     assert info.cpu_count == 1
 
 
+def test_check_hardware_nvml_exception_is_ignored(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(is_available=lambda: False),
+        version=types.SimpleNamespace(cuda=None),
+    )
+    modules = __import__("sys").modules
+    monkeypatch.setitem(modules, "torch", fake_torch)
+    monkeypatch.setitem(
+        modules,
+        "pynvml",
+        types.SimpleNamespace(nvmlInit=lambda: (_ for _ in ()).throw(RuntimeError("nvml fail"))),
+    )
+
+    info = config.check_hardware()
+    assert info.gpu_name == "CUDA Bulunamadı"
+
+
 def test_ensure_hardware_info_loaded_short_circuit(monkeypatch):
     monkeypatch.setattr(config.Config, "_hardware_loaded", True)
     before = config.Config.GPU_INFO
@@ -621,6 +640,44 @@ def test_validate_critical_settings_invalid_fernet_and_ollama_api_suffix(monkeyp
             return _Resp()
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_missing_cryptography_dependency(monkeypatch):
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://localhost:11434")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "abc123")
+
+    class _Resp:
+        status_code = 200
+
+    class _ClientOK:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+    monkeypatch.delitem(__import__("sys").modules, "cryptography.fernet", raising=False)
+    monkeypatch.delitem(__import__("sys").modules, "cryptography", raising=False)
+
+    import builtins
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "cryptography.fernet":
+            raise ImportError("cryptography missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
     assert config.Config.validate_critical_settings() is False
 
 
