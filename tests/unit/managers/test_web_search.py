@@ -5,6 +5,7 @@ import types
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 from managers.web_search import WebSearchManager
 
@@ -73,11 +74,9 @@ def test_dummy_response_raise_for_status_and_fail_import_passthrough():
     ok_resp.raise_for_status()
 
     bad_resp = DummyResponse(status_code=500)
-    try:
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
         bad_resp.raise_for_status()
-        assert False, "HTTPStatusError bekleniyordu"
-    except httpx.HTTPStatusError as exc:
-        assert exc.response.status_code == 500
+    assert exc_info.value.response.status_code == 500
 
     real_import = builtins.__import__
 
@@ -87,6 +86,8 @@ def test_dummy_response_raise_for_status_and_fail_import_passthrough():
         return real_import(name, *args, **kwargs)
 
     assert fail_import("math").__name__ == "math"
+    with pytest.raises(ImportError):
+        fail_import("duckduckgo_search")
 
 
 def test_init_with_config(monkeypatch):
@@ -120,6 +121,9 @@ def test_check_ddg_true_and_false(monkeypatch):
         if name == "duckduckgo_search":
             raise ImportError("missing")
         return real_import(name, *args, **kwargs)
+
+    with pytest.raises(ImportError):
+        fail_import("duckduckgo_search")
 
     monkeypatch.setattr(builtins, "__import__", fail_import)
     assert m._check_ddg() is False
