@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -80,3 +82,38 @@ def test_builtin_role_capabilities_match_expected_contract() -> None:
     for file_name, expected_caps in expected.items():
         observed = _extract_capabilities_from_role_file(role_dir / file_name)
         assert observed == expected_caps
+
+
+def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
+    role_file = tmp_path / "example_role.py"
+    role_file.write_text(
+        """
+@not_a_call
+@AgentCatalog.register()
+@OtherCatalog.register(capabilities=["ignored"])
+@AgentCatalog.register(tags=["ignored"])
+@AgentCatalog.register(capabilities=("still", "ignored"))
+@AgentCatalog.register(capabilities=["ok_capability"])
+class ExampleRole:
+    pass
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert _extract_capabilities_from_role_file(role_file) == {"ignored"}
+
+
+def test_extract_capabilities_raises_when_missing_or_empty(tmp_path: Path) -> None:
+    role_file = tmp_path / "empty_caps_role.py"
+    role_file.write_text(
+        """
+class ExampleRole:
+    @AgentCatalog.register(capabilities=[])
+    class Inner:
+        pass
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match="No AgentCatalog.register"):
+        _extract_capabilities_from_role_file(role_file)
