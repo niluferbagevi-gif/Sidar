@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import sqlite3
+import sys
 import types
 from dataclasses import dataclass
 from datetime import datetime
@@ -750,3 +751,115 @@ async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
     fake_pg.conn.transaction = lambda: _Tx()
     replaced = await db.replace_session_messages("s1", [{"content": "x"}, {"role": "user", "content": "y"}])
     assert replaced == 2
+
+@pytest.mark.asyncio
+async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -> None:
+    rel_cfg = DummyCfg(DATABASE_URL="sqlite:///relative.db", BASE_DIR=str(tmp_path))
+    rel_db = Database(rel_cfg)
+    assert rel_db._backend == "sqlite"
+    assert rel_db._sqlite_path == tmp_path / "relative.db"
+
+    abs_path = tmp_path / "absolute.db"
+    abs_cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{abs_path}", BASE_DIR=str(tmp_path))
+    db = Database(abs_cfg)
+    await db._connect_sqlite()
+    first_conn = db._sqlite_conn
+    await db._connect_sqlite()
+    assert db._sqlite_conn is first_conn
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+
+    already_connected = Database(cfg)
+    already_connected._pg_pool = object()
+    await already_connected._connect_postgresql()
+
+    missing_dep = Database(cfg)
+    real_import = __import__
+
+    def _raise_import(name, *args, **kwargs):
+        if name == "asyncpg":
+            raise ImportError("no asyncpg")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _raise_import)
+    with pytest.raises(RuntimeError, match="asyncpg"):
+        await missing_dep._connect_postgresql()
+    monkeypatch.setattr("builtins.__import__", real_import)
+
+    class _AsyncpgStub:
+        class PoolError(Exception):
+            pass
+
+    timeout_db = Database(cfg)
+
+    async def _raise_timeout(**_kwargs):
+        raise TimeoutError("pool timeout")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_timeout, PoolError=_AsyncpgStub.PoolError))
+    with pytest.raises(TimeoutError):
+        await timeout_db._connect_postgresql()
+
+    pool_error_db = Database(cfg)
+
+    async def _raise_pool(**_kwargs):
+        raise _AsyncpgStub.PoolError("pool is down")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_pool, PoolError=_AsyncpgStub.PoolError))
+    with pytest.raises(_AsyncpgStub.PoolError):
+        await pool_error_db._connect_postgresql()
+
+    generic_db = Database(cfg)
+
+    async def _raise_generic(**_kwargs):
+        raise RuntimeError("connection failed")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_generic, PoolError=_AsyncpgStub.PoolError))
+    with pytest.raises(RuntimeError, match="connection failed"):
+        await generic_db._connect_postgresql()
+
+
+@pytest.mark.asyncio
+async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    await db._ensure_access_control_schema_postgresql()
+    await db._ensure_audit_log_schema_postgresql()
+    assert fake_pg.conn.execute.await_count >= 6
+
+    calls: list[str] = []
+
+    async def _mark(name: str):
+        calls.append(name)
+
+    db._backend = "postgresql"
+    db._init_schema_postgresql = lambda: _mark("init")
+    db._ensure_access_control_schema_postgresql = lambda: _mark("ac")
+    db._ensure_audit_log_schema_postgresql = lambda: _mark("audit")
+    db._ensure_schema_version_postgresql = lambda: _mark("version")
+    db.ensure_default_prompt_registry = lambda: _mark("prompt")
+
+    await db.init_schema()
+    assert calls == ["init", "ac", "audit", "version", "prompt"]
+
+
+@pytest.mark.asyncio
+async def test_postgresql_create_session_and_add_message_paths(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": 777})
+
+    session = await db.create_session("user-1", "hello")
+    assert session.user_id == "user-1"
+
+    message = await db.add_message(session.id, "assistant", "reply", tokens_used=3)
+    assert message.id == 777
+    assert message.tokens_used == 3
