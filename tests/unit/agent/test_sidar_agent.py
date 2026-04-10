@@ -361,16 +361,13 @@ async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_ag
 
 async def test_autonomy_state_and_self_heal_blocked_when_dependencies_missing(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
-    if hasattr(agent, "_autonomy_history"):
-        delattr(agent, "_autonomy_history")
-    if hasattr(agent, "_autonomy_lock"):
-        delattr(agent, "_autonomy_lock")
+    agent.__dict__.pop("_autonomy_history", None)
+    agent.__dict__.pop("_autonomy_lock", None)
     agent._ensure_autonomy_runtime_state()
     assert agent._autonomy_history == []
     assert agent._autonomy_lock is None
 
-    if hasattr(agent, "code"):
-        delattr(agent, "code")
+    agent.__dict__.pop("code", None)
     remediation = {"remediation_loop": {"status": "planned"}}
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
@@ -408,6 +405,7 @@ async def test_build_context_todo_len_and_instruction_trim(sidar_agent_factory, 
             return "task1"
 
     agent.todo = _Todo()
+    assert agent.todo.list_tasks() == "task1"
     monkeypatch.setattr(agent, "_load_instruction_files", lambda: "A" * 200)
     context = await agent._build_context()
     assert "[Proje Ayarları" in context
