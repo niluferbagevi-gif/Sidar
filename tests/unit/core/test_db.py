@@ -151,6 +151,7 @@ def test_helper_functions_basic_contracts() -> None:
     assert _verify_password("abc123", hashed)
     assert not _verify_password("wrong", hashed)
     assert not _verify_password("abc123", "invalid")
+    assert not _verify_password("abc123", "sha1$salt$deadbeef")
 
     assert _quote_sql_identifier("schema_versions") == '"schema_versions"'
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
@@ -769,6 +770,13 @@ async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -
     await db.close()
 
 
+def test_sqlite_triple_slash_url_branch(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL=f"sqlite:///{tmp_path / 'triple.db'}", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    assert db._backend == "sqlite"
+    assert db._sqlite_path == tmp_path / "triple.db"
+
+
 @pytest.mark.asyncio
 async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
@@ -1022,3 +1030,127 @@ async def test_postgresql_listing_without_optional_filters() -> None:
 
     with pytest.raises(ValueError):
         await db.upsert_marketing_campaign(campaign_id=999, tenant_id="t", name="missing")
+
+
+@pytest.mark.asyncio
+async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Database) -> None:
+    # list_prompts without filter (901-908)
+    await sqlite_db.upsert_prompt("system", "v1", activate=True)
+    prompts = await sqlite_db.list_prompts()
+    assert prompts
+
+    # activate_prompt missing id -> None (1096, 1111)
+    assert await sqlite_db.activate_prompt(999_999) is None
+
+    # _run_sqlite_op lock initialization branch (282)
+    sqlite_db._sqlite_lock = None
+    result = await sqlite_db._run_sqlite_op(lambda: 42)
+    assert result == 42
+
+    user = await sqlite_db.create_user("list-policy-user", password="pw")
+    await sqlite_db.upsert_access_policy(
+        user_id=user.id,
+        tenant_id="default",
+        resource_type="repo",
+        action="read",
+        effect="allow",
+    )
+    # no tenant filter branch (1606)
+    policies = await sqlite_db.list_access_policies(user.id)
+    assert policies and policies[0].tenant_id == "default"
+
+    with pytest.raises(ValueError):
+        await sqlite_db.upsert_access_policy(user_id=user.id, tenant_id="default", resource_type="", action="read")
+
+    campaign = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-l", name="Campaign A")
+    # no status branch (2046)
+    listed_campaigns = await sqlite_db.list_marketing_campaigns(tenant_id="tenant-l")
+    assert listed_campaigns and listed_campaigns[0].id == campaign.id
+
+    checklist = await sqlite_db.add_operation_checklist(
+        campaign_id=campaign.id, tenant_id="tenant-l", title="Ops", items=["a", "b"]
+    )
+    # campaign_id is not None branch (2373)
+    checklists = await sqlite_db.list_operation_checklists(tenant_id="tenant-l", campaign_id=campaign.id)
+    assert checklists and checklists[0].id == checklist.id
+
+    await sqlite_db.create_coverage_task(tenant_id="tenant-l", command="pytest", pytest_output="ok")
+    # no status branch (2644)
+    tasks = await sqlite_db.list_coverage_tasks(tenant_id="tenant-l")
+    assert tasks
+
+
+@pytest.mark.asyncio
+async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    # ensure_default_prompt_registry when no loader/default prompt (845->850, 852)
+    class _SpecNoLoader:
+        loader = None
+
+    import importlib.util as _importlib_util
+
+    original_spec = _importlib_util.spec_from_file_location
+    _importlib_util.spec_from_file_location = lambda *_args, **_kwargs: _SpecNoLoader()  # type: ignore[assignment]
+    try:
+        await db.ensure_default_prompt_registry()
+    finally:
+        _importlib_util.spec_from_file_location = original_spec  # type: ignore[assignment]
+
+    fake_pg.conn.fetchval = AsyncMock(return_value=0)
+    fake_pg.conn.fetchrow = AsyncMock(
+        return_value={
+            "id": 10,
+            "role_name": "system",
+            "prompt_text": "new",
+            "version": 1,
+            "is_active": True,
+            "created_at": "c",
+            "updated_at": "u",
+        }
+    )
+    await db.upsert_prompt("system", "new", activate=True)  # activate=True branch (998)
+
+    # schema-version helper (1138-1149)
+    await db._ensure_schema_version_postgresql()
+    assert fake_pg.conn.execute.await_count >= 2
+
+    # ensure_user_id postgres insert path (1461-1472)
+    async def _none_user(_user_id: str):
+        return None
+
+    db._get_user_by_id = _none_user  # type: ignore[method-assign]
+    created = await db.ensure_user_id("uid-postgres", username="u-post", role="reviewer", tenant_id="t-post")
+    assert created.id == "uid-postgres"
+
+    # current >= target branch (1147)
+    fake_pg.conn.fetchval = AsyncMock(return_value=999)
+    await db._ensure_schema_version_postgresql()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'edges.db'}", BASE_DIR=str(tmp_path), DB_SCHEMA_TARGET_VERSION=1)
+    db = Database(cfg)
+    await db.connect()
+    await db.init_schema()
+
+    # sqlite schema version current>=target branch (1127)
+    await db._ensure_schema_version_sqlite()
+
+    # register_user wrapper (1383) + authenticate none/wrong branches (1411, 1413)
+    plain = await db.ensure_user("no-password")
+    assert await db.authenticate_user(plain.username, "pw") is None
+    await db.register_user("with-password", "pw")
+    assert await db.authenticate_user("with-password", "wrong") is None
+
+    # sqlite delete_session without user_id branch (1345)
+    s = await db.create_session(plain.id, "tmp")
+    assert await db.delete_session(s.id) is True
+
+    # sqlite campaign update missing row branch (1987)
+    with pytest.raises(ValueError, match="campaign not found"):
+        await db.upsert_marketing_campaign(campaign_id=999_999, tenant_id="t", name="x")
+    await db.close()
