@@ -358,6 +358,96 @@ async def test_tool_docs_search_timeout_invalid_and_empty_payload_edges(sidar_ag
     invalid_msg = await agent._tool_docs_search("query")
     assert "geçersiz yanıt" in invalid_msg
 
+
+async def test_autonomy_state_and_self_heal_blocked_when_dependencies_missing(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    if hasattr(agent, "_autonomy_history"):
+        delattr(agent, "_autonomy_history")
+    if hasattr(agent, "_autonomy_lock"):
+        delattr(agent, "_autonomy_lock")
+    agent._ensure_autonomy_runtime_state()
+    assert agent._autonomy_history == []
+    assert agent._autonomy_lock is None
+
+    if hasattr(agent, "code"):
+        delattr(agent, "code")
+    remediation = {"remediation_loop": {"status": "planned"}}
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    blocked = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
+    assert blocked["status"] == "blocked"
+
+
+async def test_memory_archive_context_empty_snippet_and_char_limit(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    collection = Mock()
+    collection.query.return_value = {
+        "documents": [["", "second snippet"]],
+        "metadatas": [[{"source": "memory_archive", "title": "T1"}, {"source": "memory_archive", "title": "T2"}]],
+        "distances": [[0.1, 0.1]],
+    }
+    agent.docs = types.SimpleNamespace(collection=collection)
+    text = agent._get_memory_archive_context_sync("q", top_k=5, min_score=0.1, max_chars=10)
+    assert text == ""
+
+
+async def test_build_context_todo_len_and_instruction_trim(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, AI_PROVIDER="ollama", LOCAL_INSTRUCTION_MAX_CHARS=20, LOCAL_AGENT_CONTEXT_MAX_CHARS=120)
+    agent.code = types.SimpleNamespace(status=lambda: "ok", get_metrics=lambda: {"files_read": 1, "files_written": 1})
+    agent.health = types.SimpleNamespace(status=lambda: "ok")
+    agent.github = types.SimpleNamespace(is_available=lambda: False, status=lambda: "no")
+    agent.web = types.SimpleNamespace(status=lambda: "ok", is_available=lambda: True)
+    agent.pkg = types.SimpleNamespace(status=lambda: "ok")
+    agent.docs = types.SimpleNamespace(status=lambda: "ok")
+    agent.memory = types.SimpleNamespace(get_last_file=lambda: "")
+
+    class _Todo:
+        def __len__(self):
+            raise TypeError("len not direct")
+        def list_tasks(self):
+            return "task1"
+
+    agent.todo = _Todo()
+    monkeypatch.setattr(agent, "_load_instruction_files", lambda: "A" * 200)
+    context = await agent._build_context()
+    assert "[Proje Ayarları" in context
+
+
+async def test_load_instruction_files_edge_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
+    good = tmp_path / "SIDAR.md"
+    good.write_text("hello", encoding="utf-8")
+    empty = tmp_path / "CLAUDE.md"
+    empty.write_text("", encoding="utf-8")
+
+    class _BadPath:
+        def is_file(self):
+            raise RuntimeError("bad")
+
+    monkeypatch.setattr(Path, "rglob", lambda self, name: [str(good), empty, _BadPath()])
+    text = agent._load_instruction_files()
+    assert "hello" in text
+
+
+async def test_tool_docs_search_and_execute_tool_error_branches(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fail")))
+    err = await agent._tool_docs_search("x")
+    assert "başarısız" in err
+
+    with pytest.raises(ValueError):
+        await agent._execute_tool("", "x")
+    with pytest.raises(ValueError):
+        await agent._execute_tool("unknown", "x")
+
+    agent._tool_sync = "not-callable"
+    with pytest.raises(TypeError):
+        await agent._execute_tool("sync", "x")
+
+    agent._tool_sync = lambda arg: f"sync:{arg}"
+    assert await agent._execute_tool("sync", "x") == "sync:x"
+
     agent.docs = types.SimpleNamespace(search=lambda *_a, **_k: (True, "   "))
     empty_msg = await agent._tool_docs_search("query")
     assert "boş yanıt" in empty_msg
