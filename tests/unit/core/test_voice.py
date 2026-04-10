@@ -70,6 +70,14 @@ def test_pyttsx3_adapter_not_available_when_import_fails(monkeypatch):
             sys.modules.pop("pyttsx3", None)
 
 
+def test_pyttsx3_adapter_not_available_when_import_fails_with_none_module(monkeypatch):
+    # sys.modules içinde anahtar var ama değer None ise finally/else kolu çalışmalı
+    monkeypatch.setitem(sys.modules, "pyttsx3", None)
+    adapter = _Pyttsx3Adapter()
+    assert adapter.available is False
+    sys.modules.pop("pyttsx3", None)
+
+
 @pytest.mark.asyncio
 async def test_pyttsx3_adapter_synthesize_when_unavailable(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyttsx3", None)
