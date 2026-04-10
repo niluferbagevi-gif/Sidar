@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import sqlite3
 import types
 from dataclasses import dataclass
@@ -65,6 +66,77 @@ class FakePgAdapter:
 
     def set_disconnect_error(self) -> None:
         self.conn.execute.side_effect = ConnectionError("database connection lost")
+
+
+@pytest.mark.asyncio
+async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    db._backend = "postgresql"
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    await db._init_schema_postgresql()
+
+    assert fake_pg.conn.execute.await_count > 20
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_prompt_registry_postgres_branches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    db._backend = "postgresql"
+    db._pg_pool = FakePgAdapter()
+
+    async def _none_active(_role):
+        return None
+
+    async def _raise_upsert(**_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(db, "get_active_prompt", _none_active)
+    monkeypatch.setattr(db, "upsert_prompt", _raise_upsert)
+
+    class _Loader:
+        def exec_module(self, module):
+            module.SIDAR_SYSTEM_PROMPT = "system-prompt"
+
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        lambda *_args, **_kwargs: types.SimpleNamespace(loader=_Loader()),
+    )
+    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: types.SimpleNamespace())
+
+    await db.ensure_default_prompt_registry()
+
+
+@pytest.mark.asyncio
+async def test_list_prompts_postgresql_role_and_no_role(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    db._backend = "postgresql"
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    rows = [
+        {
+            "id": 1,
+            "role_name": "system",
+            "prompt_text": "p1",
+            "version": 1,
+            "is_active": True,
+            "created_at": "2025-01-01T00:00:00",
+            "updated_at": "2025-01-01T00:00:00",
+        }
+    ]
+    fake_pg.conn.fetch = AsyncMock(return_value=rows)
+
+    prompts = await db.list_prompts()
+    assert prompts[0].role_name == "system"
+
+    prompts2 = await db.list_prompts("system")
+    assert prompts2[0].prompt_text == "p1"
 
 
 def test_helper_functions_basic_contracts() -> None:
