@@ -48,6 +48,8 @@ def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest
     monkeypatch.setitem(sys.modules, "config", fake_config)
 
     cfg = make_test_config()
+    assert FullConfig().initialize_directories() is True
+    assert FullConfig().validate_critical_settings() is True
 
     with pytest.raises(AttributeError):
         cfg.NON_EXISTENT = 1
@@ -69,6 +71,8 @@ def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(monk
     monkeypatch.setitem(sys.modules, "config", fake_config)
 
     cfg = make_test_config(NEW_FLAG=True)
+    assert MinimalConfig().initialize_directories() is True
+    assert MinimalConfig().validate_critical_settings() is True
 
     cfg.ANOTHER_DYNAMIC = "ok"
     assert cfg.NEW_FLAG is True
@@ -86,6 +90,7 @@ def test_make_test_config_falls_back_when_config_import_fails(monkeypatch: pytes
     monkeypatch.setattr(builtins, "__import__", raising_import)
 
     cfg = make_test_config()
+    assert builtins.__import__("math").__name__ == "math"
 
     cfg.DYNAMIC_FIELD = 123
     assert cfg.DYNAMIC_FIELD == 123
