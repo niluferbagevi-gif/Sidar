@@ -1850,3 +1850,318 @@ async def test_sidar_agent_llm_error_flow(
 
     with pytest.raises(RuntimeError, match="rate limit exceeded"):
         _chunks = [chunk async for chunk in agent.respond("hata tetikle")]
+
+
+async def test_normalize_config_defaults_covers_sentinel_and_non_upper(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Defaults:
+        MAX_MEMORY_TURNS = 12
+        not_upper = "skip"
+
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = types.SimpleNamespace(MAX_MEMORY_TURNS=8)
+
+    monkeypatch.setattr(sidar_agent, "Config", lambda: _Defaults())
+    monkeypatch.setattr(sidar_agent, "dir", lambda _obj: ["MISSING", "not_upper", "MAX_MEMORY_TURNS"], raising=False)
+
+    sidar_agent.SidarAgent._normalize_config_defaults(agent)
+    assert agent.cfg.MAX_MEMORY_TURNS == 8
+
+
+async def test_normalize_config_defaults_flaky_key_hits_non_upper_continue(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlakyKey(str):
+        def __new__(cls, value: str):
+            obj = super().__new__(cls, value)
+            obj._called = 0
+            return obj
+
+        def isupper(self) -> bool:
+            self._called += 1
+            return self._called == 1
+
+    flaky_key = _FlakyKey("MIXED")
+
+    class _Defaults:
+        pass
+
+    defaults = _Defaults()
+    setattr(defaults, flaky_key, "value")
+
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = types.SimpleNamespace()
+    monkeypatch.setattr(sidar_agent, "Config", lambda: defaults)
+    monkeypatch.setattr(sidar_agent, "dir", lambda _obj: [flaky_key], raising=False)
+
+    sidar_agent.SidarAgent._normalize_config_defaults(agent)
+    assert True
+
+
+async def test_respond_awaits_coroutine_result_from_try_multi_agent(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._lock = None
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_a, **_k: None
+    records = []
+
+    async def _later() -> str:
+        return "wrapped"
+
+    async def _multi(_user_input: str):
+        return _later()
+
+    async def _memory_add(role: str, content: str):
+        records.append((role, content))
+
+    agent._try_multi_agent = _multi
+    agent._memory_add = _memory_add
+    out = [chunk async for chunk in agent.respond("ping")]
+    assert out == ["wrapped"]
+    assert records[-1] == ("assistant", "wrapped")
+
+
+async def test_try_multi_agent_skips_optional_researcher_and_role_llm_binding(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    agent._supervisor = None
+
+    class _Supervisor:
+        def __init__(self, _cfg):
+            self.researcher = None
+            self.coder = types.SimpleNamespace()
+            self.reviewer = None
+            self.poyraz = None
+            self.qa = None
+            self.coverage = None
+
+        async def run_task(self, _input):
+            return "ok"
+
+    fake_module = types.SimpleNamespace(
+        ResearcherAgent=types.SimpleNamespace(__module__="agent.roles.researcher_agent"),
+        CoderAgent=types.SimpleNamespace(__module__="agent.roles.coder_agent"),
+        ReviewerAgent=types.SimpleNamespace(__module__="agent.roles.reviewer_agent"),
+        PoyrazAgent=types.SimpleNamespace(__module__="agent.roles.poyraz_agent"),
+        QAAgent=types.SimpleNamespace(__module__="agent.roles.qa_agent"),
+        CoverageAgent=types.SimpleNamespace(__module__="agent.roles.coverage_agent"),
+        SupervisorAgent=_Supervisor,
+    )
+    monkeypatch.setattr(sidar_agent, "import_module", lambda _name: fake_module)
+
+    result = await agent._try_multi_agent("x")
+    assert result == "ok"
+
+
+async def test_try_multi_agent_researcher_without_web_or_docs_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    agent._supervisor = None
+
+    class _Researcher:
+        pass
+
+    class _Supervisor:
+        def __init__(self, _cfg):
+            self.researcher = _Researcher()
+            self.coder = None
+            self.reviewer = None
+            self.poyraz = None
+            self.qa = None
+            self.coverage = None
+
+        async def run_task(self, _input):
+            return "ok"
+
+    fake_module = types.SimpleNamespace(
+        ResearcherAgent=types.SimpleNamespace(__module__="agent.roles.researcher_agent"),
+        CoderAgent=types.SimpleNamespace(__module__="agent.roles.coder_agent"),
+        ReviewerAgent=types.SimpleNamespace(__module__="agent.roles.reviewer_agent"),
+        PoyrazAgent=types.SimpleNamespace(__module__="agent.roles.poyraz_agent"),
+        QAAgent=types.SimpleNamespace(__module__="agent.roles.qa_agent"),
+        CoverageAgent=types.SimpleNamespace(__module__="agent.roles.coverage_agent"),
+        SupervisorAgent=_Supervisor,
+    )
+    monkeypatch.setattr(sidar_agent, "import_module", lambda _name: fake_module)
+    assert await agent._try_multi_agent("x") == "ok"
+
+
+async def test_build_context_todo_len_non_callable_and_exception(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, AI_PROVIDER="openai", ACCESS_LEVEL="safe")
+    agent.security = types.SimpleNamespace(level_name="safe")
+    agent.github = types.SimpleNamespace(is_available=lambda: False)
+    agent.web = types.SimpleNamespace(is_available=lambda: True)
+    agent.docs = types.SimpleNamespace(status=lambda: "ok")
+    agent.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0})
+    agent.memory = types.SimpleNamespace(get_last_file=lambda: "")
+    agent._load_instruction_files = lambda: ""
+
+    class _TodoNonCallable:
+        def __len__(self):
+            raise TypeError("len")
+
+    bad = _TodoNonCallable()
+    bad.__len__ = 9
+    agent.todo = bad
+    ctx = await agent._build_context()
+    assert sidar_agent.CONTEXT_TASK_LIST_HEADER not in ctx
+
+    class _TodoBoom:
+        def __len__(self):
+            raise RuntimeError("boom")
+
+    agent.todo = _TodoBoom()
+    ctx2 = await agent._build_context()
+    assert sidar_agent.CONTEXT_TASK_LIST_HEADER not in ctx2
+
+
+async def test_load_instruction_files_handles_stat_and_read_exceptions(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
+    agent._instructions_cache = None
+    agent._instructions_mtimes = {}
+    agent._instructions_lock = asyncio.Lock()
+
+    class _BadStatPath:
+        def is_file(self):
+            return True
+        def resolve(self):
+            return self
+        def stat(self):
+            raise RuntimeError("stat")
+        def read_text(self, **_kwargs):
+            return "ignored"
+        def relative_to(self, _root):
+            return Path("SIDAR.md")
+        def __str__(self):
+            return str(tmp_path / "SIDAR.md")
+        def __hash__(self):
+            return 1
+
+    class _BadReadPath(_BadStatPath):
+        def stat(self):
+            return types.SimpleNamespace(st_mtime=1.0)
+        def read_text(self, **_kwargs):
+            raise RuntimeError("read")
+        def __str__(self):
+            return str(tmp_path / "CLAUDE.md")
+        def __hash__(self):
+            return 2
+
+    monkeypatch.setattr(Path, "rglob", lambda self, _name: [_BadStatPath(), _BadReadPath()])
+    loaded = agent._load_instruction_files()
+    assert "ignored" in loaded
+
+
+async def test_tool_subtask_records_tool_execution_and_validation_error_metrics(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    metric_calls = []
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: types.SimpleNamespace(record_step=lambda *args: metric_calls.append(args)),
+    )
+
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"x","thought":"t"}'))
+    with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True, return_value="ok"):
+        out = await agent._tool_subtask("job")
+    assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+    assert any(call[1] == "tool_execution" and call[3] == "success" for call in metric_calls)
+
+    validation_error = sidar_agent.ValidationError.from_exception_data("ToolCall", line_errors=[])
+    metric_calls.clear()
+    with patch.object(sidar_agent.ToolCall, "model_validate_json", autospec=True, side_effect=validation_error), patch.object(
+        sidar_agent.ToolCall,
+        "model_validate",
+        autospec=True,
+        side_effect=validation_error,
+    ):
+        out2 = await agent._tool_subtask("job")
+    assert out2 == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+    assert any(call[1] == "llm_decision" and call[3] == "failed" for call in metric_calls)
+
+
+async def test_tool_subtask_validation_error_without_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"x","thought":"t"}'))
+    monkeypatch.setattr(
+        sidar_agent,
+        "get_agent_metrics_collector",
+        lambda: (_ for _ in ()).throw(RuntimeError("metrics unavailable")),
+    )
+    validation_error = sidar_agent.ValidationError.from_exception_data("ToolCall", line_errors=[])
+    with patch.object(sidar_agent.ToolCall, "model_validate_json", autospec=True, side_effect=validation_error), patch.object(
+        sidar_agent.ToolCall,
+        "model_validate",
+        autospec=True,
+        side_effect=validation_error,
+    ):
+        assert await agent._tool_subtask("job") == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+
+
+async def test_tool_github_smart_pr_base_defaults_to_main_on_error(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    code = Mock()
+
+    def _run(command: str) -> tuple[bool, str]:
+        if "branch" in command:
+            return True, "feat/test"
+        if "status" in command:
+            return True, "M a.py"
+        if "diff --no-color" in command:
+            return True, "diff"
+        if "log" in command:
+            return True, "c1"
+        return True, ""
+
+    code.run_shell.side_effect = _run
+    github = Mock()
+    github.is_available.return_value = True
+    type(github).default_branch = property(lambda _self: (_ for _ in ()).throw(RuntimeError("no-default")))
+    github.create_pull_request.return_value = (True, "url")
+
+    agent.code = code
+    agent.github = github
+    msg = await agent._tool_github_smart_pr("title")
+    assert "oluşturuldu" in msg
+
+
+async def test_summarize_memory_logs_info_on_success(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent_factory()
+    info_mock = Mock()
+    monkeypatch.setattr(sidar_agent.logger, "info", info_mock)
+    agent.memory = types.SimpleNamespace(
+        get_history=AsyncMock(return_value=[
+            {"role": "user", "content": "a", "timestamp": 1},
+            {"role": "assistant", "content": "b", "timestamp": 1},
+            {"role": "user", "content": "c", "timestamp": 1},
+            {"role": "assistant", "content": "d", "timestamp": 1},
+        ]),
+        apply_summary=AsyncMock(),
+    )
+    agent.docs = types.SimpleNamespace(add_document=AsyncMock())
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(return_value="summary"))
+    _override_cfg(agent, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    await agent._summarize_memory()
+    info_mock.assert_called()
+
+
+async def test_reload_sets_trace_to_none_when_opentelemetry_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+    import importlib
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("opentelemetry"):
+            raise ImportError("blocked")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+    reloaded = importlib.reload(sidar_agent)
+    assert reloaded.trace is None
+
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    importlib.reload(sidar_agent)
