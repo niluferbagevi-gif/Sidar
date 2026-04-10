@@ -863,3 +863,162 @@ async def test_postgresql_create_session_and_add_message_paths(tmp_path) -> None
     message = await db.add_message(session.id, "assistant", "reply", tokens_used=3)
     assert message.id == 777
     assert message.tokens_used == 3
+
+
+@pytest.mark.asyncio
+async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    # empty role short-circuit
+    assert await db.get_active_prompt("") is None
+
+    # get_active_prompt: missing row path then success path
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": 1, "role_name": "system", "prompt_text": "p", "version": 2, "is_active": True, "created_at": "c", "updated_at": "u"}])
+    assert await db.get_active_prompt("system") is None
+    active = await db.get_active_prompt("system")
+    assert active is not None
+    assert active.version == 2
+
+    # upsert_prompt postgresql path
+    fake_pg.conn.fetchval = AsyncMock(return_value=2)
+    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": 3, "role_name": "system", "prompt_text": "p3", "version": 3, "is_active": False, "created_at": "c", "updated_at": "u"})
+    inserted = await db.upsert_prompt("system", "p3", activate=False)
+    assert inserted.id == 3
+
+    # invalid id short-circuit
+    assert await db.activate_prompt(0) is None
+
+    # not found branch
+    fake_pg.conn.fetchrow = AsyncMock(return_value=None)
+    assert await db.activate_prompt(1000) is None
+
+    # success branch
+    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": 4, "role_name": "system"})
+
+    async def _fake_get_active(role_name: str):
+        return PromptRecord(id=4, role_name=role_name, prompt_text="x", version=4, is_active=True, created_at="c", updated_at="u")
+
+    from core.db import PromptRecord
+
+    db.get_active_prompt = _fake_get_active  # type: ignore[method-assign]
+    activated = await db.activate_prompt(4)
+    assert activated is not None
+    assert activated.id == 4
+
+
+@pytest.mark.asyncio
+async def test_postgresql_user_and_session_branches() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    # ensure_user existing path
+    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": "u1", "username": "john", "role": "admin", "created_at": "c", "tenant_id": "t1"})
+    existing = await db.ensure_user("john", role="user")
+    assert existing.role == "admin"
+
+    # ensure_user create path
+    fake_pg.conn.fetchrow = AsyncMock(return_value=None)
+    created = await db.ensure_user("new-user", role="reviewer")
+    assert created.username == "new-user"
+
+    # create_user postgresql branch
+    created2 = await db.create_user("post-user", role="analyst", password="pw", tenant_id="t2")
+    assert created2.tenant_id == "t2"
+
+    # authenticate branches: missing, wrong password, and success
+    hashed = _hash_password("pw")
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": "u2", "username": "x", "password_hash": hashed, "role": "user", "created_at": "c", "tenant_id": "t"}, {"id": "u2", "username": "x", "password_hash": hashed, "role": "user", "created_at": "c", "tenant_id": "t"}])
+    assert await db.authenticate_user("x", "pw") is None
+    assert await db.authenticate_user("x", "wrong") is None
+    ok = await db.authenticate_user("x", "pw")
+    assert ok is not None
+
+    # _get_user_by_id none and success
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": "u3", "username": "y", "role": "user", "created_at": "c", "tenant_id": "default"}])
+    assert await db._get_user_by_id("u3") is None
+    got = await db._get_user_by_id("u3")
+    assert got is not None
+
+    # load_session with user filter, without user filter, and missing
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=[
+        {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"},
+        {"id": "s2", "user_id": "u1", "title": "t2", "created_at": "c", "updated_at": "u"},
+        None,
+    ])
+    assert (await db.load_session("s1", user_id="u1")) is not None
+    assert (await db.load_session("s2")) is not None
+    assert (await db.load_session("s3")) is None
+
+    # update/delete parse-failure fallback branches
+    fake_pg.conn.execute = AsyncMock(side_effect=["UPDATED", object(), object()])
+    assert await db.update_session_title("s1", "n") is False
+    assert await db.delete_session("s1", user_id="u1") is False
+    assert await db.delete_session("s1") is False
+
+
+@pytest.mark.asyncio
+async def test_postgresql_policy_audit_and_listing_branches() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    # connect routing branch
+    await db.connect()
+
+    # access-policy early false / no match
+    assert await db.check_access_policy(user_id="", tenant_id="t", resource_type="repo", action="read") is False
+    assert await db.check_access_policy(user_id="u1", tenant_id="t", resource_type="repo", action="read", resource_id="x") is False
+
+    await db.upsert_access_policy(user_id="u1", tenant_id="default", resource_type="repo", action="read", resource_id="*", effect="allow")
+    rows = [{"id": 1, "user_id": "u1", "tenant_id": "default", "resource_type": "repo", "resource_id": "*", "action": "read", "effect": "allow", "created_at": "c", "updated_at": "u"}]
+    user_logs_rows = [{"id": 1, "user_id": "u1", "tenant_id": "default", "action": "read", "resource": "repo/1", "ip_address": "127.0.0.1", "allowed": True, "timestamp": "c"}]
+    all_logs_rows = [{"id": 2, "user_id": "u2", "tenant_id": "default", "action": "write", "resource": "repo/2", "ip_address": "10.0.0.2", "allowed": False, "timestamp": "c"}]
+
+    async def _fake_fetch(query: str, *args):
+        if "FROM access_policies" in query:
+            return rows
+        if "WHERE user_id=$1 ORDER BY timestamp DESC LIMIT $2" in query:
+            return user_logs_rows
+        return all_logs_rows
+
+    fake_pg.conn.fetch = AsyncMock(side_effect=_fake_fetch)
+
+    listed_default = await db.list_access_policies("u1")
+    listed_tenant = await db.list_access_policies("u1", tenant_id="default")
+    assert listed_default and listed_tenant
+
+    assert await db.check_access_policy(user_id="u1", tenant_id="any", resource_type="repo", action="read", resource_id="x") is True
+
+    await db.record_audit_log(user_id="u1", tenant_id="default", action="read", resource="repo/1", ip_address="127.0.0.1", allowed=True)
+    user_logs = await db.list_audit_logs(user_id="u1", limit=2)
+    all_logs = await db.list_audit_logs(limit=2)
+    assert len(user_logs) == 1
+    assert len(all_logs) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgresql_listing_without_optional_filters() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    campaign_row = {"id": 1, "tenant_id": "t", "name": "n", "channel": "", "objective": "", "status": "active", "owner_user_id": "", "budget": 0.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
+    asset_row = {"id": 2, "campaign_id": 1, "tenant_id": "t", "asset_type": "post", "title": "ttl", "content": "c", "channel": "", "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
+    checklist_row = {"id": 3, "campaign_id": 1, "tenant_id": "t", "title": "ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"}
+    task_row = {"id": 4, "tenant_id": "t", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "core/db.py", "suggested_test_path": "tests/unit/core/test_db.py", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"}
+
+    fake_pg.conn.fetch = AsyncMock(side_effect=[[campaign_row], [asset_row], [checklist_row], [task_row]])
+    fake_pg.conn.fetchrow = AsyncMock(return_value=None)
+
+    campaigns = await db.list_marketing_campaigns(tenant_id="t", limit=2)
+    assets = await db.list_content_assets(tenant_id="t", limit=2)
+    checklists = await db.list_operation_checklists(tenant_id="t", limit=2)
+    tasks = await db.list_coverage_tasks(tenant_id="t", limit=2)
+
+    assert campaigns and assets and checklists and tasks
+
+    with pytest.raises(ValueError):
+        await db.upsert_marketing_campaign(campaign_id=999, tenant_id="t", name="missing")
