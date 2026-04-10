@@ -472,3 +472,108 @@ async def test_postgresql_adapter_conflict_and_close_path() -> None:
 
     await db.close()
     assert fake_pg.closed is True
+
+@pytest.mark.asyncio
+async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None:
+    created = await sqlite_db.ensure_user("ensured-user", role="admin")
+    existing = await sqlite_db.ensure_user("ensured-user", role="user")
+    assert existing.id == created.id
+    assert existing.role == "admin"
+
+    ensured = await sqlite_db.ensure_user_id("fixed-id", username="fixed-name", role="reviewer", tenant_id="tenant-z")
+    assert ensured.id == "fixed-id"
+    assert ensured.tenant_id == "tenant-z"
+
+    same = await sqlite_db.ensure_user_id("fixed-id")
+    assert same.username == "fixed-name"
+
+
+@pytest.mark.asyncio
+async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: Database) -> None:
+    with pytest.raises(ValueError):
+        await sqlite_db.upsert_marketing_campaign(name="")
+
+    c1 = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-1", name="C1", status="DRAFT")
+    c2 = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-1", name="C2", status="ACTIVE")
+    _ = c2
+
+    active = await sqlite_db.list_marketing_campaigns(tenant_id="tenant-1", status="active", limit=1)
+    assert len(active) == 1
+    assert active[0].status == "active"
+
+    with pytest.raises(ValueError):
+        await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="", title="x", content="y")
+
+    a1 = await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T1", content="Body")
+    _a2 = await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T2", content="Body")
+
+    all_assets = await sqlite_db.list_content_assets(tenant_id="tenant-1", limit=10)
+    by_campaign = await sqlite_db.list_content_assets(tenant_id="tenant-1", campaign_id=c1.id, limit=10)
+    assert len(by_campaign) == len(all_assets) == 2
+    assert by_campaign[0].campaign_id == a1.campaign_id
+
+
+@pytest.mark.asyncio
+async def test_operation_checklist_and_coverage_management(sqlite_db: Database) -> None:
+    with pytest.raises(ValueError):
+        await sqlite_db.add_operation_checklist(tenant_id="t1", title="", items=[])
+
+    checklist = await sqlite_db.add_operation_checklist(
+        tenant_id="t1",
+        title="Ops",
+        items=["one", {"step": "two"}, {"": "drop"}, "   "],
+        status="PENDING",
+    )
+    checklists = await sqlite_db.list_operation_checklists(tenant_id="t1", limit=5)
+    assert checklists[0].id == checklist.id
+
+    with pytest.raises(ValueError):
+        await sqlite_db.create_coverage_task(tenant_id="t1", command="", pytest_output="x")
+
+    task = await sqlite_db.create_coverage_task(
+        tenant_id="t1",
+        command="pytest -q",
+        pytest_output="ok",
+        status="IN_PROGRESS",
+        review_payload_json='{"score":1}',
+    )
+    assert task.status == "IN_PROGRESS"
+
+    with pytest.raises(ValueError):
+        await sqlite_db.add_coverage_finding(task_id=task.id, finding_type="", target_path="a", summary="b")
+
+    finding = await sqlite_db.add_coverage_finding(
+        task_id=task.id,
+        finding_type="missing_test",
+        target_path="core/db.py",
+        summary="needs more tests",
+        severity="HIGH",
+    )
+    assert finding.severity == "HIGH"
+
+    tasks = await sqlite_db.list_coverage_tasks(tenant_id="t1", status="IN_PROGRESS", limit=3)
+    assert tasks and tasks[0].id == task.id
+
+
+@pytest.mark.asyncio
+async def test_quota_usage_and_admin_stats(sqlite_db: Database) -> None:
+    user = await sqlite_db.create_user("quota-user", password="pw")
+
+    await sqlite_db.upsert_user_quota(user.id, daily_token_limit=100, daily_request_limit=5)
+    await sqlite_db.record_provider_usage_daily(user.id, "OpenAI", tokens_used=40, requests_inc=2)
+    await sqlite_db.record_provider_usage_daily(user.id, "OpenAI", tokens_used=60, requests_inc=3)
+
+    status = await sqlite_db.get_user_quota_status(user.id, "openai")
+    assert status["tokens_used"] == 100
+    assert status["requests_used"] == 5
+    assert status["token_limit_exceeded"] is True
+    assert status["request_limit_exceeded"] is True
+
+    users = await sqlite_db.list_users_with_quotas()
+    quota_user = next(item for item in users if item["id"] == user.id)
+    assert quota_user["daily_token_limit"] == 100
+
+    stats = await sqlite_db.get_admin_stats()
+    assert stats["total_users"] >= 1
+    assert stats["total_tokens_used"] >= 100
+    assert stats["total_api_requests"] >= 5
