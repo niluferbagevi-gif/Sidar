@@ -284,6 +284,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_beco
         now[0] = 11.0
 
     run(jump_and_approve(0))
+    now[0] = 0.0
     monkeypatch.setattr(hitl.time, "time", fake_time)
     monkeypatch.setattr(hitl.asyncio, "sleep", jump_and_approve)
 
