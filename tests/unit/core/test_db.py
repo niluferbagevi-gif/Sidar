@@ -577,3 +577,176 @@ async def test_quota_usage_and_admin_stats(sqlite_db: Database) -> None:
     assert stats["total_users"] >= 1
     assert stats["total_tokens_used"] >= 100
     assert stats["total_api_requests"] >= 5
+
+
+@pytest.mark.asyncio
+async def test_audit_log_sqlite_validation_and_listing(sqlite_db: Database) -> None:
+    user = await sqlite_db.create_user("audit-user", password="pw")
+
+    with pytest.raises(ValueError):
+        await sqlite_db.record_audit_log(action="", resource="repo", ip_address="127.0.0.1", allowed=True)
+
+    await sqlite_db.record_audit_log(
+        user_id=user.id,
+        tenant_id="tenant-a",
+        action="READ",
+        resource="repo/1",
+        ip_address="",
+        allowed=True,
+    )
+    await sqlite_db.record_audit_log(
+        user_id=user.id,
+        tenant_id="tenant-a",
+        action="write",
+        resource="repo/2",
+        ip_address="10.0.0.2",
+        allowed=False,
+    )
+
+    by_user = await sqlite_db.list_audit_logs(user_id=user.id, limit=10)
+    assert len(by_user) == 2
+    assert by_user[0].ip_address in {"unknown", "10.0.0.2"}
+
+    all_logs = await sqlite_db.list_audit_logs(limit=1)
+    assert len(all_logs) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgresql_marketing_and_coverage_branches() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    campaign_row = {
+        "id": 10,
+        "tenant_id": "t1",
+        "name": "Launch",
+        "channel": "x",
+        "objective": "awareness",
+        "status": "active",
+        "owner_user_id": "u1",
+        "budget": 10.5,
+        "metadata_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    asset_row = {
+        "id": 20,
+        "campaign_id": 10,
+        "tenant_id": "t1",
+        "asset_type": "post",
+        "title": "hello",
+        "content": "world",
+        "channel": "x",
+        "metadata_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    checklist_row = {
+        "id": 30,
+        "campaign_id": 10,
+        "tenant_id": "t1",
+        "title": "ops",
+        "items_json": "[]",
+        "status": "pending",
+        "owner_user_id": "u1",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    task_row = {
+        "id": 40,
+        "tenant_id": "t1",
+        "requester_role": "coverage",
+        "command": "pytest",
+        "pytest_output": "ok",
+        "status": "pending_review",
+        "target_path": "core/db.py",
+        "suggested_test_path": "tests/unit/core/test_db.py",
+        "review_payload_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    finding_row = {
+        "id": 50,
+        "task_id": 40,
+        "finding_type": "missing_test",
+        "target_path": "core/db.py",
+        "summary": "line missed",
+        "severity": "medium",
+        "details_json": "{}",
+        "created_at": "c",
+    }
+
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=[campaign_row, campaign_row, asset_row, checklist_row, task_row, finding_row])
+    fake_pg.conn.fetch = AsyncMock(side_effect=[[campaign_row], [asset_row], [checklist_row], [task_row]])
+
+    created = await db.upsert_marketing_campaign(tenant_id="t1", name="Launch", status="ACTIVE")
+    assert created.id == 10
+    updated = await db.upsert_marketing_campaign(campaign_id=10, tenant_id="t1", name="Launch2")
+    assert updated.name == "Launch"
+
+    campaigns = await db.list_marketing_campaigns(tenant_id="t1", status="active", limit=5)
+    assert campaigns and campaigns[0].id == 10
+
+    asset = await db.add_content_asset(campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world")
+    assert asset.id == 20
+    assets = await db.list_content_assets(tenant_id="t1", campaign_id=10, limit=3)
+    assert assets and assets[0].campaign_id == 10
+
+    checklist = await db.add_operation_checklist(tenant_id="t1", title="ops", items=["a"], campaign_id=10)
+    assert checklist.id == 30
+    checklists = await db.list_operation_checklists(tenant_id="t1", campaign_id=10, limit=3)
+    assert checklists and checklists[0].id == 30
+
+    task = await db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok")
+    assert task.id == 40
+    finding = await db.add_coverage_finding(task_id=40, finding_type="missing_test", target_path="core/db.py", summary="line missed")
+    assert finding.id == 50
+    tasks = await db.list_coverage_tasks(tenant_id="t1", status="pending_review", limit=3)
+    assert tasks and tasks[0].id == 40
+
+
+@pytest.mark.asyncio
+async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            {"daily_token_limit": 100, "daily_request_limit": 5},
+            {"requests_used": 5, "tokens_used": 100},
+            {"total_tokens_used": 100, "total_api_requests": 5},
+        ]
+    )
+    fake_pg.conn.fetch = AsyncMock(return_value=[
+        {
+            "id": "u1",
+            "username": "john",
+            "role": "user",
+            "created_at": "c",
+            "daily_token_limit": 100,
+            "daily_request_limit": 5,
+        }
+    ])
+
+    await db.upsert_user_quota("u1", daily_token_limit=100, daily_request_limit=5)
+    await db.record_provider_usage_daily("u1", "OpenAI", tokens_used=100, requests_inc=5)
+    status = await db.get_user_quota_status("u1", "openai")
+    assert status["token_limit_exceeded"] is True
+
+    users = await db.list_users_with_quotas()
+    assert users[0]["id"] == "u1"
+    stats = await db.get_admin_stats()
+    assert stats["total_users"] == 1
+
+    class _Tx:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    fake_pg.conn.transaction = lambda: _Tx()
+    replaced = await db.replace_session_messages("s1", [{"content": "x"}, {"role": "user", "content": "y"}])
+    assert replaced == 2
