@@ -103,6 +103,21 @@ class ExampleRole:
     assert _extract_capabilities_from_role_file(role_file) == {"ignored"}
 
 
+def test_extract_capabilities_continues_when_capability_list_has_no_string_values(tmp_path: Path) -> None:
+    role_file = tmp_path / "non_string_caps_role.py"
+    role_file.write_text(
+        """
+@AgentCatalog.register(capabilities=[1], tags=["ignored"])
+@AgentCatalog.register(capabilities=["valid_capability"])
+class ExampleRole:
+    pass
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert _extract_capabilities_from_role_file(role_file) == {"valid_capability"}
+
+
 def test_extract_capabilities_raises_when_missing_or_empty(tmp_path: Path) -> None:
     role_file = tmp_path / "empty_caps_role.py"
     role_file.write_text(
