@@ -38,6 +38,8 @@ class AgentEventBus:
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
+        self._redis_connect_timeout = float(os.getenv("REDIS_CONNECT_TIMEOUT", "0.5") or "0.5")
+        self._redis_socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.5") or "0.5")
         self._redis_client: Redis | None = None
         self._redis_listener_task: asyncio.Task | None = None
         self._redis_bootstrap_task: asyncio.Task | None = None
@@ -83,6 +85,8 @@ class AgentEventBus:
                     encoding="utf-8",
                     decode_responses=True,
                     max_connections=self._redis_max_connections,
+                    socket_connect_timeout=self._redis_connect_timeout,
+                    socket_timeout=self._redis_socket_timeout,
                 )
                 await self._redis_client.ping()
 
