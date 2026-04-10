@@ -371,6 +371,7 @@ def test_init_telemetry_dependency_auto_import_failure(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
+    assert __import__("math").__name__ == "math"
     assert config.Config.init_telemetry() is False
 
 
@@ -428,6 +429,7 @@ def test_module_reload_env_branches(monkeypatch):
         return False
 
     monkeypatch.setattr(Path, "exists", fake_exists)
+    assert Path("README.md").exists() is False
     importlib.reload(config)
     assert calls["base"] is True
     assert calls["spec"] is True
@@ -445,6 +447,7 @@ def test_module_reload_env_missing_optional_and_warning(monkeypatch):
         return False
 
     monkeypatch.setattr(Path, "exists", fake_exists)
+    assert Path("README.md").exists() is False
     importlib.reload(config)
 
 
@@ -460,6 +463,7 @@ def test_module_reload_env_optional_alias_and_no_base(monkeypatch):
         return False
 
     monkeypatch.setattr(Path, "exists", fake_exists_alias)
+    assert Path("README.md").exists() is False
     importlib.reload(config)
 
     monkeypatch.setenv("SIDAR_ENV", "")
@@ -751,6 +755,7 @@ def test_init_telemetry_custom_fastapi_and_missing_httpx_instrumentor(monkeypatc
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
+    assert __import__("math").__name__ == "math"
     assert (
         config.Config.init_telemetry(
             fastapi_app=object(),
