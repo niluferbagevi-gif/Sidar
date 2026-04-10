@@ -1818,3 +1818,109 @@ async def test_llmclient_openai_surfaces_rate_limit_error_with_fake_fixture(
 
     with pytest.raises(RuntimeError, match="rate limit exceeded"):
         await client.chat(messages=[{"role": "user", "content": "fiyatlandırma nedir?"}], stream=False)
+
+
+def test_cfg_helpers_cover_all_type_fallbacks() -> None:
+    cfg = SimpleNamespace(
+        STR_NONE=None,
+        INT_BOOL=True,
+        INT_BAD="oops",
+        INT_OTHER=object(),
+        FLOAT_BOOL=False,
+        FLOAT_BAD="oops",
+        FLOAT_OTHER=object(),
+        BOOL_INT=2,
+        BOOL_STR="on",
+        BOOL_OTHER=object(),
+    )
+    assert llm_client._cfg_str(cfg, "STR_NONE", "d") == "d"
+    assert llm_client._cfg_int(cfg, "INT_BOOL", 0) == 1
+    assert llm_client._cfg_int(cfg, "INT_BAD", 7) == 7
+    assert llm_client._cfg_int(cfg, "INT_OTHER", 5) == 5
+    assert llm_client._cfg_float(cfg, "FLOAT_BOOL", 0.5) == 0.0
+    assert llm_client._cfg_float(cfg, "FLOAT_BAD", 1.5) == 1.5
+    assert llm_client._cfg_float(cfg, "FLOAT_OTHER", 2.5) == 2.5
+    assert llm_client._cfg_bool(cfg, "BOOL_INT", False) is True
+    assert llm_client._cfg_bool(cfg, "BOOL_STR", False) is True
+    assert llm_client._cfg_bool(cfg, "BOOL_OTHER", True) is True
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_error_detail_fallback_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Resp:
+        is_error = True
+        status_code = 500
+        text = ""
+
+        def json(self):
+            raise ValueError("bad json")
+
+        def raise_for_status(self):
+            raise RuntimeError("status boom")
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _Client)
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt", ENABLE_TRACING=False))
+    with pytest.raises(llm_client.LLMAPIError, match="OpenAI isteği başarısız: status boom"):
+        await c.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True)
+
+
+@pytest.mark.asyncio
+async def test_litellm_failure_without_tracing_hits_final_error_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _Client)
+    c = llm_client.LiteLLMClient(
+        _make_config(
+            LITELLM_GATEWAY_URL="http://localhost:4000",
+            LITELLM_MODEL="m1",
+            ENABLE_TRACING=False,
+        )
+    )
+    with pytest.raises(llm_client.LLMAPIError, match="LiteLLM hata"):
+        await c.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=False)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_success_without_tracing_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Messages:
+        async def create(self, **kwargs):
+            _ = kwargs
+            return SimpleNamespace(
+                usage=SimpleNamespace(input_tokens=3, output_tokens=2),
+                content=[SimpleNamespace(text='{"tool":"final_answer","argument":"ok"}')],
+            )
+
+    class _AsyncAnthropic:
+        def __init__(self, api_key, timeout=None):
+            _ = api_key
+            _ = timeout
+            self.messages = _Messages()
+
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ENABLE_TRACING=False))
+    out = await c.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=True)
+    assert "final_answer" in out
