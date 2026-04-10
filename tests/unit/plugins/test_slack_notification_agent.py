@@ -4,7 +4,7 @@ import types
 from types import SimpleNamespace
 
 # Test ortamında ağır bağımlılıkları atlamak için minimal BaseAgent stub'ı.
-if "agent.base_agent" not in sys.modules:
+if "agent.base_agent" not in sys.modules:  # pragma: no cover
     fake_base_agent = types.ModuleType("agent.base_agent")
 
     class BaseAgent:  # pragma: no cover - test helper
@@ -42,6 +42,13 @@ def test_extract_channel_finds_hashtag_without_hash() -> None:
 
 def test_extract_message_removes_channel_and_strips() -> None:
     assert SlackNotificationAgent._extract_message("  #alerts build bitti  ") == "build bitti"
+
+
+def test_extract_message_returns_default_when_only_channel_given() -> None:
+    assert (
+        SlackNotificationAgent._extract_message(" #alerts ")
+        == "SİDAR tarafından tetiklenen Slack bildirimi."
+    )
 
 
 def test_format_response_success_and_failure() -> None:
