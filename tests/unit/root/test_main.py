@@ -379,8 +379,9 @@ def test_execute_command_generic_exception_and_main_port_error(monkeypatch):
 
     monkeypatch.setattr(main, "cfg", _LauncherCfg())
     monkeypatch.setattr(main.sys, "argv", ["main.py", "--quick", "web", "--port", "70000"])
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc:
         main.main()
+    assert exc.value.code == 2
 
     monkeypatch.setattr(main, "_run_with_streaming", lambda *a, **k: 0)
     assert main.execute_command(["x"], capture_output=True) == 0
