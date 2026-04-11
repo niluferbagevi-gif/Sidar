@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 
 import pytest
@@ -9,9 +10,18 @@ import pytest
 from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
 
+def is_gpu_available() -> bool:
+    if shutil.which("nvidia-smi") is not None:
+        return True
+    # WSL2 özel CUDA yolu kontrolü
+    if os.path.exists("/usr/lib/wsl/lib/nvidia-smi"):
+        return True
+    return False
+
+
 pytestmark = pytest.mark.skipif(
-    not shutil.which("nvidia-smi"),
-    reason="Sistemde NVIDIA GPU bulunamadı, GPU smoke testi atlanıyor.",
+    not is_gpu_available(),
+    reason="Sistemde veya WSL2 katmanında NVIDIA GPU bulunamadı, GPU smoke testi atlanıyor.",
 )
 
 
