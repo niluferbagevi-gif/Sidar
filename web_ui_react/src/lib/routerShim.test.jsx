@@ -3,6 +3,7 @@ import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   BrowserRouter,
+  MemoryRouter,
   Route,
   Routes,
   Navigate,
@@ -460,6 +461,69 @@ describe("NavLink", () => {
     expect(screen.getByRole("link")).not.toHaveClass("aktif");
     await user.click(screen.getByRole("link"));
     expect(screen.getByRole("link")).toHaveClass("aktif");
+  });
+});
+
+// ─────────────────────────────────────────────────────────
+// MemoryRouter
+// ─────────────────────────────────────────────────────────
+
+describe("MemoryRouter", () => {
+  it("falls back to root when initialEntries is empty", () => {
+    render(
+      <MemoryRouter initialEntries={[]}>
+        <NavLink to="/" className={({ isActive }) => (isActive ? "aktif" : "")}>
+          Ana Sayfa
+        </NavLink>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Ana Sayfa" })).toHaveClass("aktif");
+  });
+
+  it("initializes location from initialEntries[0]", () => {
+    render(
+      <MemoryRouter initialEntries={["/hafiza"]}>
+        <NavLink to="/hafiza" className={({ isActive }) => (isActive ? "aktif" : "")}>
+          Hafıza
+        </NavLink>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Hafıza" })).toHaveClass("aktif");
+  });
+
+  it("does not re-render route when navigating to the same path", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/profil"]}>
+        <NavLink to="/profil">Profil</NavLink>
+        <Routes>
+          <Route path="/profil" element={<div>Profil Sayfası</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const page = screen.getByText("Profil Sayfası");
+    await user.click(screen.getByRole("link", { name: "Profil" }));
+    expect(screen.getByText("Profil Sayfası")).toBe(page);
+  });
+
+  it("updates rendered route when navigating to a different path", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/ilk"]}>
+        <NavLink to="/ikinci">İkinci</NavLink>
+        <Routes>
+          <Route path="/ilk" element={<div>İlk Sayfa</div>} />
+          <Route path="/ikinci" element={<div>İkinci Sayfa</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("İlk Sayfa")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "İkinci" }));
+    expect(screen.getByText("İkinci Sayfa")).toBeInTheDocument();
   });
 });
 
