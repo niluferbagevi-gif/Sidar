@@ -6,7 +6,7 @@ source =
     core
     managers
     plugins
-    main.py
+    main
 omit =
     */plug_auto_discover*
     */plug_bad_compile*
