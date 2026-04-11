@@ -13,11 +13,13 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
 import ast
 import hashlib
+import importlib
 import json
 import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import asyncio
@@ -519,7 +521,10 @@ def _build_embedding_function(use_gpu: bool = False,
         return None  # ChromaDB varsayılan (CPU) embedding fonksiyonu
 
     try:
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+        embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
+        if embedding_module is None:
+            embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
+        SentenceTransformerEmbeddingFunction = getattr(embedding_module, "SentenceTransformerEmbeddingFunction")
         import torch
 
         device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
@@ -657,11 +662,10 @@ class DocumentStore:
     # ─────────────────────────────────────────────
 
     def _check_import(self, module_name: str) -> bool:
-        import importlib
         try:
             importlib.import_module(module_name)
             return True
-        except ImportError:
+        except Exception:
             return False
 
     def _init_chroma(self) -> None:

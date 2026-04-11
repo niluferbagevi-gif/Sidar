@@ -174,7 +174,7 @@ class SystemHealthManager:
         try:
             importlib.import_module(module_name)
             return True
-        except ImportError:
+        except Exception:
             return False
 
     def _check_gpu(self) -> bool:
@@ -576,7 +576,7 @@ class SystemHealthManager:
     def close(self) -> None:
         """NVML oturumunu deterministik olarak kapatır (idempotent)."""
         with self._lock:
-            if not self._nvml_initialized:
+            if not getattr(self, "_nvml_initialized", False):
                 return
             try:
                 import pynvml

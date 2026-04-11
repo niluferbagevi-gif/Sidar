@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import configparser
+import inspect
 import json
 import logging
 import re
@@ -65,6 +66,14 @@ class CoverageAgent(BaseAgent):
             await self._db.connect()
             await self._db.init_schema()
             return self._db
+
+    @staticmethod
+    async def _call_maybe_async(func, *args, **kwargs):
+        """Hem senkron hem async tool yardımcılarını güvenli şekilde çalıştır."""
+        result = func(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     @staticmethod
     def _parse_payload(raw: str) -> dict[str, Any]:
@@ -343,13 +352,13 @@ class CoverageAgent(BaseAgent):
         default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
         command = str(payload.get("command", default_cmd) or default_cmd).strip()
         cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
-        result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
+        result = await self._call_maybe_async(self.code.run_pytest_and_collect, command, cwd)
         return json.dumps(result, ensure_ascii=False)
 
     async def _tool_analyze_pytest_output(self, arg: str) -> str:
         payload = self._parse_payload(arg)
         output = str(payload.get("output", arg) or arg)
-        analysis = await asyncio.to_thread(self.code.analyze_pytest_output, output)
+        analysis = await self._call_maybe_async(self.code.analyze_pytest_output, output)
         return json.dumps(analysis, ensure_ascii=False)
 
     async def _tool_analyze_coverage_report(self, arg: str) -> str:
@@ -377,7 +386,11 @@ class CoverageAgent(BaseAgent):
         )
 
     async def _generate_test_candidate(self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]) -> str:
-        read_ok, source_excerpt = await asyncio.to_thread(self.code.read_file, target_path) if target_path else (False, "")
+        read_ok, source_excerpt = (
+            await self._call_maybe_async(self.code.read_file, target_path)
+            if target_path
+            else (False, "")
+        )
         prompt = (
             f"Hedef modül: {target_path or 'belirlenemedi'}\n"
             f"Önerilen test yolu: {self._suggest_test_path(target_path)}\n"
@@ -409,7 +422,7 @@ class CoverageAgent(BaseAgent):
                 temperature=0.1,
             )
         if not isinstance(analysis, dict):
-            analysis = await asyncio.to_thread(self.code.analyze_pytest_output, pytest_output)
+            analysis = await self._call_maybe_async(self.code.analyze_pytest_output, pytest_output)
         return await self._generate_test_candidate(target_path=target_path, pytest_output=pytest_output, analysis=analysis)
 
     async def _tool_write_missing_tests(self, arg: str) -> str:
@@ -417,7 +430,7 @@ class CoverageAgent(BaseAgent):
         suggested_test_path = str(payload.get("suggested_test_path", "") or "")
         generated_test = self._clean_code_output(str(payload.get("generated_test", "") or ""))
         append = bool(payload.get("append", True))
-        ok, message = await asyncio.to_thread(
+        ok, message = await self._call_maybe_async(
             self.code.write_generated_test,
             suggested_test_path,
             generated_test,
@@ -484,7 +497,7 @@ class CoverageAgent(BaseAgent):
         default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
         command = str(payload.get("command", default_cmd) or default_cmd).strip()
         cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
-        pytest_result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
+        pytest_result = await self._call_maybe_async(self.code.run_pytest_and_collect, command, cwd)
         analysis = self._normalize_analysis(pytest_result.get("analysis"))
         findings = list(analysis.get("findings") or [])
         if not findings:
@@ -522,7 +535,7 @@ class CoverageAgent(BaseAgent):
             "is_approved": False,
             "approval_status": "pending_reviewer_or_human",
         }
-        write_ok, write_message = await asyncio.to_thread(
+        write_ok, write_message = await self._call_maybe_async(
             self.code.write_generated_test,
             suggested_test_path,
             generated_test,
