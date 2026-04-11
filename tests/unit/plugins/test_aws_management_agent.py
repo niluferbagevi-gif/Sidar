@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import subprocess
 import sys
 import types
@@ -125,3 +126,18 @@ def test_run_task_handles_unexpected_error(monkeypatch) -> None:
     result = asyncio.run(agent.run_task("cloudwatch alarms"))
 
     assert result == "AWS komutu çalıştırılamadı: executor issue"
+
+
+def test_aws_management_test_module_bootstrap_injects_stub_when_base_agent_missing():
+    saved_base_agent = sys.modules.get("agent.base_agent")
+    fallback_base_agent = types.ModuleType("agent.base_agent")
+    fallback_base_agent.BaseAgent = object  # type: ignore[attr-defined]
+    sys.modules.pop("agent.base_agent", None)
+    module = sys.modules[__name__]
+    reloaded = importlib.reload(module)
+    injected = sys.modules.get("agent.base_agent")
+    assert isinstance(injected, types.ModuleType)
+    assert hasattr(injected, "BaseAgent")
+    assert reloaded.AWSManagementAgent is not None
+    sys.modules["agent.base_agent"] = saved_base_agent or fallback_base_agent
+    importlib.reload(module)

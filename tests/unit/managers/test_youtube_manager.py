@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -303,3 +304,41 @@ def test_build_video_analysis_success_adds_video_identity(monkeypatch):
     assert result["video_url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     assert result["video_id"] == "dQw4w9WgXcQ"
     assert result["transcript"]["languages"] == ("en",)
+
+
+def test_youtube_manager_test_module_bootstrap_injects_httpx_stub_when_missing():
+    actual_httpx = sys.modules["httpx"]
+    sys.modules["httpx"] = None
+
+    original_httpx = sys.modules.pop("httpx", None)
+    try:
+        module = sys.modules[__name__]
+        importlib.reload(module)
+        injected = sys.modules.get("httpx")
+        assert injected is not None
+        assert hasattr(injected, "AsyncClient")
+    finally:
+        assert original_httpx is None
+        sys.modules["httpx"] = SimpleNamespace(AsyncClient=object)
+        module = sys.modules[__name__]
+        importlib.reload(module)
+        sys.modules["httpx"] = actual_httpx
+
+
+def test_youtube_manager_test_module_bootstrap_restores_original_httpx_module():
+    actual_httpx = sys.modules["httpx"]
+    original_httpx = SimpleNamespace(AsyncClient=object, marker="original")
+    sys.modules["httpx"] = original_httpx
+
+    captured_original = sys.modules.pop("httpx", None)
+    try:
+        module = sys.modules[__name__]
+        importlib.reload(module)
+        injected = sys.modules.get("httpx")
+        assert injected is not None
+        assert hasattr(injected, "AsyncClient")
+    finally:
+        sys.modules["httpx"] = captured_original
+        module = sys.modules[__name__]
+        importlib.reload(module)
+        sys.modules["httpx"] = actual_httpx

@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import sys
 import types
 
@@ -89,3 +90,40 @@ def test_run_task_returns_exception_text_when_request_fails(monkeypatch) -> None
     result = asyncio.run(agent.run_task("btc"))
 
     assert result == "BTC fiyatı alınamadı: network down"
+
+
+def test_crypto_price_test_module_bootstrap_injects_stub_when_base_agent_missing():
+    original_base_agent = sys.modules.pop("agent.base_agent", None)
+    try:
+        module = sys.modules[__name__]
+        reloaded = importlib.reload(module)
+        injected = sys.modules.get("agent.base_agent")
+        assert isinstance(injected, types.ModuleType)
+        assert hasattr(injected, "BaseAgent")
+        assert reloaded.CryptoPriceAgent is not None
+    finally:
+        if original_base_agent is not None:
+            sys.modules["agent.base_agent"] = original_base_agent
+        else:
+            sys.modules.pop("agent.base_agent", None)
+        module = sys.modules[__name__]
+        importlib.reload(module)
+
+
+def test_crypto_price_test_module_bootstrap_restores_when_original_missing():
+    pre_removed_base_agent = sys.modules.pop("agent.base_agent", None)
+    original_base_agent = sys.modules.pop("agent.base_agent", None)
+    try:
+        module = sys.modules[__name__]
+        reloaded = importlib.reload(module)
+        injected = sys.modules.get("agent.base_agent")
+        assert original_base_agent is None
+        assert isinstance(injected, types.ModuleType)
+        assert hasattr(injected, "BaseAgent")
+        assert reloaded.CryptoPriceAgent is not None
+    finally:
+        sys.modules.pop("agent.base_agent", None)
+        if pre_removed_base_agent is not None:
+            sys.modules["agent.base_agent"] = pre_removed_base_agent
+        module = sys.modules[__name__]
+        importlib.reload(module)
