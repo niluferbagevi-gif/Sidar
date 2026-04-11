@@ -65,8 +65,9 @@ run_pytest_coverage_report() {
   "${pytest_cmd[@]}"
   BACKEND_EXIT_CODE=$?
 
-  # parallel=True nedeniyle oluşan .coverage.* dosyalarını yalnızca varsa birleştir
-  if ls .coverage.* 1>/dev/null 2>&1; then
+  # parallel=True nedeniyle oluşan dosyaları güvenli listeleme ile kontrol et
+  if compgen -G ".coverage.*" > /dev/null; then
+    echo "ℹ️ Paralel coverage verileri birleştiriliyor..."
     coverage combine || true
   fi
 
