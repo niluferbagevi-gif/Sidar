@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
 from pathlib import Path
 import sys
@@ -10,7 +11,6 @@ from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
-import fakeredis
 import pytest
 import pytest_asyncio
 import sqlalchemy
@@ -24,6 +24,9 @@ from core.db import Database
 from agent.core.event_stream import AgentEvent
 import agent.sidar_agent as sidar_agent_module
 from tests.helpers import make_test_config
+
+_fakeredis_spec = importlib.util.find_spec("fakeredis")
+fakeredis = importlib.import_module("fakeredis") if _fakeredis_spec is not None else None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +47,9 @@ def _resolve_db_schema_target_version() -> int | None:
 
 @pytest_asyncio.fixture
 async def fake_redis() -> AsyncGenerator[Any, None]:
+    if fakeredis is None:
+        pytest.skip("fakeredis paketi kurulu değil; fake_redis fixture atlanıyor.")
+
     server = fakeredis.FakeServer()
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
     try:
