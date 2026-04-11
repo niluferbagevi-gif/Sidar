@@ -183,6 +183,19 @@ class SupervisorAgent(BaseAgent):
         return int(getattr(getattr(self, "cfg", None), "MAX_QA_RETRIES", self.MAX_QA_RETRIES))
 
     @staticmethod
+    def _validate_p2p_request(request: DelegationRequest) -> Optional[str]:
+        missing_fields: list[str] = []
+        if not str(getattr(request, "reply_to", "") or "").strip():
+            missing_fields.append("reply_to")
+        if not str(getattr(request, "target_agent", "") or "").strip():
+            missing_fields.append("target_agent")
+        if not str(getattr(request, "payload", "") or "").strip():
+            missing_fields.append("payload")
+        if missing_fields:
+            return ", ".join(missing_fields)
+        return None
+
+    @staticmethod
     def _is_reject_feedback_payload(payload: object) -> bool:
         text = str(payload or "")
         if not text.startswith("qa_feedback|"):
@@ -260,6 +273,13 @@ class SupervisorAgent(BaseAgent):
         current = request
         while hop < max_hops:
             hop += 1
+            missing = self._validate_p2p_request(current)
+            if missing:
+                return TaskResult(
+                    task_id=str(uuid.uuid4()),
+                    status="failed",
+                    summary=f"[P2P:FAIL] Geçersiz delegasyon isteği: eksik alan(lar): {missing}.",
+                )
             if current.target_agent == "coder" and self._is_reject_feedback_payload(current.payload):
                 qa_retries += 1
                 if qa_retries > self._max_qa_retries():
@@ -283,7 +303,7 @@ class SupervisorAgent(BaseAgent):
                         "p2p_protocol": current.protocol,
                         "p2p_sender": current.reply_to,
                         "p2p_receiver": current.target_agent,
-                        "p2p_reason": str(current.meta.get("reason", "")),
+                        "p2p_reason": str((current.meta or {}).get("reason", "")),
                         "p2p_handoff_depth": str(current.handoff_depth),
                     },
                 ),

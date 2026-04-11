@@ -193,6 +193,20 @@ def test_is_reject_feedback_payload(payload: str, expected: bool) -> None:
     assert SupervisorAgent._is_reject_feedback_payload(payload) is expected
 
 
+@pytest.mark.parametrize(
+    ("request", "expected_missing"),
+    [
+        (DelegationRequest(task_id="t", reply_to="", target_agent="coder", payload="x"), "reply_to"),
+        (DelegationRequest(task_id="t", reply_to="qa", target_agent="", payload="x"), "target_agent"),
+        (DelegationRequest(task_id="t", reply_to="qa", target_agent="coder", payload=""), "payload"),
+    ],
+)
+def test_validate_p2p_request_reports_missing_fields(request: DelegationRequest, expected_missing: str) -> None:
+    missing = SupervisorAgent._validate_p2p_request(request)
+    assert missing is not None
+    assert expected_missing in missing
+
+
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
     sup = _build_supervisor(max_qa_retries=0)
 
@@ -796,6 +810,51 @@ def test_route_p2p_reject_feedback_continues_until_retry_limit_exceeded() -> Non
     assert len(delegate_calls) == 1
     assert result.status == "failed"
     assert "Maksimum QA retry limiti aşıldı (1)" in str(result.summary)
+
+
+def test_route_p2p_returns_fail_closed_for_malformed_request() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+
+    async def _delegate(*_args, **_kwargs):
+        raise AssertionError("_delegate should not run for malformed requests")
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="reviewer",
+        target_agent="",
+        payload="",
+        intent="p2p",
+    )
+    result = asyncio.run(sup._route_p2p(req, max_hops=2))
+    assert result.status == "failed"
+    assert "Geçersiz delegasyon isteği" in str(result.summary)
+    assert "target_agent" in str(result.summary)
+    assert "payload" in str(result.summary)
+
+
+def test_route_p2p_handles_none_meta_without_crashing() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    calls: list[dict[str, object]] = []
+
+    async def _delegate(receiver: str, goal: str, intent: str, **kwargs):
+        calls.append({"receiver": receiver, "goal": goal, "intent": intent, **kwargs})
+        return TaskResult(task_id="done", status="done", summary="ok")
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="kod üret",
+        intent="p2p",
+    )
+    req.meta = None  # type: ignore[assignment]
+
+    result = asyncio.run(sup._route_p2p(req, max_hops=1))
+
+    assert result.status == "done"
+    assert calls[0]["context"]["p2p_reason"] == ""
 
 
 def test_run_task_research_routes_p2p_when_delegation_request_returns() -> None:
