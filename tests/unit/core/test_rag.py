@@ -759,6 +759,34 @@ async def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: py
     assert rag._build_embedding_function(use_gpu=True) is None
 
 
+async def test_build_embedding_function_import_module_and_missing_autocast_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    class _Cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+    class _TorchNoAutocast:
+        cuda = _Cuda()
+
+    class _EF:
+        def __init__(self, model_name: str, device: str) -> None:
+            self.model_name = model_name
+            self.device = device
+
+    fake_embedding_module = SimpleNamespace(SentenceTransformerEmbeddingFunction=_EF)
+    monkeypatch.delitem(sys.modules, "chromadb.utils.embedding_functions", raising=False)
+    monkeypatch.setattr(rag.importlib, "import_module", lambda name: fake_embedding_module)
+    monkeypatch.setitem(sys.modules, "torch", _TorchNoAutocast)
+
+    caplog.set_level("WARNING")
+    ef = rag._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
+    assert ef is not None
+    assert ef.device == "cuda:0"
+    assert "torch.autocast bulunamadı" in caplog.text
+
+
 async def test_document_store_init_pgvector_backend_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[str] = []
 
