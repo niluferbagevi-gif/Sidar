@@ -252,6 +252,7 @@ def test_main_module_import_fallback_branch(monkeypatch):
     module = importlib.reload(main)
     assert hasattr(module, "cfg")
     assert module.CONFIG_IMPORT_OK is False
+    monkeypatch.undo()
     importlib.reload(main)
 
 
@@ -263,6 +264,7 @@ def test_main_module_import_without_initialize_directories(monkeypatch):
     monkeypatch.setitem(sys.modules, "config", fake_config)
     module = importlib.reload(main)
     assert module.CONFIG_IMPORT_OK is True
+    monkeypatch.undo()
     importlib.reload(main)
 
 
