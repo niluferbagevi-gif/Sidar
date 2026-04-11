@@ -87,14 +87,11 @@ run_pytest_coverage_report
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-elif [ -f "tests/test_benchmark.py" ]; then
-  python -m pytest -v tests/test_benchmark.py --no-cov
-  BENCHMARK_EXIT_CODE=$?
 elif [ -f "tests/performance/test_benchmark.py" ]; then
   python -m pytest -v tests/performance/test_benchmark.py --no-cov
   BENCHMARK_EXIT_CODE=$?
 else
-  echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py veya tests/performance/test_benchmark.py bulunamadı."
+  echo "⚠️ Benchmark testi atlandı: tests/performance/test_benchmark.py bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then
     echo "❌ RUN_BENCHMARKS=required iken benchmark dosyası bulunamadı."
     BENCHMARK_EXIT_CODE=1
