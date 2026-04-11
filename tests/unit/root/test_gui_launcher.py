@@ -121,6 +121,7 @@ def test_start_gui_import_error(monkeypatch):
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
+    assert __import__("math").__name__ == "math"
 
     with pytest.raises(RuntimeError, match="Eel kurulu değil"):
         gui_launcher.start_gui()
