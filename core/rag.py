@@ -529,10 +529,6 @@ def _build_embedding_function(use_gpu: bool = False,
 
         device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
 
-        if mixed_precision and device.startswith("cuda"):
-            # FP16 desteği — torch.amp ile embedding modeli daha az VRAM kullanır
-            import torch.amp  # noqa: F401  (import kontrolü)
-
         ef = SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2",
             device=device,
@@ -540,13 +536,18 @@ def _build_embedding_function(use_gpu: bool = False,
 
         # Mixed precision: sentence-transformers encode sırasında half() uygula
         if mixed_precision and device.startswith("cuda"):
-            _orig_call = ef.__call__
+            if hasattr(torch, "autocast"):
+                _orig_call = ef.__call__
 
-            def _fp16_call(input):
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    return _orig_call(input)
+                def _fp16_call(input):
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        return _orig_call(input)
 
-            ef.__call__ = _fp16_call
+                ef.__call__ = _fp16_call
+            else:
+                logger.warning(
+                    "⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı."
+                )
 
         logger.info(
             "🚀 ChromaDB GPU Embedding: device=%s  mixed_precision=%s",
