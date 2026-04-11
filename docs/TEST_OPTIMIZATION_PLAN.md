@@ -126,7 +126,7 @@ Odak:
 
 Test yaklaşımı:
 - Unit seviyede repository fonksiyonlarını izole test et.
-- Integration seviyede `sqlite:///:memory:` (veya test container) ile transaction akışlarını doğrula.
+- Integration seviyede `tmp_path` destekli dosya tabanlı geçici veritabanı (`aiosqlite`) ile transaction akışlarını doğrula.
 
 #### `core/llm_client.py`
 Odak:
