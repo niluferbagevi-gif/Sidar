@@ -545,7 +545,7 @@ def _build_embedding_function(use_gpu: bool = False,
 
                 ef.__call__ = _fp16_call
             else:
-                logger.warning(
+                logging.warning(
                     "⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı."
                 )
 
