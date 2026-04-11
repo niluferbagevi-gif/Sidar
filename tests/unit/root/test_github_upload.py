@@ -71,6 +71,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     monkeypatch.setattr(gu, "run_command", fake_run)
     deleted = gu.get_deleted_files()
     assert deleted == ["gone.txt"]
+    assert fake_run(["git", "status"]) == (True, "")
 
     safe, blocked = gu.collect_safe_files(deleted)
     assert str(text_file) in safe
