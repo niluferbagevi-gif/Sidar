@@ -226,8 +226,8 @@ async def pg_db_session() -> AsyncGenerator[Any, None]:
         for attempt in range(max_retries):
             try:
                 sync_engine = sqlalchemy.create_engine(sync_url)
-                with sync_engine.connect():
-                    pass
+                with sync_engine.connect() as conn:
+                    conn.execute(sqlalchemy.text("SELECT 1"))
                 sync_engine.dispose()
                 break
             except sqlalchemy.exc.OperationalError:
