@@ -194,15 +194,15 @@ def test_is_reject_feedback_payload(payload: str, expected: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    ("request", "expected_missing"),
+    ("delegation_request", "expected_missing"),
     [
         (DelegationRequest(task_id="t", reply_to="", target_agent="coder", payload="x"), "reply_to"),
         (DelegationRequest(task_id="t", reply_to="qa", target_agent="", payload="x"), "target_agent"),
         (DelegationRequest(task_id="t", reply_to="qa", target_agent="coder", payload=""), "payload"),
     ],
 )
-def test_validate_p2p_request_reports_missing_fields(request: DelegationRequest, expected_missing: str) -> None:
-    missing = SupervisorAgent._validate_p2p_request(request)
+def test_validate_p2p_request_reports_missing_fields(delegation_request: DelegationRequest, expected_missing: str) -> None:
+    missing = SupervisorAgent._validate_p2p_request(delegation_request)
     assert missing is not None
     assert expected_missing in missing
 
