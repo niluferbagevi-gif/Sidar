@@ -43,7 +43,7 @@ open_artifact() {
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   # --cov=. yerine sadece --cov kullanıldı. Böylece .coveragerc içindeki source listesi okunacak.
-  local pytest_cmd=(pytest --cov --cov-report=xml --cov-report=term --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_cmd=(pytest --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
@@ -65,9 +65,6 @@ run_pytest_coverage_report() {
   BACKEND_EXIT_CODE=$?
 
   # xdist zaten otomatik combine yaptığı için manuel coverage combine kaldırıldı.
-
-  # pytest başarısız olsa bile HTML raporunu üretmeyi dene
-  coverage html >/dev/null 2>&1 || true
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
