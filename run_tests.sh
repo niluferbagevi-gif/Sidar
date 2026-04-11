@@ -108,7 +108,14 @@ if [ -d "web_ui_react" ]; then
     pushd web_ui_react > /dev/null || FRONTEND_EXIT_CODE=1
 
     if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-      npm ci
+      # Yerel ortamda yavaşlığı önlemek için CI değişkenine göre davran.
+      if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
+        echo "ℹ️ CI ortamı tespit edildi, 'npm ci' çalıştırılıyor..."
+        npm ci
+      else
+        echo "ℹ️ Yerel ortam tespit edildi, 'npm install' çalıştırılıyor..."
+        npm install
+      fi
       local_npm_ci_exit=$?
       if [ "${local_npm_ci_exit}" -ne 0 ]; then
         FRONTEND_EXIT_CODE=${local_npm_ci_exit}
