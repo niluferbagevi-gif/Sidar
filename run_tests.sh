@@ -42,10 +42,9 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  local pytest_cmd=(pytest --cov=. --cov-report=xml --cov-report=term --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  # --cov=. yerine sadece --cov kullanıldı. Böylece .coveragerc içindeki source listesi okunacak.
+  local pytest_cmd=(pytest --cov --cov-report=xml --cov-report=term --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
-  # Varsayılan: CI uyumluluğu için GPU testlerini hariç tut.
-  # ENABLE_GPU_TESTS=1 verilirse GPU testleri de çalıştırılır.
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
@@ -65,11 +64,7 @@ run_pytest_coverage_report() {
   "${pytest_cmd[@]}"
   BACKEND_EXIT_CODE=$?
 
-  # parallel=True nedeniyle oluşan dosyaları güvenli listeleme ile kontrol et
-  if compgen -G ".coverage.*" > /dev/null; then
-    echo "ℹ️ Paralel coverage verileri birleştiriliyor..."
-    coverage combine || true
-  fi
+  # xdist zaten otomatik combine yaptığı için manuel coverage combine kaldırıldı.
 
   # pytest başarısız olsa bile HTML raporunu üretmeyi dene
   coverage html >/dev/null 2>&1 || true
