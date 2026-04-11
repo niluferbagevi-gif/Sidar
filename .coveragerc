@@ -29,7 +29,7 @@ omit =
     core/voice.py
     web_ui_react/*
     web_ui/*
-
+    tests/*
 [report]
 fail_under = 90
 show_missing = True
