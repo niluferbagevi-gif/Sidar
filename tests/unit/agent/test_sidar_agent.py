@@ -1809,7 +1809,6 @@ async def test_load_instruction_files_handles_string_candidates(sidar_agent_fact
     assert "Talimat" in loaded
 
 
-@pytest.mark.asyncio
 async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
     sidar_agent_factory,
     fake_llm_response,
@@ -1835,7 +1834,6 @@ async def test_sidar_agent_respond_critical_flow_uses_shared_fixtures(
     assert "İşlem tamam." in chunks[0]
 
 
-@pytest.mark.asyncio
 async def test_sidar_agent_llm_error_flow(
     sidar_agent_factory,
     fake_llm_error,
