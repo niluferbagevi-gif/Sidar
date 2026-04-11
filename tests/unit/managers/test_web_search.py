@@ -122,6 +122,7 @@ def test_check_ddg_true_and_false(monkeypatch):
             raise ImportError("missing")
         return real_import(name, *args, **kwargs)
 
+    assert fail_import("math").__name__ == "math"
     with pytest.raises(ImportError):
         fail_import("duckduckgo_search")
 
