@@ -150,10 +150,28 @@ def fake_video_stream_error() -> AsyncMock:
 
 
 @pytest_asyncio.fixture
-async def fake_db_session() -> AsyncGenerator[Any, None]:
-    """In-memory SQLite için asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
+async def fake_db_session(tmp_path: Path) -> AsyncGenerator[Any, None]:
+    """SQLite üzerinde asenkron DB oturumu sağlar (entegrasyon benzeri testler için)."""
+    sqlite_path = tmp_path / "fake_session.db"
+    database_url = f"sqlite+aiosqlite:///{sqlite_path}"
+
+    schema_cfg = SimpleNamespace(
+        DATABASE_URL=database_url,
+        BASE_DIR=str(tmp_path),
+        DB_POOL_SIZE=2,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
+        JWT_SECRET_KEY="test-secret",
+        JWT_ALGORITHM="HS256",
+        JWT_TTL_DAYS=3,
+    )
+    schema_db = Database(schema_cfg)
+    await schema_db.connect()
+    await schema_db.init_schema()
+    await schema_db.close()
+
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        database_url,
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
