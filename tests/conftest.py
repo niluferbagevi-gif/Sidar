@@ -343,19 +343,19 @@ def fake_coverage_code_manager() -> MagicMock:
     """Coverage testleri için standart MagicMock kullanan code manager."""
     mock_manager = MagicMock()
 
-    mock_manager.run_pytest_and_collect.return_value = {
+    mock_manager.run_pytest_and_collect = AsyncMock(return_value={
         "analysis": {"summary": "ok", "findings": []},
         "output": "OUT",
-    }
-    mock_manager.analyze_pytest_output.side_effect = lambda output: {
+    })
+    mock_manager.analyze_pytest_output = AsyncMock(side_effect=lambda output: {
         "summary": f"ANALYZED:{output}",
         "findings": [{"target_path": "src/m.py"}],
-    }
-    mock_manager.read_file.side_effect = lambda path: (True, f"SOURCE:{path}")
-    mock_manager.write_generated_test.side_effect = lambda path, content, append=True: (
+    })
+    mock_manager.read_file = AsyncMock(side_effect=lambda path: (True, f"SOURCE:{path}"))
+    mock_manager.write_generated_test = AsyncMock(side_effect=lambda path, content, append=True: (
         True,
         f"WROTE:{path}:{append}",
-    )
+    ))
 
     return mock_manager
 
