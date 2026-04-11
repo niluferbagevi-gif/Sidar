@@ -7,7 +7,6 @@ source =
     managers
     plugins
     main.py
-    web_server.py
 omit =
     */plug_auto_discover*
     */plug_bad_compile*
@@ -27,6 +26,7 @@ omit =
     setup.py
     core/vision.py
     core/voice.py
+    web_server.py
     web_ui_react/*
     web_ui/*
     tests/*
