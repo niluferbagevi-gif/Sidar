@@ -420,26 +420,6 @@ def fake_vector_store() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_httpx(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """httpx bağımlılığını gerçek modül üstünden güvenli şekilde patch eder."""
-
-    def _install(
-        *,
-        client_factory: Callable[..., Any],
-        timeout_exception: type[Exception] | None = None,
-        request_error: type[Exception] | None = None,
-    ) -> None:
-        httpx = pytest.importorskip("httpx")
-        monkeypatch.setattr(httpx, "AsyncClient", client_factory)
-        if timeout_exception is not None:
-            monkeypatch.setattr(httpx, "TimeoutException", timeout_exception)
-        if request_error is not None:
-            monkeypatch.setattr(httpx, "RequestError", request_error)
-
-    return _install
-
-
-@pytest.fixture
 def mock_chromadb(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """chromadb/chromadb.config bağımlılıklarını gerçek modüller üstünden patch eder."""
 

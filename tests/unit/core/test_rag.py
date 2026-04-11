@@ -824,9 +824,10 @@ async def test_document_store_add_document_and_search_helpers(tmp_path: Path) ->
 
 
 async def test_document_store_add_document_from_url_success_and_failure(
-    mock_httpx,
+    respx_mock_router,
     tmp_path: Path,
 ) -> None:
+    httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
 
     async def _fake_add(title: str, content: str, source: str, tags: list[str] | None, session_id: str) -> str:
@@ -836,23 +837,9 @@ async def test_document_store_add_document_from_url_success_and_failure(
 
     store.add_document = _fake_add  # type: ignore[method-assign]
 
-    class _Resp:
-        text = "<title>My Page</title><p>Body</p>"
-
-        def raise_for_status(self) -> None:
-            return None
-
-    class _Client:
-        async def __aenter__(self) -> "_Client":
-            return self
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-        async def get(self, _url: str) -> _Resp:
-            return _Resp()
-
-    mock_httpx(client_factory=lambda **_k: _Client())
+    respx_mock_router.get("https://example.com/docs").mock(
+        return_value=httpx.Response(200, text="<title>My Page</title><p>Body</p>")
+    )
 
     ok, msg = await store.add_document_from_url("https://example.com/docs", session_id="s-url")
     assert ok is True
@@ -871,36 +858,19 @@ async def test_document_store_add_document_from_url_success_and_failure(
     ],
 )
 async def test_document_store_add_document_from_url_handles_httpx_transport_errors(
-    mock_httpx,
+    respx_mock_router,
     tmp_path: Path,
     exc_name: str,
     expected_hint: str,
 ) -> None:
+    httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
-
-    class _TimeoutException(Exception):
-        pass
-
-    class _RequestError(Exception):
-        pass
-
-    error_cls = _TimeoutException if exc_name == "TimeoutException" else _RequestError
-
-    class _Client:
-        async def __aenter__(self) -> "_Client":
-            return self
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-        async def get(self, _url: str):
-            raise error_cls(expected_hint)
-
-    mock_httpx(
-        client_factory=lambda **_k: _Client(),
-        timeout_exception=_TimeoutException,
-        request_error=_RequestError,
-    )
+    request = httpx.Request("GET", "https://example.com/docs")
+    if exc_name == "TimeoutException":
+        side_effect: Exception = httpx.TimeoutException(expected_hint)
+    else:
+        side_effect = httpx.RequestError(expected_hint, request=request)
+    respx_mock_router.get("https://example.com/docs").mock(side_effect=side_effect)
 
     ok, msg = await store.add_document_from_url("https://example.com/docs", session_id="s-url")
     assert ok is False
