@@ -225,6 +225,34 @@ async def test_retry_with_backoff_succeeds_after_retry(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_config,
+) -> None:
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(llm_client.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
+
+    state = {"n": 0}
+
+    async def op():
+        state["n"] += 1
+        if state["n"] == 1:
+            raise httpx.ConnectError("temporary upstream outage")
+        return {"ok": True}
+
+    result = await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
+
+    assert result == {"ok": True}
+    assert state["n"] == 2
+    assert sleep_calls == [pytest.approx(0.5)]
+
+
+@pytest.mark.asyncio
 async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
     async def op():
         raise ValueError("fatal")

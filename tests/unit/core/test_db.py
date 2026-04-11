@@ -83,6 +83,21 @@ async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    db._backend = "postgresql"
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+    fake_pg.conn.execute.side_effect = [None, None, ConnectionError("database connection lost during migration")]
+
+    with pytest.raises(ConnectionError, match="migration"):
+        await db._init_schema_postgresql()
+
+    assert fake_pg.conn.execute.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_ensure_default_prompt_registry_postgres_branches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
