@@ -104,3 +104,40 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
         msg.get("role") == "assistant" and "Araştırma tamamlandı." in msg.get("content", "")
         for msg in history
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
+    sidar_agent_factory,
+    fake_llm_tool_sequence,
+    fake_vector_store,
+    tmp_path,
+) -> None:
+    """RAG/vector araması patladığında akışın zarifçe sürdüğünü doğrular."""
+    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    agent = sidar_agent_factory(cfg=cfg)
+
+    agent.llm = types.SimpleNamespace(
+        chat=fake_llm_tool_sequence(
+            [
+                '{"thought":"Önce depoda arama yap.", "tool":"docs_search", "argument":"vektör araması"}',
+                '{"thought":"Hata durumunu kullanıcıya açıkla.", "tool":"final_answer", "argument":"Doküman araması şu anda kullanılamıyor."}',
+            ]
+        )
+    )
+
+    await agent.memory.set_active_user("integration-user", "Integration User")
+
+    fake_vector_store.set_db_error()
+    agent.docs = types.SimpleNamespace(search=fake_vector_store.search)
+
+    out = await _collect_stream(agent.respond("Depodaki dokümanları ara"))
+
+    assert len(out) > 0
+    assert any("kullanılamıyor" in msg.lower() or "hata" in msg.lower() for msg in out)
+    assert fake_vector_store.search.called
+
+    history = await agent.memory.get_history()
+    assert any(msg.get("role") == "user" and "Depodaki dokümanları ara" in msg.get("content", "") for msg in history)
+    assert any(msg.get("role") == "assistant" for msg in history)
