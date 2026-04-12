@@ -147,6 +147,6 @@ jobs:
 
       - name: Run PostgreSQL connection pool stress tests
         run: |
-          pytest -v -m pg_stress tests/test_db_postgresql_branches.py \
+          pytest -v -m pg_stress tests/integration/db/ \
             --timeout=120 \
             -x
