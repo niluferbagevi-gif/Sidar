@@ -273,3 +273,26 @@ def test_run_task_paths(monkeypatch, coder_module):
 
     assert len(agent.events.messages) >= 1
     assert all(role == "coder" for role, _ in agent.events.messages)
+
+
+def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
+    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
+
+    dynamic_fail = "D" * 1200
+    regression_fail = "R" * 1200
+    conflicting_feedback = (
+        "qa_feedback|decision=approve;"
+        "summary=ilk karar approve;"
+        "decision=reject;"
+        "summary=son karar reject;"
+        f"dynamic_test_output={dynamic_fail};"
+        f"regression_test_output={regression_fail}"
+    )
+
+    result = asyncio.run(agent.run_task(conflicting_feedback))
+
+    assert result.startswith("[CODER:REWORK_REQUIRED]")
+    assert "son karar reject" in result
+    assert "[FAILED_TESTS]" in result
+    failed_excerpt = result.split("[FAILED_TESTS] ", 1)[1]
+    assert len(failed_excerpt) == 1500

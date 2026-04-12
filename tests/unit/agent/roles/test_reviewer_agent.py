@@ -444,6 +444,42 @@ def test_run_task_main_paths(reviewer):
     assert asyncio.run(reviewer.run_task("unknown")) == "prs"
 
 
+def test_run_task_conflicting_signals_prioritizes_fail_closed_decision(reviewer):
+    async def fake_call_tool(name, arg):
+        if name == "run_tests":
+            return "[TEST:OK]"
+        if name == "lsp_diagnostics":
+            return json.dumps(
+                {
+                    "summary": "semantik temiz",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
+        if name == "graph_impact":
+            return json.dumps({"status": "ok", "summary": "düşük risk", "reports": []})
+        if name == "browser_signals":
+            return json.dumps({"status": "ok", "risk": "düşük", "summary": "sinyal temiz"})
+        return ""
+
+    async def fake_dynamic(_ctx):
+        # Çelişen yönlendirme senaryosu: semantik analiz onaylasa da dinamik test fail sinyali taşıyor.
+        return "[TEST:FAIL] assertion failed"
+
+    reviewer.call_tool = fake_call_tool
+    reviewer._run_dynamic_tests = fake_dynamic
+
+    result = asyncio.run(reviewer.run_task("review_code|{\"review_context\":\"src/a.py\"}"))
+    payload = json.loads(result.payload.split("qa_feedback|", 1)[1])
+
+    assert payload["decision"] == "REJECT"
+    assert payload["risk"] == "yüksek"
+    assert "[REVIEW:FAIL]" in payload["summary"]
+
+
 def test_init_registers_managers_and_tools(monkeypatch, tmp_path):
     module = sys.modules[ReviewerAgent.__module__]
 

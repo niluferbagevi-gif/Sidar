@@ -232,6 +232,19 @@ def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fa
     assert result == "web:mlops trendleri"
 
 
+def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        raise RuntimeError("token limit exceeded while planning tool call")
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("uzun araştırma özeti hazırla"))
+
+    assert result == "web:uzun araştırma özeti hazırla"
+
+
 def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(researcher_module, fake_cfg):
     agent = _build_agent(researcher_module, fake_cfg)
 
@@ -262,6 +275,25 @@ def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(r
         ("web_search", "web:iter-next"),
         ("fetch_url", "ignored"),
     ]
+
+
+def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+    llm_payloads = iter(
+        [
+            '{"tool":"docs_search","argument":"first query"}',
+            '{"tool":"unknown_tool","argument":"conflict"}',
+        ]
+    )
+
+    async def fake_call_llm(**_kwargs):
+        return next(llm_payloads)
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("başlangıç görevi"))
+
+    assert result == "web:sync:first query:auto:global"
 
 
 def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(researcher_module, fake_cfg):
