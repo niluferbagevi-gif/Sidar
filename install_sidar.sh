@@ -429,6 +429,28 @@ PY
         fi
     fi
 
+    # MEMORY_ENCRYPTION_KEY boşsa Fernet anahtarı üret
+    if grep -q '^MEMORY_ENCRYPTION_KEY=$' "$ENV_FILE"; then
+        GENERATED_FERNET_KEY=""
+        if command -v python3 &>/dev/null; then
+            GENERATED_FERNET_KEY=$(python3 - <<'PY'
+try:
+    from cryptography.fernet import Fernet
+    print(Fernet.generate_key().decode())
+except Exception:
+    pass
+PY
+)
+        fi
+
+        if [[ -n "$GENERATED_FERNET_KEY" ]]; then
+            sed -i "s|^MEMORY_ENCRYPTION_KEY=.*|MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}|" "$ENV_FILE"
+            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
+        else
+            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
+        fi
+    fi
+
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
