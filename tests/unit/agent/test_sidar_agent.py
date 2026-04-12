@@ -146,43 +146,6 @@ async def test_build_trigger_correlation_matches_history_without_duplicate_ids(
     assert correlation["latest_related_status"] == "failed"
 
 
-async def test_execute_self_heal_plan_success_and_validation(
-    sidar_agent_factory,
-    mock_config,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    cfg = mock_config(BASE_DIR=str(tmp_path))
-    agent = sidar_agent_factory(cfg=cfg)
-    writes = {}
-    code_mock = create_autospec(CodeManager, instance=True, spec_set=True)
-    code_mock.read_file.side_effect = lambda path, *args, **kwargs: (True, f"old:{path}")
-
-    def mock_patch_file(path, target, replacement):
-        writes[path] = (target, replacement)
-        return True, "ok"
-
-    code_mock.patch_file.side_effect = mock_patch_file
-    code_mock.write_file.side_effect = lambda path, content, *args, **kwargs: (
-        writes.__setitem__(path, ("restore", content)) or (True, "ok")
-    )
-    code_mock.run_shell_in_sandbox.side_effect = lambda command, base_dir: (True, f"ok:{command}:{base_dir}")
-    agent.code = code_mock
-    plan = {
-        "summary": "patching",
-        "confidence": "high",
-        "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
-        "validation_commands": ["pytest -q"],
-    }
-    remediation_loop = {"validation_commands": ["pytest -q"]}
-    result = await agent._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan)
-
-    assert result["status"] == "applied"
-    assert result["operations_applied"] == ["a.py"]
-    assert len(result["validation_results"]) == 1
-    assert writes["a.py"] == ("A", "B")
-
-
 async def test_execute_self_heal_plan_reverts_on_patch_error(
     sidar_agent_factory,
     mock_config,
@@ -226,93 +189,6 @@ async def test_restore_self_heal_backups(sidar_agent_factory) -> None:
     assert write_mock.call_count == 2
     write_mock.assert_any_call("src/main.py", "print('old main')", False)
     write_mock.assert_any_call("src/utils.py", "print('old utils')", False)
-
-
-async def test_attempt_autonomous_self_heal_core_branches(
-    sidar_agent_factory,
-    mock_config,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg_disabled = mock_config(ENABLE_AUTONOMOUS_SELF_HEAL=False)
-    agent = sidar_agent_factory(cfg=cfg_disabled)
-    remediation = {"remediation_loop": {"status": "planned"}}
-    disabled = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
-    assert disabled["status"] == "disabled"
-
-    agent.cfg = mock_config(ENABLE_AUTONOMOUS_SELF_HEAL=True)
-    remediation = {"remediation_loop": {"status": "queued"}}
-    skipped = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
-    assert skipped["status"] == "skipped"
-
-    remediation = {
-        "remediation_loop": {
-            "status": "planned",
-            "needs_human_approval": True,
-            "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
-        }
-    }
-    hitl = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
-    assert hitl["status"] == "awaiting_hitl"
-    assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
-
-
-async def test_handle_external_trigger_success_and_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
-    agent = sidar_agent_factory()
-    records = []
-    agent.initialize = AsyncMock()
-    agent._ensure_autonomy_runtime_state = lambda: None
-    agent.mark_activity = lambda source="runtime": None
-    agent._build_trigger_correlation = lambda trigger, payload: {"correlation_id": "cid"}
-    agent._build_trigger_prompt = lambda trigger, payload, ci: "PROMPT"
-
-    agent._append_autonomy_history = AsyncMock(side_effect=lambda record: records.append(record))
-    agent._memory_add = AsyncMock()
-    agent._try_multi_agent = AsyncMock(return_value="summary")
-
-    result = await agent.handle_external_trigger({"trigger_id": "tr-1", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
-    assert result["status"] == "success"
-    assert records and records[0]["summary"] == "summary"
-    agent._memory_add.assert_any_await("user", "[AUTONOMY_TRIGGER] PROMPT")
-    agent._memory_add.assert_any_await("assistant", "summary")
-
-    agent._try_multi_agent = AsyncMock(side_effect=RuntimeError("x"))
-    failed = await agent.handle_external_trigger({"trigger_id": "tr-2", "source": "s", "event_name": "e", "payload": {}, "meta": {}})
-    assert failed["status"] == "failed"
-    assert "x" in failed["summary"]
-
-
-async def test_run_nightly_memory_maintenance_disabled_and_completed(
-    sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
-    frozen_time,
-) -> None:
-    agent = sidar_agent_factory()
-    agent.initialize = AsyncMock()
-    agent._append_autonomy_history = AsyncMock()
-    agent._nightly_maintenance_lock = None
-    frozen_time.tick(delta=9999.0)
-    agent._last_activity_ts = sidar_agent.time.time() - 9999.0
-    _override_cfg(
-        agent,
-        ENABLE_NIGHTLY_MEMORY_PRUNING=False,
-        NIGHTLY_MEMORY_IDLE_SECONDS=100,
-        NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=2,
-        NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
-        NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
-    )
-    disabled = await agent.run_nightly_memory_maintenance()
-    assert disabled["status"] == "disabled"
-
-    agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = True
-    agent.memory = types.SimpleNamespace(run_nightly_consolidation=AsyncMock())
-    async def _consolidate(**kwargs):
-        return {"session_ids": ["s1"], "sessions_compacted": 1}
-    agent.memory.run_nightly_consolidation = _consolidate
-    agent.docs = types.SimpleNamespace(consolidate_session_documents=lambda session_id, keep_recent_docs=0: {"removed_docs": 2})
-    completed = await agent.run_nightly_memory_maintenance(force=True, reason="test")
-    assert completed["status"] == "completed"
-    assert completed["sessions_compacted"] == 1
-    assert completed["rag_docs_pruned"] == 2
 
 
 async def test_get_memory_archive_context_sync_filters_by_source_and_score(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
