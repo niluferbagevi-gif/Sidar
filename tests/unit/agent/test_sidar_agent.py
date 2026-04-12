@@ -872,12 +872,17 @@ async def test_tool_subtask_returns_done_and_empty_warning(
 
 async def test_tool_subtask_validation_fallback_success(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
 ) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     raw_response = '{"tool":"final_answer","argument":"kurtarıldı","thought":"düşünüyorum"}'
-    agent.llm = AsyncMock(chat=AsyncMock(return_value=raw_response))
+
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return raw_response
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
 
     with patch.object(sidar_agent.ToolCall, "model_validate_json", autospec=True) as validate_json_mock:
         validate_json_mock.side_effect = sidar_agent.ValidationError.from_exception_data("error", line_errors=[])
@@ -1150,11 +1155,17 @@ async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factor
     assert agent._load_instruction_files() == ""
 
 
-async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, fake_llm_response) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    agent.llm = AsyncMock(chat=AsyncMock(side_effect=[{"not": "string"}, '{"tool":"x","argument":"a","thought":"t"}']))
+    responses = [{"not": "string"}, '{"tool":"x","argument":"a","thought":"t"}']
+
+    async def _llm_response(*_args, **_kwargs):
+        await fake_llm_response("subtask")
+        return responses.pop(0)
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
         execute_tool_mock.side_effect = RuntimeError("fail-tool")
         output = await agent._tool_subtask("job")
@@ -1513,7 +1524,7 @@ async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> 
     tiny = await agent._build_context()
     assert "Bağlam yerel model için kırpıldı" in tiny
 
-async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, fake_llm_response) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
     metrics_calls = []
@@ -1523,7 +1534,11 @@ async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monk
         lambda: types.SimpleNamespace(record_step=lambda *a: metrics_calls.append(a)),
     )
 
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"arg","thought":"x"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
         execute_tool_mock.side_effect = RuntimeError("tool-boom")
         out = await agent._tool_subtask("job")
@@ -2046,10 +2061,19 @@ async def test_tool_subtask_records_tool_execution_and_validation_error_metrics(
     assert any(call[1] == "llm_decision" and call[3] == "failed" for call in metric_calls)
 
 
-async def test_tool_subtask_validation_error_without_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_validation_error_without_metrics(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
+) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"x","thought":"t"}'))
+
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"x","thought":"t"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     monkeypatch.setattr(
         sidar_agent,
         "get_agent_metrics_collector",
