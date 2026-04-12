@@ -317,6 +317,12 @@ setup_env_file() {
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
 
+    # Lokal kurulumda Docker hostname yerine localhost kullan
+    if grep -q '^REDIS_URL=redis://redis:6379/0$' "$ENV_FILE"; then
+        sed -i 's|^REDIS_URL=redis://redis:6379/0$|REDIS_URL=redis://localhost:6379/0|' "$ENV_FILE"
+        ok ".env: REDIS_URL lokal kullanım için redis://localhost:6379/0 olarak ayarlandı."
+    fi
+
     # API_KEY boşsa güçlü rastgele değer üret
     if ! grep -q '^API_KEY=' "$ENV_FILE" || grep -q '^API_KEY=$' "$ENV_FILE"; then
         GENERATED_API_KEY=""
