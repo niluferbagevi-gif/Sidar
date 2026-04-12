@@ -49,4 +49,49 @@ describe("P2PDialoguePanel", () => {
     expect(screen.getByText("Kaynak yok mesajı")).toBeInTheDocument();
     expect(screen.queryByText(/:\s$/)).not.toBeInTheDocument();
   });
+
+  it("shows only the last 16 events when more exist", () => {
+    const events = Array.from({ length: 20 }, (_, i) => ({
+      id: `e${i}`,
+      kind: "status",
+      ts: "2025-01-01T10:00:00Z",
+      content: `event-${i}`,
+    }));
+    useChatStoreMock.mockReturnValue({ telemetryEvents: events });
+
+    render(<P2PDialoguePanel />);
+
+    expect(screen.queryByText("event-0")).not.toBeInTheDocument();
+    expect(screen.queryByText("event-3")).not.toBeInTheDocument();
+    expect(screen.getByText("event-4")).toBeInTheDocument();
+    expect(screen.getByText("event-19")).toBeInTheDocument();
+  });
+
+  it("renders source as bold label when present", () => {
+    useChatStoreMock.mockReturnValue({
+      telemetryEvents: [
+        {
+          id: "1",
+          kind: "status",
+          ts: "2025-01-01T10:00:00Z",
+          source: "supervisor",
+          content: "Plan hazır",
+        },
+      ],
+    });
+    render(<P2PDialoguePanel />);
+
+    const label = screen.getByText("supervisor:", { selector: "strong" });
+    expect(label).toBeInTheDocument();
+    expect(label.tagName).toBe("STRONG");
+  });
+
+  it("applies correct CSS class based on event kind", () => {
+    useChatStoreMock.mockReturnValue({
+      telemetryEvents: [{ id: "1", kind: "tool_call", ts: "2025-01-01T10:00:00Z", content: "repo_search" }],
+    });
+    const { container } = render(<P2PDialoguePanel />);
+
+    expect(container.querySelector(".event-list__item--tool_call")).toBeInTheDocument();
+  });
 });
