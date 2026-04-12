@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import sys
 from types import ModuleType, SimpleNamespace
@@ -199,34 +198,36 @@ async def _new_runtime_agent(coder_agent_class):
     return agent
 
 
-def test_tool_methods_are_routed_correctly(coder_module):
-    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
+@pytest.mark.asyncio
+async def test_tool_methods_are_routed_correctly(coder_module):
+    agent = await _new_runtime_agent(coder_module.CoderAgent)
 
-    assert asyncio.run(agent._tool_read_file("a.py")) == "read:a.py"
-    assert "Kullanım" in asyncio.run(agent._tool_write_file("only-path"))
-    assert asyncio.run(agent._tool_write_file("a.py|print(1)")) == "write:a.py:print(1)"
+    assert await agent._tool_read_file("a.py") == "read:a.py"
+    assert "Kullanım" in await agent._tool_write_file("only-path")
+    assert await agent._tool_write_file("a.py|print(1)") == "write:a.py:print(1)"
 
-    assert "Kullanım" in asyncio.run(agent._tool_patch_file("a.py|x"))
-    assert asyncio.run(agent._tool_patch_file("a.py|old|new")) == "patch:a.py:old->new"
+    assert "Kullanım" in await agent._tool_patch_file("a.py|x")
+    assert await agent._tool_patch_file("a.py|old|new") == "patch:a.py:old->new"
 
-    assert asyncio.run(agent._tool_execute_code("pytest -q")) == "exec:pytest -q"
-    assert asyncio.run(agent._tool_list_directory("")) == "list:."
-    assert asyncio.run(agent._tool_list_directory("src")) == "list:src"
+    assert await agent._tool_execute_code("pytest -q") == "exec:pytest -q"
+    assert await agent._tool_list_directory("") == "list:."
+    assert await agent._tool_list_directory("src") == "list:src"
 
-    assert asyncio.run(agent._tool_glob_search("*.py|||tests")) == "glob:*.py:tests"
-    assert asyncio.run(agent._tool_glob_search("*.md")) == "glob:*.md:."
+    assert await agent._tool_glob_search("*.py|||tests") == "glob:*.py:tests"
+    assert await agent._tool_glob_search("*.md") == "glob:*.md:."
 
-    assert asyncio.run(agent._tool_grep_search("TODO|||src|||*.py|||5")) == "grep:TODO:src:*.py:5"
-    assert asyncio.run(agent._tool_grep_search("TODO|||src|||*.py|||x")) == "grep:TODO:src:*.py:2"
+    assert await agent._tool_grep_search("TODO|||src|||*.py|||5") == "grep:TODO:src:*.py:5"
+    assert await agent._tool_grep_search("TODO|||src|||*.py|||x") == "grep:TODO:src:*.py:2"
 
-    assert asyncio.run(agent._tool_audit_project("")) == "audit:."
-    assert asyncio.run(agent._tool_get_package_info(" requests ")) == "pkg:requests"
-    assert asyncio.run(agent._tool_scan_project_todos("")) == "todos:/tmp/base"
-    assert asyncio.run(agent._tool_scan_project_todos("src")) == "todos:src"
+    assert await agent._tool_audit_project("") == "audit:."
+    assert await agent._tool_get_package_info(" requests ") == "pkg:requests"
+    assert await agent._tool_scan_project_todos("") == "todos:/tmp/base"
+    assert await agent._tool_scan_project_todos("src") == "todos:src"
 
 
-def test_run_task_paths(monkeypatch, coder_module):
-    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
+@pytest.mark.asyncio
+async def test_run_task_paths(monkeypatch, coder_module):
+    agent = await _new_runtime_agent(coder_module.CoderAgent)
 
     async def fake_call_tool(name, arg):
         return f"tool:{name}:{arg}"
@@ -237,14 +238,14 @@ def test_run_task_paths(monkeypatch, coder_module):
     agent.call_tool = fake_call_tool
     agent.delegate_to = fake_delegate
 
-    assert asyncio.run(agent.run_task("   ")) == "[UYARI] Boş kodlayıcı görevi verildi."
+    assert await agent.run_task("   ") == "[UYARI] Boş kodlayıcı görevi verildi."
 
-    assert asyncio.run(agent.run_task("read_file|a.py")) == "tool:read_file:a.py"
-    assert asyncio.run(agent.run_task("WRITE_FILE|a.py|x")) == "tool:write_file:a.py|x"
-    assert asyncio.run(agent.run_task("patch_file|a.py|x|y")) == "tool:patch_file:a.py|x|y"
-    assert asyncio.run(agent.run_task("execute_code|pytest -q")) == "tool:execute_code:pytest -q"
+    assert await agent.run_task("read_file|a.py") == "tool:read_file:a.py"
+    assert await agent.run_task("WRITE_FILE|a.py|x") == "tool:write_file:a.py|x"
+    assert await agent.run_task("patch_file|a.py|x|y") == "tool:patch_file:a.py|x|y"
+    assert await agent.run_task("execute_code|pytest -q") == "tool:execute_code:pytest -q"
 
-    approve = asyncio.run(agent.run_task("qa_feedback|decision=approve;summary=looks good"))
+    approve = await agent.run_task("qa_feedback|decision=approve;summary=looks good")
     assert approve == "[CODER:APPROVED] Reviewer onayı alındı: looks good"
 
     reject_feedback = (
@@ -252,31 +253,32 @@ def test_run_task_paths(monkeypatch, coder_module):
         '"dynamic_test_output":"dyn fail","regression_test_output":"reg fail",'
         '"remediation_loop":{"summary":"rerun needed"}}'
     )
-    reject = asyncio.run(agent.run_task(reject_feedback))
+    reject = await agent.run_task(reject_feedback)
     assert reject.startswith("[CODER:REWORK_REQUIRED]")
     assert "[REMEDIATION_LOOP] rerun needed" in reject
     assert "[FAILED_TESTS] dyn fail\n\nreg fail" in reject
 
-    reject_no_outputs = asyncio.run(agent.run_task("qa_feedback|decision=reject;summary=needs work"))
+    reject_no_outputs = await agent.run_task("qa_feedback|decision=reject;summary=needs work")
     assert "[FAILED_TESTS] -" in reject_no_outputs
 
-    req = asyncio.run(agent.run_task("request_review|src changed"))
+    req = await agent.run_task("request_review|src changed")
     assert req.target == "reviewer"
     assert req.payload == "review_code|src changed"
     assert req.reason == "coder_request_review"
 
-    nl = asyncio.run(agent.run_task("foo.py isimli bir dosyaya 'hello' yaz"))
+    nl = await agent.run_task("foo.py isimli bir dosyaya 'hello' yaz")
     assert nl == "tool:write_file:foo.py|hello"
 
-    fallback = asyncio.run(agent.run_task("unknown command"))
+    fallback = await agent.run_task("unknown command")
     assert fallback == "[LEGACY_FALLBACK] coder_unhandled task=unknown command"
 
     assert len(agent.events.messages) >= 1
     assert all(role == "coder" for role, _ in agent.events.messages)
 
 
-def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
-    agent = asyncio.run(_new_runtime_agent(coder_module.CoderAgent))
+@pytest.mark.asyncio
+async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
+    agent = await _new_runtime_agent(coder_module.CoderAgent)
 
     dynamic_fail = "D" * 1200
     regression_fail = "R" * 1200
@@ -289,7 +291,7 @@ def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
         f"regression_test_output={regression_fail}"
     )
 
-    result = asyncio.run(agent.run_task(conflicting_feedback))
+    result = await agent.run_task(conflicting_feedback)
 
     assert result.startswith("[CODER:REWORK_REQUIRED]")
     assert "son karar reject" in result
