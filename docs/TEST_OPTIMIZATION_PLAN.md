@@ -1,6 +1,6 @@
-# Test ve Coverage Yükseltme Planı (Sidar)
+# Test ve Kalite Koruma Planı (Sidar)
 
-Bu belge, mevcut coverage seviyesinden kalite geçidini güvenli şekilde geçecek bir seviyeye ilerlemek için **modül bazlı ve risk odaklı** bir yol haritası sunar.
+Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliştirmelerde regresyonu önlemek için **modül bazlı ve risk odaklı** bir yol haritası sunar.
 
 > Not: Büyük projelerde %100 line coverage hedefi teknik olarak mümkün olsa da, sürdürülebilir kalite için tek metrik değildir. Öncelik; kritik iş akışları + hata patikaları + regresyon riski yüksek noktalar olmalıdır.
 
@@ -60,8 +60,8 @@ Parçalanmayı önleme kuralları (zorunlu):
 
 ## 1) Stratejik Hedefler
 
-1. **Önce kırmızı bölgeyi kaldır**: düşük coverage dosyaları için en azından smoke + hata senaryoları ekle.
-2. **Sonra sarı/turuncu bölgeyi derinleştir**: mevcut testleri edge-case ve exception akışlarıyla tamamla.
+1. **Önce koruma seviyesini sürdür**: yeni/değişen kodda coverage düşüşünü engelleyecek smoke + hata senaryolarını aynı PR içinde tamamla.
+2. **Riskli değişiklikleri derinleştir**: edge-case ve exception akışlarıyla regresyon ihtimali yüksek patikaları güçlendir.
 3. **Dış bağımlılık izolasyonu**: ağ, saat, dosya sistemi, LLM çağrıları deterministik mock/stub ile sabitlenmeli.
 4. **Coverage ajanı + HITL akışı**: Sprint önceliklerine göre Coverage Agent hedef dosyaları analiz edip taslak test üretebilir; bu çıktılar CI’a girmeden önce Reviewer Agent veya insan geliştirici onayından (HITL) geçmelidir.
 5. **Katmanlı test mimarisi**:
