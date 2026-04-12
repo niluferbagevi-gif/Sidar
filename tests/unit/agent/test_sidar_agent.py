@@ -272,7 +272,7 @@ async def test_build_context_todo_len_and_instruction_trim(sidar_agent_factory, 
     _override_cfg(agent, AI_PROVIDER="ollama", LOCAL_INSTRUCTION_MAX_CHARS=20, LOCAL_AGENT_CONTEXT_MAX_CHARS=120)
     agent.code = types.SimpleNamespace(status=lambda: "ok", get_metrics=lambda: {"files_read": 1, "files_written": 1})
     health = create_autospec(SystemHealthManager, instance=True, spec_set=True)
-    health.status.return_value = "ok"
+    health.full_report.return_value = "ok"
     agent.health = health
     github = create_autospec(GitHubManager, instance=True, spec_set=True)
     github.is_available.return_value = False
