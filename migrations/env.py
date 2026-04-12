@@ -5,7 +5,8 @@ from logging.config import fileConfig
 import os
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 config = context.config
@@ -60,11 +61,16 @@ async def run_async_migrations() -> None:
             section["sqlalchemy.url"] = x_database_url
 
         url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
-        connectable = create_async_engine(url, poolclass=pool.NullPool)
+        try:
+            connectable = create_async_engine(url, poolclass=pool.NullPool)
+        except InvalidRequestError:
+            connectable = create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
-        msg = "Alembic online migrations require an AsyncEngine connection."
-        raise TypeError(msg)
+        with connectable.connect() as connection:
+            do_run_migrations(connection)
+        connectable.dispose()
+        return
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
