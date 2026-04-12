@@ -232,7 +232,23 @@ install_python_deps() {
     ok "Python bağımlılıkları kuruldu."
 }
 
-# ── 6. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
+# ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
+install_playwright_browsers() {
+    step "Playwright Tarayıcı Motorları"
+
+    if python -c "import playwright" >/dev/null 2>&1; then
+        info "Chromium ve Firefox motorları kuruluyor..."
+        if python -m playwright install chromium firefox; then
+            ok "Playwright motorları kuruldu (chromium, firefox)."
+        else
+            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install chromium firefox"
+        fi
+    else
+        info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
+    fi
+}
+
+# ── 7. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
 check_pyaudio_wsl2() {
     if [[ "$WSL2" == true ]]; then
         warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
@@ -242,7 +258,7 @@ check_pyaudio_wsl2() {
     fi
 }
 
-# ── 7. Dizinleri oluştur ──────────────────────────────────────────────────────
+# ── 8. Dizinleri oluştur ──────────────────────────────────────────────────────
 create_directories() {
     step "Proje Dizinleri"
     for dir in "${REQUIRED_DIRS[@]}"; do
@@ -251,7 +267,7 @@ create_directories() {
     ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
 }
 
-# ── 8. .env dosyası ───────────────────────────────────────────────────────────
+# ── 9. .env dosyası ───────────────────────────────────────────────────────────
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -307,7 +323,7 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 9. Alembic migrasyonları ─────────────────────────────────────────────────
+# ── 10. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -325,7 +341,7 @@ run_migrations() {
     fi
 }
 
-# ── 10. CUDA bağlantı testi ──────────────────────────────────────────────────
+# ── 11. CUDA bağlantı testi ──────────────────────────────────────────────────
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
@@ -348,7 +364,7 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 11. Özet ─────────────────────────────────────────────────────────────────
+# ── 12. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -401,6 +417,7 @@ main() {
     setup_uv
     setup_python_env
     install_python_deps
+    install_playwright_browsers
     check_pyaudio_wsl2
     create_directories
     setup_env_file
