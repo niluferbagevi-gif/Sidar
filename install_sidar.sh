@@ -377,6 +377,27 @@ PY
         fi
     fi
 
+    # JWT_SECRET_KEY boşsa güçlü rastgele değer üret
+    if grep -q '^JWT_SECRET_KEY=$' "$ENV_FILE"; then
+        GENERATED_JWT_KEY=""
+        if command -v python3 &>/dev/null; then
+            GENERATED_JWT_KEY=$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(64))
+PY
+)
+        elif command -v openssl &>/dev/null; then
+            GENERATED_JWT_KEY=$(openssl rand -base64 64 | tr -d '\n')
+        fi
+
+        if [[ -n "$GENERATED_JWT_KEY" ]]; then
+            sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${GENERATED_JWT_KEY}|" "$ENV_FILE"
+            ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
