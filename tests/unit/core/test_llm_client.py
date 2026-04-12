@@ -914,13 +914,16 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_anthropic_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(llm_client, "anthropic", ImportError("anthropic not installed"), raising=False)
     _patch_imports(monkeypatch, {"anthropic": ImportError("anthropic not installed")})
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "anthropic paketi" in msg
 
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Messages:
         def stream(self, **_kw):
             class _CM:
@@ -938,7 +941,6 @@ async def test_anthropic_import_error_and_stream_error(monkeypatch: pytest.Monke
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c2 = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
-    assert await _Messages().stream().__aexit__(None, None, None) is False
     out = await _collect(c2._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
     assert "Anthropic" in out[0]
 
