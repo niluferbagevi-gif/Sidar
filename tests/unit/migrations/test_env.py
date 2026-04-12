@@ -50,9 +50,19 @@ def _import_env_module(monkeypatch, fake_context):
     monkeypatch.setitem(sys.modules, "alembic", alembic_mod)
 
     sqlalchemy_mod = types.ModuleType("sqlalchemy")
-    sqlalchemy_mod.engine_from_config = lambda *args, **kwargs: None
     sqlalchemy_mod.pool = types.SimpleNamespace(NullPool=object)
+
+    async_mod = types.ModuleType("sqlalchemy.ext.asyncio")
+
+    class _FakeAsyncEngine:
+        pass
+
+    async_mod.AsyncEngine = _FakeAsyncEngine
+    async_mod.create_async_engine = lambda *args, **kwargs: _FakeAsyncEngine()
+
     monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_mod)
+    monkeypatch.setitem(sys.modules, "sqlalchemy.ext", types.ModuleType("sqlalchemy.ext"))
+    monkeypatch.setitem(sys.modules, "sqlalchemy.ext.asyncio", async_mod)
 
     env_path = Path("migrations/env.py")
     spec = importlib.util.spec_from_file_location("migrations.env", env_path)
