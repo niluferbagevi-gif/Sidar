@@ -153,6 +153,18 @@ describe("ChatPanel", () => {
     webSocketOptions.onThought("Thought Test");
     expect(store.addTelemetryEvent).toHaveBeenCalledWith("thought", "Thought Test");
 
+    webSocketOptions.onRoomState({ room_id: "ws:test", messages: [] });
+    expect(store.hydrateRoom).toHaveBeenCalledWith({ room_id: "ws:test", messages: [] });
+
+    webSocketOptions.onRoomMessage({ id: "m1", role: "user", content: "test" });
+    expect(store.pushRoomMessage).toHaveBeenCalledWith({ id: "m1", role: "user", content: "test" });
+
+    webSocketOptions.onPresence([{ id: "p1" }]);
+    expect(store.updateParticipants).toHaveBeenCalledWith([{ id: "p1" }]);
+
+    webSocketOptions.onAssistantStart("req-abc");
+    expect(store.startAssistantStream).toHaveBeenCalledWith("req-abc");
+
     webSocketOptions.onRoomEvent({ kind: "room_event", content: "Room Info" });
     expect(store.addTelemetryEvent).toHaveBeenCalledWith("room_event", "Room Info", { kind: "room_event", content: "Room Info" });
 
