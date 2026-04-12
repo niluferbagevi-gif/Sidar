@@ -71,10 +71,12 @@ def fake_llm_response() -> Callable[..., Any]:
         **kwargs: Any,
     ) -> dict[str, Any]:
         mock_tokens = kwargs.pop("mock_tokens", 10)
+        # Diğer kwargs'lar (temperature, stream vb.) gerçek API yanıtına dahil edilmez;
+        # burada da yutularak yanıt şeması gerçek sağlayıcılarla uyumlu tutulur.
+        _ = kwargs
         response: dict[str, Any] = {
             "content": f"mock-response:{prompt[:32]}",
             "usage": {"total_tokens": mock_tokens},
-            "meta": kwargs,
         }
         if mock_tool_calls:
             response["tool_calls"] = mock_tool_calls
