@@ -1,6 +1,9 @@
 #!/bin/bash
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
@@ -46,8 +49,10 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
+  # her çağrıda kesin yüklenmesi garanti edilir.
   # --cov=. yerine sadece --cov kullanıldı. Böylece .coveragerc içindeki source listesi okunacak.
-  local pytest_cmd=(pytest --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_cmd=(pytest -c pyproject.toml --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
