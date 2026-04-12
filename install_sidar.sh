@@ -208,11 +208,30 @@ setup_uv() {
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
 
+build_uv_sync_args() {
+    UV_SYNC_ARGS=(--frozen)
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        UV_SYNC_ARGS+=(--extra all)
+        PLAYWRIGHT_REQUESTED=true
+    fi
+    if [[ "$INSTALL_DEV" == true ]]; then
+        UV_SYNC_ARGS+=(--extra dev)
+    fi
+}
+
 # ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR"
+
+    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulundu — reproducible kurulum için uv sync kullanılacak."
+        build_uv_sync_args
+        uv sync "${UV_SYNC_ARGS[@]}"
+        ok "Python bağımlılıkları uv.lock ile senkronlandı."
+        return
+    fi
 
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         # CUDA major version'ı belirle (örn. 13.2 → cu130)
@@ -417,17 +436,32 @@ PY
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
+    ENV_FILE="$SCRIPT_DIR/.env"
 
     if [[ ! -f "$ALEMBIC_INI" ]]; then
         warn "alembic.ini bulunamadı — migrasyon atlandı."
         return
     fi
 
+    DB_URL=""
+    if [[ -f "$ENV_FILE" ]]; then
+        DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
+    fi
+
     cd "$SCRIPT_DIR"
-    if python -m alembic upgrade head 2>&1; then
-        ok "Alembic migrasyonları tamamlandı."
+    if [[ -n "$DB_URL" ]]; then
+        info "Migrasyon DATABASE_URL (.env) üzerinden çalıştırılıyor."
+        if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
+            ok "Alembic migrasyonları tamamlandı."
+        else
+            warn "Migrasyon başarısız veya kısmen tamamlandı. Log'ları kontrol edin."
+        fi
     else
-        warn "Migrasyon başarısız veya kısmen tamamlandı. Log'ları kontrol edin."
+        if python -m alembic upgrade head 2>&1; then
+            ok "Alembic migrasyonları tamamlandı."
+        else
+            warn "Migrasyon başarısız veya kısmen tamamlandı. Log'ları kontrol edin."
+        fi
     fi
 }
 
@@ -494,6 +528,7 @@ print_summary() {
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
     echo "  python -m alembic upgrade head  — DB migrasyonu"
+    echo "  cd web_ui_react && npm install && npm run build  — React UI derlemesi"
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
@@ -505,8 +540,13 @@ main() {
     banner
     check_prerequisites
     detect_gpu
-    setup_uv
-    setup_python_env
+    if [[ "$USE_CONDA" == true ]]; then
+        setup_python_env
+        setup_uv
+    else
+        setup_uv
+        setup_python_env
+    fi
     install_python_deps
     install_playwright_browsers
     check_pyaudio_wsl2
