@@ -26,6 +26,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 INSTALL_DEV=false
 FORCE_CPU=false
 PLAYWRIGHT_REQUESTED=false
+REACT_UI_STATUS="atlandı"
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
@@ -279,22 +280,25 @@ install_playwright_browsers() {
 
 # ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────
 setup_react_frontend() {
-    step "React Web UI Kurulumu"
+    step "React Web Arayüzü"
 
     REACT_DIR="$SCRIPT_DIR/web_ui_react"
     if [[ ! -d "$REACT_DIR" ]]; then
         info "web_ui_react dizini bulunamadı — frontend kurulumu atlandı."
+        REACT_UI_STATUS="dizin_yok"
         return
     fi
 
     if [[ ! -f "$REACT_DIR/package.json" ]]; then
         info "web_ui_react/package.json bulunamadı — frontend kurulumu atlandı."
+        REACT_UI_STATUS="package_json_yok"
         return
     fi
 
     if ! command -v npm &>/dev/null; then
         warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
         echo "       cd web_ui_react && npm install && npm run build"
+        REACT_UI_STATUS="npm_yok"
         return
     fi
 
@@ -306,6 +310,7 @@ setup_react_frontend() {
         npm run build
     )
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
+    REACT_UI_STATUS="hazır"
 }
 
 # ── 8. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
@@ -481,6 +486,11 @@ print_summary() {
     echo ""
     echo -e "  4️⃣  Web arayüzü ile başlat (http://localhost:7860):"
     echo "       python main.py --quick web"
+    if [[ "$REACT_UI_STATUS" == "hazır" ]]; then
+        echo "       React UI build: tamamlandı (web_ui_react/dist)"
+    else
+        echo "       React UI build: atlandı (${REACT_UI_STATUS})"
+    fi
     echo ""
     echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
     echo "       pytest tests/ -x -q"
@@ -518,8 +528,8 @@ main() {
     install_playwright_browsers
     check_pyaudio_wsl2
     create_directories
-    setup_env_file
     setup_react_frontend
+    setup_env_file
     run_migrations
     verify_torch_cuda
     print_summary
