@@ -1764,7 +1764,7 @@ async def test_normalize_config_defaults_flaky_key_hits_non_upper_continue(monke
     monkeypatch.setattr(sidar_agent, "dir", lambda _obj: [flaky_key], raising=False)
 
     sidar_agent.SidarAgent._normalize_config_defaults(agent)
-    assert True
+    assert not hasattr(agent.cfg, "MIXED")
 
 
 async def test_respond_awaits_coroutine_result_from_try_multi_agent(sidar_agent_factory) -> None:
