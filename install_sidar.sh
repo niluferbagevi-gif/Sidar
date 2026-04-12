@@ -377,12 +377,15 @@ PY
         fi
     fi
 
-    # GPU tespiti varsa .env içinde USE_GPU=true yap
-    if [[ "$GPU_AVAILABLE" == true ]]; then
-        if command -v sed &>/dev/null; then
+    # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
+    if command -v sed &>/dev/null; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
             sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
             sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
-            ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (RTX 30xx Ampere FP16 desteği)"
+            ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
+        else
+            sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            ok ".env: USE_GPU=false (CPU modu / --cpu bayrağı)"
         fi
     fi
 
