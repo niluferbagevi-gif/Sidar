@@ -596,6 +596,31 @@ async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_fact
     assert remediation["remediation_loop"]["status"] == "applied"
 
 
+async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+
+    remediation = {"remediation_loop": {"status": "planned"}}
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=False)
+    disabled = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
+    assert disabled["status"] == "disabled"
+
+    remediation = {"remediation_loop": {"status": "failed"}}
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    skipped = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
+    assert skipped["status"] == "skipped"
+
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "needs_human_approval": True,
+            "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
+        }
+    }
+    awaiting = await agent._attempt_autonomous_self_heal(ci_context={}, diagnosis="x", remediation=remediation)
+    assert awaiting["status"] == "awaiting_hitl"
+    assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
+
+
 async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     trigger = ExternalTrigger(trigger_id="tid", source="cron", event_name="run", payload={}, meta={})
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(trigger, {"kind": "other"}, None)
@@ -655,6 +680,49 @@ async def test_run_nightly_memory_maintenance_skipped_paths(
     finally:
         lock.release()
 
+
+async def test_run_nightly_memory_maintenance_disabled_and_success_paths(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.initialize = AsyncMock()
+
+    _override_cfg(agent, ENABLE_NIGHTLY_MEMORY_PRUNING=False)
+    disabled = await agent.run_nightly_memory_maintenance()
+    assert disabled["status"] == "disabled"
+
+    frozen_time.tick(delta=7200.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 7200.0
+    _override_cfg(
+        agent,
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        NIGHTLY_MEMORY_IDLE_SECONDS=60,
+        NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=1,
+        NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=2,
+        NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=2,
+    )
+    agent._nightly_maintenance_lock = None
+    agent._append_autonomy_history = AsyncMock()
+
+    entity = AsyncMock()
+    entity.initialize = AsyncMock()
+    entity.purge_expired = AsyncMock(return_value=3)
+    monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: entity)
+
+    agent.memory = types.SimpleNamespace(
+        run_nightly_consolidation=AsyncMock(
+            return_value={"session_ids": ["s1"], "sessions_compacted": 1}
+        )
+    )
+    agent.docs = types.SimpleNamespace(
+        consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 2}
+    )
+    result = await agent.run_nightly_memory_maintenance(force=True, reason="test")
+    assert result["status"] == "completed"
+    assert result["entity_report"]["status"] == "completed"
+    assert result["rag_reports"] == [{"removed_docs": 2}]
 
 async def test_get_autonomy_activity_counts(
     sidar_agent_factory,
