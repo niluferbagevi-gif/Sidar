@@ -694,8 +694,32 @@ async def test_postgresql_marketing_and_coverage_branches() -> None:
         "created_at": "c",
     }
 
-    fake_pg.conn.fetchrow = AsyncMock(side_effect=[campaign_row, campaign_row, asset_row, checklist_row, task_row, finding_row])
-    fake_pg.conn.fetch = AsyncMock(side_effect=[[campaign_row], [asset_row], [checklist_row], [task_row]])
+    async def mock_fetchrow_router(query, *args, **kwargs):
+        if "marketing_campaigns" in query:
+            return campaign_row
+        if "content_assets" in query:
+            return asset_row
+        if "operation_checklists" in query:
+            return checklist_row
+        if "coverage_tasks" in query:
+            return task_row
+        if "coverage_findings" in query:
+            return finding_row
+        return None
+
+    async def mock_fetch_router(query, *args, **kwargs):
+        if "FROM marketing_campaigns" in query:
+            return [campaign_row]
+        if "FROM content_assets" in query:
+            return [asset_row]
+        if "FROM operation_checklists" in query:
+            return [checklist_row]
+        if "FROM coverage_tasks" in query:
+            return [task_row]
+        return []
+
+    fake_pg.conn.fetchrow = AsyncMock(side_effect=mock_fetchrow_router)
+    fake_pg.conn.fetch = AsyncMock(side_effect=mock_fetch_router)
 
     created = await db.upsert_marketing_campaign(tenant_id="t1", name="Launch", status="ACTIVE")
     assert created.id == 10
