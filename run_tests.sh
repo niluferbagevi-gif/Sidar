@@ -73,7 +73,12 @@ run_pytest_coverage_report() {
   "${pytest_cmd[@]}"
   BACKEND_EXIT_CODE=$?
 
-  # xdist zaten otomatik combine yaptığı için manuel coverage combine kaldırıldı.
+  # xdist worker crash durumlarında pytest 0 döndürse bile .coverage üretilemeyebilir.
+  # Bu fail-safe, sessiz coverage kaybını quality gate başarısı gibi görünmeden yakalar.
+  if [ ! -f ".coverage" ] && [ "${BACKEND_EXIT_CODE}" -eq 0 ]; then
+    echo "⚠️ Uyarı: Testler başarılı görünüyor ancak .coverage dosyası üretilemedi. xdist worker'ları crash olmuş olabilir."
+    BACKEND_EXIT_CODE=1
+  fi
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
