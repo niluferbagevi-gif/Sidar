@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 import importlib.util
@@ -102,6 +103,7 @@ def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) 
 async def _cache_put(redis, manager: llm_client._SemanticCacheManager, key: str, embedding: list[float], response: str) -> None:
     await redis.hset(key, mapping={"embedding": json.dumps(embedding), "response": response})
     await redis.lpush(manager.index_key, key)
+
 
 @pytest.mark.parametrize(
     ("provider", "key"),
@@ -1977,3 +1979,25 @@ async def test_anthropic_success_without_tracing_span(monkeypatch: pytest.Monkey
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ENABLE_TRACING=False))
     out = await c.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=True)
     assert "final_answer" in out
+
+
+def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list[str]:
+    module = ast.parse(file_path.read_text())
+    names = [
+        node.name
+        for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+    ]
+    seen = set()
+    duplicates = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        else:
+            seen.add(name)
+    return sorted(duplicates)
+
+
+def test_test_module_has_no_duplicate_test_function_names() -> None:
+    duplicates = _list_duplicate_test_function_names_in_file(pathlib.Path(__file__))
+    assert duplicates == []
