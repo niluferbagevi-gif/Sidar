@@ -2124,6 +2124,3 @@ async def test_reload_sets_trace_to_none_when_opentelemetry_missing(monkeypatch:
     monkeypatch.setattr(builtins, "__import__", _blocked_import)
     reloaded = importlib.reload(sidar_agent)
     assert reloaded.trace is None
-
-    monkeypatch.setattr(builtins, "__import__", real_import)
-    importlib.reload(sidar_agent)
