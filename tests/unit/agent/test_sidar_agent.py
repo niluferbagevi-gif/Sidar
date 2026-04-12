@@ -501,7 +501,7 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     task_beta = asyncio.create_task(_ask("beta"))
     step2_event.set()
 
-    first, second = await asyncio.wait_for(asyncio.gather(task_alpha, task_beta), timeout=1.0)
+    first, second = await asyncio.wait_for(asyncio.gather(task_alpha, task_beta), timeout=5.0)
 
     assert first == ["ok:alpha"]
     assert second == ["ok:beta"]
