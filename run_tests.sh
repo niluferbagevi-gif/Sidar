@@ -45,7 +45,7 @@ run_pytest_coverage_report() {
   # --cov=. yerine sadece --cov kullanıldı. Böylece .coveragerc içindeki source listesi okunacak.
   local pytest_cmd=(pytest --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
-  if [ "${ENABLE_GPU_TESTS:-0}" != "1" ]; then
+  if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
   else
