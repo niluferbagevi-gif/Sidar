@@ -1,7 +1,7 @@
 
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: v5.1.0 (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
+Sürüm: v5.2.0 (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -258,7 +258,7 @@ def check_hardware() -> HardwareInfo:
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: v5.1.0
+    Sürüm: v5.2.0
     """
 
     # ─── Genel ───────────────────────────────────────────────

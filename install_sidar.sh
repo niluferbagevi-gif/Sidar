@@ -28,6 +28,12 @@ FORCE_CPU=false
 PLAYWRIGHT_REQUESTED=false
 for arg in "$@"; do
     case "$arg" in
+        --help|-h)
+            echo "Kullanım: $0 [--dev] [--cpu]"
+            echo "  --dev  Geliştirici bağımlılıklarını kur"
+            echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            exit 0
+            ;;
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
         *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu kabul edilir)"; exit 1 ;;
@@ -125,6 +131,14 @@ check_prerequisites() {
     if ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
+    fi
+
+    # Varsayılan AI sağlayıcısı Ollama olduğundan servis erişimini doğrula
+    if command -v curl &>/dev/null && curl -sf http://localhost:11434/api/version &>/dev/null; then
+        ok "Ollama çalışıyor (localhost:11434)."
+    else
+        warn "Ollama bulunamadı veya erişilemiyor (localhost:11434). Kurulum: https://ollama.com"
+        info "Alternatif: .env içinde AI_PROVIDER=gemini veya AI_PROVIDER=openai kullanabilirsiniz."
     fi
 }
 
@@ -417,6 +431,28 @@ PY
         fi
     fi
 
+    # MEMORY_ENCRYPTION_KEY boşsa Fernet anahtarı üret
+    if grep -q '^MEMORY_ENCRYPTION_KEY=$' "$ENV_FILE"; then
+        GENERATED_FERNET_KEY=""
+        if command -v python3 &>/dev/null; then
+            GENERATED_FERNET_KEY=$(python3 - <<'PY'
+try:
+    from cryptography.fernet import Fernet
+    print(Fernet.generate_key().decode())
+except Exception:
+    print("")
+PY
+)
+        fi
+
+        if [[ -n "$GENERATED_FERNET_KEY" ]]; then
+            sed -i "s|^MEMORY_ENCRYPTION_KEY=.*|MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}|" "$ENV_FILE"
+            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
+        else
+            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Gerekirse manuel Fernet anahtarı tanımlayın."
+        fi
+    fi
+
     # GPU tespiti sonucuna göre USE_GPU değerini açıkça ayarla
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -517,7 +553,7 @@ print_summary() {
     echo "       python main.py --quick web"
     echo ""
     echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
-    echo "       pytest tests/ -x -q"
+    echo "       ./run_tests.sh"
     echo ""
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -526,10 +562,12 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
+    echo "  ollama serve              — Ollama servis başlatma"
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
     echo "  python -m alembic upgrade head  — DB migrasyonu"
     echo "  cd web_ui_react && npm install && npm run build  — React UI derlemesi"
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
 }
