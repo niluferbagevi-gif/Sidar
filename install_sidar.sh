@@ -174,6 +174,39 @@ detect_gpu() {
     fi
 }
 
+# ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
+setup_nvidia_docker() {
+    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
+        step "Docker GPU Desteği (nvidia-container-toolkit)"
+        if ! command -v nvidia-ctk &>/dev/null; then
+            warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
+
+            # NVIDIA repolarını ekle ve kur
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+
+            sudo apt-get update
+            sudo apt-get install -y nvidia-container-toolkit
+
+            # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
+            sudo nvidia-ctk runtime configure --runtime=docker
+
+            # WSL2 veya Native Ubuntu için Docker'ı yeniden başlat
+            info "Docker servisi yeniden başlatılıyor..."
+            if command -v systemctl &>/dev/null && systemctl is-active --quiet docker; then
+                sudo systemctl restart docker
+            else
+                sudo service docker restart || true
+            fi
+            ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
+        else
+            ok "nvidia-container-toolkit zaten kurulu."
+        fi
+    fi
+}
+
 # ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
@@ -463,6 +496,25 @@ PY
         fi
     fi
 
+    # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
+    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
+        if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
+            sed -i 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
+        else
+            echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
+        fi
+
+        if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
+            if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
+                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+            fi
+        else
+            echo 'DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
+        fi
+
+        ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
+    fi
+
     # WSL2 üzerinde ses tabanlı özellikler gerekmiyorsa multimodal'i varsayılan kapat
     if [[ "$WSL2" == true ]] && grep -q '^ENABLE_MULTIMODAL=true' "$ENV_FILE"; then
         sed -i 's/^ENABLE_MULTIMODAL=true/ENABLE_MULTIMODAL=false/' "$ENV_FILE"
@@ -593,6 +645,7 @@ main() {
     banner
     check_prerequisites
     detect_gpu
+    setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
         # Conda akışı: environment.yml içindeki uv ile devam et
         setup_python_env
