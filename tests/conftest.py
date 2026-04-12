@@ -140,7 +140,9 @@ def fake_video_stream() -> AsyncMock:
         {"frame_id": 1, "timestamp": 0.0},
         {"frame_id": 2, "timestamp": 0.04},
     ])
-    stream.metadata = AsyncMock(return_value={"fps": 25, "duration_sec": 2})
+    # metadata çoğu stream implementasyonunda property olarak okunur.
+    # Bu yüzden dict ataması yapıp testlerde sessizce AsyncMock zincirlenmesini önlüyoruz.
+    stream.metadata = {"fps": 25, "duration_sec": 2}
     return stream
 
 
@@ -149,7 +151,7 @@ def fake_video_stream_error() -> AsyncMock:
     """Video analiz pipeline'ı için bozuk akış/hata senaryosu."""
     stream = AsyncMock()
     stream.read_frames = AsyncMock(side_effect=RuntimeError("corrupted video stream"))
-    stream.metadata = AsyncMock(return_value={"fps": 0, "duration_sec": 0})
+    stream.metadata = {"fps": 0, "duration_sec": 0}
     return stream
 
 
