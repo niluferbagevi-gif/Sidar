@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import hashlib
+import importlib
 import importlib.util
 import json
 import pathlib
@@ -26,18 +27,6 @@ def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object
             monkeypatch.setitem(sys.modules, name, None)
             continue
         monkeypatch.setitem(sys.modules, name, module)
-
-
-class _GoogleGenaiModuleSpec:
-    Client = object
-
-
-class _GoogleGenaiTypesSpec:
-    GenerateContentConfig = object
-
-
-class _AnthropicModuleSpec:
-    AsyncAnthropic = object
 
 
 class DummyGeminiResponse:
@@ -68,36 +57,26 @@ class DummyGeminiClient:
 
 
 def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, client_cls: type, fake_types: object) -> None:
-    google_mod = types.ModuleType("google")
-    google_genai_mod = types.ModuleType("google.genai")
-    google_genai_types_mod = types.ModuleType("google.genai.types")
-
-    genai_api = MagicMock(spec_set=_GoogleGenaiModuleSpec)
-    genai_api.Client = client_cls
-    types_api = MagicMock(spec_set=_GoogleGenaiTypesSpec)
-    types_api.GenerateContentConfig = getattr(fake_types, "GenerateContentConfig")
-
-    google_mod.genai = genai_api
-    google_genai_mod.types = types_api
-    google_genai_types_mod.GenerateContentConfig = types_api.GenerateContentConfig
-    monkeypatch.setattr(llm_client, "google", google_mod, raising=False)
-    _patch_imports(
-        monkeypatch,
-        {
-            "google": google_mod,
-            "google.genai": google_genai_mod,
-            "google.genai.types": google_genai_types_mod,
-        },
+    try:
+        google_genai_mod = importlib.import_module("google.genai")
+        google_genai_types_mod = importlib.import_module("google.genai.types")
+    except ImportError as exc:
+        pytest.skip(f"google-genai import edilemedi: {exc}")
+    monkeypatch.setattr(google_genai_mod, "Client", client_cls, raising=True)
+    monkeypatch.setattr(
+        google_genai_types_mod,
+        "GenerateContentConfig",
+        getattr(fake_types, "GenerateContentConfig"),
+        raising=True,
     )
 
 
 def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) -> None:
-    anthropic_mod = types.ModuleType("anthropic")
-    anthropic_api = MagicMock(spec_set=_AnthropicModuleSpec)
-    anthropic_api.AsyncAnthropic = async_anthropic_cls
-    anthropic_mod.AsyncAnthropic = anthropic_api.AsyncAnthropic
-    monkeypatch.setattr(llm_client, "anthropic", anthropic_mod, raising=False)
-    _patch_imports(monkeypatch, {"anthropic": anthropic_mod})
+    try:
+        anthropic_mod = importlib.import_module("anthropic")
+    except ImportError as exc:
+        pytest.skip(f"anthropic import edilemedi: {exc}")
+    monkeypatch.setattr(anthropic_mod, "AsyncAnthropic", async_anthropic_cls, raising=True)
 
 
 async def _cache_put(redis, manager: llm_client._SemanticCacheManager, key: str, embedding: list[float], response: str) -> None:
