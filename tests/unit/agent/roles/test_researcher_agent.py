@@ -82,6 +82,15 @@ class AsyncLikeDocStore:
         return _inner()
 
 
+class ErrorDocStore:
+    def __init__(self, *args, **kwargs):
+        self.calls = []
+
+    def search(self, query: str, _filters, mode: str, session_id: str):
+        self.calls.append((query, mode, session_id))
+        raise RuntimeError("storage backend unavailable")
+
+
 @pytest.fixture
 def researcher_module(monkeypatch: pytest.MonkeyPatch):
     config_mod = types.ModuleType("config")
@@ -174,6 +183,28 @@ def test_docs_search_tool_handles_awaitable_result(researcher_module, fake_cfg):
 
     assert result == "async:embeddings:auto:global"
     assert agent.docs.calls == [("embeddings", "auto", "global")]
+
+
+def test_docs_search_tool_returns_timeout_message_on_timeout_error(researcher_module, fake_cfg, monkeypatch):
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=SyncDocStore)
+
+    async def raise_timeout(*_args, **_kwargs):
+        raise TimeoutError
+
+    monkeypatch.setattr(researcher_module.asyncio, "to_thread", raise_timeout)
+
+    result = asyncio.run(agent._tool_docs_search("timeouts are handled"))
+
+    assert result == "Doküman araması zaman aşımına uğradı."
+
+
+def test_docs_search_tool_returns_unavailable_message_on_unexpected_error(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=ErrorDocStore)
+
+    result = asyncio.run(agent._tool_docs_search("unexpected errors are handled"))
+
+    assert result == "Doküman araması şu anda kullanılamıyor: storage backend unavailable"
+    assert agent.docs.calls == [("unexpected errors are handled", "auto", "global")]
 
 
 def test_run_task_routing(researcher_module, fake_cfg):
