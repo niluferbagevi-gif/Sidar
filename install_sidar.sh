@@ -313,7 +313,7 @@ check_pyaudio_wsl2() {
     if [[ "$WSL2" == true ]]; then
         warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
         info "Sesli özellik kullanmayacaksanız .env dosyanıza şunu ekleyin:"
-        echo "       USE_VOICE=false"
+        echo "       ENABLE_MULTIMODAL=false"
         info "Ses desteği istiyorsanız: https://learn.microsoft.com/tr-tr/windows/wsl/tutorials/gui-apps"
     fi
 }
@@ -377,12 +377,36 @@ PY
         fi
     fi
 
-    # GPU tespiti varsa .env içinde USE_GPU=true yap
-    if [[ "$GPU_AVAILABLE" == true ]]; then
-        if command -v sed &>/dev/null; then
+    # JWT_SECRET_KEY boşsa güçlü rastgele değer üret (web JWT auth için kritik)
+    if grep -q '^JWT_SECRET_KEY=$' "$ENV_FILE"; then
+        GENERATED_JWT_KEY=""
+        if command -v python3 &>/dev/null; then
+            GENERATED_JWT_KEY=$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(64))
+PY
+)
+        elif command -v openssl &>/dev/null; then
+            GENERATED_JWT_KEY=$(openssl rand -base64 64 | tr -d '\n')
+        fi
+
+        if [[ -n "$GENERATED_JWT_KEY" ]]; then
+            sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${GENERATED_JWT_KEY}|" "$ENV_FILE"
+            ok ".env: JWT_SECRET_KEY otomatik üretildi."
+        else
+            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
+    # GPU tespiti sonucuna göre USE_GPU değerini açıkça ayarla
+    if command -v sed &>/dev/null; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
             sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
             sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (RTX 30xx Ampere FP16 desteği)"
+        else
+            sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            ok ".env: USE_GPU=false (CPU modu)"
         fi
     fi
 
