@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -46,10 +47,10 @@ async def test_gpu_smoke_success_path_returns_non_empty_response(monkeypatch):
             return True
 
         async def list_models(self):
-            return ["qwen2.5-coder:1.5b"]
+            return [gpu_smoke.MODEL_NAME]
 
         async def chat(self, **kwargs):
-            assert kwargs["model"] == "qwen2.5-coder:1.5b"
+            assert kwargs["model"] == gpu_smoke.MODEL_NAME
             return "GPU Çalışıyor"
 
     monkeypatch.setattr(gpu_smoke, "OllamaClient", _FakeClient)
@@ -57,3 +58,39 @@ async def test_gpu_smoke_success_path_returns_non_empty_response(monkeypatch):
     monkeypatch.setattr(gpu_smoke.shutil, "which", lambda _command: "/usr/bin/mock")
 
     await gpu_smoke.test_real_gpu_inference_smoke()
+
+
+def test_env_int_falls_back_to_default_for_invalid_value(monkeypatch):
+    monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "invalid")
+    assert gpu_smoke._env_int("GPU_STRESS_CONCURRENCY", 4, min_value=1, max_value=16) == 4
+
+
+def test_env_int_clamps_value_to_bounds(monkeypatch):
+    monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "99")
+    assert gpu_smoke._env_int("GPU_STRESS_CONCURRENCY", 4, min_value=1, max_value=16) == 16
+
+
+def test_read_gpu_memory_used_mib_parses_all_devices(monkeypatch):
+    monkeypatch.setattr(gpu_smoke, "is_gpu_available", lambda: True)
+    monkeypatch.setattr(
+        gpu_smoke.subprocess,
+        "check_output",
+        lambda *args, **kwargs: "120\n256\n",
+    )
+    assert gpu_smoke._read_gpu_memory_used_mib() == 376
+
+
+def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
+    monkeypatch.setattr(gpu_smoke, "is_gpu_available", lambda: True)
+
+    def _raise(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(returncode=1, cmd="nvidia-smi")
+
+    monkeypatch.setattr(gpu_smoke.subprocess, "check_output", _raise)
+    assert gpu_smoke._read_gpu_memory_used_mib() is None
+
+
+@pytest.mark.asyncio
+async def test_gpu_stress_skips_when_env_var_not_enabled():
+    with pytest.raises(pytest.skip.Exception, match="RUN_GPU_STRESS=1"):
+        await gpu_smoke.test_real_gpu_inference_stress_vram_and_concurrency()
