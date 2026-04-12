@@ -295,14 +295,13 @@ def test_export_file_error(monkeypatch):
     store = InMemoryStore([{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}])
     exporter = al.DatasetExporter(store)
 
+    # asyncio.to_thread'den doğrudan PermissionError fırlatarak test et.
+    # Not: al.Path (pathlib.Path) sınıf metodunu global olarak patch etmek yerine
+    # to_thread'i patch etmek daha güvenlidir — diğer testleri etkilemez.
     async def fake_to_thread(func, *args, **kwargs):
-        return func(*args, **kwargs)
-
-    def fake_write_text(*_args, **_kwargs):
         raise PermissionError("Erişim engellendi")
 
     monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
-    monkeypatch.setattr(al.Path, "write_text", fake_write_text)
 
     with pytest.raises(PermissionError):
         run(exporter.export("/root/secret.jsonl"))
