@@ -9,6 +9,7 @@ source =
     main
     cli
     gui_launcher
+# Keep omit entries contiguous (no blank lines) to avoid parser edge cases.
 omit =
     */plug_auto_discover*
     */plug_bad_compile*
