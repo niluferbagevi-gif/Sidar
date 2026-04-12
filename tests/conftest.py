@@ -28,6 +28,16 @@ from tests.helpers import make_test_config
 _fakeredis_spec = importlib.util.find_spec("fakeredis")
 fakeredis = importlib.import_module("fakeredis") if _fakeredis_spec is not None else None
 TEST_REDIS_DECODE_RESPONSES = os.getenv("TEST_REDIS_DECODE_RESPONSES", "true").strip().lower() in {"1", "true", "yes", "on"}
+DEFAULT_FREEZEGUN_IGNORE_MODULES = (
+    "transformers",
+    "tiktoken",
+    "pydantic",
+    # LLM ekosisteminde lazy-import zinciri yoğun paketler:
+    "tokenizers",
+    "langchain",
+    "langchain_core",
+    "langchain_community",
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +54,13 @@ def _resolve_db_schema_target_version() -> int | None:
     """Test config'te tanımlıysa hedef şema versiyonunu döndürür; yoksa head kullanır."""
     cfg = make_test_config()
     return cfg.DB_SCHEMA_TARGET_VERSION if hasattr(cfg, "DB_SCHEMA_TARGET_VERSION") else None
+
+
+def _build_freezegun_ignore_modules() -> list[str]:
+    extra_raw = os.getenv("TEST_FREEZEGUN_IGNORE_MODULES", "")
+    extras = [item.strip() for item in extra_raw.split(",") if item.strip()]
+    # Aynı modülün tekrar eklenmesini önleyip deterministik sıra korur.
+    return list(dict.fromkeys([*DEFAULT_FREEZEGUN_IGNORE_MODULES, *extras]))
 
 
 @pytest_asyncio.fixture
@@ -286,10 +303,7 @@ def frozen_time() -> Generator[FrozenDateTimeFactory, None, None]:
     # freezegun, loaded modüllerin attribute'larını gezerken transformers'ın lazy
     # import zincirini tetikleyebiliyor; bu da opsiyonel sentencepiece bağımlılığı
     # yoksa test setup sırasında patlamaya neden oluyor.
-    with freeze_time(
-        "2026-04-01 12:00:00",
-        ignore=["transformers", "tiktoken", "pydantic"],
-    ) as frozen:
+    with freeze_time("2026-04-01 12:00:00", ignore=_build_freezegun_ignore_modules()) as frozen:
         yield frozen
 
 
