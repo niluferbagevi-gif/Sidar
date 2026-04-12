@@ -31,6 +31,12 @@ for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
+        --help|-h)
+            echo "Kullanım: $0 [--dev] [--cpu]"
+            echo "  --dev  Geliştirici bağımlılıklarını kur"
+            echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            exit 0
+            ;;
         *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu kabul edilir)"; exit 1 ;;
     esac
 done
