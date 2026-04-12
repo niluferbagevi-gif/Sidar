@@ -10,7 +10,8 @@ def _import_coder_module(module_name: str):
     module = importlib.import_module(module_name)
     required_attrs = ("CoderAgent", "BaseAgent", "CodeManager", "SecurityManager")
     if not all(hasattr(module, attr) for attr in required_attrs):
-        module = importlib.reload(module)
+        sys.modules.pop(module_name, None)
+        module = importlib.import_module(module_name)
     return module
 
 
@@ -33,7 +34,7 @@ def coder_module(monkeypatch: pytest.MonkeyPatch):
     return _import_coder_module(module_name)
 
 
-def test_import_coder_module_reloads_when_required_attrs_are_missing(monkeypatch):
+def test_import_coder_module_reimports_when_required_attrs_are_missing(monkeypatch):
     module_name = "agent.roles.coder_agent"
     imported = ModuleType(module_name)
     reloaded = ModuleType(module_name)
@@ -42,18 +43,19 @@ def test_import_coder_module_reloads_when_required_attrs_are_missing(monkeypatch
     reloaded.CodeManager = object
     reloaded.SecurityManager = object
 
-    monkeypatch.setattr(importlib, "import_module", lambda _name: imported)
-    calls = []
+    import_calls = []
 
-    def _reload(mod):
-        calls.append(mod)
-        return reloaded
+    def _import(_name):
+        import_calls.append(_name)
+        return imported if len(import_calls) == 1 else reloaded
 
-    monkeypatch.setattr(importlib, "reload", _reload)
+    monkeypatch.setattr(importlib, "import_module", _import)
+    monkeypatch.setitem(sys.modules, module_name, imported)
 
     module = _import_coder_module(module_name)
     assert module is reloaded
-    assert calls == [imported]
+    assert module_name not in sys.modules or sys.modules[module_name] is not imported
+    assert import_calls == [module_name, module_name]
 
 
 class DummyEvents:
