@@ -25,6 +25,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
+PLAYWRIGHT_REQUESTED=false
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
@@ -72,7 +73,10 @@ check_prerequisites() {
         ok "FFmpeg ${FFMPEG_VER:-yüklü}"
     else
         warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
-        if command -v apt-get &>/dev/null; then
+        if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+            info "Kurulum yapılıyor: sudo apt-get update && sudo apt-get install -y ffmpeg"
+            sudo apt-get update && sudo apt-get install -y ffmpeg || warn "FFmpeg otomatik kurulamadı, manuel kurunuz."
+        elif command -v apt-get &>/dev/null; then
             info "Kurulum için: sudo apt-get update && sudo apt-get install -y ffmpeg"
         elif command -v dnf &>/dev/null; then
             info "Kurulum için: sudo dnf install -y ffmpeg ffmpeg-devel"
@@ -115,6 +119,12 @@ check_prerequisites() {
         WSL2=true
     else
         WSL2=false
+    fi
+
+    # Redis (Local Event Bus / cache)
+    if ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
+        warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
+        info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
     fi
 }
 
@@ -222,6 +232,7 @@ install_python_deps() {
         else
             INSTALL_SPEC=(-e ".[all]")
         fi
+        PLAYWRIGHT_REQUESTED=true
 
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
@@ -250,15 +261,19 @@ install_python_deps() {
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
-    if python -c "import playwright" >/dev/null 2>&1; then
-        info "Chromium ve Firefox motorları kuruluyor..."
-        if python -m playwright install chromium firefox; then
-            ok "Playwright motorları kuruldu (chromium, firefox)."
+    if [[ "$INSTALL_DEV" == true || "$PLAYWRIGHT_REQUESTED" == true ]]; then
+        if python -c "import playwright" >/dev/null 2>&1; then
+            info "Chromium ve Firefox motorları kuruluyor..."
+            if python -m playwright install --with-deps chromium firefox; then
+                ok "Playwright motorları kuruldu (chromium, firefox)."
+            else
+                warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
+            fi
         else
-            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install chromium firefox"
+            info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
         fi
     else
-        info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
+        info "Playwright kurulumu bu profil için talep edilmedi — tarayıcı motor kurulumu atlandı."
     fi
 }
 
@@ -332,9 +347,9 @@ setup_env_file() {
     ok ".env dosyası .env.example'dan oluşturuldu."
 
     # Lokal kurulumda Docker hostname yerine localhost kullan
-    if grep -q '^REDIS_URL=redis://redis:6379/0$' "$ENV_FILE"; then
-        sed -i 's|^REDIS_URL=redis://redis:6379/0$|REDIS_URL=redis://localhost:6379/0|' "$ENV_FILE"
-        ok ".env: REDIS_URL lokal kullanım için redis://localhost:6379/0 olarak ayarlandı."
+    if grep -q '^REDIS_URL=redis://redis:6379/0' "$ENV_FILE"; then
+        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$ENV_FILE"
+        ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
     # API_KEY boşsa güçlü rastgele değer üret
@@ -456,6 +471,7 @@ print_summary() {
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
     echo "  python -m alembic upgrade head  — DB migrasyonu"
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
 }
 
@@ -469,10 +485,10 @@ main() {
     setup_python_env
     install_python_deps
     install_playwright_browsers
-    setup_react_frontend
     check_pyaudio_wsl2
     create_directories
     setup_env_file
+    setup_react_frontend
     run_migrations
     verify_torch_cuda
     print_summary
