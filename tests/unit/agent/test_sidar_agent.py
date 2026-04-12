@@ -1,7 +1,7 @@
 import types
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, create_autospec, patch
+from unittest.mock import AsyncMock, Mock, call, create_autospec, patch
 
 import pytest
 
@@ -444,23 +444,18 @@ async def test_respond_handles_empty_and_success(sidar_agent_factory, monkeypatc
     agent.initialize = AsyncMock()
     agent.mark_activity = lambda *_a, **_k: None
 
-    added = []
-
-    async def _memory_add(role, content):
-        added.append((role, content))
-
-    async def _multi(prompt):
-        return f"ok:{prompt}"
-
-    agent._memory_add = _memory_add
-    agent._try_multi_agent = _multi
+    supervisor = AsyncMock()
+    supervisor.run_task.side_effect = lambda prompt: f"ok:{prompt}"
+    agent._supervisor = supervisor
+    memory = AsyncMock()
+    agent.memory = memory
 
     empty = list(await _collect_stream(agent.respond("   ")))
     assert "Boş girdi" in empty[0]
 
     ok = list(await _collect_stream(agent.respond("hello")))
     assert ok == ["ok:hello"]
-    assert added == [("user", "hello"), ("assistant", "ok:hello")]
+    memory.add.assert_has_awaits([call("user", "hello"), call("assistant", "ok:hello")])
 
 
 async def test_concurrent_respond(sidar_agent_factory) -> None:
@@ -475,7 +470,7 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     step1_event = asyncio.Event()
     step2_event = asyncio.Event()
 
-    async def _multi(prompt):
+    async def _run_task(prompt):
         nonlocal active_multi, max_active_multi
         active_multi += 1
         max_active_multi = max(max_active_multi, active_multi)
@@ -490,8 +485,11 @@ async def test_concurrent_respond(sidar_agent_factory) -> None:
     async def _memory_add(role, content):
         memory_events.append((role, content))
 
-    agent._try_multi_agent = _multi
-    agent._memory_add = _memory_add
+    supervisor = AsyncMock()
+    supervisor.run_task.side_effect = _run_task
+    agent._supervisor = supervisor
+    agent.memory = AsyncMock()
+    agent.memory.add.side_effect = _memory_add
 
     async def _ask(prompt: str) -> list[str]:
         return list(await _collect_stream(agent.respond(prompt)))
@@ -1050,23 +1048,28 @@ async def test_try_multi_agent_triggers_reload_if_module_corrupted(
 
     from agent.core import supervisor as supervisor_mod
 
-    corrupted_role = Mock()
-    corrupted_role.__module__ = "tests.stub.roles"
-    monkeypatch.setattr(supervisor_mod, "ResearcherAgent", corrupted_role, raising=False)
+    original_researcher = getattr(supervisor_mod, "ResearcherAgent", None)
 
-    reload_mock = Mock(return_value=supervisor_mod)
-    monkeypatch.setattr(sidar_agent.importlib, "reload", reload_mock)
+    with monkeypatch.context() as scoped_monkeypatch:
+        corrupted_role = Mock()
+        corrupted_role.__module__ = "tests.stub.roles"
+        scoped_monkeypatch.setattr(supervisor_mod, "ResearcherAgent", corrupted_role, raising=False)
 
-    supervisor_cls = Mock()
-    supervisor_instance = AsyncMock()
-    supervisor_instance.run_task.return_value = "ok:reloaded"
-    supervisor_cls.return_value = supervisor_instance
-    monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
+        reload_mock = Mock(return_value=supervisor_mod)
+        scoped_monkeypatch.setattr(sidar_agent.importlib, "reload", reload_mock)
 
-    result = await agent._try_multi_agent("hello")
+        supervisor_cls = Mock()
+        supervisor_instance = AsyncMock()
+        supervisor_instance.run_task.return_value = "ok:reloaded"
+        supervisor_cls.return_value = supervisor_instance
+        scoped_monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
 
-    assert result == "ok:reloaded"
-    reload_mock.assert_called_once_with(supervisor_mod)
+        result = await agent._try_multi_agent("hello")
+
+        assert result == "ok:reloaded"
+        reload_mock.assert_called_once_with(supervisor_mod)
+
+    assert getattr(supervisor_mod, "ResearcherAgent", None) is original_researcher
 
 
 async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
