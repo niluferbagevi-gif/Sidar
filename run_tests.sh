@@ -6,7 +6,17 @@ cd "${SCRIPT_DIR}"
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
+DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
+from configparser import ConfigParser
+from pathlib import Path
+
+cfg = ConfigParser()
+cfg.read(Path(".coveragerc"))
+print(cfg.get("report", "fail_under", fallback="90"))
+PY
+)"
+
+COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
@@ -51,8 +61,9 @@ run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
   # her çağrıda kesin yüklenmesi garanti edilir.
-  # --cov=. yerine sadece --cov kullanıldı. Böylece .coveragerc içindeki source listesi okunacak.
-  local pytest_cmd=(pytest -c pyproject.toml --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
+  # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
+  local pytest_cmd=(pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
