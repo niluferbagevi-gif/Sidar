@@ -536,7 +536,11 @@ async def test_respond_memory_failure_graceful(
     assert error_msg in str(warning_mock.call_args.args[1])
 
 
-async def test_append_autonomy_history_caps_to_50(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_append_autonomy_history_caps_to_50(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     base = sidar_agent.time.time()
     agent._autonomy_history = [{"i": i, "timestamp": base - (60 - i)} for i in range(60)]
@@ -742,7 +746,10 @@ async def test_get_autonomy_activity_counts(
     assert [item["trigger_id"] for item in activity["items"]] == ["a", "b"]
 
 
-async def test_get_autonomy_activity_handles_limit_edge_cases(sidar_agent_factory) -> None:
+async def test_get_autonomy_activity_handles_limit_edge_cases(
+    sidar_agent_factory,
+    frozen_time,
+) -> None:
     """limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
     agent = sidar_agent_factory()
     agent._ensure_autonomy_runtime_state = lambda: None
