@@ -550,20 +550,26 @@ async def test_append_autonomy_history_caps_to_50(
     assert agent._autonomy_history[-1]["i"] == 999
 
 
-async def test_collect_and_build_self_heal_plan(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_collect_and_build_self_heal_plan(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
     agent = sidar_agent_factory()
     reads = {}
-    code = Mock()
-    code.read_file.side_effect = lambda path, _safe: (
-        reads.__setitem__(path, True) or (not path.startswith("x"), f"C:{path}")
-    )
+
+    def _read_file(path: str, _safe: bool) -> tuple[bool, str]:
+        reads[path] = True
+        return (not path.startswith("x"), f"C:{path}")
+
+    fake_coverage_code_manager.read_file = Mock(side_effect=_read_file)
     async def _chat_side_effect(**kwargs):
         return {"raw": kwargs["messages"][0]["content"]}
 
     llm = AsyncMock()
     llm.chat.side_effect = _chat_side_effect
 
-    agent.code = code
+    agent.code = fake_coverage_code_manager
     agent.llm = llm
     _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_MAX_PATCHES=2)
     monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
