@@ -98,9 +98,7 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
     FRONTEND_EXIT_CODE=1
   else
     echo "🚀 Frontend (React) Testleri Başlıyor..."
-    pushd web_ui_react > /dev/null || FRONTEND_EXIT_CODE=1
-
-    if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
+    if pushd web_ui_react > /dev/null; then
       # Yerel ortamda yavaşlığı önlemek için CI değişkenine göre davran.
       if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
         echo "ℹ️ CI ortamı tespit edildi, 'npm ci' çalıştırılıyor..."
@@ -122,6 +120,8 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
       done
 
       popd > /dev/null || true
+    else
+      FRONTEND_EXIT_CODE=1
     fi
   fi
 elif [ -d "web_ui_react" ]; then
