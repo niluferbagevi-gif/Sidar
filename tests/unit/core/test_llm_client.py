@@ -569,6 +569,21 @@ async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) ->
 
 
 @pytest.mark.asyncio
+async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) -> None:
+    client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434"))
+    respx_mock_router.post("http://localhost:11434/api/chat").mock(
+        return_value=httpx.Response(400, json={"error": "context length exceeded"})
+    )
+
+    with pytest.raises(llm_client.LLMAPIError, match="Ollama isteği başarısız") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "ollama"
+    assert exc.value.status_code == 400
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_openai_stream_parser(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
@@ -710,6 +725,29 @@ async def test_anthropic_context_limit_error_is_non_retryable(monkeypatch: pytes
     assert exc.value.status_code == 413
     assert exc.value.retryable is False
     assert "context length exceeded" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_gemini_context_limit_error_is_non_retryable(mock_config) -> None:
+    class _GeminiContextError(Exception):
+        def __init__(self):
+            super().__init__("context length exceeded")
+            self.status_code = 400
+
+    async def _operation():
+        raise _GeminiContextError()
+
+    with pytest.raises(llm_client.LLMAPIError, match="context length exceeded") as exc:
+        await llm_client._retry_with_backoff(
+            "gemini",
+            _operation,
+            config=mock_config(LLM_MAX_RETRIES=0),
+            retry_hint="Gemini yanıtı alınamadı",
+        )
+
+    assert exc.value.provider == "gemini"
+    assert exc.value.status_code == 400
+    assert exc.value.retryable is False
 
 
 @pytest.mark.asyncio
