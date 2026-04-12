@@ -83,6 +83,20 @@ check_prerequisites() {
         fi
     fi
 
+    # Docker / Docker Compose (özet komutları için önerilir)
+    if command -v docker &>/dev/null; then
+        ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+        if docker compose version &>/dev/null; then
+            ok "Docker Compose eklentisi mevcut."
+        elif command -v docker-compose &>/dev/null; then
+            ok "docker-compose (standalone) mevcut."
+        else
+            warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
+        fi
+    else
+        warn "Docker bulunamadı. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
+    fi
+
     # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
     if command -v python3 &>/dev/null; then
         PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
