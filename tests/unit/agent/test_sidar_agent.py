@@ -9,6 +9,10 @@ pytestmark = pytest.mark.asyncio
 
 from agent.core.contracts import ExternalTrigger
 from managers.code_manager import CodeManager
+from managers.github_manager import GitHubManager
+from managers.package_info import PackageInfoManager
+from managers.system_health import SystemHealthManager
+from managers.web_search import WebSearchManager
 from core.llm_client import BaseLLMClient
 from tests.helpers import collect_async_chunks as _collect_stream
 import agent.sidar_agent as sidar_agent
@@ -267,10 +271,20 @@ async def test_build_context_todo_len_and_instruction_trim(sidar_agent_factory, 
     agent = sidar_agent_factory()
     _override_cfg(agent, AI_PROVIDER="ollama", LOCAL_INSTRUCTION_MAX_CHARS=20, LOCAL_AGENT_CONTEXT_MAX_CHARS=120)
     agent.code = types.SimpleNamespace(status=lambda: "ok", get_metrics=lambda: {"files_read": 1, "files_written": 1})
-    agent.health = types.SimpleNamespace(status=lambda: "ok")
-    agent.github = types.SimpleNamespace(is_available=lambda: False, status=lambda: "no")
-    agent.web = types.SimpleNamespace(status=lambda: "ok", is_available=lambda: True)
-    agent.pkg = types.SimpleNamespace(status=lambda: "ok")
+    health = create_autospec(SystemHealthManager, instance=True, spec_set=True)
+    health.status.return_value = "ok"
+    agent.health = health
+    github = create_autospec(GitHubManager, instance=True, spec_set=True)
+    github.is_available.return_value = False
+    github.status.return_value = "no"
+    agent.github = github
+    web = create_autospec(WebSearchManager, instance=True, spec_set=True)
+    web.status.return_value = "ok"
+    web.is_available.return_value = True
+    agent.web = web
+    pkg = create_autospec(PackageInfoManager, instance=True, spec_set=True)
+    pkg.status.return_value = "ok"
+    agent.pkg = pkg
     agent.docs = types.SimpleNamespace(status=lambda: "ok")
     agent.memory = types.SimpleNamespace(get_last_file=lambda: "")
 
@@ -390,11 +404,19 @@ async def test_status_renders_all_sections(sidar_agent_factory, monkeypatch: pyt
     agent.memory = memory
     agent._autonomy_history = [{"id": 1, "timestamp": sidar_agent.time.time()}]
     agent._ensure_autonomy_runtime_state = lambda: None
-    agent.github = types.SimpleNamespace(status=lambda: "github")
-    agent.web = types.SimpleNamespace(status=lambda: "web")
-    agent.pkg = types.SimpleNamespace(status=lambda: "pkg")
+    github = create_autospec(GitHubManager, instance=True, spec_set=True)
+    github.status.return_value = "github"
+    agent.github = github
+    web = create_autospec(WebSearchManager, instance=True, spec_set=True)
+    web.status.return_value = "web"
+    agent.web = web
+    pkg = create_autospec(PackageInfoManager, instance=True, spec_set=True)
+    pkg.status.return_value = "pkg"
+    agent.pkg = pkg
     agent.docs = types.SimpleNamespace(status=lambda: "docs")
-    agent.health = types.SimpleNamespace(full_report=lambda: "health")
+    health = create_autospec(SystemHealthManager, instance=True, spec_set=True)
+    health.full_report.return_value = "health"
+    agent.health = health
     text = agent.status()
     assert "SidarAgent" in text
     assert "github" in text and "web" in text and "pkg" in text and "docs" in text and "health" in text
@@ -1764,7 +1786,7 @@ async def test_normalize_config_defaults_flaky_key_hits_non_upper_continue(monke
     monkeypatch.setattr(sidar_agent, "dir", lambda _obj: [flaky_key], raising=False)
 
     sidar_agent.SidarAgent._normalize_config_defaults(agent)
-    assert True
+    assert not hasattr(agent.cfg, "MIXED")
 
 
 async def test_respond_awaits_coroutine_result_from_try_multi_agent(sidar_agent_factory) -> None:
