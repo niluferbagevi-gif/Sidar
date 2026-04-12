@@ -42,12 +42,14 @@ open_artifact() {
     return 0
   fi
 
-  if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$target" >/dev/null 2>&1 &
-  elif command -v wslview >/dev/null 2>&1; then
+  # WSL2 öncelikli kontroller
+  if [ -n "${WSL_DISTRO_NAME:-}" ] && command -v wslview >/dev/null 2>&1; then
     wslview "$target" >/dev/null 2>&1 &
-  elif command -v explorer.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+  elif [ -n "${WSL_DISTRO_NAME:-}" ] && command -v explorer.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
     explorer.exe "$(wslpath -w "$target")" >/dev/null 2>&1 &
+  # Standart Linux/macOS fallback'leri
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$target" >/dev/null 2>&1 &
   elif command -v open >/dev/null 2>&1; then
     open "$target" >/dev/null 2>&1 &
   elif command -v start >/dev/null 2>&1; then
