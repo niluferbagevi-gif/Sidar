@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TenantAdminPanel } from "./TenantAdminPanel.jsx";
 
@@ -29,7 +29,6 @@ describe("TenantAdminPanel", () => {
     expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(initialCards);
   });
 
-  // GÜNCELLENEN TEST: Her iki toggle (değiştirme) yönünü de test eder
   it("toggles the tenant status label in both directions (active <-> paused)", async () => {
     const user = userEvent.setup();
     render(<TenantAdminPanel />);
@@ -49,5 +48,25 @@ describe("TenantAdminPanel", () => {
 
     // Tıkladığımız tenant yeniden aktif olduğu için "Duraklat" butonlarının sayısı da doğru şekilde güncellenmiş olmalı.
     expect(screen.getAllByRole("button", { name: "Duraklat" })).toHaveLength(2);
+  });
+
+  it("new tenant gets Starter plan and quota of 5 by default", async () => {
+    const user = userEvent.setup();
+    render(<TenantAdminPanel />);
+
+    await user.type(screen.getByLabelText("Yeni tenant adı"), "Test Firma");
+    await user.click(screen.getByRole("button", { name: "Tenant Ekle" }));
+
+    const newTenantCard = screen.getByRole("heading", { name: "Test Firma" }).closest(".tenant-card");
+    expect(newTenantCard).not.toBeNull();
+    expect(within(newTenantCard).getByText("Plan: Starter")).toBeInTheDocument();
+    expect(within(newTenantCard).getByText("Ajan kotası: 5")).toBeInTheDocument();
+  });
+
+  it("shows Aktif and Duraklatıldı status labels correctly", () => {
+    render(<TenantAdminPanel />);
+
+    expect(screen.getAllByText("Aktif")).toHaveLength(2);
+    expect(screen.getAllByText("Duraklatıldı")).toHaveLength(1);
   });
 });
