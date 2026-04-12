@@ -23,7 +23,7 @@ fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
-INSTALL_DEV=false
+INSTALL_DEV=true
 FORCE_CPU=false
 PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
