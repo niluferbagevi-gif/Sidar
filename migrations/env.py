@@ -5,8 +5,16 @@ from logging.config import fileConfig
 import os
 
 from alembic import context
-from sqlalchemy import create_engine, pool
-from sqlalchemy.exc import InvalidRequestError
+from sqlalchemy import pool
+try:
+    from sqlalchemy import create_engine
+except ImportError:  # pragma: no cover - only for minimal test doubles
+    create_engine = None
+try:
+    from sqlalchemy.exc import InvalidRequestError
+except Exception:  # pragma: no cover - only for minimal test doubles
+    class InvalidRequestError(Exception):
+        pass
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 config = context.config
@@ -64,6 +72,8 @@ async def run_async_migrations() -> None:
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
         except InvalidRequestError:
+            if create_engine is None:
+                raise
             connectable = create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
