@@ -133,6 +133,14 @@ check_prerequisites() {
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
     fi
+
+    # Ollama (varsayılan AI provider)
+    if curl -sf http://localhost:11434/api/version &>/dev/null; then
+        ok "Ollama çalışıyor."
+    else
+        warn "Ollama bulunamadı (localhost:11434). Kurmak için: https://ollama.com"
+        info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
+    fi
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
