@@ -505,8 +505,15 @@ main() {
     banner
     check_prerequisites
     detect_gpu
-    setup_uv
-    setup_python_env
+    if [[ "$USE_CONDA" == true ]]; then
+        # Conda akışı: environment.yml içindeki uv ile devam et
+        setup_python_env
+        setup_uv
+    else
+        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
+        setup_uv
+        setup_python_env
+    fi
     install_python_deps
     install_playwright_browsers
     check_pyaudio_wsl2
