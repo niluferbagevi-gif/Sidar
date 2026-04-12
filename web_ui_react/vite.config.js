@@ -22,6 +22,27 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          const modulePath = id.split("node_modules/")[1];
+          if (!modulePath) {
+            return "vendor";
+          }
+
+          const parts = modulePath.split("/");
+          if (parts[0]?.startsWith("@") && parts.length > 1) {
+            return `${parts[0]}/${parts[1]}`;
+          }
+
+          return parts[0] || "vendor";
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",
