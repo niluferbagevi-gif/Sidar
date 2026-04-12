@@ -1,6 +1,7 @@
 import importlib
 import sys
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, create_autospec
 
 import pytest
 
@@ -63,59 +64,35 @@ class DummyEvents:
         self.messages.append((role, message))
 
 
-class DummyCodeManager:
-    def __init__(self, *_args, **_kwargs):
-        self.calls = []
-
-    def read_file(self, path):
-        self.calls.append(("read_file", path))
-        return True, f"read:{path}"
-
-    def write_file(self, path, content):
-        self.calls.append(("write_file", path, content))
-        return True, f"write:{path}:{content}"
-
-    def patch_file(self, path, target, replacement):
-        self.calls.append(("patch_file", path, target, replacement))
-        return True, f"patch:{path}:{target}->{replacement}"
-
-    def execute_code(self, command):
-        self.calls.append(("execute_code", command))
-        return True, f"exec:{command}"
-
-    def list_directory(self, path):
-        self.calls.append(("list_directory", path))
-        return True, f"list:{path}"
-
-    def glob_search(self, pattern, base):
-        self.calls.append(("glob_search", pattern, base))
-        return True, f"glob:{pattern}:{base}"
-
-    def grep_files(self, pattern, path, file_glob, context_lines):
-        self.calls.append(("grep_files", pattern, path, file_glob, context_lines))
-        return True, f"grep:{pattern}:{path}:{file_glob}:{context_lines}"
-
-    def audit_project(self, path):
-        self.calls.append(("audit_project", path))
-        return f"audit:{path}"
+def _build_code_manager_mock(code_manager_cls):
+    code_manager = create_autospec(code_manager_cls, instance=True, spec_set=True)
+    code_manager.read_file.side_effect = lambda path: (True, f"read:{path}")
+    code_manager.write_file.side_effect = lambda path, content: (True, f"write:{path}:{content}")
+    code_manager.patch_file.side_effect = lambda path, target, replacement: (
+        True,
+        f"patch:{path}:{target}->{replacement}",
+    )
+    code_manager.execute_code.side_effect = lambda command: (True, f"exec:{command}")
+    code_manager.list_directory.side_effect = lambda path: (True, f"list:{path}")
+    code_manager.glob_search.side_effect = lambda pattern, base: (True, f"glob:{pattern}:{base}")
+    code_manager.grep_files.side_effect = lambda pattern, path, file_glob, context_lines: (
+        True,
+        f"grep:{pattern}:{path}:{file_glob}:{context_lines}",
+    )
+    code_manager.audit_project.side_effect = lambda path: f"audit:{path}"
+    return code_manager
 
 
-class DummyPkgManager:
-    def __init__(self, *_args, **_kwargs):
-        self.calls = []
-
-    async def pypi_info(self, package_name):
-        self.calls.append(package_name)
-        return True, f"pkg:{package_name}"
+def _build_pkg_manager_mock(pkg_manager_cls):
+    pkg_manager = create_autospec(pkg_manager_cls, instance=True, spec_set=True)
+    pkg_manager.pypi_info = AsyncMock(side_effect=lambda package_name: (True, f"pkg:{package_name}"))
+    return pkg_manager
 
 
-class DummyTodoManager:
-    def __init__(self, *_args, **_kwargs):
-        self.calls = []
-
-    def scan_project_todos(self, directory, _filters):
-        self.calls.append((directory, _filters))
-        return f"todos:{directory}"
+def _build_todo_manager_mock(todo_manager_cls):
+    todo_manager = create_autospec(todo_manager_cls, instance=True, spec_set=True)
+    todo_manager.scan_project_todos.side_effect = lambda directory, _filters: f"todos:{directory}"
+    return todo_manager
 
 
 def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
@@ -132,9 +109,12 @@ def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
 
     monkeypatch.setattr(coder_module.BaseAgent, "__init__", fake_base_init)
     monkeypatch.setattr(coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level))
-    monkeypatch.setattr(coder_module, "CodeManager", DummyCodeManager)
-    monkeypatch.setattr(coder_module, "PackageInfoManager", DummyPkgManager)
-    monkeypatch.setattr(coder_module, "TodoManager", DummyTodoManager)
+    code_manager_mock = _build_code_manager_mock(coder_module.CodeManager)
+    pkg_manager_mock = _build_pkg_manager_mock(coder_module.PackageInfoManager)
+    todo_manager_mock = _build_todo_manager_mock(coder_module.TodoManager)
+    monkeypatch.setattr(coder_module, "CodeManager", lambda *_args, **_kwargs: code_manager_mock)
+    monkeypatch.setattr(coder_module, "PackageInfoManager", lambda *_args, **_kwargs: pkg_manager_mock)
+    monkeypatch.setattr(coder_module, "TodoManager", lambda *_args, **_kwargs: todo_manager_mock)
 
     events = DummyEvents()
     monkeypatch.setattr(coder_module, "get_agent_event_bus", lambda: events)
@@ -187,20 +167,21 @@ def test_parse_qa_feedback_variants(monkeypatch, coder_module):
     assert "note without equals" not in parsed_with_noise
 
 
-async def _new_runtime_agent(coder_agent_class):
+async def _new_runtime_agent(coder_module):
+    coder_agent_class = coder_module.CoderAgent
     agent = coder_agent_class.__new__(coder_agent_class)
     agent.cfg = SimpleNamespace(BASE_DIR="/tmp/base")
     agent.events = DummyEvents()
-    agent.code = DummyCodeManager()
-    agent.pkg = DummyPkgManager()
-    agent.todo = DummyTodoManager()
+    agent.code = _build_code_manager_mock(coder_module.CodeManager)
+    agent.pkg = _build_pkg_manager_mock(coder_module.PackageInfoManager)
+    agent.todo = _build_todo_manager_mock(coder_module.TodoManager)
     agent.role_name = "coder"
     return agent
 
 
 @pytest.mark.asyncio
 async def test_tool_methods_are_routed_correctly(coder_module):
-    agent = await _new_runtime_agent(coder_module.CoderAgent)
+    agent = await _new_runtime_agent(coder_module)
 
     assert await agent._tool_read_file("a.py") == "read:a.py"
     assert "Kullanım" in await agent._tool_write_file("only-path")
@@ -227,7 +208,7 @@ async def test_tool_methods_are_routed_correctly(coder_module):
 
 @pytest.mark.asyncio
 async def test_run_task_paths(monkeypatch, coder_module):
-    agent = await _new_runtime_agent(coder_module.CoderAgent)
+    agent = await _new_runtime_agent(coder_module)
 
     async def fake_call_tool(name, arg):
         return f"tool:{name}:{arg}"
@@ -278,7 +259,7 @@ async def test_run_task_paths(monkeypatch, coder_module):
 
 @pytest.mark.asyncio
 async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
-    agent = await _new_runtime_agent(coder_module.CoderAgent)
+    agent = await _new_runtime_agent(coder_module)
 
     dynamic_fail = "D" * 1200
     regression_fail = "R" * 1200
