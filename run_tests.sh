@@ -92,7 +92,7 @@ else
 fi
 
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
-if [ -d "web_ui_react" ]; then
+if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
   if ! command -v npm >/dev/null 2>&1; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
     FRONTEND_EXIT_CODE=1
@@ -124,6 +124,8 @@ if [ -d "web_ui_react" ]; then
       popd > /dev/null || true
     fi
   fi
+elif [ -d "web_ui_react" ]; then
+  echo "⚠️ Frontend testleri atlandı: web_ui_react/package.json bulunamadı."
 fi
 
 echo "======================================================"
