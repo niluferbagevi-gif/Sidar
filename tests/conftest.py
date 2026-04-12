@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
-from filelock import FileLock
 import pytest
 import pytest_asyncio
 from freezegun import freeze_time
@@ -239,18 +238,15 @@ async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
 
 
 @pytest.fixture(scope="session")
-def pg_container(tmp_path_factory: pytest.TempPathFactory) -> Generator[PostgresContainer, None, None]:
-    """Tüm xdist worker'ları için PostgreSQL container başlangıcını senkronize eder."""
-    lock_file = tmp_path_factory.getbasetemp().parent / "pg_container.lock"
-
-    with FileLock(str(lock_file)):
-        try:
-            with PostgresContainer("postgres:16-alpine") as container:
-                yield container
-        except Exception as exc:
-            if os.getenv("CI"):
-                pytest.fail(f"CI ortamında PostgreSQL container zorunludur! Başlatılamadı: {exc}")
-            pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
+def pg_container() -> Generator[PostgresContainer, None, None]:
+    """Her xdist worker için bağımsız PostgreSQL container başlatır."""
+    try:
+        with PostgresContainer("postgres:16-alpine") as container:
+            yield container
+    except Exception as exc:
+        if os.getenv("CI"):
+            pytest.fail(f"CI ortamında PostgreSQL container zorunludur! Başlatılamadı: {exc}")
+        pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
