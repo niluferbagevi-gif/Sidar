@@ -434,17 +434,34 @@ PY
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
+    ENV_FILE="$SCRIPT_DIR/.env"
 
     if [[ ! -f "$ALEMBIC_INI" ]]; then
         warn "alembic.ini bulunamadı — migrasyon atlandı."
         return
     fi
 
+    DB_URL=""
+    if [[ -f "$ENV_FILE" ]]; then
+        DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+    fi
+
     cd "$SCRIPT_DIR"
-    if python -m alembic upgrade head 2>&1; then
-        ok "Alembic migrasyonları tamamlandı."
+
+    if [[ -n "$DB_URL" ]]; then
+        info "DATABASE_URL: $DB_URL"
+        if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
+            ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
+        else
+            warn "Migrasyon başarısız. Log'ları kontrol edin."
+        fi
     else
-        warn "Migrasyon başarısız veya kısmen tamamlandı. Log'ları kontrol edin."
+        info "DATABASE_URL bulunamadı — alembic.ini içindeki varsayılan URL kullanılacak."
+        if python -m alembic upgrade head 2>&1; then
+            ok "Alembic migrasyonları tamamlandı."
+        else
+            warn "Migrasyon başarısız. Log'ları kontrol edin."
+        fi
     fi
 }
 
