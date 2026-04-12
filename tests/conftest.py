@@ -225,9 +225,9 @@ def pg_container() -> Generator[PostgresContainer, None, None]:
         pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
 
 
-@pytest_asyncio.fixture
-async def pg_db_session(pg_container: PostgresContainer) -> AsyncGenerator[Any, None]:
-    """Test başına izole edilmiş PostgreSQL veritabanı oturumu."""
+@pytest_asyncio.fixture(scope="session")
+async def pg_schema_initialized(pg_container: PostgresContainer) -> str:
+    """PostgreSQL şemasını tüm test oturumu boyunca yalnızca bir kez hazırlar."""
     sync_url = pg_container.get_connection_url()
     async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
         "postgresql://",
@@ -250,7 +250,13 @@ async def pg_db_session(pg_container: PostgresContainer) -> AsyncGenerator[Any, 
     await schema_db.init_schema()
     await schema_db.close()
 
-    engine = create_async_engine(async_url)
+    return async_url
+
+
+@pytest_asyncio.fixture
+async def pg_db_session(pg_schema_initialized: str) -> AsyncGenerator[Any, None]:
+    """Test başına transaction rollback ile izole edilmiş PostgreSQL oturumu."""
+    engine = create_async_engine(pg_schema_initialized)
     SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     try:
