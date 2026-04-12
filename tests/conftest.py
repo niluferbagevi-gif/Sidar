@@ -419,8 +419,8 @@ def mock_chromadb(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
         persistent_client_factory: Callable[..., Any],
         settings_factory: Callable[..., Any] | None = None,
     ) -> None:
-        chromadb = pytest.importorskip("chromadb", exc_type=ImportError)
-        chromadb_config = pytest.importorskip("chromadb.config", exc_type=ImportError)
+        chromadb = pytest.importorskip("chromadb")
+        chromadb_config = pytest.importorskip("chromadb.config")
         monkeypatch.setattr(chromadb, "PersistentClient", persistent_client_factory)
         if settings_factory is not None:
             monkeypatch.setattr(chromadb_config, "Settings", settings_factory)
