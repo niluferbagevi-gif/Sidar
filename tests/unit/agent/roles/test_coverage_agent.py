@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import json
 import sys
 from types import ModuleType, SimpleNamespace
@@ -10,6 +11,17 @@ import agent.roles.coverage_agent as _COVERAGE_MODULE
 from agent.roles.coverage_agent import CoverageAgent
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _reload_coverage_agent_module():
+    """CoverageAgent testlerini diğer testlerin module stub etkilerinden izole et."""
+    global _COVERAGE_MODULE, CoverageAgent
+    base_agent_module = importlib.import_module("agent.base_agent")
+    importlib.reload(base_agent_module)
+    coverage_module = importlib.import_module("agent.roles.coverage_agent")
+    _COVERAGE_MODULE = importlib.reload(coverage_module)
+    CoverageAgent = _COVERAGE_MODULE.CoverageAgent
 
 
 def make_agent(tmp_path, code_manager):
@@ -47,6 +59,21 @@ async def test_init_registers_tools(mocker, tmp_path):
         "generate_missing_tests",
         "write_missing_tests",
     ]
+
+
+async def test_reload_fixture_recovers_from_stubbed_base_agent(monkeypatch, tmp_path):
+    class _BrokenBaseAgent:
+        def __init__(self, cfg=None, role_name="broken"):
+            self.cfg = cfg
+            self.role_name = role_name
+
+    monkeypatch.setattr(_COVERAGE_MODULE, "BaseAgent", _BrokenBaseAgent, raising=True)
+    reloaded = importlib.reload(_COVERAGE_MODULE)
+    recovered_cls = reloaded.CoverageAgent
+    created = recovered_cls(cfg=SimpleNamespace(BASE_DIR=tmp_path))
+
+    assert hasattr(reloaded.BaseAgent, "register_tool")
+    assert "run_pytest" in created.tools
 
 
 async def test_static_helpers_and_parsers(tmp_path):
