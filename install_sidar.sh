@@ -555,10 +555,11 @@ print_summary() {
         echo "       React UI build: tamamlandı (web_ui_react/dist)"
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
+        echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
     fi
     echo ""
     echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
-    echo "       pytest tests/ -x -q"
+    echo "       ./run_tests.sh"
     echo ""
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -569,7 +570,9 @@ print_summary() {
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
     echo "  python -m alembic upgrade head  — DB migrasyonu"
+    echo "  ollama serve              — Ollama servisini başlat"
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
 }
