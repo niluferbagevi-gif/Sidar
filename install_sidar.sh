@@ -463,6 +463,12 @@ PY
         fi
     fi
 
+    # WSL2 üzerinde ses tabanlı özellikler gerekmiyorsa multimodal'i varsayılan kapat
+    if [[ "$WSL2" == true ]] && grep -q '^ENABLE_MULTIMODAL=true' "$ENV_FILE"; then
+        sed -i 's/^ENABLE_MULTIMODAL=true/ENABLE_MULTIMODAL=false/' "$ENV_FILE"
+        ok ".env: WSL2 için ENABLE_MULTIMODAL=false olarak ayarlandı."
+    fi
+
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
@@ -541,6 +547,10 @@ print_summary() {
     if [[ "$USE_CONDA" == true ]]; then
         echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
         echo "       conda activate $CONDA_ENV_NAME"
+        echo ""
+        echo -e "  2️⃣a Conda'yı base ortamında güncelle (önerilir):"
+        echo "       conda deactivate  # gerekirse sidar ortamından çık"
+        echo "       conda update -n base -c defaults conda"
     else
         echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
         echo "       source .venv/bin/activate"
