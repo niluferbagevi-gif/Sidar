@@ -396,7 +396,11 @@ async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monke
     assert memory.add.await_count == 2
 
 
-async def test_status_renders_all_sections(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_status_renders_all_sections(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, AI_PROVIDER="x", CODING_MODEL="m", ACCESS_LEVEL="safe")
     memory = Mock()
@@ -1641,7 +1645,10 @@ async def test_initialize_lazy_init_lock_handles_concurrent_calls(sidar_agent_fa
     agent.memory.initialize.assert_awaited_once()
 
 
-async def test_respond_and_append_history_with_existing_locks(sidar_agent_factory) -> None:
+async def test_respond_and_append_history_with_existing_locks(
+    sidar_agent_factory,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent._lock = asyncio.Lock()
     agent.initialize = AsyncMock()
@@ -1690,7 +1697,11 @@ async def test_execute_self_heal_plan_applied_with_existing_backup(sidar_agent_f
     assert (await agent._execute_self_heal_plan(remediation_loop={}, plan=plan))["status"] == "applied"
 
 
-async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_exception_path_records_failed_metrics(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
+) -> None:
     agent = sidar_agent_factory()
     metrics_calls = []
     monkeypatch.setattr(
@@ -1700,7 +1711,12 @@ async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_fa
     )
 
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
+
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"arg","thought":"x"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
 
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
         execute_tool_mock.side_effect = RuntimeError("tool-boom")
@@ -1709,7 +1725,11 @@ async def test_tool_subtask_exception_path_records_failed_metrics(sidar_agent_fa
     assert any(call[3] == "failed" for call in metrics_calls)
 
 
-async def test_handle_external_trigger_instance_path_and_correlation_loop(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_handle_external_trigger_instance_path_and_correlation_loop(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent.mark_activity = lambda *_a, **_k: None
@@ -1729,7 +1749,11 @@ async def test_handle_external_trigger_instance_path_and_correlation_loop(sidar_
     assert corr["matched_records"] == 0
 
 
-async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_initialize_without_db_and_tool_subtask_remaining_branches(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
+) -> None:
 
     # initialize branch where memory has no db
     agent = sidar_agent_factory()
@@ -1753,7 +1777,12 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
     )
 
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
+
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"arg","thought":"x"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
         execute_tool_mock.return_value = "ok"
         assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
@@ -1773,7 +1802,11 @@ async def test_initialize_without_db_and_tool_subtask_remaining_branches(sidar_a
     assert any(c[3] == "failed" for c in calls)
 
 
-async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_subtask_generic_exception_without_metrics(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
+) -> None:
     validation_err = type("ValidationErr", (Exception,), {})
     monkeypatch.setattr(sidar_agent, "ValidationError", validation_err)
     monkeypatch.setattr(
@@ -1785,7 +1818,11 @@ async def test_tool_subtask_generic_exception_without_metrics(sidar_agent_factor
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
 
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"arg","thought":"x"}'))
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"arg","thought":"x"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True) as execute_tool_mock:
         execute_tool_mock.side_effect = RuntimeError("fail")
         assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
@@ -2045,6 +2082,7 @@ async def test_load_instruction_files_handles_stat_and_read_exceptions(sidar_age
 async def test_tool_subtask_records_tool_execution_and_validation_error_metrics(
     sidar_agent_factory,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm_response,
 ) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
@@ -2055,7 +2093,11 @@ async def test_tool_subtask_records_tool_execution_and_validation_error_metrics(
         lambda: types.SimpleNamespace(record_step=lambda *args: metric_calls.append(args)),
     )
 
-    agent.llm = AsyncMock(chat=AsyncMock(return_value='{"tool":"docs_search","argument":"x","thought":"t"}'))
+    async def _llm_response(*_args, **_kwargs) -> str:
+        await fake_llm_response("subtask")
+        return '{"tool":"docs_search","argument":"x","thought":"t"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_llm_response))
     with patch.object(sidar_agent.SidarAgent, "_execute_tool", autospec=True, return_value="ok"):
         out = await agent._tool_subtask("job")
     assert out == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
