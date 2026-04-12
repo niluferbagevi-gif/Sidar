@@ -53,7 +53,7 @@ run_pytest_coverage_report() {
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
   else
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
+    if ! command -v nvidia-smi >/dev/null 2>&1 && ! command -v nvidia-smi.exe >/dev/null 2>&1; then
       echo "⚠️ ENABLE_GPU_TESTS=1 verildi ancak nvidia-smi bulunamadı. GPU/CUDA ortamını doğrulayın."
     fi
     echo "🔥 GPU testleri de dahil ediliyor!"
