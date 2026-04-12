@@ -1524,6 +1524,33 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+async def test_anthropic_stream_handles_open_failure_without_context_manager_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m"))
+
+    async def _raise_open_error(*_args, **_kwargs):
+        raise RuntimeError("open fail before cm assignment")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_open_error)
+
+    chunks = await _collect(
+        c._stream_anthropic(
+            client=SimpleNamespace(messages=SimpleNamespace(stream=lambda **_kw: None)),
+            model_name="m",
+            messages=[{"role": "user", "content": "u"}],
+            system_prompt="",
+            temperature=0.1,
+            json_mode=False,
+        )
+    )
+
+    assert len(chunks) == 1
+    assert "Anthropic akış hatası" in chunks[0]
+    assert "open fail before cm assignment" in chunks[0]
+
+
+@pytest.mark.asyncio
 async def test_openai_tracing_nonstream_success_and_error(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-4o-mini", ENABLE_TRACING=True))
     span = _Span()
