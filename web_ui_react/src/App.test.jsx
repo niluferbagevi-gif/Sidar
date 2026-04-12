@@ -69,6 +69,31 @@ describe("App", () => {
     expect(p2pLink).toHaveAttribute("href", "/p2p");
   });
 
+  it("navigates to P2P, Swarm and Tenant panels via nav links", async () => {
+    const user = userEvent.setup();
+    renderApp("/chat");
+
+    await user.click(screen.getByRole("link", { name: "P2P Diyalog" }));
+    expect(screen.getByText("P2P Mock")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Swarm Akışı" }));
+    expect(screen.getByText("Swarm Mock")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Tenant Admin" }));
+    expect(screen.getByText("Tenant Mock")).toBeInTheDocument();
+  });
+
+  it("shows chat navigation affordance on unknown routes", () => {
+    renderApp("/bilinmeyen-rota");
+    expect(screen.getByRole("link", { name: "Sohbet" })).toHaveAttribute("href", "/chat");
+  });
+
+  it("shows default token hint when no token is set", () => {
+    api.getStoredToken.mockReturnValue(null);
+    renderApp("/");
+    expect(screen.getByText(/Admin ve sohbet API/)).toBeInTheDocument();
+  });
+
   it("Agent Manager ve Plugin Marketplace sekmelerine geçişi doğrular", async () => {
     const user = userEvent.setup();
     renderApp("/chat");
