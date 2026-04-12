@@ -31,6 +31,10 @@ open_artifact() {
 
   if command -v xdg-open >/dev/null 2>&1; then
     xdg-open "$target" >/dev/null 2>&1 &
+  elif command -v wslview >/dev/null 2>&1; then
+    wslview "$target" >/dev/null 2>&1 &
+  elif command -v explorer.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    explorer.exe "$(wslpath -w "$target")" >/dev/null 2>&1 &
   elif command -v open >/dev/null 2>&1; then
     open "$target" >/dev/null 2>&1 &
   elif command -v start >/dev/null 2>&1; then
