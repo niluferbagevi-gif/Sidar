@@ -59,9 +59,11 @@ run_pytest_coverage_report() {
     pytest_cmd+=(-m "not gpu")
   else
     if ! command -v nvidia-smi >/dev/null 2>&1 && ! command -v nvidia-smi.exe >/dev/null 2>&1; then
-      echo "⚠️ ENABLE_GPU_TESTS=1 verildi ancak nvidia-smi bulunamadı. GPU/CUDA ortamını doğrulayın."
+      echo "⚠️ ENABLE_GPU_TESTS=1 verildi ancak nvidia-smi bulunamadı. GPU testleri güvenli fallback ile atlanıyor."
+      pytest_cmd+=(-m "not gpu")
+    else
+      echo "🔥 GPU testleri de dahil ediliyor!"
     fi
-    echo "🔥 GPU testleri de dahil ediliyor!"
   fi
 
   if python -c "import xdist" >/dev/null 2>&1; then
