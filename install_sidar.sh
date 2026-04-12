@@ -489,7 +489,16 @@ PY
         if [[ "$GPU_AVAILABLE" == true ]]; then
             sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
             sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+
+            # Docker için GPU modunu ön tanımlı yap
+            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
+                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
+            else
+                echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
+            fi
+
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
+            ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
             sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
             ok ".env: USE_GPU=false (CPU modu / --cpu bayrağı)"
