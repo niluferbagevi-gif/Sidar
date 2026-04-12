@@ -272,6 +272,18 @@ async def test_pipeline_analyze_from_bytes():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_analyze_from_path(tmp_path):
+    pipeline, llm = _make_pipeline()
+    llm.chat.return_value = "Path üzerinden analiz."
+    f = tmp_path / "screen.png"
+    f.write_bytes(b"\x89PNG\r\n")
+    result = await pipeline.analyze(image_path=str(f), analysis_type="ux_review")
+    assert result["success"] is True
+    assert result["analysis"] == "Path üzerinden analiz."
+    assert result["analysis_type"] == "ux_review"
+
+
+@pytest.mark.asyncio
 async def test_pipeline_analyze_disabled():
     pipeline, _ = _make_pipeline(enabled=False)
     result = await pipeline.analyze(image_bytes=b"x", mime_type="image/png")
@@ -284,6 +296,14 @@ async def test_pipeline_analyze_no_input():
     result = await pipeline.analyze()
     assert result["success"] is False
     assert "gerekli" in result["reason"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_analyze_file_not_found():
+    pipeline, _ = _make_pipeline()
+    result = await pipeline.analyze(image_path="/nonexistent/analysis.png")
+    assert result["success"] is False
+    assert "bulunamadı" in result["reason"].lower()
 
 
 @pytest.mark.asyncio
