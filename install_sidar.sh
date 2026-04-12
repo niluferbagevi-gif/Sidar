@@ -248,7 +248,38 @@ install_playwright_browsers() {
     fi
 }
 
-# ── 7. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
+# ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────
+setup_react_frontend() {
+    step "React Web UI Kurulumu"
+
+    REACT_DIR="$SCRIPT_DIR/web_ui_react"
+    if [[ ! -d "$REACT_DIR" ]]; then
+        info "web_ui_react dizini bulunamadı — frontend kurulumu atlandı."
+        return
+    fi
+
+    if [[ ! -f "$REACT_DIR/package.json" ]]; then
+        info "web_ui_react/package.json bulunamadı — frontend kurulumu atlandı."
+        return
+    fi
+
+    if ! command -v npm &>/dev/null; then
+        warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
+        echo "       cd web_ui_react && npm install && npm run build"
+        return
+    fi
+
+    (
+        cd "$REACT_DIR"
+        info "npm install çalıştırılıyor..."
+        npm install
+        info "npm run build çalıştırılıyor..."
+        npm run build
+    )
+    ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
+}
+
+# ── 8. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
 check_pyaudio_wsl2() {
     if [[ "$WSL2" == true ]]; then
         warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
@@ -258,7 +289,7 @@ check_pyaudio_wsl2() {
     fi
 }
 
-# ── 8. Dizinleri oluştur ──────────────────────────────────────────────────────
+# ── 9. Dizinleri oluştur ──────────────────────────────────────────────────────
 create_directories() {
     step "Proje Dizinleri"
     for dir in "${REQUIRED_DIRS[@]}"; do
@@ -267,7 +298,7 @@ create_directories() {
     ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
 }
 
-# ── 9. .env dosyası ───────────────────────────────────────────────────────────
+# ── 10. .env dosyası ──────────────────────────────────────────────────────────
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -323,7 +354,7 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 10. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -341,7 +372,7 @@ run_migrations() {
     fi
 }
 
-# ── 11. CUDA bağlantı testi ──────────────────────────────────────────────────
+# ── 12. CUDA bağlantı testi ──────────────────────────────────────────────────
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
@@ -364,7 +395,7 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 12. Özet ─────────────────────────────────────────────────────────────────
+# ── 13. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -418,6 +449,7 @@ main() {
     setup_python_env
     install_python_deps
     install_playwright_browsers
+    setup_react_frontend
     check_pyaudio_wsl2
     create_directories
     setup_env_file
