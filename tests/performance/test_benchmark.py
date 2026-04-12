@@ -10,8 +10,9 @@ pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
 
-def test_format_table_handles_large_dataset_quickly(benchmark) -> None:
-    rows = [
+@pytest.fixture(scope="module")
+def large_dataset_rows() -> list[FileCoverage]:
+    return [
         FileCoverage(
             path=f"module_{index // 100}/file_{index:05d}.py",
             covered=(index % 120) + 1,
@@ -20,7 +21,9 @@ def test_format_table_handles_large_dataset_quickly(benchmark) -> None:
         for index in range(10_000)
     ]
 
-    output = benchmark(format_table, rows)
+
+def test_format_table_handles_large_dataset_quickly(benchmark, large_dataset_rows) -> None:
+    output = benchmark(format_table, large_dataset_rows)
 
     assert "| File | Coverage | Missed | Covered |" in output
     assert "module_0/file_00000.py" in output
