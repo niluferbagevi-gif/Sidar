@@ -7,6 +7,8 @@ source =
     managers
     plugins
     main
+    cli
+    gui_launcher
 omit =
     */plug_auto_discover*
     */plug_bad_compile*
