@@ -1,14 +1,7 @@
 [run]
 branch = True
 parallel = True
-source =
-    agent
-    core
-    managers
-    plugins
-    main
-    cli
-    gui_launcher
+source = .
 omit =
     */plug_auto_discover*
     */plug_bad_compile*
