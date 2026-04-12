@@ -75,7 +75,12 @@ class ResearcherAgent(BaseAgent):
 
     async def _tool_docs_search(self, arg: str) -> str:
         session_id = "global"
-        result_obj = await asyncio.to_thread(self.docs.search, arg, None, "auto", session_id)
+        try:
+            result_obj = await asyncio.to_thread(self.docs.search, arg, None, "auto", session_id)
+        except TimeoutError:
+            return "Doküman araması zaman aşımına uğradı."
+        except Exception as exc:
+            return f"Doküman araması şu anda kullanılamıyor: {exc}"
         if inspect.isawaitable(result_obj):
             result_obj = await result_obj
         _ok, result = result_obj
