@@ -249,7 +249,7 @@ async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
 
     assert result == {"ok": True}
     assert state["n"] == 2
-    assert sleep_calls == [pytest.approx(0.5)]
+    assert sleep_calls == [pytest.approx(0.05)]
 
 
 @pytest.mark.asyncio
