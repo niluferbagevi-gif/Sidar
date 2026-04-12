@@ -174,7 +174,7 @@ def test_helper_functions_basic_contracts() -> None:
 
 @pytest.mark.parametrize("identifier", ["", "1abc", "bad-name", "bad space"])
 def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="SQL identifier cannot be empty|Invalid SQL identifier"):
         _quote_sql_identifier(identifier)
 
 
@@ -222,7 +222,7 @@ async def test_create_duplicate_user_raises_integrity_error(sqlite_db: Database)
 
 @pytest.mark.asyncio
 async def test_prompt_registry_flow(sqlite_db: Database) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="role_name ve prompt_text boş olamaz"):
         await sqlite_db.upsert_prompt("", "")
 
     p1 = await sqlite_db.upsert_prompt("System", "prompt-v1", activate=True)
@@ -278,7 +278,7 @@ async def test_access_policy_precedence_and_fallback(sqlite_db: Database) -> Non
         resource_id="r1",
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="effect must be allow or deny"):
         await sqlite_db.upsert_access_policy(user_id=user.id, resource_type="repo", action="write", effect="maybe")
 
 
@@ -507,7 +507,7 @@ async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None
 
 @pytest.mark.asyncio
 async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: Database) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="campaign name is required"):
         await sqlite_db.upsert_marketing_campaign(name="")
 
     c1 = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-1", name="C1", status="DRAFT")
@@ -518,7 +518,7 @@ async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: 
     assert len(active) == 1
     assert active[0].status == "active"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="asset_type, title and content are required"):
         await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="", title="x", content="y")
 
     a1 = await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T1", content="Body")
@@ -532,7 +532,7 @@ async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: 
 
 @pytest.mark.asyncio
 async def test_operation_checklist_and_coverage_management(sqlite_db: Database) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="title is required"):
         await sqlite_db.add_operation_checklist(tenant_id="t1", title="", items=[])
 
     checklist = await sqlite_db.add_operation_checklist(
@@ -544,7 +544,7 @@ async def test_operation_checklist_and_coverage_management(sqlite_db: Database) 
     checklists = await sqlite_db.list_operation_checklists(tenant_id="t1", limit=5)
     assert checklists[0].id == checklist.id
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="command is required"):
         await sqlite_db.create_coverage_task(tenant_id="t1", command="", pytest_output="x")
 
     task = await sqlite_db.create_coverage_task(
@@ -556,7 +556,7 @@ async def test_operation_checklist_and_coverage_management(sqlite_db: Database) 
     )
     assert task.status == "IN_PROGRESS"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="finding_type and summary are required"):
         await sqlite_db.add_coverage_finding(task_id=task.id, finding_type="", target_path="a", summary="b")
 
     finding = await sqlite_db.add_coverage_finding(
@@ -600,7 +600,7 @@ async def test_quota_usage_and_admin_stats(sqlite_db: Database) -> None:
 async def test_audit_log_sqlite_validation_and_listing(sqlite_db: Database) -> None:
     user = await sqlite_db.create_user("audit-user", password="pw")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="action and resource are required"):
         await sqlite_db.record_audit_log(action="", resource="repo", ip_address="127.0.0.1", allowed=True)
 
     await sqlite_db.record_audit_log(
@@ -1050,7 +1050,7 @@ async def test_postgresql_listing_without_optional_filters() -> None:
 
     assert campaigns and assets and checklists and tasks
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="campaign not found"):
         await db.upsert_marketing_campaign(campaign_id=999, tenant_id="t", name="missing")
 
 
@@ -1081,7 +1081,7 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
     policies = await sqlite_db.list_access_policies(user.id)
     assert policies and policies[0].tenant_id == "default"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="resource_type and action are required"):
         await sqlite_db.upsert_access_policy(user_id=user.id, tenant_id="default", resource_type="", action="read")
 
     campaign = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-l", name="Campaign A")
