@@ -313,7 +313,7 @@ check_pyaudio_wsl2() {
     if [[ "$WSL2" == true ]]; then
         warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
         info "Sesli özellik kullanmayacaksanız .env dosyanıza şunu ekleyin:"
-        echo "       USE_VOICE=false"
+        echo "       ENABLE_MULTIMODAL=false"
         info "Ses desteği istiyorsanız: https://learn.microsoft.com/tr-tr/windows/wsl/tutorials/gui-apps"
     fi
 }
