@@ -66,6 +66,23 @@ check_prerequisites() {
     fi
     ok "Git $(git --version | cut -d' ' -f3)"
 
+    # FFmpeg (openai-whisper / yt-dlp için zorunlu)
+    if command -v ffmpeg &>/dev/null; then
+        FFMPEG_VER=$(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')
+        ok "FFmpeg ${FFMPEG_VER:-yüklü}"
+    else
+        warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
+        if command -v apt-get &>/dev/null; then
+            info "Kurulum için: sudo apt-get update && sudo apt-get install -y ffmpeg"
+        elif command -v dnf &>/dev/null; then
+            info "Kurulum için: sudo dnf install -y ffmpeg ffmpeg-devel"
+        elif command -v brew &>/dev/null; then
+            info "Kurulum için: brew install ffmpeg"
+        else
+            warn "Paket yöneticisi otomatik tespit edilemedi. FFmpeg'i sisteminize manuel kurun."
+        fi
+    fi
+
     # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
     if command -v python3 &>/dev/null; then
         PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
