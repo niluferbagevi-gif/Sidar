@@ -74,6 +74,12 @@ run_pytest_coverage_report() {
   BACKEND_EXIT_CODE=$?
 
   # xdist zaten otomatik combine yaptığı için manuel coverage combine kaldırıldı.
+  # Ancak xdist worker'larından biri bellek taşması veya SIGKILL ile çökerse
+  # .coverage dosyası üretilemez ve pytest exit_code=0 dönebilir.
+  if [ ! -f ".coverage" ] && [ "${BACKEND_EXIT_CODE}" -eq 0 ]; then
+    echo "WARNING: Testler basarili gorunuyor ancak .coverage dosyasi uretilmedi. xdist worker'lari crash olmis olabilir."
+    BACKEND_EXIT_CODE=1
+  fi
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
