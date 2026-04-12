@@ -1279,7 +1279,8 @@ class AnthropicClient(BaseLLMClient):
                     "tool": "final_answer",
                     "argument": f"[HATA] Anthropic akış hatası: {exc}",
                     "thought": "Hata",
-                }
+                },
+                ensure_ascii=False,
             )
             yield _ensure_json_text(msg, "Anthropic") if json_mode else msg
         finally:
