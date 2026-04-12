@@ -225,7 +225,7 @@ def pg_container() -> Generator[PostgresContainer, None, None]:
         pytest.skip(f"PostgreSQL test container başlatılamadı: {exc}")
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def pg_schema_initialized(pg_container: PostgresContainer) -> str:
     """PostgreSQL şemasını tüm test oturumu boyunca yalnızca bir kez hazırlar."""
     sync_url = pg_container.get_connection_url()
