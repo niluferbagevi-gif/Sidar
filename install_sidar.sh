@@ -215,6 +215,18 @@ install_python_deps() {
 
     cd "$SCRIPT_DIR"
 
+    # Reproducible kurulum için lock dosyası önceliklidir
+    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulundu — kilitli bağımlılıklar ile kurulum yapılıyor (uv sync --frozen)."
+        SYNC_ARGS=(--frozen)
+        if [[ "$INSTALL_DEV" == true ]]; then
+            SYNC_ARGS+=(--extra dev)
+        fi
+        uv sync "${SYNC_ARGS[@]}"
+        ok "Python bağımlılıkları uv.lock ile senkronlandı."
+        return
+    fi
+
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         # CUDA major version'ı belirle (örn. 13.2 → cu130)
         CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
