@@ -6,6 +6,7 @@ import importlib
 import os
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
@@ -97,11 +98,12 @@ def fake_llm_error() -> Callable[..., Any]:
 
 @pytest.fixture
 def fake_event_stream() -> Callable[[], AsyncGenerator[AgentEvent, None]]:
-    """Ajan event stream çıktılarını deterministik olarak simüle eder."""
+    """Ajan event stream çıktılarını deterministik ve güncel zamanla simüle eder."""
 
     async def _stream() -> AsyncGenerator[AgentEvent, None]:
-        yield AgentEvent(ts=1.0, source="system", message="initializing")
-        yield AgentEvent(ts=2.0, source="assistant", message="İşlem tamam.")
+        now = time.time()
+        yield AgentEvent(ts=now, source="system", message="initializing")
+        yield AgentEvent(ts=now + 1.0, source="assistant", message="İşlem tamam.")
 
     return _stream
 
