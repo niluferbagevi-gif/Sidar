@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -87,6 +88,169 @@ async def test_pyttsx3_adapter_synthesize_when_unavailable(monkeypatch):
     assert result["provider"] == "pyttsx3"
 
 
+def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_reads_audio(monkeypatch, tmp_path):
+    class FakeVoice:
+        def __init__(self, voice_id, name):
+            self.id = voice_id
+            self.name = name
+
+    class FakeEngine:
+        def __init__(self):
+            self.selected_voice = None
+
+        def getProperty(self, key):
+            if key == "voices":
+                return [FakeVoice("en-US-1", "English"), FakeVoice("tr-TR-1", "Turkish")]
+            return None
+
+        def setProperty(self, key, value):
+            if key == "voice":
+                self.selected_voice = value
+
+        def save_to_file(self, _text, output):
+            Path(output).write_bytes(b"wav-bytes")
+
+        def runAndWait(self):
+            return None
+
+        def stop(self):
+            return None
+
+    fake_engine = FakeEngine()
+    fake_module = types.SimpleNamespace(init=lambda: fake_engine)
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+
+    class _TmpDir:
+        def __init__(self, _prefix):
+            self.path = tmp_path / "ttsdir"
+
+        def __enter__(self):
+            self.path.mkdir(parents=True, exist_ok=True)
+            return str(self.path)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("core.voice.tempfile.TemporaryDirectory", lambda prefix: _TmpDir(prefix))
+
+    adapter = _Pyttsx3Adapter()
+    result = adapter._synthesize_sync("Merhaba", "tr-tr")
+
+    assert result["success"] is True
+    assert result["audio_bytes"] == b"wav-bytes"
+    assert result["voice"] == "tr-tr"
+    assert fake_engine.selected_voice == "tr-TR-1"
+
+
+def test_pyttsx3_adapter_synthesize_sync_handles_stop_exception(monkeypatch, tmp_path):
+    class FakeEngine:
+        def getProperty(self, _key):
+            return []
+
+        def setProperty(self, _key, _value):
+            return None
+
+        def save_to_file(self, _text, output):
+            Path(output).write_bytes(b"ok")
+
+        def runAndWait(self):
+            return None
+
+        def stop(self):
+            raise RuntimeError("cannot stop")
+
+    fake_module = types.SimpleNamespace(init=lambda: FakeEngine())
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+
+    class _TmpDir:
+        def __init__(self, _prefix):
+            self.path = tmp_path / "ttsdir2"
+
+        def __enter__(self):
+            self.path.mkdir(parents=True, exist_ok=True)
+            return str(self.path)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("core.voice.tempfile.TemporaryDirectory", lambda prefix: _TmpDir(prefix))
+
+    adapter = _Pyttsx3Adapter()
+    result = adapter._synthesize_sync("Selam", "x-voice")
+    assert result["success"] is True
+    assert result["audio_bytes"] == b"ok"
+
+
+def test_pyttsx3_adapter_synthesize_sync_without_voice_skips_voice_selection(monkeypatch, tmp_path):
+    class FakeEngine:
+        def __init__(self):
+            self.get_property_called = False
+
+        def getProperty(self, _key):
+            self.get_property_called = True
+            return []
+
+        def setProperty(self, _key, _value):
+            return None
+
+        def save_to_file(self, _text, output):
+            Path(output).write_bytes(b"ok")
+
+        def runAndWait(self):
+            return None
+
+        def stop(self):
+            return None
+
+    engine = FakeEngine()
+    fake_module = types.SimpleNamespace(init=lambda: engine)
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+
+    class _TmpDir:
+        def __init__(self, _prefix):
+            self.path = tmp_path / "ttsdir3"
+
+        def __enter__(self):
+            self.path.mkdir(parents=True, exist_ok=True)
+            return str(self.path)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("core.voice.tempfile.TemporaryDirectory", lambda prefix: _TmpDir(prefix))
+
+    adapter = _Pyttsx3Adapter()
+    result = adapter._synthesize_sync("Selam", "")
+
+    assert result["success"] is True
+    assert engine.get_property_called is False
+
+
+@pytest.mark.asyncio
+async def test_pyttsx3_adapter_synthesize_available_path_uses_to_thread(monkeypatch):
+    class FakeModule:
+        @staticmethod
+        def init():
+            raise AssertionError("init should not be called in this test")
+
+    monkeypatch.setitem(sys.modules, "pyttsx3", FakeModule())
+    adapter = _Pyttsx3Adapter()
+    assert adapter.available is True
+
+    called = {}
+
+    async def fake_to_thread(fn, text, voice):
+        called["args"] = (fn, text, voice)
+        return {"success": True, "provider": "pyttsx3"}
+
+    monkeypatch.setattr("core.voice.asyncio.to_thread", fake_to_thread)
+    result = await adapter.synthesize("hello", voice="v1")
+
+    assert result["success"] is True
+    assert called["args"][0] == adapter._synthesize_sync
+    assert called["args"][1:] == ("hello", "v1")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # _build_tts_adapter
 # ──────────────────────────────────────────────────────────────────────────────
@@ -106,6 +270,12 @@ def test_build_tts_adapter_auto_falls_back_to_mock(monkeypatch):
     adapter = _build_tts_adapter("auto")
     # pyttsx3 yoksa mock'a düşmeli
     assert isinstance(adapter, _MockTTSAdapter)
+
+
+def test_build_tts_adapter_auto_prefers_available_pyttsx3(monkeypatch):
+    monkeypatch.setattr(_Pyttsx3Adapter, "available", property(lambda self: True))
+    adapter = _build_tts_adapter("auto")
+    assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 def test_build_tts_adapter_empty_string_treated_as_auto(monkeypatch):
@@ -165,6 +335,20 @@ def test_extract_ready_segments_sentence_boundary():
     text = "Birinci cümle. İkinci kısım"
     segs, remainder = p.extract_ready_segments(text)
     assert any("Birinci cümle" in s for s in segs)
+
+
+def test_extract_ready_segments_skips_empty_parts_from_split(monkeypatch):
+    p = _make_pipeline(segment_chars=500)
+
+    class _FakeBoundary:
+        @staticmethod
+        def split(_text):
+            return ["İlk", "   ", "Son"]
+
+    monkeypatch.setattr("core.voice.re.compile", lambda _pattern: _FakeBoundary())
+    segs, remainder = p.extract_ready_segments("dummy")
+    assert segs == ["İlk"]
+    assert remainder == "Son"
 
 
 def test_extract_ready_segments_long_remainder():
@@ -249,6 +433,19 @@ def test_buffer_assistant_text_short_stays_buffered():
     assert "Kısa." in state.output_text_buffer
 
 
+def test_buffer_assistant_text_empty_delta_keeps_buffer_and_emits_when_probe_ready():
+    p = _make_pipeline(segment_chars=5, buffer_chars=500)
+    state = p.create_duplex_state()
+    p.begin_assistant_turn(state)
+    state.output_text_buffer = "Uzun birikmiş metin kesinlikle yirmi karakterden fazladır."
+
+    turn_id, packets = p.buffer_assistant_text(state, "", flush=False)
+
+    assert turn_id == 1
+    assert packets
+    assert state.output_text_buffer == ""
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.interrupt_assistant_turn
 # ──────────────────────────────────────────────────────────────────────────────
@@ -279,6 +476,21 @@ def test_interrupt_assistant_turn_empty_reason():
     p.begin_assistant_turn(state)
     result = p.interrupt_assistant_turn(state, reason="")
     assert result["reason"] == "interrupt"
+
+
+def test_interrupt_assistant_turn_does_not_track_zero_turn_id():
+    p = _make_pipeline()
+    state = p.create_duplex_state()
+    state.output_text_buffer = "abc"
+    result = p.interrupt_assistant_turn(state, reason="stop")
+
+    assert result["assistant_turn_id"] == 0
+    assert state.interrupted_turns == []
+
+
+def test_should_interrupt_response_voice_event_below_threshold():
+    p = _make_pipeline(vad_enabled=True, duplex_enabled=True, vad_interrupt_min_bytes=300)
+    assert p.should_interrupt_response(100, event="speech") is False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
