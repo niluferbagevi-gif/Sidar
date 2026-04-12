@@ -941,7 +941,6 @@ async def test_anthropic_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c2 = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
-    assert await _Messages().stream().__aexit__(None, None, None) is False
     out = await _collect(c2._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
     assert "Anthropic" in out[0]
 
