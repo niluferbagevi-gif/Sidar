@@ -57,8 +57,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     build-essential \
     curl \
+    wget \
+    software-properties-common \
+    zstd \
     docker.io \
     portaudio19-dev \
+    python3-pyaudio \
+    alsa-utils \
+    v4l-utils \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
