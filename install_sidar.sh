@@ -957,9 +957,9 @@ main() {
     fi
     install_python_deps
     install_playwright_browsers
-    check_pyaudio_wsl2
     create_directories
     setup_env_file
+    check_pyaudio_wsl2
     setup_react_frontend
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
