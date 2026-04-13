@@ -34,7 +34,7 @@ async def test_default_derive_correlation_id_returns_first_non_empty_value() -> 
     assert sidar_agent._default_derive_correlation_id("", "   ", None) == ""
 
 
-async def test_fallback_federation_task_envelope_builds_prompt_and_correlation(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_fallback_federation_task_envelope_builds_prompt_and_correlation(sidar_agent_factory) -> None:
     envelope = sidar_agent._FallbackFederationTaskEnvelope(
         task_id="task-9",
         source_system="crm",
@@ -52,7 +52,7 @@ async def test_fallback_federation_task_envelope_builds_prompt_and_correlation(s
     assert "goal=Sync roadmap" in prompt
 
 
-async def test_fallback_action_feedback_uses_related_ids_for_correlation(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_fallback_action_feedback_uses_related_ids_for_correlation(sidar_agent_factory) -> None:
     feedback = sidar_agent._FallbackActionFeedback(
         feedback_id="fb-1",
         action_name="create_ticket",
@@ -65,7 +65,7 @@ async def test_fallback_action_feedback_uses_related_ids_for_correlation(sidar_a
     assert "summary=Ticket opened" in prompt
 
 
-async def test_init_accepts_config_alias_and_prefers_config(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_init_accepts_config_alias_and_prefers_config() -> None:
     cfg = Mock(name="cfg")
     cfg_alias = Mock(name="config_alias")
 
@@ -107,7 +107,7 @@ async def test_build_trigger_prompt_prioritizes_ci_context(sidar_agent_factory, 
     assert prompt == "CI::backend-ci"
 
 
-async def test_build_trigger_prompt_formats_federation_and_action_feedback(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_formats_federation_and_action_feedback(sidar_agent_factory) -> None:
     federation_trigger = ExternalTrigger(trigger_id="t-2", source="crm", event_name="sync", payload={})
     federation_prompt = sidar_agent.SidarAgent._build_trigger_prompt(
         federation_trigger,
@@ -128,7 +128,6 @@ async def test_build_trigger_prompt_formats_federation_and_action_feedback(sidar
 
 async def test_build_trigger_correlation_matches_history_without_duplicate_ids(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -153,7 +152,6 @@ async def test_build_trigger_correlation_matches_history_without_duplicate_ids(
 async def test_execute_self_heal_plan_reverts_on_patch_error(
     sidar_agent_factory,
     mock_config,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     cfg = mock_config(BASE_DIR=str(tmp_path))
@@ -195,7 +193,7 @@ async def test_restore_self_heal_backups(sidar_agent_factory) -> None:
     write_mock.assert_any_call("src/utils.py", "print('old utils')", False)
 
 
-async def test_get_memory_archive_context_sync_filters_by_source_and_score(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_memory_archive_context_sync_filters_by_source_and_score(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     collection = Mock()
     collection.query.return_value = {
@@ -214,7 +212,7 @@ async def test_get_memory_archive_context_sync_filters_by_source_and_score(sidar
     assert "T3" not in text
 
 
-async def test_tool_docs_search_handles_empty_and_async_result(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_docs_search_handles_empty_and_async_result(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     empty = await agent._tool_docs_search("")
     assert "sorgusu belirtilmedi" in empty
@@ -351,7 +349,7 @@ async def test_execute_tool_routes_to_handler_and_handles_unknown_tool(sidar_age
         await agent._execute_tool("not_real_tool", "arg")
 
 
-async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_path: Path) -> None:
     root = tmp_path
     (root / "SIDAR.md").write_text("root rules", encoding="utf-8")
     nested = root / "sub"
@@ -371,7 +369,7 @@ async def test_load_instruction_files_reads_and_caches(sidar_agent_factory, tmp_
     assert second == first
 
 
-async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_set_access_level_changed_and_unchanged(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     memory = AsyncMock()
     security = Mock()
@@ -398,7 +396,6 @@ async def test_set_access_level_changed_and_unchanged(sidar_agent_factory, monke
 
 async def test_status_renders_all_sections(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -426,7 +423,7 @@ async def test_status_renders_all_sections(
     assert "github" in text and "web" in text and "pkg" in text and "docs" in text and "health" in text
 
 
-async def test_initialize_uses_active_system_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_initialize_uses_active_system_prompt(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent._initialized = False
     agent._init_lock = None
@@ -442,7 +439,7 @@ async def test_initialize_uses_active_system_prompt(sidar_agent_factory, monkeyp
     assert agent.system_prompt == "live prompt"
 
 
-async def test_respond_handles_empty_and_success(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_respond_handles_empty_and_success(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent._lock = None
     agent.initialize = AsyncMock()
@@ -542,7 +539,6 @@ async def test_respond_memory_failure_graceful(
 
 async def test_append_autonomy_history_caps_to_50(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -591,7 +587,7 @@ async def test_collect_and_build_self_heal_plan(
     assert plan["kwargs"]["scope_paths"] == ["a.py", "x.py"]
 
 
-async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     remediation = {"remediation_loop": {"status": "planned"}}
@@ -633,7 +629,7 @@ async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(s
     assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
 
 
-async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(trigger_id="tid", source="cron", event_name="run", payload={}, meta={})
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(trigger, {"kind": "other"}, None)
     assert "correlation_id=tid" in prompt
@@ -671,7 +667,6 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(sid
 
 async def test_run_nightly_memory_maintenance_skipped_paths(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -738,7 +733,6 @@ async def test_run_nightly_memory_maintenance_disabled_and_success_paths(
 
 async def test_get_autonomy_activity_counts(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -781,7 +775,7 @@ async def test_get_autonomy_activity_handles_limit_edge_cases(
     assert res_str["returned"] == 2
 
 
-async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     supervisor = AsyncMock()
     supervisor.run_task.return_value = ""
@@ -833,7 +827,7 @@ async def test_handle_external_trigger_llm_timeout_and_rate_limit_errors_are_cap
     assert history and history[-1]["status"] == "failed"
 
 
-async def test_build_context_and_instruction_absence(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_context_and_instruction_absence(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(
         agent,
@@ -963,7 +957,7 @@ async def test_clear_memory_handles_exception(sidar_agent_factory) -> None:
         await agent.clear_memory()
 
 
-async def test_update_remediation_step_no_match_keeps_steps(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_remediation_step_no_match_keeps_steps(sidar_agent_factory) -> None:
     remediation_loop = {"steps": [{"name": "patch", "status": "planned", "detail": "x"}]}
     agent = sidar_agent_factory()
     agent._update_remediation_step(remediation_loop, "validate", status="completed", detail="ok")
@@ -978,7 +972,7 @@ async def test_update_remediation_step_match_updates_fields(sidar_agent_factory)
     assert remediation_loop["steps"][0]["detail"] == "başarılı"
 
 
-async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
 
     code = Mock()
@@ -988,7 +982,7 @@ async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(sidar_ag
     assert snapshots == [{"path": "ok.py", "content": "content:ok.py"}]
 
 
-async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(sidar_agent_factory, tmp_path: Path) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, BASE_DIR=str(tmp_path))
 
@@ -1017,7 +1011,7 @@ async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(sidar_a
     assert "yedekleme" in reverted["summary"]
 
 
-async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(trigger_id="tid", source="crm", event_name="sync", payload={}, meta={})
     prompt = sidar_agent.SidarAgent._build_trigger_prompt(
         trigger,
@@ -1029,7 +1023,6 @@ async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factor
 
 async def test_build_trigger_correlation_matches_related_ids(
     sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
     agent = sidar_agent_factory()
@@ -1094,7 +1087,7 @@ async def test_try_multi_agent_triggers_reload_if_module_corrupted(
     assert getattr(supervisor_mod, "ResearcherAgent", None) is original_researcher
 
 
-async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, MEMORY_ARCHIVE_TOP_K=1, MEMORY_ARCHIVE_MIN_SCORE=0.3, MEMORY_ARCHIVE_MAX_CHARS=1200)
 
@@ -1116,7 +1109,7 @@ async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_facto
     assert sidar_agent.ARCHIVE_CONTEXT_HEADER in async_text
 
 
-async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_context_non_ollama_and_truncations(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(
         agent,
@@ -1158,7 +1151,7 @@ async def test_build_context_non_ollama_and_truncations(sidar_agent_factory, mon
     assert "yerel model" in short
 
 
-async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_instruction_files_no_files_and_read_error(sidar_agent_factory, tmp_path: Path) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, BASE_DIR=str(tmp_path))
     agent._instructions_cache = None
@@ -1189,7 +1182,7 @@ async def test_tool_subtask_non_string_and_tool_exception(sidar_agent_factory, f
     assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
 
 
-async def test_tool_github_smart_pr_error_branches(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: True, default_branch="main", create_pull_request=lambda *_a: (False, "err"))
 
@@ -1273,7 +1266,7 @@ async def test_tool_github_smart_pr_no_branch_when_branch_output_empty_or_false(
     assert sidar_agent.GITHUB_SMART_PR_NO_BRANCH_MESSAGE in result
 
 
-async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_summarize_memory_exception_paths_and_memory_add(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     added = []
     memory = AsyncMock()
@@ -1376,7 +1369,7 @@ async def test_initialize_returns_immediately_when_already_initialized(sidar_age
 
 
 
-async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_runtime_helpers_and_self_heal_validation_failure(sidar_agent_factory, tmp_path: Path) -> None:
     agent = sidar_agent_factory()
     agent._last_activity_ts = 0
     agent.mark_activity("test")
@@ -1592,7 +1585,7 @@ async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory)
     assert "oluşturuldu" in msg
 
 
-async def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_attempt_self_heal_plan_without_operations_and_initialize_no_prompt(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
@@ -1828,7 +1821,7 @@ async def test_tool_subtask_generic_exception_without_metrics(
         assert sidar_agent.SUBTASK_MAX_STEPS_MESSAGE == await agent._tool_subtask("job")
 
 
-async def test_load_instruction_files_handles_string_candidates(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_load_instruction_files_handles_string_candidates(sidar_agent_factory, tmp_path: Path) -> None:
     agent = sidar_agent_factory()
     instruction = tmp_path / "SIDAR.md"
     instruction.write_text("Talimat", encoding="utf-8")
