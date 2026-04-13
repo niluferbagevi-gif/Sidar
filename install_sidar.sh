@@ -1061,6 +1061,8 @@ download_ollama_models() {
 
     TEXT_MOD=$(_read_env_value "TEXT_MODEL" "$ENV_FILE")
     CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
+    VISION_MOD=$(_read_env_value "VISION_MODEL" "$ENV_FILE")
+    MULTIMODAL=$(_read_env_value "ENABLE_MULTIMODAL" "$ENV_FILE")
 
     if [[ -z "$TEXT_MOD" ]]; then
         TEXT_MOD="llama3.1:8b"
@@ -1071,7 +1073,10 @@ download_ollama_models() {
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
 
-    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text" "llama3.2-vision")
+    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
+    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
+        MODELS+=("$VISION_MOD")
+    fi
 
     for model in "${MODELS[@]}"; do
         if [[ -n "$model" ]]; then
