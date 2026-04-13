@@ -601,18 +601,17 @@ setup_env_file() {
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
     if [[ -f "$ENV_FILE" ]]; then
-        ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
-        ensure_database_url_defaults "$ENV_FILE"
-        return
+        ok ".env dosyası zaten mevcut — eksik/güvensiz varsayılanlar kontrol ediliyor."
+    else
+        if [[ ! -f "$EXAMPLE_FILE" ]]; then
+            warn ".env.example bulunamadı — .env oluşturulamadı. Manuel olarak oluşturun."
+            return
+        fi
+
+        cp "$EXAMPLE_FILE" "$ENV_FILE"
+        ok ".env dosyası .env.example'dan oluşturuldu."
     fi
 
-    if [[ ! -f "$EXAMPLE_FILE" ]]; then
-        warn ".env.example bulunamadı — .env oluşturulamadı. Manuel olarak oluşturun."
-        return
-    fi
-
-    cp "$EXAMPLE_FILE" "$ENV_FILE"
-    ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_database_url_defaults "$ENV_FILE"
 
     # Lokal kurulumda Docker hostname yerine localhost kullan
