@@ -961,8 +961,9 @@ main() {
     create_directories
     setup_env_file
     setup_react_frontend
-    download_ollama_models
+    # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
+    download_ollama_models
     verify_torch_cuda
     print_summary
 }
