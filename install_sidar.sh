@@ -210,11 +210,28 @@ check_prerequisites() {
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
     fi
 
-    # Ollama (varsayılan AI provider)
-    if curl -sf http://localhost:11434/api/version &>/dev/null; then
-        ok "Ollama çalışıyor."
+    # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
+    if ! ollama -v &>/dev/null; then
+        warn "Ollama bulunamadı veya kurulumu bozuk. İndiriliyor..."
+        if command -v sudo &>/dev/null; then
+            # Eski bozuk dosya kalıntılarını temizle
+            sudo rm -f /usr/local/bin/ollama
+            info "Ollama kurulumu başlatılıyor..."
+            curl -fsSL https://ollama.com/install.sh | sh
+            ok "Ollama başarıyla kuruldu."
+        else
+            warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
+        fi
     else
-        warn "Ollama bulunamadı (localhost:11434). Kurmak için: https://ollama.com"
+        ok "Ollama zaten kurulu."
+    fi
+
+    # Servisin anlık olarak yanıt verip vermediğini kontrol et
+    if curl -sf http://localhost:11434/api/version &>/dev/null; then
+        ok "Ollama API servisi aktif (localhost:11434)."
+    else
+        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor."
+        info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
         info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
     fi
 }
