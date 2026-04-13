@@ -951,7 +951,7 @@ PY
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
-    local estimated_size_gb="~12 GB"
+    local estimated_size_gb="~14.8 GB"
 
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
