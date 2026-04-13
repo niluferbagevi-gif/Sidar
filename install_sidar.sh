@@ -101,9 +101,18 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-        info "Gerekli temel paketler (curl, wget, git, zstd, nodejs, npm vb.) kuruluyor..."
+        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl wget git build-essential software-properties-common zstd nodejs npm
+            curl wget git build-essential software-properties-common zstd ca-certificates gnupg
+
+        info "Node.js 20.x (NodeSource) kuruluyor..."
+        if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+            ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        else
+            warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+        fi
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -498,6 +507,16 @@ setup_react_frontend() {
         echo "       cd web_ui_react && npm install && npm run build"
         REACT_UI_STATUS="npm_yok"
         return
+    fi
+
+    if command -v node &>/dev/null; then
+        NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
+        if [[ "$NODE_MAJOR" -lt 20 ]]; then
+            warn "Node.js sürümü düşük: $(node -v). React build için Node.js 20+ önerilir."
+            warn "Kurulum komutları: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+        else
+            ok "Node.js sürümü uygun: $(node -v)"
+        fi
     fi
 
     (
