@@ -26,6 +26,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
+DOWNLOAD_MODELS=false
 PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
@@ -34,16 +35,22 @@ for arg in "$@"; do
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
         --skip-models) SKIP_MODELS=true ;;
+        --download-models) DOWNLOAD_MODELS=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --skip-models  Ollama model indirmelerini atla"
+            echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models kabul edilir)"; exit 1 ;;
     esac
 done
+
+if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
+    fail "--skip-models ve --download-models birlikte kullanılamaz."
+fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
@@ -101,22 +108,36 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-        info "Gerekli temel paketler (curl, wget, git, zstd, nodejs, npm vb.) kuruluyor..."
+        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl wget git build-essential software-properties-common zstd nodejs npm
+            curl wget git build-essential software-properties-common zstd ca-certificates gnupg
+
+        info "Node.js 20.x (NodeSource) kuruluyor..."
+        if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+            ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        else
+            warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+        fi
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
         info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libpq-dev postgresql-client
+            libpq-dev postgresql-client postgresql redis-server
+
+        info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
+        sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
+        sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
+            warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-server postgresql-devel redis
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
@@ -500,6 +521,16 @@ setup_react_frontend() {
         return
     fi
 
+    if command -v node &>/dev/null; then
+        NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
+        if [[ "$NODE_MAJOR" -lt 20 ]]; then
+            warn "Node.js sürümü düşük: $(node -v). React build için Node.js 20+ önerilir."
+            warn "Kurulum komutları: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+        else
+            ok "Node.js sürümü uygun: $(node -v)"
+        fi
+    fi
+
     (
         cd "$REACT_DIR"
         info "npm install çalıştırılıyor..."
@@ -707,10 +738,27 @@ PY
 # ── 11. Alembic migrasyonları ────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
+    local estimated_size_gb="~12 GB"
 
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
         return
+    fi
+
+    if [[ "$DOWNLOAD_MODELS" != true ]]; then
+        if [[ -t 0 ]]; then
+            read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
+            case "${reply:-E}" in
+                [HhNn]*)
+                    info "Model indirmesi kullanıcı tercihiyle atlandı."
+                    return
+                    ;;
+            esac
+        else
+            info "--download-models verilmediği için model indirmeleri atlanıyor (tahmini ${estimated_size_gb})."
+            info "Model indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
+            return
+        fi
     fi
 
     if ! command -v ollama &>/dev/null; then
@@ -895,10 +943,14 @@ print_summary() {
         echo "       source .venv/bin/activate"
     fi
     echo ""
-    echo -e "  3️⃣  CLI ile başlat:"
+    echo -e "  3️⃣  Arka plan servislerini başlat (önerilir):"
+    echo "       docker compose up -d"
+    echo "       (PostgreSQL/Redis gibi servisleri Docker ile kullanıyorsanız önce bunu çalıştırın.)"
+    echo ""
+    echo -e "  4️⃣  CLI ile başlat:"
     echo "       python main.py"
     echo ""
-    echo -e "  4️⃣  Web arayüzü ile başlat (http://localhost:7860):"
+    echo -e "  5️⃣  Web arayüzü ile başlat (http://localhost:7860):"
     echo "       python main.py --quick web"
     if [[ "$REACT_UI_STATUS" == "hazır" ]]; then
         echo "       React UI build: tamamlandı (web_ui_react/dist)"
@@ -907,7 +959,7 @@ print_summary() {
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
     fi
     echo ""
-    echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
+    echo -e "  6️⃣  Testleri çalıştır (--dev ile kurulduysa):"
     echo "       ./run_tests.sh"
     echo ""
 
