@@ -119,13 +119,18 @@ install_system_dependencies() {
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
         info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libpq-dev postgresql-client
+            libpq-dev postgresql-client postgresql redis-server
+
+        info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
+        sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
+        sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
+            warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-server postgresql-devel redis
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
