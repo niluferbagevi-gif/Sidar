@@ -626,13 +626,17 @@ setup_react_frontend() {
         return
     fi
 
-    (
+    if ! (
         cd "$REACT_DIR"
         info "npm install çalıştırılıyor..."
         npm install
         info "npm run build çalıştırılıyor..."
         npm run build
-    )
+    ); then
+        warn "React UI build başarısız oldu. Kurulum devam edecek; özet bölümünde durum işaretlenecek."
+        REACT_UI_STATUS="build_hata"
+        return
+    fi
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
     REACT_UI_STATUS="hazır"
 }
@@ -1319,6 +1323,9 @@ print_summary() {
         else
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
+    elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
+        echo "       React UI build: başarısız (npm install/npm run build hata verdi)"
+        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm install && npm run build"
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
