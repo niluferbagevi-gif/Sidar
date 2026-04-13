@@ -104,7 +104,11 @@ sync_repo() {
         warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
         (
             cd "$TARGET_DIR"
-            git pull --ff-only
+            git fetch origin
+            git pull --ff-only || {
+                warn "Fast-forward pull başarısız (lokal değişiklikler mevcut). Sadece fetch yapıldı."
+                info "Güncelleme için: git stash && git pull --ff-only && git stash pop"
+            }
         )
     fi
 
