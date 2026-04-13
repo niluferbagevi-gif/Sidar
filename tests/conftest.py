@@ -221,7 +221,8 @@ async def fake_db_session(tmp_path: Path) -> AsyncGenerator[Any, None]:
 @pytest_asyncio.fixture
 async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
     cfg = SimpleNamespace(
-        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",
+        # Varsayılan test DB'si in-memory tutularak disk I/O ve flaky kilitlenmeler azaltılır.
+        DATABASE_URL="sqlite+aiosqlite:///:memory:",
         BASE_DIR=str(tmp_path),
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",

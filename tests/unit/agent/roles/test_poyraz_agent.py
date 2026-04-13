@@ -736,8 +736,10 @@ async def test_poyraz_agent_error_flows(
     agent.social.set_rate_limit_error()
     agent.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))
 
-    with pytest.raises(RuntimeError, match="API Rate Limit"):
-        await agent._tool_publish_social("instagram|||hata testi|||sidar")
+    social_result = await agent._tool_publish_social("instagram|||hata testi|||sidar")
+    assert social_result.startswith("[SOCIAL:ERROR]")
+    assert "rate_limit" in social_result
+    assert "Lütfen bekleyip tekrar deneyin" in social_result
 
     class _FakeErrorPipeline:
         def __init__(self, *_args, **_kwargs):
