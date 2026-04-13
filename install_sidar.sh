@@ -27,6 +27,7 @@ INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
+FORCE_REACT_BUILD=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
@@ -35,15 +36,17 @@ for arg in "$@"; do
         --cpu)  FORCE_CPU=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
+        --build-ui) FORCE_REACT_BUILD=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
+            echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -53,9 +56,25 @@ fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
-PYTHON_VERSION="3.11"
-DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_VERSION="3.11"
+if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
+    PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
+    if [[ -n "$PYTHON_VERSION_FROM_FILE" ]]; then
+        PYTHON_VERSION="$PYTHON_VERSION_FROM_FILE"
+    fi
+elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    PYPROJECT_PYTHON_VERSION=$(sed -nE 's/^[[:space:]]*requires-python[[:space:]]*=[[:space:]]*"[>=~^]*([0-9]+\.[0-9]+).*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1)
+    if [[ -n "$PYPROJECT_PYTHON_VERSION" ]]; then
+        PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
+    fi
+fi
+OS_NAME="$(uname -s 2>/dev/null || echo Linux)"
+if [[ "$OS_NAME" == "Darwin" ]]; then
+    DEFAULT_DATABASE_URL="postgresql+asyncpg://$(whoami):@localhost:5432/sidar"
+else
+    DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
+fi
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
@@ -602,6 +621,12 @@ setup_react_frontend() {
         fi
     fi
 
+    if [[ "$FORCE_REACT_BUILD" != true && "$INSTALL_DEV" == false && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
+        ok "React Web UI zaten build edilmiş. Yeniden derleme atlanıyor (--build-ui ile zorlayabilirsiniz)."
+        REACT_UI_STATUS="hazır_cache"
+        return
+    fi
+
     (
         cd "$REACT_DIR"
         info "npm install çalıştırılıyor..."
@@ -980,8 +1005,15 @@ download_ollama_models() {
     fi
 
     if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        info "Ollama servisi başlatılıyor..."
-        ollama serve >/dev/null 2>&1 &
+        info "Ollama API erişilemedi. Servis başlatma deneniyor..."
+        if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+            sudo systemctl enable --now ollama >/dev/null 2>&1 || true
+        fi
+        # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
+        if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
+            info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
+            ollama serve >/dev/null 2>&1 &
+        fi
         for _ in {1..12}; do
             if curl -sf http://localhost:11434/api/version &>/dev/null; then
                 break
@@ -1101,10 +1133,35 @@ PY
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-            warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
-            info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
-            MIGRATION_STATUS="db_erisilemez"
-            return
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            elif command -v docker-compose &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
+            fi
+
+            if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
+                    info "Veritabanının hazır olması bekleniyor..."
+                    for _ in {1..15}; do
+                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                            ok "PostgreSQL erişilebilir hale geldi."
+                            break
+                        fi
+                        sleep 2
+                    done
+                else
+                    warn "Docker servisleri başlatılamadı (postgres/redis)."
+                fi
+            fi
+
+            if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+                info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+                MIGRATION_STATUS="db_erisilemez"
+                return
+            fi
         fi
     fi
 
@@ -1175,8 +1232,12 @@ print_summary() {
     echo ""
     echo -e "  5️⃣  Web arayüzü ile başlat (http://localhost:7860):"
     echo "       python main.py --quick web"
-    if [[ "$REACT_UI_STATUS" == "hazır" ]]; then
-        echo "       React UI build: tamamlandı (web_ui_react/dist)"
+    if [[ "$REACT_UI_STATUS" == "hazır" || "$REACT_UI_STATUS" == "hazır_cache" ]]; then
+        if [[ "$REACT_UI_STATUS" == "hazır_cache" ]]; then
+            echo "       React UI build: cache kullanıldı, yeniden derleme atlandı (web_ui_react/dist)"
+        else
+            echo "       React UI build: tamamlandı (web_ui_react/dist)"
+        fi
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
