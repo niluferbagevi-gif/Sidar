@@ -94,6 +94,29 @@ def _normalize_path(path: str) -> str:
     return normalized
 
 
+def resolve_github_token() -> str:
+    """
+    GITHUB_TOKEN değerini farklı kaynaklardan güvenli biçimde çözer.
+
+    Not:
+    - Bazı ortamlarda `GITHUB_TOKEN` değişkeni process içinde boş string olarak
+      tanımlı olabilir ve bu durum `.env` içindeki gerçek değeri gölgeleyebilir.
+    - Bu nedenle alternatif anahtar adlarını da (GH_TOKEN/GITHUB_PAT) deneriz.
+    """
+    candidates = [
+        getattr(cfg, "GITHUB_TOKEN", ""),
+        os.getenv("GITHUB_TOKEN", ""),
+        os.getenv("GH_TOKEN", ""),
+        os.getenv("GITHUB_PAT", ""),
+    ]
+
+    for value in candidates:
+        token = str(value or "").strip().strip('"').strip("'")
+        if token:
+            return token
+    return ""
+
+
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
@@ -199,8 +222,12 @@ def main():
     print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.1) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
-    if not hasattr(cfg, 'GITHUB_TOKEN') or not cfg.GITHUB_TOKEN:
-        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
+    github_token = resolve_github_token()
+    if not github_token:
+        print(
+            f"{Colors.FAIL}GITHUB_TOKEN bulunamadı. "
+            f"Lütfen .env içinde GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) tanımlayın.{Colors.ENDC}"
+        )
         sys.exit(1)
 
     success, _ = run_command(["git", "--version"], show_output=False)
