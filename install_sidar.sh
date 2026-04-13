@@ -649,6 +649,36 @@ check_pyaudio_wsl2() {
         echo "       [wsl2]"
         echo "       memory=16GB"
         echo "       swap=8GB"
+
+        # Opsiyonel kolaylık: .wslconfig yoksa otomatik oluşturmayı dene
+        local win_userprofile=""
+        local wslconfig_path=""
+        if command -v cmd.exe &>/dev/null; then
+            win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+            if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
+                local drive_letter
+                local path_rest
+                drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
+                path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
+                wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
+            fi
+        fi
+
+        if [[ -n "$wslconfig_path" ]]; then
+            if [[ ! -f "$wslconfig_path" ]]; then
+                cat > "$wslconfig_path" <<'EOF'
+[wsl2]
+memory=16GB
+swap=8GB
+EOF
+                ok "WSL2: %UserProfile%/.wslconfig otomatik oluşturuldu ($wslconfig_path)."
+            else
+                info "WSL2: .wslconfig zaten mevcut ($wslconfig_path)."
+            fi
+        else
+            info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
+        fi
+
         info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
     fi
 }
