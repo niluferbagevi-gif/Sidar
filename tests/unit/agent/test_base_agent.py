@@ -55,7 +55,7 @@ def _load_base_agent_module(monkeypatch):
     llm_stub.LLMClient = DummyLLMClient
     monkeypatch.setitem(sys.modules, "core.llm_client", llm_stub)
 
-    sys.modules.pop("agent.base_agent", None)
+    monkeypatch.delitem(sys.modules, "agent.base_agent", raising=False)
     return importlib.import_module("agent.base_agent")
 
 
@@ -68,7 +68,7 @@ def _load_base_agent_module_with_config(monkeypatch, config_cls):
     llm_stub.LLMClient = DummyLLMClient
     monkeypatch.setitem(sys.modules, "core.llm_client", llm_stub)
 
-    sys.modules.pop("agent.base_agent", None)
+    monkeypatch.delitem(sys.modules, "agent.base_agent", raising=False)
     return importlib.import_module("agent.base_agent")
 
 
