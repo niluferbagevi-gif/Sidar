@@ -803,7 +803,17 @@ download_ollama_models() {
     if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
         info "Ollama servisi başlatılıyor..."
         ollama serve >/dev/null 2>&1 &
-        sleep 5
+        for _ in {1..12}; do
+            if curl -sf http://localhost:11434/api/version &>/dev/null; then
+                break
+            fi
+            sleep 5
+        done
+    fi
+
+    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
+        warn "Ollama servisi doğrulanamadı, model indirme atlanıyor."
+        return
     fi
 
     ENV_FILE="$SCRIPT_DIR/.env"
