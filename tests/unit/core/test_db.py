@@ -832,17 +832,10 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     await already_connected._connect_postgresql()
 
     missing_dep = Database(cfg)
-    real_import = __import__
-
-    def _raise_import(name, *args, **kwargs):
-        if name == "asyncpg":
-            raise ImportError("no asyncpg")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _raise_import)
+    monkeypatch.delitem(sys.modules, "asyncpg", raising=False)
+    monkeypatch.setitem(sys.modules, "asyncpg", None)
     with pytest.raises(RuntimeError, match="asyncpg"):
         await missing_dep._connect_postgresql()
-    monkeypatch.setattr("builtins.__import__", real_import)
 
     class _AsyncpgStub:
         class PoolError(Exception):
