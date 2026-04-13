@@ -272,7 +272,9 @@ def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
     f = None
     log_path = None
     if child_log_path:
-        log_path = Path(child_log_path)
+        candidate = Path(child_log_path)
+        base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
+        log_path = candidate if candidate.is_absolute() else (base_dir / candidate)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         f = open(log_path, "w", encoding="utf-8")
         f.write(f"$ {_format_cmd(cmd)}\n\n")
