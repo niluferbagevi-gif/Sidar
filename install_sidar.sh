@@ -9,6 +9,7 @@
 #   ./install_sidar.sh           # standart kurulum
 #   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
+#   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -28,30 +29,46 @@ FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
 FORCE_REACT_BUILD=false
+INSTALL_KUBERNETES=false
+HELM_RELEASE_NAME="sidar"
+HELM_NAMESPACE="sidar"
+HELM_VALUES_FILE=""
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
+        --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
+        --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
+        --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
+        --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui] [--kubernetes]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
+            echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
+            echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
+            echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
     fail "--skip-models ve --download-models birlikte kullanılamaz."
+fi
+
+if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
+    warn "--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek."
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
@@ -80,6 +97,45 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+deploy_with_helm() {
+    step "Kubernetes/Helm Dağıtımı"
+    local chart_dir="$SCRIPT_DIR/helm/sidar"
+    local helm_cmd=(helm upgrade --install "$HELM_RELEASE_NAME" "$chart_dir" --namespace "$HELM_NAMESPACE" --create-namespace)
+
+    if ! command -v helm &>/dev/null; then
+        fail "helm bulunamadı. Kurulum için: https://helm.sh/docs/intro/install/"
+    fi
+
+    if [[ ! -f "$chart_dir/Chart.yaml" ]]; then
+        fail "Helm chart bulunamadı: $chart_dir/Chart.yaml"
+    fi
+
+    if [[ -n "$HELM_VALUES_FILE" ]]; then
+        if [[ ! -f "$SCRIPT_DIR/$HELM_VALUES_FILE" && ! -f "$HELM_VALUES_FILE" ]]; then
+            fail "--values ile verilen dosya bulunamadı: $HELM_VALUES_FILE"
+        fi
+        if [[ -f "$SCRIPT_DIR/$HELM_VALUES_FILE" ]]; then
+            HELM_VALUES_FILE="$SCRIPT_DIR/$HELM_VALUES_FILE"
+        fi
+        helm_cmd+=(--values "$HELM_VALUES_FILE")
+    fi
+
+    info "Helm chart doğrulaması çalıştırılıyor..."
+    helm lint "$chart_dir"
+
+    info "Helm release kuruluyor/güncelleniyor: release=$HELM_RELEASE_NAME namespace=$HELM_NAMESPACE"
+    "${helm_cmd[@]}"
+    ok "Helm dağıtımı tamamlandı."
+
+    if command -v kubectl &>/dev/null; then
+        info "Servisleri doğrulamak için:"
+        echo "       kubectl get pods -n $HELM_NAMESPACE"
+        echo "       kubectl get svc -n $HELM_NAMESPACE"
+    else
+        warn "kubectl bulunamadı. Cluster doğrulaması için kubectl kurmanız önerilir."
+    fi
 }
 
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
@@ -1360,6 +1416,12 @@ print_summary() {
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    if [[ "$INSTALL_KUBERNETES" == true ]]; then
+        info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
+        deploy_with_helm
+        return
+    fi
+
     # Kritik sıra:
     # 1) Sistem bağımlılıkları (git/curl vb.)
     # 2) Repo senkronizasyonu (git clone/pull)
