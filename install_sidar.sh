@@ -42,7 +42,7 @@ for arg in "$@"; do
 done
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
-CONDA_ENV_NAME="sidar-ai"
+CONDA_ENV_NAME="sidar"
 PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
