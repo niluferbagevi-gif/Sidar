@@ -736,11 +736,11 @@ download_ollama_models() {
     CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
 
     if [[ -z "$TEXT_MOD" ]]; then
-        TEXT_MOD="gemma2:9b"
+        TEXT_MOD="llama3.1:8b"
         warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
     fi
     if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:7b"
+        CODE_MOD="qwen2.5-coder:3b"
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
 

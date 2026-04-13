@@ -588,9 +588,9 @@ bash run_tests.sh
 ```env
 # AI Sağlayıcı
 AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
-CODING_MODEL=qwen2.5-coder:7b
+CODING_MODEL=qwen2.5-coder:3b
 OLLAMA_URL=http://localhost:11434/api
-TEXT_MODEL=gemma2:9b
+TEXT_MODEL=llama3.1:8b
 GEMINI_API_KEY=                 # Gemini kullanılacaksa
 OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
