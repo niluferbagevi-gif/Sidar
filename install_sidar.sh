@@ -929,11 +929,11 @@ print_summary() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
+    banner
     install_system_dependencies
     check_prerequisites
     sync_repo
     cd "$SCRIPT_DIR"
-    banner
     detect_gpu
     setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
@@ -949,8 +949,8 @@ main() {
     install_playwright_browsers
     check_pyaudio_wsl2
     create_directories
-    setup_react_frontend
     setup_env_file
+    setup_react_frontend
     download_ollama_models
     run_migrations
     verify_torch_cuda
