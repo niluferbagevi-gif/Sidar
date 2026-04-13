@@ -621,8 +621,25 @@ setup_env_file() {
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
-    # API_KEY boşsa güçlü rastgele değer üret
-    if ! grep -q '^API_KEY=' "$ENV_FILE" || grep -q '^API_KEY=$' "$ENV_FILE"; then
+    # Değişken yoksa/boşsa tespit et
+    env_key_is_missing_or_empty() {
+        local key_name="$1"
+        local current_value=""
+
+        if ! grep -q "^${key_name}=" "$ENV_FILE"; then
+            return 0
+        fi
+
+        current_value=$(grep -E "^${key_name}=" "$ENV_FILE" | head -n1 | cut -d= -f2- || true)
+        # Boşluklardan ibaret veya sadece çift tırnak ise "boş" kabul et
+        current_value="${current_value//[[:space:]]/}"
+        current_value="${current_value//\"/}"
+
+        [[ -z "$current_value" ]]
+    }
+
+    # API_KEY yoksa/boşsa güçlü rastgele değer üret
+    if env_key_is_missing_or_empty "API_KEY"; then
         GENERATED_API_KEY=""
         if command -v python3 &>/dev/null; then
             GENERATED_API_KEY=$(python3 - <<'PY'
@@ -646,8 +663,8 @@ PY
         fi
     fi
 
-    # JWT_SECRET_KEY boşsa güçlü rastgele değer üret
-    if grep -q '^JWT_SECRET_KEY=$' "$ENV_FILE"; then
+    # JWT_SECRET_KEY yoksa/boşsa güçlü rastgele değer üret
+    if env_key_is_missing_or_empty "JWT_SECRET_KEY"; then
         GENERATED_JWT_KEY=""
         if command -v python3 &>/dev/null; then
             GENERATED_JWT_KEY=$(python3 - <<'PY'
@@ -660,15 +677,19 @@ PY
         fi
 
         if [[ -n "$GENERATED_JWT_KEY" ]]; then
-            sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${GENERATED_JWT_KEY}|" "$ENV_FILE"
+            if grep -q '^JWT_SECRET_KEY=' "$ENV_FILE"; then
+                sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${GENERATED_JWT_KEY}|" "$ENV_FILE"
+            else
+                echo "JWT_SECRET_KEY=${GENERATED_JWT_KEY}" >> "$ENV_FILE"
+            fi
             ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
         else
             warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 
-    # MEMORY_ENCRYPTION_KEY boşsa Fernet anahtarı üret
-    if grep -q '^MEMORY_ENCRYPTION_KEY=$' "$ENV_FILE"; then
+    # MEMORY_ENCRYPTION_KEY yoksa/boşsa Fernet anahtarı üret
+    if env_key_is_missing_or_empty "MEMORY_ENCRYPTION_KEY"; then
         GENERATED_FERNET_KEY=""
         if command -v python3 &>/dev/null; then
             GENERATED_FERNET_KEY=$(python3 - <<'PY'
@@ -682,7 +703,11 @@ PY
         fi
 
         if [[ -n "$GENERATED_FERNET_KEY" ]]; then
-            sed -i "s|^MEMORY_ENCRYPTION_KEY=.*|MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}|" "$ENV_FILE"
+            if grep -q '^MEMORY_ENCRYPTION_KEY=' "$ENV_FILE"; then
+                sed -i "s|^MEMORY_ENCRYPTION_KEY=.*|MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}|" "$ENV_FILE"
+            else
+                echo "MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}" >> "$ENV_FILE"
+            fi
             ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
         else
             warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
@@ -695,7 +720,7 @@ PY
         local hex_len="${2:-64}"
         local generated=""
 
-        if grep -q "^${key_name}=$" "$ENV_FILE"; then
+        if env_key_is_missing_or_empty "$key_name"; then
             if command -v python3 &>/dev/null; then
                 generated=$(python3 - <<PY
 import secrets
@@ -707,7 +732,11 @@ PY
             fi
 
             if [[ -n "$generated" ]]; then
-                sed -i "s|^${key_name}=.*|${key_name}=${generated}|" "$ENV_FILE"
+                if grep -q "^${key_name}=" "$ENV_FILE"; then
+                    sed -i "s|^${key_name}=.*|${key_name}=${generated}|" "$ENV_FILE"
+                else
+                    echo "${key_name}=${generated}" >> "$ENV_FILE"
+                fi
                 ok ".env: ${key_name} otomatik ve güvenli bir değerle oluşturuldu."
             else
                 warn "${key_name} otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
