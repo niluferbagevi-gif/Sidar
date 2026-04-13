@@ -323,6 +323,16 @@ cp .env.example .env
 # .env dosyasını düzenleyin
 ```
 
+**4. Alternatif: Model İsimlerini Değiştirin**
+
+Eğer bilgisayarınızın donanımı (özellikle 8GB VRAM) varsayılan modeller için yetersiz kalıyorsa,
+`.env` dosyasında daha düşük boyutlu modelleri deneyebilirsiniz:
+
+```env
+CODING_MODEL=qwen2.5-coder:3b
+TEXT_MODEL=llama3.1:8b
+```
+
 ### Ollama Kurulumu
 
 ```bash
