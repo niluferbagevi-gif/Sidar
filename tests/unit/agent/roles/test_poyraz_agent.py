@@ -315,6 +315,18 @@ def test_social_media_invalid_text_format(poyraz_module, fake_cfg):
     assert "platform=unknown" in result
 
 
+def test_publish_social_returns_generic_exception_reason(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+
+    async def _raise_generic(**_kwargs):
+        raise RuntimeError("service down")
+
+    agent.social.publish_content = _raise_generic
+
+    result = asyncio.run(agent._tool_publish_social("instagram|||text|||dest|||m|||l"))
+    assert result == "[SOCIAL:ERROR] platform=instagram reason=service down"
+
+
 def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     sentinel_db = object()
