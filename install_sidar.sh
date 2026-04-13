@@ -69,12 +69,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
     fi
 fi
-OS_NAME="$(uname -s 2>/dev/null || echo Linux)"
-if [[ "$OS_NAME" == "Darwin" ]]; then
-    DEFAULT_DATABASE_URL="postgresql+asyncpg://$(whoami):@localhost:5432/sidar"
-else
-    DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
-fi
+DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
@@ -109,7 +104,11 @@ sync_repo() {
         warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
         (
             cd "$TARGET_DIR"
-            git pull --ff-only
+            git fetch origin
+            git pull --ff-only || {
+                warn "Fast-forward pull başarısız (lokal değişiklikler mevcut). Sadece fetch yapıldı."
+                info "Güncelleme için: git stash && git pull --ff-only && git stash pop"
+            }
         )
     fi
 
@@ -627,13 +626,17 @@ setup_react_frontend() {
         return
     fi
 
-    (
+    if ! (
         cd "$REACT_DIR"
         info "npm install çalıştırılıyor..."
         npm install
         info "npm run build çalıştırılıyor..."
         npm run build
-    )
+    ); then
+        warn "React UI build başarısız oldu. Kurulum devam edecek; özet bölümünde durum işaretlenecek."
+        REACT_UI_STATUS="build_hata"
+        return
+    fi
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
     REACT_UI_STATUS="hazır"
 }
@@ -650,6 +653,36 @@ check_pyaudio_wsl2() {
         echo "       [wsl2]"
         echo "       memory=16GB"
         echo "       swap=8GB"
+
+        # Opsiyonel kolaylık: .wslconfig yoksa otomatik oluşturmayı dene
+        local win_userprofile=""
+        local wslconfig_path=""
+        if command -v cmd.exe &>/dev/null; then
+            win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+            if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
+                local drive_letter
+                local path_rest
+                drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
+                path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
+                wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
+            fi
+        fi
+
+        if [[ -n "$wslconfig_path" ]]; then
+            if [[ ! -f "$wslconfig_path" ]]; then
+                cat > "$wslconfig_path" <<'EOF'
+[wsl2]
+memory=16GB
+swap=8GB
+EOF
+                ok "WSL2: %UserProfile%/.wslconfig otomatik oluşturuldu ($wslconfig_path)."
+            else
+                info "WSL2: .wslconfig zaten mevcut ($wslconfig_path)."
+            fi
+        else
+            info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
+        fi
+
         info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
     fi
 }
@@ -709,6 +742,22 @@ harden_database_credentials() {
                         safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
                         sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+
+                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                        # DATABASE_URL ile senkron kalmalıdır.
+                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                        else
+                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                        fi
+                        if grep -q '^POSTGRES_USER=' "$env_file"; then
+                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        else
+                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                        fi
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın:"
+                        info "docker compose down && docker compose up -d postgres redis"
                     else
                         warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                     fi
@@ -777,6 +826,11 @@ setup_env_file() {
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$ENV_FILE"; then
         sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$ENV_FILE"
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
+    fi
+
+    if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$ENV_FILE"; then
+        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$ENV_FILE"
+        ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
 
     # Bilinen sızıntı/default değerleri de güvenli olmayan kabul edilir ve yeniden üretilir.
@@ -941,7 +995,12 @@ PY
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
             sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
-            ok ".env: USE_GPU=false (CPU modu / --cpu bayrağı)"
+            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
+                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
+            else
+                echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
+            fi
+            ok ".env: USE_GPU=false, COMPOSE_PROFILES=cpu ayarlandı."
         fi
     fi
 
@@ -1052,6 +1111,8 @@ download_ollama_models() {
 
     TEXT_MOD=$(_read_env_value "TEXT_MODEL" "$ENV_FILE")
     CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
+    VISION_MOD=$(_read_env_value "VISION_MODEL" "$ENV_FILE")
+    MULTIMODAL=$(_read_env_value "ENABLE_MULTIMODAL" "$ENV_FILE")
 
     if [[ -z "$TEXT_MOD" ]]; then
         TEXT_MOD="llama3.1:8b"
@@ -1062,7 +1123,10 @@ download_ollama_models() {
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
 
-    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text" "llama3.2-vision")
+    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
+    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
+        MODELS+=("$VISION_MOD")
+    fi
 
     for model in "${MODELS[@]}"; do
         if [[ -n "$model" ]]; then
@@ -1101,6 +1165,25 @@ run_migrations() {
     fi
 
     info "DATABASE_URL: $DB_URL"
+
+    setup_pgvector_extension() {
+        if ! command -v psql &>/dev/null; then
+            return
+        fi
+        if [[ -z "$DB_URL" ]]; then
+            return
+        fi
+
+        local psql_url
+        psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
+
+        info "pgvector extension kontrol ediliyor..."
+        if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+            ok "pgvector extension hazır."
+        else
+            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
+        fi
+    }
 
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
@@ -1163,6 +1246,8 @@ PY
                 return
             fi
         fi
+
+        setup_pgvector_extension
     fi
 
     if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
@@ -1238,6 +1323,9 @@ print_summary() {
         else
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
+    elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
+        echo "       React UI build: başarısız (npm install/npm run build hata verdi)"
+        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm install && npm run build"
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
