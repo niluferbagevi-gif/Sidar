@@ -994,8 +994,15 @@ download_ollama_models() {
     fi
 
     if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        info "Ollama servisi başlatılıyor..."
-        ollama serve >/dev/null 2>&1 &
+        info "Ollama API erişilemedi. Servis başlatma deneniyor..."
+        if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+            sudo systemctl enable --now ollama >/dev/null 2>&1 || true
+        fi
+        # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
+        if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
+            info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
+            ollama serve >/dev/null 2>&1 &
+        fi
         for _ in {1..12}; do
             if curl -sf http://localhost:11434/api/version &>/dev/null; then
                 break
