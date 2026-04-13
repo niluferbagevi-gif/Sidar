@@ -69,12 +69,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
     fi
 fi
-OS_NAME="$(uname -s 2>/dev/null || echo Linux)"
-if [[ "$OS_NAME" == "Darwin" ]]; then
-    DEFAULT_DATABASE_URL="postgresql+asyncpg://$(whoami):@localhost:5432/sidar"
-else
-    DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
-fi
+DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)

@@ -208,7 +208,7 @@ class Database:
 
     Not:
     - `DATABASE_URL` yoksa varsayılan PostgreSQL DSN kullanılır:
-      `postgresql+asyncpg://postgres:postgres@localhost:5432/sidar`
+      `postgresql+asyncpg://sidar:sidar@localhost:5432/sidar`
     - PostgreSQL URL (postgresql:// / postgresql+asyncpg://) verildiğinde `asyncpg`
       kullanılır; paket yoksa anlaşılır hata döndürür.
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
@@ -218,7 +218,7 @@ class Database:
         self.cfg = cfg or Config()
         self.database_url = (
             (getattr(self.cfg, "DATABASE_URL", "") or "").strip()
-            or "postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
+            or "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
         )
         self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
         self.schema_version_table = str(getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions")
