@@ -137,6 +137,26 @@ install_system_dependencies() {
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
         sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-server postgresql-devel redis
+    elif command -v brew &>/dev/null; then
+        warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
+        brew update
+        brew install \
+            curl wget git zstd node@20 ffmpeg portaudio \
+            postgresql@16 redis || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+
+        if brew list node@20 &>/dev/null; then
+            info "Node.js 20 için brew link işlemi deneniyor..."
+            brew link --overwrite --force node@20 >/dev/null 2>&1 || true
+            ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        fi
+
+        info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
+        brew services start postgresql@16 >/dev/null 2>&1 || \
+            warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
+        brew services start redis >/dev/null 2>&1 || \
+            warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
+
+        ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
@@ -565,6 +585,63 @@ create_directories() {
 }
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
+generate_secure_token() {
+    local token_length="${1:-32}"
+    local generated=""
+
+    if command -v python3 &>/dev/null; then
+        generated=$(python3 - <<PY
+import secrets
+print(secrets.token_urlsafe(${token_length}))
+PY
+)
+    elif command -v openssl &>/dev/null; then
+        generated=$(openssl rand -base64 "$token_length" | tr -d '\n')
+    fi
+
+    echo "$generated"
+}
+
+harden_database_credentials() {
+    local env_file="$1"
+    local db_url=""
+    local sidar_env="development"
+    local safe_db_url=""
+
+    [[ -f "$env_file" ]] || return
+
+    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    sidar_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || echo "development")
+
+    [[ -n "$db_url" ]] || return
+
+    # Güvensiz bilinen varsayılan kimlik bilgileri (postgres:postgres vb.)
+    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
+        local db_user="${BASH_REMATCH[2]}"
+        local db_password="${BASH_REMATCH[3]}"
+        local db_host_and_name="${BASH_REMATCH[4]}"
+
+        case "$db_password" in
+            postgres|password|admin|changeme|123456)
+                if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                    local generated_password=""
+                    generated_password=$(generate_secure_token 24)
+                    if [[ -n "$generated_password" ]]; then
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                    else
+                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                    fi
+                else
+                    warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
+                    warn "Üretim için SIDAR_ENV=production ayarlayıp scripti tekrar çalıştırın veya DATABASE_URL parolasını manuel değiştirin."
+                fi
+                ;;
+        esac
+    fi
+}
+
 ensure_database_url_defaults() {
     local env_file="$1"
     local current_db_url=""
@@ -603,6 +680,7 @@ setup_env_file() {
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
         ensure_database_url_defaults "$ENV_FILE"
+        harden_database_credentials "$ENV_FILE"
         return
     fi
 
@@ -614,6 +692,7 @@ setup_env_file() {
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_database_url_defaults "$ENV_FILE"
+    harden_database_credentials "$ENV_FILE"
 
     # Lokal kurulumda Docker hostname yerine localhost kullan
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$ENV_FILE"; then
