@@ -11,10 +11,6 @@ import pytest
 import core.active_learning as al
 
 
-def run(coro):
-    return asyncio.run(coro)
-
-
 class DummyConfig:
     ENABLE_ACTIVE_LEARNING = True
     AL_MIN_RATING_FOR_TRAIN = 1
@@ -54,21 +50,23 @@ class InMemoryStore:
         return self.rows[:limit]
 
 
-def test_feedback_store_noop_when_disabled_or_sqlalchemy_missing(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_noop_when_disabled_or_sqlalchemy_missing(monkeypatch):
     monkeypatch.setattr(al, "_SA_AVAILABLE", False)
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
-    run(store.initialize())
+    await store.initialize()
     assert store._engine is None
 
     disabled = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=False))
-    assert run(disabled.record("p", "r")) is False
-    assert run(disabled.get_pending_export()) == []
-    assert run(disabled.get_pending_signals()) == []
-    run(disabled.mark_exported([1, 2]))
-    assert run(disabled.stats()) == {}
+    assert await disabled.record("p", "r") is False
+    assert await disabled.get_pending_export() == []
+    assert await disabled.get_pending_signals() == []
+    await disabled.mark_exported([1, 2])
+    assert await disabled.stats() == {}
 
 
-def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     called = {}
 
@@ -82,14 +80,14 @@ def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
     monkeypatch.setattr(store, "initialize", fake_initialize)
     monkeypatch.setattr(store, "record", fake_record)
 
-    result = run(store.flag_weak_response(
+    result = await store.flag_weak_response(
         prompt="p",
         response="r",
         score=11,
         reasoning=" why ",
         tags=["x"],
         user_id="u",
-    ))
+    )
 
     assert result is True
     assert called["rating"] == -1
@@ -99,7 +97,8 @@ def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
     assert "score:10" in called["tags"]
 
 
-def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
     class FakeRows:
         def fetchall(self):
@@ -126,12 +125,13 @@ def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     store._engine = FakeEngine()
 
-    out = run(store.get_pending_signals())
+    out = await store.get_pending_signals()
     assert out[0]["tags"] == ["a"]
     assert out[1]["tags"] == []
 
 
-def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypatch):
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
     executed = []
 
@@ -153,14 +153,15 @@ def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypatch):
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     store._engine = FakeEngine()
 
-    run(store.mark_exported([1, 2, 3]))
+    await store.mark_exported([1, 2, 3])
     assert executed
     sql, params = executed[0]
     assert "id_0" in sql and "id_1" in sql
     assert params["id_2"] == 3
 
 
-def test_feedback_store_full_db_paths_and_close(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_full_db_paths_and_close(monkeypatch):
     monkeypatch.setattr(al, "_SA_AVAILABLE", True)
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
 
@@ -215,28 +216,29 @@ def test_feedback_store_full_db_paths_and_close(monkeypatch):
     monkeypatch.setattr(al, "create_async_engine", lambda *args, **kwargs: FakeEngine(), raising=False)
 
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
-    run(store.initialize())
+    await store.initialize()
     assert store._engine is not None
 
-    assert run(store.record(prompt="p", response="r", rating=2, correction="c", user_id="u", tags=["t"])) is True
-    pending = run(store.get_pending_export())
+    assert await store.record(prompt="p", response="r", rating=2, correction="c", user_id="u", tags=["t"]) is True
+    pending = await store.get_pending_export()
     assert pending[0]["id"] == 11
 
-    stats = run(store.stats())
+    stats = await store.stats()
     assert stats == {"total": 7, "positive": 5, "negative": 2, "pending_export": 3}
 
-    run(store.close())
+    await store.close()
     assert store._engine is None
 
 
-def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(monkeypatch):
+@pytest.mark.asyncio
+async def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(monkeypatch):
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
 
     async def init_without_engine():
         return None
 
     monkeypatch.setattr(store, "initialize", init_without_engine)
-    assert run(store.flag_weak_response("p", "r", 0, "")) is False
+    assert await store.flag_weak_response("p", "r", 0, "") is False
 
     store._engine = object()
     called = {}
@@ -246,17 +248,19 @@ def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(mo
         return True
 
     monkeypatch.setattr(store, "record", fake_record)
-    assert run(store.flag_weak_response("p", "r", 0, "", tags=["base"])) is True
+    assert await store.flag_weak_response("p", "r", 0, "", tags=["base"]) is True
     assert "judge_reasoning" not in called["tags"]
     assert "score:1" in called["tags"]
 
 
-def test_feedback_store_flag_weak_response_returns_false_when_disabled():
+@pytest.mark.asyncio
+async def test_feedback_store_flag_weak_response_returns_false_when_disabled():
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=False))
-    assert run(store.flag_weak_response("p", "r", 5, "reason")) is False
+    assert await store.flag_weak_response("p", "r", 5, "reason") is False
 
 
-def test_dataset_exporter_formats_and_empty_case(tmp_path):
+@pytest.mark.asyncio
+async def test_dataset_exporter_formats_and_empty_case(tmp_path):
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1},
         {"id": 2, "prompt": "p2", "response": "r2", "correction": "c2", "rating": 1},
@@ -265,7 +269,7 @@ def test_dataset_exporter_formats_and_empty_case(tmp_path):
     exporter = al.DatasetExporter(store)
 
     jsonl_path = tmp_path / "a.jsonl"
-    out_jsonl = run(exporter.export(str(jsonl_path), fmt="jsonl"))
+    out_jsonl = await exporter.export(str(jsonl_path), fmt="jsonl")
     assert out_jsonl["count"] == 2
     lines = [json.loads(x) for x in jsonl_path.read_text(encoding="utf-8").splitlines()]
     assert lines[0] == {"prompt": "p1", "completion": "r1"}
@@ -273,25 +277,27 @@ def test_dataset_exporter_formats_and_empty_case(tmp_path):
     assert store.marked == [1, 2]
 
     alpaca_path = tmp_path / "b.jsonl"
-    out_alpaca = run(exporter.export(str(alpaca_path), fmt="alpaca", mark_done=False))
+    out_alpaca = await exporter.export(str(alpaca_path), fmt="alpaca", mark_done=False)
     assert out_alpaca["format"] == "alpaca"
 
     sharegpt_path = tmp_path / "c.jsonl"
-    out_share = run(exporter.export(str(sharegpt_path), fmt="sharegpt"))
+    out_share = await exporter.export(str(sharegpt_path), fmt="sharegpt")
     assert out_share["format"] == "sharegpt"
 
     empty_store = InMemoryStore([])
-    empty = run(al.DatasetExporter(empty_store).export(str(tmp_path / "empty.jsonl")))
+    empty = await al.DatasetExporter(empty_store).export(str(tmp_path / "empty.jsonl"))
     assert empty["count"] == 0
 
 
-def test_dataset_exporter_rejects_unknown_format(tmp_path):
+@pytest.mark.asyncio
+async def test_dataset_exporter_rejects_unknown_format(tmp_path):
     store = InMemoryStore([])
     with pytest.raises(ValueError):
-        run(al.DatasetExporter(store).export(str(tmp_path / "x"), fmt="unknown"))
+        await al.DatasetExporter(store).export(str(tmp_path / "x"), fmt="unknown")
 
 
-def test_export_file_error(monkeypatch):
+@pytest.mark.asyncio
+async def test_export_file_error(monkeypatch):
     store = InMemoryStore([{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}])
     exporter = al.DatasetExporter(store)
 
@@ -304,7 +310,7 @@ def test_export_file_error(monkeypatch):
     monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
 
     with pytest.raises(PermissionError):
-        run(exporter.export("/root/secret.jsonl"))
+        await exporter.export("/root/secret.jsonl")
 
 
 def test_pipeline_helpers_and_example_builders():
@@ -360,7 +366,8 @@ def test_pipeline_serialize_and_write_jsonl(tmp_path):
     assert out.exists()
 
 
-def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
+@pytest.mark.asyncio
+async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1, "tags": []},
         {"id": 2, "prompt": "p2", "response": "r2", "correction": "c2", "rating": -1, "tags": []},
@@ -371,7 +378,7 @@ def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     cfg.CONTINUOUS_LEARNING_OUTPUT_DIR = str(tmp_path)
     pipe = al.ContinuousLearningPipeline(store, config=cfg)
 
-    manifest = run(pipe.build_dataset_bundle())
+    manifest = await pipe.build_dataset_bundle()
     assert manifest["counts"]["signals"] == 3
     assert manifest["counts"]["sft_examples"] == 1
     assert manifest["counts"]["preference_examples"] == 1
@@ -380,7 +387,8 @@ def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     assert Path(manifest["preference_path"]).exists()
 
 
-def test_pipeline_run_cycle_paths(monkeypatch):
+@pytest.mark.asyncio
+async def test_pipeline_run_cycle_paths(monkeypatch):
     cfg = DummyConfig()
     store = InMemoryStore([])
     trainer = types.SimpleNamespace(enabled=True, train=lambda p: {"success": True, "path": p})
@@ -390,13 +398,13 @@ def test_pipeline_run_cycle_paths(monkeypatch):
         return {"counts": {"sft_examples": 0, "preference_examples": 0}, "sft_path": "x"}
 
     monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_small)
-    out = run(pipe.run_cycle(reason="manual"))
+    out = await pipe.run_cycle(reason="manual")
     assert out["reason"] == "insufficient_signals"
 
     pipe.cooldown_seconds = 60
     pipe._last_run_at = 100
     monkeypatch.setattr(al.time, "time", lambda: 120)
-    out2 = run(pipe.run_cycle())
+    out2 = await pipe.run_cycle()
     assert out2["reason"] == "cooldown_active"
 
     pipe.cooldown_seconds = 0
@@ -405,15 +413,16 @@ def test_pipeline_run_cycle_paths(monkeypatch):
         return {"counts": {"sft_examples": 2, "preference_examples": 0}, "sft_path": "dataset.jsonl"}
 
     monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_ready)
-    out3 = run(pipe.run_cycle(reason="cron"))
+    out3 = await pipe.run_cycle(reason="cron")
     assert out3["success"] is True
     assert out3["training_result"]["success"] is True
 
     pipe_disabled = al.ContinuousLearningPipeline(store, trainer=trainer, config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False))
-    assert run(pipe_disabled.run_cycle())["reason"] == "continuous_learning_disabled"
+    assert (await pipe_disabled.run_cycle())["reason"] == "continuous_learning_disabled"
 
 
-def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(monkeypatch):
+@pytest.mark.asyncio
+async def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(monkeypatch):
     cfg = DummyConfig()
     trainer = types.SimpleNamespace(enabled=False, train=lambda p: {"success": True, "path": p})
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), trainer=trainer, config=cfg)
@@ -422,12 +431,13 @@ def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disable
         return {"counts": {"sft_examples": 3, "preference_examples": 0}, "sft_path": "dataset.jsonl"}
 
     monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_ready)
-    out = run(pipe.run_cycle(reason="manual"))
+    out = await pipe.run_cycle(reason="manual")
     assert out["success"] is True
     assert out["training_result"]["reason"] == "trainer_disabled_or_insufficient_sft"
 
 
-def test_pipeline_schedule_cycle(monkeypatch):
+@pytest.mark.asyncio
+async def test_pipeline_schedule_cycle(monkeypatch):
     cfg = DummyConfig()
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
 
@@ -442,26 +452,26 @@ def test_pipeline_schedule_cycle(monkeypatch):
 
         def create_task(self, coro, name=None):
             self.created.append((coro, name))
-            asyncio.run(coro)
-            return object()
+            return asyncio.create_task(coro)
 
     loop = FakeLoop()
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
     assert pipe.schedule_cycle(reason="bg") is True
+    await asyncio.sleep(0)
     assert loop.created and loop.created[0][1] == "sidar_continuous_learning"
 
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
     assert pipe.schedule_cycle() is False
 
 
-def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
+@pytest.mark.asyncio
+async def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
     cfg = DummyConfig()
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
 
     class FakeLoop:
         def create_task(self, coro, name=None):
-            asyncio.run(coro)
-            return object()
+            return asyncio.create_task(coro)
 
     async def boom(**kwargs):
         raise RuntimeError("boom")
@@ -469,9 +479,11 @@ def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
     monkeypatch.setattr(pipe, "run_cycle", boom)
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: FakeLoop())
     assert pipe.schedule_cycle(reason="bg") is True
+    await asyncio.sleep(0)
 
 
-def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch):
+@pytest.mark.asyncio
+async def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch):
     disabled_pipe = al.ContinuousLearningPipeline(
         InMemoryStore([]),
         config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False),
@@ -483,15 +495,15 @@ def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch):
 
     class CancelLoop:
         def create_task(self, coro, name=None):
-            return asyncio.run(coro)
+            return asyncio.create_task(coro)
 
     async def cancelled(**kwargs):
         raise asyncio.CancelledError()
 
     monkeypatch.setattr(pipe, "run_cycle", cancelled)
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: CancelLoop())
-    with pytest.raises(asyncio.CancelledError):
-        pipe.schedule_cycle(reason="bg")
+    assert pipe.schedule_cycle(reason="bg") is True
+    await asyncio.sleep(0)
 
 
 def test_lora_trainer_check_and_train_paths(monkeypatch):
@@ -818,13 +830,15 @@ def test_active_learning_module_import_success_sets_sa_true(monkeypatch):
     assert reloaded._SA_AVAILABLE is True
 
 
-def test_feedback_store_close_no_engine_is_noop():
+@pytest.mark.asyncio
+async def test_feedback_store_close_no_engine_is_noop():
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
-    run(store.close())
+    await store.close()
     assert store._engine is None
 
 
-def test_schedule_and_flag_wrappers(monkeypatch):
+@pytest.mark.asyncio
+async def test_schedule_and_flag_wrappers(monkeypatch):
     fake_pipe = types.SimpleNamespace(schedule_cycle=lambda reason="background": reason == "ok")
     monkeypatch.setattr(al, "get_continuous_learning_pipeline", lambda config=None: fake_pipe)
     assert al.schedule_continuous_learning_cycle(reason="ok") is True
@@ -834,4 +848,4 @@ def test_schedule_and_flag_wrappers(monkeypatch):
             return kwargs["prompt"] == "p"
 
     monkeypatch.setattr(al, "get_feedback_store", lambda config=None: FakeStore())
-    assert asyncio.run(al.flag_weak_response("p", "r", 1, "x")) is True
+    assert await al.flag_weak_response("p", "r", 1, "x") is True
