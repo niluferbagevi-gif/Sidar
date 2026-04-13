@@ -55,6 +55,34 @@ banner() {
     echo -e "${NC}"
 }
 
+# ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
+install_system_dependencies() {
+    step "Sistem Güncelleme ve Temel Paketlerin Kurulumu"
+
+    if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+        info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+
+        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            curl wget git build-essential software-properties-common zstd
+
+        info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+
+        ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
+    elif command -v dnf &>/dev/null; then
+        warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
+        sudo dnf upgrade -y
+        sudo dnf install -y curl wget git zstd portaudio-devel alsa-utils v4l-utils ffmpeg
+    else
+        warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
+        info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
+    fi
+}
+
 # ── 1. Ön koşul kontrolleri ───────────────────────────────────────────────────
 check_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
@@ -700,6 +728,7 @@ print_summary() {
 main() {
     cd "$SCRIPT_DIR"
     banner
+    install_system_dependencies
     check_prerequisites
     detect_gpu
     setup_nvidia_docker
