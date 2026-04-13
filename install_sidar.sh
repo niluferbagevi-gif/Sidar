@@ -66,6 +66,12 @@ banner() {
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
 
+    # Bu adım git clone/pull çalıştırdığı için, akış sırası değişse bile
+    # git erişimi burada da kesin olarak doğrulanır.
+    if ! command -v git &>/dev/null; then
+        fail "git komutu bulunamadı. Önce sistem bağımlılıklarını kurun (install_system_dependencies)."
+    fi
+
     if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
         ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
         return
@@ -930,6 +936,10 @@ print_summary() {
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    # Kritik sıra:
+    # 1) Sistem bağımlılıkları (git dahil)
+    # 2) Ön koşul doğrulaması
+    # 3) Repo senkronizasyonu (git clone/pull)
     install_system_dependencies
     check_prerequisites
     sync_repo
@@ -947,12 +957,13 @@ main() {
     fi
     install_python_deps
     install_playwright_browsers
-    check_pyaudio_wsl2
     create_directories
     setup_env_file
+    check_pyaudio_wsl2
     setup_react_frontend
-    download_ollama_models
+    # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
+    download_ollama_models
     verify_torch_cuda
     print_summary
 }
