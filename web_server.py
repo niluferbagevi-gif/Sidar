@@ -3545,7 +3545,7 @@ async def git_info():
         repo = remote.removesuffix(".git")
         repo = repo.split("github.com/")[-1].split("github.com:")[-1]
 
-    return JSONResponse({"branch": branch, "repo": repo or "sidar_project", "default_branch": default_branch})
+    return JSONResponse({"branch": branch, "repo": repo or "Sidar", "default_branch": default_branch})
 
 
 @app.get("/git-branches")

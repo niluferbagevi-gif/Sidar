@@ -24,7 +24,7 @@ Bu script, repo için hızlı bir metrik özeti üretir:
 
 ```bash
 bash scripts/collect_repo_metrics.sh
-bash scripts/collect_repo_metrics.sh /workspace/sidar_project
+bash scripts/collect_repo_metrics.sh /workspace/Sidar
 ```
 
 ## 3) Nerede kullanılır?

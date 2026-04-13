@@ -10,7 +10,7 @@ window.UIStore = window.UIStore || { state: {}, domCache: new Map() };
     isCurrentUserAdmin:  false,
     isStreaming:         false,
     msgCounter:          0,
-    currentRepo:         'niluferbagevi-gif/sidar_project',
+    currentRepo:         'niluferbagevi-gif/Sidar',
     currentBranch:       'main',
     defaultBranch:       'main',
     currentSessionId:    null,
@@ -574,7 +574,7 @@ async function loadGitInfo() {
     if (sbl) sbl.textContent = branch;
 
     const srl = document.getElementById('sidebar-repo-label');
-    if (srl) srl.textContent = repo.split('/').pop() || repo || 'sidar_project';
+    if (srl) srl.textContent = repo.split('/').pop() || repo || 'Sidar';
 
     // Görev paneli seçici etiketleri
     const branchLabel = document.getElementById('branch-label');
