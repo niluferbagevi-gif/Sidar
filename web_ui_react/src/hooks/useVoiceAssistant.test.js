@@ -27,6 +27,7 @@ function withOpenSocketCtor(factory) {
 // navigator.mediaDevices stub yoksa tanımsız olur;
 // her testte gerektiği gibi overide edilir
 const origMediaDevices = globalThis.navigator?.mediaDevices;
+const origWebSocket = globalThis.WebSocket;
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -42,6 +43,12 @@ afterEach(() => {
       value: origMediaDevices,
       configurable: true,
     });
+  }
+  // WebSocket'i temizle/geri yükle — "stop/interrupt" testleri { OPEN:1 } bırakıyor
+  if (origWebSocket !== undefined) {
+    globalThis.WebSocket = origWebSocket;
+  } else if ("WebSocket" in globalThis) {
+    delete globalThis.WebSocket;
   }
 });
 
