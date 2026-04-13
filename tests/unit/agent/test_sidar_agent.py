@@ -1497,7 +1497,7 @@ async def test_tool_docs_search_returns_plain_text(sidar_agent_factory) -> None:
     assert await agent._tool_docs_search("q") == "plain"
 
 
-async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> None:
+async def test_build_context_excludes_todo_section_when_empty(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(
         agent,
@@ -1527,12 +1527,49 @@ async def test_build_context_truncates_for_local_models(sidar_agent_factory) -> 
     ctx = await agent._build_context()
     assert sidar_agent.CONTEXT_TASK_LIST_HEADER not in ctx
 
-    agent.cfg.AI_PROVIDER = "ollama"
-    agent.cfg.LOCAL_INSTRUCTION_MAX_CHARS = 5000
-    agent.cfg.LOCAL_AGENT_CONTEXT_MAX_CHARS = 1
-    agent._load_instruction_files = lambda: "x" * 5000
-    tiny = await agent._build_context()
-    assert "Bağlam yerel model için kırpıldı" in tiny
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+async def test_build_context_truncates_for_local_models_boundary_values(sidar_agent_factory, offset: int) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        AI_PROVIDER="ollama",
+        PROJECT_NAME="p",
+        VERSION="1",
+        CODING_MODEL="cm",
+        TEXT_MODEL="tm",
+        GEMINI_MODEL="gm",
+        ACCESS_LEVEL="safe",
+        USE_GPU=False,
+        GPU_INFO="none",
+        CUDA_VERSION="0",
+        GITHUB_REPO="org/repo",
+        LOCAL_INSTRUCTION_MAX_CHARS=5000,
+        LOCAL_AGENT_CONTEXT_MAX_CHARS=1000,
+        SUBTASK_MAX_STEPS=1,
+    )
+    agent.security = types.SimpleNamespace(level_name="safe")
+    agent.github = types.SimpleNamespace(is_available=lambda: True, status=lambda: "g")
+    agent.web = types.SimpleNamespace(is_available=lambda: True, status=lambda: "w")
+    agent.docs = types.SimpleNamespace(status=lambda: "d", search=lambda *_a: (True, "plain"))
+    agent.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 1})
+    agent.memory = types.SimpleNamespace(get_last_file=lambda: "")
+    agent.todo = types.SimpleNamespace(__len__=lambda *_a: 0)
+
+    # Önce talimatsız baz bağlamı ölç; sonra eşik altı/eşik/eşik üstü uzunlukları üret.
+    agent._load_instruction_files = lambda: ""
+    base_context = await agent._build_context()
+    target_len = 1000 + offset
+    filler_len = max(1, target_len - (len(base_context) + 2))
+    agent._load_instruction_files = lambda: "x" * filler_len
+
+    built = await agent._build_context()
+
+    if offset <= 0:
+        assert "Bağlam yerel model için kırpıldı" not in built
+        assert len(built) == target_len
+    else:
+        assert "Bağlam yerel model için kırpıldı" in built
 
 async def test_tool_subtask_records_metrics_on_failure(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, fake_llm_response) -> None:
     agent = sidar_agent_factory()
