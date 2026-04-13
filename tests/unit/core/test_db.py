@@ -288,10 +288,13 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
 
     def _failing_op() -> None:
         assert sqlite_db._sqlite_conn is not None
-        sqlite_db._sqlite_conn.execute(
+        # Database._sqlite_conn, sqlite3.Connection olduğundan execute senkrondur.
+        # Cursor döndüğünü doğrulayarak "await edilmemiş coroutine" riskini engelleriz.
+        cursor = sqlite_db._sqlite_conn.execute(
             "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             ("s1", user.id, "t", _utc_now_iso(), _utc_now_iso()),
         )
+        assert isinstance(cursor, sqlite3.Cursor)
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError):
