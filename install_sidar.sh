@@ -27,7 +27,6 @@ INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
-PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
@@ -372,11 +371,6 @@ setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
 
-        # Conda init scriptini kaynak al (conda activate çalışması için gerekli)
-        CONDA_BASE=$(conda info --base 2>/dev/null) || fail "conda info başarısız oldu."
-        # shellcheck disable=SC1091
-        source "$CONDA_BASE/etc/profile.d/conda.sh"
-
         if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
@@ -387,8 +381,12 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        conda activate "$CONDA_ENV_NAME"
-        ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
+        CONDA_RUN=(conda run -n "$CONDA_ENV_NAME")
+        if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
+            ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
+        else
+            fail "Conda ortamı doğrulanamadı: $CONDA_ENV_NAME"
+        fi
     else
         step "uv venv Ortamı"
         VENV_DIR="$SCRIPT_DIR/.venv"
@@ -421,6 +419,11 @@ install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR"
+    if [[ "$USE_CONDA" == true ]]; then
+        UV_CMD=("${CONDA_RUN[@]}" uv)
+    else
+        UV_CMD=(uv)
+    fi
 
     # Reproducible kurulum için lock dosyası önceliklidir
     if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
@@ -429,7 +432,7 @@ install_python_deps() {
         if [[ "$INSTALL_DEV" == true ]]; then
             SYNC_ARGS+=(--extra dev)
         fi
-        uv sync "${SYNC_ARGS[@]}"
+        "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
         ok "Python bağımlılıkları uv.lock ile senkronlandı."
         return
     fi
@@ -452,26 +455,24 @@ install_python_deps() {
         else
             INSTALL_SPEC=(-e ".[all]")
         fi
-        PLAYWRIGHT_REQUESTED=true
-
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
-            uv pip install \
+            "${UV_CMD[@]}" pip install \
                 --index-strategy unsafe-best-match \
                 --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
                 "${INSTALL_SPEC[@]}"
         else
             warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — PyPI'dan kuruluyor."
-            uv pip install "${INSTALL_SPEC[@]}"
+            "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
         fi
     else
         info "CPU modu kuruluyor..."
         if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[dev]")
+            INSTALL_SPEC=(-e ".[postgres,dev]")
         else
-            INSTALL_SPEC=(-e ".")
+            INSTALL_SPEC=(-e ".[postgres]")
         fi
-        uv pip install "${INSTALL_SPEC[@]}"
+        "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
     fi
 
     ok "Python bağımlılıkları kuruldu."
@@ -481,19 +482,21 @@ install_python_deps() {
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
-    if [[ "$INSTALL_DEV" == true || "$PLAYWRIGHT_REQUESTED" == true ]]; then
-        if python -c "import playwright" >/dev/null 2>&1; then
-            info "Chromium ve Firefox motorları kuruluyor..."
-            if python -m playwright install --with-deps chromium firefox; then
-                ok "Playwright motorları kuruldu (chromium, firefox)."
-            else
-                warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
-            fi
+    if [[ "$USE_CONDA" == true ]]; then
+        PY_CMD=("${CONDA_RUN[@]}" python)
+    else
+        PY_CMD=(python)
+    fi
+
+    if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
+        info "Chromium ve Firefox motorları kuruluyor..."
+        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox; then
+            ok "Playwright motorları kuruldu (chromium, firefox)."
         else
-            info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
+            warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
         fi
     else
-        info "Playwright kurulumu bu profil için talep edilmedi — tarayıcı motor kurulumu atlandı."
+        info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
 }
 
@@ -686,6 +689,36 @@ PY
         fi
     fi
 
+    # Hex tabanlı webhook/federation secret değerleri boşsa otomatik üret
+    ensure_hex_secret() {
+        local key_name="$1"
+        local hex_len="${2:-64}"
+        local generated=""
+
+        if grep -q "^${key_name}=$" "$ENV_FILE"; then
+            if command -v python3 &>/dev/null; then
+                generated=$(python3 - <<PY
+import secrets
+print(secrets.token_hex(${hex_len} // 2))
+PY
+)
+            elif command -v openssl &>/dev/null; then
+                generated=$(openssl rand -hex "$((hex_len / 2))" | tr -d '\n')
+            fi
+
+            if [[ -n "$generated" ]]; then
+                sed -i "s|^${key_name}=.*|${key_name}=${generated}|" "$ENV_FILE"
+                ok ".env: ${key_name} otomatik ve güvenli bir değerle oluşturuldu."
+            else
+                warn "${key_name} otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            fi
+        fi
+    }
+
+    ensure_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    ensure_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    ensure_hex_secret "GITHUB_WEBHOOK_SECRET" 40
+
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -735,7 +768,7 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~12 GB"
@@ -769,7 +802,17 @@ download_ollama_models() {
     if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
         info "Ollama servisi başlatılıyor..."
         ollama serve >/dev/null 2>&1 &
-        sleep 5
+        for _ in {1..12}; do
+            if curl -sf http://localhost:11434/api/version &>/dev/null; then
+                break
+            fi
+            sleep 5
+        done
+    fi
+
+    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
+        warn "Ollama servisi doğrulanamadı, model indirme atlanıyor."
+        return
     fi
 
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -819,7 +862,7 @@ download_ollama_models() {
     ok "Gerekli tüm modeller başarıyla hazırlandı."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 12. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -894,7 +937,7 @@ PY
     fi
 }
 
-# ── 12. CUDA bağlantı testi ──────────────────────────────────────────────────
+# ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
@@ -917,7 +960,7 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 13. Özet ─────────────────────────────────────────────────────────────────
+# ── 14. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
