@@ -27,6 +27,7 @@ INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
+FORCE_REACT_BUILD=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
@@ -35,15 +36,17 @@ for arg in "$@"; do
         --cpu)  FORCE_CPU=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
+        --build-ui) FORCE_REACT_BUILD=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
+            echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -605,6 +608,12 @@ setup_react_frontend() {
         else
             ok "Node.js sürümü uygun: $(node -v)"
         fi
+    fi
+
+    if [[ "$FORCE_REACT_BUILD" != true && "$INSTALL_DEV" == false && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
+        ok "React Web UI zaten build edilmiş. Yeniden derleme atlanıyor (--build-ui ile zorlayabilirsiniz)."
+        REACT_UI_STATUS="hazır_cache"
+        return
     fi
 
     (
@@ -1205,8 +1214,12 @@ print_summary() {
     echo ""
     echo -e "  5️⃣  Web arayüzü ile başlat (http://localhost:7860):"
     echo "       python main.py --quick web"
-    if [[ "$REACT_UI_STATUS" == "hazır" ]]; then
-        echo "       React UI build: tamamlandı (web_ui_react/dist)"
+    if [[ "$REACT_UI_STATUS" == "hazır" || "$REACT_UI_STATUS" == "hazır_cache" ]]; then
+        if [[ "$REACT_UI_STATUS" == "hazır_cache" ]]; then
+            echo "       React UI build: cache kullanıldı, yeniden derleme atlandı (web_ui_react/dist)"
+        else
+            echo "       React UI build: tamamlandı (web_ui_react/dist)"
+        fi
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
