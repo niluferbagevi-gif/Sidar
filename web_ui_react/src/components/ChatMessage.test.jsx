@@ -51,9 +51,8 @@ describe("ChatMessage — kullanıcı mesajı", () => {
   });
 
   it("formats timestamp in HH:MM", () => {
-    render(<ChatMessage message={makeMsg()} />);
-    // toLocaleTimeString Türkçe ile oluşturulan saat değeri mevcut olmalı
-    const timeEl = document.querySelector("time");
+    const { container } = render(<ChatMessage message={makeMsg()} />);
+    const timeEl = container.querySelector("time");
     expect(timeEl).toBeTruthy();
     expect(timeEl.dateTime).toContain("2024-01-01");
   });
