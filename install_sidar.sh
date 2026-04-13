@@ -715,8 +715,35 @@ download_ollama_models() {
         return
     fi
 
-    TEXT_MOD=$(grep "^TEXT_MODEL=" "$ENV_FILE" | cut -d= -f2)
-    CODE_MOD=$(grep "^CODING_MODEL=" "$ENV_FILE" | cut -d= -f2)
+    _read_env_value() {
+        local key="$1"
+        local file_path="$2"
+        awk -F= -v key="$key" '
+            /^[[:space:]]*#/ { next }
+            $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+                line = $0
+                sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+                sub(/[[:space:]]+#.*/, "", line)
+                gsub(/\r/, "", line)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                print line
+                exit
+            }
+        ' "$file_path"
+    }
+
+    TEXT_MOD=$(_read_env_value "TEXT_MODEL" "$ENV_FILE")
+    CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
+
+    if [[ -z "$TEXT_MOD" ]]; then
+        TEXT_MOD="gemma2:9b"
+        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
+    fi
+    if [[ -z "$CODE_MOD" ]]; then
+        CODE_MOD="qwen2.5-coder:7b"
+        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
+    fi
+
     MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text" "llama3.2-vision")
 
     for model in "${MODELS[@]}"; do
