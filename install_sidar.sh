@@ -765,7 +765,7 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~12 GB"
@@ -849,7 +849,7 @@ download_ollama_models() {
     ok "Gerekli tüm modeller başarıyla hazırlandı."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 12. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -924,7 +924,7 @@ PY
     fi
 }
 
-# ── 12. CUDA bağlantı testi ──────────────────────────────────────────────────
+# ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
@@ -947,7 +947,7 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 13. Özet ─────────────────────────────────────────────────────────────────
+# ── 14. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
