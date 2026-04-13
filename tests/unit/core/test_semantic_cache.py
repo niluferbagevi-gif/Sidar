@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.llm_client import LLMClient, _SemanticCacheManager
+from core.llm_client import LLMClient, OllamaClient, _SemanticCacheManager
 
 
 def _cfg(**overrides: object) -> SimpleNamespace:
@@ -25,30 +25,40 @@ def _cfg(**overrides: object) -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_hit_skips_llm_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache_get = AsyncMock(return_value="cached-response")
+    cache_set = AsyncMock()
+    llm_chat = AsyncMock(return_value="llm-response")
+
+    monkeypatch.setattr(_SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(_SemanticCacheManager, "set", cache_set)
+    monkeypatch.setattr(OllamaClient, "chat", llm_chat)
+
     client = LLMClient("ollama", _cfg())
-    client._semantic_cache.get = AsyncMock(return_value="cached-response")
-    client._semantic_cache.set = AsyncMock()
-    client._client.chat = AsyncMock(return_value="llm-response")
 
     result = await client.chat([{"role": "user", "content": "cache me"}], stream=False)
 
     assert result == "cached-response"
-    client._client.chat.assert_not_called()
-    client._semantic_cache.set.assert_not_called()
+    llm_chat.assert_not_called()
+    cache_set.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_miss_calls_llm_and_populates_cache() -> None:
+async def test_semantic_cache_miss_calls_llm_and_populates_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache_get = AsyncMock(return_value=None)
+    cache_set = AsyncMock()
+    llm_chat = AsyncMock(return_value="llm-response")
+
+    monkeypatch.setattr(_SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(_SemanticCacheManager, "set", cache_set)
+    monkeypatch.setattr(OllamaClient, "chat", llm_chat)
+
     client = LLMClient("ollama", _cfg())
-    client._semantic_cache.get = AsyncMock(return_value=None)
-    client._semantic_cache.set = AsyncMock()
-    client._client.chat = AsyncMock(return_value="llm-response")
 
     result = await client.chat([{"role": "user", "content": "new prompt"}], stream=False)
 
     assert result == "llm-response"
-    client._client.chat.assert_awaited_once()
-    client._semantic_cache.set.assert_awaited_once_with("new prompt", "llm-response")
+    llm_chat.assert_awaited_once()
+    cache_set.assert_awaited_once_with("new prompt", "llm-response")
 
 
 @pytest.mark.asyncio
