@@ -56,14 +56,25 @@ fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_VERSION="3.11"
+if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
+    PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
+    if [[ -n "$PYTHON_VERSION_FROM_FILE" ]]; then
+        PYTHON_VERSION="$PYTHON_VERSION_FROM_FILE"
+    fi
+elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    PYPROJECT_PYTHON_VERSION=$(sed -nE 's/^[[:space:]]*requires-python[[:space:]]*=[[:space:]]*"[>=~^]*([0-9]+\.[0-9]+).*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1)
+    if [[ -n "$PYPROJECT_PYTHON_VERSION" ]]; then
+        PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
+    fi
+fi
 OS_NAME="$(uname -s 2>/dev/null || echo Linux)"
 if [[ "$OS_NAME" == "Darwin" ]]; then
     DEFAULT_DATABASE_URL="postgresql+asyncpg://$(whoami):@localhost:5432/sidar"
 else
     DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
 fi
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
