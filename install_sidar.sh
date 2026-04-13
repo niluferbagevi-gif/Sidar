@@ -943,10 +943,14 @@ print_summary() {
         echo "       source .venv/bin/activate"
     fi
     echo ""
-    echo -e "  3️⃣  CLI ile başlat:"
+    echo -e "  3️⃣  Arka plan servislerini başlat (önerilir):"
+    echo "       docker compose up -d"
+    echo "       (PostgreSQL/Redis gibi servisleri Docker ile kullanıyorsanız önce bunu çalıştırın.)"
+    echo ""
+    echo -e "  4️⃣  CLI ile başlat:"
     echo "       python main.py"
     echo ""
-    echo -e "  4️⃣  Web arayüzü ile başlat (http://localhost:7860):"
+    echo -e "  5️⃣  Web arayüzü ile başlat (http://localhost:7860):"
     echo "       python main.py --quick web"
     if [[ "$REACT_UI_STATUS" == "hazır" ]]; then
         echo "       React UI build: tamamlandı (web_ui_react/dist)"
@@ -955,7 +959,7 @@ print_summary() {
         echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
     fi
     echo ""
-    echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
+    echo -e "  6️⃣  Testleri çalıştır (--dev ile kurulduysa):"
     echo "       ./run_tests.sh"
     echo ""
 
