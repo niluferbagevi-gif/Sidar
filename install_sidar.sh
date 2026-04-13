@@ -938,12 +938,12 @@ main() {
     banner
     # Kritik sıra:
     # 1) Sistem bağımlılıkları (git dahil)
-    # 2) Ön koşul doğrulaması
-    # 3) Repo senkronizasyonu (git clone/pull)
+    # 2) Repo senkronizasyonu (git clone/pull)
+    # 3) Ön koşul doğrulaması
     install_system_dependencies
-    check_prerequisites
     sync_repo
     cd "$SCRIPT_DIR"
+    check_prerequisites
     detect_gpu
     setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
@@ -958,9 +958,9 @@ main() {
     install_python_deps
     install_playwright_browsers
     create_directories
+    setup_react_frontend
     setup_env_file
     check_pyaudio_wsl2
-    setup_react_frontend
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
