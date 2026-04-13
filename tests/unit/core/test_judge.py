@@ -12,11 +12,6 @@ class DummyConfig:
     TEXT_MODEL = "text-model"
     CODING_MODEL = "coding-model"
 
-
-def run(coro):
-    return asyncio.run(coro)
-
-
 def _install_config_module(monkeypatch):
     fake = types.ModuleType("config")
     fake.Config = DummyConfig
@@ -94,41 +89,46 @@ def test_should_evaluate(monkeypatch, judge_instance):
     assert judge_instance.should_evaluate() is False
 
 
-def test_call_llm_success(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_success(monkeypatch, judge_instance):
     _install_llm_client_module(monkeypatch)
-    assert run(judge_instance._call_llm("sys", "user")) == 0.75
+    assert await judge_instance._call_llm("sys", "user") == 0.75
 
 
-def test_call_llm_non_string_returns_none(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_non_string_returns_none(monkeypatch, judge_instance):
     class NonStringClient(FakeLLMClient):
         response = {"v": 1}
 
     _install_llm_client_module(monkeypatch, NonStringClient)
-    assert run(judge_instance._call_llm("sys", "user")) is None
+    assert await judge_instance._call_llm("sys", "user") is None
 
 
-def test_call_llm_parses_and_clamps(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_parses_and_clamps(monkeypatch, judge_instance):
     class ParseClient(FakeLLMClient):
         response = "score 1.4"
 
     _install_llm_client_module(monkeypatch, ParseClient)
-    assert run(judge_instance._call_llm("sys", "user")) == 1.0
+    assert await judge_instance._call_llm("sys", "user") == 1.0
 
 
-def test_call_llm_no_number_returns_none(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_no_number_returns_none(monkeypatch, judge_instance):
     class NoNumberClient(FakeLLMClient):
         response = "not a number"
 
     _install_llm_client_module(monkeypatch, NoNumberClient)
-    assert run(judge_instance._call_llm("sys", "user")) is None
+    assert await judge_instance._call_llm("sys", "user") is None
 
 
-def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
     class BoomClient(FakeLLMClient):
         response = RuntimeError("boom")
 
     _install_llm_client_module(monkeypatch, BoomClient)
-    assert run(judge_instance._call_llm("sys", "user")) is None
+    assert await judge_instance._call_llm("sys", "user") is None
 
     class CancelClient(FakeLLMClient):
         async def chat(self, **kwargs):
@@ -136,27 +136,29 @@ def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
 
     _install_llm_client_module(monkeypatch, CancelClient)
     with pytest.raises(asyncio.CancelledError):
-        run(judge_instance._call_llm("sys", "user"))
+        await judge_instance._call_llm("sys", "user")
 
 
-def test_call_llm_json_paths(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_json_paths(monkeypatch, judge_instance):
     _install_llm_client_module(monkeypatch)
     FakeLLMClient.response = json.dumps({"score": 9, "reasoning": "ok"})
-    assert run(judge_instance._call_llm_json("sys", "msg")) == {"score": 9, "reasoning": "ok"}
+    assert await judge_instance._call_llm_json("sys", "msg") == {"score": 9, "reasoning": "ok"}
 
     FakeLLMClient.response = "[]"
-    assert run(judge_instance._call_llm_json("sys", "msg")) is None
+    assert await judge_instance._call_llm_json("sys", "msg") is None
 
     FakeLLMClient.response = "bad json"
-    assert run(judge_instance._call_llm_json("sys", "msg")) is None
+    assert await judge_instance._call_llm_json("sys", "msg") is None
 
 
-def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
     class NonStringClient(FakeLLMClient):
         response = {"score": 7}
 
     _install_llm_client_module(monkeypatch, NonStringClient)
-    assert run(judge_instance._call_llm_json("sys", "msg")) is None
+    assert await judge_instance._call_llm_json("sys", "msg") is None
 
     class CancelClient(FakeLLMClient):
         async def chat(self, **kwargs):
@@ -164,17 +166,18 @@ def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
 
     _install_llm_client_module(monkeypatch, CancelClient)
     with pytest.raises(asyncio.CancelledError):
-        run(judge_instance._call_llm_json("sys", "msg"))
+        await judge_instance._call_llm_json("sys", "msg")
 
 
-def test_evaluate_response_success_and_fallback(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_response_success_and_fallback(monkeypatch, judge_instance):
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
 
     async def ok_json(*args, **kwargs):
         return {"score": "8.4", "reasoning": "solid"}
 
     monkeypatch.setattr(judge_instance, "_call_llm_json", ok_json)
-    out = run(judge_instance.evaluate_response("p", "r", {"k": 1}))
+    out = await judge_instance.evaluate_response("p", "r", {"k": 1})
     assert out.score == 8
     assert out.reasoning == "solid"
     assert out.weak is False
@@ -183,26 +186,28 @@ def test_evaluate_response_success_and_fallback(monkeypatch, judge_instance):
         return {"score": "puan=10/10", "reasoning": "great"}
 
     monkeypatch.setattr(judge_instance, "_call_llm_json", score_regex)
-    assert run(judge_instance.evaluate_response("p", "r", ["a", "b"])) .score == 10
+    assert (await judge_instance.evaluate_response("p", "r", ["a", "b"])).score == 10
 
     async def parse_fail(*args, **kwargs):
         return None
 
     monkeypatch.setattr(judge_instance, "_call_llm_json", parse_fail)
-    out3 = run(judge_instance.evaluate_response("p", "r", "ctx"))
+    out3 = await judge_instance.evaluate_response("p", "r", "ctx")
     assert out3.error == "judge_json_parse_failed"
     assert out3.score == 5
 
 
-def test_evaluate_response_disabled_or_empty(judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_response_disabled_or_empty(judge_instance):
     judge_instance.enabled = False
-    assert run(judge_instance.evaluate_response("p", "r", "c")) is None
+    assert await judge_instance.evaluate_response("p", "r", "c") is None
     judge_instance.enabled = True
-    assert run(judge_instance.evaluate_response("", "r", "c")) is None
-    assert run(judge_instance.evaluate_response("p", "", "c")) is None
+    assert await judge_instance.evaluate_response("", "r", "c") is None
+    assert await judge_instance.evaluate_response("p", "", "c") is None
 
 
-def test_evaluate_rag_flow(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_rag_flow(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     calls = []
 
@@ -221,22 +226,24 @@ def test_evaluate_rag_flow(monkeypatch, judge_instance):
 
     monkeypatch.setattr(judge_instance, "_maybe_record_feedback", maybe_feedback)
 
-    result = run(judge_instance.evaluate_rag("q", ["d1", "d2"], answer="a"))
+    result = await judge_instance.evaluate_rag("q", ["d1", "d2"], answer="a")
     assert result.relevance_score == 0.62
     assert result.hallucination_risk == 0.17
     assert isinstance(saved[0], judge.JudgeResult)
     assert "feedback" in saved
 
 
-def test_evaluate_rag_short_circuits(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_rag_short_circuits(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: False)
-    assert run(judge_instance.evaluate_rag("q", ["d"])) is None
+    assert await judge_instance.evaluate_rag("q", ["d"]) is None
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
-    assert run(judge_instance.evaluate_rag("", ["d"])) is None
-    assert run(judge_instance.evaluate_rag("q", [])) is None
+    assert await judge_instance.evaluate_rag("", ["d"]) is None
+    assert await judge_instance.evaluate_rag("q", []) is None
 
 
-def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def none_llm(*args, **kwargs):
@@ -249,12 +256,13 @@ def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
     monkeypatch.setattr(judge, "_record_judge_metrics", lambda result: None)
     monkeypatch.setattr(judge_instance, "_maybe_record_feedback", no_feedback)
-    out = run(judge_instance.evaluate_rag("q", ["d"], answer="a"))
+    out = await judge_instance.evaluate_rag("q", ["d"], answer="a")
     assert out.relevance_score == 0.5
     assert out.hallucination_risk == 0.0
 
 
-def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     calls = {"n": 0}
 
@@ -266,27 +274,29 @@ def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judge_inst
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
     monkeypatch.setattr(judge, "_record_judge_metrics", lambda result: None)
     monkeypatch.setattr(judge_instance, "_maybe_record_feedback", lambda **kwargs: asyncio.sleep(0, result=False))
-    out = run(judge_instance.evaluate_rag("q", ["d1", "d2"], answer=None))
+    out = await judge_instance.evaluate_rag("q", ["d1", "d2"], answer=None)
     assert out.relevance_score == 0.8
     assert out.hallucination_risk == 0.0
     assert calls["n"] == 1
 
 
-def test_maybe_record_feedback_paths(judge_instance):
+@pytest.mark.asyncio
+async def test_maybe_record_feedback_paths(judge_instance):
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
     judge_instance.auto_feedback_enabled = False
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
 
     judge_instance.auto_feedback_enabled = True
     judge_instance.auto_feedback_threshold = 1.0
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
 
     judge_instance.auto_feedback_threshold = 9.5
-    assert run(judge_instance._maybe_record_feedback(query="", documents=["d"], answer="a", result=result)) is False
+    assert await judge_instance._maybe_record_feedback(query="", documents=["d"], answer="a", result=result) is False
 
 
-def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_instance):
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
     judge_instance.auto_feedback_enabled = True
     judge_instance.auto_feedback_threshold = 9.5
@@ -303,27 +313,28 @@ def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_instanc
     fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: None
     monkeypatch.setitem(sys.modules, "core.active_learning", fake_mod)
 
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is True
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is True
 
     fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x"))
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is True
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is True
 
     class BadStore:
         async def flag_weak_response(self, **kwargs):
             raise RuntimeError("boom")
 
     fake_mod.get_feedback_store = lambda config: BadStore()
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
 
     class FalseStore:
         async def flag_weak_response(self, **kwargs):
             return False
 
     fake_mod.get_feedback_store = lambda config: FalseStore()
-    assert run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)) is False
+    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
 
 
-def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
     class CancelStore:
@@ -336,10 +347,11 @@ def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
     monkeypatch.setitem(sys.modules, "core.active_learning", fake_mod)
 
     with pytest.raises(asyncio.CancelledError):
-        run(judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result))
+        await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)
 
 
-def test_schedule_background_evaluation(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_schedule_background_evaluation(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     called = {"v": 0}
 
@@ -348,15 +360,13 @@ def test_schedule_background_evaluation(monkeypatch, judge_instance):
 
     monkeypatch.setattr(judge_instance, "evaluate_rag", fake_eval)
 
-    async def main():
-        judge_instance.schedule_background_evaluation("q", ["d"], "a")
-        await asyncio.sleep(0)
-
-    run(main())
+    judge_instance.schedule_background_evaluation("q", ["d"], "a")
+    await asyncio.sleep(0)
     assert called["v"] == 1
 
 
-def test_schedule_background_evaluation_exception(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_schedule_background_evaluation_exception(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def boom(*args, **kwargs):
@@ -364,14 +374,12 @@ def test_schedule_background_evaluation_exception(monkeypatch, judge_instance):
 
     monkeypatch.setattr(judge_instance, "evaluate_rag", boom)
 
-    async def main():
-        judge_instance.schedule_background_evaluation("q", ["d"], "a")
-        await asyncio.sleep(0)
-
-    run(main())
+    judge_instance.schedule_background_evaluation("q", ["d"], "a")
+    await asyncio.sleep(0)
 
 
-def test_schedule_background_evaluation_cancel_raises(monkeypatch, judge_instance):
+@pytest.mark.asyncio
+async def test_schedule_background_evaluation_cancel_raises(monkeypatch, judge_instance):
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def cancel(*args, **kwargs):
@@ -379,11 +387,8 @@ def test_schedule_background_evaluation_cancel_raises(monkeypatch, judge_instanc
 
     monkeypatch.setattr(judge_instance, "evaluate_rag", cancel)
 
-    async def main():
-        judge_instance.schedule_background_evaluation("q", ["d"], "a")
-        await asyncio.sleep(0)
-
-    run(main())
+    judge_instance.schedule_background_evaluation("q", ["d"], "a")
+    await asyncio.sleep(0)
 
 
 def test_schedule_background_no_loop(monkeypatch, judge_instance):
@@ -428,7 +433,8 @@ def test_inc_prometheus_cache_and_errors(monkeypatch):
     judge._inc_prometheus("n", 1.0)
 
 
-def test_record_judge_metrics_variants(monkeypatch):
+@pytest.mark.asyncio
+async def test_record_judge_metrics_variants(monkeypatch):
     result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
 
     class Collector:
@@ -449,7 +455,7 @@ def test_record_judge_metrics_variants(monkeypatch):
     async def async_sink(payload):
         return None
 
-    assert __import__("asyncio").run(async_sink({"type": "judge"})) is None
+    assert await async_sink({"type": "judge"}) is None
     metrics_mod.get_llm_metrics_collector = lambda: Collector(async_sink)
 
     def no_loop():
@@ -462,7 +468,8 @@ def test_record_judge_metrics_variants(monkeypatch):
     judge._record_judge_metrics(result)
 
 
-def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
+@pytest.mark.asyncio
+async def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
     result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
     task_calls = {"n": 0}
 
@@ -473,7 +480,7 @@ def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
     async def async_sink(payload):
         return None
 
-    assert __import__("asyncio").run(async_sink({"type": "judge"})) is None
+    assert await async_sink({"type": "judge"}) is None
 
     class _Loop:
         def create_task(self, coro):
