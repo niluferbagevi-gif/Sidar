@@ -71,7 +71,7 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
     assert "deadbeefdeadbeefdeadbeefdeadbeef" not in masked
 
     names = {d.pattern_name for d in detections}
-    assert {
+    assert names == {
         "jwt",
         "bearer_token",
         "sk_key",
@@ -83,7 +83,7 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
         "email",
         "credit_card",
         "long_hex",
-    }.issubset(names)
+    }
     assert any("DLP Maskeleme" in rec.message for rec in caplog.records)
 
 
