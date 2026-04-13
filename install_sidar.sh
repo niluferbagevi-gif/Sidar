@@ -26,6 +26,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
+DOWNLOAD_MODELS=false
 PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
@@ -34,16 +35,22 @@ for arg in "$@"; do
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
         --skip-models) SKIP_MODELS=true ;;
+        --download-models) DOWNLOAD_MODELS=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --skip-models  Ollama model indirmelerini atla"
+            echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models kabul edilir)"; exit 1 ;;
     esac
 done
+
+if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
+    fail "--skip-models ve --download-models birlikte kullanılamaz."
+fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
@@ -731,10 +738,27 @@ PY
 # ── 11. Alembic migrasyonları ────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
+    local estimated_size_gb="~12 GB"
 
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
         return
+    fi
+
+    if [[ "$DOWNLOAD_MODELS" != true ]]; then
+        if [[ -t 0 ]]; then
+            read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
+            case "${reply:-E}" in
+                [HhNn]*)
+                    info "Model indirmesi kullanıcı tercihiyle atlandı."
+                    return
+                    ;;
+            esac
+        else
+            info "--download-models verilmediği için model indirmeleri atlanıyor (tahmini ${estimated_size_gb})."
+            info "Model indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
+            return
+        fi
     fi
 
     if ! command -v ollama &>/dev/null; then
