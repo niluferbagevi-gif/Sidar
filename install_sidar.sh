@@ -572,6 +572,12 @@ check_pyaudio_wsl2() {
         info "Sesli özellik kullanmayacaksanız .env dosyanıza şunu ekleyin:"
         echo "       ENABLE_MULTIMODAL=false"
         info "Ses desteği istiyorsanız: https://learn.microsoft.com/tr-tr/windows/wsl/tutorials/gui-apps"
+        warn "WSL2 varsayılan RAM limiti düşükse lokal LLM/RAG işlemlerinde OOM (Out of Memory) yaşanabilir."
+        info "Windows tarafında %UserProfile%\\.wslconfig dosyasına bellek limiti ekleyin (örnek):"
+        echo "       [wsl2]"
+        echo "       memory=16GB"
+        echo "       swap=8GB"
+        info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
     fi
 }
 
