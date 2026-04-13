@@ -467,9 +467,9 @@ install_python_deps() {
     else
         info "CPU modu kuruluyor..."
         if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[dev]")
+            INSTALL_SPEC=(-e ".[postgres,dev]")
         else
-            INSTALL_SPEC=(-e ".")
+            INSTALL_SPEC=(-e ".[postgres]")
         fi
         uv pip install "${INSTALL_SPEC[@]}"
     fi
