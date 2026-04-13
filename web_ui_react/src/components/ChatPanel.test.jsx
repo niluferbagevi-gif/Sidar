@@ -165,6 +165,16 @@ describe("ChatPanel", () => {
     webSocketOptions.onAssistantStart("req-abc");
     expect(store.startAssistantStream).toHaveBeenCalledWith("req-abc");
 
+    // WebSocket doğrudan callback referansları
+    webSocketOptions.onChunk("parça metin", "req-1");
+    expect(store.appendChunk).toHaveBeenCalledWith("parça metin", "req-1");
+
+    webSocketOptions.onDone(undefined, "req-1");
+    expect(store.commitAssistantMessage).toHaveBeenCalledWith(undefined, "req-1");
+
+    webSocketOptions.onError("WS Hatası");
+    expect(store.setError).toHaveBeenCalledWith("WS Hatası");
+
     webSocketOptions.onRoomEvent({ kind: "room_event", content: "Room Info" });
     expect(store.addTelemetryEvent).toHaveBeenCalledWith("room_event", "Room Info", { kind: "room_event", content: "Room Info" });
 
@@ -175,6 +185,16 @@ describe("ChatPanel", () => {
     // Voice Assistant event'leri tetiklemesi ve testleri
     voiceAssistantOptions.onUserTranscript("Nasılsın");
     expect(send).toHaveBeenCalledWith("@Sidar Nasılsın"); // 54. ve 55. Satırların çözümü!
+
+    // Voice assistant doğrudan callback referansları
+    voiceAssistantOptions.onAssistantChunk("ses parçası");
+    expect(store.appendChunk).toHaveBeenCalledWith("ses parçası");
+
+    voiceAssistantOptions.onAssistantDone();
+    expect(store.commitAssistantMessage).toHaveBeenCalled();
+
+    voiceAssistantOptions.onError("Ses Hatası");
+    expect(store.setError).toHaveBeenCalledWith("Ses Hatası");
 
     voiceAssistantOptions.onTelemetry("voice_event", "Mic Active");
     expect(store.addTelemetryEvent).toHaveBeenCalledWith("voice_event", "Mic Active");
