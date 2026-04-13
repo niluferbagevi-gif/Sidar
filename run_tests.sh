@@ -21,6 +21,7 @@ AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
 RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
+PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -66,6 +67,13 @@ run_pytest_coverage_report() {
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
   # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
   local pytest_cmd=(pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_targets=("tests")
+
+  # Yeni test klasörleri ayrı mount/volume altında tutuluyorsa açıkça hedefleyelim.
+  # Bu sayede coverage quality gate çalışırken test keşfi dizin bağımlılıklarından etkilenmez.
+  if [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+    pytest_targets+=("${PERFORMANCE_TEST_DIR}")
+  fi
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
@@ -82,6 +90,8 @@ run_pytest_coverage_report() {
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
+
+  pytest_cmd+=("${pytest_targets[@]}")
 
   echo "➡️ Çalıştırılan komut: ${pytest_cmd[*]}"
 

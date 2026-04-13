@@ -183,7 +183,7 @@ Faz E vizyonu artık SİDAR'ı yalnızca yazılım geliştiren bir AI yardımcı
 [⬆ İçindekilere Dön](#içindekiler)
 
 <pre>
-sidar_project/
+Sidar/
 ├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
 ├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı Başlatıcı (Ultimate Launcher - TUI entegre)
 ├── <a href="docs/module-notes/cli.py.md">cli.py</a>                     # CLI terminal arayüzü giriş noktası

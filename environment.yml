@@ -1,4 +1,4 @@
-name: sidar-ai
+name: sidar
 
 # ── Kanal öncelik sırası ──────────────────────────────────────────────────────
 # pytorch  : PyTorch GPU wheellerini conda üzerinden sunar
@@ -34,7 +34,7 @@ dependencies:
 #
 # 1. Ortamı oluştur:
 #      conda env create -f environment.yml
-#      conda activate sidar-ai
+#      conda activate sidar
 #
 # 2. Tüm bağımlılıkları kur (CPU):
 #      uv pip install -r requirements.txt

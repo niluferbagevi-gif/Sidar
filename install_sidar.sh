@@ -42,9 +42,12 @@ for arg in "$@"; do
 done
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
-CONDA_ENV_NAME="sidar-ai"
+CONDA_ENV_NAME="sidar"
 PYTHON_VERSION="3.11"
+DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
+TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
 
 banner() {
@@ -53,6 +56,30 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+# ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
+sync_repo() {
+    step "Sidar projesi GitHub'dan çekiliyor"
+
+    if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
+        ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
+        return
+    fi
+
+    if [[ ! -d "$TARGET_DIR/.git" ]]; then
+        info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
+        git clone "$REPO_URL" "$TARGET_DIR"
+    else
+        warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
+        (
+            cd "$TARGET_DIR"
+            git pull --ff-only
+        )
+    fi
+
+    SCRIPT_DIR="$TARGET_DIR"
+    ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
 }
 
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
@@ -71,12 +98,15 @@ install_system_dependencies() {
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+        info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            libpq-dev postgresql-client
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd portaudio-devel alsa-utils v4l-utils ffmpeg
+        sudo dnf install -y curl wget git zstd portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
@@ -208,6 +238,12 @@ check_prerequisites() {
     if ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
+    fi
+
+    if command -v psql &>/dev/null; then
+        ok "PostgreSQL istemcisi hazır: $(psql --version | awk '{print $3}')"
+    else
+        warn "psql bulunamadı. PostgreSQL kullanımı için postgresql-client/libpq kurulu olmalı."
     fi
 
     # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
@@ -485,13 +521,37 @@ create_directories() {
 }
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
+ensure_database_url_defaults() {
+    local env_file="$1"
+    local current_db_url=""
+
+    if [[ ! -f "$env_file" ]]; then
+        return
+    fi
+
+    current_db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+
+    if [[ -z "$current_db_url" ]]; then
+        echo "DATABASE_URL=${DEFAULT_DATABASE_URL}" >> "$env_file"
+        ok ".env: DATABASE_URL varsayılan PostgreSQL DSN ile eklendi."
+        return
+    fi
+
+    if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
+        warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
+        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
+        ok ".env: DATABASE_URL PostgreSQL varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
     if [[ -f "$ENV_FILE" ]]; then
-        ok ".env dosyası zaten mevcut — atlandı."
+        ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
+        ensure_database_url_defaults "$ENV_FILE"
         return
     fi
 
@@ -502,6 +562,7 @@ setup_env_file() {
 
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
+    ensure_database_url_defaults "$ENV_FILE"
 
     # Lokal kurulumda Docker hostname yerine localhost kullan
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$ENV_FILE"; then
@@ -743,6 +804,7 @@ print_summary() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
+    sync_repo
     cd "$SCRIPT_DIR"
     banner
     install_system_dependencies

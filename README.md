@@ -270,7 +270,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ### Conda ile (Önerilen)
 
 ```bash
-cd sidar_project
+cd Sidar
 conda env create -f environment.yml
 conda activate sidar
 ```
@@ -523,7 +523,7 @@ python cli.py --provider gemini -c "FastAPI nedir?"
 ## Proje Yapısı
 
 ```
-sidar_project/
+Sidar/
 ├── agent/                  # Supervisor + swarm + uzman roller (coder/researcher/reviewer)
 ├── core/                   # LLM istemcisi, DB, RAG, DLP, HITL, Judge, Vision, metrics
 ├── managers/               # Kod, güvenlik, GitHub, sistem sağlığı, paket ve web arama yöneticileri
@@ -551,7 +551,7 @@ sidar_project/
 ## Testleri Çalıştır
 
 ```bash
-cd sidar_project
+cd Sidar
 pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
@@ -684,7 +684,7 @@ mypy . --ignore-missing-imports
 
 ## Lisans
 
-Bu proje LotusAI ekosisteminin bir parçasıdır.
+Bu proje Sidar ekosisteminin bir parçasıdır.
 
 ## 🧹 Depo Hijyeni
 

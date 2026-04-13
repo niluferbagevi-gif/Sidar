@@ -9,7 +9,7 @@ describe("UIStore — seed defaults", () => {
     expect(s).toHaveProperty("isCurrentUserAdmin", false);
     expect(s).toHaveProperty("isStreaming", false);
     expect(s).toHaveProperty("msgCounter", 0);
-    expect(s).toHaveProperty("currentRepo", "niluferbagevi-gif/sidar_project");
+    expect(s).toHaveProperty("currentRepo", "niluferbagevi-gif/Sidar");
     expect(s).toHaveProperty("currentBranch", "main");
     expect(s).toHaveProperty("defaultBranch", "main");
     expect(s).toHaveProperty("currentSessionId", null);
