@@ -25,6 +25,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
+SKIP_MODELS=false
 PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
@@ -32,13 +33,15 @@ for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
+        --skip-models) SKIP_MODELS=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            echo "  --skip-models  Ollama model indirmelerini atla"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -92,9 +95,9 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
+        info "Gerekli temel paketler (curl, wget, git, zstd, nodejs, npm vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl wget git build-essential software-properties-common zstd
+            curl wget git build-essential software-properties-common zstd nodejs npm
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -107,7 +110,7 @@ install_system_dependencies() {
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
@@ -699,6 +702,11 @@ PY
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
 
+    if [[ "$SKIP_MODELS" == true ]]; then
+        info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
+        return
+    fi
+
     if ! command -v ollama &>/dev/null; then
         warn "Ollama bulunamadı, model indirme atlanıyor."
         return
@@ -910,6 +918,9 @@ print_summary() {
         echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
+    if [[ "$SKIP_MODELS" == true ]]; then
+        echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
+    fi
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
