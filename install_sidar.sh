@@ -9,6 +9,7 @@
 #   ./install_sidar.sh           # standart kurulum
 #   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
+#   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -28,30 +29,55 @@ FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
 FORCE_REACT_BUILD=false
+INSTALL_KUBERNETES=false
+HELM_RELEASE_NAME="sidar"
+HELM_NAMESPACE="sidar"
+HELM_VALUES_FILE=""
+RUN_SMOKE_TESTS_MODE="ask"
+DOCKER_ONLY=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
+SMOKE_TEST_STATUS="atlandı"
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
+        --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
+        --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
+        --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
+        --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
+        --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
+        --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
+        --docker-only) DOCKER_ONLY=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
+            echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
+            echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
+            echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
+            echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
+            echo "  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır"
+            echo "  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
     fail "--skip-models ve --download-models birlikte kullanılamaz."
+fi
+
+if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
+    warn "--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek."
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
@@ -80,6 +106,111 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+read_env_value_from_file() {
+    local key="$1"
+    local file_path="$2"
+    [[ -f "$file_path" ]] || return 0
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*#/ { next }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            line = $0
+            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            gsub(/\r/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            gsub(/^'\''|'\''$/, "", line)
+            print line
+            exit
+        }
+    ' "$file_path"
+}
+
+normalize_ollama_base_url() {
+    local raw="${1:-}"
+    local normalized="$raw"
+
+    normalized="${normalized%/}"
+    normalized="${normalized%/api}"
+    if [[ -z "$normalized" ]]; then
+        echo "http://localhost:11434"
+        return
+    fi
+    if [[ "$normalized" != http://* && "$normalized" != https://* ]]; then
+        normalized="http://$normalized"
+    fi
+    echo "$normalized"
+}
+
+resolve_ollama_base_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local detected="${OLLAMA_BASE_URL:-}"
+
+    if [[ -z "$detected" ]]; then
+        detected="${OLLAMA_HOST:-}"
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_BASE_URL" "$env_file")
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_HOST" "$env_file")
+    fi
+
+    normalize_ollama_base_url "$detected"
+}
+
+resolve_ollama_version_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local base_url
+    base_url=$(resolve_ollama_base_url "$env_file")
+    echo "${base_url}/api/version"
+}
+
+is_local_ollama_url() {
+    local url="$1"
+    [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
+}
+
+deploy_with_helm() {
+    step "Kubernetes/Helm Dağıtımı"
+    local chart_dir="$SCRIPT_DIR/helm/sidar"
+    local helm_cmd=(helm upgrade --install "$HELM_RELEASE_NAME" "$chart_dir" --namespace "$HELM_NAMESPACE" --create-namespace)
+
+    if ! command -v helm &>/dev/null; then
+        fail "helm bulunamadı. Kurulum için: https://helm.sh/docs/intro/install/"
+    fi
+
+    if [[ ! -f "$chart_dir/Chart.yaml" ]]; then
+        fail "Helm chart bulunamadı: $chart_dir/Chart.yaml"
+    fi
+
+    if [[ -n "$HELM_VALUES_FILE" ]]; then
+        if [[ ! -f "$SCRIPT_DIR/$HELM_VALUES_FILE" && ! -f "$HELM_VALUES_FILE" ]]; then
+            fail "--values ile verilen dosya bulunamadı: $HELM_VALUES_FILE"
+        fi
+        if [[ -f "$SCRIPT_DIR/$HELM_VALUES_FILE" ]]; then
+            HELM_VALUES_FILE="$SCRIPT_DIR/$HELM_VALUES_FILE"
+        fi
+        helm_cmd+=(--values "$HELM_VALUES_FILE")
+    fi
+
+    info "Helm chart doğrulaması çalıştırılıyor..."
+    helm lint "$chart_dir"
+
+    info "Helm release kuruluyor/güncelleniyor: release=$HELM_RELEASE_NAME namespace=$HELM_NAMESPACE"
+    "${helm_cmd[@]}"
+    ok "Helm dağıtımı tamamlandı."
+
+    if command -v kubectl &>/dev/null; then
+        info "Servisleri doğrulamak için:"
+        echo "       kubectl get pods -n $HELM_NAMESPACE"
+        echo "       kubectl get svc -n $HELM_NAMESPACE"
+    else
+        warn "kubectl bulunamadı. Cluster doğrulaması için kubectl kurmanız önerilir."
+    fi
 }
 
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
@@ -143,24 +274,41 @@ install_system_dependencies() {
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
         info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libpq-dev postgresql-client postgresql redis-server
+            libpq-dev postgresql-client
 
-        info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
-        sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
-        sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
-            warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: postgresql/redis-server host paketleri atlandı."
+        else
+            info "Host PostgreSQL ve Redis sunucuları kuruluyor..."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
+
+            info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
+            sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
+            sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
+                warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
+        fi
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-server postgresql-devel redis
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: postgresql-server ve redis host paketleri atlandı."
+        else
+            sudo dnf install -y postgresql-server redis
+        fi
     elif command -v brew &>/dev/null; then
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
             curl wget git zstd node@20 ffmpeg portaudio \
-            postgresql@16 redis || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+            postgresql@16 || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: redis host paketi kurulumu atlandı."
+        else
+            brew install redis || warn "redis kurulamadı; eksikleri manuel tamamlayın."
+        fi
 
         if brew list node@20 &>/dev/null; then
             info "Node.js 20 için brew link işlemi deneniyor..."
@@ -168,11 +316,15 @@ install_system_dependencies() {
             ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         fi
 
-        info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
-        brew services start postgresql@16 >/dev/null 2>&1 || \
-            warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
-        brew services start redis >/dev/null 2>&1 || \
-            warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: brew services ile PostgreSQL/Redis başlatma atlandı."
+        else
+            info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
+            brew services start postgresql@16 >/dev/null 2>&1 || \
+                warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
+            brew services start redis >/dev/null 2>&1 || \
+                warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
+        fi
 
         ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
     else
@@ -303,13 +455,15 @@ check_prerequisites() {
     fi
 
     # Redis (Local Event Bus / cache)
-    if ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
+    if [[ "$DOCKER_ONLY" == false ]] && ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
     fi
 
     if command -v psql &>/dev/null; then
         ok "PostgreSQL istemcisi hazır: $(psql --version | awk '{print $3}')"
+    elif [[ "$DOCKER_ONLY" == true ]]; then
+        info "--docker-only: psql istemcisi opsiyonel. DB bağlantısı Docker servisleriyle sağlanacak."
     else
         warn "psql bulunamadı. PostgreSQL kullanımı için postgresql-client/libpq kurulu olmalı."
     fi
@@ -331,10 +485,11 @@ check_prerequisites() {
     fi
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
-    if curl -sf http://localhost:11434/api/version &>/dev/null; then
-        ok "Ollama API servisi aktif (localhost:11434)."
+    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
+    if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
-        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor."
+        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
         info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
         info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
     fi
@@ -1063,26 +1218,33 @@ download_ollama_models() {
         return
     fi
 
-    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        info "Ollama API erişilemedi. Servis başlatma deneniyor..."
-        if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
-            sudo systemctl enable --now ollama >/dev/null 2>&1 || true
-        fi
-        # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
-        if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-            info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
-            ollama serve >/dev/null 2>&1 &
-        fi
-        for _ in {1..12}; do
-            if curl -sf http://localhost:11434/api/version &>/dev/null; then
-                break
+    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
+    OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
+    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        info "Ollama API erişilemedi (${OLLAMA_VERSION_URL})."
+        if is_local_ollama_url "$OLLAMA_BASE_URL"; then
+            info "Yerel Ollama servisi başlatma deneniyor..."
+            if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+                sudo systemctl enable --now ollama >/dev/null 2>&1 || true
             fi
-            sleep 5
-        done
+            # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
+            if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+                info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
+                ollama serve >/dev/null 2>&1 &
+            fi
+            for _ in {1..12}; do
+                if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+                    break
+                fi
+                sleep 5
+            done
+        else
+            warn "Uzak Ollama endpoint'i tespit edildi (${OLLAMA_BASE_URL}). Otomatik servis başlatma atlandı."
+        fi
     fi
 
-    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        warn "Ollama servisi doğrulanamadı, model indirme atlanıyor."
+    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        warn "Ollama servisi doğrulanamadı (${OLLAMA_VERSION_URL}), model indirme atlanıyor."
         return
     fi
 
@@ -1092,27 +1254,10 @@ download_ollama_models() {
         return
     fi
 
-    _read_env_value() {
-        local key="$1"
-        local file_path="$2"
-        awk -F= -v key="$key" '
-            /^[[:space:]]*#/ { next }
-            $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-                line = $0
-                sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
-                sub(/[[:space:]]+#.*/, "", line)
-                gsub(/\r/, "", line)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                print line
-                exit
-            }
-        ' "$file_path"
-    }
-
-    TEXT_MOD=$(_read_env_value "TEXT_MODEL" "$ENV_FILE")
-    CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
-    VISION_MOD=$(_read_env_value "VISION_MODEL" "$ENV_FILE")
-    MULTIMODAL=$(_read_env_value "ENABLE_MULTIMODAL" "$ENV_FILE")
+    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$ENV_FILE")
+    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$ENV_FILE")
+    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$ENV_FILE")
+    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$ENV_FILE")
 
     if [[ -z "$TEXT_MOD" ]]; then
         TEXT_MOD="llama3.1:8b"
@@ -1165,6 +1310,21 @@ run_migrations() {
     fi
 
     info "DATABASE_URL: $DB_URL"
+
+    if [[ "$DOCKER_ONLY" == true ]]; then
+        DOCKER_COMPOSE_CMD=()
+        if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker compose)
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker-compose)
+        fi
+        if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+            info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
+            "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis || warn "Docker postgres/redis servisleri başlatılamadı."
+        else
+            warn "--docker-only aktif ancak docker compose bulunamadı. DB servislerini manuel başlatın."
+        fi
+    fi
 
     setup_pgvector_extension() {
         if ! command -v psql &>/dev/null; then
@@ -1282,7 +1442,75 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 14. Özet ─────────────────────────────────────────────────────────────────
+# ── 14. Smoke testler ────────────────────────────────────────────────────────
+run_smoke_tests() {
+    step "Smoke Test Doğrulaması"
+    local smoke_dir="$SCRIPT_DIR/tests/smoke"
+    local should_run=false
+
+    if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
+        info "--skip-smoke-test verildiği için smoke testler atlandı."
+        SMOKE_TEST_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    if [[ ! -d "$smoke_dir" ]]; then
+        warn "Smoke test dizini bulunamadı: $smoke_dir"
+        SMOKE_TEST_STATUS="dizin_yok"
+        return
+    fi
+
+    if [[ "$RUN_SMOKE_TESTS_MODE" == "always" ]]; then
+        should_run=true
+    elif [[ -t 0 ]]; then
+        read -r -p "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] " reply
+        case "${reply:-E}" in
+            [HhNn]*) should_run=false ;;
+            *) should_run=true ;;
+        esac
+    else
+        info "Etkileşimsiz modda smoke test otomatik atlandı. Çalıştırmak için --smoke-test kullanın."
+        SMOKE_TEST_STATUS="atlandi_non_interactive"
+        return
+    fi
+
+    if [[ "$should_run" != true ]]; then
+        info "Smoke testler kullanıcı tercihiyle atlandı."
+        SMOKE_TEST_STATUS="atlandi_kullanici"
+        return
+    fi
+
+    if [[ "$USE_CONDA" == true ]]; then
+        if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
+            warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+            SMOKE_TEST_STATUS="pytest_yok"
+            return
+        fi
+        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir"; then
+            ok "Smoke testler başarıyla geçti."
+            SMOKE_TEST_STATUS="tamamlandi"
+        else
+            warn "Smoke testlerde hata var. Logları inceleyin."
+            SMOKE_TEST_STATUS="hata"
+        fi
+        return
+    fi
+
+    if ! python -c "import pytest" >/dev/null 2>&1; then
+        warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+        SMOKE_TEST_STATUS="pytest_yok"
+        return
+    fi
+    if python -m pytest "$smoke_dir"; then
+        ok "Smoke testler başarıyla geçti."
+        SMOKE_TEST_STATUS="tamamlandi"
+    else
+        warn "Smoke testlerde hata var. Logları inceleyin."
+        SMOKE_TEST_STATUS="hata"
+    fi
+}
+
+# ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -1347,12 +1575,26 @@ print_summary() {
     else
         echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
+    if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
+        echo "  Smoke testler: başarılı (tests/smoke)."
+    elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
+        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke"
+    else
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke"
+    fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
         echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
     fi
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
+    echo ""
+    echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
+    echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
+    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  Prometheus paneli : http://localhost:9090"
+    echo "  Jaeger UI         : http://localhost:16686"
+    echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
 }
@@ -1360,6 +1602,12 @@ print_summary() {
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    if [[ "$INSTALL_KUBERNETES" == true ]]; then
+        info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
+        deploy_with_helm
+        return
+    fi
+
     # Kritik sıra:
     # 1) Sistem bağımlılıkları (git/curl vb.)
     # 2) Repo senkronizasyonu (git clone/pull)
@@ -1389,6 +1637,7 @@ main() {
     run_migrations
     download_ollama_models
     verify_torch_cuda
+    run_smoke_tests
     print_summary
 }
 
