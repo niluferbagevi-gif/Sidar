@@ -34,6 +34,7 @@ HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
+DOCKER_ONLY=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -50,10 +51,12 @@ for arg in "$@"; do
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
+        --docker-only) DOCKER_ONLY=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
             echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
             echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
@@ -65,7 +68,7 @@ for arg in "$@"; do
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -271,24 +274,41 @@ install_system_dependencies() {
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
         info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libpq-dev postgresql-client postgresql redis-server
+            libpq-dev postgresql-client
 
-        info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
-        sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
-        sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
-            warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: postgresql/redis-server host paketleri atlandı."
+        else
+            info "Host PostgreSQL ve Redis sunucuları kuruluyor..."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
+
+            info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
+            sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
+            sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
+                warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
+        fi
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-server postgresql-devel redis
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: postgresql-server ve redis host paketleri atlandı."
+        else
+            sudo dnf install -y postgresql-server redis
+        fi
     elif command -v brew &>/dev/null; then
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
             curl wget git zstd node@20 ffmpeg portaudio \
-            postgresql@16 redis || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+            postgresql@16 || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: redis host paketi kurulumu atlandı."
+        else
+            brew install redis || warn "redis kurulamadı; eksikleri manuel tamamlayın."
+        fi
 
         if brew list node@20 &>/dev/null; then
             info "Node.js 20 için brew link işlemi deneniyor..."
@@ -296,11 +316,15 @@ install_system_dependencies() {
             ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         fi
 
-        info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
-        brew services start postgresql@16 >/dev/null 2>&1 || \
-            warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
-        brew services start redis >/dev/null 2>&1 || \
-            warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
+        if [[ "$DOCKER_ONLY" == true ]]; then
+            info "--docker-only aktif: brew services ile PostgreSQL/Redis başlatma atlandı."
+        else
+            info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
+            brew services start postgresql@16 >/dev/null 2>&1 || \
+                warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
+            brew services start redis >/dev/null 2>&1 || \
+                warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
+        fi
 
         ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
     else
@@ -431,13 +455,15 @@ check_prerequisites() {
     fi
 
     # Redis (Local Event Bus / cache)
-    if ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
+    if [[ "$DOCKER_ONLY" == false ]] && ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
         info "Lokal yerine Docker kullanacaksanız bu uyarıyı dikkate almayın."
     fi
 
     if command -v psql &>/dev/null; then
         ok "PostgreSQL istemcisi hazır: $(psql --version | awk '{print $3}')"
+    elif [[ "$DOCKER_ONLY" == true ]]; then
+        info "--docker-only: psql istemcisi opsiyonel. DB bağlantısı Docker servisleriyle sağlanacak."
     else
         warn "psql bulunamadı. PostgreSQL kullanımı için postgresql-client/libpq kurulu olmalı."
     fi
@@ -1284,6 +1310,21 @@ run_migrations() {
     fi
 
     info "DATABASE_URL: $DB_URL"
+
+    if [[ "$DOCKER_ONLY" == true ]]; then
+        DOCKER_COMPOSE_CMD=()
+        if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker compose)
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker-compose)
+        fi
+        if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+            info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
+            "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis || warn "Docker postgres/redis servisleri başlatılamadı."
+        else
+            warn "--docker-only aktif ancak docker compose bulunamadı. DB servislerini manuel başlatın."
+        fi
+    fi
 
     setup_pgvector_extension() {
         if ! command -v psql &>/dev/null; then
