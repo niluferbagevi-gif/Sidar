@@ -346,7 +346,15 @@ setup_python_env() {
         # shellcheck disable=SC1091
         source "$CONDA_BASE/etc/profile.d/conda.sh"
 
-        if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
+        # Conda base sürümünü güncelle (eski sürüm uyarısını önler)
+        info "Conda base sürümü kontrol ediliyor ($(conda --version | cut -d' ' -f2))..."
+        if conda update -n base -c defaults conda -y -q 2>/dev/null; then
+            ok "Conda $(conda --version | cut -d' ' -f2) — güncel."
+        else
+            info "Conda otomatik güncellenemedi. Manuel için: conda update -n base -c defaults conda"
+        fi
+
+        if conda env list | grep -qE "^${CONDA_ENV_NAME}[[:space:]]"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
             ok "Conda ortamı güncellendi."
@@ -357,7 +365,8 @@ setup_python_env() {
         fi
 
         conda activate "$CONDA_ENV_NAME"
-        ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
+        ACTIVE_ENV=$(conda info --envs 2>/dev/null | grep -v '^#' | awk '/\*/{print $1}')
+        ok "Ortam aktif: ${ACTIVE_ENV:-$CONDA_ENV_NAME}"
     else
         step "uv venv Ortamı"
         VENV_DIR="$SCRIPT_DIR/.venv"
@@ -694,7 +703,7 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 11. Ollama Modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
 
@@ -729,7 +738,7 @@ download_ollama_models() {
     ok "Gerekli tüm modeller başarıyla hazırlandı."
 }
 
-# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+# ── 12. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
