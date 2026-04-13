@@ -372,11 +372,6 @@ setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
 
-        # Conda init scriptini kaynak al (conda activate çalışması için gerekli)
-        CONDA_BASE=$(conda info --base 2>/dev/null) || fail "conda info başarısız oldu."
-        # shellcheck disable=SC1091
-        source "$CONDA_BASE/etc/profile.d/conda.sh"
-
         if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
@@ -387,8 +382,12 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        conda activate "$CONDA_ENV_NAME"
-        ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
+        CONDA_RUN=(conda run -n "$CONDA_ENV_NAME")
+        if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
+            ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
+        else
+            fail "Conda ortamı doğrulanamadı: $CONDA_ENV_NAME"
+        fi
     else
         step "uv venv Ortamı"
         VENV_DIR="$SCRIPT_DIR/.venv"
@@ -421,6 +420,11 @@ install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR"
+    if [[ "$USE_CONDA" == true ]]; then
+        UV_CMD=("${CONDA_RUN[@]}" uv)
+    else
+        UV_CMD=(uv)
+    fi
 
     # Reproducible kurulum için lock dosyası önceliklidir
     if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
@@ -429,7 +433,7 @@ install_python_deps() {
         if [[ "$INSTALL_DEV" == true ]]; then
             SYNC_ARGS+=(--extra dev)
         fi
-        uv sync "${SYNC_ARGS[@]}"
+        "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
         ok "Python bağımlılıkları uv.lock ile senkronlandı."
         return
     fi
@@ -456,13 +460,13 @@ install_python_deps() {
 
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
-            uv pip install \
+            "${UV_CMD[@]}" pip install \
                 --index-strategy unsafe-best-match \
                 --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
                 "${INSTALL_SPEC[@]}"
         else
             warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — PyPI'dan kuruluyor."
-            uv pip install "${INSTALL_SPEC[@]}"
+            "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
         fi
     else
         info "CPU modu kuruluyor..."
@@ -471,7 +475,7 @@ install_python_deps() {
         else
             INSTALL_SPEC=(-e ".[postgres]")
         fi
-        uv pip install "${INSTALL_SPEC[@]}"
+        "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
     fi
 
     ok "Python bağımlılıkları kuruldu."
