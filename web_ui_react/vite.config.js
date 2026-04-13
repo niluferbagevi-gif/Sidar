@@ -52,6 +52,13 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
+      include: ["src/**/*.{js,jsx}"],
+      exclude: [
+        "src/test/setup.js",
+        "src/main.jsx",
+        "src/**/*.test.{js,jsx}",
+        "src/test/**",
+      ],
       thresholds: {
         lines: 90,
         functions: 90,
