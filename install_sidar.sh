@@ -1101,10 +1101,35 @@ PY
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-            warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
-            info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
-            MIGRATION_STATUS="db_erisilemez"
-            return
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            elif command -v docker-compose &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
+            fi
+
+            if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
+                    info "Veritabanının hazır olması bekleniyor..."
+                    for _ in {1..15}; do
+                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                            ok "PostgreSQL erişilebilir hale geldi."
+                            break
+                        fi
+                        sleep 2
+                    done
+                else
+                    warn "Docker servisleri başlatılamadı (postgres/redis)."
+                fi
+            fi
+
+            if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+                info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+                MIGRATION_STATUS="db_erisilemez"
+                return
+            fi
         fi
     fi
 
