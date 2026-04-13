@@ -340,6 +340,15 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
 @pytest.fixture
 def respx_mock_router() -> Generator[Any, None, None]:
     respx = pytest.importorskip("respx")
+    # Varsayılanı sıkı tut: test içinde kaydedilen her route en az bir kez çağrılmalı.
+    with respx.mock(assert_all_called=True) as router:
+        yield router
+
+
+@pytest.fixture
+def respx_mock_router_relaxed() -> Generator[Any, None, None]:
+    """Bazı rotaların bilinçli olarak çağrılmadığı senaryolar için gevşek router."""
+    respx = pytest.importorskip("respx")
     with respx.mock(assert_all_called=False) as router:
         yield router
 
