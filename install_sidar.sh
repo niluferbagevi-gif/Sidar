@@ -541,6 +541,13 @@ ensure_database_url_defaults() {
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
         sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
         ok ".env: DATABASE_URL PostgreSQL varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
+        return
+    fi
+
+    if [[ "$current_db_url" == *lotus* ]]; then
+        warn ".env içinde eski 'lotus' referansı içeren DATABASE_URL tespit edildi: $current_db_url"
+        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
+        ok ".env: DATABASE_URL Sidar varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
     fi
 }
 
