@@ -135,7 +135,7 @@ async def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
             raise asyncio.CancelledError()
 
     _install_llm_client_module(monkeypatch, CancelClient)
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError, match=r"^$"):
         await judge_instance._call_llm("sys", "user")
 
 
@@ -165,7 +165,7 @@ async def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
             raise asyncio.CancelledError()
 
     _install_llm_client_module(monkeypatch, CancelClient)
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError, match=r"^$"):
         await judge_instance._call_llm_json("sys", "msg")
 
 
@@ -346,7 +346,7 @@ async def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
     fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: None
     monkeypatch.setitem(sys.modules, "core.active_learning", fake_mod)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError, match=r"^$"):
         await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)
 
 
