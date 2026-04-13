@@ -1588,6 +1588,13 @@ print_summary() {
     fi
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
+    echo ""
+    echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
+    echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
+    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  Prometheus paneli : http://localhost:9090"
+    echo "  Jaeger UI         : http://localhost:16686"
+    echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
 }
