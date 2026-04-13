@@ -105,6 +105,72 @@ banner() {
     echo -e "${NC}"
 }
 
+read_env_value_from_file() {
+    local key="$1"
+    local file_path="$2"
+    [[ -f "$file_path" ]] || return 0
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*#/ { next }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            line = $0
+            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            gsub(/\r/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            gsub(/^'\''|'\''$/, "", line)
+            print line
+            exit
+        }
+    ' "$file_path"
+}
+
+normalize_ollama_base_url() {
+    local raw="${1:-}"
+    local normalized="$raw"
+
+    normalized="${normalized%/}"
+    normalized="${normalized%/api}"
+    if [[ -z "$normalized" ]]; then
+        echo "http://localhost:11434"
+        return
+    fi
+    if [[ "$normalized" != http://* && "$normalized" != https://* ]]; then
+        normalized="http://$normalized"
+    fi
+    echo "$normalized"
+}
+
+resolve_ollama_base_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local detected="${OLLAMA_BASE_URL:-}"
+
+    if [[ -z "$detected" ]]; then
+        detected="${OLLAMA_HOST:-}"
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_BASE_URL" "$env_file")
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_HOST" "$env_file")
+    fi
+
+    normalize_ollama_base_url "$detected"
+}
+
+resolve_ollama_version_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local base_url
+    base_url=$(resolve_ollama_base_url "$env_file")
+    echo "${base_url}/api/version"
+}
+
+is_local_ollama_url() {
+    local url="$1"
+    [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -393,10 +459,11 @@ check_prerequisites() {
     fi
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
-    if curl -sf http://localhost:11434/api/version &>/dev/null; then
-        ok "Ollama API servisi aktif (localhost:11434)."
+    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
+    if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
-        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor."
+        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
         info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
         info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
     fi
@@ -1125,26 +1192,33 @@ download_ollama_models() {
         return
     fi
 
-    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        info "Ollama API erişilemedi. Servis başlatma deneniyor..."
-        if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
-            sudo systemctl enable --now ollama >/dev/null 2>&1 || true
-        fi
-        # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
-        if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-            info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
-            ollama serve >/dev/null 2>&1 &
-        fi
-        for _ in {1..12}; do
-            if curl -sf http://localhost:11434/api/version &>/dev/null; then
-                break
+    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
+    OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
+    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        info "Ollama API erişilemedi (${OLLAMA_VERSION_URL})."
+        if is_local_ollama_url "$OLLAMA_BASE_URL"; then
+            info "Yerel Ollama servisi başlatma deneniyor..."
+            if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+                sudo systemctl enable --now ollama >/dev/null 2>&1 || true
             fi
-            sleep 5
-        done
+            # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
+            if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+                info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
+                ollama serve >/dev/null 2>&1 &
+            fi
+            for _ in {1..12}; do
+                if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+                    break
+                fi
+                sleep 5
+            done
+        else
+            warn "Uzak Ollama endpoint'i tespit edildi (${OLLAMA_BASE_URL}). Otomatik servis başlatma atlandı."
+        fi
     fi
 
-    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
-        warn "Ollama servisi doğrulanamadı, model indirme atlanıyor."
+    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+        warn "Ollama servisi doğrulanamadı (${OLLAMA_VERSION_URL}), model indirme atlanıyor."
         return
     fi
 
@@ -1154,27 +1228,10 @@ download_ollama_models() {
         return
     fi
 
-    _read_env_value() {
-        local key="$1"
-        local file_path="$2"
-        awk -F= -v key="$key" '
-            /^[[:space:]]*#/ { next }
-            $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-                line = $0
-                sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
-                sub(/[[:space:]]+#.*/, "", line)
-                gsub(/\r/, "", line)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                print line
-                exit
-            }
-        ' "$file_path"
-    }
-
-    TEXT_MOD=$(_read_env_value "TEXT_MODEL" "$ENV_FILE")
-    CODE_MOD=$(_read_env_value "CODING_MODEL" "$ENV_FILE")
-    VISION_MOD=$(_read_env_value "VISION_MODEL" "$ENV_FILE")
-    MULTIMODAL=$(_read_env_value "ENABLE_MULTIMODAL" "$ENV_FILE")
+    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$ENV_FILE")
+    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$ENV_FILE")
+    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$ENV_FILE")
+    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$ENV_FILE")
 
     if [[ -z "$TEXT_MOD" ]]; then
         TEXT_MOD="llama3.1:8b"
