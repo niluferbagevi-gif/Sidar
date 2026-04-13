@@ -470,6 +470,33 @@ install_python_deps() {
         fi
 
         info "GPU kurulumu yapılıyor..."
+        REQ_ARGS=()
+        if [[ -f "$SCRIPT_DIR/requirements-gpu.txt" ]]; then
+            REQ_ARGS+=("requirements-gpu.txt")
+        elif [[ -f "$SCRIPT_DIR/requirements-all.txt" ]]; then
+            REQ_ARGS+=("requirements-all.txt")
+        elif [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+            REQ_ARGS+=("requirements.txt")
+        fi
+        if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
+            REQ_ARGS+=("requirements-dev.txt")
+        fi
+
+        if [[ "${#REQ_ARGS[@]}" -gt 0 ]]; then
+            info "GPU için requirements dosyaları uv pip sync ile senkronlanıyor: ${REQ_ARGS[*]}"
+            if [[ -n "$TORCH_CU" ]]; then
+                "${UV_CMD[@]}" pip sync \
+                    --index-strategy unsafe-best-match \
+                    --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
+                    "${REQ_ARGS[@]}"
+            else
+                warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — varsayılan indekslerle senkron yapılacak."
+                "${UV_CMD[@]}" pip sync "${REQ_ARGS[@]}"
+            fi
+            ok "Python bağımlılıkları requirements dosyalarıyla senkronlandı."
+            return
+        fi
+
         if [[ "$INSTALL_DEV" == true ]]; then
             INSTALL_SPEC=(-e ".[all,dev]")
         else
@@ -487,6 +514,20 @@ install_python_deps() {
         fi
     else
         info "CPU modu kuruluyor..."
+        REQ_ARGS=()
+        if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+            REQ_ARGS+=("requirements.txt")
+        fi
+        if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
+            REQ_ARGS+=("requirements-dev.txt")
+        fi
+        if [[ "${#REQ_ARGS[@]}" -gt 0 ]]; then
+            info "CPU için requirements dosyaları uv pip sync ile senkronlanıyor: ${REQ_ARGS[*]}"
+            "${UV_CMD[@]}" pip sync "${REQ_ARGS[@]}"
+            ok "Python bağımlılıkları requirements dosyalarıyla senkronlandı."
+            return
+        fi
+
         if [[ "$INSTALL_DEV" == true ]]; then
             INSTALL_SPEC=(-e ".[postgres,dev]")
         else
