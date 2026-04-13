@@ -686,6 +686,36 @@ PY
         fi
     fi
 
+    # Hex tabanlı webhook/federation secret değerleri boşsa otomatik üret
+    ensure_hex_secret() {
+        local key_name="$1"
+        local hex_len="${2:-64}"
+        local generated=""
+
+        if grep -q "^${key_name}=$" "$ENV_FILE"; then
+            if command -v python3 &>/dev/null; then
+                generated=$(python3 - <<PY
+import secrets
+print(secrets.token_hex(${hex_len} // 2))
+PY
+)
+            elif command -v openssl &>/dev/null; then
+                generated=$(openssl rand -hex "$((hex_len / 2))" | tr -d '\n')
+            fi
+
+            if [[ -n "$generated" ]]; then
+                sed -i "s|^${key_name}=.*|${key_name}=${generated}|" "$ENV_FILE"
+                ok ".env: ${key_name} otomatik ve güvenli bir değerle oluşturuldu."
+            else
+                warn "${key_name} otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            fi
+        fi
+    }
+
+    ensure_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    ensure_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    ensure_hex_secret "GITHUB_WEBHOOK_SECRET" 40
+
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
