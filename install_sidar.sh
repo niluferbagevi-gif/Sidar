@@ -738,6 +738,22 @@ harden_database_credentials() {
                         safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
                         sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+
+                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                        # DATABASE_URL ile senkron kalmalıdır.
+                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                        else
+                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                        fi
+                        if grep -q '^POSTGRES_USER=' "$env_file"; then
+                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        else
+                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                        fi
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın:"
+                        info "docker compose down && docker compose up -d postgres redis"
                     else
                         warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                     fi
