@@ -25,19 +25,23 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
+SKIP_MODELS=false
 PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
+MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
         --cpu)  FORCE_CPU=true ;;
+        --skip-models) SKIP_MODELS=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
+            echo "  --skip-models  Ollama model indirmelerini atla"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --skip-models kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -91,9 +95,9 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
+        info "Gerekli temel paketler (curl, wget, git, zstd, nodejs, npm vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl wget git build-essential software-properties-common zstd
+            curl wget git build-essential software-properties-common zstd nodejs npm
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -106,7 +110,7 @@ install_system_dependencies() {
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
@@ -698,6 +702,11 @@ PY
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
 
+    if [[ "$SKIP_MODELS" == true ]]; then
+        info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
+        return
+    fi
+
     if ! command -v ollama &>/dev/null; then
         warn "Ollama bulunamadı, model indirme atlanıyor."
         return
@@ -764,6 +773,7 @@ run_migrations() {
 
     if [[ ! -f "$ALEMBIC_INI" ]]; then
         warn "alembic.ini bulunamadı — migrasyon atlandı."
+        MIGRATION_STATUS="alembic_yok"
         return
     fi
 
@@ -774,20 +784,59 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
-    if [[ -n "$DB_URL" ]]; then
-        info "DATABASE_URL: $DB_URL"
-        if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
-            ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
-        else
-            warn "Migrasyon başarısız. Log'ları kontrol edin."
+    if [[ -z "$DB_URL" ]]; then
+        warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: python -m alembic upgrade head"
+        MIGRATION_STATUS="db_url_yok"
+        return
+    fi
+
+    info "DATABASE_URL: $DB_URL"
+
+    if [[ "$DB_URL" == postgresql* ]]; then
+        if ! command -v pg_isready &>/dev/null; then
+            warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
+            info "Veritabanını başlattıktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+            MIGRATION_STATUS="pg_isready_yok"
+            return
         fi
+
+        DB_CONN_INFO=$(python - <<'PY' "$DB_URL"
+from urllib.parse import urlparse, unquote
+import sys
+
+url = sys.argv[1]
+url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urlparse(url)
+
+host = parsed.hostname or "localhost"
+port = str(parsed.port or 5432)
+user = unquote(parsed.username or "postgres")
+db = parsed.path.lstrip("/") or "postgres"
+
+print(f"{host}|{port}|{user}|{db}")
+PY
+)
+
+        DB_HOST=$(echo "$DB_CONN_INFO" | cut -d'|' -f1)
+        DB_PORT=$(echo "$DB_CONN_INFO" | cut -d'|' -f2)
+        DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
+        DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
+
+        if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+            warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+            info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+            MIGRATION_STATUS="db_erisilemez"
+            return
+        fi
+    fi
+
+    if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
+        ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
+        MIGRATION_STATUS="tamamlandi"
     else
-        info "DATABASE_URL bulunamadı — alembic.ini içindeki varsayılan URL kullanılacak."
-        if python -m alembic upgrade head 2>&1; then
-            ok "Alembic migrasyonları tamamlandı."
-        else
-            warn "Migrasyon başarısız. Log'ları kontrol edin."
-        fi
+        warn "Migrasyon başarısız. Log'ları kontrol edin."
+        MIGRATION_STATUS="hata"
     fi
 }
 
@@ -863,8 +912,15 @@ print_summary() {
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
-    echo "  python -m alembic upgrade head  — DB migrasyonu"
+    if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
+        echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
+    else
+        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+    fi
     echo "  ollama serve              — Ollama servisini başlat"
+    if [[ "$SKIP_MODELS" == true ]]; then
+        echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
+    fi
     echo "  docker compose up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
@@ -873,11 +929,11 @@ print_summary() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
-    sync_repo
-    cd "$SCRIPT_DIR"
     banner
     install_system_dependencies
     check_prerequisites
+    sync_repo
+    cd "$SCRIPT_DIR"
     detect_gpu
     setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
@@ -893,8 +949,8 @@ main() {
     install_playwright_browsers
     check_pyaudio_wsl2
     create_directories
-    setup_react_frontend
     setup_env_file
+    setup_react_frontend
     download_ollama_models
     run_migrations
     verify_torch_cuda
