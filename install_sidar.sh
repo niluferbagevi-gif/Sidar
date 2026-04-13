@@ -1111,6 +1111,25 @@ run_migrations() {
 
     info "DATABASE_URL: $DB_URL"
 
+    setup_pgvector_extension() {
+        if ! command -v psql &>/dev/null; then
+            return
+        fi
+        if [[ -z "$DB_URL" ]]; then
+            return
+        fi
+
+        local psql_url
+        psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
+
+        info "pgvector extension kontrol ediliyor..."
+        if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+            ok "pgvector extension hazır."
+        else
+            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
+        fi
+    }
+
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
@@ -1172,6 +1191,8 @@ PY
                 return
             fi
         fi
+
+        setup_pgvector_extension
     fi
 
     if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
