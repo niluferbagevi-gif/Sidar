@@ -48,4 +48,4 @@ dependencies:
 # NOT — WSL2 ses desteği:
 #   PulseAudio veya PipeWire kurulumu gerekebilir; pyaudio WSL2'de
 #   çoğunlukla ses donanımına erişemez. Ses özelliği devre dışı bırakılabilir:
-#   USE_VOICE=false (.env)
+#   ENABLE_MULTIMODAL=false (.env)
