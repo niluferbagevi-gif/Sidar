@@ -138,13 +138,20 @@ class PoyrazAgent(BaseAgent):
             else:
                 parts = (raw_parts[:5] + ["", "", "", "", ""])[:5]
                 platform, text, destination, media_url, link_url = (part.strip() for part in parts)
-        ok, result = await self.social.publish_content(
-            platform=platform,
-            text=text,
-            destination=destination,
-            media_url=media_url,
-            link_url=link_url,
-        )
+        try:
+            ok, result = await self.social.publish_content(
+                platform=platform,
+                text=text,
+                destination=destination,
+                media_url=media_url,
+                link_url=link_url,
+            )
+        except Exception as exc:
+            reason = str(exc).strip() or exc.__class__.__name__
+            if "rate limit" in reason.lower():
+                return f"[SOCIAL:ERROR] platform={platform} reason=rate_limit:{reason}. Lütfen bekleyip tekrar deneyin."
+            return f"[SOCIAL:ERROR] platform={platform} reason={reason}"
+
         if ok:
             return f"[SOCIAL:PUBLISHED] platform={platform} result={result}"
         return f"[SOCIAL:ERROR] platform={platform} reason={result}"
