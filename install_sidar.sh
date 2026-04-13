@@ -774,6 +774,11 @@ setup_env_file() {
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
+    if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$ENV_FILE"; then
+        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$ENV_FILE"
+        ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
+    fi
+
     # Bilinen sızıntı/default değerleri de güvenli olmayan kabul edilir ve yeniden üretilir.
     is_missing_empty_or_known_insecure() {
         local key_name="$1"
