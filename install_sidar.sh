@@ -33,8 +33,10 @@ INSTALL_KUBERNETES=false
 HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
+RUN_SMOKE_TESTS_MODE="ask"
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
+SMOKE_TEST_STATUS="atlandı"
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
@@ -46,20 +48,24 @@ for arg in "$@"; do
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
+        --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
+        --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui] [--kubernetes]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
             echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
             echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
             echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
+            echo "  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır"
+            echo "  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1338,7 +1344,75 @@ print(f'available={avail} cuda={ver} device={dev}')
     fi
 }
 
-# ── 14. Özet ─────────────────────────────────────────────────────────────────
+# ── 14. Smoke testler ────────────────────────────────────────────────────────
+run_smoke_tests() {
+    step "Smoke Test Doğrulaması"
+    local smoke_dir="$SCRIPT_DIR/tests/smoke"
+    local should_run=false
+
+    if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
+        info "--skip-smoke-test verildiği için smoke testler atlandı."
+        SMOKE_TEST_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    if [[ ! -d "$smoke_dir" ]]; then
+        warn "Smoke test dizini bulunamadı: $smoke_dir"
+        SMOKE_TEST_STATUS="dizin_yok"
+        return
+    fi
+
+    if [[ "$RUN_SMOKE_TESTS_MODE" == "always" ]]; then
+        should_run=true
+    elif [[ -t 0 ]]; then
+        read -r -p "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] " reply
+        case "${reply:-E}" in
+            [HhNn]*) should_run=false ;;
+            *) should_run=true ;;
+        esac
+    else
+        info "Etkileşimsiz modda smoke test otomatik atlandı. Çalıştırmak için --smoke-test kullanın."
+        SMOKE_TEST_STATUS="atlandi_non_interactive"
+        return
+    fi
+
+    if [[ "$should_run" != true ]]; then
+        info "Smoke testler kullanıcı tercihiyle atlandı."
+        SMOKE_TEST_STATUS="atlandi_kullanici"
+        return
+    fi
+
+    if [[ "$USE_CONDA" == true ]]; then
+        if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
+            warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+            SMOKE_TEST_STATUS="pytest_yok"
+            return
+        fi
+        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir"; then
+            ok "Smoke testler başarıyla geçti."
+            SMOKE_TEST_STATUS="tamamlandi"
+        else
+            warn "Smoke testlerde hata var. Logları inceleyin."
+            SMOKE_TEST_STATUS="hata"
+        fi
+        return
+    fi
+
+    if ! python -c "import pytest" >/dev/null 2>&1; then
+        warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+        SMOKE_TEST_STATUS="pytest_yok"
+        return
+    fi
+    if python -m pytest "$smoke_dir"; then
+        ok "Smoke testler başarıyla geçti."
+        SMOKE_TEST_STATUS="tamamlandi"
+    else
+        warn "Smoke testlerde hata var. Logları inceleyin."
+        SMOKE_TEST_STATUS="hata"
+    fi
+}
+
+# ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -1403,6 +1477,13 @@ print_summary() {
     else
         echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
+    if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
+        echo "  Smoke testler: başarılı (tests/smoke)."
+    elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
+        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke"
+    else
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke"
+    fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
         echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
@@ -1451,6 +1532,7 @@ main() {
     run_migrations
     download_ollama_models
     verify_torch_cuda
+    run_smoke_tests
     print_summary
 }
 
