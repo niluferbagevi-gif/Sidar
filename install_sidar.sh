@@ -449,6 +449,13 @@ install_python_deps() {
     if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
         info "uv.lock bulundu — kilitli bağımlılıklar ile kurulum yapılıyor (uv sync --frozen)."
         SYNC_ARGS=(--frozen)
+        if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
+            for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser; do
+                SYNC_ARGS+=(--extra "$_extra")
+            done
+        else
+            SYNC_ARGS+=(--extra postgres)
+        fi
         if [[ "$INSTALL_DEV" == true ]]; then
             SYNC_ARGS+=(--extra dev)
         fi
@@ -944,7 +951,7 @@ PY
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
-    local estimated_size_gb="~12 GB"
+    local estimated_size_gb="~14.8 GB"
 
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
