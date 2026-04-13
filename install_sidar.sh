@@ -945,7 +945,12 @@ PY
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
             sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
-            ok ".env: USE_GPU=false (CPU modu / --cpu bayrağı)"
+            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
+                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
+            else
+                echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
+            fi
+            ok ".env: USE_GPU=false, COMPOSE_PROFILES=cpu ayarlandı."
         fi
     fi
 
