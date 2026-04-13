@@ -54,7 +54,12 @@ fi
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
 PYTHON_VERSION="3.11"
-DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
+OS_NAME="$(uname -s 2>/dev/null || echo Linux)"
+if [[ "$OS_NAME" == "Darwin" ]]; then
+    DEFAULT_DATABASE_URL="postgresql+asyncpg://$(whoami):@localhost:5432/sidar"
+else
+    DEFAULT_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
