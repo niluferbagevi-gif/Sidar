@@ -27,7 +27,6 @@ INSTALL_DEV=false
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
-PLAYWRIGHT_REQUESTED=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 for arg in "$@"; do
@@ -456,8 +455,6 @@ install_python_deps() {
         else
             INSTALL_SPEC=(-e ".[all]")
         fi
-        PLAYWRIGHT_REQUESTED=true
-
         if [[ -n "$TORCH_CU" ]]; then
             info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
             "${UV_CMD[@]}" pip install \
@@ -485,19 +482,21 @@ install_python_deps() {
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
-    if [[ "$INSTALL_DEV" == true || "$PLAYWRIGHT_REQUESTED" == true ]]; then
-        if python -c "import playwright" >/dev/null 2>&1; then
-            info "Chromium ve Firefox motorları kuruluyor..."
-            if python -m playwright install --with-deps chromium firefox; then
-                ok "Playwright motorları kuruldu (chromium, firefox)."
-            else
-                warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
-            fi
+    if [[ "$USE_CONDA" == true ]]; then
+        PY_CMD=("${CONDA_RUN[@]}" python)
+    else
+        PY_CMD=(python)
+    fi
+
+    if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
+        info "Chromium ve Firefox motorları kuruluyor..."
+        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox; then
+            ok "Playwright motorları kuruldu (chromium, firefox)."
         else
-            info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
+            warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
         fi
     else
-        info "Playwright kurulumu bu profil için talep edilmedi — tarayıcı motor kurulumu atlandı."
+        info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
 }
 
