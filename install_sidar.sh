@@ -59,13 +59,61 @@ banner() {
 check_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    # Conda (opsiyonel)
+    # Conda kontrolü ve otomatik Miniconda kurulumu
     if command -v conda &>/dev/null; then
         USE_CONDA=true
-        ok "Conda $(conda --version | cut -d' ' -f2)"
+        ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
     else
-        USE_CONDA=false
-        warn "Conda bulunamadı — uv venv fallback kullanılacak."
+        warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
+
+        OS="$(uname -s)"
+        ARCH="$(uname -m)"
+        MINICONDA_URL=""
+        MINICONDA_INSTALLER="/tmp/miniconda.sh"
+        MINICONDA_PREFIX="$HOME/miniconda3"
+
+        case "$OS" in
+            Linux)
+                case "$ARCH" in
+                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" ;;
+                    aarch64|arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh" ;;
+                esac
+                ;;
+            Darwin)
+                case "$ARCH" in
+                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh" ;;
+                    arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh" ;;
+                esac
+                ;;
+        esac
+
+        if [[ -z "$MINICONDA_URL" ]]; then
+            USE_CONDA=false
+            warn "Miniconda için desteklenmeyen platform ($OS/$ARCH). uv venv fallback kullanılacak."
+        elif ! command -v curl &>/dev/null; then
+            USE_CONDA=false
+            warn "curl bulunamadı, Miniconda indirilemedi. uv venv fallback kullanılacak."
+        else
+            info "Miniconda indiriliyor: $MINICONDA_URL"
+            if curl -fsSL "$MINICONDA_URL" -o "$MINICONDA_INSTALLER"; then
+                if [[ -d "$MINICONDA_PREFIX" ]]; then
+                    info "Mevcut dizin bulundu: $MINICONDA_PREFIX (yeniden kurulum atlandı)."
+                else
+                    info "Miniconda kuruluyor: $MINICONDA_PREFIX"
+                    bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_PREFIX"
+                fi
+                rm -f "$MINICONDA_INSTALLER"
+
+                # shellcheck disable=SC1091
+                source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
+                conda init bash >/dev/null 2>&1 || true
+                USE_CONDA=true
+                ok "Miniconda kuruldu ve conda aktif edildi: $(conda --version | cut -d' ' -f2)"
+            else
+                USE_CONDA=false
+                warn "Miniconda indirilemedi. uv venv fallback kullanılacak."
+            fi
+        fi
     fi
 
     # Git
