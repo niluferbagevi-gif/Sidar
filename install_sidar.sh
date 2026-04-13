@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
 # Sürüm : 5.2.0
-# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x)
+# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
 #   chmod +x install_sidar.sh
@@ -98,7 +98,7 @@ fi
 DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
-REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
+REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 
 banner() {
     echo -e "${BOLD}${BLUE}"
@@ -627,7 +627,9 @@ install_python_deps() {
                 SYNC_ARGS+=(--extra "$_extra")
             done
         else
-            SYNC_ARGS+=(--extra postgres)
+            for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser; do
+                SYNC_ARGS+=(--extra "$_extra")
+            done
         fi
         if [[ "$INSTALL_DEV" == true ]]; then
             SYNC_ARGS+=(--extra dev)
@@ -638,12 +640,12 @@ install_python_deps() {
     fi
 
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        # CUDA major version'ı belirle (örn. 13.2 → cu130)
+        # CUDA major version'ı belirle (örn. 13.2 → cu124 fallback)
         CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
         CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
 
-        # PyTorch wheel dizini: cu130, cu121, cu124 gibi
-        if   [[ "$CUDA_MAJOR" -ge 13 ]]; then TORCH_CU="cu130"
+        # PyTorch wheel dizini: cu124, cu121 gibi
+        if   [[ "$CUDA_MAJOR" -ge 13 ]]; then TORCH_CU="cu124"
         elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 4 ]]; then TORCH_CU="cu124"
         elif [[ "$CUDA_MAJOR" -eq 12 ]]; then TORCH_CU="cu121"
         else TORCH_CU=""
@@ -792,6 +794,11 @@ setup_react_frontend() {
         REACT_UI_STATUS="build_hata"
         return
     fi
+    if [[ ! -d "$REACT_DIR/dist" ]]; then
+        warn "React UI build tamamlandı görünüyor ancak dist klasörü bulunamadı: $REACT_DIR/dist"
+        REACT_UI_STATUS="build_hata"
+        return
+    fi
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
     REACT_UI_STATUS="hazır"
 }
@@ -848,6 +855,9 @@ create_directories() {
     for dir in "${REQUIRED_DIRS[@]}"; do
         mkdir -p "$SCRIPT_DIR/$dir"
     done
+    if [[ -f "$SCRIPT_DIR/run_tests.sh" ]]; then
+        chmod +x "$SCRIPT_DIR/run_tests.sh"
+    fi
     ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
 }
 
@@ -1191,6 +1201,14 @@ PY
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
+    local temp_ollama_pid=""
+    cleanup_temp_ollama() {
+        if [[ -n "$temp_ollama_pid" ]] && kill -0 "$temp_ollama_pid" >/dev/null 2>&1; then
+            info "Geçici ollama serve süreci sonlandırılıyor (PID: $temp_ollama_pid)..."
+            kill "$temp_ollama_pid" >/dev/null 2>&1 || true
+        fi
+    }
+    trap cleanup_temp_ollama RETURN
 
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
@@ -1231,6 +1249,7 @@ download_ollama_models() {
             if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
                 info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
                 ollama serve >/dev/null 2>&1 &
+                temp_ollama_pid=$!
             fi
             for _ in {1..12}; do
                 if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
@@ -1345,6 +1364,23 @@ run_migrations() {
         fi
     }
 
+    setup_postgresql_local() {
+        if ! command -v psql &>/dev/null; then
+            return
+        fi
+        if ! command -v sudo &>/dev/null; then
+            return
+        fi
+        if ! sudo -u postgres psql -tAc "SELECT 1;" >/dev/null 2>&1; then
+            return
+        fi
+
+        info "Lokal PostgreSQL kullanıcı/veritabanı kontrolü yapılıyor..."
+        sudo -u postgres psql -c "CREATE USER sidar WITH PASSWORD 'sidar';" >/dev/null 2>&1 || true
+        sudo -u postgres psql -c "CREATE DATABASE sidar OWNER sidar;" >/dev/null 2>&1 || true
+        ok "PostgreSQL: sidar kullanıcısı ve veritabanı hazır."
+    }
+
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
@@ -1374,6 +1410,10 @@ PY
         DB_PORT=$(echo "$DB_CONN_INFO" | cut -d'|' -f2)
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
+
+        if [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" ]]; then
+            setup_postgresql_local
+        fi
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD=()
@@ -1437,7 +1477,7 @@ print(f'available={avail} cuda={ver} device={dev}')
             ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
         else
             warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-            info "GPU wheel için: uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130"
+            info "GPU wheel için: uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu124"
         fi
     fi
 }
