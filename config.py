@@ -386,7 +386,7 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/sidar")
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", 5)
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
