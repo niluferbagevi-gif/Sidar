@@ -9,7 +9,7 @@ description = "Sidar AI: Multi-Agent Autonomous System with Swarm Capability"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  {name = "Nilüfer Bagevi", email = "niluferbagevi@example.com"},
+  {name = "Nilüfer Bagevi", email = "niluferbagevi@users.noreply.github.com"},
 ]
 keywords = ["ai", "agent", "swarm", "code-generation", "rag"]
 classifiers = [
@@ -76,8 +76,8 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/niluferbagevi-gif/Sidar"
-Documentation = "https://github.com/niluferbagevi-gif/Sidar/docs"
-Changelog = "https://github.com/niluferbagevi-gif/Sidar/releases"
+Documentation = "https://github.com/niluferbagevi-gif/Sidar/tree/main/docs"
+Changelog = "https://github.com/niluferbagevi-gif/Sidar/blob/main/CHANGELOG.md"
 Issues = "https://github.com/niluferbagevi-gif/Sidar/issues"
 
 [project.optional-dependencies]
