@@ -688,6 +688,41 @@ PY
 }
 
 # ── 11. Alembic migrasyonları ────────────────────────────────────────────────
+download_ollama_models() {
+    step "Ollama Modelleri Hazırlanıyor"
+
+    if ! command -v ollama &>/dev/null; then
+        warn "Ollama bulunamadı, model indirme atlanıyor."
+        return
+    fi
+
+    if ! curl -sf http://localhost:11434/api/version &>/dev/null; then
+        info "Ollama servisi başlatılıyor..."
+        ollama serve >/dev/null 2>&1 &
+        sleep 5
+    fi
+
+    ENV_FILE="$SCRIPT_DIR/.env"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        warn ".env bulunamadı, varsayılan modeller indirilemedi."
+        return
+    fi
+
+    TEXT_MOD=$(grep "^TEXT_MODEL=" "$ENV_FILE" | cut -d= -f2)
+    CODE_MOD=$(grep "^CODING_MODEL=" "$ENV_FILE" | cut -d= -f2)
+    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text" "llama3.2-vision")
+
+    for model in "${MODELS[@]}"; do
+        if [[ -n "$model" ]]; then
+            info "-> $model indiriliyor (bu işlem zaman alabilir)..."
+            ollama pull "$model"
+        fi
+    done
+
+    ok "Gerekli tüm modeller başarıyla hazırlandı."
+}
+
+# ── 11. Alembic migrasyonları ────────────────────────────────────────────────
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -826,6 +861,7 @@ main() {
     create_directories
     setup_react_frontend
     setup_env_file
+    download_ollama_models
     run_migrations
     verify_torch_cuda
     print_summary
