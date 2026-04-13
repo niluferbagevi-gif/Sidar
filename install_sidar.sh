@@ -45,6 +45,8 @@ done
 CONDA_ENV_NAME="sidar-ai"
 PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
+TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
 
 banner() {
@@ -53,6 +55,30 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+# ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
+sync_repo() {
+    step "Sidar projesi GitHub'dan çekiliyor"
+
+    if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
+        ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
+        return
+    fi
+
+    if [[ ! -d "$TARGET_DIR/.git" ]]; then
+        info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
+        git clone "$REPO_URL" "$TARGET_DIR"
+    else
+        warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
+        (
+            cd "$TARGET_DIR"
+            git pull --ff-only
+        )
+    fi
+
+    SCRIPT_DIR="$TARGET_DIR"
+    ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
 }
 
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
@@ -743,6 +769,7 @@ print_summary() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
+    sync_repo
     cd "$SCRIPT_DIR"
     banner
     install_system_dependencies
