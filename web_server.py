@@ -2344,7 +2344,15 @@ async def rate_limit_middleware(request: Request, call_next):
 async def _close_redis_client() -> None:
     global _redis_client
     if _redis_client is not None:
-        await _redis_client.aclose()
+        try:
+            await _redis_client.aclose()
+        except RuntimeError as exc:
+            # Bazı test teardown senaryolarında (özellikle lifespan kapanışında)
+            # redis istemcisinin bağlı olduğu event loop kapanmış olabilir.
+            # Bu durumda sessizce temizleyip kapanış akışını bozmamayı tercih ediyoruz.
+            if "Event loop is closed" not in str(exc):
+                raise
+            logger.debug("Redis istemcisi event loop kapandıktan sonra kapatılmaya çalışıldı: %s", exc)
         _redis_client = None
 
 
