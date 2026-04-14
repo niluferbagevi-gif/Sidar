@@ -281,6 +281,14 @@ install_system_dependencies() {
         else
             info "Host PostgreSQL ve Redis sunucuları kuruluyor..."
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
+            info "pgvector eklentisi (PostgreSQL) kuruluyor..."
+            if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16-pgvector; then
+                ok "pgvector paketi kuruldu: postgresql-16-pgvector"
+            elif sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-pgvector; then
+                ok "pgvector paketi kuruldu: postgresql-pgvector"
+            else
+                warn "pgvector apt paketi kurulamadı. Gerekirse manuel kurulum yapın."
+            fi
 
             info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
             sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
@@ -1399,6 +1407,9 @@ run_migrations() {
         info "Lokal PostgreSQL kullanıcı/veritabanı kontrolü yapılıyor..."
         sudo -u postgres psql -c "CREATE USER sidar WITH PASSWORD 'sidar';" >/dev/null 2>&1 || true
         sudo -u postgres psql -c "CREATE DATABASE sidar OWNER sidar;" >/dev/null 2>&1 || true
+        info "pgvector eklentisi sidar veritabanında etkinleştiriliyor..."
+        sudo -u postgres psql -d sidar -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1 || \
+            warn "sidar veritabanında pgvector etkinleştirilemedi."
         ok "PostgreSQL: sidar kullanıcısı ve veritabanı hazır."
     }
 
