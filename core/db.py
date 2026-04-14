@@ -1354,7 +1354,8 @@ class Database:
         return await self._run_sqlite_op(_run)
     async def create_user(self, username: str, role: str = "user", password: Optional[str] = None, tenant_id: str = "default") -> UserRecord:
         user_id = str(uuid.uuid4())
-        created_at = _utc_now_iso()
+        created_at_dt = datetime.now(timezone.utc)
+        created_at = created_at_dt.isoformat()
         password_hash = _hash_password(password) if password else None
 
         if self._backend == "postgresql":
@@ -1457,7 +1458,8 @@ class Database:
         if existing:
             return existing
 
-        created_at = _utc_now_iso()
+        created_at_dt = datetime.now(timezone.utc)
+        created_at = created_at_dt.isoformat()
         normalized_username = str(username or user_id).strip() or str(user_id)
         normalized_role = str(role or "user").strip() or "user"
         normalized_tenant_id = str(tenant_id or "default").strip() or "default"
@@ -1472,7 +1474,7 @@ class Database:
                     None,
                     normalized_role,
                     normalized_tenant_id,
-                    created_at,
+                    created_at_dt,
                 )
             return UserRecord(
                 id=user_id,
