@@ -633,9 +633,9 @@ install_python_deps() {
         "${UV_CMD[@]}" lock
         ok "uv.lock oluşturuldu."
     else
-        info "uv.lock bulundu — uv lock --upgrade ile bağımlılıklar kontrol ediliyor..."
-        "${UV_CMD[@]}" lock --upgrade
-        ok "uv.lock güncellendi."
+        info "uv.lock bulundu — uv lock ile bağımlılıklar kontrol ediliyor..."
+        "${UV_CMD[@]}" lock
+        ok "uv.lock kontrol edildi."
     fi
 
     SYNC_ARGS=(--frozen)
