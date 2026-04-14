@@ -68,13 +68,6 @@ dependencies = [
   "posthog<6.0.0",
   "sentence-transformers~=3.0.1",
   "pgvector~=0.3.6",
-  "pyttsx3~=2.98",
-  "SpeechRecognition~=3.10.4",
-  "pyaudio~=0.2.14",
-  "openai-whisper>=20231117",
-  "yt-dlp>=2024.0.0",
-  "playwright~=1.51.0",
-  "selenium~=4.29.0",
 ]
 
 [project.urls]
@@ -139,11 +132,23 @@ gui = [
 slack = [
   "slack-sdk~=3.33.0",
 ]
-browser = []
+browser = [
+  "playwright~=1.51.0",
+  "selenium~=4.29.0",
+]
+voice = [
+  "pyttsx3~=2.98",
+  "SpeechRecognition~=3.10.4",
+  "pyaudio~=0.2.14",
+  "openai-whisper>=20231117",
+]
+tools = [
+  "yt-dlp>=2024.0.0",
+]
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser]",
+  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools]",
 ]
 dev = [
   "pytest>=8.0.0",
