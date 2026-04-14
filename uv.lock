@@ -6778,6 +6778,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pgvector" },
     { name = "pillow" },
+    { name = "playwright" },
     { name = "posthog" },
     { name = "prometheus-client" },
     { name = "psutil" },
@@ -6791,6 +6792,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rank-bm25" },
     { name = "redis" },
+    { name = "selenium" },
     { name = "sentence-transformers" },
     { name = "speechrecognition" },
     { name = "sqlalchemy" },
@@ -6816,19 +6818,13 @@ all = [
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-sdk" },
-    { name = "playwright" },
     { name = "posthog" },
-    { name = "selenium" },
     { name = "sentence-transformers" },
     { name = "torch" },
     { name = "torchvision" },
 ]
 anthropic = [
     { name = "anthropic" },
-]
-browser = [
-    { name = "playwright" },
-    { name = "selenium" },
 ]
 dev = [
     { name = "fakeredis" },
@@ -6917,7 +6913,7 @@ requires-dist = [
     { name = "packaging", specifier = "~=24.1" },
     { name = "pgvector", specifier = "~=0.3.6" },
     { name = "pillow", specifier = "<12.0.0" },
-    { name = "playwright", marker = "extra == 'browser'", specifier = "~=1.51.0" },
+    { name = "playwright", specifier = "~=1.51.0" },
     { name = "posthog", specifier = "<6.0.0" },
     { name = "posthog", marker = "extra == 'rag'", specifier = "<6.0.0" },
     { name = "prometheus-client", specifier = "~=0.21.0" },
@@ -6939,7 +6935,7 @@ requires-dist = [
     { name = "redis", specifier = "~=5.2.1" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.21.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "~=0.8.1" },
-    { name = "selenium", marker = "extra == 'browser'", specifier = "~=4.29.0" },
+    { name = "selenium", specifier = "~=4.29.0" },
     { name = "sentence-transformers", specifier = "~=3.0.1" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = "~=3.0.1" },
     { name = "sidar", extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "gpu", "sandbox", "gui", "browser"], marker = "extra == 'all'" },

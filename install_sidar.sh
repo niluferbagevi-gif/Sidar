@@ -697,7 +697,9 @@ install_python_deps() {
     else
         info "CPU modu kuruluyor..."
         REQ_ARGS=()
-        if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+        if [[ -f "$SCRIPT_DIR/requirements-all.txt" ]]; then
+            REQ_ARGS+=("requirements-all.txt")
+        elif [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
             REQ_ARGS+=("requirements.txt")
         fi
         if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
@@ -711,9 +713,9 @@ install_python_deps() {
         fi
 
         if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[postgres,dev]")
+            INSTALL_SPEC=(-e ".[postgres,browser,dev]")
         else
-            INSTALL_SPEC=(-e ".[postgres]")
+            INSTALL_SPEC=(-e ".[postgres,browser]")
         fi
         "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
     fi
@@ -1203,9 +1205,9 @@ download_ollama_models() {
     local estimated_size_gb="~14.8 GB"
     local temp_ollama_pid=""
     cleanup_temp_ollama() {
-        if [[ -n "$temp_ollama_pid" ]] && kill -0 "$temp_ollama_pid" >/dev/null 2>&1; then
-            info "Geçici ollama serve süreci sonlandırılıyor (PID: $temp_ollama_pid)..."
-            kill "$temp_ollama_pid" >/dev/null 2>&1 || true
+        if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
+            info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
+            kill "${temp_ollama_pid:-}" >/dev/null 2>&1 || true
         fi
     }
     trap cleanup_temp_ollama RETURN
