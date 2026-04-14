@@ -224,6 +224,9 @@ exclude = [
   "data",
   "logs",
   "temp",
+  "web_ui",
+  "web_ui_react",
+  "launcher_gui",
 ]
 
 [tool.ruff.lint]
@@ -257,6 +260,9 @@ exclude = [
   "^data/",
   "^logs/",
   "^temp/",
+  "^web_ui/",
+  "^web_ui_react/",
+  "^launcher_gui/",
 ]
 
 [[tool.mypy.overrides]]
