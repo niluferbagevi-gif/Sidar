@@ -338,9 +338,23 @@ check_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
     # Conda kontrolü ve otomatik Miniconda kurulumu
+    MINICONDA_PREFIX="$HOME/miniconda3"
+
+    # Önce conda.sh üzerinden PATH'e ekle (terminal yeniden başlatılmamış olabilir)
+    if [[ -f "$MINICONDA_PREFIX/etc/profile.d/conda.sh" ]]; then
+        # shellcheck disable=SC1091
+        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
+    fi
+
     if command -v conda &>/dev/null; then
         USE_CONDA=true
         ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
+    elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
+        # shellcheck disable=SC1091
+        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
+        conda init bash >/dev/null 2>&1 || true
+        USE_CONDA=true
+        ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
     else
         warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
 
@@ -348,7 +362,6 @@ check_prerequisites() {
         ARCH="$(uname -m)"
         MINICONDA_URL=""
         MINICONDA_INSTALLER="/tmp/miniconda.sh"
-        MINICONDA_PREFIX="$HOME/miniconda3"
 
         case "$OS" in
             Linux)
@@ -374,12 +387,8 @@ check_prerequisites() {
         else
             info "Miniconda indiriliyor: $MINICONDA_URL"
             if curl -fsSL "$MINICONDA_URL" -o "$MINICONDA_INSTALLER"; then
-                if [[ -d "$MINICONDA_PREFIX" ]]; then
-                    info "Mevcut dizin bulundu: $MINICONDA_PREFIX (yeniden kurulum atlandı)."
-                else
-                    info "Miniconda kuruluyor: $MINICONDA_PREFIX"
-                    bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_PREFIX"
-                fi
+                info "Miniconda kuruluyor: $MINICONDA_PREFIX"
+                bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_PREFIX"
                 rm -f "$MINICONDA_INSTALLER"
 
                 # shellcheck disable=SC1091
