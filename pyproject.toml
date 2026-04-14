@@ -221,6 +221,21 @@ py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "github_upl
   "helm/sidar/templates/*.tpl",
   "helm/sidar/templates/*.txt",
 ]
+"share/sidar/migrations" = [
+  "alembic.ini",
+  "migrations/*.py",
+  "migrations/*.mako",
+  "migrations/versions/*.py",
+]
+"share/sidar/docker_setup" = [
+  "docker_setup/prometheus/*.yml",
+  "docker_setup/grafana/dashboards/*.json",
+  "docker_setup/grafana/provisioning/dashboards/*.yml",
+  "docker_setup/grafana/provisioning/datasources/*.yml",
+]
+"share/sidar/runbooks" = [
+  "runbooks/*.md",
+]
 
 [tool.ruff]
 line-length = 100
