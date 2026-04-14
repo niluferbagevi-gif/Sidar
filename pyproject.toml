@@ -164,6 +164,8 @@ dev = [
   "testcontainers>=4.0.0",
   "ruff~=0.8.1",
   "mypy~=1.11.2",
+  "bandit>=1.7.0",
+  "safety>=3.0.0",
 ]
 
 [tool.pytest.ini_options]
