@@ -337,10 +337,15 @@ class CodeManager:
             logger.warning("Docker SDK kurulu değil. (pip install docker)")
         except Exception as first_err:
             # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
-            # (docker modülü zaten try bloğunda import edildi; yeniden import gerekmez)
-            import docker as _docker_mod  # noqa: F811 — try bloğu ImportError vermediyse önbellektedir
+            # (docker modülü try bloğunda import edildiyse kullan; yoksa yeniden import dene)
+            fallback_module = docker_module
+            if fallback_module is None:
+                try:
+                    import docker as fallback_module  # type: ignore[no-redef]
+                except ImportError:
+                    fallback_module = None
 
-            if self._try_wsl_socket_fallback(_docker_mod):
+            if fallback_module is not None and self._try_wsl_socket_fallback(fallback_module):
                 return
             # SDK kurulu ama daemon/socket erişimi başarısız olduğunda CLI fallback'e
             # geçmeyiz; bu durum mevcut daemon erişim problemini maskeleyip test/üretim
