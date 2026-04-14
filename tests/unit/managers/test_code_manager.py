@@ -16,6 +16,9 @@ import pytest
 import managers.code_manager as cm
 from managers.security import FULL, SANDBOX
 
+# Capture the real _init_docker before any fixture patches it
+_real_init_docker = cm.CodeManager._init_docker
+
 
 class DummySecurity:
     def __init__(self):
@@ -1322,6 +1325,7 @@ def test_init_docker_success_sets_client_and_availability(manager, monkeypatch):
     manager.docker_available = False
     manager.docker_client = None
 
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _real_init_docker)
     manager._init_docker()
 
     assert manager.docker_client is client
