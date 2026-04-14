@@ -202,6 +202,18 @@ exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 include-package-data = true
 py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "github_upload"]
 
+[tool.setuptools.data-files]
+"share/sidar/web_ui" = ["web_ui/*.html", "web_ui/*.css", "web_ui/*.js"]
+"share/sidar/launcher_gui" = ["launcher_gui/*.html", "launcher_gui/*.css", "launcher_gui/*.js"]
+"share/sidar/helm" = [
+  "helm/sidar/Chart.yaml",
+  "helm/sidar/*.yaml",
+  "helm/sidar/templates/*.yaml",
+  "helm/sidar/templates/*.tpl",
+  "helm/sidar/templates/*.txt",
+]
+"share/sidar/web_ui_react/dist" = ["web_ui_react/dist/**/*.*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

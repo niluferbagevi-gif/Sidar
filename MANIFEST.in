@@ -24,6 +24,12 @@ recursive-include migrations *.py *.ini *.cfg
 # Docs
 recursive-include docs *
 
+# Frontend / dağıtım varlıkları
+recursive-include web_ui *
+recursive-include web_ui_react/dist *
+recursive-include launcher_gui *
+recursive-include helm *
+
 # Data dizini (şema/seed dosyaları — büyük binary veriler hariç)
 recursive-include data *.sql *.json *.yaml *.yml
 prune data/lora_adapters
@@ -36,3 +42,4 @@ prune *.egg-info
 global-exclude *.pyc *.pyo *.pyd
 global-exclude .DS_Store
 global-exclude *.log
+global-exclude *:Zone.Identifier
