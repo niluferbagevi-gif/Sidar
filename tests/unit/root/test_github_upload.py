@@ -129,6 +129,9 @@ def test_main_invalid_rollback(monkeypatch):
 
 
 def test_main_missing_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_PAT", raising=False)
     MainHarness(monkeypatch, [], outputs=[], cfg_token="")
     assert run_main_and_exit_code() == 1
 

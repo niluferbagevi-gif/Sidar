@@ -186,9 +186,19 @@ class CodeManager:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
         limits = dict(SANDBOX_LIMITS)
         cfg = getattr(self, "cfg", None)
-        limits.update(getattr(cfg, "SANDBOX_LIMITS", {}) or {})
+        cfg_limits = getattr(cfg, "SANDBOX_LIMITS", {}) or {}
+        limits.update(cfg_limits)
 
-        memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
+        # Bellek limitinde öncelik sırası:
+        # 1) instance cfg.SANDBOX_LIMITS['memory']
+        # 2) DOCKER_MEM_LIMIT
+        # 3) modül/genel SANDBOX_LIMITS['memory']
+        memory = str(
+            cfg_limits.get("memory")
+            or self.docker_mem_limit
+            or limits.get("memory")
+            or "256m"
+        ).strip()
         cpus = str(limits.get("cpus") or "0.5").strip()
         pids_limit = int(limits.get("pids_limit", 64))
         timeout = int(limits.get("timeout", self.docker_exec_timeout or 10))

@@ -399,7 +399,7 @@ class Database:
                 """
                 CREATE TABLE IF NOT EXISTS access_policies (
                     id BIGSERIAL PRIMARY KEY,
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     tenant_id TEXT NOT NULL DEFAULT 'default',
                     resource_type TEXT NOT NULL,
                     resource_id TEXT NOT NULL DEFAULT '*',
@@ -660,7 +660,7 @@ class Database:
         queries = [
             """
             CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY,
+                id TEXT PRIMARY KEY,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT,
                 role TEXT NOT NULL DEFAULT 'user',
@@ -671,14 +671,14 @@ class Database:
             """
             CREATE TABLE IF NOT EXISTS auth_tokens (
                 token TEXT PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 expires_at TIMESTAMPTZ NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS user_quotas (
-                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 daily_token_limit INTEGER NOT NULL DEFAULT 0,
                 daily_request_limit INTEGER NOT NULL DEFAULT 0
             );
@@ -686,7 +686,7 @@ class Database:
             """
             CREATE TABLE IF NOT EXISTS provider_usage_daily (
                 id BIGSERIAL PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 provider TEXT NOT NULL,
                 usage_date DATE NOT NULL,
                 requests_used INTEGER NOT NULL DEFAULT 0,
@@ -696,8 +696,8 @@ class Database:
             """,
             """
             CREATE TABLE IF NOT EXISTS sessions (
-                id UUID PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL
@@ -706,7 +706,7 @@ class Database:
             """
             CREATE TABLE IF NOT EXISTS messages (
                 id BIGSERIAL PRIMARY KEY,
-                session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 tokens_used INTEGER NOT NULL DEFAULT 0,
@@ -720,7 +720,7 @@ class Database:
             """
             CREATE TABLE IF NOT EXISTS access_policies (
                 id BIGSERIAL PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 tenant_id TEXT NOT NULL DEFAULT 'default',
                 resource_type TEXT NOT NULL,
                 resource_id TEXT NOT NULL DEFAULT '*',

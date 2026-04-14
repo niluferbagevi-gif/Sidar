@@ -72,9 +72,13 @@ class ConversationMemory:
             "sqlite+aiosqlite:///x.db",
         }
         should_use_memory_default = (
-            not normalized_database_url
+            # Çağıran açık bir DB URL vermediyse ve base_dir ile yerel çalışma dizini
+            # istediyse bellek katmanı için izole sqlite dosyası kullan.
+            (database_url is None and base_dir is not None)
+            or not normalized_database_url
             or normalized_database_url in placeholder_sqlite_urls
             or normalized_database_url.endswith("data/sidar.db")
+            or (database_url is None and normalized_database_url.startswith("postgresql"))
         )
         if should_use_memory_default:
             resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
