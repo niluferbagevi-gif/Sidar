@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 
 from agent.registry import AgentCatalog
+from tests.helpers import make_test_config
 
 
 def _is_external_infra_checks_disabled() -> bool:
@@ -24,6 +25,19 @@ def test_boot_agent_catalog_api_available() -> None:
 def test_boot_agent_catalog_unknown_role_returns_none() -> None:
     """Kayıtlı olmayan rol sorgusunda None dönüldüğünü doğrular."""
     assert AgentCatalog.get("__missing_role__") is None
+
+
+def test_boot_agent_catalog_can_instantiate_coder_agent() -> None:
+    """Kritik yerleşik rolün bağımlılıklarıyla birlikte örneklenebildiğini doğrular."""
+    # Dekoratör-kayıt zinciri bu import ile tetiklenir; import başarısızsa smoke fail olmalıdır.
+    from agent.roles.coder_agent import CoderAgent  # noqa: F401
+
+    cfg = make_test_config(BASE_DIR=os.getcwd())
+    coder_agent = AgentCatalog.create("coder", cfg=cfg)
+
+    assert getattr(coder_agent, "role_name", "") == "coder"
+    assert callable(getattr(coder_agent, "run_task", None))
+    assert {"read_file", "write_file", "execute_code"}.issubset(set(getattr(coder_agent, "tools", {}).keys()))
 
 
 @pytest.mark.asyncio
