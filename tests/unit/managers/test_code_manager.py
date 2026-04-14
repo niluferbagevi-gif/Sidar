@@ -1306,6 +1306,29 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
     assert not ok and msg == "read-error"
 
 
+def test_init_docker_success_sets_client_and_availability(manager, monkeypatch):
+    class _Client:
+        def __init__(self):
+            self.ping_called = False
+
+        def ping(self):
+            self.ping_called = True
+
+    client = _Client()
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: client
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+
+    manager.docker_available = False
+    manager.docker_client = None
+
+    manager._init_docker()
+
+    assert manager.docker_client is client
+    assert client.ping_called is True
+    assert manager.docker_available is True
+
+
 def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monkeypatch, tmp_path):
     # execute_code: no network/runtime branches + sleep path + wait exception path + no log path
     manager.docker_available = True
