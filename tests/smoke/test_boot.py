@@ -1,12 +1,18 @@
 """Smoke tests for application boot sanity."""
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 
 from agent.registry import AgentCatalog
+
+
+def _is_external_infra_checks_disabled() -> bool:
+    return os.getenv("SMOKE_SKIP_EXTERNAL_INFRA", "0") == "1"
 
 
 def test_boot_agent_catalog_api_available() -> None:
@@ -55,3 +61,40 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
         assert shutdown_local_llm.await_count == 1
     finally:
         web_server.app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_boot_postgresql_connection_select_1() -> None:
+    """Boot sırasında PostgreSQL erişiminin temel sorguyla doğrulandığını garanti eder."""
+    if _is_external_infra_checks_disabled():
+        pytest.skip("Harici altyapı smoke testleri SMOKE_SKIP_EXTERNAL_INFRA=1 ile kapatıldı.")
+
+    asyncpg = pytest.importorskip("asyncpg", reason="PostgreSQL smoke testi için asyncpg gereklidir.")
+
+    database_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sidar")
+    if database_url.startswith("postgresql+asyncpg://"):
+        database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    conn = await asyncpg.connect(dsn=database_url, timeout=3)
+    try:
+        result = await conn.fetchval("SELECT 1")
+    finally:
+        await conn.close()
+
+    assert result == 1
+
+
+@pytest.mark.asyncio
+async def test_boot_redis_ping() -> None:
+    """Boot sırasında Redis erişiminin ping ile doğrulandığını garanti eder."""
+    if _is_external_infra_checks_disabled():
+        pytest.skip("Harici altyapı smoke testleri SMOKE_SKIP_EXTERNAL_INFRA=1 ile kapatıldı.")
+
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    client = Redis.from_url(redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3)
+    try:
+        is_alive = await client.ping()
+    finally:
+        await client.aclose()
+
+    assert is_alive is True
