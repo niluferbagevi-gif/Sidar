@@ -16,12 +16,10 @@ include install_sidar.sh
 
 # Belgeler ve lisans
 include CHANGELOG.md
-include LICENSE
 include README.md
 
 # Migrasyon dosyaları
 recursive-include migrations *.py *.ini *.cfg
-include migrations/alembic.ini
 
 # Docs
 recursive-include docs *

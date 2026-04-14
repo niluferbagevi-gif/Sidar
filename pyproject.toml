@@ -190,6 +190,7 @@ exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
 include-package-data = true
+py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "github_upload"]
 
 [tool.ruff]
 line-length = 100
