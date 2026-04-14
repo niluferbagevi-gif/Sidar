@@ -94,5 +94,10 @@ def start_gui() -> None:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI entrypoint uyumlu GUI başlatıcı."""
     start_gui()
+
+
+if __name__ == "__main__":
+    main()

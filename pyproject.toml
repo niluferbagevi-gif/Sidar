@@ -83,6 +83,11 @@ Documentation = "https://github.com/niluferbagevi-gif/Sidar/tree/main/docs"
 Changelog = "https://github.com/niluferbagevi-gif/Sidar/blob/main/CHANGELOG.md"
 Issues = "https://github.com/niluferbagevi-gif/Sidar/issues"
 
+[project.scripts]
+sidar = "cli:main"
+sidar-gui = "gui_launcher:main"
+sidar-web = "web_server:main"
+
 [project.optional-dependencies]
 # ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
 gemini = [
