@@ -141,10 +141,19 @@ voice = [
 tools = [
   "yt-dlp>=2024.0.0",
 ]
+aws = [
+  "boto3~=1.35.0",
+]
+jira = [
+  "jira~=3.8.0",
+]
+teams = [
+  "pymsteams~=0.2.3",
+]
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools]",
+  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools,aws,jira,teams]",
 ]
 dev = [
   "pytest>=8.0.0",
