@@ -40,6 +40,34 @@ def test_boot_agent_catalog_can_instantiate_coder_agent() -> None:
     assert {"read_file", "write_file", "execute_code"}.issubset(set(getattr(coder_agent, "tools", {}).keys()))
 
 
+def test_environment_sanity_required_ai_provider_settings() -> None:
+    """Aktif AI sağlayıcısı için zorunlu kimlik/endpoint ayarlarının yüklü olduğunu doğrular."""
+    config_module = pytest.importorskip("config")
+    cfg = config_module.Config
+
+    provider = str(getattr(cfg, "AI_PROVIDER", "") or "").strip().lower()
+    requirements: dict[str, tuple[str, ...]] = {
+        "openai": ("OPENAI_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "gemini": ("GEMINI_API_KEY",),
+        "litellm": ("LITELLM_GATEWAY_URL",),
+        "ollama": ("OLLAMA_URL",),
+    }
+    required_fields = requirements.get(provider, tuple())
+
+    missing_fields = [field for field in required_fields if not str(getattr(cfg, field, "") or "").strip()]
+    assert not missing_fields, (
+        f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
+    )
+
+    if provider == "ollama":
+        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith("http"), "OLLAMA_URL http/https ile başlamalı."
+    if provider == "litellm":
+        assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith(
+            "http"
+        ), "LITELLM_GATEWAY_URL http/https ile başlamalı."
+
+
 @pytest.mark.asyncio
 async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     """FastAPI uygulamasının temel boot akışında çökmeden ayağa kalktığını doğrular."""
