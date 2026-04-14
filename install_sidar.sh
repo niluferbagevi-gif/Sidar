@@ -986,10 +986,25 @@ setup_env_file() {
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
+    ensure_local_service_host_defaults() {
+        local env_file="$1"
+        # Lokal kurulumda Docker hostname yerine localhost kullan
+        if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
+            sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+            ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
+        fi
+
+        if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
+            sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+            ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
+        fi
+    }
+
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
         ensure_database_url_defaults "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
+        ensure_local_service_host_defaults "$ENV_FILE"
         return
     fi
 
@@ -1002,17 +1017,7 @@ setup_env_file() {
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_database_url_defaults "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
-
-    # Lokal kurulumda Docker hostname yerine localhost kullan
-    if grep -q '^REDIS_URL=redis://redis:6379/0' "$ENV_FILE"; then
-        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$ENV_FILE"
-        ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
-    fi
-
-    if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$ENV_FILE"; then
-        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$ENV_FILE"
-        ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
-    fi
+    ensure_local_service_host_defaults "$ENV_FILE"
 
     # Bilinen sızıntı/default değerleri de güvenli olmayan kabul edilir ve yeniden üretilir.
     is_missing_empty_or_known_insecure() {
