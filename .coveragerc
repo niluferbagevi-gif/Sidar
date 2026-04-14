@@ -19,7 +19,6 @@ omit =
     .tox/*
     .env
     setup.py
-    web_server.py
     web_ui_react/*
     web_ui/*
     tests/*
