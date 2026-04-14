@@ -7,6 +7,7 @@ name = "sidar"
 version = "5.2.0"
 description = "Sidar AI: Multi-Agent Autonomous System with Swarm Capability"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 authors = [
   {name = "Nilüfer Bagevi", email = "niluferbagevi@users.noreply.github.com"},
@@ -16,7 +17,6 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Web Environment",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -212,7 +212,6 @@ py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "github_upl
   "helm/sidar/templates/*.tpl",
   "helm/sidar/templates/*.txt",
 ]
-"share/sidar/web_ui_react/dist" = ["web_ui_react/dist/**/*.*"]
 
 [tool.ruff]
 line-length = 100
