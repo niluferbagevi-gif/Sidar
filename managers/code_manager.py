@@ -320,15 +320,16 @@ class CodeManager:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
         self.docker_available = False
         self.docker_client = None
+        docker_module = sys.modules.get("docker")
         try:
-            import docker
+            if docker_module is None:
+                import docker as docker_module
 
-            self.docker_client = docker.from_env()
+            self.docker_client = docker_module.from_env()
             self.docker_client.ping()
             self.docker_available = True
             logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
         except ImportError:
-            docker_module = sys.modules.get("docker")
             if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
                 return
             if self._try_docker_cli_fallback():
