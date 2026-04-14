@@ -989,6 +989,27 @@ ensure_database_url_defaults() {
     fi
 }
 
+ensure_rag_vector_backend_pgvector() {
+    local env_file="$1"
+    local current_backend=""
+
+    if [[ ! -f "$env_file" ]]; then
+        return
+    fi
+
+    current_backend=$(grep -E '^RAG_VECTOR_BACKEND=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    if [[ -z "$current_backend" ]]; then
+        echo "RAG_VECTOR_BACKEND=pgvector" >> "$env_file"
+        ok ".env: RAG_VECTOR_BACKEND=pgvector eklendi."
+        return
+    fi
+
+    if [[ "$current_backend" != "pgvector" ]]; then
+        sed -i 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
+        ok ".env: RAG_VECTOR_BACKEND pgvector olarak güncellendi."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -1011,6 +1032,7 @@ setup_env_file() {
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
         ensure_database_url_defaults "$ENV_FILE"
+        ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         return
@@ -1024,6 +1046,7 @@ setup_env_file() {
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_database_url_defaults "$ENV_FILE"
+    ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
 
