@@ -638,7 +638,7 @@ install_python_deps() {
         ok "uv.lock kontrol edildi."
     fi
 
-    SYNC_ARGS=(--frozen)
+    SYNC_ARGS=(--frozen --extra dev)
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser; do
             SYNC_ARGS+=(--extra "$_extra")
@@ -647,9 +647,6 @@ install_python_deps() {
         for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser; do
             SYNC_ARGS+=(--extra "$_extra")
         done
-    fi
-    if [[ "$INSTALL_DEV" == true ]]; then
-        SYNC_ARGS+=(--extra dev)
     fi
     info "Bağımlılıklar senkronlanıyor (uv sync --frozen)..."
     "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
