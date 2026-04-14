@@ -78,6 +78,17 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_boot_real_lifespan_uses_actual_config_validation() -> None:
+    """Mock'suz boot: gerçek Config doğrulamasıyla lifespan açılıp kapanabilmelidir."""
+    web_server = pytest.importorskip("web_server")
+
+    async with web_server.app.router.lifespan_context(web_server.app):
+        assert web_server._agent_lock is not None
+        assert web_server._redis_lock is not None
+        assert web_server._local_rate_lock is not None
+
+
+@pytest.mark.asyncio
 async def test_boot_postgresql_connection_select_1() -> None:
     """Boot sırasında PostgreSQL erişiminin temel sorguyla doğrulandığını garanti eder."""
     if _is_external_infra_checks_disabled():
