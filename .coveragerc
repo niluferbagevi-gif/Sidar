@@ -7,7 +7,6 @@ omit =
     */plug_bad_compile*
     conftest.py
     migrations/*
-    scripts/*
     temp/*
     */third_party/*
     */templates/*
