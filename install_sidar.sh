@@ -697,7 +697,9 @@ install_python_deps() {
     else
         info "CPU modu kuruluyor..."
         REQ_ARGS=()
-        if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+        if [[ -f "$SCRIPT_DIR/requirements-all.txt" ]]; then
+            REQ_ARGS+=("requirements-all.txt")
+        elif [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
             REQ_ARGS+=("requirements.txt")
         fi
         if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
@@ -711,9 +713,9 @@ install_python_deps() {
         fi
 
         if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[postgres,dev]")
+            INSTALL_SPEC=(-e ".[postgres,browser,dev]")
         else
-            INSTALL_SPEC=(-e ".[postgres]")
+            INSTALL_SPEC=(-e ".[postgres,browser]")
         fi
         "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
     fi
