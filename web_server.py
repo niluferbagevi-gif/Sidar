@@ -2309,7 +2309,11 @@ def _get_client_ip(request: Request) -> str:
 
 @app.middleware("http")
 async def ddos_rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/ui/") or request.url.path.startswith("/static/") or request.url.path == "/health":
+    if (
+        request.url.path.startswith("/ui/")
+        or request.url.path.startswith("/static/")
+        or request.url.path in ("/health", "/healthz", "/readyz")
+    ):
         return await call_next(request)
 
     client_ip = _get_client_ip(request)

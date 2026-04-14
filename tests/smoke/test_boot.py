@@ -1,5 +1,6 @@
 """Smoke tests for application boot sanity."""
 
+import inspect
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -101,6 +102,39 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
         assert "uptime_seconds" in payload
         assert close_redis.await_count == 1
         assert shutdown_local_llm.await_count == 1
+    finally:
+        web_server.app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_boot_health_probes_bypass_ddos_redis_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Health probe endpoint'leri DDOS Redis rate-limit kontrolünü tetiklememelidir."""
+    web_server = pytest.importorskip("web_server")
+
+    fake_agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="ollama"),
+        health=SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": True}),
+    )
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    redis_rate_limiter = AsyncMock(return_value=False)
+
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: None)
+    monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", redis_rate_limiter)
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+
+    try:
+        async with web_server.app.router.lifespan_context(web_server.app):
+            async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
+                healthz = await client.get("/healthz")
+
+        assert healthz.status_code == 200
+        assert redis_rate_limiter.await_count == 0
+        ddos_source = inspect.getsource(web_server.ddos_rate_limit_middleware)
+        assert "/readyz" in ddos_source
     finally:
         web_server.app.dependency_overrides.clear()
 
