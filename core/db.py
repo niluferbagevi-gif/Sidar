@@ -1296,14 +1296,15 @@ class Database:
         )
 
     async def update_session_title(self, session_id: str, title: str) -> bool:
-        now = _utc_now_iso()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 result = await conn.execute(
                     "UPDATE sessions SET title=$1, updated_at=$2 WHERE id=$3",
                     title,
-                    now,
+                    now_dt,
                     session_id,
                 )
             # asyncpg "UPDATE N" veya "UPDATE 0" formatında string döndürür;
@@ -2905,7 +2906,8 @@ class Database:
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
         session_id = str(uuid.uuid4())
-        now = _utc_now_iso()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -2915,8 +2917,8 @@ class Database:
                     session_id,
                     user_id,
                     title,
-                    now,
-                    now,
+                    now_dt,
+                    now_dt,
                 )
             return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
 
@@ -2934,7 +2936,8 @@ class Database:
         return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
 
     async def add_message(self, session_id: str, role: str, content: str, tokens_used: int = 0) -> MessageRecord:
-        now = _utc_now_iso()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
         tokens = max(0, int(tokens_used or 0))
 
         if self._backend == "postgresql":
@@ -2950,7 +2953,7 @@ class Database:
                     role,
                     content,
                     tokens,
-                    now,
+                    now_dt,
                 )
                 msg_id = int(row["id"])
             return MessageRecord(id=msg_id, session_id=session_id, role=role, content=content, tokens_used=tokens, created_at=now)
@@ -3022,7 +3025,8 @@ class Database:
             for item in list(messages or [])
             if str(item.get("content", "") or "").strip()
         ]
-        now = _utc_now_iso()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -3039,12 +3043,12 @@ class Database:
                             item["role"],
                             item["content"],
                             0,
-                            now,
+                            now_dt,
                         )
                     await conn.execute(
                         "UPDATE sessions SET updated_at=$2 WHERE id=$1",
                         session_id,
-                        now,
+                        now_dt,
                     )
             return len(normalized_messages)
 
