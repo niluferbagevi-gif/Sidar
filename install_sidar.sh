@@ -1542,7 +1542,7 @@ run_smoke_tests() {
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
-        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir"; then
+        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir" --no-cov; then
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
@@ -1557,7 +1557,7 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if python -m pytest "$smoke_dir"; then
+    if python -m pytest "$smoke_dir" --no-cov; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
@@ -1634,9 +1634,9 @@ print_summary() {
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke"
+        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --no-cov"
     else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke"
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --no-cov"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
