@@ -627,26 +627,34 @@ install_python_deps() {
         UV_CMD=(uv)
     fi
 
-    # Reproducible kurulum için lock dosyası önceliklidir
-    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
-        info "uv.lock bulundu — kilitli bağımlılıklar ile kurulum yapılıyor (uv sync --frozen)."
-        SYNC_ARGS=(--frozen)
-        if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-            for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser; do
-                SYNC_ARGS+=(--extra "$_extra")
-            done
-        else
-            for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser; do
-                SYNC_ARGS+=(--extra "$_extra")
-            done
-        fi
-        if [[ "$INSTALL_DEV" == true ]]; then
-            SYNC_ARGS+=(--extra dev)
-        fi
-        "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
-        ok "Python bağımlılıkları uv.lock ile senkronlandı."
-        return
+    # uv.lock yönetimi: yoksa oluştur, varsa güncelle
+    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulunamadı — uv lock ile oluşturuluyor..."
+        "${UV_CMD[@]}" lock
+        ok "uv.lock oluşturuldu."
+    else
+        info "uv.lock bulundu — uv lock --upgrade ile bağımlılıklar kontrol ediliyor..."
+        "${UV_CMD[@]}" lock --upgrade
+        ok "uv.lock güncellendi."
     fi
+
+    SYNC_ARGS=(--frozen)
+    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
+        for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser; do
+            SYNC_ARGS+=(--extra "$_extra")
+        done
+    else
+        for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser; do
+            SYNC_ARGS+=(--extra "$_extra")
+        done
+    fi
+    if [[ "$INSTALL_DEV" == true ]]; then
+        SYNC_ARGS+=(--extra dev)
+    fi
+    info "Bağımlılıklar senkronlanıyor (uv sync --frozen)..."
+    "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
+    ok "Python bağımlılıkları senkronlandı."
+    return
 
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         # CUDA major version'ı belirle (örn. 13.2 → cu124 fallback)
