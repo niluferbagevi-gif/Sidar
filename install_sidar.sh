@@ -1205,9 +1205,9 @@ download_ollama_models() {
     local estimated_size_gb="~14.8 GB"
     local temp_ollama_pid=""
     cleanup_temp_ollama() {
-        if [[ -n "$temp_ollama_pid" ]] && kill -0 "$temp_ollama_pid" >/dev/null 2>&1; then
-            info "Geçici ollama serve süreci sonlandırılıyor (PID: $temp_ollama_pid)..."
-            kill "$temp_ollama_pid" >/dev/null 2>&1 || true
+        if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
+            info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
+            kill "${temp_ollama_pid:-}" >/dev/null 2>&1 || true
         fi
     }
     trap cleanup_temp_ollama RETURN
