@@ -63,7 +63,6 @@ dependencies = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
   "sentence-transformers~=3.0.1",
-  "pgvector~=0.3.6",
 ]
 
 [project.urls]
@@ -95,6 +94,7 @@ litellm = [
 # ── Altyapı extras ────────────────────────────────────────────────────────
 postgres = [
   "asyncpg~=0.30.0",
+  "pgvector~=0.3.6",
 ]
 telemetry = [
   "opentelemetry-api>=1.29.0",
