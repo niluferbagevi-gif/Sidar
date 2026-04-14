@@ -49,6 +49,7 @@ dependencies = [
   "PyJWT~=2.9.0",
   # ── Observability (temel) ──────────────────────────────────────────────
   "prometheus-client~=0.21.0",
+  "requests~=2.32.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
   "tiktoken~=0.8.0",
   "rank-bm25==0.2.2",
@@ -115,6 +116,12 @@ rag = [
   "torchvision",
   "sentence-transformers~=3.0.1",
 ]
+lora = [
+  "transformers>=4.44.0",
+  "peft>=0.12.0",
+  "datasets>=2.20.0",
+  "bitsandbytes>=0.43.0; platform_system != 'Darwin'",
+]
 gpu = [
   "nvidia-ml-py~=12.560.30",
 ]
@@ -124,11 +131,14 @@ sandbox = [
 gui = [
   "eel>=0.16.0",
 ]
+slack = [
+  "slack-sdk~=3.33.0",
+]
 browser = []
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
+  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser]",
 ]
 dev = [
   "pytest>=8.0.0",
