@@ -640,11 +640,11 @@ install_python_deps() {
 
     SYNC_ARGS=(--frozen --extra dev)
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser; do
+        for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser slack voice tools aws jira teams; do
             SYNC_ARGS+=(--extra "$_extra")
         done
     else
-        for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser; do
+        for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams; do
             SYNC_ARGS+=(--extra "$_extra")
         done
     fi
