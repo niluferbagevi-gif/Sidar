@@ -72,8 +72,6 @@ dependencies = [
   "pyaudio~=0.2.14",
   "openai-whisper>=20231117",
   "yt-dlp>=2024.0.0",
-  "playwright~=1.51.0",
-  "selenium~=4.29.0",
 ]
 
 [project.urls]
@@ -124,7 +122,10 @@ sandbox = [
 gui = [
   "eel>=0.16.0",
 ]
-browser = []
+browser = [
+  "playwright~=1.51.0",
+  "selenium~=4.29.0",
+]
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
