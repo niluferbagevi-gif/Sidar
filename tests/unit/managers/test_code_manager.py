@@ -619,6 +619,62 @@ def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch
     assert manager.docker_client is None
 
 
+def test_init_docker_importerror_returns_before_cli_when_cached_wsl_succeeds(manager, monkeypatch):
+    original_import = builtins.__import__
+
+    def _import_without_docker(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker missing")
+        return original_import(name, *args, **kwargs)
+
+    cached_docker = ModuleType("docker")
+    monkeypatch.setitem(sys.modules, "docker", cached_docker)
+    monkeypatch.setattr(builtins, "__import__", _import_without_docker)
+
+    cli_calls = {"count": 0}
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is cached_docker)
+    monkeypatch.setattr(
+        manager,
+        "_try_docker_cli_fallback",
+        lambda: cli_calls.__setitem__("count", cli_calls["count"] + 1) or False,
+    )
+
+    manager._init_docker()
+
+    assert cli_calls["count"] == 0
+
+
+def test_init_docker_exception_path_reimport_importerror_sets_none(manager, monkeypatch):
+    original_import = builtins.__import__
+    import_calls = {"docker": 0}
+
+    def _broken_then_missing_import(name, *args, **kwargs):
+        if name == "docker":
+            import_calls["docker"] += 1
+            if import_calls["docker"] == 1:
+                raise RuntimeError("import crash")
+            raise ImportError("docker missing")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(builtins, "__import__", _broken_then_missing_import)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda *_a, **_k: False)
+
+    warnings = {"count": 0}
+    monkeypatch.setattr(
+        cm.logger,
+        "warning",
+        lambda *_a, **_k: warnings.__setitem__("count", warnings["count"] + 1),
+    )
+
+    manager._init_docker()
+
+    assert import_calls["docker"] == 2
+    assert warnings["count"] == 1
+    assert manager.docker_available is False
+    assert manager.docker_client is None
+
+
 def test_execute_code_docker_error_paths(manager, monkeypatch):
     manager.docker_available = True
     manager.security.level = SANDBOX
