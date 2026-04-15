@@ -2184,6 +2184,26 @@ print_summary() {
     echo ""
 }
 
+# ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
+launch_ide() {
+    if command -v code &>/dev/null; then
+        echo ""
+        read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
+        case "${open_code:-H}" in
+            [EeYy]*)
+                info "VS Code açılıyor..."
+                code "$SCRIPT_DIR"
+                ;;
+            *)
+                info "VS Code başlatılması atlandı."
+                ;;
+        esac
+    else
+        warn "Sistemde VS Code (code komutu) bulunamadı."
+        info "WSL ile tam entegrasyon için Windows tarafına VS Code ve 'WSL' eklentisini kurmanız önerilir."
+    fi
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -2225,6 +2245,7 @@ main() {
     verify_torch_cuda
     run_smoke_tests
     print_summary
+    launch_ide
 }
 
 main "$@"
