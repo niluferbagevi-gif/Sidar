@@ -300,9 +300,41 @@ install_system_dependencies() {
             fi
 
             info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
-            sudo systemctl enable postgresql redis-server >/dev/null 2>&1 || true
-            sudo systemctl start postgresql redis-server >/dev/null 2>&1 || \
-                warn "PostgreSQL/Redis servisleri başlatılamadı (özellikle WSL2'de normal olabilir). Gerekirse manuel başlatın."
+            # WSL2'de systemd çalışmaz; service komutuyla başlatılır.
+            # systemd varsa (native Linux) systemctl kullan.
+            _start_service() {
+                local svc="$1"
+                if pidof systemd >/dev/null 2>&1 || [ "$(cat /proc/1/comm 2>/dev/null)" = "systemd" ]; then
+                    sudo systemctl enable "$svc" >/dev/null 2>&1 || true
+                    sudo systemctl start  "$svc" >/dev/null 2>&1 || true
+                else
+                    sudo service "$svc" start >/dev/null 2>&1 || true
+                fi
+            }
+
+            _check_service() {
+                local svc="$1"
+                if pidof systemd >/dev/null 2>&1 || [ "$(cat /proc/1/comm 2>/dev/null)" = "systemd" ]; then
+                    systemctl is-active --quiet "$svc" 2>/dev/null
+                else
+                    sudo service "$svc" status >/dev/null 2>&1
+                fi
+            }
+
+            _start_service postgresql
+            _start_service redis-server
+
+            if _check_service postgresql; then
+                ok "PostgreSQL servisi çalışıyor."
+            else
+                warn "PostgreSQL başlatılamadı. Manuel başlatmak için: sudo service postgresql start"
+            fi
+
+            if _check_service redis-server; then
+                ok "Redis servisi çalışıyor."
+            else
+                warn "Redis başlatılamadı. Manuel başlatmak için: sudo service redis-server start"
+            fi
         fi
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
