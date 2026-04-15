@@ -1249,70 +1249,6 @@ PY
     warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
 }
 
-# ── 10.5 API Anahtarlarını Sor ───────────────────────────────────────────────
-prompt_api_keys() {
-    step "API Anahtarlarının Yapılandırılması"
-    info "Uygulamanın tam kapasite çalışabilmesi için LLM API anahtarlarına ihtiyacı var."
-    info "Atlamak için alanları boş bırakıp Enter'a basabilirsiniz (veya iptal edebilirsiniz)."
-
-    local env_file="$SCRIPT_DIR/.env"
-    [[ ! -f "$env_file" ]] && return
-    local is_interactive=false
-    [[ -t 0 && -t 1 ]] && is_interactive=true
-
-    update_env_key() {
-        local key="$1"
-        local prompt_text="$2"
-        local current_val=""
-        current_val=$(grep -E "^${key}=" "$env_file" | head -n1 | cut -d= -f2- || true)
-
-        # Eğer değer boşsa veya bilinen örnek/varsayılan bir değer ise sor
-        if [[ -z "$current_val" || "$current_val" == "your_"* || "$current_val" == "<"* || "$current_val" == "changeme"* ]]; then
-            local user_input=""
-
-            # 1. Öncelik: Zenity ile GUI Penceresi (WSLg veya Linux Desktop için)
-            if command -v zenity &>/dev/null && [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]; then
-                user_input=$(zenity --entry \
-                    --title="Sidar AI - API Yapılandırması" \
-                    --text="${prompt_text}\n(${key}):\n\nBoş bırakarak atlayabilirsiniz." \
-                    --hide-text \
-                    --width=400 2>/dev/null || true)
-            # 2. Öncelik: Whiptail ile Terminal İçi Form (TUI)
-            elif command -v whiptail &>/dev/null && [[ "$is_interactive" == true ]]; then
-                user_input=$(whiptail --passwordbox "${prompt_text}\n(${key}):\nBoş bırakarak atlayabilirsiniz." \
-                    12 60 3>&1 1>&2 2>&3 || true)
-            # 3. Öncelik: Standart Terminal İstemi (Yedek)
-            elif [[ "$is_interactive" == true ]]; then
-                echo -e -n "${BOLD}${BLUE}? ${prompt_text} (${key}) [Atlamak için boş bırakın]:${NC} "
-                read -r -s user_input
-                echo
-            else
-                info "${key} için etkileşimli giriş atlandı (non-interactive çalışma)."
-                return
-            fi
-
-            # Kullanıcı bir giriş yaptıysa .env dosyasına kaydet
-            if [[ -n "$user_input" ]]; then
-                if grep -q "^${key}=" "$env_file"; then
-                    sed -i "s|^${key}=.*|${key}=${user_input}|" "$env_file"
-                else
-                    echo "${key}=${user_input}" >> "$env_file"
-                fi
-                ok "${key} başarıyla .env dosyasına kaydedildi."
-            else
-                info "${key} atlandı."
-            fi
-        else
-            ok "${key} zaten yapılandırılmış."
-        fi
-    }
-
-    # İstediğiniz API'leri bu listeye ekleyip çıkarabilirsiniz:
-    update_env_key "OPENAI_API_KEY" "OpenAI API Anahtarınızı girin"
-    update_env_key "GEMINI_API_KEY" "Google Gemini API Anahtarınızı girin"
-    update_env_key "ANTHROPIC_API_KEY" "Anthropic (Claude) API Anahtarınızı girin"
-}
-
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
@@ -1791,7 +1727,6 @@ main() {
     create_directories
     setup_react_frontend
     setup_env_file
-    prompt_api_keys
     check_pyaudio_wsl2
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
