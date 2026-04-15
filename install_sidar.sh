@@ -1330,6 +1330,19 @@ PY
         "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
     _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
         "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+
+    # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
+    # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
+    if _is_missing_or_insecure "METRICS_TOKEN" \
+        "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
+        local _v; _v=$(_gen_urlsafe 32)
+        if [[ -n "$_v" ]]; then
+            _write_secret "METRICS_TOKEN" "$_v"
+            ok ".env: METRICS_TOKEN otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
 }
 
 setup_env_file() {
