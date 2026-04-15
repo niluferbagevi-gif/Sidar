@@ -1817,10 +1817,15 @@ run_migrations() {
         psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
 
         info "pgvector extension kontrol ediliyor..."
-        if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
-            ok "pgvector extension hazır."
+        local ext_exists
+        ext_exists=$(psql "$psql_url" -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" 2>/dev/null || echo "")
+
+        if [[ "$ext_exists" == "1" ]]; then
+            ok "pgvector extension zaten kurulu ve hazır."
+        elif psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+            ok "pgvector extension başarıyla kuruldu."
         else
-            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
+            warn "pgvector oluşturulamadı (veritabanı kullanıcısının süper yetkisi olmayabilir). RAG pgvector backend çalışmayabilir."
         fi
     }
 
