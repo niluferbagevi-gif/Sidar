@@ -265,17 +265,13 @@ install_system_dependencies() {
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
         local _ns_log; _ns_log=$(mktemp)
-        # NodeSource setup betiği çalıştır; çıktıyı geçici dosyaya al
-        if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - > "$_ns_log" 2>&1; then
-            # "To install / You can use N|solid" gibi bilgi satırlarını gizle,
-            # gerçek hata/uyarı satırlarını göster
-            grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} - (To install|You can use|Repository configured)' \
-                "$_ns_log" | grep -v 'N|solid' || true
+        # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
+        # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
+        if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >"$_ns_log" 2>&1; then
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
             ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         else
-            # Hata durumunda tüm çıktıyı göster
-            cat "$_ns_log"
+            cat "$_ns_log" >&2
             warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
         fi
