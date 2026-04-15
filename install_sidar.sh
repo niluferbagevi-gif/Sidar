@@ -1214,6 +1214,124 @@ collect_api_keys_interactive() {
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
 }
 
+# ── Otomatik Secret Üretimi ────────────────────────────────────────────────
+# Güvenlik anahtarlarını (API_KEY, JWT_SECRET_KEY, MEMORY_ENCRYPTION_KEY vb.)
+# .env boşsa veya bilinen güvensiz örnekse otomatik üretir.
+# Hem yeni oluşturulan hem de mevcut .env üzerinde çalışır.
+ensure_auto_secrets() {
+    local env_file="$1"
+
+    # Boş, eksik veya bilinen güvensiz değer mi? → 0 (true) döner
+    _is_missing_or_insecure() {
+        local key="$1"; shift
+        local val
+        val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
+              | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        [[ -z "$val" ]] && return 0
+        local bad
+        for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
+        return 1
+    }
+
+    # Üretilen değeri .env'e yazar (varsa günceller, yoksa satır ekler)
+    _write_secret() {
+        local key="$1" val="$2"
+        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+        else
+            echo "${key}=${val}" >> "$env_file"
+        fi
+    }
+
+    # urlsafe token üretici (python3 → openssl fallback)
+    _gen_urlsafe() {
+        local n="$1"
+        if command -v python3 &>/dev/null; then
+            python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true
+        elif command -v openssl &>/dev/null; then
+            openssl rand -base64 "$n" 2>/dev/null | tr -d '\n=' || true
+        fi
+    }
+
+    # hex token üretici
+    _gen_hex() {
+        local bits="$1"
+        if command -v python3 &>/dev/null; then
+            python3 -c "import secrets; print(secrets.token_hex($((bits / 2))))" 2>/dev/null || true
+        elif command -v openssl &>/dev/null; then
+            openssl rand -hex "$((bits / 2))" 2>/dev/null | tr -d '\n' || true
+        fi
+    }
+
+    # Fernet anahtarı üretici
+    _gen_fernet() {
+        python3 - 2>/dev/null <<'PY' || true
+try:
+    from cryptography.fernet import Fernet
+    print(Fernet.generate_key().decode())
+except Exception:
+    pass
+PY
+    }
+
+    # ── API_KEY ──────────────────────────────────────────────────────────────
+    if _is_missing_or_insecure "API_KEY" \
+        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
+        local _v; _v=$(_gen_urlsafe 32)
+        if [[ -n "$_v" ]]; then
+            _write_secret "API_KEY" "$_v"
+            ok ".env: API_KEY otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
+    # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
+    if _is_missing_or_insecure "JWT_SECRET_KEY" \
+        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
+        local _v; _v=$(_gen_urlsafe 64)
+        if [[ -n "$_v" ]]; then
+            _write_secret "JWT_SECRET_KEY" "$_v"
+            ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
+    # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
+    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
+        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
+        local _v; _v=$(_gen_fernet)
+        if [[ -n "$_v" ]]; then
+            _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
+            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
+        else
+            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
+        fi
+    fi
+
+    # ── Hex tabanlı webhook/federation secret'lar ─────────────────────────────
+    _auto_hex_secret() {
+        local key="$1" bits="${2:-64}"; shift 2
+        if _is_missing_or_insecure "$key" "$@"; then
+            local _v; _v=$(_gen_hex "$bits")
+            if [[ -n "$_v" ]]; then
+                _write_secret "$key" "$_v"
+                ok ".env: ${key} otomatik ve güvenli bir değerle oluşturuldu."
+            else
+                warn "${key} otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            fi
+        fi
+    }
+
+    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64 \
+        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
+    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64 \
+        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
+    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
+        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -1234,11 +1352,12 @@ setup_env_file() {
     }
 
     if [[ -f "$ENV_FILE" ]]; then
-        ok ".env dosyası zaten mevcut — PostgreSQL varsayılanları kontrol ediliyor."
+        ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        ensure_auto_secrets "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         return
     fi
@@ -1255,150 +1374,8 @@ setup_env_file() {
     harden_database_credentials "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
 
-    # Bilinen sızıntı/default değerleri de güvenli olmayan kabul edilir ve yeniden üretilir.
-    is_missing_empty_or_known_insecure() {
-        local key_name="$1"
-        shift
-        local current_value=""
-        current_value=$(grep -E "^${key_name}=" "$ENV_FILE" | head -n1 | cut -d= -f2- || true)
-
-        if ! grep -q "^${key_name}=" "$ENV_FILE"; then
-            return 0
-        fi
-        if [[ -z "$current_value" ]]; then
-            return 0
-        fi
-        for insecure_value in "$@"; do
-            if [[ "$current_value" == "$insecure_value" ]]; then
-                return 0
-            fi
-        done
-        return 1
-    }
-
-    # API_KEY boşsa/yoksa veya bilinen güvensiz örnek değerse güçlü rastgele değer üret
-    if is_missing_empty_or_known_insecure \
-        "API_KEY" \
-        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
-        GENERATED_API_KEY=""
-        if command -v python3 &>/dev/null; then
-            GENERATED_API_KEY=$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-)
-        elif command -v openssl &>/dev/null; then
-            GENERATED_API_KEY=$(openssl rand -base64 32 | tr -d '\n')
-        fi
-
-        if [[ -n "$GENERATED_API_KEY" ]]; then
-            if grep -q '^API_KEY=' "$ENV_FILE"; then
-                sed -i "s|^API_KEY=.*|API_KEY=${GENERATED_API_KEY}|" "$ENV_FILE"
-            else
-                echo "API_KEY=${GENERATED_API_KEY}" >> "$ENV_FILE"
-            fi
-            ok ".env: API_KEY otomatik ve güvenli bir değerle oluşturuldu."
-        else
-            warn "API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
-        fi
-    fi
-
-    # JWT_SECRET_KEY boşsa/yoksa veya bilinen güvensiz örnek değerse güçlü rastgele değer üret
-    if is_missing_empty_or_known_insecure \
-        "JWT_SECRET_KEY" \
-        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
-        GENERATED_JWT_KEY=""
-        if command -v python3 &>/dev/null; then
-            GENERATED_JWT_KEY=$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(64))
-PY
-)
-        elif command -v openssl &>/dev/null; then
-            GENERATED_JWT_KEY=$(openssl rand -base64 64 | tr -d '\n')
-        fi
-
-        if [[ -n "$GENERATED_JWT_KEY" ]]; then
-            if grep -q '^JWT_SECRET_KEY=' "$ENV_FILE"; then
-                sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${GENERATED_JWT_KEY}|" "$ENV_FILE"
-            else
-                echo "JWT_SECRET_KEY=${GENERATED_JWT_KEY}" >> "$ENV_FILE"
-            fi
-            ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
-        else
-            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
-        fi
-    fi
-
-    # MEMORY_ENCRYPTION_KEY boşsa/yoksa veya bilinen güvensiz örnek değerse Fernet anahtarı üret
-    if is_missing_empty_or_known_insecure \
-        "MEMORY_ENCRYPTION_KEY" \
-        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
-        GENERATED_FERNET_KEY=""
-        if command -v python3 &>/dev/null; then
-            GENERATED_FERNET_KEY=$(python3 - <<'PY'
-try:
-    from cryptography.fernet import Fernet
-    print(Fernet.generate_key().decode())
-except Exception:
-    pass
-PY
-)
-        fi
-
-        if [[ -n "$GENERATED_FERNET_KEY" ]]; then
-            if grep -q '^MEMORY_ENCRYPTION_KEY=' "$ENV_FILE"; then
-                sed -i "s|^MEMORY_ENCRYPTION_KEY=.*|MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}|" "$ENV_FILE"
-            else
-                echo "MEMORY_ENCRYPTION_KEY=${GENERATED_FERNET_KEY}" >> "$ENV_FILE"
-            fi
-            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
-        else
-            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
-        fi
-    fi
-
-    # Hex tabanlı webhook/federation secret değerleri boşsa/yoksa veya bilinen
-    # güvensiz örnek değerlerse otomatik üret
-    ensure_hex_secret() {
-        local key_name="$1"
-        local hex_len="${2:-64}"
-        local generated=""
-        shift 2
-
-        if is_missing_empty_or_known_insecure "$key_name" "$@"; then
-            if command -v python3 &>/dev/null; then
-                generated=$(python3 - <<PY
-import secrets
-print(secrets.token_hex(${hex_len} // 2))
-PY
-)
-            elif command -v openssl &>/dev/null; then
-                generated=$(openssl rand -hex "$((hex_len / 2))" | tr -d '\n')
-            fi
-
-            if [[ -n "$generated" ]]; then
-                if grep -q "^${key_name}=" "$ENV_FILE"; then
-                    sed -i "s|^${key_name}=.*|${key_name}=${generated}|" "$ENV_FILE"
-                else
-                    echo "${key_name}=${generated}" >> "$ENV_FILE"
-                fi
-                ok ".env: ${key_name} otomatik ve güvenli bir değerle oluşturuldu."
-            else
-                warn "${key_name} otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
-            fi
-        fi
-    }
-
-    ensure_hex_secret \
-        "AUTONOMY_WEBHOOK_SECRET" 64 \
-        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
-    ensure_hex_secret \
-        "SWARM_FEDERATION_SHARED_SECRET" 64 \
-        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
-    ensure_hex_secret \
-        "GITHUB_WEBHOOK_SECRET" 40 \
-        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+    # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
+    ensure_auto_secrets "$ENV_FILE"
 
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
