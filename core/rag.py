@@ -27,6 +27,7 @@ import ipaddress
 import time
 import urllib.parse
 import uuid
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -46,6 +47,13 @@ except ImportError:
     _BLEACH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8)
+def _get_sentence_transformer_model(model_name: str):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name)
 
 
 class GraphIndex:
@@ -496,9 +504,7 @@ def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = Non
     cfg = cfg or Config()
     model_name = str(getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2")
     try:
-        from sentence_transformers import SentenceTransformer
-
-        model = SentenceTransformer(model_name)
+        model = _get_sentence_transformer_model(model_name)
         vectors = model.encode(texts, normalize_embeddings=True)
         return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
     except Exception as exc:
@@ -763,7 +769,7 @@ class DocumentStore:
         return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
     def _init_pgvector(self) -> None:
-        """PostgreSQL + pgvector tablosunu başlatır."""
+        """PostgreSQL üzerinde pgvector için gerekli nesnelerin hazır olduğunu doğrular."""
         db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
         if not db_url.startswith("postgresql"):
             logger.warning("pgvector backend için PostgreSQL DATABASE_URL gerekli. Alınan: %s", db_url)
@@ -774,57 +780,39 @@ class DocumentStore:
             return
 
         try:
-            from sentence_transformers import SentenceTransformer
             from sqlalchemy import create_engine, text
 
             self._apply_hf_runtime_env()
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
             with self.pg_engine.begin() as conn:
-                extension_ready = False
-                try:
-                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                    extension_ready = True
-                except Exception as extension_exc:
-                    installed = conn.execute(
+                extension_ready = bool(
+                    conn.execute(
                         text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')")
                     ).scalar()
-                    if installed:
-                        extension_ready = True
-                        logger.info(
-                            "pgvector extension zaten mevcut; CREATE EXTENSION adımı atlandı (yetki sınırlı olabilir): %s",
-                            extension_exc,
-                        )
-                    else:
-                        logger.warning(
-                            "pgvector extension etkin değil ve uygulama kullanıcısının yetkisi yetersiz olabilir: %s",
-                            extension_exc,
-                        )
+                )
+                table_ready = bool(
+                    conn.execute(
+                        text("SELECT to_regclass(:table_name) IS NOT NULL"),
+                        {"table_name": self._pg_table},
+                    ).scalar()
+                )
 
-                if not extension_ready:
-                    logger.warning(
-                        "pgvector backend devre dışı bırakıldı. Superuser ile 'CREATE EXTENSION vector' komutunu çalıştırın."
-                    )
-                    self._pgvector_available = False
-                    return
+            if not extension_ready:
+                logger.warning(
+                    "pgvector extension etkin değil. DevOps/Alembic aşamasında 'CREATE EXTENSION vector' uygulanmalı."
+                )
+                self._pgvector_available = False
+                return
 
-                conn.execute(text(f"""
-                    CREATE TABLE IF NOT EXISTS {self._pg_table} (
-                        doc_id TEXT NOT NULL,
-                        parent_id TEXT NOT NULL,
-                        session_id TEXT NOT NULL,
-                        chunk_index INTEGER NOT NULL,
-                        title TEXT,
-                        source TEXT,
-                        chunk_content TEXT,
-                        embedding vector({self._pg_embedding_dim}),
-                        PRIMARY KEY (doc_id, chunk_index)
-                    )
-                """))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_embedding_hnsw ON {self._pg_table} USING hnsw (embedding vector_cosine_ops)"))
+            if not table_ready:
+                logger.warning(
+                    "pgvector tablo şeması (%s) bulunamadı. Oluşturma işlemi uygulama kodunda yapılmaz; migrasyon çalıştırın.",
+                    self._pg_table,
+                )
+                self._pgvector_available = False
+                return
 
-            self._pg_embedding_model = SentenceTransformer(self._pg_embedding_model_name)
+            self._pg_embedding_model = _get_sentence_transformer_model(self._pg_embedding_model_name)
             self._pgvector_available = True
             logger.info("pgvector backend başlatıldı: table=%s model=%s", self._pg_table, self._pg_embedding_model_name)
         except Exception as exc:
