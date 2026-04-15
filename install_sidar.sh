@@ -1819,6 +1819,8 @@ run_migrations() {
         info "pgvector extension kontrol ediliyor..."
         if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
             ok "pgvector extension hazır."
+        elif psql "$psql_url" -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" 2>/dev/null | grep -q '^1$'; then
+            ok "pgvector extension zaten mevcut (yetki sınırı nedeniyle CREATE atlandı)."
         else
             warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
         fi
