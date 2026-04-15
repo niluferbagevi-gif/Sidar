@@ -1107,6 +1107,31 @@ create_directories() {
     ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
 }
 
+# ── VS Code Çalışma Alanı Hazırlığı ──────────────────────────────────────────
+setup_vscode_workspace() {
+    step "VS Code Çalışma Alanı Hazırlığı"
+    local vscode_dir="$SCRIPT_DIR/.vscode"
+
+    mkdir -p "$vscode_dir"
+
+    local python_path
+    if [[ "$USE_CONDA" == true ]]; then
+        python_path="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
+    else
+        python_path="$SCRIPT_DIR/.venv/bin/python"
+    fi
+
+    cat > "$vscode_dir/settings.json" <<EOF
+{
+    "python.defaultInterpreterPath": "${python_path}",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.defaultProfile.linux": "bash"
+}
+EOF
+
+    ok "VS Code çalışma alanı yapılandırıldı (.vscode/settings.json)."
+}
+
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
 generate_secure_token() {
     local token_length="${1:-32}"
@@ -2190,6 +2215,7 @@ main() {
     install_python_deps
     install_playwright_browsers
     create_directories
+    setup_vscode_workspace
     setup_react_frontend
     setup_env_file
     setup_wsl2_audio
