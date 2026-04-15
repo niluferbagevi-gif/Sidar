@@ -1010,6 +1010,133 @@ ensure_rag_vector_backend_pgvector() {
     fi
 }
 
+# ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
+# Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
+# sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
+collect_api_keys_interactive() {
+    local env_file="$1"
+
+    local -a KEY_ORDER=("OPENAI_API_KEY" "GEMINI_API_KEY" "ANTHROPIC_API_KEY" "GITHUB_TOKEN" "HF_TOKEN")
+
+    _key_label() {
+        case "$1" in
+            OPENAI_API_KEY)    echo "OpenAI API Anahtarı (opsiyonel)" ;;
+            GEMINI_API_KEY)    echo "Google Gemini API Anahtarı (opsiyonel)" ;;
+            ANTHROPIC_API_KEY) echo "Anthropic Claude API Anahtarı (opsiyonel)" ;;
+            GITHUB_TOKEN)      echo "GitHub Token - repo erişimi (opsiyonel)" ;;
+            HF_TOKEN)          echo "HuggingFace Token (opsiyonel)" ;;
+        esac
+    }
+
+    _current_val() {
+        grep -E "^${1}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true
+    }
+
+    _write_key() {
+        local key="$1"
+        local val="${2//[[:space:]]/}"
+        [[ -z "$val" ]] && return
+        if grep -q "^${key}=" "$env_file"; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+        else
+            echo "${key}=${val}" >> "$env_file"
+        fi
+        ok ".env: ${key} güncellendi."
+    }
+
+    # Eksik anahtar var mı kontrol et
+    local any_missing=false
+    for key in "${KEY_ORDER[@]}"; do
+        [[ -z "$(_current_val "$key")" ]] && { any_missing=true; break; }
+    done
+
+    if [[ "$any_missing" == false ]]; then
+        ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
+        return
+    fi
+
+    step "API Anahtarları Yapılandırması"
+    echo ""
+    info "Eksik API anahtarları tespit edildi."
+    info "Kullanmak istediğiniz servislerin anahtarlarını girin; kullanmayacaklarınızı boş bırakın."
+    echo ""
+
+    # ─── 1. Zenity GUI ──────────────────────────────────────────────────────
+    local has_display=false
+    [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] && has_display=true
+
+    if [[ "$has_display" == true ]]; then
+        # zenity yoksa küçük bir paketle kur
+        if ! command -v zenity &>/dev/null; then
+            info "Grafik pencere için zenity kuruluyor..."
+            sudo apt-get install -y zenity -qq >/dev/null 2>&1 || true
+        fi
+    fi
+
+    if command -v zenity &>/dev/null && [[ "$has_display" == true ]]; then
+        info "API anahtarı giriş penceresi açılıyor (zenity)..."
+        local zenity_out
+        zenity_out=$(zenity --forms \
+            --title="Sidar AI — API Anahtarları" \
+            --text="Kullanmak istediğiniz servislerin API anahtarlarını girin.\nBoş bıraktıklarınız atlanır ve sistem Ollama (yerel) ile çalışmaya devam eder." \
+            --separator="|" \
+            --add-entry="OpenAI API Key:" \
+            --add-entry="Google Gemini API Key:" \
+            --add-entry="Anthropic API Key:" \
+            --add-entry="GitHub Token:" \
+            --add-entry="HuggingFace Token:" \
+            2>/dev/null) || true
+
+        if [[ -n "$zenity_out" ]]; then
+            IFS='|' read -ra _vals <<< "$zenity_out"
+            for i in "${!KEY_ORDER[@]}"; do
+                _write_key "${KEY_ORDER[$i]}" "${_vals[$i]:-}"
+            done
+            ok "API anahtarları kaydedildi, kurulum devam ediyor."
+        else
+            warn "Pencere iptal edildi ya da kapatıldı — anahtarlar boş bırakıldı."
+            info "Anahtarları daha sonra .env dosyasına ekleyebilirsiniz."
+        fi
+        return
+    fi
+
+    # ─── 2. Whiptail TUI ────────────────────────────────────────────────────
+    if command -v whiptail &>/dev/null; then
+        info "Terminal tabanlı arayüz açılıyor (whiptail)..."
+        for key in "${KEY_ORDER[@]}"; do
+            if [[ -z "$(_current_val "$key")" ]]; then
+                local lbl
+                lbl="$(_key_label "$key")"
+                local input=""
+                input=$(whiptail \
+                    --title "Sidar AI — API Anahtarları" \
+                    --inputbox "${lbl}\n\nBoş bırakmak için doğrudan Enter'a basın." \
+                    11 72 "" \
+                    3>&1 1>&2 2>&3) || true
+                _write_key "$key" "$input"
+            fi
+        done
+        ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+        return
+    fi
+
+    # ─── 3. Basit read (her zaman çalışır) ──────────────────────────────────
+    info "API anahtarlarını girin (boş bırakmak için doğrudan Enter'a basın):"
+    echo ""
+    for key in "${KEY_ORDER[@]}"; do
+        if [[ -z "$(_current_val "$key")" ]]; then
+            local lbl
+            lbl="$(_key_label "$key")"
+            printf "  %-42s : " "$lbl"
+            local input=""
+            read -r input || true
+            _write_key "$key" "$input"
+        fi
+    done
+    echo ""
+    ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -1035,6 +1162,7 @@ setup_env_file() {
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        collect_api_keys_interactive "$ENV_FILE"
         return
     fi
 
@@ -1246,7 +1374,7 @@ PY
         ok ".env: WSL2 için ENABLE_MULTIMODAL=false olarak ayarlandı."
     fi
 
-    warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
+    collect_api_keys_interactive "$ENV_FILE"
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
