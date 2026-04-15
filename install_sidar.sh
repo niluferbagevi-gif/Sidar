@@ -23,6 +23,25 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
+run_conda_cmd() {
+    local -a conda_cmd=(conda "$@")
+    local line=""
+
+    "${conda_cmd[@]}" 2>&1 | while IFS= read -r line; do
+        case "$line" in
+            *"A newer version of conda exists."*|\
+            *"To update conda, run"*|\
+            *"Installing pip dependencies"*|\
+            *"Ran pip subprocess with arguments"*)
+                continue
+                ;;
+        esac
+        echo "$line"
+    done
+
+    return "${PIPESTATUS[0]}"
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -617,6 +636,22 @@ setup_nvidia_docker() {
     fi
 }
 
+auto_update_conda_base() {
+    if [[ "$USE_CONDA" != true ]]; then
+        return
+    fi
+
+    step "Conda Base Güncellemesi"
+    info "Conda güncellemesi sessiz modda kontrol ediliyor..."
+    conda config --set notify_outdated_conda false >/dev/null 2>&1 || true
+
+    if run_conda_cmd update -n base -c defaults conda -y -q; then
+        ok "Conda base ortamı güncel."
+    else
+        warn "Conda base otomatik güncellenemedi. Kurulum mevcut sürümle devam edecek."
+    fi
+}
+
 # ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
@@ -624,11 +659,11 @@ setup_python_env() {
 
         if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
-            conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
+            run_conda_cmd env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune --quiet
             ok "Conda ortamı güncellendi."
         else
             info "Yeni conda ortamı oluşturuluyor: $CONDA_ENV_NAME (Python $PYTHON_VERSION)..."
-            conda env create -f "$SCRIPT_DIR/environment.yml"
+            run_conda_cmd env create -f "$SCRIPT_DIR/environment.yml" --quiet
             ok "Conda ortamı oluşturuldu."
         fi
 
@@ -2132,6 +2167,7 @@ main() {
     check_prerequisites
     detect_gpu
     setup_nvidia_docker
+    auto_update_conda_base
     if [[ "$USE_CONDA" == true ]]; then
         # Conda akışı: environment.yml içindeki uv ile devam et
         setup_python_env
