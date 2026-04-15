@@ -1132,6 +1132,11 @@ async def test_document_store_pgvector_init_and_query_helpers(monkeypatch: pytes
     class _Conn:
         def execute(self, sql: object, params: dict[str, object] | None = None) -> _Rows | None:
             executed.append((str(sql), params))
+            normalized = str(sql)
+            if "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')" in normalized:
+                return SimpleNamespace(scalar=lambda: True)
+            if "SELECT to_regclass(:table_name) IS NOT NULL" in normalized:
+                return SimpleNamespace(scalar=lambda: True)
             if params and "qvec" in params:
                 rows = [
                     SimpleNamespace(parent_id="p1", title="Doc 1", source="src://1", chunk_content="a", distance=0.1),
@@ -1177,6 +1182,65 @@ async def test_document_store_pgvector_init_and_query_helpers(monkeypatch: pytes
     store._upsert_pgvector_chunks("chunk-1", "parent-1", "s1", "title", "src", ["content"])
     store._delete_pgvector_parent("parent-1", "s1")
     assert any("DELETE FROM rag_pg" in sql for sql, _ in executed)
+
+
+async def test_document_store_init_pgvector_disables_backend_when_table_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._check_import = lambda _name: True  # type: ignore[method-assign]
+    store._pg_table = "rag_pg"
+    store._pg_embedding_model_name = "mini"
+    store._pgvector_available = False
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql+asyncpg://u:p@h/db")
+
+    class _Conn:
+        def execute(self, sql: object, _params: dict[str, object] | None = None) -> object:
+            normalized = str(sql)
+            if "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')" in normalized:
+                return SimpleNamespace(scalar=lambda: True)
+            if "SELECT to_regclass(:table_name) IS NOT NULL" in normalized:
+                return SimpleNamespace(scalar=lambda: False)
+            return SimpleNamespace(scalar=lambda: None)
+
+    class _Begin:
+        def __enter__(self) -> _Conn:
+            return _Conn()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _Engine:
+        def begin(self) -> _Begin:
+            return _Begin()
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda s: s))
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=lambda *_a, **_k: object()))
+    store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
+
+    store._init_pgvector()
+
+    assert store._pgvector_available is False
+
+
+async def test_get_sentence_transformer_model_uses_lru_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    rag._get_sentence_transformer_model.cache_clear()
+    calls: list[str] = []
+
+    class _Factory:
+        def __init__(self, model_name: str) -> None:
+            calls.append(model_name)
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_Factory))
+
+    first = rag._get_sentence_transformer_model("model-a")
+    second = rag._get_sentence_transformer_model("model-a")
+    third = rag._get_sentence_transformer_model("model-b")
+
+    assert first is second
+    assert first is not third
+    assert calls == ["model-a", "model-b"]
 
 
 async def test_document_store_load_and_bm25_fetch_and_keyword_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

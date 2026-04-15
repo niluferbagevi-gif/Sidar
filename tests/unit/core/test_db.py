@@ -70,31 +70,45 @@ class FakePgAdapter:
 
 
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
+async def test_init_schema_postgresql_checks_required_relations(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
+    fake_pg.conn.fetchval = AsyncMock(return_value=True)
 
     await db._init_schema_postgresql()
 
-    assert fake_pg.conn.execute.await_count > 20
+    assert fake_pg.conn.fetchval.await_count == 14
 
 
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_path) -> None:
+async def test_init_schema_postgresql_raises_if_any_relation_missing(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
-    fake_pg.conn.execute.side_effect = [None, None, ConnectionError("database connection lost during migration")]
+    fake_pg.conn.fetchval = AsyncMock(side_effect=[True] * 13 + [False])
 
-    with pytest.raises(ConnectionError, match="migration"):
+    with pytest.raises(RuntimeError, match="çekirdek PostgreSQL şeması eksik"):
         await db._init_schema_postgresql()
 
-    assert fake_pg.conn.execute.await_count == 3
+    assert fake_pg.conn.fetchval.await_count == 14
+
+
+@pytest.mark.asyncio
+async def test_ensure_schema_version_postgresql_requires_alembic_version_table(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    db._backend = "postgresql"
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+    fake_pg.conn.fetchval = AsyncMock(return_value=False)
+
+    with pytest.raises(RuntimeError, match="migrasyon metadata eksik"):
+        await db._ensure_schema_version_postgresql()
 
 
 @pytest.mark.asyncio
