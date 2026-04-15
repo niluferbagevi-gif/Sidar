@@ -780,7 +780,33 @@ class DocumentStore:
             self._apply_hf_runtime_env()
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
             with self.pg_engine.begin() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                extension_ready = False
+                try:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    extension_ready = True
+                except Exception as extension_exc:
+                    installed = conn.execute(
+                        text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')")
+                    ).scalar()
+                    if installed:
+                        extension_ready = True
+                        logger.info(
+                            "pgvector extension zaten mevcut; CREATE EXTENSION adımı atlandı (yetki sınırlı olabilir): %s",
+                            extension_exc,
+                        )
+                    else:
+                        logger.warning(
+                            "pgvector extension etkin değil ve uygulama kullanıcısının yetkisi yetersiz olabilir: %s",
+                            extension_exc,
+                        )
+
+                if not extension_ready:
+                    logger.warning(
+                        "pgvector backend devre dışı bırakıldı. Superuser ile 'CREATE EXTENSION vector' komutunu çalıştırın."
+                    )
+                    self._pgvector_available = False
+                    return
+
                 conn.execute(text(f"""
                     CREATE TABLE IF NOT EXISTS {self._pg_table} (
                         doc_id TEXT NOT NULL,

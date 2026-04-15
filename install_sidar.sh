@@ -1805,7 +1805,7 @@ run_migrations() {
         fi
     fi
 
-    setup_pgvector_extension() {
+    verify_pgvector_extension() {
         if ! command -v psql &>/dev/null; then
             return
         fi
@@ -1814,14 +1814,18 @@ run_migrations() {
         fi
 
         local psql_url
+        local extension_ready
         psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
 
-        info "pgvector extension kontrol ediliyor..."
-        if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+        info "pgvector extension durumu kontrol ediliyor..."
+        extension_ready=$(psql "$psql_url" -tAc "SELECT 1 FROM pg_extension WHERE extname='vector'" 2>/dev/null | tr -d '[:space:]')
+        if [[ "$extension_ready" == "1" ]]; then
             ok "pgvector extension hazır."
-        else
-            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
+            return
         fi
+
+        warn "pgvector extension bu bağlantı için etkin değil veya görünmüyor."
+        info "Gerekirse superuser ile çalıştırın: sudo -u postgres psql -d sidar -c \"CREATE EXTENSION IF NOT EXISTS vector;\""
     }
 
     setup_postgresql_local() {
@@ -1910,7 +1914,7 @@ PY
             fi
         fi
 
-        setup_pgvector_extension
+        verify_pgvector_extension
     fi
 
     if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
