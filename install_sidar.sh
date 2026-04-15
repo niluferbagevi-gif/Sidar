@@ -967,13 +967,7 @@ ASOUNDRC
         fi
     fi
 
-    # ── RAM limiti uyarısı ve .wslconfig otomatik oluşturma ───────────────────
-    warn "WSL2 varsayılan RAM limiti düşükse lokal LLM/RAG işlemlerinde OOM (Out of Memory) yaşanabilir."
-    info "Windows tarafında %UserProfile%\\.wslconfig dosyasına bellek limiti ekleyin:"
-    echo "       [wsl2]"
-    echo "       memory=16GB"
-    echo "       swap=8GB"
-
+    # ── RAM limiti kontrolü ve .wslconfig otomatik yapılandırma ──────────────
     local win_userprofile=""
     local wslconfig_path=""
     if command -v cmd.exe &>/dev/null; then
@@ -986,6 +980,11 @@ ASOUNDRC
         fi
     fi
 
+    # Mevcut memory değerini GB cinsinden sayıya çevir (örn. "16GB" → 16)
+    _parse_gb() {
+        echo "${1:-0}" | grep -oP '^\d+' || echo "0"
+    }
+
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
@@ -994,8 +993,8 @@ memory=16GB
 swap=8GB
 WSLCFG
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
+            info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
-            # Dosya var — eksik satırları ekle, mevcut değerlere dokunma
             local changed=false
 
             # [wsl2] bölümü yoksa dosyanın başına ekle
@@ -1005,34 +1004,49 @@ WSLCFG
                 changed=true
             fi
 
-            # memory= satırı yoksa ekle
+            # memory= satırı yoksa ekle; varsa değeri kontrol et
             if ! grep -q '^memory=' "$wslconfig_path" 2>/dev/null; then
                 sed -i '/^\[wsl2\]/a memory=16GB' "$wslconfig_path"
                 ok "WSL2: .wslconfig içine memory=16GB eklendi."
                 changed=true
             else
-                local cur_mem
+                local cur_mem cur_mem_gb
                 cur_mem=$(grep '^memory=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                info "WSL2: .wslconfig memory zaten ayarlı: ${cur_mem} (değiştirilmedi)."
+                cur_mem_gb=$(_parse_gb "$cur_mem")
+                if [[ "$cur_mem_gb" -lt 8 ]]; then
+                    warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
+                else
+                    ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
+                fi
             fi
 
-            # swap= satırı yoksa ekle
+            # swap= satırı yoksa ekle; varsa değeri kontrol et
             if ! grep -q '^swap=' "$wslconfig_path" 2>/dev/null; then
                 sed -i '/^\[wsl2\]/a swap=8GB' "$wslconfig_path"
                 ok "WSL2: .wslconfig içine swap=8GB eklendi."
                 changed=true
             else
-                local cur_swap
+                local cur_swap cur_swap_gb
                 cur_swap=$(grep '^swap=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                info "WSL2: .wslconfig swap zaten ayarlı: ${cur_swap} (değiştirilmedi)."
+                cur_swap_gb=$(_parse_gb "$cur_swap")
+                if [[ "$cur_swap_gb" -lt 4 ]]; then
+                    warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
+                else
+                    ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
+                fi
             fi
 
-            [[ "$changed" == false ]] && info "WSL2: .wslconfig zaten gerekli ayarları içeriyor ($wslconfig_path)."
+            if [[ "$changed" == true ]]; then
+                info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
+            fi
         fi
     else
-        info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
+        warn "WSL2: %UserProfile% yolu çözümlenemedi. .wslconfig dosyasını manuel yapılandırın:"
+        echo "       %UserProfile%\\.wslconfig içeriği:"
+        echo "       [wsl2]"
+        echo "       memory=16GB"
+        echo "       swap=8GB"
     fi
-    info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
 }
 
 # ── 9. Dizinleri oluştur ──────────────────────────────────────────────────────
