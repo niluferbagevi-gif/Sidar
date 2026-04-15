@@ -35,6 +35,7 @@ HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
 DOCKER_ONLY=false
+ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -52,8 +53,9 @@ for arg in "$@"; do
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --docker-only) DOCKER_ONLY=true ;;
+        --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -66,9 +68,10 @@ for arg in "$@"; do
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
+            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (PulseAudio/WSLg otomatik yapılandırılır)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -269,9 +272,10 @@ install_system_dependencies() {
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
         fi
 
-        info "Kamera (v4l2) ve Ses (PortAudio/ALSA/FFmpeg) kütüphaneleri kuruluyor..."
+        info "Kamera (v4l2) ve Ses (PortAudio/ALSA/PulseAudio/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg \
+            pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio
         info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libpq-dev postgresql-client
@@ -827,50 +831,176 @@ setup_react_frontend() {
     REACT_UI_STATUS="hazır"
 }
 
-# ── 8. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
-check_pyaudio_wsl2() {
-    if [[ "$WSL2" == true ]]; then
-        warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
-        info "Sesli özellik kullanmayacaksanız .env dosyanıza şunu ekleyin:"
-        echo "       ENABLE_MULTIMODAL=false"
-        info "Ses desteği istiyorsanız: https://learn.microsoft.com/tr-tr/windows/wsl/tutorials/gui-apps"
-        warn "WSL2 varsayılan RAM limiti düşükse lokal LLM/RAG işlemlerinde OOM (Out of Memory) yaşanabilir."
-        info "Windows tarafında %UserProfile%\\.wslconfig dosyasına bellek limiti ekleyin (örnek):"
-        echo "       [wsl2]"
-        echo "       memory=16GB"
-        echo "       swap=8GB"
+# ── 8. WSL2 Ses Desteği Kurulumu ─────────────────────────────────────────────
+# WSLg (Windows 11 Build 22000+) PulseAudio soketi üzerinden gerçek zamanlı
+# mikrofon/hoparlör erişimini etkinleştirir.
+setup_wsl2_audio() {
+    [[ "$WSL2" == true ]] || return 0
 
-        # Opsiyonel kolaylık: .wslconfig yoksa otomatik oluşturmayı dene
-        local win_userprofile=""
-        local wslconfig_path=""
-        if command -v cmd.exe &>/dev/null; then
-            win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-            if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
-                local drive_letter
-                local path_rest
-                drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
-                path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
-                wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
-            fi
+    step "WSL2 Ses Desteği"
+
+    local pulse_socket=""
+    local pulse_uid
+    pulse_uid=$(id -u)
+    local pulse_runtime_dir="/run/user/${pulse_uid}"
+
+    # WSLg PulseAudio soket konumlarını sırayla dene
+    for candidate in \
+        "${pulse_runtime_dir}/pulse/native" \
+        "/tmp/pulse-${pulse_uid}/native" \
+        "/tmp/pulse-socket"; do
+        if [[ -S "$candidate" ]]; then
+            pulse_socket="$candidate"
+            break
+        fi
+    done
+
+    # ── WSLg soketi tespit edildi: tam ses kurulumu ────────────────────────────
+    if [[ -n "$pulse_socket" ]]; then
+        ok "WSLg PulseAudio soketi tespit edildi: $pulse_socket"
+        info "Windows 11 WSLg üzerinde ses desteği yapılandırılıyor..."
+
+        # PulseAudio istemci araçları + ALSA→PulseAudio köprüsü
+        info "PulseAudio istemci kütüphaneleri kontrol ediliyor..."
+        local pa_pkgs_needed=()
+        for pkg in pulseaudio-utils libpulse-dev libasound2-plugins; do
+            dpkg -l "$pkg" &>/dev/null 2>&1 || pa_pkgs_needed+=("$pkg")
+        done
+        if [[ ${#pa_pkgs_needed[@]} -gt 0 ]]; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" \
+                >/dev/null 2>&1 && ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}" \
+                || warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
+        else
+            ok "PulseAudio paketleri zaten kurulu."
         fi
 
-        if [[ -n "$wslconfig_path" ]]; then
-            if [[ ! -f "$wslconfig_path" ]]; then
-                cat > "$wslconfig_path" <<'EOF'
+        # ALSA → PulseAudio yönlendirmesi (~/.asoundrc)
+        local asoundrc="$HOME/.asoundrc"
+        if [[ ! -f "$asoundrc" ]] || ! grep -q "pcm.pulse" "$asoundrc" 2>/dev/null; then
+            cat > "$asoundrc" <<'ASOUNDRC'
+# Sidar: ALSA varsayılanını PulseAudio'ya yönlendir (WSL2/WSLg)
+pcm.default pulse
+ctl.default pulse
+
+pcm.pulse {
+    type pulse
+}
+ctl.pulse {
+    type pulse
+}
+ASOUNDRC
+            ok "ALSA → PulseAudio köprüsü yapılandırıldı (~/.asoundrc)."
+        else
+            ok "~/.asoundrc zaten PulseAudio yapılandırması içeriyor."
+        fi
+
+        # PULSE_SERVER ortam değişkeni (yeni terminaller için kalıcı)
+        local pulse_export="export PULSE_SERVER=unix:${pulse_socket}"
+        for rcfile in "$HOME/.bashrc" "$HOME/.zshrc"; do
+            if [[ -f "$rcfile" ]] && ! grep -q "PULSE_SERVER" "$rcfile" 2>/dev/null; then
+                echo "" >> "$rcfile"
+                echo "# Sidar WSL2 ses desteği" >> "$rcfile"
+                echo "$pulse_export" >> "$rcfile"
+                ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+            fi
+        done
+        # Mevcut oturum için de hemen ayarla
+        export PULSE_SERVER="unix:${pulse_socket}"
+
+        # PulseAudio bağlantısını doğrula
+        if command -v pactl &>/dev/null && pactl info &>/dev/null 2>&1; then
+            local pa_server
+            pa_server=$(pactl info 2>/dev/null | grep -i "Server Name" | cut -d: -f2- | xargs || echo "aktif")
+            ok "PulseAudio bağlantısı doğrulandı: ${pa_server}"
+
+            # .env'de ENABLE_MULTIMODAL=true yap (ses çalışıyor)
+            local env_file="$SCRIPT_DIR/.env"
+            if [[ -f "$env_file" ]]; then
+                if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
+                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
+                else
+                    echo "ENABLE_MULTIMODAL=true" >> "$env_file"
+                fi
+                ok ".env: ENABLE_MULTIMODAL=true — ses/mikrofon desteği aktif."
+            fi
+        else
+            warn "PulseAudio soketi mevcut fakat pactl ile doğrulanamadı."
+            info "Yeni bir terminal açtıktan sonra test edin: pactl info"
+            info "Sorun devam ederse: wsl --shutdown && wsl (Windows PowerShell'de)"
+        fi
+
+    # ── WSLg soketi bulunamadı: yönlendirme ve otomatik WSLg etkinleştirme ────
+    else
+        # --enable-audio bayrağıyla çalışıyorsa aktif etkinleştirme girişimi yap
+        if [[ "$ENABLE_AUDIO" == true ]]; then
+            warn "WSLg PulseAudio soketi henüz mevcut değil."
+            info "WSLg'yi etkinleştirmek için aşağıdaki adımları uygulayın:"
+            echo ""
+            echo "  Windows PowerShell / CMD (yönetici olarak):"
+            echo "    1. wsl --update"
+            echo "    2. wsl --shutdown"
+            echo "    3. Dağıtımı yeniden başlatın: wsl -d Ubuntu"
+            echo ""
+            echo "  Gereksinimler:"
+            echo "    • Windows 11 Build 22000+ (veya Windows 10 KB5004296+)"
+            echo "    • WSL 2.0.0+ (wsl --update ile güncelleyin)"
+            echo ""
+            echo "  WSLg sonra kurulumu tamamlayın:"
+            echo "    ./install_sidar.sh --enable-audio"
+            echo ""
+            info "Ses desteği olmadan devam edilecek (ENABLE_MULTIMODAL=false)."
+            local env_file="$SCRIPT_DIR/.env"
+            if [[ -f "$env_file" ]]; then
+                if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
+                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
+                fi
+            fi
+        else
+            warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
+            info "Ses desteğini etkinleştirmek için:"
+            echo "  1. Windows 11 Build 22000+ ile WSLg otomatik olarak ses desteği sağlar."
+            echo "  2. 'wsl --update' ile WSL'yi güncelleyin, ardından 'wsl --shutdown' yapın."
+            echo "  3. Kurulum betiğini --enable-audio bayrağıyla yeniden çalıştırın:"
+            echo "       ./install_sidar.sh --enable-audio"
+            echo ""
+            info "Sesli özellik kullanmayacaksanız .env dosyanızda ENABLE_MULTIMODAL=false kalabilir."
+        fi
+    fi
+
+    # ── RAM limiti uyarısı ve .wslconfig otomatik oluşturma ───────────────────
+    warn "WSL2 varsayılan RAM limiti düşükse lokal LLM/RAG işlemlerinde OOM (Out of Memory) yaşanabilir."
+    info "Windows tarafında %UserProfile%\\.wslconfig dosyasına bellek limiti ekleyin:"
+    echo "       [wsl2]"
+    echo "       memory=16GB"
+    echo "       swap=8GB"
+
+    local win_userprofile=""
+    local wslconfig_path=""
+    if command -v cmd.exe &>/dev/null; then
+        win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
+            local drive_letter path_rest
+            drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
+            path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
+            wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
+        fi
+    fi
+
+    if [[ -n "$wslconfig_path" ]]; then
+        if [[ ! -f "$wslconfig_path" ]]; then
+            cat > "$wslconfig_path" <<'WSLCFG'
 [wsl2]
 memory=16GB
 swap=8GB
-EOF
-                ok "WSL2: %UserProfile%/.wslconfig otomatik oluşturuldu ($wslconfig_path)."
-            else
-                info "WSL2: .wslconfig zaten mevcut ($wslconfig_path)."
-            fi
+WSLCFG
+            ok "WSL2: %UserProfile%/.wslconfig otomatik oluşturuldu ($wslconfig_path)."
         else
-            info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
+            info "WSL2: .wslconfig zaten mevcut ($wslconfig_path)."
         fi
-
-        info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
+    else
+        info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
     fi
+    info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
 }
 
 # ── 9. Dizinleri oluştur ──────────────────────────────────────────────────────
@@ -1435,12 +1565,6 @@ setup_env_file() {
         ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
     fi
 
-    # WSL2 üzerinde ses tabanlı özellikler gerekmiyorsa multimodal'i varsayılan kapat
-    if [[ "$WSL2" == true ]] && grep -q '^ENABLE_MULTIMODAL=true' "$ENV_FILE"; then
-        sed -i 's/^ENABLE_MULTIMODAL=true/ENABLE_MULTIMODAL=false/' "$ENV_FILE"
-        ok ".env: WSL2 için ENABLE_MULTIMODAL=false olarak ayarlandı."
-    fi
-
     collect_api_keys_interactive "$ENV_FILE"
 }
 
@@ -1858,6 +1982,17 @@ print_summary() {
         echo ""
     fi
 
+    if [[ "$WSL2" == true ]]; then
+        local multimodal_val=""
+        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(grep -E "^ENABLE_MULTIMODAL=" "$SCRIPT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        if [[ "$multimodal_val" == "true" ]]; then
+            echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
+        else
+            echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
+        fi
+        echo ""
+    fi
+
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
     echo "  python github_upload.py   — projeyi GitHub'a yükle"
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
@@ -1922,7 +2057,7 @@ main() {
     create_directories
     setup_react_frontend
     setup_env_file
-    check_pyaudio_wsl2
+    setup_wsl2_audio
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
