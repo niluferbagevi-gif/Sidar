@@ -1257,6 +1257,8 @@ prompt_api_keys() {
 
     local env_file="$SCRIPT_DIR/.env"
     [[ ! -f "$env_file" ]] && return
+    local is_interactive=false
+    [[ -t 0 && -t 1 ]] && is_interactive=true
 
     update_env_key() {
         local key="$1"
@@ -1264,8 +1266,8 @@ prompt_api_keys() {
         local current_val=""
         current_val=$(grep -E "^${key}=" "$env_file" | head -n1 | cut -d= -f2- || true)
 
-        # Eğer değer boşsa veya varsayılan (your_key_here vb.) ise sor
-        if [[ -z "$current_val" || "$current_val" == "your_"* || "$current_val" == "sk-"* ]]; then
+        # Eğer değer boşsa veya bilinen örnek/varsayılan bir değer ise sor
+        if [[ -z "$current_val" || "$current_val" == "your_"* || "$current_val" == "<"* || "$current_val" == "changeme"* ]]; then
             local user_input=""
 
             # 1. Öncelik: Zenity ile GUI Penceresi (WSLg veya Linux Desktop için)
@@ -1273,15 +1275,20 @@ prompt_api_keys() {
                 user_input=$(zenity --entry \
                     --title="Sidar AI - API Yapılandırması" \
                     --text="${prompt_text}\n(${key}):\n\nBoş bırakarak atlayabilirsiniz." \
+                    --hide-text \
                     --width=400 2>/dev/null || true)
             # 2. Öncelik: Whiptail ile Terminal İçi Form (TUI)
-            elif command -v whiptail &>/dev/null; then
-                user_input=$(whiptail --inputbox "${prompt_text}\n(${key}):\nBoş bırakarak atlayabilirsiniz." \
+            elif command -v whiptail &>/dev/null && [[ "$is_interactive" == true ]]; then
+                user_input=$(whiptail --passwordbox "${prompt_text}\n(${key}):\nBoş bırakarak atlayabilirsiniz." \
                     12 60 3>&1 1>&2 2>&3 || true)
             # 3. Öncelik: Standart Terminal İstemi (Yedek)
-            else
+            elif [[ "$is_interactive" == true ]]; then
                 echo -e -n "${BOLD}${BLUE}? ${prompt_text} (${key}) [Atlamak için boş bırakın]:${NC} "
-                read -r user_input
+                read -r -s user_input
+                echo
+            else
+                info "${key} için etkileşimli giriş atlandı (non-interactive çalışma)."
+                return
             fi
 
             # Kullanıcı bir giriş yaptıysa .env dosyasına kaydet
