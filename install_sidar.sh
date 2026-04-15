@@ -39,6 +39,9 @@ ENABLE_AUDIO=true
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
+ENV_API_KEYS_TOTAL=0
+ENV_API_KEYS_FILLED=0
+ENV_API_KEYS_MISSING=()
 for arg in "$@"; do
     case "$arg" in
         --dev)  INSTALL_DEV=true ;;
@@ -1433,6 +1436,32 @@ collect_api_keys_interactive() {
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
 }
 
+report_env_api_key_status() {
+    local env_file="$1"
+    local -a key_order=(
+        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN GITHUB_TOKEN
+        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
+        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
+        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
+        TEAMS_WEBHOOK_URL
+    )
+
+    ENV_API_KEYS_TOTAL="${#key_order[@]}"
+    ENV_API_KEYS_FILLED=0
+    ENV_API_KEYS_MISSING=()
+
+    local key value
+    for key in "${key_order[@]}"; do
+        value=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
+                | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        if [[ -n "$value" ]]; then
+            ((ENV_API_KEYS_FILLED+=1))
+        else
+            ENV_API_KEYS_MISSING+=("$key")
+        fi
+    done
+}
+
 # ── Otomatik Secret Üretimi ────────────────────────────────────────────────
 # Güvenlik anahtarlarını (API_KEY, JWT_SECRET_KEY, MEMORY_ENCRYPTION_KEY vb.)
 # .env boşsa veya bilinen güvensiz örnekse otomatik üretir.
@@ -1591,6 +1620,7 @@ setup_env_file() {
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
+        report_env_api_key_status "$ENV_FILE"
         return
     fi
 
@@ -1655,6 +1685,7 @@ setup_env_file() {
     fi
 
     collect_api_keys_interactive "$ENV_FILE"
+    report_env_api_key_status "$ENV_FILE"
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
@@ -2026,6 +2057,21 @@ print_summary() {
     echo ""
     echo -e "  1️⃣  .env dosyasını düzenle:"
     echo "       nano .env"
+    echo ""
+    echo -e "${BOLD}.env API anahtar durumu:${NC}"
+    if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
+        echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
+    else
+        echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
+        if [[ "${#ENV_API_KEYS_MISSING[@]}" -gt 0 ]]; then
+            echo "  Eksik / boş bırakılan anahtarlar:"
+            local missing_key
+            for missing_key in "${ENV_API_KEYS_MISSING[@]}"; do
+                echo "    - ${missing_key}"
+            done
+        fi
+        echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
+    fi
     echo ""
     if [[ "$USE_CONDA" == true ]]; then
         echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
