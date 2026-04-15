@@ -2235,16 +2235,18 @@ main() {
     install_python_deps
     install_playwright_browsers
     create_directories
-    setup_vscode_workspace
     setup_react_frontend
     setup_env_file
     setup_wsl2_audio
+    # Yeni eklenen VS Code yapılandırması
+    setup_vscode_workspace
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
     print_summary
+    # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
 }
 
