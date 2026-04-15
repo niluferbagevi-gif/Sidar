@@ -1010,6 +1010,210 @@ ensure_rag_vector_backend_pgvector() {
     fi
 }
 
+# ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
+# Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
+# sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
+collect_api_keys_interactive() {
+    local env_file="$1"
+
+    # ── Tüm kullanıcı girişi gerektiren anahtarlar (otomatik üretilenler hariç) ──
+    local -a KEY_ORDER=(
+        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
+        GITHUB_TOKEN
+        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
+        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
+        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
+        TEAMS_WEBHOOK_URL
+    )
+
+    # Gruplar: "Başlık|KEY1,KEY2,..."  (her grup zenity'de ayrı form / whiptail'de bölüm)
+    # NOT: GROUPS bash reserved değişkeni olduğundan API_GROUPS adı kullanılıyor.
+    local -a API_GROUPS=(
+        "AI Sağlayıcıları|OPENAI_API_KEY,GEMINI_API_KEY,ANTHROPIC_API_KEY,LITELLM_API_KEY,HF_TOKEN"
+        "GitHub ve Web Arama|GITHUB_TOKEN,TAVILY_API_KEY,GOOGLE_SEARCH_API_KEY,GOOGLE_SEARCH_CX"
+        "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL"
+        "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_DEFAULT_PROJECT"
+        "Microsoft Teams|TEAMS_WEBHOOK_URL"
+    )
+
+    _key_label() {
+        case "$1" in
+            OPENAI_API_KEY)        echo "OpenAI API Anahtarı" ;;
+            GEMINI_API_KEY)        echo "Google Gemini API Anahtarı" ;;
+            ANTHROPIC_API_KEY)     echo "Anthropic Claude API Anahtarı" ;;
+            LITELLM_API_KEY)       echo "LiteLLM / OpenRouter API Anahtarı" ;;
+            HF_TOKEN)              echo "HuggingFace Token" ;;
+            GITHUB_TOKEN)          echo "GitHub Token (repo erişimi)" ;;
+            TAVILY_API_KEY)        echo "Tavily Arama API Anahtarı" ;;
+            GOOGLE_SEARCH_API_KEY) echo "Google Custom Search API Anahtarı" ;;
+            GOOGLE_SEARCH_CX)      echo "Google Search Engine ID (cx)" ;;
+            SLACK_TOKEN)           echo "Slack Bot OAuth Token (xoxb-...)" ;;
+            SLACK_APP_LEVEL_TOKEN) echo "Slack App Level Token (xapp-...) [opt]" ;;
+            SLACK_WEBHOOK_URL)     echo "Slack Incoming Webhook URL [opt]" ;;
+            SLACK_DEFAULT_CHANNEL) echo "Slack Varsayılan Kanal (örn: #sidar)" ;;
+            JIRA_URL)              echo "Jira URL (örn: https://sirket.atlassian.net)" ;;
+            JIRA_EMAIL)            echo "Jira Atlassian E-posta" ;;
+            JIRA_TOKEN)            echo "Jira API Token" ;;
+            JIRA_DEFAULT_PROJECT)  echo "Jira Proje Anahtarı (örn: SID)" ;;
+            TEAMS_WEBHOOK_URL)     echo "Microsoft Teams Webhook URL" ;;
+            *)                     echo "$1" ;;
+        esac
+    }
+
+    # Anahtarı .env'e yazar; boşsa sessizce atlar
+    _write_key() {
+        local key="$1"
+        local val
+        val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
+        [[ -z "$val" ]] && return
+        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+        else
+            echo "${key}=${val}" >> "$env_file"
+        fi
+        ok ".env: ${key} güncellendi."
+    }
+
+    step "API Anahtarları Yapılandırması"
+    echo ""
+
+    # ── Durum tespiti: doğrudan inline (subshell yok, \r temizlendi) ──────────
+    local -a missing_keys=()
+    local _chk_val
+    for key in "${KEY_ORDER[@]}"; do
+        _chk_val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
+                   | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        if [[ -z "$_chk_val" ]]; then
+            missing_keys+=("$key")
+            info "  [ eksik  ] ${key}"
+        else
+            ok   "  [ mevcut ] ${key}"
+        fi
+    done
+    echo ""
+
+    if [[ ${#missing_keys[@]} -eq 0 ]]; then
+        ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
+        return
+    fi
+
+    info "${#missing_keys[@]} anahtar eksik."
+    info "Kullanmak istediğiniz servislerin anahtarlarını girin; kullanmayacaklarınızı boş bırakın."
+    info "Sistemi yalnızca yerel Ollama ile kullanacaksanız hepsini boş bırakıp geçebilirsiniz."
+    echo ""
+
+    # Bir grubun eksik anahtarlarını döndürür (inline — subshell kullanmaz)
+    _fill_group_missing() {
+        # $1: virgülle ayrılmış grup anahtarları  $2: sonucu yazacağımız dizi adı (nameref)
+        local -n _out_arr="$2"
+        _out_arr=()
+        local gk mk
+        IFS=',' read -ra _gkeys <<< "$1"
+        for gk in "${_gkeys[@]}"; do
+            for mk in "${missing_keys[@]}"; do
+                [[ "$mk" == "$gk" ]] && { _out_arr+=("$mk"); break; }
+            done
+        done
+    }
+
+    # ─── 1. Zenity GUI (WSLg / X11 ekranı varsa) ────────────────────────────
+    local has_display=false
+    [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] && has_display=true
+
+    if [[ "$has_display" == true ]] && ! command -v zenity &>/dev/null; then
+        info "Grafik pencere için zenity kuruluyor..."
+        sudo apt-get install -y zenity -qq >/dev/null 2>&1 || true
+    fi
+
+    if command -v zenity &>/dev/null && [[ "$has_display" == true ]]; then
+        info "API anahtarı giriş pencereleri açılıyor (zenity — grup grup)..."
+        local grp_spec grp_title grp_keys
+        local -a grp_missing z_args _vals
+        for grp_spec in "${API_GROUPS[@]}"; do
+            grp_title="${grp_spec%%|*}"
+            grp_keys="${grp_spec##*|}"
+            _fill_group_missing "$grp_keys" grp_missing
+            [[ ${#grp_missing[@]} -eq 0 ]] && continue
+
+            z_args=(
+                "--title=Sidar AI — ${grp_title}"
+                "--text=${grp_title} için anahtarları girin.\nKullanmayacaklarınızı boş bırakın."
+                "--separator=|"
+            )
+            local mk
+            for mk in "${grp_missing[@]}"; do
+                z_args+=("--add-entry=$(_key_label "$mk"):")
+            done
+
+            local zenity_out=""
+            zenity_out=$(zenity --forms "${z_args[@]}" 2>/dev/null) || true
+            [[ -z "$zenity_out" ]] && continue   # iptal / kapatıldı
+
+            IFS='|' read -ra _vals <<< "$zenity_out"
+            for i in "${!grp_missing[@]}"; do
+                _write_key "${grp_missing[$i]}" "${_vals[$i]:-}"
+            done
+        done
+        ok "API anahtarları kaydedildi, kurulum devam ediyor."
+        return
+    fi
+
+    # ─── 2. Whiptail TUI (terminal içi diyalog) ─────────────────────────────
+    if command -v whiptail &>/dev/null; then
+        info "Terminal tabanlı arayüz açılıyor (whiptail)..."
+        local grp_spec grp_title grp_keys
+        local -a grp_missing
+        for grp_spec in "${API_GROUPS[@]}"; do
+            grp_title="${grp_spec%%|*}"
+            grp_keys="${grp_spec##*|}"
+            _fill_group_missing "$grp_keys" grp_missing
+            [[ ${#grp_missing[@]} -eq 0 ]] && continue
+
+            whiptail --title "Sidar AI — API Anahtarları" \
+                --msgbox "── ${grp_title} ──\n\nBu gruba ait anahtarları girmeniz istenecek.\nKullanmayacaklarınızı boş bırakabilirsiniz." \
+                9 68 2>/dev/null || true
+
+            local mk lbl input
+            for mk in "${grp_missing[@]}"; do
+                lbl="$(_key_label "$mk")"
+                input=""
+                input=$(whiptail \
+                    --title "Sidar AI — ${grp_title}" \
+                    --inputbox "${lbl}\n(Boş bırakmak için doğrudan Enter'a basın)" \
+                    10 72 "" \
+                    3>&1 1>&2 2>&3) || true
+                _write_key "$mk" "$input"
+            done
+        done
+        ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+        return
+    fi
+
+    # ─── 3. Basit read (her ortamda çalışır, fallback) ──────────────────────
+    info "API anahtarlarını girin (boş bırakmak için doğrudan Enter'a basın):"
+    echo ""
+    local grp_spec grp_title grp_keys
+    local -a grp_missing
+    for grp_spec in "${API_GROUPS[@]}"; do
+        grp_title="${grp_spec%%|*}"
+        grp_keys="${grp_spec##*|}"
+        _fill_group_missing "$grp_keys" grp_missing
+        [[ ${#grp_missing[@]} -eq 0 ]] && continue
+
+        echo -e "${BOLD}${BLUE}  ── ${grp_title} ──${NC}"
+        local mk lbl input
+        for mk in "${grp_missing[@]}"; do
+            lbl="$(_key_label "$mk")"
+            printf "  %-46s : " "$lbl"
+            input=""
+            read -r input || true
+            _write_key "$mk" "$input"
+        done
+        echo ""
+    done
+    ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -1035,6 +1239,7 @@ setup_env_file() {
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        collect_api_keys_interactive "$ENV_FILE"
         return
     fi
 
@@ -1246,7 +1451,7 @@ PY
         ok ".env: WSL2 için ENABLE_MULTIMODAL=false olarak ayarlandı."
     fi
 
-    warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
+    collect_api_keys_interactive "$ENV_FILE"
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
