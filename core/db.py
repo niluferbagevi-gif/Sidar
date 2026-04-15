@@ -393,25 +393,10 @@ class Database:
 
     async def _ensure_access_control_schema_postgresql(self) -> None:
         assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS access_policies (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    resource_type TEXT NOT NULL,
-                    resource_id TEXT NOT NULL DEFAULT '*',
-                    action TEXT NOT NULL,
-                    effect TEXT NOT NULL DEFAULT 'allow',
-                    created_at TIMESTAMPTZ NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
-                )
-                """
-            )
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)")
+        await self._assert_postgresql_relations_exist(
+            ["users", "access_policies"],
+            context="access control şeması",
+        )
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -444,27 +429,10 @@ class Database:
 
     async def _ensure_audit_log_schema_postgresql(self) -> None:
         assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL DEFAULT '',
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    action TEXT NOT NULL,
-                    resource TEXT NOT NULL,
-                    ip_address TEXT NOT NULL,
-                    allowed BOOLEAN NOT NULL DEFAULT FALSE,
-                    timestamp TIMESTAMPTZ NOT NULL
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
-            )
+        await self._assert_postgresql_relations_exist(
+            ["audit_logs"],
+            context="audit log şeması",
+        )
 
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -657,187 +625,46 @@ class Database:
 
     async def _init_schema_postgresql(self) -> None:
         assert self._pg_pool is not None
-        queries = [
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT,
-                role TEXT NOT NULL DEFAULT 'user',
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS auth_tokens (
-                token TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                expires_at TIMESTAMPTZ NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS user_quotas (
-                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                daily_token_limit INTEGER NOT NULL DEFAULT 0,
-                daily_request_limit INTEGER NOT NULL DEFAULT 0
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS provider_usage_daily (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                provider TEXT NOT NULL,
-                usage_date DATE NOT NULL,
-                requests_used INTEGER NOT NULL DEFAULT 0,
-                tokens_used INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(user_id, provider, usage_date)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                title TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS messages (
-                id BIGSERIAL PRIMARY KEY,
-                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tokens_used INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
-            "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);",
-            """
-            CREATE TABLE IF NOT EXISTS access_policies (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                resource_type TEXT NOT NULL,
-                resource_id TEXT NOT NULL DEFAULT '*',
-                action TEXT NOT NULL,
-                effect TEXT NOT NULL DEFAULT 'allow',
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL,
-                UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action);",
-            """
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL DEFAULT '',
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                action TEXT NOT NULL,
-                resource TEXT NOT NULL,
-                ip_address TEXT NOT NULL,
-                allowed BOOLEAN NOT NULL DEFAULT FALSE,
-                timestamp TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);",
+        await self._assert_postgresql_relations_exist(
+            [
+                "users",
+                "auth_tokens",
+                "user_quotas",
+                "provider_usage_daily",
+                "sessions",
+                "messages",
+                "access_policies",
+                "audit_logs",
+                "prompt_registry",
+                "marketing_campaigns",
+                "content_assets",
+                "operation_checklists",
+                "coverage_tasks",
+                "coverage_findings",
+            ],
+            context="çekirdek PostgreSQL şeması",
+        )
 
-            """
-            CREATE TABLE IF NOT EXISTS prompt_registry (
-                id BIGSERIAL PRIMARY KEY,
-                role_name TEXT NOT NULL,
-                prompt_text TEXT NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                is_active BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL,
-                UNIQUE(role_name, version)
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);",
-            """
-            CREATE TABLE IF NOT EXISTS marketing_campaigns (
-                id BIGSERIAL PRIMARY KEY,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                name TEXT NOT NULL,
-                channel TEXT NOT NULL DEFAULT '',
-                objective TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'draft',
-                owner_user_id TEXT NOT NULL DEFAULT '',
-                budget DOUBLE PRECISION NOT NULL DEFAULT 0,
-                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status ON marketing_campaigns(tenant_id, status, updated_at);",
-            """
-            CREATE TABLE IF NOT EXISTS content_assets (
-                id BIGSERIAL PRIMARY KEY,
-                campaign_id BIGINT NOT NULL REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                asset_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                channel TEXT NOT NULL DEFAULT '',
-                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant ON content_assets(campaign_id, tenant_id, asset_type);",
-            """
-            CREATE TABLE IF NOT EXISTS operation_checklists (
-                id BIGSERIAL PRIMARY KEY,
-                campaign_id BIGINT REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                title TEXT NOT NULL,
-                items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-                status TEXT NOT NULL DEFAULT 'pending',
-                owner_user_id TEXT NOT NULL DEFAULT '',
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant ON operation_checklists(campaign_id, tenant_id, status);",
-            """
-            CREATE TABLE IF NOT EXISTS coverage_tasks (
-                id BIGSERIAL PRIMARY KEY,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                requester_role TEXT NOT NULL DEFAULT 'coverage',
-                command TEXT NOT NULL,
-                pytest_output TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'pending_review',
-                target_path TEXT NOT NULL DEFAULT '',
-                suggested_test_path TEXT NOT NULL DEFAULT '',
-                review_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status ON coverage_tasks(tenant_id, status, updated_at);",
-            """
-            CREATE TABLE IF NOT EXISTS coverage_findings (
-                id BIGSERIAL PRIMARY KEY,
-                task_id BIGINT NOT NULL REFERENCES coverage_tasks(id) ON DELETE CASCADE,
-                finding_type TEXT NOT NULL,
-                target_path TEXT NOT NULL DEFAULT '',
-                summary TEXT NOT NULL,
-                severity TEXT NOT NULL DEFAULT 'medium',
-                details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_coverage_findings_task ON coverage_findings(task_id, finding_type, severity);",
-        ]
+    async def _assert_postgresql_relations_exist(
+        self,
+        relation_names: list[str],
+        *,
+        context: str,
+    ) -> None:
+        assert self._pg_pool is not None
+        missing: list[str] = []
         async with self._pg_pool.acquire() as conn:
-            for q in queries:
-                await conn.execute(q)
+            for relation_name in relation_names:
+                exists = await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", relation_name)
+                if not bool(exists):
+                    missing.append(relation_name)
+
+        if missing:
+            joined = ", ".join(sorted(missing))
+            raise RuntimeError(
+                f"PostgreSQL {context} eksik: {joined}. "
+                "Şema yönetimi Alembic ile yapılır; lütfen 'alembic upgrade head' çalıştırın."
+            )
 
 
     async def ensure_default_prompt_registry(self) -> None:
@@ -1141,22 +968,10 @@ class Database:
 
     async def _ensure_schema_version_postgresql(self) -> None:
         assert self._pg_pool is not None
-        tbl = self._schema_version_table_quoted
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
-            )
-            current = await conn.fetchval(f"SELECT COALESCE(MAX(version), 0) FROM {tbl}")
-            current = int(current or 0)
-            if current >= self.target_schema_version:
-                return
-            for v in range(current + 1, self.target_schema_version + 1):
-                await conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",
-                    v,
-                    datetime.now(timezone.utc),
-                    f"baseline migration v{v}",
-                )
+        await self._assert_postgresql_relations_exist(
+            ["alembic_version"],
+            context="migrasyon metadata",
+        )
 
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
