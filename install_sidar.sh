@@ -993,9 +993,41 @@ ASOUNDRC
 memory=16GB
 swap=8GB
 WSLCFG
-            ok "WSL2: %UserProfile%/.wslconfig otomatik oluşturuldu ($wslconfig_path)."
+            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
         else
-            info "WSL2: .wslconfig zaten mevcut ($wslconfig_path)."
+            # Dosya var — eksik satırları ekle, mevcut değerlere dokunma
+            local changed=false
+
+            # [wsl2] bölümü yoksa dosyanın başına ekle
+            if ! grep -q '^\[wsl2\]' "$wslconfig_path" 2>/dev/null; then
+                sed -i '1s/^/[wsl2]\n/' "$wslconfig_path"
+                ok "WSL2: .wslconfig içine [wsl2] bölümü eklendi."
+                changed=true
+            fi
+
+            # memory= satırı yoksa ekle
+            if ! grep -q '^memory=' "$wslconfig_path" 2>/dev/null; then
+                sed -i '/^\[wsl2\]/a memory=16GB' "$wslconfig_path"
+                ok "WSL2: .wslconfig içine memory=16GB eklendi."
+                changed=true
+            else
+                local cur_mem
+                cur_mem=$(grep '^memory=' "$wslconfig_path" | head -1 | cut -d= -f2-)
+                info "WSL2: .wslconfig memory zaten ayarlı: ${cur_mem} (değiştirilmedi)."
+            fi
+
+            # swap= satırı yoksa ekle
+            if ! grep -q '^swap=' "$wslconfig_path" 2>/dev/null; then
+                sed -i '/^\[wsl2\]/a swap=8GB' "$wslconfig_path"
+                ok "WSL2: .wslconfig içine swap=8GB eklendi."
+                changed=true
+            else
+                local cur_swap
+                cur_swap=$(grep '^swap=' "$wslconfig_path" | head -1 | cut -d= -f2-)
+                info "WSL2: .wslconfig swap zaten ayarlı: ${cur_swap} (değiştirilmedi)."
+            fi
+
+            [[ "$changed" == false ]] && info "WSL2: .wslconfig zaten gerekli ayarları içeriyor ($wslconfig_path)."
         fi
     else
         info "WSL2: %UserProfile% yolu otomatik çözümlenemedi; .wslconfig dosyasını manuel oluşturun."
