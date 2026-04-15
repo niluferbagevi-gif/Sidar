@@ -1814,14 +1814,30 @@ run_migrations() {
         fi
 
         local psql_url
+        local extension_exists
         psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
 
         info "pgvector extension kontrol ediliyor..."
+        extension_exists="$(psql "$psql_url" -tAc "SELECT 1 FROM pg_extension WHERE extname='vector' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+        if [[ "$extension_exists" == "1" ]]; then
+            ok "pgvector extension hazır."
+            return
+        fi
+
         if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
             ok "pgvector extension hazır."
-        else
-            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
+            return
         fi
+
+        if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && -n "$DB_NAME" ]] && command -v sudo &>/dev/null; then
+            if sudo -u postgres psql -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+                ok "pgvector extension postgres yetkisi ile etkinleştirildi."
+                return
+            fi
+        fi
+
+        warn "pgvector kurulamadı. Muhtemel neden: DB kullanıcısında CREATE EXTENSION yetkisi yok."
+        warn "RAG pgvector backend çalışmayabilir. Çözüm: sudo -u postgres psql -d $DB_NAME -c \"CREATE EXTENSION IF NOT EXISTS vector;\""
     }
 
     setup_postgresql_local() {
