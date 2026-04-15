@@ -1028,15 +1028,14 @@ collect_api_keys_interactive() {
         esac
     }
 
-    _current_val() {
-        grep -E "^${1}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true
-    }
-
+    # Anahtarı .env'e yazar; boşsa sessizce atlar
     _write_key() {
         local key="$1"
-        local val="${2//[[:space:]]/}"
+        local val
+        # Satır sonu (\r\n) ve boşlukları temizle
+        val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
-        if grep -q "^${key}=" "$env_file"; then
+        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
             sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
@@ -1044,53 +1043,63 @@ collect_api_keys_interactive() {
         ok ".env: ${key} güncellendi."
     }
 
-    # Eksik anahtar var mı kontrol et
-    local any_missing=false
-    for key in "${KEY_ORDER[@]}"; do
-        [[ -z "$(_current_val "$key")" ]] && { any_missing=true; break; }
-    done
+    step "API Anahtarları Yapılandırması"
+    echo ""
 
-    if [[ "$any_missing" == false ]]; then
+    # ── Her anahtarın durumunu doğrudan inline kontrol et ─────────────────
+    # NOT: İç fonksiyonları $() subshell'inden çağırmak (eski _current_val yaklaşımı)
+    # set -u + yerel değişken miras sorununa yol açar; doğrudan inline kullanıyoruz.
+    local -a missing_keys=()
+    local _chk_val
+    for key in "${KEY_ORDER[@]}"; do
+        _chk_val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
+                   | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        if [[ -z "$_chk_val" ]]; then
+            missing_keys+=("$key")
+            info "  [ eksik  ] ${key}"
+        else
+            ok   "  [ mevcut ] ${key}"
+        fi
+    done
+    echo ""
+
+    if [[ ${#missing_keys[@]} -eq 0 ]]; then
         ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
         return
     fi
 
-    step "API Anahtarları Yapılandırması"
-    echo ""
-    info "Eksik API anahtarları tespit edildi."
+    info "${#missing_keys[@]} anahtar eksik."
     info "Kullanmak istediğiniz servislerin anahtarlarını girin; kullanmayacaklarınızı boş bırakın."
     echo ""
 
-    # ─── 1. Zenity GUI ──────────────────────────────────────────────────────
+    # ─── 1. Zenity GUI (WSLg / X11 ekranı varsa) ────────────────────────────
     local has_display=false
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] && has_display=true
 
-    if [[ "$has_display" == true ]]; then
-        # zenity yoksa küçük bir paketle kur
-        if ! command -v zenity &>/dev/null; then
-            info "Grafik pencere için zenity kuruluyor..."
-            sudo apt-get install -y zenity -qq >/dev/null 2>&1 || true
-        fi
+    if [[ "$has_display" == true ]] && ! command -v zenity &>/dev/null; then
+        info "Grafik pencere için zenity kuruluyor..."
+        sudo apt-get install -y zenity -qq >/dev/null 2>&1 || true
     fi
 
     if command -v zenity &>/dev/null && [[ "$has_display" == true ]]; then
         info "API anahtarı giriş penceresi açılıyor (zenity)..."
+        local -a z_args=(
+            "--title=Sidar AI — API Anahtarları"
+            "--text=Kullanmak istediğiniz servislerin API anahtarlarını girin.\nBoş bıraktıklarınız atlanır; sistem Ollama (yerel) ile çalışmaya devam eder."
+            "--separator=|"
+        )
+        local mk
+        for mk in "${missing_keys[@]}"; do
+            z_args+=("--add-entry=$(_key_label "$mk"):")
+        done
+
         local zenity_out
-        zenity_out=$(zenity --forms \
-            --title="Sidar AI — API Anahtarları" \
-            --text="Kullanmak istediğiniz servislerin API anahtarlarını girin.\nBoş bıraktıklarınız atlanır ve sistem Ollama (yerel) ile çalışmaya devam eder." \
-            --separator="|" \
-            --add-entry="OpenAI API Key:" \
-            --add-entry="Google Gemini API Key:" \
-            --add-entry="Anthropic API Key:" \
-            --add-entry="GitHub Token:" \
-            --add-entry="HuggingFace Token:" \
-            2>/dev/null) || true
+        zenity_out=$(zenity --forms "${z_args[@]}" 2>/dev/null) || true
 
         if [[ -n "$zenity_out" ]]; then
             IFS='|' read -ra _vals <<< "$zenity_out"
-            for i in "${!KEY_ORDER[@]}"; do
-                _write_key "${KEY_ORDER[$i]}" "${_vals[$i]:-}"
+            for i in "${!missing_keys[@]}"; do
+                _write_key "${missing_keys[$i]}" "${_vals[$i]:-}"
             done
             ok "API anahtarları kaydedildi, kurulum devam ediyor."
         else
@@ -1100,38 +1109,34 @@ collect_api_keys_interactive() {
         return
     fi
 
-    # ─── 2. Whiptail TUI ────────────────────────────────────────────────────
+    # ─── 2. Whiptail TUI (terminal içi diyalog) ─────────────────────────────
     if command -v whiptail &>/dev/null; then
         info "Terminal tabanlı arayüz açılıyor (whiptail)..."
-        for key in "${KEY_ORDER[@]}"; do
-            if [[ -z "$(_current_val "$key")" ]]; then
-                local lbl
-                lbl="$(_key_label "$key")"
-                local input=""
-                input=$(whiptail \
-                    --title "Sidar AI — API Anahtarları" \
-                    --inputbox "${lbl}\n\nBoş bırakmak için doğrudan Enter'a basın." \
-                    11 72 "" \
-                    3>&1 1>&2 2>&3) || true
-                _write_key "$key" "$input"
-            fi
+        local mk lbl input
+        for mk in "${missing_keys[@]}"; do
+            lbl="$(_key_label "$mk")"
+            input=""
+            input=$(whiptail \
+                --title "Sidar AI — API Anahtarları" \
+                --inputbox "${lbl}\n\nBoş bırakmak için doğrudan Enter'a basın." \
+                11 72 "" \
+                3>&1 1>&2 2>&3) || true
+            _write_key "$mk" "$input"
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
         return
     fi
 
-    # ─── 3. Basit read (her zaman çalışır) ──────────────────────────────────
+    # ─── 3. Basit read (her ortamda çalışır, fallback) ──────────────────────
     info "API anahtarlarını girin (boş bırakmak için doğrudan Enter'a basın):"
     echo ""
-    for key in "${KEY_ORDER[@]}"; do
-        if [[ -z "$(_current_val "$key")" ]]; then
-            local lbl
-            lbl="$(_key_label "$key")"
-            printf "  %-42s : " "$lbl"
-            local input=""
-            read -r input || true
-            _write_key "$key" "$input"
-        fi
+    local mk lbl input
+    for mk in "${missing_keys[@]}"; do
+        lbl="$(_key_label "$mk")"
+        printf "  %-42s : " "$lbl"
+        input=""
+        read -r input || true
+        _write_key "$mk" "$input"
     done
     echo ""
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
