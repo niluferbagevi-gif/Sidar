@@ -798,11 +798,17 @@ install_playwright_browsers() {
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         info "Chromium ve Firefox motorları kuruluyor..."
-        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox; then
+        local _pw_log; _pw_log=$(mktemp)
+        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
+            # Zaten kurulu paketlerin "is already the newest version" satırlarını filtrele
+            grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                "$_pw_log" || true
             ok "Playwright motorları kuruldu (chromium, firefox)."
         else
-            warn "Playwright motor kurulumu başarısız oldu veya atlandı. Manuel komut: python -m playwright install --with-deps chromium firefox"
+            cat "$_pw_log" >&2
+            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install --with-deps chromium firefox"
         fi
+        rm -f "$_pw_log"
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
