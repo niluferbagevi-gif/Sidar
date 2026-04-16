@@ -27,6 +27,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sidar_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
     profiles: ["cpu"]
@@ -49,7 +58,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
 
@@ -102,11 +111,12 @@ services:
 
     depends_on:
       - redis
+      - ollama
 
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - USE_GPU=true
@@ -158,11 +168,12 @@ services:
       - redis
       - postgres
       - jaeger
+      - ollama
 
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - WEB_HOST=0.0.0.0
@@ -219,11 +230,12 @@ services:
       - redis
       - postgres
       - jaeger
+      - ollama
 
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - WEB_HOST=0.0.0.0
@@ -288,6 +300,7 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  ollama_data:
   sidar_data_prod:
   sidar_logs_prod:
   sidar_temp_prod:

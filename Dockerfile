@@ -107,11 +107,10 @@ USER sidaruser
 # Web arayüzü portu
 EXPOSE 7860
 
-# Sağlık kontrolü — çalışma moduna göre deterministik kontrol yapar.
-# Web modu: PID 1 komutu web_server.py ise /status endpoint'i zorunlu olarak doğrulanır.
-# CLI modu: PID 1'in main.py/cli.py olması beklenir; rastgele python süreçleri kabul edilmez.
+# Sağlık kontrolü — uygulama içi health endpoint'i kullanır.
+# /status endpoint'i DB/Redis gibi iç bağımlılıklarını 200/503 ile raporlamalıdır.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD sh -c 'if ps -p 1 -o args= | grep -Eq "python(3)? .*web_server.py"; then curl -fsS http://localhost:7860/status > /dev/null; else ps -p 1 -o args= | grep -Eq "python(3)? .* (main.py|cli.py)( |$)"; fi'
+  CMD curl -fsS http://localhost:7860/status > /dev/null || exit 1
 
 # Varsayılan başlatma (CLI)
 # Web için (ENTRYPOINT argümanı olarak): docker run ... --quick web --host 0.0.0.0 --port 7860
