@@ -59,7 +59,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     wget \
-    software-properties-common \
     zstd \
     docker.io \
     portaudio19-dev \
