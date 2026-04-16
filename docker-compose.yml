@@ -217,6 +217,8 @@ services:
 
     depends_on:
       - redis
+      - postgres
+      - jaeger
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -234,6 +236,10 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
+      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
 
     env_file:
       - .env
@@ -263,8 +269,6 @@ services:
       - "9090:9090"
     volumes:
       - ./docker_setup/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    depends_on:
-      - sidar-web
 
   grafana:
     image: grafana/grafana:latest
