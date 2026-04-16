@@ -1921,21 +1921,31 @@ PY
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
-        CUDA_OK=$(python -c "
+        if [[ "$USE_CONDA" == true ]]; then
+            if "${CONDA_RUN[@]}" python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
+                CUDA_OK=$("${CONDA_RUN[@]}" python -c "
 import torch
 avail = torch.cuda.is_available()
 ver   = torch.version.cuda or 'N/A'
 dev   = torch.cuda.get_device_name(0) if avail else 'N/A'
 print(f'available={avail} cuda={ver} device={dev}')
-" 2>/dev/null || echo "available=false cuda=N/A device=N/A")
+" 2>/dev/null || echo "available=true cuda=N/A device=N/A")
+                TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
+                TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
+                ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
+            else
+                warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
+                info "GPU wheel için PyTorch yeniden kuruluyor (CUDA 12.4 arayüzü ile)..."
+                "${CONDA_RUN[@]}" uv pip install torch torchvision torchaudio --reinstall --extra-index-url https://download.pytorch.org/whl/cu124
 
-        if echo "$CUDA_OK" | grep -q "available=True"; then
-            TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
-            TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
-            ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
+                if "${CONDA_RUN[@]}" python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
+                    ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
+                else
+                    fail "PyTorch CUDA kurulumu yine başarısız oldu. Lütfen manuel kontrol edin."
+                fi
+            fi
         else
-            warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-            info "GPU wheel için: uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu124"
+            info "Conda kullanılmıyor, PyTorch CUDA kontrolü atlanıyor."
         fi
     fi
 }
