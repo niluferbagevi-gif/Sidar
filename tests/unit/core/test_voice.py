@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import sys
 import types
+import base64
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from core.voice import (
+    BrowserAudioPacket,
     VoicePipeline,
+    WebRTCAudioIngress,
     _BaseTTSAdapter,
     _MockTTSAdapter,
     _Pyttsx3Adapter,
@@ -613,3 +616,36 @@ async def test_synthesize_text_whitespace_only():
     p = _make_pipeline(provider="mock")
     result = await p.synthesize_text("   ")
     assert result["success"] is False
+
+
+def test_webrtc_audio_ingress_decode_packet_success():
+    ingress = WebRTCAudioIngress()
+    packet = ingress.decode_packet(
+        {
+            "audio_chunk": base64.b64encode(b"abc123").decode("ascii"),
+            "mime_type": "audio/webm",
+            "sequence": 5,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "duration_ms": 120,
+            "session_id": "s1",
+            "client_id": "c1",
+        }
+    )
+    assert isinstance(packet, BrowserAudioPacket)
+    assert packet.audio_bytes == b"abc123"
+    assert packet.sequence == 5
+    assert packet.mime_type == "audio/webm"
+
+
+def test_webrtc_audio_ingress_decode_packet_rejects_invalid_base64():
+    ingress = WebRTCAudioIngress()
+    with pytest.raises(ValueError, match="base64"):
+        ingress.decode_packet({"audio_chunk": "***not-base64***", "mime_type": "audio/webm"})
+
+
+def test_webrtc_audio_ingress_decode_packet_rejects_unsupported_mime():
+    ingress = WebRTCAudioIngress()
+    payload = {"audio_chunk": base64.b64encode(b"raw").decode("ascii"), "mime_type": "application/octet-stream"}
+    with pytest.raises(ValueError, match="Desteklenmeyen"):
+        ingress.decode_packet(payload)

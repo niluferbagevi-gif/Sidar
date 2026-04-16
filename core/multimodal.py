@@ -500,6 +500,45 @@ async def transcribe_audio(
         }
 
 
+async def transcribe_webrtc_audio_chunk(
+    audio_bytes: bytes,
+    *,
+    mime_type: str = "audio/webm",
+    provider: str = "whisper",
+    model: str = "base",
+    language: str | None = None,
+    prompt: str = "",
+) -> dict[str, Any]:
+    """WebRTC üzerinden gelen tarayıcı ses parçasını STT'ye uygun dosyaya dönüştürüp çözer."""
+    payload = bytes(audio_bytes or b"")
+    if not payload:
+        return {
+            "success": False,
+            "provider": (provider or "whisper").strip().lower(),
+            "model": model,
+            "text": "",
+            "segments": [],
+            "language": language or "",
+            "reason": "Boş WebRTC ses paketi.",
+        }
+
+    suffix = _guess_suffix(mime_type, ".webm")
+    with tempfile.TemporaryDirectory(prefix="sidar-webrtc-audio-") as tmpdir:
+        source = Path(tmpdir) / f"chunk{suffix}"
+        source.write_bytes(payload)
+        result = await transcribe_audio(
+            source,
+            provider=provider,
+            model=model,
+            language=language,
+            prompt=prompt,
+        )
+    result["transport"] = "webrtc"
+    result["mime_type"] = (mime_type or "").strip().lower()
+    result["bytes"] = len(payload)
+    return result
+
+
 def build_multimodal_context(
     *,
     media_kind: str,

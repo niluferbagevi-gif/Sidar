@@ -7,6 +7,8 @@ için kullanılacak ortak yardımcı sınıfları içerir.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import re
 import tempfile
 from dataclasses import dataclass, field
@@ -308,3 +310,80 @@ class VoicePipeline:
                 "reason": "Boş metin için TTS üretilmedi.",
             }
         return await self.adapter.synthesize(normalized, voice=self.voice)
+
+
+@dataclass(frozen=True)
+class BrowserAudioPacket:
+    """web_ui_react/WebRTC üzerinden gelen tarayıcı ses paketi."""
+
+    audio_bytes: bytes
+    mime_type: str
+    sequence: int = 0
+    sample_rate_hz: int = 48000
+    channels: int = 1
+    duration_ms: int = 0
+    event: str = "media_chunk"
+    transport: str = "webrtc"
+    session_id: str = ""
+    client_id: str = ""
+
+
+class WebRTCAudioIngress:
+    """Tarayıcı tabanlı WebRTC ses girişini OS bağımsız normalize eder."""
+
+    SUPPORTED_MIME_TYPES = {
+        "audio/webm",
+        "audio/ogg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/mp3",
+    }
+
+    def __init__(self, config: Any = None) -> None:
+        self.max_chunk_bytes = max(
+            2048,
+            int(getattr(config, "VOICE_WEBRTC_MAX_CHUNK_BYTES", 2 * 1024 * 1024) or (2 * 1024 * 1024)),
+        )
+        self.default_mime_type = str(getattr(config, "VOICE_WEBRTC_DEFAULT_MIME", "audio/webm") or "audio/webm").strip().lower()
+        self.default_sample_rate_hz = max(8000, int(getattr(config, "VOICE_WEBRTC_SAMPLE_RATE_HZ", 48000) or 48000))
+        self.default_channels = max(1, int(getattr(config, "VOICE_WEBRTC_CHANNELS", 1) or 1))
+
+    def decode_packet(self, payload: dict[str, Any]) -> BrowserAudioPacket:
+        raw_bytes = self._decode_audio_bytes(payload)
+        if not raw_bytes:
+            raise ValueError("WebRTC paketi boş ses verisi içeriyor.")
+        if len(raw_bytes) > self.max_chunk_bytes:
+            raise ValueError(f"WebRTC ses paketi limiti aşıldı: {len(raw_bytes)} > {self.max_chunk_bytes}")
+
+        mime_type = str(payload.get("mime_type") or self.default_mime_type).strip().lower()
+        if mime_type not in self.SUPPORTED_MIME_TYPES:
+            raise ValueError(f"Desteklenmeyen WebRTC ses formatı: {mime_type}")
+
+        return BrowserAudioPacket(
+            audio_bytes=raw_bytes,
+            mime_type=mime_type,
+            sequence=max(0, int(payload.get("sequence", 0) or 0)),
+            sample_rate_hz=max(8000, int(payload.get("sample_rate_hz", self.default_sample_rate_hz) or self.default_sample_rate_hz)),
+            channels=max(1, int(payload.get("channels", self.default_channels) or self.default_channels)),
+            duration_ms=max(0, int(payload.get("duration_ms", 0) or 0)),
+            event=str(payload.get("event") or "media_chunk").strip().lower() or "media_chunk",
+            transport=str(payload.get("transport") or "webrtc").strip().lower() or "webrtc",
+            session_id=str(payload.get("session_id") or "").strip(),
+            client_id=str(payload.get("client_id") or "").strip(),
+        )
+
+    @staticmethod
+    def _decode_audio_bytes(payload: dict[str, Any]) -> bytes:
+        direct = payload.get("audio_bytes")
+        if isinstance(direct, (bytes, bytearray)):
+            return bytes(direct)
+
+        encoded = payload.get("audio_chunk") or payload.get("audio_b64") or payload.get("data")
+        if not isinstance(encoded, str) or not encoded.strip():
+            return b""
+        try:
+            return base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("WebRTC ses paketi base64 decode edilemedi.") from exc

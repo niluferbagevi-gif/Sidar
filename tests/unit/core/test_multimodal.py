@@ -737,3 +737,36 @@ def test_pipeline_remote_ffmpeg_materialize_success_skips_download_fallback(monk
     result = run(pipeline.analyze_media_source(media_source="https://example.com/video.mp4"))
     assert result["success"] is True
     assert result["download"]["resolved_url"] == "https://cdn.example.com/resolved.mp4"
+
+
+def test_transcribe_webrtc_audio_chunk_empty_bytes_returns_failure():
+    result = run(multimodal.transcribe_webrtc_audio_chunk(b"", mime_type="audio/webm"))
+    assert result["success"] is False
+    assert "Boş WebRTC ses paketi" in result["reason"]
+
+
+def test_transcribe_webrtc_audio_chunk_uses_temp_file_and_adds_transport(monkeypatch):
+    captured = {}
+
+    async def fake_transcribe(path, **kwargs):
+        captured["path"] = Path(path)
+        captured["kwargs"] = kwargs
+        return {"success": True, "provider": "whisper", "model": "tiny", "text": "ok", "segments": []}
+
+    monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
+    payload = b"webrtc-blob"
+    result = run(
+        multimodal.transcribe_webrtc_audio_chunk(
+            payload,
+            mime_type="audio/webm",
+            model="tiny",
+            language="tr",
+            prompt="selam",
+        )
+    )
+    assert result["success"] is True
+    assert result["transport"] == "webrtc"
+    assert result["mime_type"] == "audio/webm"
+    assert result["bytes"] == len(payload)
+    assert captured["path"].suffix == ".webm"
+    assert captured["kwargs"]["language"] == "tr"
