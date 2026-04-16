@@ -2133,11 +2133,6 @@ print_summary() {
 launch_docker_services() {
     local docker_compose_cmd=()
 
-    if command -v docker &>/dev/null && ! ensure_docker_daemon_running; then
-        warn "Docker daemon çalışmıyor; servisler otomatik başlatılamıyor."
-        return
-    fi
-
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
     elif command -v docker-compose &>/dev/null; then
@@ -2151,6 +2146,41 @@ launch_docker_services() {
     read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
     case "${start_docker:-E}" in
         [EeYy]*)
+            echo "── Docker Servis Kontrolü ──"
+            if ! docker info > /dev/null 2>&1; then
+                echo "⚠️ Docker motoru şu anda çalışmıyor."
+                echo "ℹ️ Docker başlatılmaya çalışılıyor..."
+
+                # WSL2 / Linux Native kontrolü
+                if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null; then
+                    echo "WSL ortamı algılandı. Service üzerinden başlatılıyor..."
+                    if command -v sudo &>/dev/null; then
+                        sudo service docker start
+                    else
+                        service docker start
+                    fi
+                else
+                    echo "Linux ortamı algılandı. Systemctl üzerinden başlatılıyor..."
+                    if command -v sudo &>/dev/null; then
+                        sudo systemctl start docker
+                    else
+                        systemctl start docker
+                    fi
+                fi
+
+                # Docker'ın ayağa kalkması için biraz bekle
+                sleep 5
+
+                if ! docker info > /dev/null 2>&1; then
+                    echo "❌ Docker başlatılamadı! Lütfen Docker Desktop'ı veya Docker servisini manuel olarak başlatın."
+                    exit 1
+                else
+                    echo "✅ Docker başarıyla başlatıldı."
+                fi
+            else
+                echo "✅ Docker motoru zaten çalışıyor."
+            fi
+
             info "Docker Compose servisleri başlatılıyor..."
             if "${docker_compose_cmd[@]}" up -d; then
                 ok "Docker servisleri başarıyla başlatıldı."
