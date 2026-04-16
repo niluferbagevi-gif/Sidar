@@ -39,6 +39,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=7860 \
     PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy \
     ACCESS_LEVEL=sandbox \
     USE_GPU=${GPU_ENABLED} \
     MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY} \
@@ -71,15 +72,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
 # GPU build: --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-ENV TORCH_INDEX_URL=${TORCH_INDEX_URL}
+ENV TORCH_INDEX_URL=${TORCH_INDEX_URL} \
+    UV_EXTRA_INDEX_URL=${TORCH_INDEX_URL} \
+    PATH="/app/.venv/bin:$PATH"
 
-# Bağımlılık Yönetimi — requirements.txt doğrudan kullanılır
-# GPU torch wheel'i TORCH_INDEX_URL üzerinden ek index olarak eklenir.
-COPY requirements.txt .
-RUN python3 -m pip install --upgrade "pip>=26.0.1" setuptools wheel && \
-    pip install \
-        --extra-index-url ${TORCH_INDEX_URL} \
-        -r requirements.txt
+# Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
 # Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .
@@ -93,6 +93,9 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
 
 # Uygulama kodlarını kopyala
 COPY . .
+
+# Proje paketini mevcut lock dosyasına göre ortama kur
+RUN uv sync --frozen --no-dev
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
 RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
