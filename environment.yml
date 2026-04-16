@@ -21,14 +21,15 @@ dependencies:
   # pip wheelinin derlenmesi gerekmez.
   - portaudio
 
-  # ── pip ile kurulan paketler ──────────────────────────────────────────────
+  # ── uv paket yöneticisi (conda-forge) ────────────────────────────────────
+  # conda-forge kanalından conda native olarak kurulur; pip subprocess
+  # oluşturulmaz, geçici condaenv.*.requirements.txt dosyası üretilmez.
   # Paket yönetimi uv (requirements.txt) üzerinden yapılır.
   # GPU torch desteği için:
   #   uv pip install torch>=2.4.1 torchvision --extra-index-url https://download.pytorch.org/whl/cu130
   # Tüm bağımlılıklar için:
   #   uv pip install -r requirements.txt
-  - pip:
-      - uv>=0.5.0
+  - uv>=0.5.0
 
 # ── Kurulum talimatları (WSL2 / Ubuntu / Conda) ───────────────────────────────
 #
