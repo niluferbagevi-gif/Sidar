@@ -88,6 +88,7 @@ class _NullSpan:
 
 class SupervisorAgent(BaseAgent):
     MAX_QA_RETRIES = 3
+    MAX_TURNS = 10
     """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
 
     SYSTEM_PROMPT = "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."
@@ -182,6 +183,9 @@ class SupervisorAgent(BaseAgent):
     def _max_qa_retries(self) -> int:
         return int(getattr(getattr(self, "cfg", None), "MAX_QA_RETRIES", self.MAX_QA_RETRIES))
 
+    def _max_turns(self) -> int:
+        return max(1, int(getattr(getattr(self, "cfg", None), "MAX_TURNS", self.MAX_TURNS) or self.MAX_TURNS))
+
     @staticmethod
     def _validate_p2p_request(request: DelegationRequest) -> Optional[str]:
         missing_fields: list[str] = []
@@ -266,12 +270,20 @@ class SupervisorAgent(BaseAgent):
         self.memory_hub.add_role_note(receiver, str(summary))
         return TaskResult(task_id=task_id, status=status, summary=summary)
 
-    async def _route_p2p(self, request: DelegationRequest, *, parent_task_id: Optional[str] = None, max_hops: int = 4) -> TaskResult:
+    async def _route_p2p(
+        self,
+        request: DelegationRequest,
+        *,
+        parent_task_id: Optional[str] = None,
+        max_hops: int = 4,
+        max_turns: Optional[int] = None,
+    ) -> TaskResult:
         """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
+        turn_limit = max(1, int(max_turns if max_turns is not None else self._max_turns()))
         hop = 0
         qa_retries = 0
         current = request
-        while hop < max_hops:
+        while hop < max_hops and hop < turn_limit:
             hop += 1
             missing = self._validate_p2p_request(current)
             if missing:
@@ -313,46 +325,68 @@ class SupervisorAgent(BaseAgent):
                 current = result.summary.bumped() if hasattr(result.summary, "bumped") else result.summary
                 continue
             return result
-        return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary="[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı.")
+        stop_reason = (
+            f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({turn_limit})."
+            if hop >= turn_limit
+            else "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
+        )
+        return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary=stop_reason)
 
     async def run_task(self, task_prompt: str) -> str:
         await self.events.publish("supervisor", "Görev analiz ediliyor...")
         intent = self._intent(task_prompt)
         self.memory_hub.add_global(task_prompt)
+        max_turns = self._max_turns()
+        turn_count = 0
+
+        def _consume_turn() -> bool:
+            nonlocal turn_count
+            turn_count += 1
+            return turn_count <= max_turns
 
         if intent == "research":
             await self.events.publish("supervisor", "Researcher ajanına yönlendiriliyor...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("researcher", task_prompt, "research")
             if is_delegation_request(result.summary):
-                result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
+                result = await self._route_p2p(result.summary, parent_task_id=result.task_id, max_turns=max_turns)
             return str(result.summary)
 
         if intent == "review":
             await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("reviewer", task_prompt, "review")
             if is_delegation_request(result.summary):
-                result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
+                result = await self._route_p2p(result.summary, parent_task_id=result.task_id, max_turns=max_turns)
             return str(result.summary)
 
         if intent == "marketing":
             await self.events.publish("supervisor", "Poyraz ajanına yönlendiriliyor...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("poyraz", task_prompt, "marketing")
             if is_delegation_request(result.summary):
-                result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
+                result = await self._route_p2p(result.summary, parent_task_id=result.task_id, max_turns=max_turns)
             return str(result.summary)
 
         if intent == "coverage":
             await self.events.publish("supervisor", "Coverage ajanına yönlendiriliyor...")
             receiver = "coverage" if self.registry.has("coverage") else "qa"
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate(receiver, task_prompt, "coverage")
             if is_delegation_request(result.summary):
-                result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
+                result = await self._route_p2p(result.summary, parent_task_id=result.task_id, max_turns=max_turns)
             return str(result.summary)
 
         await self.events.publish("supervisor", "Coder ajanı kod üzerinde çalışıyor...")
+        if not _consume_turn():
+            return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
         code_result = await self._delegate("coder", task_prompt, "code")
         if is_delegation_request(code_result.summary):
-            code_result = await self._route_p2p(code_result.summary, parent_task_id=code_result.task_id)
+            code_result = await self._route_p2p(code_result.summary, parent_task_id=code_result.task_id, max_turns=max_turns)
 
         code_summary = str(code_result.summary)
         if bool(getattr(getattr(self, "cfg", None), "CLI_FAST_MODE", False)):
@@ -364,9 +398,11 @@ class SupervisorAgent(BaseAgent):
 
         review_goal = f"review_code|{code_summary[:800]}"
         await self.events.publish("supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor...")
+        if not _consume_turn():
+            return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
         review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)
         if is_delegation_request(review_result.summary):
-            review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
+            review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id, max_turns=max_turns)
 
         review_summary = str(review_result.summary)
         retries = 0
@@ -374,6 +410,12 @@ class SupervisorAgent(BaseAgent):
 
         while self._review_requires_revision(review_summary):
             retries += 1
+            if turn_count >= max_turns:
+                return (
+                    f"{latest_code_summary}\n\n---\n"
+                    f"Reviewer QA Özeti (circuit breaker):\n{review_summary}\n"
+                    f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                )
             if retries > self._max_qa_retries():
                 return (
                     f"{latest_code_summary}\n\n---\n"
@@ -387,12 +429,16 @@ class SupervisorAgent(BaseAgent):
                 f"Reviewer notu: {review_summary[:800]}"
             )
             await self.events.publish("supervisor", f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self._max_qa_retries()})...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             next_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
             if is_delegation_request(next_code.summary):
-                next_code = await self._route_p2p(next_code.summary, parent_task_id=next_code.task_id)
+                next_code = await self._route_p2p(next_code.summary, parent_task_id=next_code.task_id, max_turns=max_turns)
 
             latest_code_summary = str(next_code.summary)
             await self.events.publish("supervisor", "Reviewer kontrolü tekrar çalıştırılıyor...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             review_result = await self._delegate(
                 "reviewer",
                 f"review_code|{latest_code_summary[:800]}",
@@ -400,7 +446,7 @@ class SupervisorAgent(BaseAgent):
                 parent_task_id=next_code.task_id,
             )
             if is_delegation_request(review_result.summary):
-                review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
+                review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id, max_turns=max_turns)
             review_summary = str(review_result.summary)
 
         suffix = f" ({retries + 1}. tur)" if retries else ""
