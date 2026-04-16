@@ -2278,8 +2278,8 @@ main() {
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
-    launch_docker_services
     print_summary
+    launch_docker_services
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
 }
