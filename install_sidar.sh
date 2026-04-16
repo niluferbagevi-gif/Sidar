@@ -288,79 +288,22 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libpq-dev postgresql-client
 
-        if [[ "$DOCKER_ONLY" == true ]]; then
-            info "--docker-only aktif: postgresql/redis-server host paketleri atlandı."
-        else
-            info "Host PostgreSQL ve Redis sunucuları kuruluyor..."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
-            info "pgvector eklentisi (PostgreSQL) kuruluyor..."
-            if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16-pgvector; then
-                ok "pgvector paketi kuruldu: postgresql-16-pgvector"
-            elif sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-pgvector; then
-                ok "pgvector paketi kuruldu: postgresql-pgvector"
-            else
-                warn "pgvector apt paketi kurulamadı. Gerekirse manuel kurulum yapın."
-            fi
-
-            info "Yerel servisler için PostgreSQL ve Redis servisleri etkinleştirilmeye çalışılıyor..."
-            # WSL2'de systemd çalışmaz; service komutuyla başlatılır.
-            # systemd varsa (native Linux) systemctl kullan.
-            _start_service() {
-                local svc="$1"
-                if pidof systemd >/dev/null 2>&1 || [ "$(cat /proc/1/comm 2>/dev/null)" = "systemd" ]; then
-                    sudo systemctl enable "$svc" >/dev/null 2>&1 || true
-                    sudo systemctl start  "$svc" >/dev/null 2>&1 || true
-                else
-                    sudo service "$svc" start >/dev/null 2>&1 || true
-                fi
-            }
-
-            _check_service() {
-                local svc="$1"
-                if pidof systemd >/dev/null 2>&1 || [ "$(cat /proc/1/comm 2>/dev/null)" = "systemd" ]; then
-                    systemctl is-active --quiet "$svc" 2>/dev/null
-                else
-                    sudo service "$svc" status >/dev/null 2>&1
-                fi
-            }
-
-            _start_service postgresql
-            _start_service redis-server
-
-            if _check_service postgresql; then
-                ok "PostgreSQL servisi çalışıyor."
-            else
-                warn "PostgreSQL başlatılamadı. Manuel başlatmak için: sudo service postgresql start"
-            fi
-
-            if _check_service redis-server; then
-                ok "Redis servisi çalışıyor."
-            else
-                warn "Redis başlatılamadı. Manuel başlatmak için: sudo service redis-server start"
-            fi
-        fi
+        info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
+        info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
         ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
         sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
-        if [[ "$DOCKER_ONLY" == true ]]; then
-            info "--docker-only aktif: postgresql-server ve redis host paketleri atlandı."
-        else
-            sudo dnf install -y postgresql-server redis
-        fi
+        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
     elif command -v brew &>/dev/null; then
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
             curl wget git zstd node@20 ffmpeg portaudio \
             postgresql@16 || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
-        if [[ "$DOCKER_ONLY" == true ]]; then
-            info "--docker-only aktif: redis host paketi kurulumu atlandı."
-        else
-            brew install redis || warn "redis kurulamadı; eksikleri manuel tamamlayın."
-        fi
+        info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
 
         if brew list node@20 &>/dev/null; then
             info "Node.js 20 için brew link işlemi deneniyor..."
@@ -368,15 +311,7 @@ install_system_dependencies() {
             ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         fi
 
-        if [[ "$DOCKER_ONLY" == true ]]; then
-            info "--docker-only aktif: brew services ile PostgreSQL/Redis başlatma atlandı."
-        else
-            info "PostgreSQL ve Redis servisleri brew services ile başlatılmaya çalışılıyor..."
-            brew services start postgresql@16 >/dev/null 2>&1 || \
-                warn "postgresql@16 servisi başlatılamadı. Manuel başlatın: brew services start postgresql@16"
-            brew services start redis >/dev/null 2>&1 || \
-                warn "redis servisi başlatılamadı. Manuel başlatın: brew services start redis"
-        fi
+        info "brew services ile host PostgreSQL/Redis başlatma adımı kaldırıldı (Docker Compose tercih ediliyor)."
 
         ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
     else
