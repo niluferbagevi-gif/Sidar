@@ -39,6 +39,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=7860 \
     PIP_NO_CACHE_DIR=1 \
+    UV_PYTHON=3.11 \
     UV_LINK_MODE=copy \
     ACCESS_LEVEL=sandbox \
     USE_GPU=${GPU_ENABLED} \
@@ -66,6 +67,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     alsa-utils \
     v4l-utils \
     ffmpeg \
+    cargo \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
