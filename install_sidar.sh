@@ -2184,6 +2184,36 @@ print_summary() {
     echo ""
 }
 
+# ── Docker Servislerini Başlatma ──────────────────────────────────────────────
+launch_docker_services() {
+    local docker_compose_cmd=()
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        warn "Sistemde Docker veya Docker Compose bulunamadı, servisler otomatik başlatılamıyor."
+        return
+    fi
+
+    echo ""
+    read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
+    case "${start_docker:-E}" in
+        [EeYy]*)
+            info "Docker Compose servisleri başlatılıyor..."
+            if "${docker_compose_cmd[@]}" up -d; then
+                ok "Docker servisleri başarıyla başlatıldı."
+            else
+                warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+            fi
+            ;;
+        *)
+            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: docker compose up -d)"
+            ;;
+    esac
+}
+
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
     if command -v code &>/dev/null; then
@@ -2248,6 +2278,7 @@ main() {
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
+    launch_docker_services
     print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
