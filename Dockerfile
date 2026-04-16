@@ -76,12 +76,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ENV TORCH_INDEX_URL=${TORCH_INDEX_URL} \
     UV_EXTRA_INDEX_URL=${TORCH_INDEX_URL} \
+    UV_INDEX_STRATEGY=unsafe-best-match \
     PATH="/app/.venv/bin:$PATH"
 
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --index-strategy unsafe-best-match
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
 # Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .
@@ -97,7 +98,7 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
 COPY . .
 
 # Proje paketini mevcut lock dosyasına göre ortama kur
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --index-strategy unsafe-best-match
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
 RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
