@@ -2132,32 +2132,67 @@ print_summary() {
     echo ""
 }
 
-# ── Docker Servislerini Başlatma ──────────────────────────────────────────────
-launch_docker_services() {
-    local docker_compose_cmd=()
+# ── Arka Plan Servislerini Başlatma ──────────────────────────────────────────
+start_background_infrastructure() {
+    step "Geliştirme Ortamı Altyapısının Hazırlanması"
 
+    # 1) Ollama (sessiz ve otomatik)
+    if command -v ollama &>/dev/null; then
+        if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+            ok "Ollama API servisi halihazırda çalışıyor."
+        else
+            info "Ollama servisi çalışmıyor. Arka planda uyandırılıyor..."
+            nohup ollama serve >/dev/null 2>&1 &
+            sleep 3
+            if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+                ok "Ollama servisi arka planda başlatıldı."
+            else
+                warn "Ollama servisi başlatıldı ancak API henüz doğrulanamadı (http://localhost:11434)."
+            fi
+        fi
+    fi
+
+    # 2) Docker Compose altyapısı (PostgreSQL + Redis)
+    local docker_compose_cmd=()
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
     elif command -v docker-compose &>/dev/null; then
         docker_compose_cmd=(docker-compose)
     else
-        warn "Sistemde Docker veya Docker Compose bulunamadı, servisler otomatik başlatılamıyor."
+        warn "Sistemde Docker veya Docker Compose bulunamadı, altyapı servisleri otomatik başlatılamıyor."
         return
     fi
 
     echo ""
-    read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
-    case "${start_docker:-E}" in
+    read -r -p "Veritabanı ve Cache (PostgreSQL, Redis) Docker ile başlatılsın mı? [E/h] " start_base
+    case "${start_base:-E}" in
         [EeYy]*)
-            info "Docker Compose servisleri başlatılıyor..."
+            info "Temel altyapı servisleri başlatılıyor..."
             if "${docker_compose_cmd[@]}" up -d; then
-                ok "Docker servisleri başarıyla başlatıldı."
+                ok "PostgreSQL ve Redis servisleri hazır."
             else
-                warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                warn "Temel Docker servisleri başlatılamadı. Port çakışması veya Docker daemon kapalı olabilir."
             fi
             ;;
         *)
-            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: docker compose up -d)"
+            warn "Temel servisler atlandı. (Projenin çalışması için manuel başlatmanız gerekebilir)"
+            ;;
+    esac
+
+    # 3) Telemetry servisleri (opsiyonel)
+    echo ""
+    read -r -p "İzleme servisleri (Grafana, Jaeger, Prometheus) başlatılsın mı? [e/H] " start_telemetry
+    case "${start_telemetry:-H}" in
+        [EeYy]*)
+            info "Telemetry servisleri başlatılıyor..."
+            if "${docker_compose_cmd[@]}" up -d jaeger prometheus grafana; then
+                ok "Gözlemlenebilirlik servisleri hazır."
+            else
+                warn "Telemetry servisleri başlatılamadı. docker compose loglarını kontrol edin."
+            fi
+            ;;
+        *)
+            info "Telemetry servisleri atlandı. İhtiyaç anında manuel başlatabilirsiniz."
             ;;
     esac
 }
@@ -2228,7 +2263,7 @@ main() {
     verify_torch_cuda
     run_smoke_tests
     print_summary
-    launch_docker_services
+    start_background_infrastructure
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
 }
