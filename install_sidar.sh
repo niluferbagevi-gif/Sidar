@@ -625,6 +625,10 @@ setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
 
+        info "Conda base ortamı güncelleniyor..."
+        conda update -n base -c defaults conda -y
+        ok "Conda base ortamı güncellendi."
+
         if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
