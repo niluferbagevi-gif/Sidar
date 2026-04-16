@@ -209,9 +209,26 @@ def check_hardware() -> HardwareInfo:
                     frac,
                 )
                 frac = 0.8
+            multi_gpu = get_bool_env("MULTI_GPU", False)
+            target_device = max(0, get_int_env("GPU_DEVICE", 0))
             try:
-                torch.cuda.set_per_process_memory_fraction(frac, device=0)
-                logger.info("🔧 VRAM fraksiyonu ayarlandı: %.0f%%", frac * 100)
+                if multi_gpu and info.gpu_count > 1:
+                    for device_idx in range(info.gpu_count):
+                        torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
+                    logger.info(
+                        "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
+                        frac * 100,
+                        info.gpu_count,
+                    )
+                else:
+                    if info.gpu_count > 0:
+                        target_device = min(target_device, info.gpu_count - 1)
+                    torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
+                    logger.info(
+                        "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)",
+                        frac * 100,
+                        target_device,
+                    )
             except Exception as exc:
                 logger.debug("VRAM fraksiyon ayarı atlandı: %s", exc)
         else:
@@ -380,6 +397,7 @@ class Config:
     TRUSTED_PROXIES: frozenset = frozenset(
         ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "").split(",") if ip.strip()
     )
+    TRUSTED_PROXIES_LIST: List[str] = sorted(TRUSTED_PROXIES)
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
     # Metrics endpoint'leri için statik Bearer token (boşsa yalnızca admin kullanıcılar erişebilir)
@@ -621,6 +639,11 @@ class Config:
         cls.CUDA_VERSION = hw.cuda_version
         cls.DRIVER_VERSION = hw.driver_version
         cls._hardware_loaded = True
+
+    @classmethod
+    def trusted_proxies_as_list(cls) -> List[str]:
+        """Middleware entegrasyonları için güvenilir proxy değerlerini list[str] verir."""
+        return list(cls.TRUSTED_PROXIES_LIST)
 
     @classmethod
     def initialize_directories(cls) -> bool:
