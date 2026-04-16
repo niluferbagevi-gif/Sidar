@@ -14,10 +14,15 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 20.0
+
+
+class _JiraRetryableError(RuntimeError):
+    """Rate limit / geçici servis hatalarında retry tetiklemek için iç hata türü."""
 
 
 class JiraManager:
@@ -77,14 +82,29 @@ class JiraManager:
             return False, None, "Jira bağlantısı mevcut değil"
         url = f"{self.url}/rest/api/3/{endpoint.lstrip('/')}"
         try:
-            async with httpx.AsyncClient(
-                timeout=_TIMEOUT, auth=self._auth, headers=self._headers
-            ) as client:
-                resp = await client.request(method, url, **kwargs)
+            async for attempt in AsyncRetrying(
+                reraise=True,
+                stop=stop_after_attempt(5),
+                wait=wait_exponential(multiplier=1, min=1, max=16),
+                retry=retry_if_exception_type(_JiraRetryableError),
+            ):
+                with attempt:
+                    async with httpx.AsyncClient(
+                        timeout=_TIMEOUT, auth=self._auth, headers=self._headers
+                    ) as client:
+                        try:
+                            resp = await client.request(method, url, **kwargs)
+                        except (httpx.TimeoutException, httpx.TransportError) as exc:
+                            raise _JiraRetryableError(str(exc)) from exc
+                    if resp.status_code in (429, 502, 503, 504):
+                        raise _JiraRetryableError(f"HTTP {resp.status_code}: {resp.text[:200]}")
             if resp.status_code in (200, 201, 204):
                 body = resp.json() if resp.content else {}
                 return True, body, ""
             return False, None, f"HTTP {resp.status_code}: {resp.text[:300]}"
+        except _JiraRetryableError as exc:
+            logger.error("Jira._request retry limiti aşıldı [%s %s]: %s", method, endpoint, exc)
+            return False, None, str(exc)
         except Exception as exc:
             logger.error("Jira._request hatası [%s %s]: %s", method, endpoint, exc)
             return False, None, str(exc)

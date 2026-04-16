@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
+from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
+
 logger = logging.getLogger(__name__)
 
 # Güvenli dal adı kalıbı: yalnızca harf, rakam, /, _, -, . izinli
@@ -21,6 +23,17 @@ def _is_not_found_error(exc: Exception) -> bool:
         return True
     message = str(exc).lower()
     return "404" in message or "not found" in message
+
+
+def _is_retryable_github_error(exc: Exception) -> bool:
+    """Rate-limit ve geçici ağ/API hataları için retry kararı."""
+    status = getattr(exc, "status", None)
+    message = str(exc).lower()
+    if status in {429, 502, 503, 504}:
+        return True
+    if status == 403 and "rate limit" in message:
+        return True
+    return any(token in message for token in ("rate limit", "temporarily unavailable", "timeout", "connection reset"))
 
 
 class GitHubManager:
@@ -43,6 +56,16 @@ class GitHubManager:
         "cmakelists", "gradlew", "mvnw", "license", "changelog",
         "readme", "authors", "contributors", "notice",
     }
+
+    @staticmethod
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=1, max=16),
+        retry=retry_if_exception(_is_retryable_github_error),
+    )
+    def _call_with_retry(func, *args, **kwargs):
+        return func(*args, **kwargs)
 
     def __init__(self, token: str, repo_name: str = "", require_token: bool = False) -> None:
         # Token sonuna yanlışlıkla eklenen boşluk veya hatalı karakterleri temizle
@@ -76,7 +99,7 @@ class GitHubManager:
             # Yeni önerilen kullanım auth=Auth.Token(...).
             self._gh = Github(auth=Auth.Token(self.token))
             # Token doğrulama
-            _ = self._gh.get_user().login
+            _ = self._call_with_retry(self._gh.get_user).login
             self._available = True
             logger.info("GitHub bağlantısı kuruldu.")
             if self.repo_name:  # pragma: no cover
@@ -91,10 +114,13 @@ class GitHubManager:
         if not self._gh:
             return False
         try:
-            self._repo = self._gh.get_repo(repo_name)
+            self._repo = self._call_with_retry(self._gh.get_repo, repo_name)
             self.repo_name = repo_name
             logger.info("Depo yüklendi: %s", repo_name)
             return True
+        except RetryError as exc:
+            logger.error("Depo yükleme tekrar limiti aşıldı (%s): %s", repo_name, exc)
+            return False
         except Exception as exc:
             logger.error("Depo yükleme hatası (%s): %s", repo_name, exc)
             return False
@@ -122,12 +148,12 @@ class GitHubManager:
         try:
             repos: List[Dict[str, str]] = []
             if owner:
-                account = self._gh.get_user(owner)
+                account = self._call_with_retry(self._gh.get_user, owner)
                 account_type = str(getattr(account, "type", "")).lower()
                 repo_type = "all" if account_type == "organization" else "owner"
                 source = account.get_repos(type=repo_type)
             else:
-                source = self._gh.get_user().get_repos(visibility="all")
+                source = self._call_with_retry(self._gh.get_user).get_repos(visibility="all")
 
             for i, repo in enumerate(source):
                 if i >= limit:
@@ -154,8 +180,8 @@ class GitHubManager:
                 f"  Dil       : {r.language or 'Bilinmiyor'}\n"
                 f"  Yıldız    : {r.stargazers_count}\n"
                 f"  Fork      : {r.forks_count}\n"
-                f"  Açık PR   : {r.get_pulls(state='open').totalCount}\n"
-                f"  Açık Issue: {r.get_issues(state='open').totalCount}\n"
+                f"  Açık PR   : {self._call_with_retry(r.get_pulls, state='open').totalCount}\n"
+                f"  Açık Issue: {self._call_with_retry(r.get_issues, state='open').totalCount}\n"
                 f"  Varsayılan branch: {r.default_branch}"
             )
         except Exception as exc:
@@ -171,7 +197,7 @@ class GitHubManager:
                 kwargs["sha"] = branch
             requested_limit = int(limit)
             actual_limit = max(1, min(requested_limit, 100))
-            commits = list(self._repo.get_commits(**kwargs)[:actual_limit])
+            commits = list(self._call_with_retry(self._repo.get_commits, **kwargs)[:actual_limit])
 
             warning = ""
             if requested_limit > 100:  # pragma: no cover
@@ -201,7 +227,7 @@ class GitHubManager:
             if ref:
                 kwargs["ref"] = ref
             
-            content_file = self._repo.get_contents(file_path, **kwargs)
+            content_file = self._call_with_retry(self._repo.get_contents, file_path, **kwargs)
             
             # Eğer dönen veri bir liste ise, bu bir dizindir
             if isinstance(content_file, list):
@@ -253,7 +279,7 @@ class GitHubManager:
             return False, "Aktif depo yok."
         try:
             limit = max(1, min(int(limit), 100))
-            branches = list(self._repo.get_branches()[:limit])
+            branches = list(self._call_with_retry(self._repo.get_branches)[:limit])
             lines = [f"[Branch Listesi — {self._repo.full_name}]"]
             for b in branches:
                 prefix = "* " if b.name == self._repo.default_branch else "  "
@@ -270,7 +296,7 @@ class GitHubManager:
             kwargs = {}
             if branch:
                 kwargs["ref"] = branch
-            contents = self._repo.get_contents(path or "", **kwargs)
+            contents = self._call_with_retry(self._repo.get_contents, path or "", **kwargs)
             if not isinstance(contents, list):
                 contents = [contents]
             lines = [f"[GitHub Dosya Listesi: {path or '/'}]"]
