@@ -2110,9 +2110,8 @@ print_summary() {
         echo "       source .venv/bin/activate"
     fi
     echo ""
-    echo -e "  3️⃣  Arka plan servislerini başlat (önerilir):"
-    echo "       docker compose up -d"
-    echo "       (PostgreSQL/Redis gibi servisleri Docker ile kullanıyorsanız önce bunu çalıştırın.)"
+    echo -e "  3️⃣  Arka plan servisleri durumu:"
+    echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
     echo ""
     echo -e "  4️⃣  CLI ile başlat:"
     echo "       python main.py"
