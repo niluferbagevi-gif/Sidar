@@ -8,8 +8,9 @@ Sürüm: 2.7.0
 
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from config import Config
 
@@ -35,6 +36,28 @@ _BLOCKED_PATTERNS = [
     re.compile(r"(^|[/\\])\.git([/\\]|$)", re.IGNORECASE),
     re.compile(r"(^|[/\\])__pycache__([/\\]|$)", re.IGNORECASE),
 ]
+
+_PROMPT_INJECTION_PATTERNS = [
+    re.compile(r"ignore (all|any|previous|prior) (instructions|rules|prompts)", re.IGNORECASE),
+    re.compile(r"(reveal|show|print).*(system prompt|developer message|hidden prompt)", re.IGNORECASE),
+    re.compile(r"(jailbreak|bypass|override).*(policy|safety|guardrail|security)", re.IGNORECASE),
+    re.compile(r"(do not follow|stop following).*(policy|rules|instructions)", re.IGNORECASE),
+    re.compile(r"(act as|pretend to be).*(system|developer|admin)", re.IGNORECASE),
+    re.compile(r"(exfiltrate|leak).*(secret|token|credential|api key|password)", re.IGNORECASE),
+]
+
+_SUSPICIOUS_OUTPUT_PATTERNS = [
+    re.compile(r"(BEGIN|START).*(SYSTEM|DEVELOPER).*(PROMPT|MESSAGE)", re.IGNORECASE),
+    re.compile(r"(api[_ -]?key|token|password|secret)\s*[:=]\s*[A-Za-z0-9_\-]{8,}", re.IGNORECASE),
+]
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    allowed: bool
+    risk_score: int = 0
+    reasons: list[str] = field(default_factory=list)
+    source: str = "unknown"
 
 
 class SecurityManager:
@@ -64,7 +87,21 @@ class SecurityManager:
         self.base_dir: Path = Path(raw_base_dir).resolve()
         self.temp_dir: Path = (self.base_dir / "temp").resolve()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.prompt_guard_enabled = bool(getattr(self.cfg, "PROMPT_GUARD_ENABLED", True))
+        self._guardrails_engine: Any = None
+        self._guardrails_unavailable_reason = ""
+        if self.prompt_guard_enabled:
+            self._init_guardrails()
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
+
+    def _init_guardrails(self) -> None:
+        """NeMo Guardrails benzeri motor varsa bağla; yoksa regex fallback kullan."""
+        try:
+            from nemoguardrails import LLMRails  # type: ignore
+        except Exception as exc:  # pragma: no cover - opsiyonel bağımlılık
+            self._guardrails_unavailable_reason = str(exc)
+            return
+        self._guardrails_engine = LLMRails
 
     # ─────────────────────────────────────────────
     #  YARDIMCI — YOL GÜVENLİĞİ
@@ -138,6 +175,61 @@ class SecurityManager:
     @staticmethod
     def _is_blocked_path(path_str: str) -> bool:
         return any(pattern.search(path_str) for pattern in _BLOCKED_PATTERNS)
+
+    @staticmethod
+    def _scan_prompt_injection_patterns(text: str) -> list[str]:
+        findings: list[str] = []
+        for pattern in _PROMPT_INJECTION_PATTERNS:
+            if pattern.search(text):
+                findings.append(pattern.pattern)
+        return findings
+
+    @staticmethod
+    def _scan_output_leak_patterns(text: str) -> list[str]:
+        findings: list[str] = []
+        for pattern in _SUSPICIOUS_OUTPUT_PATTERNS:
+            if pattern.search(text):
+                findings.append(pattern.pattern)
+        return findings
+
+    def _run_guardrails_engine(self, text: str, *, source: str) -> list[str]:
+        """Guardrails motorunu best-effort çalıştırır; başarısız olursa boş döner."""
+        if not self._guardrails_engine:
+            return []
+        try:
+            # Entegrasyon noktası intentionally gevşek tutulur:
+            # farklı guardrails engine adaptörleri bu metodu override edebilir.
+            checker = getattr(self._guardrails_engine, "validate", None)
+            if callable(checker):
+                result = checker(text=text, source=source)
+                if isinstance(result, dict) and result.get("allowed") is False:
+                    reason = str(result.get("reason") or "guardrails_blocked")
+                    return [reason]
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Guardrails motoru çalıştırılamadı (%s): %s", source, exc)
+        return []
+
+    def validate_prompt_text(self, text: str, *, source: str = "user") -> ValidationResult:
+        """Kullanıcı girdisi / ajan çıktısında prompt injection benzeri riskleri tarar."""
+        normalized = str(text or "")
+        if not normalized.strip():
+            return ValidationResult(allowed=True, risk_score=0, reasons=[], source=source)
+
+        reasons = self._scan_prompt_injection_patterns(normalized)
+        if source == "agent_output":
+            reasons.extend(self._scan_output_leak_patterns(normalized))
+        reasons.extend(self._run_guardrails_engine(normalized, source=source))
+
+        unique_reasons = sorted(set(reasons))
+        risk_score = min(100, len(unique_reasons) * 20)
+        allowed = risk_score < 40
+        return ValidationResult(allowed=allowed, risk_score=risk_score, reasons=unique_reasons, source=source)
+
+    def validate_user_input(self, text: str) -> ValidationResult:
+        return self.validate_prompt_text(text, source="user")
+
+    def validate_agent_output(self, text: str) -> ValidationResult:
+        return self.validate_prompt_text(text, source="agent_output")
 
     def is_safe_path(self, path_str: str) -> bool:
         """Path traversal + base_dir + hassas yol desenleri doğrulaması."""
