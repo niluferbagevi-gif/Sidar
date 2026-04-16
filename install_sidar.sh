@@ -1106,6 +1106,11 @@ harden_database_credentials() {
         case "$db_password" in
             postgres|password|admin|changeme|123456)
                 if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                    if [[ "${ENABLE_DB_PASSWORD_HARDENING:-1}" != "1" ]]; then
+                        warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
+                        warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                        return
+                    fi
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
@@ -1126,8 +1131,17 @@ harden_database_credentials() {
                             echo "POSTGRES_USER=${db_user}" >> "$env_file"
                         fi
                         ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın:"
-                        info "docker compose down && docker compose up -d postgres redis"
+                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
+                        warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
+                        info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
+                        if command -v docker &>/dev/null; then
+                            local detected_pg_volume=""
+                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                            if [[ -n "$detected_pg_volume" ]]; then
+                                warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
+                                info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                            fi
+                        fi
                     else
                         warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                     fi
