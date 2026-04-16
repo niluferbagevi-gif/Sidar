@@ -94,6 +94,19 @@ apm:
       collectorGrpcPort: 4317
       collectorHttpPort: 14268
       queryPort: 16686
+    ingress:
+      enabled: true
+      className: nginx
+      host: jaeger.sidar.local
+      tlsSecretName: jaeger-tls
+      auth:
+        enabled: true
+        mode: basic-auth # basic-auth | oauth2-proxy
+        basicAuthSecretName: sidar-jaeger-basic-auth
+        oauth2Proxy:
+          enabled: false
+          authUrl: "https://oauth2-proxy.sidar.local/oauth2/auth"
+          signInUrl: "https://oauth2-proxy.sidar.local/oauth2/start?rd=$request_uri"
     resources:
       requests:
         cpu: 100m
@@ -117,6 +130,34 @@ apm:
 monitoring:
   sloDashboard:
     enabled: true
+  grafana:
+    ingress:
+      enabled: true
+      className: nginx
+      host: grafana.sidar.local
+      tlsSecretName: grafana-tls
+      auth:
+        enabled: true
+        mode: basic-auth # basic-auth | oauth2-proxy
+        basicAuthSecretName: sidar-grafana-basic-auth
+        oauth2Proxy:
+          enabled: false
+          authUrl: "https://oauth2-proxy.sidar.local/oauth2/auth"
+          signInUrl: "https://oauth2-proxy.sidar.local/oauth2/start?rd=$request_uri"
+  prometheus:
+    ingress:
+      enabled: true
+      className: nginx
+      host: prometheus.sidar.local
+      tlsSecretName: prometheus-tls
+      auth:
+        enabled: true
+        mode: basic-auth # basic-auth | oauth2-proxy
+        basicAuthSecretName: sidar-prometheus-basic-auth
+        oauth2Proxy:
+          enabled: false
+          authUrl: "https://oauth2-proxy.sidar.local/oauth2/auth"
+          signInUrl: "https://oauth2-proxy.sidar.local/oauth2/start?rd=$request_uri"
 
 healthChecks:
   dependencyChecksEnabled: true
