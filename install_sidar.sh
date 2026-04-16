@@ -180,6 +180,41 @@ is_local_ollama_url() {
     [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
 }
 
+ensure_ollama_running() {
+    step "Ollama Servisi Kontrolü"
+
+    if ! command -v ollama &>/dev/null; then
+        warn "Ollama kurulu değil, servis kontrolü atlanıyor."
+        return
+    fi
+
+    local env_file="$SCRIPT_DIR/.env"
+    local ollama_base_url
+    local ollama_tags_url
+    ollama_base_url=$(resolve_ollama_base_url "$env_file")
+    ollama_tags_url="${ollama_base_url}/api/tags"
+
+    if ! is_local_ollama_url "$ollama_base_url"; then
+        info "Uzak Ollama endpoint'i tespit edildi (${ollama_base_url}). Servis başlatma denemesi atlandı."
+        return
+    fi
+
+    if curl -sf "$ollama_tags_url" &>/dev/null; then
+        ok "Ollama servisi halihazırda çalışıyor (${ollama_base_url})."
+        return
+    fi
+
+    warn "Ollama servisi çalışmıyor. Arka planda başlatılıyor..."
+    nohup ollama serve >/dev/null 2>&1 &
+    sleep 3
+
+    if curl -sf "$ollama_tags_url" &>/dev/null; then
+        ok "Ollama servisi arka planda başarıyla başlatıldı."
+    else
+        fail "Ollama servisi başlatılamadı. Lütfen manuel olarak 'ollama serve' komutunu çalıştırın."
+    fi
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -2188,6 +2223,7 @@ main() {
     setup_vscode_workspace
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
+    ensure_ollama_running
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
