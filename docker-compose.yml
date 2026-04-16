@@ -29,6 +29,7 @@ services:
 
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
+    profiles: ["cpu"]
     build:
       context: .
       args:
@@ -75,6 +76,7 @@ services:
   #   NVIDIA Driver (>=595.x) kurulmalı; WSL2 içinde ayrıca nvidia-ctk kurulumu gerekir:
   #   sudo apt-get install -y nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker
   sidar-gpu:
+    profiles: ["gpu"]
     build:
       context: .
       args:
@@ -131,6 +133,7 @@ services:
 
   # ── Web Arayüzü — CPU ──────────────────────────────────────────
   sidar-web:
+    profiles: ["cpu"]
     build:
       context: .
       args:
@@ -185,6 +188,7 @@ services:
   # ── Web Arayüzü — GPU ─────────────────────────────────────────
   # Kullanım: docker compose up sidar-web-gpu
   sidar-web-gpu:
+    profiles: ["gpu"]
     build:
       context: .
       args:
