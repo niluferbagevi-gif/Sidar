@@ -284,10 +284,6 @@ install_system_dependencies() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg \
             pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio
-        info "PostgreSQL istemci/geliştirme bağımlılıkları kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libpq-dev postgresql-client
-
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
         info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
@@ -295,14 +291,13 @@ install_system_dependencies() {
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg postgresql postgresql-devel
+        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
         info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
     elif command -v brew &>/dev/null; then
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
-            curl wget git zstd node@20 ffmpeg portaudio \
-            postgresql@16 || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+            curl wget git zstd node@20 ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
         info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
 
         if brew list node@20 &>/dev/null; then
@@ -461,7 +456,7 @@ check_prerequisites() {
     elif [[ "$DOCKER_ONLY" == true ]]; then
         info "--docker-only: psql istemcisi opsiyonel. DB bağlantısı Docker servisleriyle sağlanacak."
     else
-        warn "psql bulunamadı. PostgreSQL kullanımı için postgresql-client/libpq kurulu olmalı."
+        warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
     # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
@@ -1776,9 +1771,14 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
+    ALEMBIC_CMD=(python -m alembic upgrade head)
+    if [[ "$USE_CONDA" == true ]]; then
+        ALEMBIC_CMD=(conda run -n "$CONDA_ENV_NAME" python -m alembic upgrade head)
+    fi
+
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: python -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
@@ -1800,49 +1800,10 @@ run_migrations() {
         fi
     fi
 
-    setup_pgvector_extension() {
-        if ! command -v psql &>/dev/null; then
-            return
-        fi
-        if [[ -z "$DB_URL" ]]; then
-            return
-        fi
-
-        local psql_url
-        psql_url="${DB_URL/postgresql+asyncpg:\/\//postgresql:\/\/}"
-
-        info "pgvector extension kontrol ediliyor..."
-        if psql "$psql_url" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
-            ok "pgvector extension hazır."
-        else
-            warn "pgvector kurulamadı. RAG pgvector backend çalışmayabilir."
-        fi
-    }
-
-    setup_postgresql_local() {
-        if ! command -v psql &>/dev/null; then
-            return
-        fi
-        if ! command -v sudo &>/dev/null; then
-            return
-        fi
-        if ! sudo -u postgres psql -tAc "SELECT 1;" >/dev/null 2>&1; then
-            return
-        fi
-
-        info "Lokal PostgreSQL kullanıcı/veritabanı kontrolü yapılıyor..."
-        sudo -u postgres psql -c "CREATE USER sidar WITH PASSWORD 'sidar';" >/dev/null 2>&1 || true
-        sudo -u postgres psql -c "CREATE DATABASE sidar OWNER sidar;" >/dev/null 2>&1 || true
-        info "pgvector eklentisi sidar veritabanında etkinleştiriliyor..."
-        sudo -u postgres psql -d sidar -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1 || \
-            warn "sidar veritabanında pgvector etkinleştirilemedi."
-        ok "PostgreSQL: sidar kullanıcısı ve veritabanı hazır."
-    }
-
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
-            info "Veritabanını başlattıktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+            info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
@@ -1868,10 +1829,6 @@ PY
         DB_PORT=$(echo "$DB_CONN_INFO" | cut -d'|' -f2)
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
-
-        if [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" ]]; then
-            setup_postgresql_local
-        fi
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD=()
@@ -1899,16 +1856,14 @@ PY
 
             if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                 warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
-                info "DB hazır olduktan sonra manuel çalıştırın: python -m alembic -x \"database_url=$DB_URL\" upgrade head"
+                info "DB hazır olduktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
                 return
             fi
         fi
-
-        setup_pgvector_extension
     fi
 
-    if python -m alembic -x "database_url=$DB_URL" upgrade head 2>&1; then
+    if "${ALEMBIC_CMD[@]}" 2>&1; then
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
@@ -2102,7 +2057,7 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  conda run -n sidar python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
