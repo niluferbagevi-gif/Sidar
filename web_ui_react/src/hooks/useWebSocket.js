@@ -4,6 +4,9 @@ const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
 
 const TOKEN_KEY = "sidar_access_token";
+const RECONNECT_BASE_DELAY_MS = 800;
+const RECONNECT_MAX_DELAY_MS = 20_000;
+const RECONNECT_JITTER_MS = 600;
 
 export function useWebSocket(
   _sessionId,
@@ -27,6 +30,32 @@ export function useWebSocket(
   const joinedRoomRef = useRef("");
   const [status, setStatus] = useState("disconnected");
   const bufferRef = useRef("");
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef(null);
+  const manualCloseRef = useRef(false);
+  const connectRef = useRef(null);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleReconnect = useCallback(() => {
+    clearReconnectTimer();
+    reconnectAttemptRef.current += 1;
+    const exponentialDelay = Math.min(
+      RECONNECT_MAX_DELAY_MS,
+      RECONNECT_BASE_DELAY_MS * (2 ** (reconnectAttemptRef.current - 1)),
+    );
+    const jitter = Math.floor(Math.random() * RECONNECT_JITTER_MS);
+    const nextDelay = exponentialDelay + jitter;
+    setStatus("reconnecting");
+    reconnectTimerRef.current = setTimeout(() => {
+      connectRef.current?.();
+    }, nextDelay);
+  }, [clearReconnectTimer]);
 
   const joinRoom = useCallback((targetRoomId, targetDisplayName) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -51,6 +80,7 @@ export function useWebSocket(
     }
 
     setStatus("connecting");
+    clearReconnectTimer();
     const ws = new WebSocket(WS_URL(), [token]);
     wsRef.current = ws;
 
@@ -66,6 +96,7 @@ export function useWebSocket(
       try {
         const msg = JSON.parse(raw);
         if (msg.auth_ok) {
+          reconnectAttemptRef.current = 0;
           setStatus("connected");
           joinedRoomRef.current = "";
           joinRoom(roomId, displayName);
@@ -141,8 +172,14 @@ export function useWebSocket(
       onError?.("WebSocket bağlantı hatası.");
     };
 
-    ws.onclose = () => setStatus("disconnected");
+    ws.onclose = () => {
+      wsRef.current = null;
+      setStatus("disconnected");
+      if (manualCloseRef.current) return;
+      scheduleReconnect();
+    };
   }, [
+    clearReconnectTimer,
     displayName,
     joinRoom,
     onChunk,
@@ -157,11 +194,18 @@ export function useWebSocket(
     onToolCall,
     onAssistantStart,
     roomId,
+    scheduleReconnect,
   ]);
 
   const disconnect = useCallback(() => {
+    manualCloseRef.current = true;
+    clearReconnectTimer();
     wsRef.current?.close();
-  }, []);
+  }, [clearReconnectTimer]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const send = useCallback((message) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -176,9 +220,14 @@ export function useWebSocket(
   }, [displayName, onError, roomId]);
 
   useEffect(() => {
+    manualCloseRef.current = false;
     connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+    return () => {
+      manualCloseRef.current = true;
+      clearReconnectTimer();
+      disconnect();
+    };
+  }, [clearReconnectTimer, connect, disconnect]);
 
   useEffect(() => {
     joinRoom(roomId, displayName);
