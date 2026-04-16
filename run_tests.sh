@@ -62,6 +62,33 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  if ! python - <<'PY' >/dev/null 2>&1
+import tomllib
+from pathlib import Path
+
+data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+opt_deps = data.get("project", {}).get("optional-dependencies", {})
+deps = opt_deps.get("test") or opt_deps.get("dev") or []
+deps_l = [d.lower() for d in deps]
+assert any("pytest-cov" in d for d in deps_l), "pytest-cov"
+assert any("pytest-xdist" in d for d in deps_l), "pytest-xdist"
+PY
+  then
+    echo "❌ pyproject.toml test bağımlılıklarında pytest-cov/pytest-xdist doğrulaması başarısız."
+    BACKEND_EXIT_CODE=1
+    return
+  fi
+
+  if ! python - <<'PY' >/dev/null 2>&1
+import coverage  # noqa: F401
+import pytest_cov  # noqa: F401
+PY
+  then
+    echo "❌ Coverage quality gate için gerekli modüller eksik: coverage ve/veya pytest-cov."
+    BACKEND_EXIT_CODE=1
+    return
+  fi
+
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
@@ -98,11 +125,21 @@ run_pytest_coverage_report() {
   "${pytest_cmd[@]}"
   BACKEND_EXIT_CODE=$?
 
-  # xdist worker crash durumlarında pytest 0 döndürse bile .coverage üretilemeyebilir.
-  # Bu fail-safe, sessiz coverage kaybını quality gate başarısı gibi görünmeden yakalar.
+  # xdist altında bazı koşullarda sadece .coverage.* shard'ları kalabilir.
+  # Önce bunları birleştirmeyi dener, başarısızsa quality gate'i fail eder.
   if [ ! -f ".coverage" ] && [ "${BACKEND_EXIT_CODE}" -eq 0 ]; then
-    echo "⚠️ Uyarı: Testler başarılı görünüyor ancak .coverage dosyası üretilemedi. xdist worker'ları crash olmuş olabilir."
-    BACKEND_EXIT_CODE=1
+    if compgen -G ".coverage.*" > /dev/null; then
+      echo "ℹ️ .coverage bulunamadı fakat .coverage.* shard dosyaları tespit edildi. coverage combine deneniyor..."
+      if python -m coverage combine && python -m coverage html -d htmlcov && python -m coverage xml -o coverage.xml; then
+        echo "✅ coverage combine başarılı; raporlar yeniden üretildi."
+      else
+        echo "❌ coverage combine başarısız oldu. Paralel testlerde coverage verisi toparlanamadı."
+        BACKEND_EXIT_CODE=1
+      fi
+    else
+      echo "⚠️ Uyarı: Testler başarılı görünüyor ancak .coverage dosyası üretilemedi. xdist worker'ları crash olmuş olabilir."
+      BACKEND_EXIT_CODE=1
+    fi
   fi
 
   if [ -f "htmlcov/index.html" ]; then
