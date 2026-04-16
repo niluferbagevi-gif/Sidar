@@ -2196,7 +2196,11 @@ launch_ide() {
         case "${open_code:-H}" in
             [EeYy]*)
                 info "VS Code açılıyor..."
-                code "$SCRIPT_DIR"
+                if [[ "$USE_CONDA" == true ]]; then
+                    conda run -n "$CONDA_ENV_NAME" code "$SCRIPT_DIR"
+                else
+                    code "$SCRIPT_DIR"
+                fi
                 ;;
             *)
                 info "VS Code başlatılması atlandı."
