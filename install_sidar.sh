@@ -23,6 +23,33 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
+ensure_docker_daemon_running() {
+    if ! command -v docker &>/dev/null; then
+        return 1
+    fi
+
+    if docker info &>/dev/null; then
+        return 0
+    fi
+
+    warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
+
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl start docker >/dev/null 2>&1 || true
+    fi
+
+    if ! docker info &>/dev/null && command -v service &>/dev/null; then
+        sudo service docker start >/dev/null 2>&1 || true
+    fi
+
+    if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
+        powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
+        sleep 8
+    fi
+
+    docker info &>/dev/null
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -414,6 +441,11 @@ check_prerequisites() {
     # Docker / Docker Compose (özet komutları için önerilir)
     if command -v docker &>/dev/null; then
         ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+        if ensure_docker_daemon_running; then
+            ok "Docker daemon çalışıyor."
+        else
+            warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
+        fi
         if docker compose version &>/dev/null; then
             ok "Docker Compose eklentisi mevcut."
         elif command -v docker-compose &>/dev/null; then
@@ -616,11 +648,11 @@ install_python_deps() {
     # uv.lock yönetimi: yoksa oluştur, varsa güncelle
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         info "uv.lock bulunamadı — uv lock ile oluşturuluyor..."
-        "${UV_CMD[@]}" lock
+        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
         ok "uv.lock oluşturuldu."
     else
         info "uv.lock bulundu — uv lock ile bağımlılıklar kontrol ediliyor..."
-        "${UV_CMD[@]}" lock
+        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
         ok "uv.lock kontrol edildi."
     fi
 
@@ -634,8 +666,8 @@ install_python_deps() {
             SYNC_ARGS+=(--extra "$_extra")
         done
     fi
-    info "Bağımlılıklar senkronlanıyor (uv sync --frozen)..."
-    "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"
+    info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
+    "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
     ok "Python bağımlılıkları senkronlandı."
     return
 
@@ -2100,6 +2132,11 @@ print_summary() {
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
 launch_docker_services() {
     local docker_compose_cmd=()
+
+    if command -v docker &>/dev/null && ! ensure_docker_daemon_running; then
+        warn "Docker daemon çalışmıyor; servisler otomatik başlatılamıyor."
+        return
+    fi
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
