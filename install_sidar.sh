@@ -1107,6 +1107,70 @@ create_directories() {
     ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
 }
 
+# ── VS Code Çalışma Alanı Hazırlığı ──────────────────────────────────────────
+setup_vscode_workspace() {
+    step "VS Code Çalışma Alanı Hazırlığı"
+    local vscode_dir="$SCRIPT_DIR/.vscode"
+    local settings_file="$vscode_dir/settings.json"
+
+    mkdir -p "$vscode_dir"
+
+    local python_path
+    local conda_path="$HOME/miniconda3/bin/conda"
+    if [[ "$USE_CONDA" == true ]]; then
+        python_path="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
+    else
+        python_path="$SCRIPT_DIR/.venv/bin/python"
+    fi
+
+    if command -v python3 &>/dev/null; then
+        SETTINGS_FILE="$settings_file" \
+        PYTHON_PATH="$python_path" \
+        CONDA_PATH="$conda_path" \
+        USE_CONDA_VALUE="$USE_CONDA" \
+        python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+settings_path = Path(os.environ["SETTINGS_FILE"])
+python_path = os.environ["PYTHON_PATH"]
+conda_path = os.environ["CONDA_PATH"]
+use_conda = os.environ["USE_CONDA_VALUE"].lower() == "true"
+
+current = {}
+if settings_path.exists():
+    try:
+        current = json.loads(settings_path.read_text(encoding="utf-8"))
+        if not isinstance(current, dict):
+            current = {}
+    except Exception:
+        current = {}
+
+current["python.defaultInterpreterPath"] = python_path
+current["python.terminal.activateEnvironment"] = True
+current["terminal.integrated.defaultProfile.linux"] = "bash"
+if use_conda:
+    current["python.condaPath"] = conda_path
+
+settings_path.write_text(
+    json.dumps(current, ensure_ascii=False, indent=4) + "\n",
+    encoding="utf-8",
+)
+PY
+    else
+        cat > "$settings_file" <<EOF
+{
+    "python.defaultInterpreterPath": "${python_path}",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.defaultProfile.linux": "bash"
+}
+EOF
+    fi
+
+    ok "VS Code çalışma alanı yapılandırıldı (.vscode/settings.json)."
+}
+
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
 generate_secure_token() {
     local token_length="${1:-32}"
@@ -2159,6 +2223,30 @@ print_summary() {
     echo ""
 }
 
+# ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
+launch_ide() {
+    if command -v code &>/dev/null; then
+        if [[ ! -t 0 ]]; then
+            info "Etkileşimli terminal algılanmadı; VS Code başlatma sorusu atlandı."
+            return
+        fi
+        echo ""
+        read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
+        case "${open_code:-H}" in
+            [EeYy]*)
+                info "VS Code açılıyor..."
+                code "$SCRIPT_DIR"
+                ;;
+            *)
+                info "VS Code başlatılması atlandı."
+                ;;
+        esac
+    else
+        warn "Sistemde VS Code (code komutu) bulunamadı."
+        info "WSL ile tam entegrasyon için Windows tarafına VS Code ve 'WSL' eklentisini kurmanız önerilir."
+    fi
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -2193,12 +2281,16 @@ main() {
     setup_react_frontend
     setup_env_file
     setup_wsl2_audio
+    # Yeni eklenen VS Code yapılandırması
+    setup_vscode_workspace
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
     print_summary
+    # Yeni eklenen onaylı IDE başlatma adımı
+    launch_ide
 }
 
 main "$@"
