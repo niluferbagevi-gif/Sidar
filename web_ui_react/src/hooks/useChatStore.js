@@ -7,6 +7,44 @@ const genId = () =>
 
 const DISPLAY_NAME_KEY = "sidar_collab_display_name";
 const ROOM_ID_KEY = "sidar_collab_room_id";
+const STREAM_THROTTLE_MS = 120;
+
+let pendingChunkText = "";
+let pendingChunkRequestId = "";
+let flushTimer = null;
+
+function clearStreamFlushTimer() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+}
+
+function flushPendingChunk(set, get) {
+  if (!pendingChunkText) {
+    clearStreamFlushTimer();
+    return;
+  }
+  const chunk = pendingChunkText;
+  const requestId = pendingChunkRequestId;
+  pendingChunkText = "";
+  pendingChunkRequestId = "";
+  clearStreamFlushTimer();
+  set((state) => {
+    const currentRequestId = requestId || state.streamingRequestId;
+    const switchedRequest = Boolean(state.streamingRequestId && state.streamingRequestId !== currentRequestId);
+    return {
+      streamingText: switchedRequest ? chunk : state.streamingText + chunk,
+      streamingRequestId: currentRequestId,
+      isStreaming: true,
+    };
+  });
+}
+
+function scheduleChunkFlush(set, get) {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => flushPendingChunk(set, get), STREAM_THROTTLE_MS);
+}
 
 function readStoredValue(key, fallback) {
   if (typeof localStorage === "undefined") return fallback;
@@ -76,6 +114,9 @@ export const useChatStore = create((set, get) => ({
   },
 
   startAssistantStream(requestId) {
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
     set({
       isStreaming: true,
       streamingText: "",
@@ -85,22 +126,25 @@ export const useChatStore = create((set, get) => ({
   },
 
   appendChunk(text, requestId = "") {
-    set((state) => {
-      const currentRequestId = requestId || state.streamingRequestId;
-      return {
-        streamingText: state.streamingRequestId && state.streamingRequestId !== currentRequestId
-          ? text
-          : state.streamingText + text,
-        streamingRequestId: currentRequestId,
-        isStreaming: true,
-      };
-    });
+    const normalized = String(text || "");
+    if (!normalized) return;
+    const activeRequestId = String(requestId || get().streamingRequestId || "");
+    if (pendingChunkRequestId && activeRequestId && pendingChunkRequestId !== activeRequestId) {
+      flushPendingChunk(set, get);
+    }
+    pendingChunkRequestId = activeRequestId || pendingChunkRequestId;
+    pendingChunkText += normalized;
+    scheduleChunkFlush(set, get);
   },
 
   commitAssistantMessage(message = null, requestId = "") {
+    flushPendingChunk(set, get);
     const state = get();
     const finalText = message?.content || state.streamingText;
     if (!finalText) {
+      pendingChunkText = "";
+      pendingChunkRequestId = "";
+      clearStreamFlushTimer();
       set({ streamingText: "", isStreaming: false, streamingRequestId: "" });
       return;
     }
@@ -121,6 +165,9 @@ export const useChatStore = create((set, get) => ({
       isStreaming: false,
       streamingRequestId: "",
     }));
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
   },
 
   addTelemetryEvent(kind, content, meta = {}) {
@@ -138,14 +185,23 @@ export const useChatStore = create((set, get) => ({
   },
 
   setError(msg) {
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
     set({ error: msg, isStreaming: false, streamingText: "", streamingRequestId: "" });
   },
 
   clearMessages() {
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
     set({ messages: [], streamingText: "", error: null, telemetryEvents: [], streamingRequestId: "", isStreaming: false });
   },
 
   newSession() {
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
     set({
       sessionId: genId(),
       messages: [],

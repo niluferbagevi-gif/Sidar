@@ -8,9 +8,29 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 
-export function ChatMessage({ message, isStreaming = false }) {
+const markdownRenderers = {
+  pre: ({ node, ...props }) => (
+    <div className="code-block-wrapper">
+      <pre {...props} />
+    </div>
+  ),
+};
+
+const MemoMarkdown = React.memo(function MemoMarkdown({ content }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      className="message__markdown"
+      components={markdownRenderers}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
+
+export const ChatMessage = React.memo(function ChatMessage({ message, isStreaming = false }) {
   const isUser = message.role === "user";
-  const isAssistant = message.role === "assistant";
   const authorName = message.author_name || (isUser ? "Ekip Üyesi" : "SİDAR");
 
   return (
@@ -23,20 +43,7 @@ export function ChatMessage({ message, isStreaming = false }) {
         {isUser ? (
           <span className="message__text">{message.content}</span>
         ) : (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeHighlight]}
-            className="message__markdown"
-            components={{
-              pre: ({ node, ...props }) => (
-                <div className="code-block-wrapper">
-                  <pre {...props} />
-                </div>
-              ),
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+          <MemoMarkdown content={message.content} />
         )}
         {isStreaming && <span className="message__cursor" aria-hidden>▊</span>}
       </div>
@@ -45,4 +52,4 @@ export function ChatMessage({ message, isStreaming = false }) {
       </time>
     </div>
   );
-}
+});
