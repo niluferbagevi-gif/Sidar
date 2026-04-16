@@ -2105,10 +2105,6 @@ print_summary() {
     if [[ "$USE_CONDA" == true ]]; then
         echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
         echo "       conda activate $CONDA_ENV_NAME"
-        echo ""
-        echo -e "  2️⃣a Conda'yı base ortamında güncelle (önerilir):"
-        echo "       conda deactivate  # gerekirse sidar ortamından çık"
-        echo "       conda update -n base -c defaults conda"
     else
         echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
         echo "       source .venv/bin/activate"
@@ -2197,10 +2193,9 @@ launch_ide() {
             [EeYy]*)
                 info "VS Code açılıyor..."
                 if [[ "$USE_CONDA" == true ]]; then
-                    conda run -n "$CONDA_ENV_NAME" code "$SCRIPT_DIR"
-                else
-                    code "$SCRIPT_DIR"
+                    info "Not: .vscode/settings.json ile yeni entegre terminallerde '$CONDA_ENV_NAME' ortamı otomatik aktive edilir."
                 fi
+                code "$SCRIPT_DIR"
                 ;;
             *)
                 info "VS Code başlatılması atlandı."
