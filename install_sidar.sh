@@ -1793,6 +1793,14 @@ download_ollama_models() {
     }
     trap cleanup_temp_ollama RETURN
 
+    if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
+        warn "WSL2 .wslconfig bu kurulumda güncellendi; yeni memory/swap limitleri henüz etkin değil."
+        info "Model indirme işlemleri güvenlik için ertelendi. Önce Windows PowerShell'de şunu çalıştırın:"
+        echo "  wsl --shutdown"
+        info "Ardından dağıtımı yeniden açıp modelleri indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
+        return
+    fi
+
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
         return
@@ -2065,6 +2073,14 @@ run_smoke_tests() {
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
+
+    if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
+        warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
+        info "PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden açtıktan sonra testleri çalıştırın:"
+        echo "  python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        SMOKE_TEST_STATUS="ertelendi_wsl_restart"
+        return
+    fi
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
         info "--skip-smoke-test verildiği için smoke testler atlandı."
