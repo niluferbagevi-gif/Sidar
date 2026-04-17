@@ -575,7 +575,7 @@ ensure_prerequisites() {
     # Docker / Docker Compose (özet komutları için önerilir)
     if command -v docker &>/dev/null && docker --version &>/dev/null; then
         local docker_ver
-        docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
+        docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)
         ok "Docker ${docker_ver:-yüklü}"
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
