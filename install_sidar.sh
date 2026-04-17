@@ -529,11 +529,18 @@ detect_gpu() {
         return
     fi
 
-    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
-        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
-        CUDA_VERSION=$(nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
-        DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
+    local SMI_CMD=""
+    if command -v nvidia-smi &>/dev/null; then
+        SMI_CMD="nvidia-smi"
+    elif command -v nvidia-smi.exe &>/dev/null; then
+        SMI_CMD="nvidia-smi.exe"
+    fi
+
+    if [[ -n "$SMI_CMD" ]] && "$SMI_CMD" &>/dev/null 2>&1; then
+        GPU_NAME=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
+        VRAM_MB=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
+        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
+        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
 
         GPU_AVAILABLE=true
         ok "GPU     : $GPU_NAME"
