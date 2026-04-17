@@ -110,6 +110,7 @@ HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
+NO_INTERACTION=false
 DOCKER_ONLY=false
 ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
@@ -126,6 +127,7 @@ for arg in "$@"; do
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
+        --ci|--no-interaction) NO_INTERACTION=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -134,7 +136,7 @@ for arg in "$@"; do
         --docker-only) DOCKER_ONLY=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio] [--ci|--no-interaction]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -148,9 +150,10 @@ for arg in "$@"; do
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
+            echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -160,6 +163,10 @@ fi
 
 if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
     warn "--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek."
+fi
+
+if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
+    RUN_SMOKE_TESTS_MODE="never"
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
@@ -1252,6 +1259,11 @@ ensure_rag_vector_backend_pgvector() {
 collect_api_keys_interactive() {
     local env_file="$1"
 
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: API anahtarı etkileşimli toplama adımı atlandı."
+        return
+    fi
+
     # ── Tüm kullanıcı girişi gerektiren anahtarlar (otomatik üretilenler hariç) ──
     local -a KEY_ORDER=(
         OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
@@ -1721,6 +1733,11 @@ download_ollama_models() {
     fi
 
     if [[ "$DOWNLOAD_MODELS" != true ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            info "--ci/--no-interaction etkin ve --download-models verilmedi: model indirmeleri atlanıyor (${estimated_size_gb})."
+            info "Model indirmek için: ./install_sidar.sh --download-models"
+            return
+        fi
         if [[ -t 0 ]]; then
             read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
             case "${reply:-E}" in
@@ -2168,6 +2185,12 @@ launch_docker_services() {
         return
     fi
 
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
+        info "Gerekirse manuel çalıştırın: docker compose up -d"
+        return
+    fi
+
     echo ""
     read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
     case "${start_docker:-E}" in
@@ -2222,6 +2245,11 @@ launch_docker_services() {
 
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
+        return
+    fi
+
     if command -v code &>/dev/null; then
         echo ""
         read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
