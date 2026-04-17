@@ -622,17 +622,30 @@ detect_gpu() {
     fi
 
     local SMI_CMD=""
+    local smi_ping_out=""
+    local query_out=""
     if command -v nvidia-smi &>/dev/null; then
         SMI_CMD="nvidia-smi"
     elif command -v nvidia-smi.exe &>/dev/null; then
         SMI_CMD="nvidia-smi.exe"
     fi
 
-    if [[ -n "$SMI_CMD" ]] && "$SMI_CMD" &>/dev/null 2>&1; then
-        GPU_NAME=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
-        VRAM_MB=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
-        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
-        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
+    if [[ -n "$SMI_CMD" ]]; then
+        smi_ping_out=$("$SMI_CMD" -L 2>/dev/null | head -1 || true)
+    fi
+
+    if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
+        query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
+        GPU_NAME="${query_out:-Bilinmiyor}"
+
+        query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
+        VRAM_MB=$(echo "${query_out:-0}" | tr -d ' ,' )
+        if [[ -z "$VRAM_MB" ]]; then
+            VRAM_MB="0"
+        fi
+
+        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || true)
+        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
         ok "GPU     : $GPU_NAME"
