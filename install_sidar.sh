@@ -578,7 +578,20 @@ ensure_prerequisites() {
     fi
 
     # Docker / Docker Compose (özet komutları için önerilir)
-    if command -v docker &>/dev/null && docker --version &>/dev/null; then
+    local docker_version_check_ok=false
+    local docker_version_error=""
+    if command -v docker &>/dev/null; then
+        local _docker_err_file
+        _docker_err_file=$(mktemp)
+        if docker --version >/dev/null 2>"$_docker_err_file"; then
+            docker_version_check_ok=true
+        else
+            docker_version_error="$(<"$_docker_err_file")"
+        fi
+        rm -f "$_docker_err_file"
+    fi
+
+    if command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]; then
         local docker_ver
         docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)
         ok "Docker ${docker_ver:-yüklü}"
@@ -595,6 +608,9 @@ ensure_prerequisites() {
             warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
         fi
     else
+        if [[ "$WSL2" == true ]] && [[ "$docker_version_error" == *"Input/output error"* ]]; then
+            warn "Docker CLI çağrısı Input/output error döndürüyor. WSL entegrasyon mount'ları askıda kalmış olabilir."
+        fi
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
@@ -614,7 +630,7 @@ ensure_prerequisites() {
         info "WSL2 ortamı tespit edildi."
     fi
 
-    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
         warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
         info "Lütfen şu adımları uygulayın:"
         echo "  1. Windows'ta Docker Desktop'ı açın."
