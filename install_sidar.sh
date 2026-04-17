@@ -15,6 +15,8 @@ set -Eeuo pipefail
 
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
@@ -2442,6 +2444,31 @@ launch_ide() {
     fi
 }
 
+cleanup_bootstrap_script_copy() {
+    if [[ "$ORIGINAL_SCRIPT_DIR" == "$TARGET_DIR" ]]; then
+        return
+    fi
+
+    if [[ "$(basename "$ORIGINAL_SCRIPT_PATH")" != "install_sidar.sh" ]]; then
+        return
+    fi
+
+    if [[ -d "$ORIGINAL_SCRIPT_DIR/.git" ]]; then
+        info "Kurulum farklı bir repo kopyasından çalıştırıldığı için betik dosyası silinmedi: $ORIGINAL_SCRIPT_PATH"
+        return
+    fi
+
+    if [[ -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+        if rm -f "$ORIGINAL_SCRIPT_PATH"; then
+            ok "Geçici kurulum betiği kaldırıldı: $ORIGINAL_SCRIPT_PATH"
+        else
+            warn "Geçici kurulum betiği silinemedi: $ORIGINAL_SCRIPT_PATH"
+        fi
+    fi
+
+    info "Kurulum bundan sonra $TARGET_DIR dizininden yönetilmelidir."
+}
+
 # ── Terminal kısayolu: Sidar ortamını hızlı aktive et ───────────────────────
 setup_shell_activation_shortcut() {
     step "Terminal Kısayolu Yapılandırması"
@@ -2554,6 +2581,7 @@ main() {
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
     relocate_log_file_if_needed
+    cleanup_bootstrap_script_copy
 }
 
 main "$@"
