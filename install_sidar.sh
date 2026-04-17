@@ -271,14 +271,25 @@ sync_repo() {
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
         git clone "$REPO_URL" "$TARGET_DIR"
     else
-        warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
+        warn "Sidar klasörü zaten var. Rebase tabanlı git pull ile güncelleniyor..."
         (
             cd "$TARGET_DIR"
-            git fetch origin
-            git pull --ff-only || {
-                warn "Fast-forward pull başarısız (lokal değişiklikler mevcut). Sadece fetch yapıldı."
-                info "Güncelleme için: git stash && git pull --ff-only && git stash pop"
-            }
+            local STASHED_CHANGES=false
+            if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+                info "Lokal değişiklikler geçici olarak stash'e alınıyor."
+                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
+                STASHED_CHANGES=true
+            fi
+
+            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
+
+            if [[ "$STASHED_CHANGES" == true ]]; then
+                if git stash pop >/dev/null 2>&1; then
+                    ok "Lokal değişiklikler stash'ten geri yüklendi."
+                else
+                    warn "Stash pop sırasında çakışma oluştu. Değişikliklerinizi manuel kontrol edin (git stash list)."
+                fi
+            fi
         )
     fi
 
