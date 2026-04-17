@@ -1630,24 +1630,24 @@ PY
     fi
 }
 
+ensure_local_service_host_defaults() {
+    local env_file="$1"
+    # Lokal kurulumda Docker hostname yerine localhost kullan
+    if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
+        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+        ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
+    fi
+
+    if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
+        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+        ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
-
-    ensure_local_service_host_defaults() {
-        local env_file="$1"
-        # Lokal kurulumda Docker hostname yerine localhost kullan
-        if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
-            sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
-            ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
-        fi
-
-        if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
-            sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
-            ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
-        fi
-    }
 
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
