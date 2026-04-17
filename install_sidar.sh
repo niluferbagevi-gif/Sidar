@@ -26,11 +26,11 @@ exec > >(tee -i "$LOG_FILE") 2>&1
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
 
-ok()   { echo -e "${GREEN}✅  $*${NC}"; }
-info() { echo -e "${BLUE}ℹ️   $*${NC}"; }
-warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
-fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
-step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
+ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
+info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
+warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
+fail() { echo -e "${RED}❌  $*${NC}" >&2; exit 1; }
+step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 prompt_yes_no_with_timeout_default_yes() {
     local prompt="$1"
