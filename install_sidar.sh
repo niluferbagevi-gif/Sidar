@@ -1604,7 +1604,7 @@ ensure_auto_secrets() {
         if command -v python3 &>/dev/null; then
             python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true
         elif command -v openssl &>/dev/null; then
-            openssl rand -base64 "$n" 2>/dev/null | tr -d '\n=' || true
+            openssl rand -base64 "$n" 2>/dev/null | tr '+/' '-_' | tr -d '\n=' || true
         fi
     }
 
