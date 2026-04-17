@@ -2394,8 +2394,8 @@ main() {
     verify_torch_cuda
     install_playwright_browsers
     create_directories
-    setup_react_frontend
     setup_env_file
+    setup_react_frontend
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
     setup_vscode_workspace
