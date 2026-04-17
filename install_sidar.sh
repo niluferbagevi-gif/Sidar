@@ -141,6 +141,7 @@ REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
+WSL2=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
@@ -409,10 +410,15 @@ install_system_dependencies() {
         fi
         rm -f "$_ns_log" "$_nodesource_script"
 
-        info "Kamera (v4l2) ve Ses (PortAudio/ALSA/PulseAudio/FFmpeg) kütüphaneleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg \
-            pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio
+        info "Kamera ve ses kütüphaneleri kuruluyor..."
+        local -a linux_media_pkgs=(
+            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+        )
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
+            linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
+        fi
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
         info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
@@ -571,12 +577,8 @@ ensure_prerequisites() {
         fi
     fi
 
-    # WSL2 tespiti
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+    if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
-        WSL2=true
-    else
-        WSL2=false
     fi
 
     if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
@@ -2356,6 +2358,13 @@ launch_ide() {
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
+    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+        WSL2=true
+    else
+        WSL2=false
+    fi
+
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
         deploy_with_helm
