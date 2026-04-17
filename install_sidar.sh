@@ -13,6 +13,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+# Güvenilir kaynaklar için varsayılan olarak unverified indirmelere izin ver
+export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
