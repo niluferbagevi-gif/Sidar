@@ -139,19 +139,6 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
-is_command_healthy() {
-    local cmd="$1"
-    shift
-
-    local cmd_path=""
-    cmd_path="$(command -v "$cmd" 2>/dev/null || true)"
-    if [[ -z "$cmd_path" || ! -x "$cmd_path" ]]; then
-        return 1
-    fi
-
-    "$cmd" "$@" >/dev/null 2>&1
-}
-
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -585,8 +572,10 @@ ensure_prerequisites() {
     fi
 
     # Docker / Docker Compose (özet komutları için önerilir)
-    if is_command_healthy docker --version; then
-        ok "Docker $(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')"
+    if command -v docker &>/dev/null && docker --version &>/dev/null; then
+        local docker_ver
+        docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
+        ok "Docker ${docker_ver:-yüklü}"
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
         else
@@ -599,11 +588,8 @@ ensure_prerequisites() {
         else
             warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
         fi
-    elif command -v docker &>/dev/null; then
-        warn "Docker binary bulundu ancak çalıştırılamadı (olası WSL2 entegrasyon kopukluğu / Input/output error)."
-        warn "Docker Desktop > Settings > Resources > WSL Integration altında bu dağıtımın açık olduğundan emin olun ve Docker Desktop'ı yeniden başlatın."
     else
-        warn "Docker bulunamadı. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
+        warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
     # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
@@ -622,7 +608,7 @@ ensure_prerequisites() {
         info "WSL2 ortamı tespit edildi."
     fi
 
-    if [[ "$WSL2" == true ]] && ! is_command_healthy docker --version; then
+    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && docker --version &>/dev/null); then
         warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
         info "Lütfen şu adımları uygulayın:"
         echo "  1. Windows'ta Docker Desktop'ı açın."
@@ -632,7 +618,7 @@ ensure_prerequisites() {
         read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
         # Kullanıcıdan onay sonrası tekrar doğrula
-        if ! is_command_healthy docker --version; then
+        if !(command -v docker &>/dev/null && docker --version &>/dev/null); then
             fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
         fi
     fi
