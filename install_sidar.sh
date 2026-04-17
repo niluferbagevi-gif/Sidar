@@ -13,6 +13,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+# Güvenilir kaynaklar için varsayılan olarak unverified indirmelere izin ver
+export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -82,6 +85,8 @@ compute_sha256() {
     fi
 }
 
+DOWNLOADED_SCRIPT_FILE=""
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -110,7 +115,7 @@ download_verified_script() {
         ok "${script_label} checksum doğrulaması başarılı."
     fi
 
-    echo "$script_file"
+    DOWNLOADED_SCRIPT_FILE="$script_file"
 }
 
 ensure_docker_daemon_running() {
@@ -414,15 +419,15 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
-        local _nodesource_script=""
+        DOWNLOADED_SCRIPT_FILE=""
         local _ns_log; _ns_log=$(mktemp)
         # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
         # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
-        if _nodesource_script=$(download_verified_script \
+        if download_verified_script \
             "https://deb.nodesource.com/setup_20.x" \
             "${NODESOURCE_SETUP_SHA256:-}" \
-            "nodesource_setup"); then
-            if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
+            "nodesource_setup"; then
+            if sudo -E bash "$DOWNLOADED_SCRIPT_FILE" >"$_ns_log" 2>&1; then
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
@@ -434,7 +439,7 @@ install_system_dependencies() {
             warn "NodeSource setup script indirilemedi/doğrulanamadı, apt deposundan nodejs/npm kurulumu deneniyor."
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
-        rm -f "$_ns_log" "$_nodesource_script"
+        rm -f "$_ns_log" "$DOWNLOADED_SCRIPT_FILE"
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
         local -a linux_media_pkgs=(
@@ -573,7 +578,20 @@ ensure_prerequisites() {
     fi
 
     # Docker / Docker Compose (özet komutları için önerilir)
-    if command -v docker &>/dev/null && docker --version &>/dev/null; then
+    local docker_version_check_ok=false
+    local docker_version_error=""
+    if command -v docker &>/dev/null; then
+        local _docker_err_file
+        _docker_err_file=$(mktemp)
+        if docker --version >/dev/null 2>"$_docker_err_file"; then
+            docker_version_check_ok=true
+        else
+            docker_version_error="$(<"$_docker_err_file")"
+        fi
+        rm -f "$_docker_err_file"
+    fi
+
+    if command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]; then
         local docker_ver
         docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)
         ok "Docker ${docker_ver:-yüklü}"
@@ -590,6 +608,9 @@ ensure_prerequisites() {
             warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
         fi
     else
+        if [[ "$WSL2" == true ]] && [[ "$docker_version_error" == *"Input/output error"* ]]; then
+            warn "Docker CLI çağrısı Input/output error döndürüyor. WSL entegrasyon mount'ları askıda kalmış olabilir."
+        fi
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
@@ -609,7 +630,7 @@ ensure_prerequisites() {
         info "WSL2 ortamı tespit edildi."
     fi
 
-    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
         warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
         info "Lütfen şu adımları uygulayın:"
         echo "  1. Windows'ta Docker Desktop'ı açın."
@@ -645,13 +666,13 @@ ensure_prerequisites() {
             # Eski bozuk dosya kalıntılarını temizle
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
-            local _ollama_script=""
-            _ollama_script=$(download_verified_script \
+            DOWNLOADED_SCRIPT_FILE=""
+            download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
-                "ollama_install")
-            sh "$_ollama_script"
-            rm -f "$_ollama_script"
+                "ollama_install"
+            sh "$DOWNLOADED_SCRIPT_FILE"
+            rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
@@ -808,13 +829,13 @@ setup_uv() {
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-        local _uv_install_script=""
-        _uv_install_script=$(download_verified_script \
+        DOWNLOADED_SCRIPT_FILE=""
+        download_verified_script \
             "https://astral.sh/uv/install.sh" \
             "${UV_INSTALL_SHA256:-}" \
-            "uv_install")
-        sh "$_uv_install_script"
-        rm -f "$_uv_install_script"
+            "uv_install"
+        sh "$DOWNLOADED_SCRIPT_FILE"
+        rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
