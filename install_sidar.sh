@@ -69,7 +69,7 @@ HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
 DOCKER_ONLY=false
-ENABLE_AUDIO=true
+ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -105,7 +105,7 @@ for arg in "$@"; do
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
-            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (PulseAudio/WSLg otomatik yapılandırılır)"
+            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
             exit 0
             ;;
         *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio kabul edilir)"; exit 1 ;;
