@@ -82,6 +82,8 @@ compute_sha256() {
     fi
 }
 
+DOWNLOADED_SCRIPT_FILE=""
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -110,7 +112,7 @@ download_verified_script() {
         ok "${script_label} checksum doğrulaması başarılı."
     fi
 
-    echo "$script_file"
+    DOWNLOADED_SCRIPT_FILE="$script_file"
 }
 
 ensure_docker_daemon_running() {
@@ -414,15 +416,15 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
-        local _nodesource_script=""
+        DOWNLOADED_SCRIPT_FILE=""
         local _ns_log; _ns_log=$(mktemp)
         # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
         # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
-        if _nodesource_script=$(download_verified_script \
+        if download_verified_script \
             "https://deb.nodesource.com/setup_20.x" \
             "${NODESOURCE_SETUP_SHA256:-}" \
-            "nodesource_setup"); then
-            if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
+            "nodesource_setup"; then
+            if sudo -E bash "$DOWNLOADED_SCRIPT_FILE" >"$_ns_log" 2>&1; then
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
@@ -434,7 +436,7 @@ install_system_dependencies() {
             warn "NodeSource setup script indirilemedi/doğrulanamadı, apt deposundan nodejs/npm kurulumu deneniyor."
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
-        rm -f "$_ns_log" "$_nodesource_script"
+        rm -f "$_ns_log" "$DOWNLOADED_SCRIPT_FILE"
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
         local -a linux_media_pkgs=(
@@ -645,13 +647,13 @@ ensure_prerequisites() {
             # Eski bozuk dosya kalıntılarını temizle
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
-            local _ollama_script=""
-            _ollama_script=$(download_verified_script \
+            DOWNLOADED_SCRIPT_FILE=""
+            download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
-                "ollama_install")
-            sh "$_ollama_script"
-            rm -f "$_ollama_script"
+                "ollama_install"
+            sh "$DOWNLOADED_SCRIPT_FILE"
+            rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
@@ -808,13 +810,13 @@ setup_uv() {
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-        local _uv_install_script=""
-        _uv_install_script=$(download_verified_script \
+        DOWNLOADED_SCRIPT_FILE=""
+        download_verified_script \
             "https://astral.sh/uv/install.sh" \
             "${UV_INSTALL_SHA256:-}" \
-            "uv_install")
-        sh "$_uv_install_script"
-        rm -f "$_uv_install_script"
+            "uv_install"
+        sh "$DOWNLOADED_SCRIPT_FILE"
+        rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
