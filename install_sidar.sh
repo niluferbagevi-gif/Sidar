@@ -386,7 +386,8 @@ install_system_dependencies() {
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential software-properties-common zstd ca-certificates gnupg
+            curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
+            postgresql-client-common postgresql-client
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
         local _nodesource_script=""
@@ -583,8 +584,18 @@ ensure_prerequisites() {
     fi
 
     if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
-        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduysanız Docker Desktop entegrasyonu kopmuş olabilir."
-        warn "Windows'ta Docker Desktop > Settings > Resources > WSL Integration menüsünden 'Ubuntu'yu etkinleştirip yeniden deneyin."
+        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
+        info "Lütfen şu adımları uygulayın:"
+        echo "  1. Windows'ta Docker Desktop'ı açın."
+        echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
+        echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+        echo ""
+        read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+
+        # Kullanıcıdan onay sonrası tekrar doğrula
+        if ! command -v docker &>/dev/null; then
+            fail "Docker hâlâ bulunamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+        fi
     fi
 
     # Redis (Local Event Bus / cache)
@@ -1782,6 +1793,14 @@ download_ollama_models() {
     }
     trap cleanup_temp_ollama RETURN
 
+    if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
+        warn "WSL2 .wslconfig bu kurulumda güncellendi; yeni memory/swap limitleri henüz etkin değil."
+        info "Model indirme işlemleri güvenlik için ertelendi. Önce Windows PowerShell'de şunu çalıştırın:"
+        echo "  wsl --shutdown"
+        info "Ardından dağıtımı yeniden açıp modelleri indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
+        return
+    fi
+
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
         return
@@ -2054,6 +2073,14 @@ run_smoke_tests() {
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
+
+    if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
+        warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
+        info "PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden açtıktan sonra testleri çalıştırın:"
+        echo "  python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        SMOKE_TEST_STATUS="ertelendi_wsl_restart"
+        return
+    fi
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
         info "--skip-smoke-test verildiği için smoke testler atlandı."
@@ -2362,6 +2389,61 @@ launch_ide() {
     fi
 }
 
+# ── Terminal kısayolu: Sidar ortamını hızlı aktive et ───────────────────────
+setup_shell_activation_shortcut() {
+    step "Terminal Kısayolu Yapılandırması"
+
+    local -a rc_files=("$HOME/.bashrc" "$HOME/.zshrc")
+    local marker_begin="# >>> Sidar shell helper >>>"
+    local marker_end="# <<< Sidar shell helper <<<"
+    local helper_body=""
+
+    if [[ "$USE_CONDA" == true ]]; then
+        local conda_base=""
+        conda_base=$(conda info --base 2>/dev/null || true)
+        helper_body=$(cat <<EOF
+${marker_begin}
+sidar_env() {
+  cd "$TARGET_DIR" || return 1
+  if [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$conda_base/etc/profile.d/conda.sh"
+  fi
+  conda activate "$CONDA_ENV_NAME"
+}
+alias sidar-env='sidar_env'
+${marker_end}
+EOF
+)
+    else
+        helper_body=$(cat <<EOF
+${marker_begin}
+sidar_env() {
+  cd "$TARGET_DIR" || return 1
+  # shellcheck disable=SC1091
+  source "$TARGET_DIR/.venv/bin/activate"
+}
+alias sidar-env='sidar_env'
+${marker_end}
+EOF
+)
+    fi
+
+    local rcfile
+    for rcfile in "${rc_files[@]}"; do
+        [[ -f "$rcfile" ]] || touch "$rcfile"
+        if grep -qF "$marker_begin" "$rcfile" 2>/dev/null; then
+            info "Sidar terminal kısayolu zaten mevcut: $rcfile"
+            continue
+        fi
+        {
+            echo ""
+            echo "$helper_body"
+        } >> "$rcfile"
+        ok "Sidar terminal kısayolu eklendi: $rcfile (kullanım: sidar-env)"
+    done
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -2397,6 +2479,7 @@ main() {
         setup_uv
         setup_python_env
     fi
+    setup_shell_activation_shortcut
     install_python_deps
     verify_torch_cuda
     install_playwright_browsers
