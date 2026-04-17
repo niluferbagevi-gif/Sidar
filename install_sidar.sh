@@ -658,8 +658,16 @@ setup_uv() {
     step "uv Paket Yöneticisi"
 
     if ! command -v uv &>/dev/null; then
-        info "uv bulunamadı — pip ile kuruluyor..."
-        pip install --quiet "uv>=0.5.0"
+        info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        if [[ -f "$HOME/.cargo/env" ]]; then
+            # shellcheck disable=SC1090
+            source "$HOME/.cargo/env"
+        fi
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
