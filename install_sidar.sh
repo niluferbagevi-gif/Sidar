@@ -54,6 +54,7 @@ on_install_error() {
     echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
     echo "   Hata veren komut: ${failed_cmd}" >&2
     echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+    exit "$exit_code"
 }
 
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
