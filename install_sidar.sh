@@ -2382,6 +2382,7 @@ main() {
         setup_python_env
     fi
     install_python_deps
+    verify_torch_cuda
     install_playwright_browsers
     create_directories
     setup_react_frontend
@@ -2392,7 +2393,6 @@ main() {
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
-    verify_torch_cuda
     run_smoke_tests
     run_test_artifact_audit
     print_summary
