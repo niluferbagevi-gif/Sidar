@@ -1800,7 +1800,23 @@ download_ollama_models() {
     for model in "${MODELS[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
-            ollama pull "$model"
+            local pull_success=false
+            for attempt in 1 2 3; do
+                if ollama pull "$model"; then
+                    pull_success=true
+                    break
+                fi
+                warn "Model indirme denemesi başarısız (${model}) [${attempt}/3]."
+                if [[ "$attempt" -lt 3 ]]; then
+                    local backoff=$((attempt * 5))
+                    info "${backoff}s sonra yeniden denenecek..."
+                    sleep "$backoff"
+                fi
+            done
+
+            if [[ "$pull_success" != true ]]; then
+                fail "Model indirilemedi: ${model} (3 deneme sonrası başarısız)."
+            fi
         fi
     done
 
