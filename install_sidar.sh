@@ -32,6 +32,21 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
+prompt_yes_no_with_timeout_default_yes() {
+    local prompt="$1"
+    local timeout_seconds="${2:-180}"
+    local reply=""
+
+    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+        :
+    else
+        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Evet."
+        reply="E"
+    fi
+
+    echo "$reply"
+}
+
 on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
@@ -628,7 +643,7 @@ ensure_prerequisites() {
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
             local _ollama_script=""
-            _ollama_script=$(ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 download_verified_script \
+            _ollama_script=$(download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install")
@@ -790,7 +805,13 @@ setup_uv() {
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        local _uv_install_script=""
+        _uv_install_script=$(download_verified_script \
+            "https://astral.sh/uv/install.sh" \
+            "${UV_INSTALL_SHA256:-}" \
+            "uv_install")
+        sh "$_uv_install_script"
+        rm -f "$_uv_install_script"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
@@ -997,11 +1018,15 @@ ASOUNDRC
         # PULSE_SERVER ortam değişkeni (yeni terminaller için kalıcı)
         local pulse_export="export PULSE_SERVER=unix:${pulse_socket}"
         for rcfile in "$HOME/.bashrc" "$HOME/.zshrc"; do
-            if [[ -f "$rcfile" ]] && ! grep -q "PULSE_SERVER" "$rcfile" 2>/dev/null; then
-                echo "" >> "$rcfile"
-                echo "# Sidar WSL2 ses desteği" >> "$rcfile"
-                echo "$pulse_export" >> "$rcfile"
-                ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+            if [[ -f "$rcfile" ]]; then
+                if grep -Fxq "$pulse_export" "$rcfile" 2>/dev/null; then
+                    ok "PULSE_SERVER zaten ${rcfile} içinde tanımlı."
+                else
+                    echo "" >> "$rcfile"
+                    echo "# Sidar WSL2 ses desteği" >> "$rcfile"
+                    echo "$pulse_export" >> "$rcfile"
+                    ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+                fi
             fi
         done
         # Mevcut oturum için de hemen ayarla
@@ -1085,6 +1110,54 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
+    # Değer zaten varsa korur, yinelenen satırları temizler.
+    _ensure_wsl2_key_once() {
+        local cfg_file="$1"
+        local cfg_key="$2"
+        local cfg_value="$3"
+        local tmp_file
+        tmp_file=$(mktemp)
+
+        awk -v key="$cfg_key" -v value="$cfg_value" '
+            BEGIN { in_wsl2=0; seen_key=0 }
+            {
+                if ($0 ~ /^\[.*\]$/) {
+                    if (in_wsl2 && !seen_key) {
+                        print key "=" value
+                        seen_key=1
+                    }
+                    in_wsl2 = ($0 == "[wsl2]")
+                    print
+                    next
+                }
+
+                if (in_wsl2 && $0 ~ ("^" key "=")) {
+                    if (!seen_key) {
+                        print
+                        seen_key=1
+                    }
+                    next
+                }
+
+                print
+            }
+            END {
+                if (in_wsl2 && !seen_key) {
+                    print key "=" value
+                }
+            }
+        ' "$cfg_file" > "$tmp_file"
+
+        if ! cmp -s "$cfg_file" "$tmp_file"; then
+            mv "$tmp_file" "$cfg_file"
+            return 0
+        fi
+
+        rm -f "$tmp_file"
+        return 1
+    }
+
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
@@ -1098,43 +1171,49 @@ WSLCFG
         else
             local changed=false
 
-            # [wsl2] bölümü yoksa dosyanın başına ekle
+            # [wsl2] bölümü yoksa dosyanın sonuna ekle
             if ! grep -q '^\[wsl2\]' "$wslconfig_path" 2>/dev/null; then
-                sed -i '1s/^/[wsl2]\n/' "$wslconfig_path"
+                printf '\n[wsl2]\n' >> "$wslconfig_path"
                 ok "WSL2: .wslconfig içine [wsl2] bölümü eklendi."
                 changed=true
             fi
 
-            # memory= satırı yoksa ekle; varsa değeri kontrol et
-            if ! grep -q '^memory=' "$wslconfig_path" 2>/dev/null; then
-                sed -i '/^\[wsl2\]/a memory=16GB' "$wslconfig_path"
-                ok "WSL2: .wslconfig içine memory=16GB eklendi."
+            # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "16GB"; then
+                ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
-            else
-                local cur_mem cur_mem_gb
-                cur_mem=$(grep '^memory=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                cur_mem_gb=$(_parse_gb "$cur_mem")
-                if [[ "$cur_mem_gb" -lt 8 ]]; then
-                    warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
-                else
-                    ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
-                fi
             fi
 
-            # swap= satırı yoksa ekle; varsa değeri kontrol et
-            if ! grep -q '^swap=' "$wslconfig_path" 2>/dev/null; then
-                sed -i '/^\[wsl2\]/a swap=8GB' "$wslconfig_path"
-                ok "WSL2: .wslconfig içine swap=8GB eklendi."
-                changed=true
+            local cur_mem cur_mem_gb
+            cur_mem=$(awk '
+                BEGIN { in_wsl2=0 }
+                /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
+                in_wsl2 && /^memory=/ { sub(/^memory=/, "", $0); print; exit }
+            ' "$wslconfig_path")
+            cur_mem_gb=$(_parse_gb "$cur_mem")
+            if [[ "$cur_mem_gb" -lt 8 ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
             else
-                local cur_swap cur_swap_gb
-                cur_swap=$(grep '^swap=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                cur_swap_gb=$(_parse_gb "$cur_swap")
-                if [[ "$cur_swap_gb" -lt 4 ]]; then
-                    warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
-                else
-                    ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
-                fi
+                ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
+            fi
+
+            # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "8GB"; then
+                ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
+                changed=true
+            fi
+
+            local cur_swap cur_swap_gb
+            cur_swap=$(awk '
+                BEGIN { in_wsl2=0 }
+                /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
+                in_wsl2 && /^swap=/ { sub(/^swap=/, "", $0); print; exit }
+            ' "$wslconfig_path")
+            cur_swap_gb=$(_parse_gb "$cur_swap")
+            if [[ "$cur_swap_gb" -lt 4 ]]; then
+                warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
+            else
+                ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
 
             if [[ "$changed" == true ]]; then
@@ -1598,7 +1677,7 @@ ensure_auto_secrets() {
         if command -v python3 &>/dev/null; then
             python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true
         elif command -v openssl &>/dev/null; then
-            openssl rand -base64 "$n" 2>/dev/null | tr -d '\n=' || true
+            openssl rand -base64 "$n" 2>/dev/null | tr '+/' '-_' | tr -d '\n=' || true
         fi
     }
 
@@ -1776,10 +1855,10 @@ setup_env_file() {
 
         if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
             if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
             fi
         else
-            echo 'DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
+            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
         fi
 
         ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
@@ -1821,19 +1900,13 @@ download_ollama_models() {
             info "Model indirmek için: ./install_sidar.sh --download-models"
             return
         fi
-        if [[ -t 0 ]]; then
-            read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
-            case "${reply:-E}" in
-                [HhNn]*)
-                    info "Model indirmesi kullanıcı tercihiyle atlandı."
-                    return
-                    ;;
-            esac
-        else
-            info "--download-models verilmediği için model indirmeleri atlanıyor (tahmini ${estimated_size_gb})."
-            info "Model indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
-            return
-        fi
+        reply=$(prompt_yes_no_with_timeout_default_yes "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] ")
+        case "${reply:-E}" in
+            [HhNn]*)
+                info "Model indirmesi kullanıcı tercihiyle atlandı."
+                return
+                ;;
+        esac
     fi
 
     if ! command -v ollama &>/dev/null; then
@@ -2070,7 +2143,7 @@ prepare_docker_for_migrations() {
     fi
 
     echo ""
-    read -r -p "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] " start_for_migration
+    start_for_migration=$(prompt_yes_no_with_timeout_default_yes "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] ")
     case "${start_for_migration:-E}" in
         [HhNn]*)
             MIGRATION_DOCKER_POLICY="disabled"
@@ -2149,16 +2222,12 @@ run_smoke_tests() {
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "always" ]]; then
         should_run=true
-    elif [[ -t 0 ]]; then
-        read -r -p "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] " reply
+    else
+        reply=$(prompt_yes_no_with_timeout_default_yes "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] ")
         case "${reply:-E}" in
             [HhNn]*) should_run=false ;;
             *) should_run=true ;;
         esac
-    else
-        info "Etkileşimsiz modda smoke test otomatik atlandı. Çalıştırmak için --smoke-test kullanın."
-        SMOKE_TEST_STATUS="atlandi_non_interactive"
-        return
     fi
 
     if [[ "$should_run" != true ]]; then
@@ -2373,7 +2442,7 @@ launch_docker_services() {
         start_default="H"
     fi
 
-    read -r -p "$start_prompt" start_docker
+    start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
@@ -2433,7 +2502,7 @@ launch_ide() {
 
     if command -v code &>/dev/null; then
         echo ""
-        read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
+        open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
         case "${open_code:-H}" in
             [EeYy]*)
                 info "VS Code açılıyor..."
