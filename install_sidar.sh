@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.0
+# Sürüm : 5.2.1
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -87,6 +87,38 @@ compute_sha256() {
 
 DOWNLOADED_SCRIPT_FILE=""
 
+validate_downloaded_script_file() {
+    local script_file="${1:-}"
+    local script_label="${2:-indirilen_betik}"
+    if [[ -z "$script_file" ]]; then
+        fail "${script_label}: indirilen betik yolu boş."
+    fi
+    if [[ "$script_file" == *$'\n'* ]]; then
+        fail "${script_label}: betik yolu birden fazla satır içeriyor, güvenli değil."
+    fi
+    if [[ ! -f "$script_file" ]]; then
+        fail "${script_label}: betik dosyası bulunamadı (${script_file})."
+    fi
+}
+
+docker_cli_healthy() {
+    command -v docker &>/dev/null || return 1
+
+    local docker_out=""
+    local docker_rc=0
+    docker_out="$(docker --version 2>&1)" || docker_rc=$?
+    if [[ "$docker_rc" -ne 0 ]]; then
+        if [[ "$docker_rc" -eq 135 ]] || [[ "$docker_out" == *"Bus error"* ]]; then
+            warn "Docker CLI Bus error veriyor. WSL2 Docker Desktop entegrasyonunu yeniden etkinleştirip WSL'i yeniden başlatın."
+        elif [[ "$docker_out" == *"Input/output error"* ]]; then
+            warn "Docker CLI Input/output error veriyor. WSL mount/entegrasyon durumu bozulmuş olabilir."
+        fi
+        return 1
+    fi
+
+    return 0
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -94,7 +126,9 @@ download_verified_script() {
     local script_file
     script_file=$(mktemp)
 
-    if ! curl -fsSL "$script_url" -o "$script_file"; then
+    if ! curl -fsSL --retry 3 --retry-all-errors \
+        -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+        "$script_url" -o "$script_file"; then
         rm -f "$script_file"
         fail "${script_label} indirilemedi: ${script_url}"
     fi
@@ -119,7 +153,7 @@ download_verified_script() {
 }
 
 ensure_docker_daemon_running() {
-    if ! command -v docker &>/dev/null; then
+    if ! docker_cli_healthy; then
         return 1
     fi
 
@@ -246,7 +280,7 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -583,7 +617,7 @@ ensure_prerequisites() {
     if command -v docker &>/dev/null; then
         local _docker_err_file
         _docker_err_file=$(mktemp)
-        if docker --version >/dev/null 2>"$_docker_err_file"; then
+        if docker_cli_healthy 2>"$_docker_err_file"; then
             docker_version_check_ok=true
         else
             docker_version_error="$(<"$_docker_err_file")"
@@ -640,7 +674,7 @@ ensure_prerequisites() {
         read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
         # Kullanıcıdan onay sonrası tekrar doğrula
-        if !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+        if ! docker_cli_healthy; then
             fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
         fi
     fi
@@ -671,6 +705,7 @@ ensure_prerequisites() {
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install"
+            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
             sh "$DOWNLOADED_SCRIPT_FILE"
             rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
