@@ -628,7 +628,7 @@ ensure_prerequisites() {
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
             local _ollama_script=""
-            _ollama_script=$(ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 download_verified_script \
+            _ollama_script=$(download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install")
@@ -790,7 +790,13 @@ setup_uv() {
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        local _uv_install_script=""
+        _uv_install_script=$(download_verified_script \
+            "https://astral.sh/uv/install.sh" \
+            "${UV_INSTALL_SHA256:-}" \
+            "uv_install")
+        sh "$_uv_install_script"
+        rm -f "$_uv_install_script"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
