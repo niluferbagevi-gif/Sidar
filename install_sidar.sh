@@ -563,6 +563,11 @@ check_prerequisites() {
         WSL2=false
     fi
 
+    if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
+        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduysanız Docker Desktop entegrasyonu kopmuş olabilir."
+        warn "Windows'ta Docker Desktop > Settings > Resources > WSL Integration menüsünden 'Ubuntu'yu etkinleştirip yeniden deneyin."
+    fi
+
     # Redis (Local Event Bus / cache)
     if [[ "$DOCKER_ONLY" == false ]] && ! command -v redis-server &>/dev/null && [[ "$WSL2" == false ]]; then
         warn "Lokal Redis sunucusu bulunamadı. Projenin düzgün çalışması için Redis gereklidir."
