@@ -50,6 +50,21 @@ prompt_yes_no_with_timeout_default_yes() {
     echo "$reply"
 }
 
+prompt_yes_no_with_timeout_default_no() {
+    local prompt="$1"
+    local timeout_seconds="${2:-180}"
+    local reply=""
+
+    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+        :
+    else
+        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Hayır."
+        reply="H"
+    fi
+
+    echo "$reply"
+}
+
 on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
@@ -426,10 +441,29 @@ sync_repo() {
                 if git stash pop >/dev/null 2>&1; then
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
-                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurulum durdurulacak."
+                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
                     git merge --abort >/dev/null 2>&1 || true
                     git rebase --abort >/dev/null 2>&1 || true
-                    fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                    if [[ "$NO_INTERACTION" == true ]]; then
+                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
+                    fi
+
+                    echo ""
+                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
+                    local recovery_reply
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    case "${recovery_reply:-H}" in
+                        [EeYy]*)
+                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
+                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
+                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
+                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
+                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
+                            ;;
+                        *)
+                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                            ;;
+                    esac
                 fi
             fi
         )
