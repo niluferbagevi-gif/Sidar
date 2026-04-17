@@ -1110,6 +1110,54 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
+    # Değer zaten varsa korur, yinelenen satırları temizler.
+    _ensure_wsl2_key_once() {
+        local cfg_file="$1"
+        local cfg_key="$2"
+        local cfg_value="$3"
+        local tmp_file
+        tmp_file=$(mktemp)
+
+        awk -v key="$cfg_key" -v value="$cfg_value" '
+            BEGIN { in_wsl2=0; seen_key=0 }
+            {
+                if ($0 ~ /^\[.*\]$/) {
+                    if (in_wsl2 && !seen_key) {
+                        print key "=" value
+                        seen_key=1
+                    }
+                    in_wsl2 = ($0 == "[wsl2]")
+                    print
+                    next
+                }
+
+                if (in_wsl2 && $0 ~ ("^" key "=")) {
+                    if (!seen_key) {
+                        print
+                        seen_key=1
+                    }
+                    next
+                }
+
+                print
+            }
+            END {
+                if (in_wsl2 && !seen_key) {
+                    print key "=" value
+                }
+            }
+        ' "$cfg_file" > "$tmp_file"
+
+        if ! cmp -s "$cfg_file" "$tmp_file"; then
+            mv "$tmp_file" "$cfg_file"
+            return 0
+        fi
+
+        rm -f "$tmp_file"
+        return 1
+    }
+
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
@@ -1123,43 +1171,49 @@ WSLCFG
         else
             local changed=false
 
-            # [wsl2] bölümü yoksa dosyanın başına ekle
+            # [wsl2] bölümü yoksa dosyanın sonuna ekle
             if ! grep -q '^\[wsl2\]' "$wslconfig_path" 2>/dev/null; then
-                sed -i '1s/^/[wsl2]\n/' "$wslconfig_path"
+                printf '\n[wsl2]\n' >> "$wslconfig_path"
                 ok "WSL2: .wslconfig içine [wsl2] bölümü eklendi."
                 changed=true
             fi
 
-            # memory= satırı yoksa ekle; varsa değeri kontrol et
-            if ! grep -q '^memory=' "$wslconfig_path" 2>/dev/null; then
-                sed -i '/^\[wsl2\]/a memory=16GB' "$wslconfig_path"
-                ok "WSL2: .wslconfig içine memory=16GB eklendi."
+            # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "16GB"; then
+                ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
-            else
-                local cur_mem cur_mem_gb
-                cur_mem=$(grep '^memory=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                cur_mem_gb=$(_parse_gb "$cur_mem")
-                if [[ "$cur_mem_gb" -lt 8 ]]; then
-                    warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
-                else
-                    ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
-                fi
             fi
 
-            # swap= satırı yoksa ekle; varsa değeri kontrol et
-            if ! grep -q '^swap=' "$wslconfig_path" 2>/dev/null; then
-                sed -i '/^\[wsl2\]/a swap=8GB' "$wslconfig_path"
-                ok "WSL2: .wslconfig içine swap=8GB eklendi."
-                changed=true
+            local cur_mem cur_mem_gb
+            cur_mem=$(awk '
+                BEGIN { in_wsl2=0 }
+                /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
+                in_wsl2 && /^memory=/ { sub(/^memory=/, "", $0); print; exit }
+            ' "$wslconfig_path")
+            cur_mem_gb=$(_parse_gb "$cur_mem")
+            if [[ "$cur_mem_gb" -lt 8 ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
             else
-                local cur_swap cur_swap_gb
-                cur_swap=$(grep '^swap=' "$wslconfig_path" | head -1 | cut -d= -f2-)
-                cur_swap_gb=$(_parse_gb "$cur_swap")
-                if [[ "$cur_swap_gb" -lt 4 ]]; then
-                    warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
-                else
-                    ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
-                fi
+                ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
+            fi
+
+            # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "8GB"; then
+                ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
+                changed=true
+            fi
+
+            local cur_swap cur_swap_gb
+            cur_swap=$(awk '
+                BEGIN { in_wsl2=0 }
+                /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
+                in_wsl2 && /^swap=/ { sub(/^swap=/, "", $0); print; exit }
+            ' "$wslconfig_path")
+            cur_swap_gb=$(_parse_gb "$cur_swap")
+            if [[ "$cur_swap_gb" -lt 4 ]]; then
+                warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
+            else
+                ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
 
             if [[ "$changed" == true ]]; then
