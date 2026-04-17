@@ -2389,6 +2389,61 @@ launch_ide() {
     fi
 }
 
+# ── Terminal kısayolu: Sidar ortamını hızlı aktive et ───────────────────────
+setup_shell_activation_shortcut() {
+    step "Terminal Kısayolu Yapılandırması"
+
+    local -a rc_files=("$HOME/.bashrc" "$HOME/.zshrc")
+    local marker_begin="# >>> Sidar shell helper >>>"
+    local marker_end="# <<< Sidar shell helper <<<"
+    local helper_body=""
+
+    if [[ "$USE_CONDA" == true ]]; then
+        local conda_base=""
+        conda_base=$(conda info --base 2>/dev/null || true)
+        helper_body=$(cat <<EOF
+${marker_begin}
+sidar_env() {
+  cd "$TARGET_DIR" || return 1
+  if [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$conda_base/etc/profile.d/conda.sh"
+  fi
+  conda activate "$CONDA_ENV_NAME"
+}
+alias sidar-env='sidar_env'
+${marker_end}
+EOF
+)
+    else
+        helper_body=$(cat <<EOF
+${marker_begin}
+sidar_env() {
+  cd "$TARGET_DIR" || return 1
+  # shellcheck disable=SC1091
+  source "$TARGET_DIR/.venv/bin/activate"
+}
+alias sidar-env='sidar_env'
+${marker_end}
+EOF
+)
+    fi
+
+    local rcfile
+    for rcfile in "${rc_files[@]}"; do
+        [[ -f "$rcfile" ]] || touch "$rcfile"
+        if grep -qF "$marker_begin" "$rcfile" 2>/dev/null; then
+            info "Sidar terminal kısayolu zaten mevcut: $rcfile"
+            continue
+        fi
+        {
+            echo ""
+            echo "$helper_body"
+        } >> "$rcfile"
+        ok "Sidar terminal kısayolu eklendi: $rcfile (kullanım: sidar-env)"
+    done
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -2424,6 +2479,7 @@ main() {
         setup_uv
         setup_python_env
     fi
+    setup_shell_activation_shortcut
     install_python_deps
     verify_torch_cuda
     install_playwright_browsers
