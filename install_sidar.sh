@@ -1003,11 +1003,15 @@ ASOUNDRC
         # PULSE_SERVER ortam değişkeni (yeni terminaller için kalıcı)
         local pulse_export="export PULSE_SERVER=unix:${pulse_socket}"
         for rcfile in "$HOME/.bashrc" "$HOME/.zshrc"; do
-            if [[ -f "$rcfile" ]] && ! grep -q "PULSE_SERVER" "$rcfile" 2>/dev/null; then
-                echo "" >> "$rcfile"
-                echo "# Sidar WSL2 ses desteği" >> "$rcfile"
-                echo "$pulse_export" >> "$rcfile"
-                ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+            if [[ -f "$rcfile" ]]; then
+                if grep -Fxq "$pulse_export" "$rcfile" 2>/dev/null; then
+                    ok "PULSE_SERVER zaten ${rcfile} içinde tanımlı."
+                else
+                    echo "" >> "$rcfile"
+                    echo "# Sidar WSL2 ses desteği" >> "$rcfile"
+                    echo "$pulse_export" >> "$rcfile"
+                    ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+                fi
             fi
         done
         # Mevcut oturum için de hemen ayarla
