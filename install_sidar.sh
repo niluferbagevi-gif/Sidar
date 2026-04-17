@@ -30,6 +30,48 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
+compute_sha256() {
+    local file_path="$1"
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file_path" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file_path" | awk '{print $1}'
+    else
+        fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+    fi
+}
+
+download_verified_script() {
+    local script_url="$1"
+    local expected_sha="$2"
+    local script_label="$3"
+    local script_file
+    script_file=$(mktemp)
+
+    if ! curl -fsSL "$script_url" -o "$script_file"; then
+        rm -f "$script_file"
+        fail "${script_label} indirilemedi: ${script_url}"
+    fi
+
+    local actual_sha
+    actual_sha=$(compute_sha256 "$script_file")
+
+    if [[ -z "$expected_sha" ]]; then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+            rm -f "$script_file"
+            fail "${script_label} checksum değeri tanımlı değil. ${script_label^^}_SHA256 değişkenini ayarlayın veya ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+        fi
+        warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
+    elif [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$script_file"
+        fail "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
+    else
+        ok "${script_label} checksum doğrulaması başarılı."
+    fi
+
+    echo "$script_file"
+}
+
 ensure_docker_daemon_running() {
     if ! command -v docker &>/dev/null; then
         return 1
@@ -303,7 +345,13 @@ install_system_dependencies() {
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        local _nodesource_script=""
+        _nodesource_script=$(download_verified_script \
+            "https://deb.nodesource.com/setup_20.x" \
+            "${NODESOURCE_SETUP_SHA256:-}" \
+            "nodesource_setup")
+        if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
+        rm -f "$_nodesource_script"
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
@@ -515,7 +563,13 @@ check_prerequisites() {
             # Eski bozuk dosya kalıntılarını temizle
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
-            curl -fsSL https://ollama.com/install.sh | sh
+            local _ollama_script=""
+            _ollama_script=$(download_verified_script \
+                "https://ollama.com/install.sh" \
+                "${OLLAMA_INSTALL_SHA256:-}" \
+                "ollama_install")
+            sh "$_ollama_script"
+            rm -f "$_ollama_script"
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
