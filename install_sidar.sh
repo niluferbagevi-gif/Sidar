@@ -142,6 +142,7 @@ MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 WSL2=false
+WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
@@ -1072,6 +1073,7 @@ memory=16GB
 swap=8GB
 WSLCFG
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
+            WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
             local changed=false
@@ -1116,6 +1118,7 @@ WSLCFG
             fi
 
             if [[ "$changed" == true ]]; then
+                WSLCONFIG_CHANGED=true
                 info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
             fi
         fi
@@ -2214,6 +2217,10 @@ print_summary() {
             echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
         else
             echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
+        fi
+        if [[ "$WSLCONFIG_CHANGED" == true ]]; then
+            echo -e "  ${YELLOW}⚠️  ÖNEMLİ: .wslconfig değişti → memory/swap ayarlarının etkili olması için:${NC}"
+            echo "       PowerShell'de: wsl --shutdown && wsl"
         fi
         echo ""
     fi
