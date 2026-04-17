@@ -583,8 +583,18 @@ ensure_prerequisites() {
     fi
 
     if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
-        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduysanız Docker Desktop entegrasyonu kopmuş olabilir."
-        warn "Windows'ta Docker Desktop > Settings > Resources > WSL Integration menüsünden 'Ubuntu'yu etkinleştirip yeniden deneyin."
+        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
+        info "Lütfen şu adımları uygulayın:"
+        echo "  1. Windows'ta Docker Desktop'ı açın."
+        echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
+        echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+        echo ""
+        read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+
+        # Kullanıcıdan onay sonrası tekrar doğrula
+        if ! command -v docker &>/dev/null; then
+            fail "Docker hâlâ bulunamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+        fi
     fi
 
     # Redis (Local Event Bus / cache)
