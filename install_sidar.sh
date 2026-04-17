@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.0
+# Sürüm : 5.2.1
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -50,6 +50,21 @@ prompt_yes_no_with_timeout_default_yes() {
     echo "$reply"
 }
 
+prompt_yes_no_with_timeout_default_no() {
+    local prompt="$1"
+    local timeout_seconds="${2:-180}"
+    local reply=""
+
+    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+        :
+    else
+        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Hayır."
+        reply="H"
+    fi
+
+    echo "$reply"
+}
+
 on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
@@ -87,6 +102,38 @@ compute_sha256() {
 
 DOWNLOADED_SCRIPT_FILE=""
 
+validate_downloaded_script_file() {
+    local script_file="${1:-}"
+    local script_label="${2:-indirilen_betik}"
+    if [[ -z "$script_file" ]]; then
+        fail "${script_label}: indirilen betik yolu boş."
+    fi
+    if [[ "$script_file" == *$'\n'* ]]; then
+        fail "${script_label}: betik yolu birden fazla satır içeriyor, güvenli değil."
+    fi
+    if [[ ! -f "$script_file" ]]; then
+        fail "${script_label}: betik dosyası bulunamadı (${script_file})."
+    fi
+}
+
+docker_cli_healthy() {
+    command -v docker &>/dev/null || return 1
+
+    local docker_out=""
+    local docker_rc=0
+    docker_out="$(docker --version 2>&1)" || docker_rc=$?
+    if [[ "$docker_rc" -ne 0 ]]; then
+        if [[ "$docker_rc" -eq 135 ]] || [[ "$docker_out" == *"Bus error"* ]]; then
+            warn "Docker CLI Bus error veriyor. WSL2 Docker Desktop entegrasyonunu yeniden etkinleştirip WSL'i yeniden başlatın."
+        elif [[ "$docker_out" == *"Input/output error"* ]]; then
+            warn "Docker CLI Input/output error veriyor. WSL mount/entegrasyon durumu bozulmuş olabilir."
+        fi
+        return 1
+    fi
+
+    return 0
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -94,7 +141,9 @@ download_verified_script() {
     local script_file
     script_file=$(mktemp)
 
-    if ! curl -fsSL "$script_url" -o "$script_file"; then
+    if ! curl -fsSL --retry 3 --retry-all-errors \
+        -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+        "$script_url" -o "$script_file"; then
         rm -f "$script_file"
         fail "${script_label} indirilemedi: ${script_url}"
     fi
@@ -119,7 +168,7 @@ download_verified_script() {
 }
 
 ensure_docker_daemon_running() {
-    if ! command -v docker &>/dev/null; then
+    if ! docker_cli_healthy; then
         return 1
     fi
 
@@ -226,6 +275,7 @@ fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
+CONDA_PYTHON_PATH="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -246,7 +296,7 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -391,10 +441,29 @@ sync_repo() {
                 if git stash pop >/dev/null 2>&1; then
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
-                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurulum durdurulacak."
+                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
                     git merge --abort >/dev/null 2>&1 || true
                     git rebase --abort >/dev/null 2>&1 || true
-                    fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                    if [[ "$NO_INTERACTION" == true ]]; then
+                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
+                    fi
+
+                    echo ""
+                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
+                    local recovery_reply
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    case "${recovery_reply:-H}" in
+                        [EeYy]*)
+                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
+                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
+                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
+                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
+                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
+                            ;;
+                        *)
+                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                            ;;
+                    esac
                 fi
             fi
         )
@@ -583,7 +652,7 @@ ensure_prerequisites() {
     if command -v docker &>/dev/null; then
         local _docker_err_file
         _docker_err_file=$(mktemp)
-        if docker --version >/dev/null 2>"$_docker_err_file"; then
+        if docker_cli_healthy 2>"$_docker_err_file"; then
             docker_version_check_ok=true
         else
             docker_version_error="$(<"$_docker_err_file")"
@@ -640,7 +709,7 @@ ensure_prerequisites() {
         read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
         # Kullanıcıdan onay sonrası tekrar doğrula
-        if !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+        if ! docker_cli_healthy; then
             fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
         fi
     fi
@@ -671,6 +740,15 @@ ensure_prerequisites() {
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install"
+            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
+
+            info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
+            if [[ "$NO_INTERACTION" == true ]]; then
+                sudo -n -v || fail "Ollama kurulumu için sudo yetkisi gerekli. --ci/--no-interaction modunda şifresiz sudo veya önceden doğrulanmış sudo oturumu beklenir."
+            else
+                sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
+            fi
+
             sh "$DOWNLOADED_SCRIPT_FILE"
             rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
@@ -806,6 +884,10 @@ setup_python_env() {
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
             fail "Conda ortamı doğrulanamadı: $CONDA_ENV_NAME"
+        fi
+
+        if [[ ! -x "$CONDA_PYTHON_PATH" ]]; then
+            fail "Conda ortamı oluşturuldu ancak python ikilisi bulunamadı: $CONDA_PYTHON_PATH"
         fi
     else
         step "uv venv Ortamı"
@@ -2039,14 +2121,15 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
-    ALEMBIC_CMD=(python -m alembic upgrade head)
+    ALEMBIC_PYTHON="python"
     if [[ "$USE_CONDA" == true ]]; then
-        ALEMBIC_CMD=(conda run -n "$CONDA_ENV_NAME" python -m alembic upgrade head)
+        ALEMBIC_PYTHON="$CONDA_PYTHON_PATH"
     fi
+    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
@@ -2071,7 +2154,7 @@ run_migrations() {
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
-            info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+            info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
@@ -2114,7 +2197,7 @@ PY
                     if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
                         DOCKER_DB_SERVICES_STARTED=true
                         info "Veritabanının hazır olması bekleniyor..."
-                        for _ in {1..15}; do
+                        for _ in {1..30}; do
                             if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                                 ok "PostgreSQL erişilebilir hale geldi."
                                 break
@@ -2129,7 +2212,11 @@ PY
 
             if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                 warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
-                info "DB hazır olduktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+                if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    info "PostgreSQL log özeti (son 80 satır) alınıyor..."
+                    "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres || warn "PostgreSQL logları okunamadı."
+                fi
+                info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
                 return
             fi
@@ -2406,7 +2493,7 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  conda run -n sidar python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  $CONDA_PYTHON_PATH -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
