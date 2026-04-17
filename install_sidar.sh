@@ -41,6 +41,18 @@ on_install_error() {
 
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
+relocate_log_file_if_needed() {
+    local target_log_dir="${TARGET_DIR}/logs"
+
+    if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
+        mkdir -p "$target_log_dir"
+        mv "$LOG_FILE" "$target_log_dir/"
+        LOG_DIR="$target_log_dir"
+        LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
+        info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
+    fi
+}
+
 compute_sha256() {
     local file_path="$1"
     if command -v sha256sum &>/dev/null; then
@@ -121,12 +133,16 @@ HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
+RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
+AUDIT_STATUS="atlandı"
+WSL2=false
+WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
@@ -144,10 +160,11 @@ for arg in "$@"; do
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
+        --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio] [--ci|--no-interaction]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -157,6 +174,7 @@ for arg in "$@"; do
             echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
             echo "  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır"
             echo "  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma"
+            echo "  --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
@@ -164,7 +182,7 @@ for arg in "$@"; do
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -393,10 +411,15 @@ install_system_dependencies() {
         fi
         rm -f "$_ns_log" "$_nodesource_script"
 
-        info "Kamera (v4l2) ve Ses (PortAudio/ALSA/PulseAudio/FFmpeg) kütüphaneleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg \
-            pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio
+        info "Kamera ve ses kütüphaneleri kuruluyor..."
+        local -a linux_media_pkgs=(
+            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+        )
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
+            linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
+        fi
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
         info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
@@ -429,7 +452,7 @@ install_system_dependencies() {
 }
 
 # ── 1. Ön koşul kontrolleri ───────────────────────────────────────────────────
-check_prerequisites() {
+ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
     # Conda kontrolü ve otomatik Miniconda kurulumu
@@ -555,12 +578,13 @@ check_prerequisites() {
         fi
     fi
 
-    # WSL2 tespiti
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+    if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
-        WSL2=true
-    else
-        WSL2=false
+    fi
+
+    if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
+        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduysanız Docker Desktop entegrasyonu kopmuş olabilir."
+        warn "Windows'ta Docker Desktop > Settings > Resources > WSL Integration menüsünden 'Ubuntu'yu etkinleştirip yeniden deneyin."
     fi
 
     # Redis (Local Event Bus / cache)
@@ -585,7 +609,7 @@ check_prerequisites() {
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
             local _ollama_script=""
-            _ollama_script=$(download_verified_script \
+            _ollama_script=$(ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install")
@@ -752,6 +776,8 @@ setup_uv() {
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
         fi
+        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
+        export PATH="$HOME/.local/bin:$PATH"
     fi
 
     if ! command -v uv &>/dev/null; then
@@ -1047,6 +1073,7 @@ memory=16GB
 swap=8GB
 WSLCFG
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
+            WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
             local changed=false
@@ -1091,6 +1118,7 @@ WSLCFG
             fi
 
             if [[ "$changed" == true ]]; then
+                WSLCONFIG_CHANGED=true
                 info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
             fi
         fi
@@ -2089,6 +2117,31 @@ run_smoke_tests() {
     fi
 }
 
+run_test_artifact_audit() {
+    step "Test Artifact Denetimi"
+
+    if [[ "$RUN_AUDIT" != true ]]; then
+        info "--audit verilmediği için test artifact denetimi atlandı."
+        AUDIT_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    local audit_script="$SCRIPT_DIR/scripts/check_empty_test_artifacts.sh"
+    if [[ ! -f "$audit_script" ]]; then
+        warn "Audit betiği bulunamadı: $audit_script"
+        AUDIT_STATUS="betik_yok"
+        return
+    fi
+
+    if bash "$audit_script"; then
+        ok "Test artifact denetimi başarıyla tamamlandı."
+        AUDIT_STATUS="tamamlandi"
+    else
+        AUDIT_STATUS="hata"
+        fail "Test artifact denetimi başarısız oldu. Boş/uygunsuz test dosyalarını düzeltip tekrar deneyin."
+    fi
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
@@ -2165,6 +2218,10 @@ print_summary() {
         else
             echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
         fi
+        if [[ "$WSLCONFIG_CHANGED" == true ]]; then
+            echo -e "  ${YELLOW}⚠️  ÖNEMLİ: .wslconfig değişti → memory/swap ayarlarının etkili olması için:${NC}"
+            echo "       PowerShell'de: wsl --shutdown && wsl"
+        fi
         echo ""
     fi
 
@@ -2181,6 +2238,13 @@ print_summary() {
         echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+    fi
+    if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
+        echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
+    elif [[ "$RUN_AUDIT" == true ]]; then
+        echo "  Test artifact audit: ${AUDIT_STATUS}."
+    else
+        echo "  Test artifact audit: atlandı. Çalıştırmak için: ./install_sidar.sh --audit"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
@@ -2301,6 +2365,13 @@ launch_ide() {
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
+    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+        WSL2=true
+    else
+        WSL2=false
+    fi
+
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
         deploy_with_helm
@@ -2314,7 +2385,7 @@ main() {
     install_system_dependencies
     sync_repo
     cd "$SCRIPT_DIR"
-    check_prerequisites
+    ensure_prerequisites
     detect_gpu
     setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
@@ -2327,22 +2398,24 @@ main() {
         setup_python_env
     fi
     install_python_deps
+    verify_torch_cuda
     install_playwright_browsers
     create_directories
-    setup_react_frontend
     setup_env_file
+    setup_react_frontend
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
     setup_vscode_workspace
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
-    verify_torch_cuda
     run_smoke_tests
+    run_test_artifact_audit
     print_summary
     launch_docker_services
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
+    relocate_log_file_if_needed
 }
 
 main "$@"
