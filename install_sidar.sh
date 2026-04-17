@@ -445,7 +445,7 @@ install_system_dependencies() {
 }
 
 # ── 1. Ön koşul kontrolleri ───────────────────────────────────────────────────
-check_prerequisites() {
+ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
     # Conda kontrolü ve otomatik Miniconda kurulumu
@@ -2369,7 +2369,7 @@ main() {
     install_system_dependencies
     sync_repo
     cd "$SCRIPT_DIR"
-    check_prerequisites
+    ensure_prerequisites
     detect_gpu
     setup_nvidia_docker
     if [[ "$USE_CONDA" == true ]]; then
