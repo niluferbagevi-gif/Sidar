@@ -572,8 +572,10 @@ ensure_prerequisites() {
     fi
 
     # Docker / Docker Compose (özet komutları için önerilir)
-    if command -v docker &>/dev/null; then
-        ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+    if command -v docker &>/dev/null && docker --version &>/dev/null; then
+        local docker_ver
+        docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
+        ok "Docker ${docker_ver:-yüklü}"
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
         else
@@ -587,7 +589,7 @@ ensure_prerequisites() {
             warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
         fi
     else
-        warn "Docker bulunamadı. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
+        warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
     # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
@@ -606,8 +608,8 @@ ensure_prerequisites() {
         info "WSL2 ortamı tespit edildi."
     fi
 
-    if [[ "$WSL2" == true ]] && ! command -v docker &>/dev/null; then
-        warn "Docker bulunamadı! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
+    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+        warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
         info "Lütfen şu adımları uygulayın:"
         echo "  1. Windows'ta Docker Desktop'ı açın."
         echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
@@ -616,8 +618,8 @@ ensure_prerequisites() {
         read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
         # Kullanıcıdan onay sonrası tekrar doğrula
-        if ! command -v docker &>/dev/null; then
-            fail "Docker hâlâ bulunamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+        if !(command -v docker &>/dev/null && docker --version &>/dev/null); then
+            fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
         fi
     fi
 
