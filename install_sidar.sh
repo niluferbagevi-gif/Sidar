@@ -15,6 +15,8 @@ set -Eeuo pipefail
 
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
@@ -141,6 +143,9 @@ REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
+MIGRATION_DOCKER_POLICY="auto"
+DOCKER_DB_SERVICES_STARTED=false
+AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
@@ -365,7 +370,10 @@ sync_repo() {
                 if git stash pop >/dev/null 2>&1; then
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
-                    warn "Stash pop sırasında çakışma oluştu. Değişikliklerinizi manuel kontrol edin (git stash list)."
+                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurulum durdurulacak."
+                    git merge --abort >/dev/null 2>&1 || true
+                    git rebase --abort >/dev/null 2>&1 || true
+                    fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
                 fi
             fi
         )
@@ -950,6 +958,7 @@ setup_wsl2_audio() {
     if [[ -n "$pulse_socket" ]]; then
         ok "WSLg PulseAudio soketi tespit edildi: $pulse_socket"
         info "Windows 11 WSLg üzerinde ses desteği yapılandırılıyor..."
+        AUDIO_SESSION_RESTART_RECOMMENDED=true
 
         # PulseAudio istemci araçları + ALSA→PulseAudio köprüsü
         info "PulseAudio istemci kütüphaneleri kontrol ediliyor..."
@@ -2001,18 +2010,23 @@ PY
             fi
 
             if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
-                info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
-                if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
-                    info "Veritabanının hazır olması bekleniyor..."
-                    for _ in {1..15}; do
-                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            ok "PostgreSQL erişilebilir hale geldi."
-                            break
-                        fi
-                        sleep 2
-                    done
+                if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
+                    info "Kullanıcı tercihi nedeniyle migrasyon sırasında Docker servisleri otomatik başlatılmayacak."
                 else
-                    warn "Docker servisleri başlatılamadı (postgres/redis)."
+                    info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                    if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
+                        DOCKER_DB_SERVICES_STARTED=true
+                        info "Veritabanının hazır olması bekleniyor..."
+                        for _ in {1..15}; do
+                            if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                                ok "PostgreSQL erişilebilir hale geldi."
+                                break
+                            fi
+                            sleep 2
+                        done
+                    else
+                        warn "Docker servisleri başlatılamadı (postgres/redis)."
+                    fi
                 fi
             fi
 
@@ -2032,6 +2046,45 @@ PY
         warn "Migrasyon başarısız. Log'ları kontrol edin."
         MIGRATION_STATUS="hata"
     fi
+}
+
+prepare_docker_for_migrations() {
+    local docker_compose_cmd=()
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        return
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
+        if "${docker_compose_cmd[@]}" up -d postgres redis; then
+            DOCKER_DB_SERVICES_STARTED=true
+        else
+            warn "Migrasyon öncesi postgres/redis servisleri otomatik başlatılamadı."
+        fi
+        return
+    fi
+
+    echo ""
+    read -r -p "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] " start_for_migration
+    case "${start_for_migration:-E}" in
+        [HhNn]*)
+            MIGRATION_DOCKER_POLICY="disabled"
+            info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
+            ;;
+        *)
+            if "${docker_compose_cmd[@]}" up -d postgres redis; then
+                DOCKER_DB_SERVICES_STARTED=true
+                ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
+            else
+                warn "Migrasyon öncesi postgres/redis servisleri başlatılamadı; migrasyon adımı tekrar deneyecek."
+            fi
+            ;;
+    esac
 }
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
@@ -2242,6 +2295,9 @@ print_summary() {
         [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(grep -E "^ENABLE_MULTIMODAL=" "$SCRIPT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
         if [[ "$multimodal_val" == "true" ]]; then
             echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
+            if [[ "$AUDIO_SESSION_RESTART_RECOMMENDED" == true ]]; then
+                echo -e "  ${YELLOW}⚠️  Ses paketleri/yol değişkenleri güncellendi. Sağlıklı çalışması için kurulumdan sonra terminali kapatıp yeniden açın.${NC}"
+            fi
         else
             echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
         fi
@@ -2310,8 +2366,15 @@ launch_docker_services() {
     fi
 
     echo ""
-    read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
-    case "${start_docker:-E}" in
+    local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
+    local start_default="E"
+    if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
+        start_prompt="PostgreSQL/Redis zaten çalışıyor. Kalan Docker servisleri de başlatılsın mı? [e/H] "
+        start_default="H"
+    fi
+
+    read -r -p "$start_prompt" start_docker
+    case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
             if ! docker info > /dev/null 2>&1; then
@@ -2387,6 +2450,31 @@ launch_ide() {
         warn "Sistemde VS Code (code komutu) bulunamadı."
         info "WSL ile tam entegrasyon için Windows tarafına VS Code ve 'WSL' eklentisini kurmanız önerilir."
     fi
+}
+
+cleanup_bootstrap_script_copy() {
+    if [[ "$ORIGINAL_SCRIPT_DIR" == "$TARGET_DIR" ]]; then
+        return
+    fi
+
+    if [[ "$(basename "$ORIGINAL_SCRIPT_PATH")" != "install_sidar.sh" ]]; then
+        return
+    fi
+
+    if [[ -d "$ORIGINAL_SCRIPT_DIR/.git" ]]; then
+        info "Kurulum farklı bir repo kopyasından çalıştırıldığı için betik dosyası silinmedi: $ORIGINAL_SCRIPT_PATH"
+        return
+    fi
+
+    if [[ -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+        if rm -f "$ORIGINAL_SCRIPT_PATH"; then
+            ok "Geçici kurulum betiği kaldırıldı: $ORIGINAL_SCRIPT_PATH"
+        else
+            warn "Geçici kurulum betiği silinemedi: $ORIGINAL_SCRIPT_PATH"
+        fi
+    fi
+
+    info "Kurulum bundan sonra $TARGET_DIR dizininden yönetilmelidir."
 }
 
 # ── Terminal kısayolu: Sidar ortamını hızlı aktive et ───────────────────────
@@ -2489,6 +2577,8 @@ main() {
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
     setup_vscode_workspace
+    # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
+    prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
@@ -2499,6 +2589,7 @@ main() {
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
     relocate_log_file_if_needed
+    cleanup_bootstrap_script_copy
 }
 
 main "$@"
