@@ -11,7 +11,14 @@
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 # ═══════════════════════════════════════════════════════════════════════════════
-set -euo pipefail
+set -Eeuo pipefail
+
+# Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -i "$LOG_FILE") 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -22,6 +29,59 @@ info() { echo -e "${BLUE}ℹ️   $*${NC}"; }
 warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
+
+on_install_error() {
+    local exit_code=$?
+    local failed_line="${1:-unknown}"
+    local failed_cmd="${2:-unknown}"
+    echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
+    echo "   Hata veren komut: ${failed_cmd}" >&2
+    echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+}
+
+trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
+
+compute_sha256() {
+    local file_path="$1"
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file_path" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file_path" | awk '{print $1}'
+    else
+        fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+    fi
+}
+
+download_verified_script() {
+    local script_url="$1"
+    local expected_sha="$2"
+    local script_label="$3"
+    local script_file
+    script_file=$(mktemp)
+
+    if ! curl -fsSL "$script_url" -o "$script_file"; then
+        rm -f "$script_file"
+        fail "${script_label} indirilemedi: ${script_url}"
+    fi
+
+    local actual_sha
+    actual_sha=$(compute_sha256 "$script_file")
+
+    if [[ -z "$expected_sha" ]]; then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+            rm -f "$script_file"
+            fail "${script_label} checksum değeri tanımlı değil. ${script_label^^}_SHA256 değişkenini ayarlayın veya ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+        fi
+        warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
+    elif [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$script_file"
+        fail "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
+    else
+        ok "${script_label} checksum doğrulaması başarılı."
+    fi
+
+    echo "$script_file"
+}
 
 ensure_docker_daemon_running() {
     if ! command -v docker &>/dev/null; then
@@ -61,8 +121,9 @@ HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
+NO_INTERACTION=false
 DOCKER_ONLY=false
-ENABLE_AUDIO=true
+ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -77,6 +138,7 @@ for arg in "$@"; do
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
+        --ci|--no-interaction) NO_INTERACTION=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -85,7 +147,7 @@ for arg in "$@"; do
         --docker-only) DOCKER_ONLY=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio] [--ci|--no-interaction]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -98,10 +160,11 @@ for arg in "$@"; do
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
-            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (PulseAudio/WSLg otomatik yapılandırılır)"
+            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
+            echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -113,9 +176,12 @@ if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
     warn "--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek."
 fi
 
+if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
+    RUN_SMOKE_TESTS_MODE="never"
+fi
+
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -265,14 +331,25 @@ sync_repo() {
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
         git clone "$REPO_URL" "$TARGET_DIR"
     else
-        warn "Sidar klasörü zaten var. Git pull ile güncelleniyor..."
+        warn "Sidar klasörü zaten var. Rebase tabanlı git pull ile güncelleniyor..."
         (
             cd "$TARGET_DIR"
-            git fetch origin
-            git pull --ff-only || {
-                warn "Fast-forward pull başarısız (lokal değişiklikler mevcut). Sadece fetch yapıldı."
-                info "Güncelleme için: git stash && git pull --ff-only && git stash pop"
-            }
+            local STASHED_CHANGES=false
+            if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+                info "Lokal değişiklikler geçici olarak stash'e alınıyor."
+                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
+                STASHED_CHANGES=true
+            fi
+
+            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
+
+            if [[ "$STASHED_CHANGES" == true ]]; then
+                if git stash pop >/dev/null 2>&1; then
+                    ok "Lokal değişiklikler stash'ten geri yüklendi."
+                else
+                    warn "Stash pop sırasında çakışma oluştu. Değişikliklerinizi manuel kontrol edin (git stash list)."
+                fi
+            fi
         )
     fi
 
@@ -286,7 +363,13 @@ install_system_dependencies() {
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        local _nodesource_script=""
+        _nodesource_script=$(download_verified_script \
+            "https://deb.nodesource.com/setup_20.x" \
+            "${NODESOURCE_SETUP_SHA256:-}" \
+            "nodesource_setup")
+        if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
+        rm -f "$_nodesource_script"
         sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
@@ -498,7 +581,13 @@ check_prerequisites() {
             # Eski bozuk dosya kalıntılarını temizle
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
-            curl -fsSL https://ollama.com/install.sh | sh
+            local _ollama_script=""
+            _ollama_script=$(download_verified_script \
+                "https://ollama.com/install.sh" \
+                "${OLLAMA_INSTALL_SHA256:-}" \
+                "ollama_install")
+            sh "$_ollama_script"
+            rm -f "$_ollama_script"
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
@@ -529,11 +618,18 @@ detect_gpu() {
         return
     fi
 
-    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
-        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
-        CUDA_VERSION=$(nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
-        DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
+    local SMI_CMD=""
+    if command -v nvidia-smi &>/dev/null; then
+        SMI_CMD="nvidia-smi"
+    elif command -v nvidia-smi.exe &>/dev/null; then
+        SMI_CMD="nvidia-smi.exe"
+    fi
+
+    if [[ -n "$SMI_CMD" ]] && "$SMI_CMD" &>/dev/null 2>&1; then
+        GPU_NAME=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
+        VRAM_MB=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
+        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
+        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
 
         GPU_AVAILABLE=true
         ok "GPU     : $GPU_NAME"
@@ -634,8 +730,16 @@ setup_uv() {
     step "uv Paket Yöneticisi"
 
     if ! command -v uv &>/dev/null; then
-        info "uv bulunamadı — pip ile kuruluyor..."
-        pip install --quiet "uv>=0.5.0"
+        info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        if [[ -f "$HOME/.cargo/env" ]]; then
+            # shellcheck disable=SC1090
+            source "$HOME/.cargo/env"
+        fi
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
@@ -675,90 +779,6 @@ install_python_deps() {
     info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
     "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
     ok "Python bağımlılıkları senkronlandı."
-    return
-
-    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        # CUDA major version'ı belirle (örn. 13.2 → cu124 fallback)
-        CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
-        CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
-
-        # PyTorch wheel dizini: cu124, cu121 gibi
-        if   [[ "$CUDA_MAJOR" -ge 13 ]]; then TORCH_CU="cu124"
-        elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 4 ]]; then TORCH_CU="cu124"
-        elif [[ "$CUDA_MAJOR" -eq 12 ]]; then TORCH_CU="cu121"
-        else TORCH_CU=""
-        fi
-
-        info "GPU kurulumu yapılıyor..."
-        REQ_ARGS=()
-        if [[ -f "$SCRIPT_DIR/requirements-gpu.txt" ]]; then
-            REQ_ARGS+=("requirements-gpu.txt")
-        elif [[ -f "$SCRIPT_DIR/requirements-all.txt" ]]; then
-            REQ_ARGS+=("requirements-all.txt")
-        elif [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-            REQ_ARGS+=("requirements.txt")
-        fi
-        if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
-            REQ_ARGS+=("requirements-dev.txt")
-        fi
-
-        if [[ "${#REQ_ARGS[@]}" -gt 0 ]]; then
-            info "GPU için requirements dosyaları uv pip sync ile senkronlanıyor: ${REQ_ARGS[*]}"
-            if [[ -n "$TORCH_CU" ]]; then
-                "${UV_CMD[@]}" pip sync \
-                    --index-strategy unsafe-best-match \
-                    --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
-                    "${REQ_ARGS[@]}"
-            else
-                warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — varsayılan indekslerle senkron yapılacak."
-                "${UV_CMD[@]}" pip sync "${REQ_ARGS[@]}"
-            fi
-            ok "Python bağımlılıkları requirements dosyalarıyla senkronlandı."
-            return
-        fi
-
-        if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[all,dev]")
-        else
-            INSTALL_SPEC=(-e ".[all]")
-        fi
-        if [[ -n "$TORCH_CU" ]]; then
-            info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
-            "${UV_CMD[@]}" pip install \
-                --index-strategy unsafe-best-match \
-                --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
-                "${INSTALL_SPEC[@]}"
-        else
-            warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — PyPI'dan kuruluyor."
-            "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
-        fi
-    else
-        info "CPU modu kuruluyor..."
-        REQ_ARGS=()
-        if [[ -f "$SCRIPT_DIR/requirements-all.txt" ]]; then
-            REQ_ARGS+=("requirements-all.txt")
-        elif [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-            REQ_ARGS+=("requirements.txt")
-        fi
-        if [[ "$INSTALL_DEV" == true && -f "$SCRIPT_DIR/requirements-dev.txt" ]]; then
-            REQ_ARGS+=("requirements-dev.txt")
-        fi
-        if [[ "${#REQ_ARGS[@]}" -gt 0 ]]; then
-            info "CPU için requirements dosyaları uv pip sync ile senkronlanıyor: ${REQ_ARGS[*]}"
-            "${UV_CMD[@]}" pip sync "${REQ_ARGS[@]}"
-            ok "Python bağımlılıkları requirements dosyalarıyla senkronlandı."
-            return
-        fi
-
-        if [[ "$INSTALL_DEV" == true ]]; then
-            INSTALL_SPEC=(-e ".[postgres,browser,dev]")
-        else
-            INSTALL_SPEC=(-e ".[postgres,browser]")
-        fi
-        "${UV_CMD[@]}" pip install "${INSTALL_SPEC[@]}"
-    fi
-
-    ok "Python bağımlılıkları kuruldu."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -1144,44 +1164,45 @@ harden_database_credentials() {
         case "$db_password" in
             postgres|password|admin|changeme|123456)
                 if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    if [[ "${ENABLE_DB_PASSWORD_HARDENING:-1}" != "1" ]]; then
-                        warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                        warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
-                        return
-                    fi
-                    local generated_password=""
-                    generated_password=$(generate_secure_token 24)
-                    if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
+                    if [[ "$hardening_enabled" == "1" ]]; then
+                        local generated_password=""
+                        generated_password=$(generate_secure_token 24)
+                        if [[ -n "$generated_password" ]]; then
+                            safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                            sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                            ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
-                        warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
-                        info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
-                        if command -v docker &>/dev/null; then
-                            local detected_pg_volume=""
-                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                            if [[ -n "$detected_pg_volume" ]]; then
-                                warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
-                                info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                            # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                            # DATABASE_URL ile senkron kalmalıdır.
+                            if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                                sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                            else
+                                echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
                             fi
+                            if grep -q '^POSTGRES_USER=' "$env_file"; then
+                                sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                            else
+                                echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                            fi
+                            ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                            warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
+                            warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
+                            info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
+                            if command -v docker &>/dev/null; then
+                                local detected_pg_volume=""
+                                detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                                if [[ -n "$detected_pg_volume" ]]; then
+                                    warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
+                                    info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                                fi
+                            fi
+                        else
+                            warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                         fi
                     else
-                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                        warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
+                        warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
                     fi
                 else
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
@@ -1248,6 +1269,11 @@ ensure_rag_vector_backend_pgvector() {
 # sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
 collect_api_keys_interactive() {
     local env_file="$1"
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: API anahtarı etkileşimli toplama adımı atlandı."
+        return
+    fi
 
     # ── Tüm kullanıcı girişi gerektiren anahtarlar (otomatik üretilenler hariç) ──
     local -a KEY_ORDER=(
@@ -1604,24 +1630,24 @@ PY
     fi
 }
 
+ensure_local_service_host_defaults() {
+    local env_file="$1"
+    # Lokal kurulumda Docker hostname yerine localhost kullan
+    if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
+        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+        ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
+    fi
+
+    if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
+        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+        ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
-
-    ensure_local_service_host_defaults() {
-        local env_file="$1"
-        # Lokal kurulumda Docker hostname yerine localhost kullan
-        if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
-            sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
-            ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
-        fi
-
-        if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
-            sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
-            ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
-        fi
-    }
 
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
@@ -1718,6 +1744,11 @@ download_ollama_models() {
     fi
 
     if [[ "$DOWNLOAD_MODELS" != true ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            info "--ci/--no-interaction etkin ve --download-models verilmedi: model indirmeleri atlanıyor (${estimated_size_gb})."
+            info "Model indirmek için: ./install_sidar.sh --download-models"
+            return
+        fi
         if [[ -t 0 ]]; then
             read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
             case "${reply:-E}" in
@@ -1797,7 +1828,23 @@ download_ollama_models() {
     for model in "${MODELS[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
-            ollama pull "$model"
+            local pull_success=false
+            for attempt in 1 2 3; do
+                if ollama pull "$model"; then
+                    pull_success=true
+                    break
+                fi
+                warn "Model indirme denemesi başarısız (${model}) [${attempt}/3]."
+                if [[ "$attempt" -lt 3 ]]; then
+                    local backoff=$((attempt * 5))
+                    info "${backoff}s sonra yeniden denenecek..."
+                    sleep "$backoff"
+                fi
+            done
+
+            if [[ "$pull_success" != true ]]; then
+                fail "Model indirilemedi: ${model} (3 deneme sonrası başarısız)."
+            fi
         fi
     done
 
@@ -1961,6 +2008,7 @@ print(f'available={avail} cuda={ver} device={dev}')
 run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
+    local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
@@ -2001,7 +2049,7 @@ run_smoke_tests() {
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
-        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir" --no-cov; then
+        if "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
@@ -2016,7 +2064,7 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if python -m pytest "$smoke_dir" --no-cov; then
+    if python -m pytest "${pytest_smoke_args[@]}"; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
@@ -2114,9 +2162,9 @@ print_summary() {
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --no-cov"
+        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --no-cov"
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
@@ -2145,6 +2193,12 @@ launch_docker_services() {
         docker_compose_cmd=(docker-compose)
     else
         warn "Sistemde Docker veya Docker Compose bulunamadı, servisler otomatik başlatılamıyor."
+        return
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
+        info "Gerekirse manuel çalıştırın: docker compose up -d"
         return
     fi
 
@@ -2202,6 +2256,11 @@ launch_docker_services() {
 
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
+        return
+    fi
+
     if command -v code &>/dev/null; then
         echo ""
         read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
