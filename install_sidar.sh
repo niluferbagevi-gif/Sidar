@@ -386,7 +386,8 @@ install_system_dependencies() {
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential software-properties-common zstd ca-certificates gnupg
+            curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
+            postgresql-client-common postgresql-client
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
         local _nodesource_script=""
