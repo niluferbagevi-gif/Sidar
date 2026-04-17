@@ -145,6 +145,7 @@ SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
+AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
@@ -957,6 +958,7 @@ setup_wsl2_audio() {
     if [[ -n "$pulse_socket" ]]; then
         ok "WSLg PulseAudio soketi tespit edildi: $pulse_socket"
         info "Windows 11 WSLg üzerinde ses desteği yapılandırılıyor..."
+        AUDIO_SESSION_RESTART_RECOMMENDED=true
 
         # PulseAudio istemci araçları + ALSA→PulseAudio köprüsü
         info "PulseAudio istemci kütüphaneleri kontrol ediliyor..."
@@ -2293,6 +2295,9 @@ print_summary() {
         [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(grep -E "^ENABLE_MULTIMODAL=" "$SCRIPT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
         if [[ "$multimodal_val" == "true" ]]; then
             echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
+            if [[ "$AUDIO_SESSION_RESTART_RECOMMENDED" == true ]]; then
+                echo -e "  ${YELLOW}⚠️  Ses paketleri/yol değişkenleri güncellendi. Sağlıklı çalışması için kurulumdan sonra terminali kapatıp yeniden açın.${NC}"
+            fi
         else
             echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
         fi
