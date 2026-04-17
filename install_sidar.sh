@@ -606,7 +606,7 @@ check_prerequisites() {
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
             local _ollama_script=""
-            _ollama_script=$(download_verified_script \
+            _ollama_script=$(ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install")
