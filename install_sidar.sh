@@ -41,6 +41,18 @@ on_install_error() {
 
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
+relocate_log_file_if_needed() {
+    local target_log_dir="${TARGET_DIR}/logs"
+
+    if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
+        mkdir -p "$target_log_dir"
+        mv "$LOG_FILE" "$target_log_dir/"
+        LOG_DIR="$target_log_dir"
+        LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
+        info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
+    fi
+}
+
 compute_sha256() {
     local file_path="$1"
     if command -v sha256sum &>/dev/null; then
@@ -2350,6 +2362,7 @@ main() {
     launch_docker_services
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
+    relocate_log_file_if_needed
 }
 
 main "$@"
