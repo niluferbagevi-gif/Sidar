@@ -13,6 +13,13 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
+# Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -i "$LOG_FILE") 2>&1
+
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
@@ -115,7 +122,6 @@ fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
