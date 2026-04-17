@@ -1993,6 +1993,7 @@ print(f'available={avail} cuda={ver} device={dev}')
 run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
+    local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "never" ]]; then
@@ -2033,7 +2034,7 @@ run_smoke_tests() {
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
-        if "${CONDA_RUN[@]}" python -m pytest "$smoke_dir" --no-cov; then
+        if "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
@@ -2048,7 +2049,7 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if python -m pytest "$smoke_dir" --no-cov; then
+    if python -m pytest "${pytest_smoke_args[@]}"; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
@@ -2146,9 +2147,9 @@ print_summary() {
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --no-cov"
+        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --no-cov"
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
