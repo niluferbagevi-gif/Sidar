@@ -2163,7 +2163,7 @@ PY
                     if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
                         DOCKER_DB_SERVICES_STARTED=true
                         info "Veritabanının hazır olması bekleniyor..."
-                        for _ in {1..15}; do
+                        for _ in {1..30}; do
                             if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                                 ok "PostgreSQL erişilebilir hale geldi."
                                 break
@@ -2178,6 +2178,10 @@ PY
 
             if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                 warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+                if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    info "PostgreSQL log özeti (son 80 satır) alınıyor..."
+                    "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres || warn "PostgreSQL logları okunamadı."
+                fi
                 info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
                 return
