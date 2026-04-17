@@ -260,6 +260,7 @@ fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 CONDA_ENV_NAME="sidar"
+CONDA_PYTHON_PATH="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -849,6 +850,10 @@ setup_python_env() {
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
             fail "Conda ortamı doğrulanamadı: $CONDA_ENV_NAME"
+        fi
+
+        if [[ ! -x "$CONDA_PYTHON_PATH" ]]; then
+            fail "Conda ortamı oluşturuldu ancak python ikilisi bulunamadı: $CONDA_PYTHON_PATH"
         fi
     else
         step "uv venv Ortamı"
@@ -2082,14 +2087,15 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
-    ALEMBIC_CMD=(python -m alembic upgrade head)
+    ALEMBIC_PYTHON="python"
     if [[ "$USE_CONDA" == true ]]; then
-        ALEMBIC_CMD=(conda run -n "$CONDA_ENV_NAME" python -m alembic upgrade head)
+        ALEMBIC_PYTHON="$CONDA_PYTHON_PATH"
     fi
+    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
@@ -2114,7 +2120,7 @@ run_migrations() {
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
-            info "Veritabanını başlattıktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+            info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
@@ -2172,7 +2178,7 @@ PY
 
             if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                 warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
-                info "DB hazır olduktan sonra manuel çalıştırın: conda run -n sidar python -m alembic upgrade head"
+                info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
                 return
             fi
@@ -2449,7 +2455,7 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  conda run -n sidar python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  $CONDA_PYTHON_PATH -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
