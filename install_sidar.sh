@@ -369,7 +369,10 @@ sync_repo() {
                 if git stash pop >/dev/null 2>&1; then
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
-                    warn "Stash pop sırasında çakışma oluştu. Değişikliklerinizi manuel kontrol edin (git stash list)."
+                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurulum durdurulacak."
+                    git merge --abort >/dev/null 2>&1 || true
+                    git rebase --abort >/dev/null 2>&1 || true
+                    fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
                 fi
             fi
         )
