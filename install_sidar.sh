@@ -363,13 +363,6 @@ install_system_dependencies() {
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
-        local _nodesource_script=""
-        _nodesource_script=$(download_verified_script \
-            "https://deb.nodesource.com/setup_20.x" \
-            "${NODESOURCE_SETUP_SHA256:-}" \
-            "nodesource_setup")
-        if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
-        rm -f "$_nodesource_script"
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
@@ -377,18 +370,27 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
+        local _nodesource_script=""
         local _ns_log; _ns_log=$(mktemp)
         # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
         # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
-        if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >"$_ns_log" 2>&1; then
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
-            ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        if _nodesource_script=$(download_verified_script \
+            "https://deb.nodesource.com/setup_20.x" \
+            "${NODESOURCE_SETUP_SHA256:-}" \
+            "nodesource_setup"); then
+            if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+            else
+                cat "$_ns_log" >&2
+                warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+            fi
         else
-            cat "$_ns_log" >&2
-            warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
+            warn "NodeSource setup script indirilemedi/doğrulanamadı, apt deposundan nodejs/npm kurulumu deneniyor."
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
-        rm -f "$_ns_log"
+        rm -f "$_ns_log" "$_nodesource_script"
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/PulseAudio/FFmpeg) kütüphaneleri kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
