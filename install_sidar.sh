@@ -370,10 +370,10 @@ install_system_dependencies() {
             "nodesource_setup")
         if sudo -E bash "$_nodesource_script" >"$_ns_log" 2>&1; then
         rm -f "$_nodesource_script"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg
 
         info "Node.js 20.x (NodeSource) kuruluyor..."
@@ -381,17 +381,17 @@ install_system_dependencies() {
         # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
         # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
         if curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >"$_ns_log" 2>&1; then
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
             ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         else
             cat "$_ns_log" >&2
             warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
         rm -f "$_ns_log"
 
         info "Kamera (v4l2) ve Ses (PortAudio/ALSA/PulseAudio/FFmpeg) kütüphaneleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
             portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg \
             pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
