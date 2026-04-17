@@ -141,6 +141,8 @@ REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
+MIGRATION_DOCKER_POLICY="auto"
+DOCKER_DB_SERVICES_STARTED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
@@ -2001,18 +2003,23 @@ PY
             fi
 
             if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
-                info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
-                if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
-                    info "Veritabanının hazır olması bekleniyor..."
-                    for _ in {1..15}; do
-                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            ok "PostgreSQL erişilebilir hale geldi."
-                            break
-                        fi
-                        sleep 2
-                    done
+                if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
+                    info "Kullanıcı tercihi nedeniyle migrasyon sırasında Docker servisleri otomatik başlatılmayacak."
                 else
-                    warn "Docker servisleri başlatılamadı (postgres/redis)."
+                    info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                    if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
+                        DOCKER_DB_SERVICES_STARTED=true
+                        info "Veritabanının hazır olması bekleniyor..."
+                        for _ in {1..15}; do
+                            if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                                ok "PostgreSQL erişilebilir hale geldi."
+                                break
+                            fi
+                            sleep 2
+                        done
+                    else
+                        warn "Docker servisleri başlatılamadı (postgres/redis)."
+                    fi
                 fi
             fi
 
@@ -2032,6 +2039,45 @@ PY
         warn "Migrasyon başarısız. Log'ları kontrol edin."
         MIGRATION_STATUS="hata"
     fi
+}
+
+prepare_docker_for_migrations() {
+    local docker_compose_cmd=()
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        return
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
+        if "${docker_compose_cmd[@]}" up -d postgres redis; then
+            DOCKER_DB_SERVICES_STARTED=true
+        else
+            warn "Migrasyon öncesi postgres/redis servisleri otomatik başlatılamadı."
+        fi
+        return
+    fi
+
+    echo ""
+    read -r -p "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] " start_for_migration
+    case "${start_for_migration:-E}" in
+        [HhNn]*)
+            MIGRATION_DOCKER_POLICY="disabled"
+            info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
+            ;;
+        *)
+            if "${docker_compose_cmd[@]}" up -d postgres redis; then
+                DOCKER_DB_SERVICES_STARTED=true
+                ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
+            else
+                warn "Migrasyon öncesi postgres/redis servisleri başlatılamadı; migrasyon adımı tekrar deneyecek."
+            fi
+            ;;
+    esac
 }
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
@@ -2310,8 +2356,15 @@ launch_docker_services() {
     fi
 
     echo ""
-    read -r -p "Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] " start_docker
-    case "${start_docker:-E}" in
+    local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
+    local start_default="E"
+    if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
+        start_prompt="PostgreSQL/Redis zaten çalışıyor. Kalan Docker servisleri de başlatılsın mı? [e/H] "
+        start_default="H"
+    fi
+
+    read -r -p "$start_prompt" start_docker
+    case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
             if ! docker info > /dev/null 2>&1; then
@@ -2489,6 +2542,8 @@ main() {
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
     setup_vscode_workspace
+    # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
+    prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
     download_ollama_models
