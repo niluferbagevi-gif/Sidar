@@ -11,7 +11,7 @@
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 # ═══════════════════════════════════════════════════════════════════════════════
-set -euo pipefail
+set -Eeuo pipefail
 
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +29,17 @@ info() { echo -e "${BLUE}ℹ️   $*${NC}"; }
 warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
+
+on_install_error() {
+    local exit_code=$?
+    local failed_line="${1:-unknown}"
+    local failed_cmd="${2:-unknown}"
+    echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
+    echo "   Hata veren komut: ${failed_cmd}" >&2
+    echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+}
+
+trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 compute_sha256() {
     local file_path="$1"
