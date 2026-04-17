@@ -133,12 +133,14 @@ HELM_RELEASE_NAME="sidar"
 HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
+RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 ENABLE_AUDIO=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
+AUDIT_STATUS="atlandı"
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
@@ -156,10 +158,11 @@ for arg in "$@"; do
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
+        --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--enable-audio] [--ci|--no-interaction]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -169,6 +172,7 @@ for arg in "$@"; do
             echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
             echo "  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır"
             echo "  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma"
+            echo "  --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır"
             echo "  --skip-models  Ollama model indirmelerini atla"
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
@@ -176,7 +180,7 @@ for arg in "$@"; do
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -2108,6 +2112,31 @@ run_smoke_tests() {
     fi
 }
 
+run_test_artifact_audit() {
+    step "Test Artifact Denetimi"
+
+    if [[ "$RUN_AUDIT" != true ]]; then
+        info "--audit verilmediği için test artifact denetimi atlandı."
+        AUDIT_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    local audit_script="$SCRIPT_DIR/scripts/check_empty_test_artifacts.sh"
+    if [[ ! -f "$audit_script" ]]; then
+        warn "Audit betiği bulunamadı: $audit_script"
+        AUDIT_STATUS="betik_yok"
+        return
+    fi
+
+    if bash "$audit_script"; then
+        ok "Test artifact denetimi başarıyla tamamlandı."
+        AUDIT_STATUS="tamamlandi"
+    else
+        AUDIT_STATUS="hata"
+        fail "Test artifact denetimi başarısız oldu. Boş/uygunsuz test dosyalarını düzeltip tekrar deneyin."
+    fi
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     echo ""
@@ -2200,6 +2229,13 @@ print_summary() {
         echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+    fi
+    if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
+        echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
+    elif [[ "$RUN_AUDIT" == true ]]; then
+        echo "  Test artifact audit: ${AUDIT_STATUS}."
+    else
+        echo "  Test artifact audit: atlandı. Çalıştırmak için: ./install_sidar.sh --audit"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then
@@ -2358,6 +2394,7 @@ main() {
     download_ollama_models
     verify_torch_cuda
     run_smoke_tests
+    run_test_artifact_audit
     print_summary
     launch_docker_services
     # Yeni eklenen onaylı IDE başlatma adımı
