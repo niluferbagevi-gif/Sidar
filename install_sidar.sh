@@ -32,6 +32,21 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
 fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
 
+prompt_yes_no_with_timeout_default_yes() {
+    local prompt="$1"
+    local timeout_seconds="${2:-180}"
+    local reply=""
+
+    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+        :
+    else
+        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Evet."
+        reply="E"
+    fi
+
+    echo "$reply"
+}
+
 on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
@@ -1831,19 +1846,13 @@ download_ollama_models() {
             info "Model indirmek için: ./install_sidar.sh --download-models"
             return
         fi
-        if [[ -t 0 ]]; then
-            read -r -p "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] " reply
-            case "${reply:-E}" in
-                [HhNn]*)
-                    info "Model indirmesi kullanıcı tercihiyle atlandı."
-                    return
-                    ;;
-            esac
-        else
-            info "--download-models verilmediği için model indirmeleri atlanıyor (tahmini ${estimated_size_gb})."
-            info "Model indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
-            return
-        fi
+        reply=$(prompt_yes_no_with_timeout_default_yes "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] ")
+        case "${reply:-E}" in
+            [HhNn]*)
+                info "Model indirmesi kullanıcı tercihiyle atlandı."
+                return
+                ;;
+        esac
     fi
 
     if ! command -v ollama &>/dev/null; then
@@ -2080,7 +2089,7 @@ prepare_docker_for_migrations() {
     fi
 
     echo ""
-    read -r -p "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] " start_for_migration
+    start_for_migration=$(prompt_yes_no_with_timeout_default_yes "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] ")
     case "${start_for_migration:-E}" in
         [HhNn]*)
             MIGRATION_DOCKER_POLICY="disabled"
@@ -2159,16 +2168,12 @@ run_smoke_tests() {
 
     if [[ "$RUN_SMOKE_TESTS_MODE" == "always" ]]; then
         should_run=true
-    elif [[ -t 0 ]]; then
-        read -r -p "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] " reply
+    else
+        reply=$(prompt_yes_no_with_timeout_default_yes "Smoke testler (tests/smoke) çalıştırılsın mı? [E/h] ")
         case "${reply:-E}" in
             [HhNn]*) should_run=false ;;
             *) should_run=true ;;
         esac
-    else
-        info "Etkileşimsiz modda smoke test otomatik atlandı. Çalıştırmak için --smoke-test kullanın."
-        SMOKE_TEST_STATUS="atlandi_non_interactive"
-        return
     fi
 
     if [[ "$should_run" != true ]]; then
@@ -2383,7 +2388,7 @@ launch_docker_services() {
         start_default="H"
     fi
 
-    read -r -p "$start_prompt" start_docker
+    start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
@@ -2443,7 +2448,7 @@ launch_ide() {
 
     if command -v code &>/dev/null; then
         echo ""
-        read -r -p "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] " open_code
+        open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
         case "${open_code:-H}" in
             [EeYy]*)
                 info "VS Code açılıyor..."
