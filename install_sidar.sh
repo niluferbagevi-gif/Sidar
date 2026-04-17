@@ -706,6 +706,14 @@ ensure_prerequisites() {
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install"
             validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
+
+            info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
+            if [[ "$NO_INTERACTION" == true ]]; then
+                sudo -n -v || fail "Ollama kurulumu için sudo yetkisi gerekli. --ci/--no-interaction modunda şifresiz sudo veya önceden doğrulanmış sudo oturumu beklenir."
+            else
+                sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
+            fi
+
             sh "$DOWNLOADED_SCRIPT_FILE"
             rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
