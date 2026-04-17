@@ -1776,10 +1776,10 @@ setup_env_file() {
 
         if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
             if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
             fi
         else
-            echo 'DOCKER_ALLOWED_RUNTIMES=,runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
+            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
         fi
 
         ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
