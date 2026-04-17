@@ -752,6 +752,8 @@ setup_uv() {
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
         fi
+        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
+        export PATH="$HOME/.local/bin:$PATH"
     fi
 
     if ! command -v uv &>/dev/null; then
