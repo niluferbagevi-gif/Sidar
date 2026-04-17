@@ -363,6 +363,7 @@ install_system_dependencies() {
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
