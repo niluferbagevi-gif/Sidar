@@ -385,26 +385,45 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    local -a candidate_volumes=()
+    local -a candidate_volume_suffixes=()
     if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
         for volume_name in "${compose_volumes[@]}"; do
             if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
-                candidate_volumes+=("$volume_name")
+                candidate_volume_suffixes+=("$volume_name")
             fi
         done
     fi
 
-    # docker compose config çıktısı yoksa ya da proje adı değiştiyse bilinen fallback adı da denenir.
-    if [[ ${#candidate_volumes[@]} -eq 0 ]]; then
-        candidate_volumes+=("sidar_postgres_data")
+    # docker compose config --volumes çoğunlukla kısa adı (örn: postgres_data) döndürür.
+    # Gerçek Docker volume adı ise çoğu zaman proje önekli olur (örn: sidar_postgres_data).
+    # Bu nedenle kısa adları suffix olarak ele alıp docker volume ls çıktısından gerçek adları çözüyoruz.
+    if [[ ${#candidate_volume_suffixes[@]} -eq 0 ]]; then
+        candidate_volume_suffixes+=("postgres_data")
     fi
 
     local -a existing_pg_volumes=()
-    for volume_name in "${candidate_volumes[@]}"; do
-        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
-            existing_pg_volumes+=("$volume_name")
-        fi
-    done
+    if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
+        for docker_volume_name in "${docker_volume_names[@]}"; do
+            for volume_suffix in "${candidate_volume_suffixes[@]}"; do
+                if [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == *_"$volume_suffix" ]]; then
+                    existing_pg_volumes+=("$docker_volume_name")
+                    break
+                fi
+            done
+        done
+    fi
+
+    if [[ ${#existing_pg_volumes[@]} -gt 1 ]]; then
+        local -A unique_existing_pg_volumes=()
+        local -a deduped_existing_pg_volumes=()
+        for volume_name in "${existing_pg_volumes[@]}"; do
+            if [[ -z "${unique_existing_pg_volumes[$volume_name]:-}" ]]; then
+                unique_existing_pg_volumes["$volume_name"]=1
+                deduped_existing_pg_volumes+=("$volume_name")
+            fi
+        done
+        existing_pg_volumes=("${deduped_existing_pg_volumes[@]}")
+    fi
 
     if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
         info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
