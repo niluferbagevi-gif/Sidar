@@ -907,7 +907,7 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        CONDA_RUN=(conda run -n "$CONDA_ENV_NAME")
+        CONDA_RUN=(conda run --no-capture-output -n "$CONDA_ENV_NAME")
         if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
