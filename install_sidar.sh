@@ -386,6 +386,29 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     local -a candidate_volume_suffixes=()
+    local compose_project_name="${COMPOSE_PROJECT_NAME:-}"
+    local compose_arg=""
+    local consume_next_as_project_name=false
+    for compose_arg in "${compose_cmd[@]}"; do
+        if [[ "$consume_next_as_project_name" == true ]]; then
+            compose_project_name="$compose_arg"
+            consume_next_as_project_name=false
+            continue
+        fi
+        case "$compose_arg" in
+            -p|--project-name)
+                consume_next_as_project_name=true
+                ;;
+            -p=*|--project-name=*)
+                compose_project_name="${compose_arg#*=}"
+                ;;
+        esac
+    done
+
+    if [[ -z "$compose_project_name" ]]; then
+        compose_project_name=$(read_env_value_from_file "COMPOSE_PROJECT_NAME" "$env_file")
+    fi
+    compose_project_name=$(echo "${compose_project_name:-}" | tr -d '"'\''[:space:]')
     if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
         for volume_name in "${compose_volumes[@]}"; do
             if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
@@ -405,7 +428,12 @@ maybe_reset_postgres_volume_after_password_hardening() {
     if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
         for docker_volume_name in "${docker_volume_names[@]}"; do
             for volume_suffix in "${candidate_volume_suffixes[@]}"; do
-                if [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == *_"$volume_suffix" ]]; then
+                if [[ -n "$compose_project_name" ]]; then
+                    if [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == "${compose_project_name}_${volume_suffix}" ]]; then
+                        existing_pg_volumes+=("$docker_volume_name")
+                        break
+                    fi
+                elif [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == *_"$volume_suffix" ]]; then
                     existing_pg_volumes+=("$docker_volume_name")
                     break
                 fi
