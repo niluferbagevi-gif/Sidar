@@ -1307,6 +1307,32 @@ setup_nvidia_docker() {
 }
 
 # ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
+activate_conda_env_in_current_shell() {
+    local env_name="$1"
+    local conda_base=""
+
+    if ! command -v conda &>/dev/null; then
+        fail "conda komutu bulunamadı; ortam aktive edilemiyor."
+    fi
+
+    conda_base="$(conda info --base 2>/dev/null || true)"
+    if [[ -n "$conda_base" ]] && [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+        # shellcheck disable=SC1090
+        source "$conda_base/etc/profile.d/conda.sh"
+    elif [[ -x "$HOME/miniconda3/bin/conda" ]]; then
+        # shellcheck disable=SC1091
+        eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
+    fi
+
+    if ! conda activate "$env_name"; then
+        fail "Conda ortamı aktive edilemedi: $env_name"
+    fi
+
+    export PATH="$HOME/miniconda3/envs/$env_name/bin:$PATH"
+    export CONDA_DEFAULT_ENV="$env_name"
+    ok "Conda ortamı aktif edildi (current shell): $env_name"
+}
+
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
@@ -1337,6 +1363,13 @@ setup_python_env() {
 
         if [[ ! -x "$CONDA_PYTHON_PATH" ]]; then
             fail "Conda ortamı oluşturuldu ancak python ikilisi bulunamadı: $CONDA_PYTHON_PATH"
+        fi
+
+        activate_conda_env_in_current_shell "$CONDA_ENV_NAME"
+
+        if [[ "$(command -v python || true)" != "$CONDA_PYTHON_PATH" ]]; then
+            warn "Aktif python conda env ile eşleşmiyor. PATH zorlanıyor: $CONDA_PYTHON_PATH"
+            hash -r
         fi
     else
         step "uv venv Ortamı"
