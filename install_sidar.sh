@@ -769,6 +769,7 @@ install_system_dependencies() {
                 sudo install -m 0755 -d /etc/apt/keyrings
                 if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
                     sudo chmod 0644 "$ns_keyring"
+                    sudo rm -f "$ns_repo_file"
                     echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee "$ns_repo_file" >/dev/null
                     sudo chmod 0644 "$ns_repo_file"
                     ns_ready=true
