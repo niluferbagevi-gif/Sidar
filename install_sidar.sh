@@ -2968,6 +2968,7 @@ run_smoke_tests() {
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
+    local smoke_failure_policy="${SMOKE_TEST_FAILURE_POLICY:-fail}"
 
     if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
         warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
@@ -3022,8 +3023,12 @@ run_smoke_tests() {
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
-            warn "Smoke testlerde hata var. Logları inceleyin."
             SMOKE_TEST_STATUS="hata"
+            if [[ "$smoke_failure_policy" == "warn" ]]; then
+                warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+            else
+                fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
+            fi
         fi
         return
     fi
@@ -3037,8 +3042,12 @@ run_smoke_tests() {
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
-        warn "Smoke testlerde hata var. Logları inceleyin."
         SMOKE_TEST_STATUS="hata"
+        if [[ "$smoke_failure_policy" == "warn" ]]; then
+            warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+        else
+            fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
+        fi
     fi
 }
 
