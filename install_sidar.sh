@@ -320,6 +320,8 @@ start_docker_services_or_fail() {
     local stderr_file
     stderr_file=$(mktemp)
 
+    maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"
+
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
         return 0
@@ -334,6 +336,78 @@ start_docker_services_or_fail() {
     fi
 
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
+}
+
+maybe_reset_postgres_volume_after_password_hardening() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+
+    if [[ "$DB_PASSWORD_HARDENED" != true || "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    local includes_postgres=false
+    for service in "${services[@]}"; do
+        if [[ "$service" == "postgres" ]]; then
+            includes_postgres=true
+            break
+        fi
+    done
+    [[ "$includes_postgres" == true ]] || return 0
+
+    local env_file="$SCRIPT_DIR/.env"
+    local sidar_env="development"
+    if [[ -f "$env_file" ]]; then
+        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    fi
+    sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
+
+    if [[ "$sidar_env" == "production" ]]; then
+        warn "DB parola hardening algılandı ancak SIDAR_ENV=production olduğu için PostgreSQL volume otomatik sıfırlanmadı."
+        return 0
+    fi
+
+    if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
+        warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
+        return 0
+    fi
+
+    local detected_pg_volume=""
+    if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
+        for volume_name in "${compose_volumes[@]}"; do
+            if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
+                detected_pg_volume="$volume_name"
+                break
+            fi
+        done
+    fi
+
+    if [[ -z "$detected_pg_volume" ]] && command -v docker &>/dev/null; then
+        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+    fi
+
+    if [[ -z "$detected_pg_volume" ]]; then
+        warn "DB parola hardening sonrası PostgreSQL volume adı tespit edilemedi; otomatik volume sıfırlama atlandı."
+        return 0
+    fi
+
+    warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${detected_pg_volume}"
+    "${compose_cmd[@]}" down >/dev/null 2>&1 || true
+    if command -v docker &>/dev/null && docker volume rm "$detected_pg_volume" >/dev/null 2>&1; then
+        ok "PostgreSQL volume temizlendi: ${detected_pg_volume}"
+        POSTGRES_VOLUME_RESET_DONE=true
+        return 0
+    fi
+
+    warn "PostgreSQL volume otomatik silinemedi (${detected_pg_volume}). Geliştirme ortamında manuel olarak sıfırlayın."
 }
 
 wait_for_redis_ready_after_docker_start() {
@@ -431,6 +505,8 @@ SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
+DB_PASSWORD_HARDENED=false
+POSTGRES_VOLUME_RESET_DONE=false
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
@@ -1812,6 +1888,7 @@ harden_database_credentials() {
                         else
                             echo "POSTGRES_USER=${db_user}" >> "$env_file"
                         fi
+                        DB_PASSWORD_HARDENED=true
                         ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
