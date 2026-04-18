@@ -706,6 +706,86 @@ verify_postgres_auth() {
     return $?
 }
 
+try_recover_postgres_password_with_alter_user() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local new_password="$5"
+    shift 5
+    local -a old_password_candidates=("$@")
+
+    local candidate=""
+    local escape_sql_literal_password="${new_password//\'/\'\'}"
+    local escape_sql_identifier_user="${db_user//\"/\"\"}"
+    local -A seen_candidates=()
+
+    for candidate in "${old_password_candidates[@]}"; do
+        [[ -n "$candidate" ]] || continue
+        if [[ -n "${seen_candidates[$candidate]:-}" ]]; then
+            continue
+        fi
+        seen_candidates["$candidate"]=1
+        if [[ "$candidate" == "$new_password" ]]; then
+            continue
+        fi
+
+        if verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$candidate"; then
+            info "Eski parola ile erişim doğrulandı; ALTER USER ile parola güncellemesi deneniyor."
+
+            if command -v psql &>/dev/null; then
+                if PGPASSWORD="$candidate" psql \
+                    "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+                    -v ON_ERROR_STOP=1 \
+                    -c "ALTER USER \"${escape_sql_identifier_user}\" WITH PASSWORD '${escape_sql_literal_password}';" \
+                    >/dev/null 2>&1; then
+                    ok "ALTER USER ile PostgreSQL parolası güncellendi."
+                    return 0
+                fi
+            fi
+
+            local -a py_cmd=()
+            if command -v python3 &>/dev/null; then
+                py_cmd=(python3)
+            elif command -v python &>/dev/null; then
+                py_cmd=(python)
+            fi
+
+            if [[ ${#py_cmd[@]} -gt 0 ]]; then
+                if "${py_cmd[@]}" - "$db_host" "$db_port" "$db_user" "$db_name" "$candidate" "$new_password" <<'PY' >/dev/null 2>&1
+import asyncio
+import sys
+
+host, port, user, database, old_password, new_password = sys.argv[1:7]
+
+async def main():
+    import asyncpg
+    conn = await asyncpg.connect(
+        host=host,
+        port=int(port),
+        user=user,
+        password=old_password,
+        database=database,
+        timeout=5,
+    )
+    try:
+        await conn.execute(f'ALTER USER "{user.replace(chr(34), chr(34)*2)}" WITH PASSWORD $1', new_password)
+    finally:
+        await conn.close()
+
+asyncio.run(main())
+PY
+                then
+                    ok "ALTER USER (python/asyncpg) ile PostgreSQL parolası güncellendi."
+                    return 0
+                fi
+            fi
+        fi
+    done
+
+    return 1
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -730,6 +810,7 @@ DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
 POSTGRES_VOLUME_RESET_FAILED=false
+PRE_HARDEN_DB_PASSWORD=""
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
@@ -2167,6 +2248,7 @@ harden_database_credentials() {
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
                 if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                    PRE_HARDEN_DB_PASSWORD="$db_password"
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
@@ -3007,35 +3089,51 @@ PY
             warn "PostgreSQL kimlik doğrulaması doğrulanamadı (psql/asyncpg denetimi kullanılamadı). Alembic denenecek."
         elif [[ "$auth_check_rc" -eq 10 ]]; then
             warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
-            DOCKER_COMPOSE_CMD=()
-            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-                DOCKER_COMPOSE_CMD=(docker compose)
-            elif command -v docker-compose &>/dev/null; then
-                DOCKER_COMPOSE_CMD=(docker-compose)
+            local -a recovery_password_candidates=()
+            if [[ -n "${PRE_HARDEN_DB_PASSWORD:-}" ]]; then
+                recovery_password_candidates+=("$PRE_HARDEN_DB_PASSWORD")
             fi
-
-            if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
-                DB_PASSWORD_HARDENED=true
-                POSTGRES_VOLUME_RESET_DONE=false
-                if ! maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis; then
-                    MIGRATION_STATUS="db_auth_hatasi"
-                    fail "PostgreSQL volume sıfırlanamadı; eski parola ile çalışan volume nedeniyle migrasyon güvenli şekilde durduruldu."
-                fi
-                start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
-                DOCKER_DB_SERVICES_STARTED=true
-                wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
-
-                for _ in {1..30}; do
-                    if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                        break
-                    fi
-                    sleep 2
-                done
-
+            recovery_password_candidates+=("sidar" "postgres" "password" "admin" "changeme" "123456")
+            if try_recover_postgres_password_with_alter_user \
+                "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" "${recovery_password_candidates[@]}"; then
                 auth_check_rc=0
                 verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
                 if [[ "$auth_check_rc" -eq 0 ]]; then
-                    ok "PostgreSQL parola doğrulaması SELECT 1 ile başarılı."
+                    ok "ALTER USER kurtarma adımı sonrası PostgreSQL parola doğrulaması başarılı."
+                fi
+            fi
+
+            if [[ "$auth_check_rc" -eq 10 ]]; then
+                DOCKER_COMPOSE_CMD=()
+                if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                    DOCKER_COMPOSE_CMD=(docker compose)
+                elif command -v docker-compose &>/dev/null; then
+                    DOCKER_COMPOSE_CMD=(docker-compose)
+                fi
+
+                if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    DB_PASSWORD_HARDENED=true
+                    POSTGRES_VOLUME_RESET_DONE=false
+                    if ! maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis; then
+                        MIGRATION_STATUS="db_auth_hatasi"
+                        fail "PostgreSQL volume sıfırlanamadı; eski parola ile çalışan volume nedeniyle migrasyon güvenli şekilde durduruldu."
+                    fi
+                    start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                    DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
+
+                    for _ in {1..30}; do
+                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                            break
+                        fi
+                        sleep 2
+                    done
+
+                    auth_check_rc=0
+                    verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                    if [[ "$auth_check_rc" -eq 0 ]]; then
+                        ok "PostgreSQL parola doğrulaması SELECT 1 ile başarılı."
+                    fi
                 fi
             fi
         fi
