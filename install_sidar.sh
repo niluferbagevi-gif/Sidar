@@ -512,7 +512,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
             fi
             ;;
         *)
-            warn "PostgreSQL volume sıfırlama kullanıcı tercihiyle atlandı; eski parola kaynaklı auth hatası oluşabilir."
+            fail "DB şifresi güncellendiği için PostgreSQL volume sıfırlama atlanamaz. Kurulum durduruldu; devam etmeden önce 'docker compose down --remove-orphans && docker rm -f \$(docker ps -a -q --filter ancestor=postgres) 2>/dev/null || true && docker volume rm ${existing_pg_volumes[*]}' komutunu çalıştırın."
             ;;
     esac
 
