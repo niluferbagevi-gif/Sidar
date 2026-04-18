@@ -259,6 +259,80 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+wait_for_redis_ready_after_docker_start() {
+    local env_file="$SCRIPT_DIR/.env"
+    local redis_url=""
+    local redis_host="localhost"
+    local redis_port="6379"
+    local -a python_cmd=()
+
+    if [[ -f "$env_file" ]]; then
+        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+    fi
+    if [[ -z "$redis_url" ]]; then
+        redis_url="redis://localhost:6379/0"
+    fi
+
+    if command -v python3 &>/dev/null; then
+        python_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        python_cmd=(python)
+    fi
+
+    if [[ ${#python_cmd[@]} -gt 0 ]]; then
+        if mapfile -t redis_conn < <("${python_cmd[@]}" - "$redis_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+url = (sys.argv[1] or "").strip() or "redis://localhost:6379/0"
+parsed = urlparse(url)
+print(parsed.hostname or "localhost")
+print(str(parsed.port or 6379))
+PY
+); then
+            redis_host="${redis_conn[0]:-localhost}"
+            redis_port="${redis_conn[1]:-6379}"
+        fi
+    fi
+
+    info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
+    for _ in {1..30}; do
+        if command -v redis-cli &>/dev/null; then
+            if redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
+        elif [[ ${#python_cmd[@]} -gt 0 ]]; then
+            if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(1.0)
+try:
+    sock.connect((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+            then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
+        else
+            warn "redis-cli veya python bulunamadı; Redis hazır kontrolü atlanıyor."
+            return 0
+        fi
+        sleep 2
+    done
+
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı."
+    return 1
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -2257,6 +2331,7 @@ run_migrations() {
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
             start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_redis_ready_after_docker_start || true
         else
             fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
         fi
@@ -2307,6 +2382,7 @@ PY
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_redis_ready_after_docker_start || true
                     info "Veritabanının hazır olması bekleniyor..."
                     for _ in {1..30}; do
                         if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
@@ -2355,6 +2431,7 @@ prepare_docker_for_migrations() {
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
+        wait_for_redis_ready_after_docker_start || true
         return
     fi
 
@@ -2368,6 +2445,7 @@ prepare_docker_for_migrations() {
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_redis_ready_after_docker_start || true
             ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
     esac
@@ -2407,6 +2485,111 @@ print(f'available={avail} cuda={ver} device={dev}')
 }
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
+wait_for_redis_before_smoke_tests() {
+    local env_file="$SCRIPT_DIR/.env"
+    local redis_url=""
+    local redis_host=""
+    local redis_port=""
+    local redis_host_lc=""
+    local redis_is_local=false
+    local docker_start_attempted=false
+    local -a docker_compose_cmd=()
+    local -a python_cmd=()
+
+    if [[ -f "$env_file" ]]; then
+        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+    fi
+    if [[ -z "$redis_url" ]]; then
+        redis_url="redis://localhost:6379/0"
+    fi
+
+    if [[ "$USE_CONDA" == true ]]; then
+        python_cmd=("${CONDA_RUN[@]}" python)
+    elif command -v python3 &>/dev/null; then
+        python_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        python_cmd=(python)
+    else
+        warn "Python bulunamadı; Redis hazır bekleme adımı atlandı."
+        return 0
+    fi
+
+    if ! mapfile -t redis_conn < <("${python_cmd[@]}" - "$redis_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+url = (sys.argv[1] or "").strip()
+if not url:
+    print("localhost")
+    print("6379")
+    raise SystemExit(0)
+
+parsed = urlparse(url)
+host = parsed.hostname or "localhost"
+port = parsed.port or 6379
+print(host)
+print(str(port))
+PY
+); then
+        warn "REDIS_URL ayrıştırılamadı ($redis_url); Redis hazır bekleme adımı atlandı."
+        return 0
+    fi
+
+    redis_host="${redis_conn[0]:-localhost}"
+    redis_port="${redis_conn[1]:-6379}"
+    redis_host_lc="${redis_host,,}"
+    if [[ "$redis_host_lc" == "localhost" || "$redis_host_lc" == "127.0.0.1" || "$redis_host_lc" == "redis" ]]; then
+        redis_is_local=true
+    fi
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    fi
+
+    info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
+    for _ in {1..30}; do
+        if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(1.0)
+try:
+    sock.connect((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+        then
+            ok "Redis erişilebilir hale geldi."
+            return 0
+        fi
+
+        if [[ "$redis_is_local" == true && "$docker_start_attempted" == false && "$DOCKER_DB_SERVICES_STARTED" != true ]]; then
+            docker_start_attempted=true
+            if [[ ${#docker_compose_cmd[@]} -eq 0 ]]; then
+                warn "Redis henüz erişilebilir değil ve docker compose bulunamadı; servis otomatik başlatılamıyor."
+            elif ! ensure_docker_daemon_running; then
+                warn "Redis henüz erişilebilir değil; Docker daemon çalışmadığı için postgres/redis otomatik başlatılamadı."
+            else
+                info "Redis erişilemediği için PostgreSQL/Redis Docker servisleri otomatik başlatılıyor..."
+                start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+                DOCKER_DB_SERVICES_STARTED=true
+            fi
+        fi
+
+        sleep 2
+    done
+
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler yine de çalıştırılacak."
+    return 0
+}
+
 run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
@@ -2448,6 +2631,8 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="atlandi_kullanici"
         return
     fi
+
+    wait_for_redis_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
@@ -2849,12 +3034,12 @@ main() {
         setup_uv
         setup_python_env
     fi
-    setup_shell_activation_shortcut
     install_python_deps
     verify_torch_cuda
     install_playwright_browsers
     create_directories
     setup_env_file
+    setup_shell_activation_shortcut
     setup_react_frontend
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
