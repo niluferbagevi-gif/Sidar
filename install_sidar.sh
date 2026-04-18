@@ -3385,12 +3385,31 @@ launch_docker_services() {
 
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
+    local vscode_mode="none"
+    local vscode_target_path="$SCRIPT_DIR"
+
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
         return
     fi
 
     if command -v code &>/dev/null; then
+        vscode_mode="code-cli"
+    elif [[ "$WSL2" == true ]] && command -v cmd.exe &>/dev/null; then
+        if cmd.exe /c "where code" >/dev/null 2>&1; then
+            vscode_mode="windows-code-cli"
+            if command -v wslpath &>/dev/null; then
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+            fi
+        elif [[ -x "/mnt/c/Program Files/Microsoft VS Code/Code.exe" ]]; then
+            vscode_mode="windows-code-exe"
+            if command -v wslpath &>/dev/null; then
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+            fi
+        fi
+    fi
+
+    if [[ "$vscode_mode" != "none" ]]; then
         echo ""
         open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
         case "${open_code:-H}" in
@@ -3399,14 +3418,24 @@ launch_ide() {
                 if [[ "$USE_CONDA" == true ]]; then
                     info "Not: .vscode/settings.json ile yeni entegre terminallerde '$CONDA_ENV_NAME' ortamı otomatik aktive edilir."
                 fi
-                code "$SCRIPT_DIR"
+                case "$vscode_mode" in
+                    code-cli)
+                        code "$SCRIPT_DIR"
+                        ;;
+                    windows-code-cli)
+                        cmd.exe /c code "$vscode_target_path" >/dev/null 2>&1 || warn "Windows code CLI ile VS Code başlatılamadı."
+                        ;;
+                    windows-code-exe)
+                        "/mnt/c/Program Files/Microsoft VS Code/Code.exe" "$vscode_target_path" >/dev/null 2>&1 || warn "Code.exe ile VS Code başlatılamadı."
+                        ;;
+                esac
                 ;;
             *)
                 info "VS Code başlatılması atlandı."
                 ;;
         esac
     else
-        warn "Sistemde VS Code (code komutu) bulunamadı."
+        warn "Sistemde VS Code launcher bulunamadı (code PATH, Windows code CLI veya Code.exe)."
         info "WSL ile tam entegrasyon için Windows tarafına VS Code ve 'WSL' eklentisini kurmanız önerilir."
     fi
 }
