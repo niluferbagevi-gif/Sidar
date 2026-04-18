@@ -107,6 +107,7 @@ async def test_real_gpu_inference_smoke() -> None:
 
 
 @pytest.mark.gpu
+@pytest.mark.gpu_stress
 @pytest.mark.asyncio
 async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
     """İsteğe bağlı GPU stres testi: eşzamanlı istek, gecikme ve bellek tepe değeri gözlemi."""
