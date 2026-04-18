@@ -992,8 +992,22 @@ install_python_deps() {
             SYNC_ARGS+=(--extra "$_extra")
         done
     fi
-    info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-    "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+
+    if [[ "$USE_CONDA" == true ]]; then
+        local uv_export_file
+        uv_export_file="$(mktemp)"
+
+        info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
+        "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
+
+        info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
+        "${CONDA_RUN[@]}" uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        rm -f "$uv_export_file"
+    else
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
+        "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+    fi
+
     ok "Python bağımlılıkları senkronlandı."
 }
 
