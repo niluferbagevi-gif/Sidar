@@ -1733,6 +1733,47 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    _detect_host_ram_gb() {
+        local total_kb="0"
+        if [[ -r /proc/meminfo ]]; then
+            total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
+        fi
+        if [[ -z "$total_kb" || "$total_kb" -le 0 ]]; then
+            echo "16"
+            return
+        fi
+        # Yukarı yuvarla: KB -> GB
+        echo $(((total_kb + 1048575) / 1048576))
+    }
+
+    _clamp_int() {
+        local val="$1"
+        local min="$2"
+        local max="$3"
+        if [[ "$val" -lt "$min" ]]; then
+            echo "$min"
+            return
+        fi
+        if [[ "$val" -gt "$max" ]]; then
+            echo "$max"
+            return
+        fi
+        echo "$val"
+    }
+
+    local host_ram_gb
+    local target_memory_gb
+    local target_swap_gb
+    host_ram_gb=$(_detect_host_ram_gb)
+    target_memory_gb=$((host_ram_gb * 3 / 4))
+    target_memory_gb=$(_clamp_int "$target_memory_gb" 4 32)
+    target_swap_gb=$((host_ram_gb / 2))
+    target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
+
+    local target_memory="${target_memory_gb}GB"
+    local target_swap="${target_swap_gb}GB"
+    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+
     # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
     # Değer zaten varsa korur, yinelenen satırları temizler.
     _ensure_wsl2_key_once() {
@@ -1785,10 +1826,11 @@ ASOUNDRC
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
 [wsl2]
-memory=16GB
-swap=8GB
+memory=__SIDAR_WSL_MEMORY__
+swap=__SIDAR_WSL_SWAP__
 WSLCFG
-            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
+            sed -i "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
+            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
@@ -1802,7 +1844,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "16GB"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
                 ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -1814,14 +1856,14 @@ WSLCFG
                 in_wsl2 && /^memory=/ { sub(/^memory=/, "", $0); print; exit }
             ' "$wslconfig_path")
             cur_mem_gb=$(_parse_gb "$cur_mem")
-            if [[ "$cur_mem_gb" -lt 8 ]]; then
-                warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
+            if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
             else
                 ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "8GB"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
                 ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -1833,8 +1875,8 @@ WSLCFG
                 in_wsl2 && /^swap=/ { sub(/^swap=/, "", $0); print; exit }
             ' "$wslconfig_path")
             cur_swap_gb=$(_parse_gb "$cur_swap")
-            if [[ "$cur_swap_gb" -lt 4 ]]; then
-                warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
+            if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
+                warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
             else
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
@@ -1848,8 +1890,8 @@ WSLCFG
         warn "WSL2: %UserProfile% yolu çözümlenemedi. .wslconfig dosyasını manuel yapılandırın:"
         echo "       %UserProfile%\\.wslconfig içeriği:"
         echo "       [wsl2]"
-        echo "       memory=16GB"
-        echo "       swap=8GB"
+        echo "       memory=${target_memory}"
+        echo "       swap=${target_swap}"
     fi
 }
 
