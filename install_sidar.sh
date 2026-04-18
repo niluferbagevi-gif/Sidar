@@ -859,12 +859,22 @@ setup_nvidia_docker() {
             # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
             sudo nvidia-ctk runtime configure --runtime=docker
 
-            # WSL2 veya Native Ubuntu için Docker'ı yeniden başlat
+            # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
             info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl is-active --quiet docker; then
-                sudo systemctl restart docker
+            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
+                if systemctl is-active --quiet docker; then
+                    sudo systemctl restart docker
+                    ok "Docker servisi systemd üzerinden yeniden başlatıldı."
+                else
+                    warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
+                    info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
+                fi
+            elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
+                sudo service docker restart
+                ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
             else
-                sudo service docker restart || true
+                warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
+                info "nvidia-container-toolkit'in aktif olması için Windows üzerinden Docker Desktop'ı yeniden başlatmanız gerekebilir."
             fi
             ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
         else
@@ -877,6 +887,11 @@ setup_nvidia_docker() {
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
+
+        info "Conda Terms of Service (TOS) otomatik kabul adımı çalıştırılıyor..."
+        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+        ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
 
         info "Conda base ortamı güncelleniyor..."
         conda update -n base -c defaults conda -y
@@ -977,8 +992,22 @@ install_python_deps() {
             SYNC_ARGS+=(--extra "$_extra")
         done
     fi
-    info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-    "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+
+    if [[ "$USE_CONDA" == true ]]; then
+        local uv_export_file
+        uv_export_file="$(mktemp)"
+
+        info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
+        "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
+
+        info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
+        "${CONDA_RUN[@]}" uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        rm -f "$uv_export_file"
+    else
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
+        "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+    fi
+
     ok "Python bağımlılıkları senkronlandı."
 }
 
