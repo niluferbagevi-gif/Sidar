@@ -472,6 +472,14 @@ maybe_reset_postgres_volume_after_password_hardening() {
         E|e)
             reset_attempted=true
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            local -a postgres_service_container_ids=()
+            if mapfile -t postgres_service_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
+                if [[ ${#postgres_service_container_ids[@]} -gt 0 ]]; then
+                    warn "postgres servisine ait mevcut container(lar) doğrudan kaldırılıyor."
+                    docker stop "${postgres_service_container_ids[@]}" >/dev/null 2>&1 || true
+                    docker rm -f "${postgres_service_container_ids[@]}" >/dev/null 2>&1 || warn "postgres container kaldırma adımı tamamlanamadı."
+                fi
+            fi
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
             fi

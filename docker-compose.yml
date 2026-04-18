@@ -29,11 +29,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-sidar} -d ${POSTGRES_DB:-sidar} || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sidar} -d ${POSTGRES_DB:-sidar} || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 15
-      start_period: 20s
+      retries: 30
+      start_period: 15s
 
   ollama:
     image: ollama/ollama:latest
