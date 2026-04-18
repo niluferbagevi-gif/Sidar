@@ -241,6 +241,11 @@ validate_monitoring_mount_paths() {
     local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
     local -a errors=()
 
+    if [[ -d "$prometheus_cfg" ]]; then
+        warn "Docker Desktop bug'ı tespit edildi: $prometheus_cfg bir klasör olarak oluşturulmuş. Silinip dosya olarak yeniden oluşturulacak."
+        rm -rf "$prometheus_cfg"
+    fi
+
     if [[ ! -e "$prometheus_cfg" ]]; then
         warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
         mkdir -p "$(dirname "$prometheus_cfg")"
