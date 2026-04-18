@@ -16,12 +16,31 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # pgvector eklentisi kuruluysa/kurulabiliyorsa HNSW indeksi etkinleştirilir.
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # pgvector mevcut değilse migrasyonu sessizce atla (ChromaDB fallback çalışmaya devam eder).
     op.execute(
         """
         DO $$
+        DECLARE
+            vector_available BOOLEAN;
         BEGIN
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_available_extensions
+                WHERE name = 'vector'
+            )
+            INTO vector_available;
+
+            IF NOT vector_available THEN
+                RETURN;
+            END IF;
+
+            BEGIN
+                EXECUTE 'CREATE EXTENSION IF NOT EXISTS vector';
+            EXCEPTION
+                WHEN insufficient_privilege THEN
+                    RETURN;
+            END;
+
             IF EXISTS (
                 SELECT 1
                 FROM information_schema.columns
