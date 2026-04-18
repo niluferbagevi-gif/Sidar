@@ -2412,6 +2412,10 @@ wait_for_redis_before_smoke_tests() {
     local redis_url=""
     local redis_host=""
     local redis_port=""
+    local redis_host_lc=""
+    local redis_is_local=false
+    local docker_start_attempted=false
+    local -a docker_compose_cmd=()
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
@@ -2455,6 +2459,16 @@ PY
 
     redis_host="${redis_conn[0]:-localhost}"
     redis_port="${redis_conn[1]:-6379}"
+    redis_host_lc="${redis_host,,}"
+    if [[ "$redis_host_lc" == "localhost" || "$redis_host_lc" == "127.0.0.1" || "$redis_host_lc" == "redis" ]]; then
+        redis_is_local=true
+    fi
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    fi
 
     info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
     for _ in {1..30}; do
@@ -2477,6 +2491,20 @@ PY
             ok "Redis erişilebilir hale geldi."
             return 0
         fi
+
+        if [[ "$redis_is_local" == true && "$docker_start_attempted" == false && "$DOCKER_DB_SERVICES_STARTED" != true ]]; then
+            docker_start_attempted=true
+            if [[ ${#docker_compose_cmd[@]} -eq 0 ]]; then
+                warn "Redis henüz erişilebilir değil ve docker compose bulunamadı; servis otomatik başlatılamıyor."
+            elif ! ensure_docker_daemon_running; then
+                warn "Redis henüz erişilebilir değil; Docker daemon çalışmadığı için postgres/redis otomatik başlatılamadı."
+            else
+                info "Redis erişilemediği için PostgreSQL/Redis Docker servisleri otomatik başlatılıyor..."
+                start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+                DOCKER_DB_SERVICES_STARTED=true
+            fi
+        fi
+
         sleep 2
     done
 
