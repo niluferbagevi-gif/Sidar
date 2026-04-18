@@ -385,22 +385,73 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    local -a candidate_volumes=()
-    if mapfile -t actual_volumes < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
-        for volume_name in "${actual_volumes[@]}"; do
-            # Proje isminden bağımsız olarak sonu postgres_data ile biten fiziksel volume'leri bul (örn: sidar_postgres_data)
+    local -a candidate_volume_suffixes=()
+    local compose_project_name="${COMPOSE_PROJECT_NAME:-}"
+    local compose_arg=""
+    local consume_next_as_project_name=false
+    for compose_arg in "${compose_cmd[@]}"; do
+        if [[ "$consume_next_as_project_name" == true ]]; then
+            compose_project_name="$compose_arg"
+            consume_next_as_project_name=false
+            continue
+        fi
+        case "$compose_arg" in
+            -p|--project-name)
+                consume_next_as_project_name=true
+                ;;
+            -p=*|--project-name=*)
+                compose_project_name="${compose_arg#*=}"
+                ;;
+        esac
+    done
+
+    if [[ -z "$compose_project_name" ]]; then
+        compose_project_name=$(read_env_value_from_file "COMPOSE_PROJECT_NAME" "$env_file")
+    fi
+    compose_project_name=$(echo "${compose_project_name:-}" | tr -d '"'\''[:space:]')
+    if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
+        for volume_name in "${compose_volumes[@]}"; do
             if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
-                candidate_volumes+=("$volume_name")
+                candidate_volume_suffixes+=("$volume_name")
             fi
         done
     fi
 
+    # docker compose config --volumes çoğunlukla kısa adı (örn: postgres_data) döndürür.
+    # Gerçek Docker volume adı ise çoğu zaman proje önekli olur (örn: sidar_postgres_data).
+    # Bu nedenle kısa adları suffix olarak ele alıp docker volume ls çıktısından gerçek adları çözüyoruz.
+    if [[ ${#candidate_volume_suffixes[@]} -eq 0 ]]; then
+        candidate_volume_suffixes+=("postgres_data")
+    fi
+
     local -a existing_pg_volumes=()
-    for volume_name in "${candidate_volumes[@]}"; do
-        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
-            existing_pg_volumes+=("$volume_name")
-        fi
-    done
+    if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
+        for docker_volume_name in "${docker_volume_names[@]}"; do
+            for volume_suffix in "${candidate_volume_suffixes[@]}"; do
+                if [[ -n "$compose_project_name" ]]; then
+                    if [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == "${compose_project_name}_${volume_suffix}" ]]; then
+                        existing_pg_volumes+=("$docker_volume_name")
+                        break
+                    fi
+                elif [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == *_"$volume_suffix" ]]; then
+                    existing_pg_volumes+=("$docker_volume_name")
+                    break
+                fi
+            done
+        done
+    fi
+
+    if [[ ${#existing_pg_volumes[@]} -gt 1 ]]; then
+        local -A unique_existing_pg_volumes=()
+        local -a deduped_existing_pg_volumes=()
+        for volume_name in "${existing_pg_volumes[@]}"; do
+            if [[ -z "${unique_existing_pg_volumes[$volume_name]:-}" ]]; then
+                unique_existing_pg_volumes["$volume_name"]=1
+                deduped_existing_pg_volumes+=("$volume_name")
+            fi
+        done
+        existing_pg_volumes=("${deduped_existing_pg_volumes[@]}")
+    fi
 
     if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
         info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
@@ -514,6 +565,35 @@ PY
     done
 
     warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı."
+    return 1
+}
+
+verify_postgres_auth_with_psql() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    POSTGRES_AUTH_CHECK_ERROR=""
+
+    if ! command -v psql &>/dev/null; then
+        POSTGRES_AUTH_CHECK_ERROR="psql_missing"
+        return 2
+    fi
+
+    local psql_output=""
+    if psql_output=$(
+        PGPASSWORD="$db_password" psql \
+            "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+            -tAc "SELECT 1" 2>&1
+    ); then
+        return 0
+    fi
+
+    POSTGRES_AUTH_CHECK_ERROR="$psql_output"
+    if [[ "$psql_output" == *"password authentication failed"* ]]; then
+        return 10
+    fi
     return 1
 }
 
@@ -2747,12 +2827,6 @@ run_migrations() {
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
-        if ! command -v psql &>/dev/null; then
-            warn "psql bulunamadı — kimlik doğrulamalı veritabanı testi yapılamadı, migrasyon atlandı."
-            info "PostgreSQL istemci araçlarını kurup tekrar deneyin: ${ALEMBIC_PYTHON} -m alembic upgrade head"
-            MIGRATION_STATUS="psql_yok"
-            return
-        fi
 
         DB_CONN_INFO=$("$ALEMBIC_PYTHON" - "$DB_URL" <<'PY'
 from urllib.parse import urlparse, unquote
@@ -2765,8 +2839,8 @@ parsed = urlparse(url)
 host = parsed.hostname or "localhost"
 port = str(parsed.port or 5432)
 user = unquote(parsed.username or "postgres")
-db = parsed.path.lstrip("/") or "postgres"
 password = unquote(parsed.password or "")
+db = parsed.path.lstrip("/") or "postgres"
 
 print(f"{host}|{port}|{user}|{db}|{password}")
 PY
@@ -2778,39 +2852,26 @@ PY
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
         DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
 
-        DOCKER_COMPOSE_CMD=()
-        if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-            DOCKER_COMPOSE_CMD=(docker compose)
-        elif command -v docker-compose &>/dev/null; then
-            DOCKER_COMPOSE_CMD=(docker-compose)
-        fi
-
-        if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-            if pg_isready -h "$DB_HOST" -p "$DB_PORT" >/dev/null 2>&1; then
-                warn "PostgreSQL çalışıyor ancak kimlik doğrulaması (Auth) başarısız oldu!"
-                warn "Eski şifre kalıntısı (Volume uyuşmazlığı) tespit edildi. Volume zorla sıfırlanıyor..."
-                if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
-                    "${DOCKER_COMPOSE_CMD[@]}" down -v postgres || warn "docker compose down -v postgres komutu başarısız oldu."
-                    docker volume rm -f "${DB_HOST}_postgres_data" sidar_postgres_data >/dev/null 2>&1 || true
-                    "${DOCKER_COMPOSE_CMD[@]}" up -d postgres || warn "postgres servisi yeniden başlatılamadı."
-                    sleep 5
-                else
-                    warn "docker compose bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
-                fi
+        if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            elif command -v docker-compose &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
             fi
 
             if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
                 if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
                     info "Kullanıcı tercihi nedeniyle migrasyon sırasında Docker servisleri otomatik başlatılmayacak."
                 else
-                    info "PostgreSQL erişilemedi veya doğrulanamadı ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                    info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     info "Veritabanının hazır olması bekleniyor..."
                     for _ in {1..30}; do
-                        if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-                            ok "PostgreSQL kimlik doğrulamalı erişilebilir hale geldi."
+                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                            ok "PostgreSQL erişilebilir hale geldi."
                             break
                         fi
                         sleep 2
@@ -2818,8 +2879,8 @@ PY
                 fi
             fi
 
-            if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-                warn "PostgreSQL erişilemedi veya kimlik doğrulama başarısız ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+            if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
                 if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
                     info "PostgreSQL log özeti (son 80 satır) alınıyor..."
                     "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres || warn "PostgreSQL logları okunamadı."
@@ -2828,6 +2889,48 @@ PY
                 MIGRATION_STATUS="db_erisilemez"
                 fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
+        fi
+
+        local auth_check_rc=0
+        verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+        if [[ "$auth_check_rc" -eq 2 ]]; then
+            warn "psql bulunamadığı için PostgreSQL kimlik doğrulaması SELECT 1 ile doğrulanamadı. Alembic denenecek."
+        elif [[ "$auth_check_rc" -eq 10 ]]; then
+            warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            elif command -v docker-compose &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
+            fi
+
+            if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                DB_PASSWORD_HARDENED=true
+                POSTGRES_VOLUME_RESET_DONE=false
+                maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                DOCKER_DB_SERVICES_STARTED=true
+                wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
+
+                for _ in {1..30}; do
+                    if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                        break
+                    fi
+                    sleep 2
+                done
+
+                auth_check_rc=0
+                verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                if [[ "$auth_check_rc" -eq 0 ]]; then
+                    ok "PostgreSQL parola doğrulaması SELECT 1 ile başarılı."
+                fi
+            fi
+        fi
+
+        if [[ "$auth_check_rc" -ne 0 && "$auth_check_rc" -ne 2 ]]; then
+            warn "PostgreSQL kimlik doğrulama kontrolü başarısız: ${POSTGRES_AUTH_CHECK_ERROR:-bilinmeyen_hata}"
+            MIGRATION_STATUS="db_auth_hatasi"
+            fail "PostgreSQL kimlik doğrulaması başarısız olduğu için migrasyon güvenli şekilde durduruldu."
         fi
     fi
 
