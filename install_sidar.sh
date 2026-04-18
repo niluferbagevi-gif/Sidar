@@ -3034,12 +3034,12 @@ main() {
         setup_uv
         setup_python_env
     fi
-    setup_shell_activation_shortcut
     install_python_deps
     verify_torch_cuda
     install_playwright_browsers
     create_directories
     setup_env_file
+    setup_shell_activation_shortcut
     setup_react_frontend
     setup_wsl2_audio
     # Yeni eklenen VS Code yapılandırması
