@@ -1001,7 +1001,7 @@ install_python_deps() {
         "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        "${CONDA_RUN[@]}" uv pip sync -v --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        "${CONDA_RUN[@]}" uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
