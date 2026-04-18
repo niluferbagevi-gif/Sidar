@@ -3197,11 +3197,11 @@ main() {
     setup_vscode_workspace
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
-    # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
+    # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
     run_migrations
-    # Hızlı geri bildirim için smoke testleri büyük model indirme adımından önce çalıştır.
-    run_smoke_tests
+    # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
     download_ollama_models
+    run_smoke_tests
     run_test_artifact_audit
     print_summary
     launch_docker_services
