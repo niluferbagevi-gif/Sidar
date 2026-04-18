@@ -386,17 +386,13 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     local -a candidate_volumes=()
-    if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
-        for volume_name in "${compose_volumes[@]}"; do
+    if mapfile -t actual_volumes < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
+        for volume_name in "${actual_volumes[@]}"; do
+            # Proje isminden bağımsız olarak sonu postgres_data ile biten fiziksel volume'leri bul (örn: sidar_postgres_data)
             if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
                 candidate_volumes+=("$volume_name")
             fi
         done
-    fi
-
-    # docker compose config çıktısı yoksa ya da proje adı değiştiyse bilinen fallback adı da denenir.
-    if [[ ${#candidate_volumes[@]} -eq 0 ]]; then
-        candidate_volumes+=("sidar_postgres_data")
     fi
 
     local -a existing_pg_volumes=()
@@ -2751,6 +2747,12 @@ run_migrations() {
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
+        if ! command -v psql &>/dev/null; then
+            warn "psql bulunamadı — kimlik doğrulamalı veritabanı testi yapılamadı, migrasyon atlandı."
+            info "PostgreSQL istemci araçlarını kurup tekrar deneyin: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+            MIGRATION_STATUS="psql_yok"
+            return
+        fi
 
         DB_CONN_INFO=$("$ALEMBIC_PYTHON" - "$DB_URL" <<'PY'
 from urllib.parse import urlparse, unquote
@@ -2764,8 +2766,9 @@ host = parsed.hostname or "localhost"
 port = str(parsed.port or 5432)
 user = unquote(parsed.username or "postgres")
 db = parsed.path.lstrip("/") or "postgres"
+password = unquote(parsed.password or "")
 
-print(f"{host}|{port}|{user}|{db}")
+print(f"{host}|{port}|{user}|{db}|{password}")
 PY
 )
 
@@ -2773,27 +2776,41 @@ PY
         DB_PORT=$(echo "$DB_CONN_INFO" | cut -d'|' -f2)
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
+        DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
 
-        if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-            DOCKER_COMPOSE_CMD=()
-            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-                DOCKER_COMPOSE_CMD=(docker compose)
-            elif command -v docker-compose &>/dev/null; then
-                DOCKER_COMPOSE_CMD=(docker-compose)
+        DOCKER_COMPOSE_CMD=()
+        if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker compose)
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD=(docker-compose)
+        fi
+
+        if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+            if pg_isready -h "$DB_HOST" -p "$DB_PORT" >/dev/null 2>&1; then
+                warn "PostgreSQL çalışıyor ancak kimlik doğrulaması (Auth) başarısız oldu!"
+                warn "Eski şifre kalıntısı (Volume uyuşmazlığı) tespit edildi. Volume zorla sıfırlanıyor..."
+                if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    "${DOCKER_COMPOSE_CMD[@]}" down -v postgres || warn "docker compose down -v postgres komutu başarısız oldu."
+                    docker volume rm -f "${DB_HOST}_postgres_data" sidar_postgres_data >/dev/null 2>&1 || true
+                    "${DOCKER_COMPOSE_CMD[@]}" up -d postgres || warn "postgres servisi yeniden başlatılamadı."
+                    sleep 5
+                else
+                    warn "docker compose bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
+                fi
             fi
 
             if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
                 if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
                     info "Kullanıcı tercihi nedeniyle migrasyon sırasında Docker servisleri otomatik başlatılmayacak."
                 else
-                    info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
+                    info "PostgreSQL erişilemedi veya doğrulanamadı ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     info "Veritabanının hazır olması bekleniyor..."
                     for _ in {1..30}; do
-                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            ok "PostgreSQL erişilebilir hale geldi."
+                        if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+                            ok "PostgreSQL kimlik doğrulamalı erişilebilir hale geldi."
                             break
                         fi
                         sleep 2
@@ -2801,8 +2818,8 @@ PY
                 fi
             fi
 
-            if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                warn "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
+            if ! PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+                warn "PostgreSQL erişilemedi veya kimlik doğrulama başarısız ($DB_HOST:$DB_PORT/$DB_NAME) — migrasyon atlandı."
                 if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
                     info "PostgreSQL log özeti (son 80 satır) alınıyor..."
                     "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres || warn "PostgreSQL logları okunamadı."
