@@ -108,6 +108,27 @@ _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+def _repair_log_file_permissions(log_file: Path) -> None:
+    """Yazılamayan log dosyasını mümkünse mevcut kullanıcıya göre onarır."""
+    if not log_file.exists():
+        return
+
+    if os.access(log_file, os.W_OK):
+        return
+
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    gid = os.getgid() if hasattr(os, "getgid") else None
+
+    if uid is not None and gid is not None and hasattr(os, "chown"):
+        with contextlib.suppress(PermissionError, OSError):
+            os.chown(log_file, uid, gid)
+
+    current_mode = log_file.stat().st_mode & 0o777
+    with contextlib.suppress(PermissionError, OSError):
+        log_file.chmod(current_mode | 0o200)
+
+_repair_log_file_permissions(_LOG_FILE_PATH)
+
 _root_logger = logging.getLogger()
 for _handler in list(_root_logger.handlers):
     with contextlib.suppress(Exception):
@@ -118,17 +139,30 @@ for _handler in list(_root_logger.handlers):
 logging.basicConfig(
     level=getattr(logging, _LOG_LEVEL_STR, logging.INFO),
     format="%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        RotatingFileHandler(
-            _LOG_FILE_PATH,
-            maxBytes=_LOG_MAX_BYTES,
-            backupCount=_LOG_BACKUP_CNT,
-            encoding="utf-8",
-        ),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
     force=True,
 )
+
+with contextlib.suppress(Exception):
+    _root_logger.handlers[0].setLevel(getattr(logging, _LOG_LEVEL_STR, logging.INFO))
+
+try:
+    _file_handler = RotatingFileHandler(
+        _LOG_FILE_PATH,
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_CNT,
+        encoding="utf-8",
+    )
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s"
+    ))
+    _root_logger.addHandler(_file_handler)
+except (PermissionError, OSError) as exc:
+    _root_logger.warning(
+        "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
+        exc,
+    )
+
 logger = logging.getLogger("Sidar.Config")
 
 _DEPENDENCY_AUTO = object()
