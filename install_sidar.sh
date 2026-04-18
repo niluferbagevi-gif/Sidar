@@ -907,7 +907,7 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        CONDA_RUN=(conda run -n "$CONDA_ENV_NAME")
+        CONDA_RUN=(conda run --no-capture-output -n "$CONDA_ENV_NAME")
         if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
@@ -1001,7 +1001,7 @@ install_python_deps() {
         "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        "${CONDA_RUN[@]}" uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        "${CONDA_RUN[@]}" uv pip sync -v --python "$CONDA_PYTHON_PATH" "$uv_export_file"
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
