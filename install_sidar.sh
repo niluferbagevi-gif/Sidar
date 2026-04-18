@@ -936,6 +936,7 @@ setup_python_env() {
 # ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
 setup_uv() {
     step "uv Paket Yöneticisi"
+    export UV_PROGRESS_BAR=on
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
