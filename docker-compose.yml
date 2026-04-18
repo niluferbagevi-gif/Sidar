@@ -282,7 +282,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./docker_setup/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker_setup/prometheus:/etc/prometheus:ro
 
   grafana:
     image: grafana/grafana:latest
