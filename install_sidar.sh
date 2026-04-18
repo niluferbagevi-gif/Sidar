@@ -3234,11 +3234,11 @@ main() {
     fi
     install_python_deps
     verify_torch_cuda
-    install_playwright_browsers
     create_directories
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
     setup_env_file
+    install_playwright_browsers
     setup_shell_activation_shortcut
     setup_react_frontend
     setup_wsl2_audio
