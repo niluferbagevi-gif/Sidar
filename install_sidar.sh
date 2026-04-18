@@ -3250,8 +3250,8 @@ main() {
     download_ollama_models
     run_smoke_tests
     run_test_artifact_audit
-    print_summary
     launch_docker_services
+    print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
     relocate_log_file_if_needed
