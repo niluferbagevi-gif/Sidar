@@ -786,7 +786,7 @@ ensure_prerequisites() {
             read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
             # Kullanıcıdan onay sonrası tekrar doğrula
-            if ! docker_cli_healthy; then
+            if ! ensure_docker_daemon_running; then
                 fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
             fi
         fi
