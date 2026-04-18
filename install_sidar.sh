@@ -2663,7 +2663,7 @@ run_migrations() {
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
             start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
-            wait_for_redis_ready_after_docker_start || true
+            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; sonraki adımlarda bağlantı hatası oluşabilir."
         else
             fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
         fi
@@ -2714,7 +2714,7 @@ PY
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
-                    wait_for_redis_ready_after_docker_start || true
+                    wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     info "Veritabanının hazır olması bekleniyor..."
                     for _ in {1..30}; do
                         if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
@@ -2771,7 +2771,7 @@ prepare_docker_for_migrations() {
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
-        wait_for_redis_ready_after_docker_start || true
+        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
         return
     fi
 
@@ -2785,7 +2785,7 @@ prepare_docker_for_migrations() {
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
-            wait_for_redis_ready_after_docker_start || true
+            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
             ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
     esac
@@ -2926,8 +2926,8 @@ PY
         sleep 2
     done
 
-    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler yine de çalıştırılacak."
-    return 0
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler atlanacak."
+    return 1
 }
 
 run_smoke_tests() {
@@ -2972,7 +2972,11 @@ run_smoke_tests() {
         return
     fi
 
-    wait_for_redis_before_smoke_tests
+    if ! wait_for_redis_before_smoke_tests; then
+        warn "Redis hazır olmadığı için smoke testler çalıştırılmadı (false-negative önleme)."
+        SMOKE_TEST_STATUS="atlandi_redis_hazir_degil"
+        return
+    fi
     wait_for_core_docker_health_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
