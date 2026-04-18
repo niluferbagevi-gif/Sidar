@@ -1294,7 +1294,7 @@ setup_react_frontend() {
 
     if ! command -v npm &>/dev/null; then
         warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
-        echo "       cd web_ui_react && npm install && npm run build"
+        echo "       cd web_ui_react && npm ci && npm run build"
         REACT_UI_STATUS="npm_yok"
         return
     fi
@@ -1317,8 +1317,13 @@ setup_react_frontend() {
 
     if ! (
         cd "$REACT_DIR"
-        info "npm install çalıştırılıyor..."
-        npm install
+        if [[ -f "package-lock.json" ]]; then
+            info "package-lock.json bulundu. npm ci çalıştırılıyor..."
+            npm ci
+        else
+            warn "package-lock.json bulunamadı. npm ci yerine npm install kullanılacak."
+            npm install
+        fi
         info "npm run build çalıştırılıyor..."
         npm run build
     ); then
@@ -2870,11 +2875,11 @@ print_summary() {
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
     elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
-        echo "       React UI build: başarısız (npm install/npm run build hata verdi)"
-        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm install && npm run build"
+        echo "       React UI build: başarısız (npm ci|npm install ve/veya npm run build hata verdi)"
+        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm ci && npm run build"
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
-        echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
+        echo "       Manuel build için: cd web_ui_react && npm ci && npm run build"
     fi
     echo ""
     echo -e "  6️⃣  Testleri çalıştır (--dev ile kurulduysa):"
