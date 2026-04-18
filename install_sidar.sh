@@ -1217,7 +1217,7 @@ install_python_deps() {
         EXTRAS+=(gpu)
     fi
 
-    local -a LOCK_ARGS=(--index-strategy unsafe-best-match)
+    local -a LOCK_ARGS=(--index-strategy first-match)
     local -a SYNC_ARGS=(--frozen)
     for _extra in "${EXTRAS[@]}"; do
         LOCK_ARGS+=(--extra "$_extra")
@@ -1240,7 +1240,7 @@ install_python_deps() {
         uv_export_file="$(mktemp)"
 
         info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
-        if ! "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
+        if ! "${UV_CMD[@]}" export --index-strategy first-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
             rm -f "$uv_export_file"
             fail "uv export başarısız oldu. Conda için requirements dosyası üretilemedi."
         fi
@@ -1252,8 +1252,8 @@ install_python_deps() {
         fi
         rm -f "$uv_export_file"
     else
-        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"; then
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
+        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
             fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
         fi
     fi
