@@ -629,6 +629,19 @@ deploy_with_helm() {
     fi
 }
 
+report_repo_lookup_context() {
+    local current_pwd
+    current_pwd="$(pwd)"
+
+    info "Kurulum çalışma dizini: $current_pwd"
+    info "Sidar deposu hedef dizini: $TARGET_DIR"
+
+    if [[ "$current_pwd" == /mnt/* ]]; then
+        warn "Kurulum /mnt altında çalışıyor. Windows dosya sistemi önceki Sidar klasörünü koruyor olabilir."
+        info "Temiz kurulum için öneri: cd \"$HOME\" && ./Sidar/install_sidar.sh veya doğrudan cd \"$TARGET_DIR\"."
+    fi
+}
+
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
@@ -648,7 +661,8 @@ sync_repo() {
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
         git clone "$REPO_URL" "$TARGET_DIR"
     else
-        warn "Sidar klasörü zaten var. Rebase tabanlı git pull ile güncelleniyor..."
+        warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
+        info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
         (
             cd "$TARGET_DIR"
             local STASHED_CHANGES=false
@@ -3119,6 +3133,7 @@ EOF
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    report_repo_lookup_context
     # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
     if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
         WSL2=true
