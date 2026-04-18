@@ -700,17 +700,30 @@ ensure_prerequisites() {
     fi
 
     if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
-        warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
-        info "Lütfen şu adımları uygulayın:"
-        echo "  1. Windows'ta Docker Desktop'ı açın."
-        echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-        echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
-        echo ""
-        read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
-        # Kullanıcıdan onay sonrası tekrar doğrula
-        if ! docker_cli_healthy; then
-            fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+        # Windows tarafında Docker Desktop'ın gerçekten kurulu olup olmadığını denetle
+        local docker_desktop_installed=false
+        if [[ -f "/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe" ]] || command -v docker.exe &>/dev/null; then
+            docker_desktop_installed=true
+        fi
+
+        # Eğer Windows'ta kurulu değilse net bir şekilde hata verip kurulumu iptal et
+        if [[ "$docker_desktop_installed" == false ]]; then
+            fail "Docker Desktop sisteminizde hiç bulunamadı, lütfen önce Windows'a kurun."
+        else
+            # Windows'ta kurulu ama WSL2'de çalışmıyorsa entegrasyon bozuktur
+            warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
+            info "Lütfen şu adımları uygulayın:"
+            echo "  1. Windows'ta Docker Desktop'ı açın."
+            echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
+            echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+            echo ""
+            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+
+            # Kullanıcıdan onay sonrası tekrar doğrula
+            if ! docker_cli_healthy; then
+                fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+            fi
         fi
     fi
 
