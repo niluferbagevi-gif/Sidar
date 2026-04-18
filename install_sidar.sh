@@ -2225,9 +2225,15 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
-    ALEMBIC_PYTHON="python"
-    if [[ "$USE_CONDA" == true ]]; then
+    ALEMBIC_PYTHON=""
+    if [[ "$USE_CONDA" == true ]] && [[ -n "${CONDA_PYTHON_PATH:-}" ]] && [[ -x "${CONDA_PYTHON_PATH:-}" ]]; then
         ALEMBIC_PYTHON="$CONDA_PYTHON_PATH"
+    elif command -v python3 &>/dev/null; then
+        ALEMBIC_PYTHON="python3"
+    elif command -v python &>/dev/null; then
+        ALEMBIC_PYTHON="python"
+    else
+        fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
     fi
     ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
@@ -2264,7 +2270,7 @@ run_migrations() {
             return
         fi
 
-        DB_CONN_INFO=$(python - <<'PY' "$DB_URL"
+        DB_CONN_INFO=$("$ALEMBIC_PYTHON" - "$DB_URL" <<'PY'
 from urllib.parse import urlparse, unquote
 import sys
 
