@@ -2563,11 +2563,13 @@ setup_env_file() {
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
     if [[ -f "$ENV_FILE" ]]; then
-        ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
+        ok ".env dosyası zaten mevcut — mevcut DB kimlik bilgileri korunarak varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
         ensure_sidar_env_default "$ENV_FILE"
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
-        harden_database_credentials "$ENV_FILE"
+        # İdempotent davranış: mevcut .env dosyasında DB parolasını yeniden üretip
+        # POSTGRES_PASSWORD alanını ezmeyiz. Parola hardening sadece ilk .env
+        # oluşturulurken uygulanır.
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
