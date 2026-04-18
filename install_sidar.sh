@@ -737,46 +737,19 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
             postgresql-client-common postgresql-client
 
-        info "Node.js 20.x (NodeSource apt + GPG keyring) kuruluyor..."
-        local distro_codename=""
-        local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
-        local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
-        local ns_key_tmp=""
+        info "Node.js (v20.x) durumu kontrol ediliyor..."
+        if command -v node &>/dev/null && node -v | grep -q "^v20"; then
+            ok "Node.js 20.x zaten kurulu: $(node -v)"
+        else
+            info "Node.js 20.x (NodeSource) kuruluyor..."
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo DEBIAN_FRONTEND=noninteractive -E bash -
 
-        if [[ -r /etc/os-release ]]; then
-            distro_codename=$(awk -F= '/^VERSION_CODENAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release | head -n1)
-        fi
-        if [[ -z "$distro_codename" ]] && command -v lsb_release &>/dev/null; then
-            distro_codename=$(lsb_release -cs 2>/dev/null || true)
-        fi
-
-        if [[ -n "$distro_codename" ]]; then
-            ns_key_tmp=$(mktemp)
-            if curl -fsSL "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key" -o "$ns_key_tmp"; then
-                sudo install -m 0755 -d /etc/apt/keyrings
-                if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
-                    sudo chmod 0644 "$ns_keyring"
-                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/node_20.x ${distro_codename} main" | sudo tee "$ns_repo_file" >/dev/null
-                    sudo chmod 0644 "$ns_repo_file"
-                    if sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && \
-                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
-                        ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-                    else
-                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
-                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
-                    fi
-                else
-                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
-                fi
+            if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
-                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
+                warn "Node.js kurulamadı, varsayılan apt deposu deneniyor..."
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
             fi
-            rm -f "$ns_key_tmp"
-        else
-            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
