@@ -108,6 +108,27 @@ _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+def _repair_log_file_permissions(log_file: Path) -> None:
+    """Yazılamayan log dosyasını mümkünse mevcut kullanıcıya göre onarır."""
+    if not log_file.exists():
+        return
+
+    if os.access(log_file, os.W_OK):
+        return
+
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    gid = os.getgid() if hasattr(os, "getgid") else None
+
+    if uid is not None and gid is not None and hasattr(os, "chown"):
+        with contextlib.suppress(PermissionError, OSError):
+            os.chown(log_file, uid, gid)
+
+    current_mode = log_file.stat().st_mode & 0o777
+    with contextlib.suppress(PermissionError, OSError):
+        log_file.chmod(current_mode | 0o200)
+
+_repair_log_file_permissions(_LOG_FILE_PATH)
+
 _root_logger = logging.getLogger()
 for _handler in list(_root_logger.handlers):
     with contextlib.suppress(Exception):

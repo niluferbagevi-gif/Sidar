@@ -1519,7 +1519,15 @@ create_directories() {
     step "Proje Dizinleri"
     for dir in "${REQUIRED_DIRS[@]}"; do
         mkdir -p "$SCRIPT_DIR/$dir"
+        chmod 755 "$SCRIPT_DIR/$dir" 2>/dev/null || true
     done
+
+    local log_file="$SCRIPT_DIR/logs/sidar_system.log"
+    if [[ -f "$log_file" && ! -w "$log_file" ]]; then
+        chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
+        chmod u+rw "$log_file" 2>/dev/null || true
+    fi
+
     if [[ -f "$SCRIPT_DIR/run_tests.sh" ]]; then
         chmod +x "$SCRIPT_DIR/run_tests.sh"
     fi
