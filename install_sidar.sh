@@ -20,7 +20,12 @@ export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
-LOG_DIR="$SCRIPT_DIR/logs"
+INITIAL_TARGET_DIR="${HOME}/Sidar"
+if [[ -d "$INITIAL_TARGET_DIR" ]]; then
+    LOG_DIR="$INITIAL_TARGET_DIR/logs"
+else
+    LOG_DIR="$SCRIPT_DIR/logs"
+fi
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -i "$LOG_FILE") 2>&1
@@ -113,6 +118,7 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 relocate_log_file_if_needed() {
+    [[ -n "${TARGET_DIR:-}" ]] || return 0
     local target_log_dir="${TARGET_DIR}/logs"
     local source_log_dir="$LOG_DIR"
 
@@ -128,6 +134,8 @@ relocate_log_file_if_needed() {
         fi
     fi
 }
+
+trap 'relocate_log_file_if_needed || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
@@ -240,6 +248,11 @@ validate_monitoring_mount_paths() {
     local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
     local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
     local -a errors=()
+
+    if [[ -d "$prometheus_cfg" ]]; then
+        warn "Docker Desktop bug'ı tespit edildi: $prometheus_cfg bir klasör olarak oluşturulmuş. Silinip dosya olarak yeniden oluşturulacak."
+        rm -rf "$prometheus_cfg"
+    fi
 
     if [[ ! -e "$prometheus_cfg" ]]; then
         warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
@@ -1146,7 +1159,7 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        CONDA_RUN=(conda run --no-capture-output -n "$CONDA_ENV_NAME")
+        CONDA_RUN=(conda run --no-capture-output --cwd "$SCRIPT_DIR" -n "$CONDA_ENV_NAME")
         if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
@@ -1207,41 +1220,61 @@ install_python_deps() {
     cd "$SCRIPT_DIR"
     UV_CMD=(uv)
 
-    # uv.lock yönetimi: yoksa oluştur, varsa güncelle
-    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
-        info "uv.lock bulunamadı — uv lock ile oluşturuluyor..."
-        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
-        ok "uv.lock oluşturuldu."
-    else
-        info "uv.lock bulundu — uv lock ile bağımlılıklar kontrol ediliyor..."
-        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
-        ok "uv.lock kontrol edildi."
+    local -a EXTRAS=(dev gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams)
+    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
+        EXTRAS+=(gpu)
     fi
 
-    SYNC_ARGS=(--frozen --extra dev)
-    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser slack voice tools aws jira teams; do
-            SYNC_ARGS+=(--extra "$_extra")
-        done
+    local -a LOCK_ARGS=(--index-strategy first-match)
+    local -a SYNC_ARGS=(--frozen)
+    for _extra in "${EXTRAS[@]}"; do
+        LOCK_ARGS+=(--extra "$_extra")
+        SYNC_ARGS+=(--extra "$_extra")
+    done
+
+    # uv.lock yönetimi: extras seti belirlendikten sonra oluştur/güncelle
+    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulunamadı — seçili extras ile oluşturuluyor..."
     else
-        for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams; do
-            SYNC_ARGS+=(--extra "$_extra")
-        done
+        info "uv.lock bulundu — seçili extras ile güncelleniyor..."
     fi
+    if ! "${UV_CMD[@]}" lock "${LOCK_ARGS[@]}"; then
+        fail "uv lock başarısız oldu. Bağımlılık çözümleme tamamlanamadı; kurulum durduruluyor."
+    fi
+    ok "uv.lock güncellendi."
 
     if [[ "$USE_CONDA" == true ]]; then
         local uv_export_file
         uv_export_file="$(mktemp)"
 
         info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
-        "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
+        if ! "${UV_CMD[@]}" export --index-strategy first-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
+            rm -f "$uv_export_file"
+            fail "uv export başarısız oldu. Conda için requirements dosyası üretilemedi."
+        fi
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        if ! run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
+            rm -f "$uv_export_file"
+            fail "uv pip sync başarısız oldu. Conda ortamına bağımlılıklar kurulamadı."
+        fi
         rm -f "$uv_export_file"
     else
-        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-        run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
+        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
+            fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
+        fi
+    fi
+
+    info "Sidar paketi editable modda kuruluyor (pip install -e .)..."
+    if [[ "$USE_CONDA" == true ]]; then
+        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR"; then
+            fail "Sidar paketi conda ortamına editable olarak kurulamadı."
+        fi
+    else
+        if ! python -m pip install -e "$SCRIPT_DIR"; then
+            fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
+        fi
     fi
 
     ok "Python bağımlılıkları senkronlandı."
@@ -1294,7 +1327,7 @@ setup_react_frontend() {
 
     if ! command -v npm &>/dev/null; then
         warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
-        echo "       cd web_ui_react && npm install && npm run build"
+        echo "       cd web_ui_react && npm ci && npm run build"
         REACT_UI_STATUS="npm_yok"
         return
     fi
@@ -1317,8 +1350,13 @@ setup_react_frontend() {
 
     if ! (
         cd "$REACT_DIR"
-        info "npm install çalıştırılıyor..."
-        npm install
+        if [[ -f "package-lock.json" ]]; then
+            info "package-lock.json bulundu. npm ci çalıştırılıyor..."
+            npm ci
+        else
+            warn "package-lock.json bulunamadı. npm ci yerine npm install kullanılacak."
+            npm install
+        fi
         info "npm run build çalıştırılıyor..."
         npm run build
     ); then
@@ -1697,7 +1735,7 @@ harden_database_credentials() {
         local db_host_and_name="${BASH_REMATCH[4]}"
 
         case "$db_password" in
-            postgres|password|admin|changeme|123456)
+            sidar|postgres|password|admin|changeme|123456)
                 if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
                     local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
                     if [[ "$hardening_enabled" == "1" ]]; then
@@ -2531,7 +2569,7 @@ PY
                 fi
                 info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
-                return
+                fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
         fi
     fi
@@ -2540,8 +2578,8 @@ PY
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
-        warn "Migrasyon başarısız. Log'ları kontrol edin."
         MIGRATION_STATUS="hata"
+        fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
 }
 
@@ -2870,11 +2908,11 @@ print_summary() {
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
     elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
-        echo "       React UI build: başarısız (npm install/npm run build hata verdi)"
-        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm install && npm run build"
+        echo "       React UI build: başarısız (npm ci|npm install ve/veya npm run build hata verdi)"
+        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm ci && npm run build"
     else
         echo "       React UI build: atlandı (${REACT_UI_STATUS})"
-        echo "       Manuel build için: cd web_ui_react && npm install && npm run build"
+        echo "       Manuel build için: cd web_ui_react && npm ci && npm run build"
     fi
     echo ""
     echo -e "  6️⃣  Testleri çalıştır (--dev ile kurulduysa):"
@@ -2945,6 +2983,8 @@ print_summary() {
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
 launch_docker_services() {
     local docker_compose_cmd=()
+    local compose_profiles=""
+    local env_file="$SCRIPT_DIR/.env"
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -2955,9 +2995,20 @@ launch_docker_services() {
         return
     fi
 
+    if [[ -f "$env_file" ]]; then
+        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+    fi
+    if [[ -z "$compose_profiles" ]]; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
+            compose_profiles="gpu"
+        else
+            compose_profiles="cpu"
+        fi
+    fi
+
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
-        info "Gerekirse manuel çalıştırın: docker compose up -d"
+        info "Gerekirse manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles docker compose up -d"
         return
     fi
 
@@ -2977,8 +3028,8 @@ launch_docker_services() {
                 echo "⚠️ Docker motoru şu anda çalışmıyor."
                 echo "ℹ️ Docker başlatılmaya çalışılıyor..."
 
-                # WSL2 / Linux Native kontrolü
-                if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null; then
+                # WSL2 / Linux Native kontrolü (başta belirlenen WSL2 bayrağı kullanılır)
+                if [[ "$WSL2" == true ]]; then
                     echo "WSL ortamı algılandı. Service üzerinden başlatılıyor..."
                     if command -v sudo &>/dev/null; then
                         sudo service docker start
@@ -3010,14 +3061,15 @@ launch_docker_services() {
             info "Docker Compose servisleri başlatılıyor..."
             info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
             validate_monitoring_mount_paths
-            if "${docker_compose_cmd[@]}" up -d; then
+            info "Docker Compose profili: $compose_profiles"
+            if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                 ok "Docker servisleri başarıyla başlatıldı."
             else
                 warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
             fi
             ;;
         *)
-            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: docker compose up -d)"
+            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
             ;;
     esac
 }
@@ -3178,11 +3230,11 @@ main() {
     setup_vscode_workspace
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
-    # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
+    # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
     run_migrations
-    # Hızlı geri bildirim için smoke testleri büyük model indirme adımından önce çalıştır.
-    run_smoke_tests
+    # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
     download_ollama_models
+    run_smoke_tests
     run_test_artifact_audit
     print_summary
     launch_docker_services
