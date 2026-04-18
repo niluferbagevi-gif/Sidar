@@ -234,6 +234,65 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
+validate_monitoring_mount_paths() {
+    local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
+    local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
+    local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
+    local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
+    local -a errors=()
+
+    if [[ ! -e "$prometheus_cfg" ]]; then
+        warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
+        mkdir -p "$(dirname "$prometheus_cfg")"
+        cat > "$prometheus_cfg" <<'EOF'
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+EOF
+    elif [[ ! -f "$prometheus_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $prometheus_cfg")
+    fi
+
+    if [[ ! -e "$grafana_provisioning_dir" ]]; then
+        warn "Grafana provisioning dizini bulunamadı, oluşturuluyor: $grafana_provisioning_dir"
+        mkdir -p "$grafana_provisioning_dir"
+    elif [[ ! -d "$grafana_provisioning_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_provisioning_dir")
+    fi
+
+    if [[ ! -e "$grafana_dashboards_dir" ]]; then
+        warn "Grafana dashboards dizini bulunamadı, oluşturuluyor: $grafana_dashboards_dir"
+        mkdir -p "$grafana_dashboards_dir"
+    elif [[ ! -d "$grafana_dashboards_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_dashboards_dir")
+    fi
+
+    if [[ -d "$grafana_provisioning_dir" ]] && [[ ! -e "$grafana_datasource_cfg" ]]; then
+        warn "Grafana Prometheus datasource tanımı bulunamadı, varsayılan dosya oluşturuluyor: $grafana_datasource_cfg"
+        mkdir -p "$(dirname "$grafana_datasource_cfg")"
+        cat > "$grafana_datasource_cfg" <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+EOF
+    elif [[ -e "$grafana_datasource_cfg" ]] && [[ ! -f "$grafana_datasource_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $grafana_datasource_cfg")
+    fi
+
+    if (( ${#errors[@]} > 0 )); then
+        printf ' - %s\n' "${errors[@]}" >&2
+        fail "Docker Compose monitoring bind-mount sanity check başarısız. Lütfen eksik/yanlış tipte yolları düzeltin."
+    fi
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -436,6 +495,7 @@ DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
+CONDA_BASE_UPDATE_DONE=false
 
 banner() {
     echo -e "${BOLD}${BLUE}"
@@ -443,6 +503,25 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+update_conda_base_if_available() {
+    if [[ "${USE_CONDA:-false}" != true ]]; then
+        return 0
+    fi
+
+    if [[ "${CONDA_BASE_UPDATE_DONE:-false}" == true ]]; then
+        return 0
+    fi
+
+    info "Conda base ortamı sessiz modda güncelleniyor..."
+    if conda update -n base -c defaults conda -y >/dev/null 2>&1; then
+        ok "Conda base ortamı güncellendi."
+    else
+        warn "Conda base güncellemesi başarısız/atlanmış olabilir. Mevcut sürümle devam ediliyor."
+    fi
+
+    CONDA_BASE_UPDATE_DONE=true
 }
 
 read_env_value_from_file() {
@@ -550,6 +629,19 @@ deploy_with_helm() {
     fi
 }
 
+report_repo_lookup_context() {
+    local current_pwd
+    current_pwd="$(pwd)"
+
+    info "Kurulum çalışma dizini: $current_pwd"
+    info "Sidar deposu hedef dizini: $TARGET_DIR"
+
+    if [[ "$current_pwd" == /mnt/* ]]; then
+        warn "Kurulum /mnt altında çalışıyor. Windows dosya sistemi önceki Sidar klasörünü koruyor olabilir."
+        info "Temiz kurulum için öneri: cd \"$HOME\" && ./Sidar/install_sidar.sh veya doğrudan cd \"$TARGET_DIR\"."
+    fi
+}
+
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
@@ -569,7 +661,8 @@ sync_repo() {
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
         git clone "$REPO_URL" "$TARGET_DIR"
     else
-        warn "Sidar klasörü zaten var. Rebase tabanlı git pull ile güncelleniyor..."
+        warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
+        info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
         (
             cd "$TARGET_DIR"
             local STASHED_CHANGES=false
@@ -762,6 +855,10 @@ ensure_prerequisites() {
                 warn "Miniconda indirilemedi. uv venv fallback kullanılacak."
             fi
         fi
+    fi
+
+    if [[ "$USE_CONDA" == true ]]; then
+        update_conda_base_if_available
     fi
 
     # Git
@@ -1037,9 +1134,7 @@ setup_python_env() {
         conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
         ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
 
-        info "Conda base ortamı güncelleniyor..."
-        conda update -n base -c defaults conda -y
-        ok "Conda base ortamı güncellendi."
+        update_conda_base_if_available
 
         if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
@@ -2913,6 +3008,8 @@ launch_docker_services() {
             fi
 
             info "Docker Compose servisleri başlatılıyor..."
+            info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
+            validate_monitoring_mount_paths
             if "${docker_compose_cmd[@]}" up -d; then
                 ok "Docker servisleri başarıyla başlatıldı."
             else
@@ -3036,6 +3133,7 @@ EOF
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
+    report_repo_lookup_context
     # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
     if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
         WSL2=true
