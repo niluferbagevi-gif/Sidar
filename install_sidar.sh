@@ -470,14 +470,19 @@ maybe_reset_postgres_volume_after_password_hardening() {
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
             "${compose_cmd[@]}" down -v postgres >/dev/null 2>&1 || "${compose_cmd[@]}" down -v >/dev/null 2>&1 || true
             local removed_any=false
+            local remove_failed=false
             for volume_name in "${existing_pg_volumes[@]}"; do
                 if docker volume rm "$volume_name" >/dev/null 2>&1; then
                     ok "PostgreSQL volume temizlendi: ${volume_name}"
                     removed_any=true
                 else
+                    remove_failed=true
                     warn "PostgreSQL volume otomatik silinemedi (${volume_name}). Geliştirme ortamında manuel olarak sıfırlayın."
                 fi
             done
+            if [[ "$remove_failed" == true ]]; then
+                fail "DB şifresi güncellendi ancak PostgreSQL volume tamamen silinemedi. Kurulum durduruldu. Devam etmeden önce 'docker compose down -v postgres && docker volume rm ${existing_pg_volumes[*]}' komutunu çalıştırın."
+            fi
             if [[ "$removed_any" == true ]]; then
                 POSTGRES_VOLUME_RESET_DONE=true
             fi
