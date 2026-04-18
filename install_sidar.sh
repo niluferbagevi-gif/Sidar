@@ -320,6 +320,8 @@ start_docker_services_or_fail() {
     local stderr_file
     stderr_file=$(mktemp)
 
+    maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"
+
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
         return 0
@@ -334,6 +336,115 @@ start_docker_services_or_fail() {
     fi
 
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
+}
+
+maybe_reset_postgres_volume_after_password_hardening() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+
+    if [[ "$DB_PASSWORD_HARDENED" != true || "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    local includes_postgres=false
+    for service in "${services[@]}"; do
+        if [[ "$service" == "postgres" ]]; then
+            includes_postgres=true
+            break
+        fi
+    done
+    [[ "$includes_postgres" == true ]] || return 0
+
+    local env_file="$SCRIPT_DIR/.env"
+    local sidar_env="development"
+    if [[ -f "$env_file" ]]; then
+        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    fi
+    sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
+
+    if [[ "$sidar_env" == "production" ]]; then
+        warn "DB parola hardening algılandı ancak SIDAR_ENV=production olduğu için PostgreSQL volume otomatik sıfırlanmadı."
+        return 0
+    fi
+
+    if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
+        warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
+        return 0
+    fi
+
+    if ! command -v docker &>/dev/null; then
+        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
+        return 0
+    fi
+
+    local -a candidate_volumes=()
+    if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
+        for volume_name in "${compose_volumes[@]}"; do
+            if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
+                candidate_volumes+=("$volume_name")
+            fi
+        done
+    fi
+
+    # docker compose config çıktısı yoksa ya da proje adı değiştiyse bilinen fallback adı da denenir.
+    if [[ ${#candidate_volumes[@]} -eq 0 ]]; then
+        candidate_volumes+=("sidar_postgres_data")
+    fi
+
+    local -a existing_pg_volumes=()
+    for volume_name in "${candidate_volumes[@]}"; do
+        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            existing_pg_volumes+=("$volume_name")
+        fi
+    done
+
+    if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
+        info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
+        POSTGRES_VOLUME_RESET_DONE=true
+        return 0
+    fi
+
+    local should_reset="E"
+    if [[ "$NO_INTERACTION" != true ]]; then
+        should_reset=$(prompt_yes_no_with_timeout_default_yes \
+            "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
+    fi
+
+    case "${should_reset:-E}" in
+        E|e)
+            warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            "${compose_cmd[@]}" down -v postgres >/dev/null 2>&1 || "${compose_cmd[@]}" down -v >/dev/null 2>&1 || true
+            local removed_any=false
+            for volume_name in "${existing_pg_volumes[@]}"; do
+                if docker volume rm "$volume_name" >/dev/null 2>&1; then
+                    ok "PostgreSQL volume temizlendi: ${volume_name}"
+                    removed_any=true
+                else
+                    warn "PostgreSQL volume otomatik silinemedi (${volume_name}). Geliştirme ortamında manuel olarak sıfırlayın."
+                fi
+            done
+            if [[ "$removed_any" == true ]]; then
+                POSTGRES_VOLUME_RESET_DONE=true
+            fi
+            ;;
+        *)
+            warn "PostgreSQL volume sıfırlama kullanıcı tercihiyle atlandı; eski parola kaynaklı auth hatası oluşabilir."
+            ;;
+    esac
+
+    if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down -v postgres && docker volume rm sidar_postgres_data komutlarını çalıştırın."
 }
 
 wait_for_redis_ready_after_docker_start() {
@@ -431,6 +542,8 @@ SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
+DB_PASSWORD_HARDENED=false
+POSTGRES_VOLUME_RESET_DONE=false
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
@@ -1194,6 +1307,32 @@ setup_nvidia_docker() {
 }
 
 # ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
+activate_conda_env_in_current_shell() {
+    local env_name="$1"
+    local conda_base=""
+
+    if ! command -v conda &>/dev/null; then
+        fail "conda komutu bulunamadı; ortam aktive edilemiyor."
+    fi
+
+    conda_base="$(conda info --base 2>/dev/null || true)"
+    if [[ -n "$conda_base" ]] && [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+        # shellcheck disable=SC1090
+        source "$conda_base/etc/profile.d/conda.sh"
+    elif [[ -x "$HOME/miniconda3/bin/conda" ]]; then
+        # shellcheck disable=SC1091
+        eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
+    fi
+
+    if ! conda activate "$env_name"; then
+        fail "Conda ortamı aktive edilemedi: $env_name"
+    fi
+
+    export PATH="$HOME/miniconda3/envs/$env_name/bin:$PATH"
+    export CONDA_DEFAULT_ENV="$env_name"
+    ok "Conda ortamı aktif edildi (current shell): $env_name"
+}
+
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
@@ -1224,6 +1363,13 @@ setup_python_env() {
 
         if [[ ! -x "$CONDA_PYTHON_PATH" ]]; then
             fail "Conda ortamı oluşturuldu ancak python ikilisi bulunamadı: $CONDA_PYTHON_PATH"
+        fi
+
+        activate_conda_env_in_current_shell "$CONDA_ENV_NAME"
+
+        if [[ "$(command -v python || true)" != "$CONDA_PYTHON_PATH" ]]; then
+            warn "Aktif python conda env ile eşleşmiyor. PATH zorlanıyor: $CONDA_PYTHON_PATH"
+            hash -r
         fi
     else
         step "uv venv Ortamı"
@@ -1587,6 +1733,47 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    _detect_host_ram_gb() {
+        local total_kb="0"
+        if [[ -r /proc/meminfo ]]; then
+            total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
+        fi
+        if [[ -z "$total_kb" || "$total_kb" -le 0 ]]; then
+            echo "16"
+            return
+        fi
+        # Yukarı yuvarla: KB -> GB
+        echo $(((total_kb + 1048575) / 1048576))
+    }
+
+    _clamp_int() {
+        local val="$1"
+        local min="$2"
+        local max="$3"
+        if [[ "$val" -lt "$min" ]]; then
+            echo "$min"
+            return
+        fi
+        if [[ "$val" -gt "$max" ]]; then
+            echo "$max"
+            return
+        fi
+        echo "$val"
+    }
+
+    local host_ram_gb
+    local target_memory_gb
+    local target_swap_gb
+    host_ram_gb=$(_detect_host_ram_gb)
+    target_memory_gb=$((host_ram_gb * 3 / 4))
+    target_memory_gb=$(_clamp_int "$target_memory_gb" 4 32)
+    target_swap_gb=$((host_ram_gb / 2))
+    target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
+
+    local target_memory="${target_memory_gb}GB"
+    local target_swap="${target_swap_gb}GB"
+    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+
     # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
     # Değer zaten varsa korur, yinelenen satırları temizler.
     _ensure_wsl2_key_once() {
@@ -1639,10 +1826,11 @@ ASOUNDRC
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
 [wsl2]
-memory=16GB
-swap=8GB
+memory=__SIDAR_WSL_MEMORY__
+swap=__SIDAR_WSL_SWAP__
 WSLCFG
-            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=16GB, swap=8GB)."
+            sed -i "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
+            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
@@ -1656,7 +1844,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "16GB"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
                 ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -1668,14 +1856,14 @@ WSLCFG
                 in_wsl2 && /^memory=/ { sub(/^memory=/, "", $0); print; exit }
             ' "$wslconfig_path")
             cur_mem_gb=$(_parse_gb "$cur_mem")
-            if [[ "$cur_mem_gb" -lt 8 ]]; then
-                warn "WSL2: .wslconfig memory=${cur_mem} — lokal LLM için yetersiz olabilir (önerilen: 16GB)."
+            if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
             else
                 ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "8GB"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
                 ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -1687,8 +1875,8 @@ WSLCFG
                 in_wsl2 && /^swap=/ { sub(/^swap=/, "", $0); print; exit }
             ' "$wslconfig_path")
             cur_swap_gb=$(_parse_gb "$cur_swap")
-            if [[ "$cur_swap_gb" -lt 4 ]]; then
-                warn "WSL2: .wslconfig swap=${cur_swap} — yetersiz olabilir (önerilen: 8GB)."
+            if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
+                warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
             else
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
@@ -1702,8 +1890,8 @@ WSLCFG
         warn "WSL2: %UserProfile% yolu çözümlenemedi. .wslconfig dosyasını manuel yapılandırın:"
         echo "       %UserProfile%\\.wslconfig içeriği:"
         echo "       [wsl2]"
-        echo "       memory=16GB"
-        echo "       swap=8GB"
+        echo "       memory=${target_memory}"
+        echo "       swap=${target_swap}"
     fi
 }
 
@@ -1812,6 +2000,7 @@ harden_database_credentials() {
                         else
                             echo "POSTGRES_USER=${db_user}" >> "$env_file"
                         fi
+                        DB_PASSWORD_HARDENED=true
                         ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
@@ -2549,7 +2738,7 @@ run_migrations() {
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
             start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
-            wait_for_redis_ready_after_docker_start || true
+            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; sonraki adımlarda bağlantı hatası oluşabilir."
         else
             fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
         fi
@@ -2600,7 +2789,7 @@ PY
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
-                    wait_for_redis_ready_after_docker_start || true
+                    wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     info "Veritabanının hazır olması bekleniyor..."
                     for _ in {1..30}; do
                         if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
@@ -2625,10 +2814,18 @@ PY
         fi
     fi
 
-    if "${ALEMBIC_CMD[@]}" 2>&1; then
+    local alembic_output_file=""
+    alembic_output_file=$(mktemp)
+    if "${ALEMBIC_CMD[@]}" \
+        > >(tee -a "$alembic_output_file") \
+        2> >(tee -a "$alembic_output_file" >&2); then
+        rm -f "$alembic_output_file"
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
+        warn "Alembic migrasyonu başarısız oldu. Hata özeti (son 120 satır):"
+        tail -n 120 "$alembic_output_file" || true
+        rm -f "$alembic_output_file"
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
@@ -2649,7 +2846,7 @@ prepare_docker_for_migrations() {
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
-        wait_for_redis_ready_after_docker_start || true
+        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
         return
     fi
 
@@ -2663,7 +2860,7 @@ prepare_docker_for_migrations() {
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
-            wait_for_redis_ready_after_docker_start || true
+            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
             ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
     esac
@@ -2804,8 +3001,8 @@ PY
         sleep 2
     done
 
-    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler yine de çalıştırılacak."
-    return 0
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler atlanacak."
+    return 1
 }
 
 run_smoke_tests() {
@@ -2813,6 +3010,7 @@ run_smoke_tests() {
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
     local should_run=false
+    local smoke_failure_policy="${SMOKE_TEST_FAILURE_POLICY:-fail}"
 
     if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
         warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
@@ -2850,7 +3048,12 @@ run_smoke_tests() {
         return
     fi
 
-    wait_for_redis_before_smoke_tests
+    if ! wait_for_redis_before_smoke_tests; then
+        warn "Redis hazır olmadığı için smoke testler çalıştırılmadı (false-negative önleme)."
+        SMOKE_TEST_STATUS="atlandi_redis_hazir_degil"
+        return
+    fi
+    wait_for_core_docker_health_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
@@ -2862,8 +3065,12 @@ run_smoke_tests() {
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
-            warn "Smoke testlerde hata var. Logları inceleyin."
             SMOKE_TEST_STATUS="hata"
+            if [[ "$smoke_failure_policy" == "warn" ]]; then
+                warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+            else
+                fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
+            fi
         fi
         return
     fi
@@ -2877,9 +3084,58 @@ run_smoke_tests() {
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
-        warn "Smoke testlerde hata var. Logları inceleyin."
         SMOKE_TEST_STATUS="hata"
+        if [[ "$smoke_failure_policy" == "warn" ]]; then
+            warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+        else
+            fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
+        fi
     fi
+}
+
+wait_for_core_docker_health_before_smoke_tests() {
+    local -a docker_compose_cmd=()
+    local -a containers=("sidar_postgres" "sidar_redis")
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        return 0
+    fi
+
+    if ! ensure_docker_daemon_running; then
+        warn "Docker daemon erişilemedi; smoke test öncesi container health kontrolü atlandı."
+        return 0
+    fi
+
+    # Bu adım, smoke testlerin servisler tam hazır olmadan başlamasını azaltır.
+    info "Smoke test öncesi Docker servis health kontrolleri yapılıyor (postgres/redis)..."
+    "${docker_compose_cmd[@]}" ps --status running postgres redis >/dev/null 2>&1 || true
+
+    local container_name=""
+    local state=""
+    for container_name in "${containers[@]}"; do
+        if ! docker inspect "$container_name" >/dev/null 2>&1; then
+            continue
+        fi
+
+        for _ in {1..30}; do
+            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || echo "unknown")
+            case "$state" in
+                healthy|running)
+                    ok "Container hazır: ${container_name} (${state})"
+                    break
+                    ;;
+                exited|dead|unhealthy)
+                    warn "Container sağlıksız görünüyor: ${container_name} (${state})"
+                    return 0
+                    ;;
+            esac
+            sleep 2
+        done
+    done
 }
 
 run_test_artifact_audit() {
@@ -3129,12 +3385,31 @@ launch_docker_services() {
 
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
+    local vscode_mode="none"
+    local vscode_target_path="$SCRIPT_DIR"
+
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
         return
     fi
 
     if command -v code &>/dev/null; then
+        vscode_mode="code-cli"
+    elif [[ "$WSL2" == true ]] && command -v cmd.exe &>/dev/null; then
+        if cmd.exe /c "where code" >/dev/null 2>&1; then
+            vscode_mode="windows-code-cli"
+            if command -v wslpath &>/dev/null; then
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+            fi
+        elif [[ -x "/mnt/c/Program Files/Microsoft VS Code/Code.exe" ]]; then
+            vscode_mode="windows-code-exe"
+            if command -v wslpath &>/dev/null; then
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+            fi
+        fi
+    fi
+
+    if [[ "$vscode_mode" != "none" ]]; then
         echo ""
         open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
         case "${open_code:-H}" in
@@ -3143,14 +3418,24 @@ launch_ide() {
                 if [[ "$USE_CONDA" == true ]]; then
                     info "Not: .vscode/settings.json ile yeni entegre terminallerde '$CONDA_ENV_NAME' ortamı otomatik aktive edilir."
                 fi
-                code "$SCRIPT_DIR"
+                case "$vscode_mode" in
+                    code-cli)
+                        code "$SCRIPT_DIR"
+                        ;;
+                    windows-code-cli)
+                        cmd.exe /c code "$vscode_target_path" >/dev/null 2>&1 || warn "Windows code CLI ile VS Code başlatılamadı."
+                        ;;
+                    windows-code-exe)
+                        "/mnt/c/Program Files/Microsoft VS Code/Code.exe" "$vscode_target_path" >/dev/null 2>&1 || warn "Code.exe ile VS Code başlatılamadı."
+                        ;;
+                esac
                 ;;
             *)
                 info "VS Code başlatılması atlandı."
                 ;;
         esac
     else
-        warn "Sistemde VS Code (code komutu) bulunamadı."
+        warn "Sistemde VS Code launcher bulunamadı (code PATH, Windows code CLI veya Code.exe)."
         info "WSL ile tam entegrasyon için Windows tarafına VS Code ve 'WSL' eklentisini kurmanız önerilir."
     fi
 }
@@ -3271,10 +3556,10 @@ main() {
     create_directories
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
+    setup_react_frontend
     setup_env_file
     install_playwright_browsers
     setup_shell_activation_shortcut
-    setup_react_frontend
     setup_wsl2_audio
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
