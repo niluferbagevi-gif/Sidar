@@ -528,7 +528,7 @@ update_conda_base_if_available() {
     fi
 
     info "Conda base ortamı sessiz modda güncelleniyor..."
-    if conda update -n base -c defaults conda -y >/dev/null 2>&1; then
+    if conda update -n base -c defaults conda -y --quiet >/dev/null 2>&1; then
         ok "Conda base ortamı güncellendi."
     else
         warn "Conda base güncellemesi başarısız/atlanmış olabilir. Mevcut sürümle devam ediliyor."
@@ -737,28 +737,47 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
             postgresql-client-common postgresql-client
 
-        info "Node.js 20.x (NodeSource) kuruluyor..."
-        DOWNLOADED_SCRIPT_FILE=""
-        local _ns_log; _ns_log=$(mktemp)
-        # NodeSource yalnızca apt deposunu yapılandırır; kendi çıktısı bilgi gürültüsüdür.
-        # Başarılı olursa sustur, başarısız olursa tüm çıktıyı göster.
-        if download_verified_script \
-            "https://deb.nodesource.com/setup_20.x" \
-            "${NODESOURCE_SETUP_SHA256:-}" \
-            "nodesource_setup"; then
-            if sudo -E bash "$DOWNLOADED_SCRIPT_FILE" >"$_ns_log" 2>&1; then
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
-                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        info "Node.js 20.x (NodeSource apt + GPG keyring) kuruluyor..."
+        local distro_codename=""
+        local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
+        local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
+        local ns_key_tmp=""
+
+        if [[ -r /etc/os-release ]]; then
+            distro_codename=$(awk -F= '/^VERSION_CODENAME=/{gsub(/"/, "", $2); print $2}' /etc/os-release | head -n1)
+        fi
+        if [[ -z "$distro_codename" ]] && command -v lsb_release &>/dev/null; then
+            distro_codename=$(lsb_release -cs 2>/dev/null || true)
+        fi
+
+        if [[ -n "$distro_codename" ]]; then
+            ns_key_tmp=$(mktemp)
+            if curl -fsSL "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key" -o "$ns_key_tmp"; then
+                sudo install -m 0755 -d /etc/apt/keyrings
+                if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
+                    sudo chmod 0644 "$ns_keyring"
+                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/node_20.x ${distro_codename} main" | sudo tee "$ns_repo_file" >/dev/null
+                    sudo chmod 0644 "$ns_repo_file"
+                    if sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && \
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+                        ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+                    else
+                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                    fi
+                else
+                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                fi
             else
-                cat "$_ns_log" >&2
-                warn "NodeSource kurulumu başarısız oldu, apt deposundan nodejs/npm kurulumu deneniyor."
+                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
             fi
+            rm -f "$ns_key_tmp"
         else
-            warn "NodeSource setup script indirilemedi/doğrulanamadı, apt deposundan nodejs/npm kurulumu deneniyor."
+            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
         fi
-        rm -f "$_ns_log" "$DOWNLOADED_SCRIPT_FILE"
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
         local -a linux_media_pkgs=(
@@ -797,6 +816,21 @@ install_system_dependencies() {
     else
         warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
+    fi
+}
+
+detect_environment() {
+    step "Çalışma Ortamı Tespiti"
+
+    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+        WSL2=true
+        info "Ortam: WSL2 (Windows Subsystem for Linux)"
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        WSL2=false
+        info "Ortam: macOS"
+    else
+        WSL2=false
+        info "Ortam: Linux (native/container)"
     fi
 }
 
@@ -1719,6 +1753,7 @@ harden_database_credentials() {
     local db_url=""
     local sidar_env="development"
     local safe_db_url=""
+    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
 
     [[ -f "$env_file" ]] || return
 
@@ -1735,50 +1770,45 @@ harden_database_credentials() {
 
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
-                if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
-                    if [[ "$hardening_enabled" == "1" ]]; then
-                        local generated_password=""
-                        generated_password=$(generate_secure_token 24)
-                        if [[ -n "$generated_password" ]]; then
-                            safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                            sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                            ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                    local generated_password=""
+                    generated_password=$(generate_secure_token 24)
+                    if [[ -n "$generated_password" ]]; then
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
-                            # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                            # DATABASE_URL ile senkron kalmalıdır.
-                            if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                                sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                            else
-                                echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                            fi
-                            if grep -q '^POSTGRES_USER=' "$env_file"; then
-                                sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                            else
-                                echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                            fi
-                            ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                            warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
-                            warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
-                            info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
-                            if command -v docker &>/dev/null; then
-                                local detected_pg_volume=""
-                                detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                                if [[ -n "$detected_pg_volume" ]]; then
-                                    warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
-                                    info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
-                                fi
-                            fi
+                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                        # DATABASE_URL ile senkron kalmalıdır.
+                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                         else
-                            warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                        fi
+                        if grep -q '^POSTGRES_USER=' "$env_file"; then
+                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        else
+                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                        fi
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
+                        warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
+                        info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
+                        if command -v docker &>/dev/null; then
+                            local detected_pg_volume=""
+                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                            if [[ -n "$detected_pg_volume" ]]; then
+                                warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
+                                info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                            fi
                         fi
                     else
-                        warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                        warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                     fi
                 else
+                    warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Üretim için SIDAR_ENV=production ayarlayıp scripti tekrar çalıştırın veya DATABASE_URL parolasını manuel değiştirin."
+                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
                 fi
                 ;;
         esac
@@ -3014,12 +3044,14 @@ launch_docker_services() {
     echo ""
     local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
     local start_default="E"
+    local start_docker=""
     if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
-        start_prompt="PostgreSQL/Redis zaten çalışıyor. Kalan Docker servisleri de başlatılsın mı? [e/H] "
-        start_default="H"
+        info "PostgreSQL/Redis migrasyon adımında zaten başlatıldı; kalan Docker servisleri otomatik başlatılacak."
+        start_docker="E"
+    else
+        start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     fi
 
-    start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
@@ -3185,12 +3217,7 @@ EOF
 main() {
     banner
     report_repo_lookup_context
-    # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
-        WSL2=true
-    else
-        WSL2=false
-    fi
+    detect_environment
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
@@ -3219,14 +3246,14 @@ main() {
     fi
     install_python_deps
     verify_torch_cuda
-    install_playwright_browsers
     create_directories
+    # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
+    setup_vscode_workspace
     setup_env_file
+    install_playwright_browsers
     setup_shell_activation_shortcut
     setup_react_frontend
     setup_wsl2_audio
-    # Yeni eklenen VS Code yapılandırması
-    setup_vscode_workspace
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
@@ -3235,8 +3262,8 @@ main() {
     download_ollama_models
     run_smoke_tests
     run_test_artifact_audit
-    print_summary
     launch_docker_services
+    print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
     relocate_log_file_if_needed
