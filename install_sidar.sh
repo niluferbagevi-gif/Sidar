@@ -2407,6 +2407,83 @@ print(f'available={avail} cuda={ver} device={dev}')
 }
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
+wait_for_redis_before_smoke_tests() {
+    local env_file="$SCRIPT_DIR/.env"
+    local redis_url=""
+    local redis_host=""
+    local redis_port=""
+    local -a python_cmd=()
+
+    if [[ -f "$env_file" ]]; then
+        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+    fi
+    if [[ -z "$redis_url" ]]; then
+        redis_url="redis://localhost:6379/0"
+    fi
+
+    if [[ "$USE_CONDA" == true ]]; then
+        python_cmd=("${CONDA_RUN[@]}" python)
+    elif command -v python3 &>/dev/null; then
+        python_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        python_cmd=(python)
+    else
+        warn "Python bulunamadı; Redis hazır bekleme adımı atlandı."
+        return 0
+    fi
+
+    if ! mapfile -t redis_conn < <("${python_cmd[@]}" - "$redis_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+url = (sys.argv[1] or "").strip()
+if not url:
+    print("localhost")
+    print("6379")
+    raise SystemExit(0)
+
+parsed = urlparse(url)
+host = parsed.hostname or "localhost"
+port = parsed.port or 6379
+print(host)
+print(str(port))
+PY
+); then
+        warn "REDIS_URL ayrıştırılamadı ($redis_url); Redis hazır bekleme adımı atlandı."
+        return 0
+    fi
+
+    redis_host="${redis_conn[0]:-localhost}"
+    redis_port="${redis_conn[1]:-6379}"
+
+    info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
+    for _ in {1..30}; do
+        if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(1.0)
+try:
+    sock.connect((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+        then
+            ok "Redis erişilebilir hale geldi."
+            return 0
+        fi
+        sleep 2
+    done
+
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı; smoke testler yine de çalıştırılacak."
+    return 0
+}
+
 run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
@@ -2448,6 +2525,8 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="atlandi_kullanici"
         return
     fi
+
+    wait_for_redis_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
