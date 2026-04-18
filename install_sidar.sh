@@ -965,11 +965,7 @@ install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR"
-    if [[ "$USE_CONDA" == true ]]; then
-        UV_CMD=("${CONDA_RUN[@]}" uv)
-    else
-        UV_CMD=(uv)
-    fi
+    UV_CMD=(uv)
 
     # uv.lock yönetimi: yoksa oluştur, varsa güncelle
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
