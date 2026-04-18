@@ -2739,10 +2739,18 @@ PY
         fi
     fi
 
-    if "${ALEMBIC_CMD[@]}" 2>&1; then
+    local alembic_output_file=""
+    alembic_output_file=$(mktemp)
+    if "${ALEMBIC_CMD[@]}" \
+        > >(tee -a "$alembic_output_file") \
+        2> >(tee -a "$alembic_output_file" >&2); then
+        rm -f "$alembic_output_file"
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
+        warn "Alembic migrasyonu başarısız oldu. Hata özeti (son 120 satır):"
+        tail -n 120 "$alembic_output_file" || true
+        rm -f "$alembic_output_file"
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
