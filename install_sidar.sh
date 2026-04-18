@@ -729,7 +729,23 @@ install_system_dependencies() {
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        local -a ns_source_files=()
+        mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/node_20.x' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
+        if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
+            info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
+            local src_file=""
+            for src_file in "${ns_source_files[@]}"; do
+                sudo sed -E -i \
+                    's#(deb(\s+\[[^]]+\])?\s+https?://deb\.nodesource\.com/node_20\.x)\s+[[:alnum:]_.-]+\s+main#\1 nodistro main#g' \
+                    "$src_file"
+            done
+        fi
+
+        if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
+            warn "apt update başarısız oldu. NodeSource listesi sıfırlanıp tekrar denenecek..."
+            sudo rm -f /etc/apt/sources.list.d/nodesource.list
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
+        fi
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
 
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
@@ -1364,7 +1380,7 @@ setup_react_frontend() {
         NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
         if [[ "$NODE_MAJOR" -lt 20 ]]; then
             warn "Node.js sürümü düşük: $(node -v). React build için Node.js 20+ önerilir."
-            warn "Kurulum komutları: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+            warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından otomatik ayarlanır)"
         else
             ok "Node.js sürümü uygun: $(node -v)"
         fi
