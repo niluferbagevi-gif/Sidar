@@ -238,24 +238,53 @@ validate_monitoring_mount_paths() {
     local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
     local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
     local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
+    local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
     local -a errors=()
 
     if [[ ! -e "$prometheus_cfg" ]]; then
-        errors+=("Eksik dosya: $prometheus_cfg")
+        warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
+        mkdir -p "$(dirname "$prometheus_cfg")"
+        cat > "$prometheus_cfg" <<'EOF'
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+EOF
     elif [[ ! -f "$prometheus_cfg" ]]; then
         errors+=("Dosya bekleniyordu ancak farklı tipte: $prometheus_cfg")
     fi
 
     if [[ ! -e "$grafana_provisioning_dir" ]]; then
-        errors+=("Eksik dizin: $grafana_provisioning_dir")
+        warn "Grafana provisioning dizini bulunamadı, oluşturuluyor: $grafana_provisioning_dir"
+        mkdir -p "$grafana_provisioning_dir"
     elif [[ ! -d "$grafana_provisioning_dir" ]]; then
         errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_provisioning_dir")
     fi
 
     if [[ ! -e "$grafana_dashboards_dir" ]]; then
-        errors+=("Eksik dizin: $grafana_dashboards_dir")
+        warn "Grafana dashboards dizini bulunamadı, oluşturuluyor: $grafana_dashboards_dir"
+        mkdir -p "$grafana_dashboards_dir"
     elif [[ ! -d "$grafana_dashboards_dir" ]]; then
         errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_dashboards_dir")
+    fi
+
+    if [[ -d "$grafana_provisioning_dir" ]] && [[ ! -e "$grafana_datasource_cfg" ]]; then
+        warn "Grafana Prometheus datasource tanımı bulunamadı, varsayılan dosya oluşturuluyor: $grafana_datasource_cfg"
+        mkdir -p "$(dirname "$grafana_datasource_cfg")"
+        cat > "$grafana_datasource_cfg" <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+EOF
+    elif [[ -e "$grafana_datasource_cfg" ]] && [[ ! -f "$grafana_datasource_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $grafana_datasource_cfg")
     fi
 
     if (( ${#errors[@]} > 0 )); then
