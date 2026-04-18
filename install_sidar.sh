@@ -380,34 +380,71 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    local detected_pg_volume=""
+    if ! command -v docker &>/dev/null; then
+        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
+        return 0
+    fi
+
+    local -a candidate_volumes=()
     if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
         for volume_name in "${compose_volumes[@]}"; do
             if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
-                detected_pg_volume="$volume_name"
-                break
+                candidate_volumes+=("$volume_name")
             fi
         done
     fi
 
-    if [[ -z "$detected_pg_volume" ]] && command -v docker &>/dev/null; then
-        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+    # docker compose config çıktısı yoksa ya da proje adı değiştiyse bilinen fallback adı da denenir.
+    if [[ ${#candidate_volumes[@]} -eq 0 ]]; then
+        candidate_volumes+=("sidar_postgres_data")
     fi
 
-    if [[ -z "$detected_pg_volume" ]]; then
-        warn "DB parola hardening sonrası PostgreSQL volume adı tespit edilemedi; otomatik volume sıfırlama atlandı."
-        return 0
-    fi
+    local -a existing_pg_volumes=()
+    for volume_name in "${candidate_volumes[@]}"; do
+        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            existing_pg_volumes+=("$volume_name")
+        fi
+    done
 
-    warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${detected_pg_volume}"
-    "${compose_cmd[@]}" down >/dev/null 2>&1 || true
-    if command -v docker &>/dev/null && docker volume rm "$detected_pg_volume" >/dev/null 2>&1; then
-        ok "PostgreSQL volume temizlendi: ${detected_pg_volume}"
+    if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
+        info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
         POSTGRES_VOLUME_RESET_DONE=true
         return 0
     fi
 
-    warn "PostgreSQL volume otomatik silinemedi (${detected_pg_volume}). Geliştirme ortamında manuel olarak sıfırlayın."
+    local should_reset="E"
+    if [[ "$NO_INTERACTION" != true ]]; then
+        should_reset=$(prompt_yes_no_with_timeout_default_yes \
+            "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
+    fi
+
+    case "${should_reset:-E}" in
+        E|e)
+            warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            "${compose_cmd[@]}" down -v postgres >/dev/null 2>&1 || "${compose_cmd[@]}" down -v >/dev/null 2>&1 || true
+            local removed_any=false
+            for volume_name in "${existing_pg_volumes[@]}"; do
+                if docker volume rm "$volume_name" >/dev/null 2>&1; then
+                    ok "PostgreSQL volume temizlendi: ${volume_name}"
+                    removed_any=true
+                else
+                    warn "PostgreSQL volume otomatik silinemedi (${volume_name}). Geliştirme ortamında manuel olarak sıfırlayın."
+                fi
+            done
+            if [[ "$removed_any" == true ]]; then
+                POSTGRES_VOLUME_RESET_DONE=true
+            fi
+            ;;
+        *)
+            warn "PostgreSQL volume sıfırlama kullanıcı tercihiyle atlandı; eski parola kaynaklı auth hatası oluşabilir."
+            ;;
+    esac
+
+    if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down -v postgres && docker volume rm sidar_postgres_data komutlarını çalıştırın."
 }
 
 wait_for_redis_ready_after_docker_start() {
