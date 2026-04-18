@@ -1212,27 +1212,26 @@ install_python_deps() {
     cd "$SCRIPT_DIR"
     UV_CMD=(uv)
 
-    # uv.lock yönetimi: yoksa oluştur, varsa güncelle
-    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
-        info "uv.lock bulunamadı — uv lock ile oluşturuluyor..."
-        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
-        ok "uv.lock oluşturuldu."
-    else
-        info "uv.lock bulundu — uv lock ile bağımlılıklar kontrol ediliyor..."
-        "${UV_CMD[@]}" lock --index-strategy unsafe-best-match
-        ok "uv.lock kontrol edildi."
+    local -a EXTRAS=(dev gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams)
+    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
+        EXTRAS+=(gpu)
     fi
 
-    SYNC_ARGS=(--frozen --extra dev)
-    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        for _extra in gemini anthropic openai litellm postgres telemetry rag gpu sandbox gui browser slack voice tools aws jira teams; do
-            SYNC_ARGS+=(--extra "$_extra")
-        done
+    local -a LOCK_ARGS=(--index-strategy unsafe-best-match)
+    local -a SYNC_ARGS=(--frozen)
+    for _extra in "${EXTRAS[@]}"; do
+        LOCK_ARGS+=(--extra "$_extra")
+        SYNC_ARGS+=(--extra "$_extra")
+    done
+
+    # uv.lock yönetimi: extras seti belirlendikten sonra oluştur/güncelle
+    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulunamadı — seçili extras ile oluşturuluyor..."
     else
-        for _extra in gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams; do
-            SYNC_ARGS+=(--extra "$_extra")
-        done
+        info "uv.lock bulundu — seçili extras ile güncelleniyor..."
     fi
+    "${UV_CMD[@]}" lock "${LOCK_ARGS[@]}"
+    ok "uv.lock güncellendi."
 
     if [[ "$USE_CONDA" == true ]]; then
         local uv_export_file
