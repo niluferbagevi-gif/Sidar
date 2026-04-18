@@ -1230,7 +1230,9 @@ install_python_deps() {
     else
         info "uv.lock bulundu — seçili extras ile güncelleniyor..."
     fi
-    "${UV_CMD[@]}" lock "${LOCK_ARGS[@]}"
+    if ! "${UV_CMD[@]}" lock "${LOCK_ARGS[@]}"; then
+        fail "uv lock başarısız oldu. Bağımlılık çözümleme tamamlanamadı; kurulum durduruluyor."
+    fi
     ok "uv.lock güncellendi."
 
     if [[ "$USE_CONDA" == true ]]; then
@@ -1238,14 +1240,22 @@ install_python_deps() {
         uv_export_file="$(mktemp)"
 
         info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
-        "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
+        if ! "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
+            rm -f "$uv_export_file"
+            fail "uv export başarısız oldu. Conda için requirements dosyası üretilemedi."
+        fi
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        if ! run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
+            rm -f "$uv_export_file"
+            fail "uv pip sync başarısız oldu. Conda ortamına bağımlılıklar kurulamadı."
+        fi
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-        run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"; then
+            fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
+        fi
     fi
 
     ok "Python bağımlılıkları senkronlandı."
