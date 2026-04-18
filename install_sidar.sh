@@ -936,6 +936,7 @@ setup_python_env() {
 # ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
 setup_uv() {
     step "uv Paket Yöneticisi"
+    export UV_PROGRESS_BAR=on
 
     if ! command -v uv &>/dev/null; then
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
@@ -965,11 +966,7 @@ install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR"
-    if [[ "$USE_CONDA" == true ]]; then
-        UV_CMD=("${CONDA_RUN[@]}" uv)
-    else
-        UV_CMD=(uv)
-    fi
+    UV_CMD=(uv)
 
     # uv.lock yönetimi: yoksa oluştur, varsa güncelle
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
@@ -1001,7 +998,7 @@ install_python_deps() {
         "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        "${CONDA_RUN[@]}" uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
