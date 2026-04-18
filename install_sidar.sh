@@ -234,6 +234,36 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
+validate_monitoring_mount_paths() {
+    local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
+    local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
+    local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
+    local -a errors=()
+
+    if [[ ! -e "$prometheus_cfg" ]]; then
+        errors+=("Eksik dosya: $prometheus_cfg")
+    elif [[ ! -f "$prometheus_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $prometheus_cfg")
+    fi
+
+    if [[ ! -e "$grafana_provisioning_dir" ]]; then
+        errors+=("Eksik dizin: $grafana_provisioning_dir")
+    elif [[ ! -d "$grafana_provisioning_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_provisioning_dir")
+    fi
+
+    if [[ ! -e "$grafana_dashboards_dir" ]]; then
+        errors+=("Eksik dizin: $grafana_dashboards_dir")
+    elif [[ ! -d "$grafana_dashboards_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_dashboards_dir")
+    fi
+
+    if (( ${#errors[@]} > 0 )); then
+        printf ' - %s\n' "${errors[@]}" >&2
+        fail "Docker Compose monitoring bind-mount sanity check başarısız. Lütfen eksik/yanlış tipte yolları düzeltin."
+    fi
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -2913,6 +2943,8 @@ launch_docker_services() {
             fi
 
             info "Docker Compose servisleri başlatılıyor..."
+            info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
+            validate_monitoring_mount_paths
             if "${docker_compose_cmd[@]}" up -d; then
                 ok "Docker servisleri başarıyla başlatıldı."
             else
