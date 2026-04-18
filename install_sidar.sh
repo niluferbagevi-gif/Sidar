@@ -1228,7 +1228,6 @@ install_python_deps() {
     local -a LOCK_ARGS=(--index-strategy first-match)
     local -a SYNC_ARGS=(--frozen)
     for _extra in "${EXTRAS[@]}"; do
-        LOCK_ARGS+=(--extra "$_extra")
         SYNC_ARGS+=(--extra "$_extra")
     done
 
