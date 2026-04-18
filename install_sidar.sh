@@ -878,6 +878,11 @@ setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
         step "Conda Ortamı: $CONDA_ENV_NAME"
 
+        info "Conda Terms of Service (TOS) otomatik kabul adımı çalıştırılıyor..."
+        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+        ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
+
         info "Conda base ortamı güncelleniyor..."
         conda update -n base -c defaults conda -y
         ok "Conda base ortamı güncellendi."
