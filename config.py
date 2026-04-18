@@ -139,17 +139,30 @@ for _handler in list(_root_logger.handlers):
 logging.basicConfig(
     level=getattr(logging, _LOG_LEVEL_STR, logging.INFO),
     format="%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        RotatingFileHandler(
-            _LOG_FILE_PATH,
-            maxBytes=_LOG_MAX_BYTES,
-            backupCount=_LOG_BACKUP_CNT,
-            encoding="utf-8",
-        ),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
     force=True,
 )
+
+with contextlib.suppress(Exception):
+    _root_logger.handlers[0].setLevel(getattr(logging, _LOG_LEVEL_STR, logging.INFO))
+
+try:
+    _file_handler = RotatingFileHandler(
+        _LOG_FILE_PATH,
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_CNT,
+        encoding="utf-8",
+    )
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s"
+    ))
+    _root_logger.addHandler(_file_handler)
+except (PermissionError, OSError) as exc:
+    _root_logger.warning(
+        "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
+        exc,
+    )
+
 logger = logging.getLogger("Sidar.Config")
 
 _DEPENDENCY_AUTO = object()
