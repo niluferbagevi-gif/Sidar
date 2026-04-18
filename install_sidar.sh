@@ -229,6 +229,36 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
+start_docker_services_or_fail() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local stderr_file
+    stderr_file=$(mktemp)
+
+    if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
+        rm -f "$stderr_file"
+        return 0
+    fi
+
+    local compose_err=""
+    compose_err="$(<"$stderr_file")"
+    rm -f "$stderr_file"
+
+    if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
+        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+    fi
+
+    fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -2219,9 +2249,10 @@ run_migrations() {
         fi
         if [[ ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
-            "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis || warn "Docker postgres/redis servisleri başlatılamadı."
+            start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+            DOCKER_DB_SERVICES_STARTED=true
         else
-            warn "--docker-only aktif ancak docker compose bulunamadı. DB servislerini manuel başlatın."
+            fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
         fi
     fi
 
@@ -2268,19 +2299,16 @@ PY
                     info "Kullanıcı tercihi nedeniyle migrasyon sırasında Docker servisleri otomatik başlatılmayacak."
                 else
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
-                    if "${DOCKER_COMPOSE_CMD[@]}" up -d postgres redis; then
-                        DOCKER_DB_SERVICES_STARTED=true
-                        info "Veritabanının hazır olması bekleniyor..."
-                        for _ in {1..30}; do
-                            if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                                ok "PostgreSQL erişilebilir hale geldi."
-                                break
-                            fi
-                            sleep 2
-                        done
-                    else
-                        warn "Docker servisleri başlatılamadı (postgres/redis)."
-                    fi
+                    start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                    DOCKER_DB_SERVICES_STARTED=true
+                    info "Veritabanının hazır olması bekleniyor..."
+                    for _ in {1..30}; do
+                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                            ok "PostgreSQL erişilebilir hale geldi."
+                            break
+                        fi
+                        sleep 2
+                    done
                 fi
             fi
 
@@ -2319,11 +2347,8 @@ prepare_docker_for_migrations() {
 
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
-        if "${docker_compose_cmd[@]}" up -d postgres redis; then
-            DOCKER_DB_SERVICES_STARTED=true
-        else
-            warn "Migrasyon öncesi postgres/redis servisleri otomatik başlatılamadı."
-        fi
+        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+        DOCKER_DB_SERVICES_STARTED=true
         return
     fi
 
@@ -2335,12 +2360,9 @@ prepare_docker_for_migrations() {
             info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
             ;;
         *)
-            if "${docker_compose_cmd[@]}" up -d postgres redis; then
-                DOCKER_DB_SERVICES_STARTED=true
-                ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
-            else
-                warn "Migrasyon öncesi postgres/redis servisleri başlatılamadı; migrasyon adımı tekrar deneyecek."
-            fi
+            start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+            DOCKER_DB_SERVICES_STARTED=true
+            ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
     esac
 }
