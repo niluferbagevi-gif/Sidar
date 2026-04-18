@@ -2540,7 +2540,7 @@ PY
                 fi
                 info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
-                return
+                fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
         fi
     fi
@@ -2549,8 +2549,8 @@ PY
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
-        warn "Migrasyon başarısız. Log'ları kontrol edin."
         MIGRATION_STATUS="hata"
+        fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
 }
 
