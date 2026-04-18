@@ -35,6 +35,41 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() { echo -e "${RED}❌  $*${NC}" >&2; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
+run_with_progress_hint() {
+    local label="$1"
+    shift
+    local -a cmd=("$@")
+
+    "${cmd[@]}" &
+    local cmd_pid=$!
+    local pct=5
+
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        local filled=$((pct / 4))
+        local empty=$((25 - filled))
+        local bar_filled
+        local bar_empty
+        printf -v bar_filled '%*s' "$filled" ''
+        printf -v bar_empty '%*s' "$empty" ''
+        bar_filled="${bar_filled// /█}"
+        bar_empty="${bar_empty// /░}"
+        echo -e "${BLUE}[${bar_filled}${bar_empty}] ${pct}% ${label}${NC}" >&2
+
+        pct=$((pct + 5))
+        if (( pct > 95 )); then
+            pct=95
+        fi
+        sleep 4
+    done
+
+    wait "$cmd_pid"
+    local cmd_rc=$?
+    if [[ "$cmd_rc" -eq 0 ]]; then
+        echo -e "${GREEN}[█████████████████████████] 100% ${label}${NC}" >&2
+    fi
+    return "$cmd_rc"
+}
+
 prompt_yes_no_with_timeout_default_yes() {
     local prompt="$1"
     local timeout_seconds="${2:-180}"
@@ -998,11 +1033,11 @@ install_python_deps() {
         "${UV_CMD[@]}" export --index-strategy unsafe-best-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
+        run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy unsafe-best-match)..."
-        "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
+        run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy unsafe-best-match "${SYNC_ARGS[@]}"
     fi
 
     ok "Python bağımlılıkları senkronlandı."
