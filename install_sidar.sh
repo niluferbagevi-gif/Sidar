@@ -468,7 +468,19 @@ maybe_reset_postgres_volume_after_password_hardening() {
     case "${should_reset:-E}" in
         E|e)
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
-            "${compose_cmd[@]}" down -v postgres >/dev/null 2>&1 || "${compose_cmd[@]}" down -v >/dev/null 2>&1 || true
+            "${compose_cmd[@]}" down >/dev/null 2>&1 || true
+
+            local -a postgres_container_ids=()
+            if mapfile -t postgres_container_ids < <(docker ps -a -q --filter ancestor=postgres 2>/dev/null); then
+                if [[ ${#postgres_container_ids[@]} -gt 0 ]]; then
+                    docker rm -f "${postgres_container_ids[@]}" >/dev/null 2>&1 || true
+                fi
+            fi
+
+            if docker volume inspect sidar_postgres_data >/dev/null 2>&1 && [[ " ${existing_pg_volumes[*]} " != *" sidar_postgres_data "* ]]; then
+                existing_pg_volumes+=("sidar_postgres_data")
+            fi
+
             local removed_any=false
             local remove_failed=false
             for volume_name in "${existing_pg_volumes[@]}"; do
