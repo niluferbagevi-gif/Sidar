@@ -468,7 +468,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
     case "${should_reset:-E}" in
         E|e)
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
-            "${compose_cmd[@]}" down >/dev/null 2>&1 || true
+            "${compose_cmd[@]}" down --remove-orphans >/dev/null 2>&1 || true
 
             local -a postgres_container_ids=()
             if mapfile -t postgres_container_ids < <(docker ps -a -q --filter ancestor=postgres 2>/dev/null); then
@@ -480,6 +480,18 @@ maybe_reset_postgres_volume_after_password_hardening() {
             if docker volume inspect sidar_postgres_data >/dev/null 2>&1 && [[ " ${existing_pg_volumes[*]} " != *" sidar_postgres_data "* ]]; then
                 existing_pg_volumes+=("sidar_postgres_data")
             fi
+
+            # Orphaned container'lar image etiketiyle yakalanamayabilir; hedef volume'e bağlı
+            # container'ları da zorla kaldırarak volume kilidini açmayı deneriz.
+            local volume_name=""
+            for volume_name in "${existing_pg_volumes[@]}"; do
+                local -a volume_bound_container_ids=()
+                if mapfile -t volume_bound_container_ids < <(docker ps -a -q --filter "volume=${volume_name}" 2>/dev/null); then
+                    if [[ ${#volume_bound_container_ids[@]} -gt 0 ]]; then
+                        docker rm -f "${volume_bound_container_ids[@]}" >/dev/null 2>&1 || true
+                    fi
+                fi
+            done
 
             local removed_any=false
             local remove_failed=false
@@ -493,7 +505,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
                 fi
             done
             if [[ "$remove_failed" == true ]]; then
-                fail "DB şifresi güncellendi ancak PostgreSQL volume tamamen silinemedi. Kurulum durduruldu. Devam etmeden önce 'docker compose down -v postgres && docker volume rm ${existing_pg_volumes[*]}' komutunu çalıştırın."
+                fail "DB şifresi güncellendi ancak PostgreSQL volume tamamen silinemedi. Kurulum durduruldu. Devam etmeden önce 'docker compose down --remove-orphans && docker rm -f \$(docker ps -a -q --filter ancestor=postgres) 2>/dev/null || true && docker volume rm ${existing_pg_volumes[*]}' komutunu çalıştırın."
             fi
             if [[ "$removed_any" == true ]]; then
                 POSTGRES_VOLUME_RESET_DONE=true
@@ -508,7 +520,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down -v postgres && docker volume rm sidar_postgres_data komutlarını çalıştırın."
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --remove-orphans && docker rm -f \$(docker ps -a -q --filter ancestor=postgres) 2>/dev/null || true && docker volume rm sidar_postgres_data komutlarını çalıştırın."
 }
 
 wait_for_redis_ready_after_docker_start() {
