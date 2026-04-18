@@ -468,9 +468,18 @@ maybe_reset_postgres_volume_after_password_hardening() {
     case "${should_reset:-E}" in
         E|e)
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
-            "${compose_cmd[@]}" down -v postgres >/dev/null 2>&1 || "${compose_cmd[@]}" down -v >/dev/null 2>&1 || true
+            if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
+                warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
+            fi
             local removed_any=false
             for volume_name in "${existing_pg_volumes[@]}"; do
+                local -a volume_container_ids=()
+                if mapfile -t volume_container_ids < <(docker ps -a --filter "volume=${volume_name}" --format '{{.ID}}' 2>/dev/null); then
+                    if [[ ${#volume_container_ids[@]} -gt 0 ]]; then
+                        warn "Volume bağlı container(lar) bulundu (${volume_name}); zorla kaldırılıyor."
+                        docker rm -f "${volume_container_ids[@]}" >/dev/null 2>&1 || warn "Volume kullanan container'lar kaldırılamadı: ${volume_name}"
+                    fi
+                fi
                 if docker volume rm "$volume_name" >/dev/null 2>&1; then
                     ok "PostgreSQL volume temizlendi: ${volume_name}"
                     removed_any=true
@@ -491,7 +500,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down -v postgres && docker volume rm sidar_postgres_data komutlarını çalıştırın."
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data komutlarını çalıştırın."
 }
 
 wait_for_redis_ready_after_docker_start() {
