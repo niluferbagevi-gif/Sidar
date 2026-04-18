@@ -184,6 +184,7 @@ markers = [
   "asyncio: run coroutine test",
   "slow: yavaş entegrasyon testleri (CI'da -m \"not slow\" ile atlanabilir)",
   "gpu: gerçek GPU donanımı gerektiren testler (CI ortamlarında atlanmalıdır)",
+  "gpu_stress: uzun/yoğun GPU yük testleri (CI pipeline'ında ayrı job olarak çalıştırılabilir)",
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
   "integration: harici sistem entegrasyonları",
