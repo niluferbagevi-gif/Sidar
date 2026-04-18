@@ -114,6 +114,7 @@ trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 relocate_log_file_if_needed() {
     local target_log_dir="${TARGET_DIR}/logs"
+    local source_log_dir="$LOG_DIR"
 
     if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
         mkdir -p "$target_log_dir"
@@ -121,6 +122,10 @@ relocate_log_file_if_needed() {
         LOG_DIR="$target_log_dir"
         LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
         info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
+
+        if [[ -d "$source_log_dir" ]]; then
+            rmdir "$source_log_dir" 2>/dev/null || true
+        fi
     fi
 }
 
