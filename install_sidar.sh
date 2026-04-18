@@ -2973,6 +2973,7 @@ run_smoke_tests() {
     fi
 
     wait_for_redis_before_smoke_tests
+    wait_for_core_docker_health_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
@@ -3002,6 +3003,51 @@ run_smoke_tests() {
         warn "Smoke testlerde hata var. Logları inceleyin."
         SMOKE_TEST_STATUS="hata"
     fi
+}
+
+wait_for_core_docker_health_before_smoke_tests() {
+    local -a docker_compose_cmd=()
+    local -a containers=("sidar_postgres" "sidar_redis")
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        return 0
+    fi
+
+    if ! ensure_docker_daemon_running; then
+        warn "Docker daemon erişilemedi; smoke test öncesi container health kontrolü atlandı."
+        return 0
+    fi
+
+    # Bu adım, smoke testlerin servisler tam hazır olmadan başlamasını azaltır.
+    info "Smoke test öncesi Docker servis health kontrolleri yapılıyor (postgres/redis)..."
+    "${docker_compose_cmd[@]}" ps --status running postgres redis >/dev/null 2>&1 || true
+
+    local container_name=""
+    local state=""
+    for container_name in "${containers[@]}"; do
+        if ! docker inspect "$container_name" >/dev/null 2>&1; then
+            continue
+        fi
+
+        for _ in {1..30}; do
+            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || echo "unknown")
+            case "$state" in
+                healthy|running)
+                    ok "Container hazır: ${container_name} (${state})"
+                    break
+                    ;;
+                exited|dead|unhealthy)
+                    warn "Container sağlıksız görünüyor: ${container_name} (${state})"
+                    return 0
+                    ;;
+            esac
+            sleep 2
+        done
+    done
 }
 
 run_test_artifact_audit() {
@@ -3393,10 +3439,10 @@ main() {
     create_directories
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
+    setup_react_frontend
     setup_env_file
     install_playwright_browsers
     setup_shell_activation_shortcut
-    setup_react_frontend
     setup_wsl2_audio
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
