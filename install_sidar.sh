@@ -114,6 +114,7 @@ trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 relocate_log_file_if_needed() {
     local target_log_dir="${TARGET_DIR}/logs"
+    local source_log_dir="$LOG_DIR"
 
     if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
         mkdir -p "$target_log_dir"
@@ -121,6 +122,10 @@ relocate_log_file_if_needed() {
         LOG_DIR="$target_log_dir"
         LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
         info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
+
+        if [[ -d "$source_log_dir" ]]; then
+            rmdir "$source_log_dir" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -1519,7 +1524,15 @@ create_directories() {
     step "Proje Dizinleri"
     for dir in "${REQUIRED_DIRS[@]}"; do
         mkdir -p "$SCRIPT_DIR/$dir"
+        chmod 755 "$SCRIPT_DIR/$dir" 2>/dev/null || true
     done
+
+    local log_file="$SCRIPT_DIR/logs/sidar_system.log"
+    if [[ -f "$log_file" && ! -w "$log_file" ]]; then
+        chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
+        chmod u+rw "$log_file" 2>/dev/null || true
+    fi
+
     if [[ -f "$SCRIPT_DIR/run_tests.sh" ]]; then
         chmod +x "$SCRIPT_DIR/run_tests.sh"
     fi
@@ -2071,6 +2084,25 @@ ensure_local_service_host_defaults() {
     fi
 }
 
+ensure_sidar_env_default() {
+    local env_file="$1"
+    local current_env=""
+
+    current_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_env=$(echo "$current_env" | tr -d '"'\''[:space:]')
+
+    if [[ -z "$current_env" ]]; then
+        echo "SIDAR_ENV=development" >> "$env_file"
+        ok ".env: SIDAR_ENV=development eklendi."
+        return
+    fi
+
+    if [[ "$current_env" == "production" ]]; then
+        sed -i 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
+        warn ".env: SIDAR_ENV=production varsayılanı development olarak düzeltildi (üretimde manuel production yapın)."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -2078,6 +2110,7 @@ setup_env_file() {
 
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
+        ensure_sidar_env_default "$ENV_FILE"
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
@@ -2095,6 +2128,7 @@ setup_env_file() {
 
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
+    ensure_sidar_env_default "$ENV_FILE"
     ensure_database_url_defaults "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
@@ -3048,8 +3082,9 @@ main() {
     prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
-    download_ollama_models
+    # Hızlı geri bildirim için smoke testleri büyük model indirme adımından önce çalıştır.
     run_smoke_tests
+    download_ollama_models
     run_test_artifact_audit
     print_summary
     launch_docker_services
