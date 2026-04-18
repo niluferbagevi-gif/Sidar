@@ -20,7 +20,12 @@ export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
-LOG_DIR="$SCRIPT_DIR/logs"
+INITIAL_TARGET_DIR="${HOME}/Sidar"
+if [[ -d "$INITIAL_TARGET_DIR" ]]; then
+    LOG_DIR="$INITIAL_TARGET_DIR/logs"
+else
+    LOG_DIR="$SCRIPT_DIR/logs"
+fi
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -i "$LOG_FILE") 2>&1
@@ -113,6 +118,7 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 relocate_log_file_if_needed() {
+    [[ -n "${TARGET_DIR:-}" ]] || return 0
     local target_log_dir="${TARGET_DIR}/logs"
     local source_log_dir="$LOG_DIR"
 
@@ -128,6 +134,8 @@ relocate_log_file_if_needed() {
         fi
     fi
 }
+
+trap 'relocate_log_file_if_needed || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
@@ -1151,7 +1159,7 @@ setup_python_env() {
             ok "Conda ortamı oluşturuldu."
         fi
 
-        CONDA_RUN=(conda run --no-capture-output -n "$CONDA_ENV_NAME")
+        CONDA_RUN=(conda run --no-capture-output --cwd "$SCRIPT_DIR" -n "$CONDA_ENV_NAME")
         if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
             ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
         else
@@ -1727,7 +1735,7 @@ harden_database_credentials() {
         local db_host_and_name="${BASH_REMATCH[4]}"
 
         case "$db_password" in
-            postgres|password|admin|changeme|123456)
+            sidar|postgres|password|admin|changeme|123456)
                 if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
                     local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
                     if [[ "$hardening_enabled" == "1" ]]; then
@@ -3020,8 +3028,8 @@ launch_docker_services() {
                 echo "⚠️ Docker motoru şu anda çalışmıyor."
                 echo "ℹ️ Docker başlatılmaya çalışılıyor..."
 
-                # WSL2 / Linux Native kontrolü
-                if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null; then
+                # WSL2 / Linux Native kontrolü (başta belirlenen WSL2 bayrağı kullanılır)
+                if [[ "$WSL2" == true ]]; then
                     echo "WSL ortamı algılandı. Service üzerinden başlatılıyor..."
                     if command -v sudo &>/dev/null; then
                         sudo service docker start
