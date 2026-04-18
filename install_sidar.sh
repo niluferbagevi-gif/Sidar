@@ -320,7 +320,9 @@ start_docker_services_or_fail() {
     local stderr_file
     stderr_file=$(mktemp)
 
-    maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"
+    if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
+        fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
+    fi
 
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
@@ -349,6 +351,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         shift
     done
     local -a services=("$@")
+    local reset_attempted=false
 
     if [[ "$DB_PASSWORD_HARDENED" != true || "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
         return 0
@@ -467,6 +470,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
 
     case "${should_reset:-E}" in
         E|e)
+            reset_attempted=true
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
@@ -497,10 +501,16 @@ maybe_reset_postgres_volume_after_password_hardening() {
     esac
 
     if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        POSTGRES_VOLUME_RESET_FAILED=false
         return 0
     fi
 
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data komutlarını çalıştırın."
+    if [[ "$reset_attempted" == true ]]; then
+        POSTGRES_VOLUME_RESET_FAILED=true
+        return 1
+    fi
+    return 0
 }
 
 wait_for_redis_ready_after_docker_start() {
@@ -606,6 +616,96 @@ verify_postgres_auth_with_psql() {
     return 1
 }
 
+verify_postgres_auth_with_python() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    local -a py_cmd=()
+    local py_output=""
+    POSTGRES_AUTH_CHECK_ERROR=""
+
+    if command -v python3 &>/dev/null; then
+        py_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        py_cmd=(python)
+    else
+        POSTGRES_AUTH_CHECK_ERROR="python_missing"
+        return 2
+    fi
+
+    if py_output=$("${py_cmd[@]}" - "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" <<'PY' 2>&1
+import asyncio
+import sys
+
+host, port, user, database, password = sys.argv[1:6]
+
+async def main():
+    try:
+        import asyncpg
+    except Exception as exc:
+        print(f"asyncpg_missing:{exc}")
+        raise SystemExit(2)
+
+    try:
+        conn = await asyncpg.connect(
+            host=host,
+            port=int(port),
+            user=user,
+            password=password,
+            database=database,
+            timeout=5,
+        )
+        try:
+            await conn.fetchval("SELECT 1")
+        finally:
+            await conn.close()
+        print("ok")
+        raise SystemExit(0)
+    except Exception as exc:
+        print(str(exc))
+        raise
+
+try:
+    asyncio.run(main())
+except SystemExit:
+    raise
+except Exception:
+    raise SystemExit(1)
+PY
+); then
+        return 0
+    fi
+
+    local py_rc=$?
+    POSTGRES_AUTH_CHECK_ERROR="$py_output"
+    if [[ "$py_output" == *"password authentication failed"* || "$py_output" == *"InvalidPasswordError"* ]]; then
+        return 10
+    fi
+    if [[ "$py_rc" -eq 2 ]]; then
+        return 2
+    fi
+    return 1
+}
+
+verify_postgres_auth() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+
+    verify_postgres_auth_with_psql "$db_host" "$db_port" "$db_user" "$db_name" "$db_password"
+    local auth_rc=$?
+    if [[ "$auth_rc" -ne 2 ]]; then
+        return "$auth_rc"
+    fi
+
+    verify_postgres_auth_with_python "$db_host" "$db_port" "$db_user" "$db_name" "$db_password"
+    return $?
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -629,6 +729,7 @@ MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
+POSTGRES_VOLUME_RESET_FAILED=false
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
 WSLCONFIG_CHANGED=false
@@ -2901,9 +3002,9 @@ PY
         fi
 
         local auth_check_rc=0
-        verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+        verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
         if [[ "$auth_check_rc" -eq 2 ]]; then
-            warn "psql bulunamadığı için PostgreSQL kimlik doğrulaması SELECT 1 ile doğrulanamadı. Alembic denenecek."
+            warn "PostgreSQL kimlik doğrulaması doğrulanamadı (psql/asyncpg denetimi kullanılamadı). Alembic denenecek."
         elif [[ "$auth_check_rc" -eq 10 ]]; then
             warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
             DOCKER_COMPOSE_CMD=()
@@ -2916,7 +3017,10 @@ PY
             if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
                 DB_PASSWORD_HARDENED=true
                 POSTGRES_VOLUME_RESET_DONE=false
-                maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                if ! maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis; then
+                    MIGRATION_STATUS="db_auth_hatasi"
+                    fail "PostgreSQL volume sıfırlanamadı; eski parola ile çalışan volume nedeniyle migrasyon güvenli şekilde durduruldu."
+                fi
                 start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                 DOCKER_DB_SERVICES_STARTED=true
                 wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
@@ -2929,7 +3033,7 @@ PY
                 done
 
                 auth_check_rc=0
-                verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
                 if [[ "$auth_check_rc" -eq 0 ]]; then
                     ok "PostgreSQL parola doğrulaması SELECT 1 ile başarılı."
                 fi
