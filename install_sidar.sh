@@ -495,6 +495,7 @@ DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
+CONDA_BASE_UPDATE_DONE=false
 
 banner() {
     echo -e "${BOLD}${BLUE}"
@@ -502,6 +503,25 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+update_conda_base_if_available() {
+    if [[ "${USE_CONDA:-false}" != true ]]; then
+        return 0
+    fi
+
+    if [[ "${CONDA_BASE_UPDATE_DONE:-false}" == true ]]; then
+        return 0
+    fi
+
+    info "Conda base ortamı sessiz modda güncelleniyor..."
+    if conda update -n base -c defaults conda -y >/dev/null 2>&1; then
+        ok "Conda base ortamı güncellendi."
+    else
+        warn "Conda base güncellemesi başarısız/atlanmış olabilir. Mevcut sürümle devam ediliyor."
+    fi
+
+    CONDA_BASE_UPDATE_DONE=true
 }
 
 read_env_value_from_file() {
@@ -823,6 +843,10 @@ ensure_prerequisites() {
         fi
     fi
 
+    if [[ "$USE_CONDA" == true ]]; then
+        update_conda_base_if_available
+    fi
+
     # Git
     if ! command -v git &>/dev/null; then
         fail "Git bulunamadı. Kurun: sudo apt-get install -y git"
@@ -1096,9 +1120,7 @@ setup_python_env() {
         conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
         ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
 
-        info "Conda base ortamı güncelleniyor..."
-        conda update -n base -c defaults conda -y
-        ok "Conda base ortamı güncellendi."
+        update_conda_base_if_available
 
         if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
