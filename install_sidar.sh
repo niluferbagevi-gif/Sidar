@@ -3236,12 +3236,12 @@ main() {
     verify_torch_cuda
     install_playwright_browsers
     create_directories
+    # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
+    setup_vscode_workspace
     setup_env_file
     setup_shell_activation_shortcut
     setup_react_frontend
     setup_wsl2_audio
-    # Yeni eklenen VS Code yapılandırması
-    setup_vscode_workspace
     # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
     prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
