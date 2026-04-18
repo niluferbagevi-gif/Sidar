@@ -762,21 +762,33 @@ install_system_dependencies() {
                         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
                         ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
                     else
-                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
-                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan yalnızca nodejs kurulumu deneniyor."
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
                     fi
                 else
-                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan nodejs/npm kurulumu deneniyor."
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan yalnızca nodejs kurulumu deneniyor."
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
                 fi
             else
-                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan yalnızca nodejs kurulumu deneniyor."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
             fi
             rm -f "$ns_key_tmp"
         else
-            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan nodejs/npm kurulumu deneniyor."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan yalnızca nodejs kurulumu deneniyor."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+        fi
+
+        if command -v node &>/dev/null; then
+            ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+        else
+            fail "Node.js kurulumu doğrulanamadı; lütfen nodejs paketini manuel kontrol edin."
+        fi
+
+        if command -v npm &>/dev/null; then
+            ok "npm sürümü: $(npm --version 2>/dev/null || echo 'sürüm alınamadı')"
+        else
+            warn "npm komutu bulunamadı. NodeSource nodejs paketlerinde npm gömülü gelir; eksikse çakışan paketleri temizleyip nodejs'i yeniden kurun."
         fi
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
