@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.1
+# Sürüm : 5.2.2
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -513,7 +513,7 @@ CONDA_BASE_UPDATE_DONE=false
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.2)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -1225,10 +1225,9 @@ install_python_deps() {
         EXTRAS+=(gpu)
     fi
 
-    local -a LOCK_ARGS=(--index-strategy first-match)
+    local -a LOCK_ARGS=(--index-strategy first-index)
     local -a SYNC_ARGS=(--frozen)
     for _extra in "${EXTRAS[@]}"; do
-        LOCK_ARGS+=(--extra "$_extra")
         SYNC_ARGS+=(--extra "$_extra")
     done
 
@@ -1248,7 +1247,7 @@ install_python_deps() {
         uv_export_file="$(mktemp)"
 
         info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
-        if ! "${UV_CMD[@]}" export --index-strategy first-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
+        if ! "${UV_CMD[@]}" export --index-strategy first-index "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
             rm -f "$uv_export_file"
             fail "uv export başarısız oldu. Conda için requirements dosyası üretilemedi."
         fi
@@ -1260,8 +1259,8 @@ install_python_deps() {
         fi
         rm -f "$uv_export_file"
     else
-        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
-        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-index)..."
+        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-index "${SYNC_ARGS[@]}"; then
             fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
         fi
     fi
