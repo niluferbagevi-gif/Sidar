@@ -786,7 +786,17 @@ install_system_dependencies() {
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                if command -v node &>/dev/null; then
+                    warn "Sistemde node bulundu ($(node -v 2>/dev/null || echo 'sürüm alınamadı'))."
+                    warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
+                    if command -v npm &>/dev/null; then
+                        ok "npm zaten mevcut: $(npm -v 2>/dev/null || echo 'sürüm alınamadı')"
+                    else
+                        warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
+                    fi
+                else
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                fi
             fi
         fi
 
