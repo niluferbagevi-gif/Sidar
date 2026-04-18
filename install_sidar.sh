@@ -2964,6 +2964,8 @@ print_summary() {
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
 launch_docker_services() {
     local docker_compose_cmd=()
+    local compose_profiles=""
+    local env_file="$SCRIPT_DIR/.env"
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -2974,9 +2976,20 @@ launch_docker_services() {
         return
     fi
 
+    if [[ -f "$env_file" ]]; then
+        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+    fi
+    if [[ -z "$compose_profiles" ]]; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
+            compose_profiles="gpu"
+        else
+            compose_profiles="cpu"
+        fi
+    fi
+
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
-        info "Gerekirse manuel çalıştırın: docker compose up -d"
+        info "Gerekirse manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles docker compose up -d"
         return
     fi
 
@@ -3029,14 +3042,15 @@ launch_docker_services() {
             info "Docker Compose servisleri başlatılıyor..."
             info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
             validate_monitoring_mount_paths
-            if "${docker_compose_cmd[@]}" up -d; then
+            info "Docker Compose profili: $compose_profiles"
+            if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                 ok "Docker servisleri başarıyla başlatıldı."
             else
                 warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
             fi
             ;;
         *)
-            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: docker compose up -d)"
+            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
             ;;
     esac
 }
