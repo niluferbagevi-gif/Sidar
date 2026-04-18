@@ -2632,6 +2632,18 @@ run_smoke_tests() {
         return
     fi
 
+    # Docker/WSL kombinasyonunda log/data dosyaları root sahibi kalabilir.
+    # Smoke testler öncesinde erişim izinlerini mümkün olduğunca normal kullanıcıya geri al.
+    if command -v sudo >/dev/null 2>&1; then
+        local -a permission_dirs=()
+        [[ -d "$SCRIPT_DIR/logs" ]] && permission_dirs+=("$SCRIPT_DIR/logs")
+        [[ -d "$SCRIPT_DIR/data" ]] && permission_dirs+=("$SCRIPT_DIR/data")
+        if [[ ${#permission_dirs[@]} -gt 0 ]]; then
+            info "Smoke test öncesi log/data dizin yetkileri düzenleniyor..."
+            sudo chown -R "$(id -u):$(id -g)" "${permission_dirs[@]}" >/dev/null 2>&1 || true
+        fi
+    fi
+
     wait_for_redis_before_smoke_tests
 
     if [[ "$USE_CONDA" == true ]]; then
