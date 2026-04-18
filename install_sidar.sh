@@ -3029,12 +3029,14 @@ launch_docker_services() {
     echo ""
     local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
     local start_default="E"
+    local start_docker=""
     if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
-        start_prompt="PostgreSQL/Redis zaten çalışıyor. Kalan Docker servisleri de başlatılsın mı? [e/H] "
-        start_default="H"
+        info "PostgreSQL/Redis migrasyon adımında zaten başlatıldı; kalan Docker servisleri otomatik başlatılacak."
+        start_docker="E"
+    else
+        start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     fi
 
-    start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
     case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
