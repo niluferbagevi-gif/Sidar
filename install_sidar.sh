@@ -568,6 +568,35 @@ PY
     return 1
 }
 
+verify_postgres_auth_with_psql() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    POSTGRES_AUTH_CHECK_ERROR=""
+
+    if ! command -v psql &>/dev/null; then
+        POSTGRES_AUTH_CHECK_ERROR="psql_missing"
+        return 2
+    fi
+
+    local psql_output=""
+    if psql_output=$(
+        PGPASSWORD="$db_password" psql \
+            "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+            -tAc "SELECT 1" 2>&1
+    ); then
+        return 0
+    fi
+
+    POSTGRES_AUTH_CHECK_ERROR="$psql_output"
+    if [[ "$psql_output" == *"password authentication failed"* ]]; then
+        return 10
+    fi
+    return 1
+}
+
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
 FORCE_CPU=false
@@ -2810,9 +2839,10 @@ parsed = urlparse(url)
 host = parsed.hostname or "localhost"
 port = str(parsed.port or 5432)
 user = unquote(parsed.username or "postgres")
+password = unquote(parsed.password or "")
 db = parsed.path.lstrip("/") or "postgres"
 
-print(f"{host}|{port}|{user}|{db}")
+print(f"{host}|{port}|{user}|{db}|{password}")
 PY
 )
 
@@ -2820,6 +2850,7 @@ PY
         DB_PORT=$(echo "$DB_CONN_INFO" | cut -d'|' -f2)
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
+        DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD=()
@@ -2858,6 +2889,48 @@ PY
                 MIGRATION_STATUS="db_erisilemez"
                 fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
+        fi
+
+        local auth_check_rc=0
+        verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+        if [[ "$auth_check_rc" -eq 2 ]]; then
+            warn "psql bulunamadığı için PostgreSQL kimlik doğrulaması SELECT 1 ile doğrulanamadı. Alembic denenecek."
+        elif [[ "$auth_check_rc" -eq 10 ]]; then
+            warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
+            DOCKER_COMPOSE_CMD=()
+            if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker compose)
+            elif command -v docker-compose &>/dev/null; then
+                DOCKER_COMPOSE_CMD=(docker-compose)
+            fi
+
+            if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                DB_PASSWORD_HARDENED=true
+                POSTGRES_VOLUME_RESET_DONE=false
+                maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                DOCKER_DB_SERVICES_STARTED=true
+                wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
+
+                for _ in {1..30}; do
+                    if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                        break
+                    fi
+                    sleep 2
+                done
+
+                auth_check_rc=0
+                verify_postgres_auth_with_psql "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                if [[ "$auth_check_rc" -eq 0 ]]; then
+                    ok "PostgreSQL parola doğrulaması SELECT 1 ile başarılı."
+                fi
+            fi
+        fi
+
+        if [[ "$auth_check_rc" -ne 0 && "$auth_check_rc" -ne 2 ]]; then
+            warn "PostgreSQL kimlik doğrulama kontrolü başarısız: ${POSTGRES_AUTH_CHECK_ERROR:-bilinmeyen_hata}"
+            MIGRATION_STATUS="db_auth_hatasi"
+            fail "PostgreSQL kimlik doğrulaması başarısız olduğu için migrasyon güvenli şekilde durduruldu."
         fi
     fi
 
