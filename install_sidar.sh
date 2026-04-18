@@ -1719,6 +1719,7 @@ harden_database_credentials() {
     local db_url=""
     local sidar_env="development"
     local safe_db_url=""
+    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
 
     [[ -f "$env_file" ]] || return
 
@@ -1735,50 +1736,45 @@ harden_database_credentials() {
 
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
-                if [[ "$sidar_env" == "production" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
-                    if [[ "$hardening_enabled" == "1" ]]; then
-                        local generated_password=""
-                        generated_password=$(generate_secure_token 24)
-                        if [[ -n "$generated_password" ]]; then
-                            safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                            sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                            ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                    local generated_password=""
+                    generated_password=$(generate_secure_token 24)
+                    if [[ -n "$generated_password" ]]; then
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
-                            # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                            # DATABASE_URL ile senkron kalmalıdır.
-                            if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                                sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                            else
-                                echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                            fi
-                            if grep -q '^POSTGRES_USER=' "$env_file"; then
-                                sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                            else
-                                echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                            fi
-                            ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                            warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
-                            warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
-                            info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
-                            if command -v docker &>/dev/null; then
-                                local detected_pg_volume=""
-                                detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                                if [[ -n "$detected_pg_volume" ]]; then
-                                    warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
-                                    info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
-                                fi
-                            fi
+                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                        # DATABASE_URL ile senkron kalmalıdır.
+                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                         else
-                            warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                        fi
+                        if grep -q '^POSTGRES_USER=' "$env_file"; then
+                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        else
+                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                        fi
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
+                        warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
+                        info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
+                        if command -v docker &>/dev/null; then
+                            local detected_pg_volume=""
+                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                            if [[ -n "$detected_pg_volume" ]]; then
+                                warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
+                                info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                            fi
                         fi
                     else
-                        warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                        warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                     fi
                 else
+                    warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Üretim için SIDAR_ENV=production ayarlayıp scripti tekrar çalıştırın veya DATABASE_URL parolasını manuel değiştirin."
+                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
                 fi
                 ;;
         esac
