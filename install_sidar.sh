@@ -819,6 +819,21 @@ install_system_dependencies() {
     fi
 }
 
+detect_environment() {
+    step "Çalışma Ortamı Tespiti"
+
+    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+        WSL2=true
+        info "Ortam: WSL2 (Windows Subsystem for Linux)"
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        WSL2=false
+        info "Ortam: macOS"
+    else
+        WSL2=false
+        info "Ortam: Linux (native/container)"
+    fi
+}
+
 # ── 1. Ön koşul kontrolleri ───────────────────────────────────────────────────
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
@@ -3202,12 +3217,7 @@ EOF
 main() {
     banner
     report_repo_lookup_context
-    # WSL2 tespiti en başta yapılarak alt fonksiyonların aynı bayrağı kullanması sağlanır.
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
-        WSL2=true
-    else
-        WSL2=false
-    fi
+    detect_environment
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
