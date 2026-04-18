@@ -528,7 +528,7 @@ update_conda_base_if_available() {
     fi
 
     info "Conda base ortamı sessiz modda güncelleniyor..."
-    if conda update -n base -c defaults conda -y >/dev/null 2>&1; then
+    if conda update -n base -c defaults conda -y --quiet >/dev/null 2>&1; then
         ok "Conda base ortamı güncellendi."
     else
         warn "Conda base güncellemesi başarısız/atlanmış olabilir. Mevcut sürümle devam ediliyor."
