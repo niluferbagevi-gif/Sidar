@@ -737,6 +737,11 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
             postgresql-client-common postgresql-client
 
+        local _node_major
+        _node_major=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/')
+        if node --version &>/dev/null && npm --version &>/dev/null && [[ "${_node_major:-0}" -ge 18 ]]; then
+            ok "Node.js ve npm zaten kurulu ve kullanılabilir: $(node --version 2>/dev/null), npm $(npm --version 2>/dev/null)"
+        else
         info "Node.js 20.x (NodeSource apt + GPG keyring) kuruluyor..."
         local distro_codename=""
         local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
@@ -762,33 +767,26 @@ install_system_dependencies() {
                         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
                         ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
                     else
-                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan yalnızca nodejs kurulumu deneniyor."
-                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+                        warn "NodeSource deposundan Node.js kurulamadı, apt deposundan nodejs kurulumu deneniyor."
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs || true
+                        npm --version &>/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y npm || true
                     fi
                 else
-                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan yalnızca nodejs kurulumu deneniyor."
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+                    warn "NodeSource GPG keyring oluşturulamadı, apt deposundan nodejs kurulumu deneniyor."
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs || true
+                    npm --version &>/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y npm || true
                 fi
             else
-                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan yalnızca nodejs kurulumu deneniyor."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+                warn "NodeSource GPG anahtarı indirilemedi, apt deposundan nodejs kurulumu deneniyor."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs || true
+                npm --version &>/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y npm || true
             fi
             rm -f "$ns_key_tmp"
         else
-            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan yalnızca nodejs kurulumu deneniyor."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs
+            warn "Linux dağıtım kod adı tespit edilemedi, apt deposundan nodejs kurulumu deneniyor."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs || true
+            npm --version &>/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y npm || true
         fi
-
-        if command -v node &>/dev/null; then
-            ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-        else
-            fail "Node.js kurulumu doğrulanamadı; lütfen nodejs paketini manuel kontrol edin."
-        fi
-
-        if command -v npm &>/dev/null; then
-            ok "npm sürümü: $(npm --version 2>/dev/null || echo 'sürüm alınamadı')"
-        else
-            warn "npm komutu bulunamadı. NodeSource nodejs paketlerinde npm gömülü gelir; eksikse çakışan paketleri temizleyip nodejs'i yeniden kurun."
         fi
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
