@@ -2079,6 +2079,25 @@ ensure_local_service_host_defaults() {
     fi
 }
 
+ensure_sidar_env_default() {
+    local env_file="$1"
+    local current_env=""
+
+    current_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_env=$(echo "$current_env" | tr -d '"'\''[:space:]')
+
+    if [[ -z "$current_env" ]]; then
+        echo "SIDAR_ENV=development" >> "$env_file"
+        ok ".env: SIDAR_ENV=development eklendi."
+        return
+    fi
+
+    if [[ "$current_env" == "production" ]]; then
+        sed -i 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
+        warn ".env: SIDAR_ENV=production varsayılanı development olarak düzeltildi (üretimde manuel production yapın)."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -2086,6 +2105,7 @@ setup_env_file() {
 
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
+        ensure_sidar_env_default "$ENV_FILE"
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
@@ -2103,6 +2123,7 @@ setup_env_file() {
 
     cp "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
+    ensure_sidar_env_default "$ENV_FILE"
     ensure_database_url_defaults "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
