@@ -859,12 +859,22 @@ setup_nvidia_docker() {
             # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
             sudo nvidia-ctk runtime configure --runtime=docker
 
-            # WSL2 veya Native Ubuntu için Docker'ı yeniden başlat
+            # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
             info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl is-active --quiet docker; then
-                sudo systemctl restart docker
+            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
+                if systemctl is-active --quiet docker; then
+                    sudo systemctl restart docker
+                    ok "Docker servisi systemd üzerinden yeniden başlatıldı."
+                else
+                    warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
+                    info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
+                fi
+            elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
+                sudo service docker restart
+                ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
             else
-                sudo service docker restart || true
+                warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
+                info "nvidia-container-toolkit'in aktif olması için Windows üzerinden Docker Desktop'ı yeniden başlatmanız gerekebilir."
             fi
             ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
         else
