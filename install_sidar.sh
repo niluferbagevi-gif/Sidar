@@ -3082,8 +3082,9 @@ main() {
     prepare_docker_for_migrations
     # Önce DB migrasyonu: olası bağlantı/şema hataları uzun model indirme öncesi görülsün.
     run_migrations
-    download_ollama_models
+    # Hızlı geri bildirim için smoke testleri büyük model indirme adımından önce çalıştır.
     run_smoke_tests
+    download_ollama_models
     run_test_artifact_audit
     print_summary
     launch_docker_services
