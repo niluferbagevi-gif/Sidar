@@ -584,6 +584,62 @@ async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) ->
 
 
 @pytest.mark.asyncio
+async def test_ollama_missing_model_error_suggests_pull_command(respx_mock_router) -> None:
+    client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b"))
+    respx_mock_router.post("http://localhost:11434/api/chat").mock(
+        return_value=httpx.Response(404, json={"error": "model 'qwen2.5-coder:7b' not found"})
+    )
+
+    with pytest.raises(llm_client.LLMAPIError, match="ollama pull qwen2.5-coder:7b") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "ollama"
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_missing_model_emits_runtime_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b"))
+
+    class _DummyResp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"error":"model \\"qwen2.5-coder:7b\\" not found"}\n'
+
+    class _DummyCM:
+        async def __aenter__(self):
+            return _DummyResp()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _DummyClient:
+        def stream(self, *_args, **_kwargs):
+            return _DummyCM()
+
+        async def aclose(self):
+            return None
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):  # noqa: ARG001
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())  # noqa: ARG005
+
+    chunks = await _collect(
+        client._stream_response(
+            "http://localhost:11434/api/chat",
+            {"model": "qwen2.5-coder:7b", "messages": [], "stream": True},
+            llm_client.httpx.Timeout(10, connect=1),
+        )
+    )
+    assert chunks
+    assert "ollama pull qwen2.5-coder:7b" in chunks[0]
+
+
+@pytest.mark.asyncio
 async def test_openai_stream_parser(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)

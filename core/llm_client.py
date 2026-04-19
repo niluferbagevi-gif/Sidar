@@ -465,6 +465,16 @@ class OllamaClient(BaseLLMClient):
     def json_mode_config(self) -> Dict[str, Any]:
         return {"format": SIDAR_TOOL_JSON_SCHEMA}
 
+    @staticmethod
+    def _build_missing_model_guidance(target_model: str, error_text: str) -> Optional[str]:
+        normalized = (error_text or "").lower()
+        if ("model" in normalized) and ("not found" in normalized or "bulunamad" in normalized):
+            return (
+                f"Ollama modeli bulunamadı: '{target_model}'. "
+                f"Lütfen terminalde `ollama pull {target_model}` komutunu çalıştırın."
+            )
+        return None
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -518,6 +528,10 @@ class OllamaClient(BaseLLMClient):
         except LLMAPIError:
             raise
         except Exception as exc:
+            guidance = self._build_missing_model_guidance(target_model, str(exc))
+            if guidance:
+                logger.warning("Ollama eksik model: %s", guidance)
+                raise LLMAPIError("ollama", guidance, retryable=False) from exc
             logger.error("Ollama hata: %s", exc)
             raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
         finally:
@@ -561,6 +575,18 @@ class OllamaClient(BaseLLMClient):
                         continue
                     try:
                         body = json.loads(line)
+                        err = str(body.get("error", "") or "")
+                        if err:
+                            guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
+                            if guidance:
+                                yield json.dumps(
+                                    {
+                                        "tool": "final_answer",
+                                        "argument": f"\n[HATA] {guidance}",
+                                        "thought": "Hata",
+                                    }
+                                )
+                                return
                         chunk = body.get("message", {}).get("content", "")
                         if chunk:
                             yield chunk
@@ -577,6 +603,18 @@ class OllamaClient(BaseLLMClient):
                         continue
                     try:
                         body = json.loads(line)
+                        err = str(body.get("error", "") or "")
+                        if err:
+                            guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
+                            if guidance:
+                                yield json.dumps(
+                                    {
+                                        "tool": "final_answer",
+                                        "argument": f"\n[HATA] {guidance}",
+                                        "thought": "Hata",
+                                    }
+                                )
+                                return
                         chunk = body.get("message", {}).get("content", "")
                         if chunk:
                             yield chunk
@@ -586,6 +624,18 @@ class OllamaClient(BaseLLMClient):
             if buffer.strip():
                 try:
                     body = json.loads(buffer)
+                    err = str(body.get("error", "") or "")
+                    if err:
+                        guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
+                        if guidance:
+                            yield json.dumps(
+                                {
+                                    "tool": "final_answer",
+                                    "argument": f"\n[HATA] {guidance}",
+                                    "thought": "Hata",
+                                }
+                            )
+                            return
                     chunk = body.get("message", {}).get("content", "")
                     if chunk:
                         yield chunk
