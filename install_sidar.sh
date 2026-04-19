@@ -273,6 +273,40 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
+ensure_current_user_in_docker_group() {
+    local current_user="${USER:-$(id -un 2>/dev/null || true)}"
+    [[ -n "$current_user" ]] || return 0
+
+    if ! getent group docker >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if id -nG "$current_user" 2>/dev/null | tr ' ' '\n' | grep -qx "docker"; then
+        return 0
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        warn "Kullanıcı '${current_user}' docker grubunda değil; sudo bulunamadığı için otomatik ekleme atlandı."
+        return 0
+    fi
+
+    info "Kullanıcı '${current_user}' docker grubuna ekleniyor (usermod -aG docker)."
+    if [[ "$NO_INTERACTION" == true ]]; then
+        if ! sudo -n usermod -aG docker "$current_user" >/dev/null 2>&1; then
+            warn "--ci/--no-interaction modunda docker grubu güncellenemedi (sudo parolasız değil). Manuel komut: sudo usermod -aG docker $current_user"
+            return 0
+        fi
+    else
+        if ! sudo usermod -aG docker "$current_user"; then
+            warn "Kullanıcı docker grubuna eklenemedi. Manuel komut: sudo usermod -aG docker $current_user"
+            return 0
+        fi
+    fi
+
+    ok "Kullanıcı '${current_user}' docker grubuna eklendi."
+    info "Grup üyeliğinin etkili olması için oturumu kapatıp yeniden açın veya 'newgrp docker' çalıştırın."
+}
+
 validate_monitoring_mount_paths() {
     local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
     local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
@@ -1146,6 +1180,23 @@ is_local_ollama_url() {
     [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
 }
 
+wait_for_ollama_api_ready() {
+    local version_url="$1"
+    local max_wait_seconds="${2:-10}"
+    local poll_interval_seconds="${3:-1}"
+    local elapsed=0
+
+    while (( elapsed < max_wait_seconds )); do
+        if curl -sf "$version_url" &>/dev/null; then
+            return 0
+        fi
+        sleep "$poll_interval_seconds"
+        elapsed=$((elapsed + poll_interval_seconds))
+    done
+
+    return 1
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -1529,6 +1580,7 @@ ensure_prerequisites() {
         local docker_ver
         docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)
         ok "Docker ${docker_ver:-yüklü}"
+        ensure_current_user_in_docker_group
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
         else
@@ -1639,7 +1691,8 @@ ensure_prerequisites() {
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum 10 saniye)..."
+    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" 10 1; then
         ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
         warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
@@ -1934,9 +1987,11 @@ install_playwright_browsers() {
     fi
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
-        info "Chromium ve Firefox motorları kuruluyor..."
+        local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
+        info "Chromium ve Firefox motorları kuruluyor (timeout=${pw_timeout_ms}ms)..."
         local _pw_log; _pw_log=$(mktemp)
-        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
+        if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
+            "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
             # Zaten kurulu paketlerin "is already the newest version" satırlarını filtrele
             grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                 "$_pw_log" || true
@@ -2457,13 +2512,16 @@ harden_database_credentials() {
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
                         info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
-                        if command -v docker &>/dev/null; then
+                        if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                             local detected_pg_volume=""
                             detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
                             if [[ -n "$detected_pg_volume" ]]; then
                                 warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
                                 info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
                             fi
+                        else
+                            warn "Docker daemon erişilemediği için PostgreSQL volume tespiti atlandı."
+                            info "Docker entegrasyonunu tamamladıktan sonra manuel çalıştırın: docker compose up -d postgres redis"
                         fi
                     else
                         warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
@@ -3381,6 +3439,10 @@ PY
                 fi
                 info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
+                if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
+                    warn "MIGRATION_DOCKER_POLICY=disabled olduğu için kurulum migrasyon olmadan devam ediyor."
+                    return
+                fi
                 fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
         fi
@@ -3487,6 +3549,16 @@ prepare_docker_for_migrations() {
     elif command -v docker-compose &>/dev/null; then
         docker_compose_cmd=(docker-compose)
     else
+        return
+    fi
+
+    if ! ensure_docker_daemon_running; then
+        warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 için öneri: Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+        fi
+        info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
+        MIGRATION_DOCKER_POLICY="disabled"
         return
     fi
 
@@ -3981,38 +4053,15 @@ launch_docker_services() {
     case "${start_docker:-$start_default}" in
         [EeYy]*)
             echo "── Docker Servis Kontrolü ──"
-            if ! docker info > /dev/null 2>&1; then
-                echo "⚠️ Docker motoru şu anda çalışmıyor."
-                echo "ℹ️ Docker başlatılmaya çalışılıyor..."
-
-                # WSL2 / Linux Native kontrolü (başta belirlenen WSL2 bayrağı kullanılır)
-                if [[ "$WSL2" == true ]]; then
-                    echo "WSL ortamı algılandı. Service üzerinden başlatılıyor..."
-                    if command -v sudo &>/dev/null; then
-                        sudo service docker start
-                    else
-                        service docker start
-                    fi
-                else
-                    echo "Linux ortamı algılandı. Systemctl üzerinden başlatılıyor..."
-                    if command -v sudo &>/dev/null; then
-                        sudo systemctl start docker
-                    else
-                        systemctl start docker
-                    fi
-                fi
-
-                # Docker'ın ayağa kalkması için biraz bekle
-                sleep 5
-
-                if ! docker info > /dev/null 2>&1; then
-                    echo "❌ Docker başlatılamadı! Lütfen Docker Desktop'ı veya Docker servisini manuel olarak başlatın."
-                    exit 1
-                else
-                    echo "✅ Docker başarıyla başlatıldı."
-                fi
+            if ensure_docker_daemon_running; then
+                echo "✅ Docker motoru erişilebilir."
             else
-                echo "✅ Docker motoru zaten çalışıyor."
+                warn "Docker motoruna erişilemediği için arka plan servis başlatma adımı atlandı."
+                if [[ "$WSL2" == true ]]; then
+                    info "Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+                fi
+                info "Entegrasyon tamamlandıktan sonra manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d"
+                return
             fi
 
             info "Docker Compose servisleri başlatılıyor..."
