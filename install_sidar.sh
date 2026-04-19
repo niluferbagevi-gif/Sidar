@@ -3964,7 +3964,7 @@ run_smoke_tests() {
 
 wait_for_core_docker_health_before_smoke_tests() {
     local -a docker_compose_cmd=()
-    local -a containers=("sidar_postgres" "sidar_redis")
+    local -a services=("postgres" "redis")
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -3983,22 +3983,25 @@ wait_for_core_docker_health_before_smoke_tests() {
     info "Smoke test öncesi Docker servis health kontrolleri yapılıyor (postgres/redis)..."
     "${docker_compose_cmd[@]}" ps --status running postgres redis >/dev/null 2>&1 || true
 
-    local container_name=""
+    local svc=""
+    local container_id=""
     local state=""
-    for container_name in "${containers[@]}"; do
-        if ! docker inspect "$container_name" >/dev/null 2>&1; then
+    for svc in "${services[@]}"; do
+        container_id=$("${docker_compose_cmd[@]}" ps -q "$svc" 2>/dev/null | head -n1 || true)
+        if [[ -z "$container_id" ]]; then
+            warn "'$svc' servisi için container bulunamadı. Compose projesi ayakta mı?"
             continue
         fi
 
         for _ in {1..30}; do
-            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || echo "unknown")
+            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo "unknown")
             case "$state" in
                 healthy|running)
-                    ok "Container hazır: ${container_name} (${state})"
+                    ok "'$svc' servisi hazır: ${container_id} (${state})"
                     break
                     ;;
                 exited|dead|unhealthy)
-                    warn "Container sağlıksız görünüyor: ${container_name} (${state})"
+                    warn "'$svc' servisi sağlıksız görünüyor: ${container_id} (${state})"
                     return 0
                     ;;
             esac
