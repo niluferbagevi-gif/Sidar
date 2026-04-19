@@ -182,6 +182,27 @@ docker_cli_healthy() {
     return 0
 }
 
+command_points_to_windows_exe() {
+    local cmd_name="$1"
+    local cmd_path=""
+    local resolved_path=""
+
+    cmd_path="$(command -v "$cmd_name" 2>/dev/null || true)"
+    [[ -n "$cmd_path" ]] || return 1
+
+    resolved_path="$(readlink -f "$cmd_path" 2>/dev/null || echo "$cmd_path")"
+
+    # WSL interop ile görünen Windows binary'lerini Linux kurulu saymıyoruz.
+    if [[ "$cmd_path" == *.exe ]] || [[ "$resolved_path" == *.exe ]]; then
+        return 0
+    fi
+    if [[ "$resolved_path" =~ ^/mnt/[a-z]/ ]] || [[ "$resolved_path" =~ ^//wsl\\.localhost/ ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -1235,9 +1256,12 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js (v20.x) durumu kontrol ediliyor..."
-        if command -v node &>/dev/null && node -v | grep -q "^v20"; then
-            ok "Node.js 20.x zaten kurulu: $(node -v)"
+        if command -v node &>/dev/null && ! command_points_to_windows_exe node && node -v | grep -q "^v20"; then
+            ok "Node.js 20.x (Linux) zaten kurulu: $(node -v)"
         else
+            if command -v node &>/dev/null && command_points_to_windows_exe node; then
+                warn "WSL interop ile Windows Node.js tespit edildi; Linux kurulumu yapılacak."
+            fi
             info "Node.js 20.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
@@ -1268,10 +1292,10 @@ install_system_dependencies() {
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                if command -v node &>/dev/null; then
+                if command -v node &>/dev/null && ! command_points_to_windows_exe node; then
                     warn "Sistemde node bulundu ($(node -v 2>/dev/null || echo 'sürüm alınamadı'))."
                     warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    if command -v npm &>/dev/null; then
+                    if command -v npm &>/dev/null && ! command_points_to_windows_exe npm; then
                         ok "npm zaten mevcut: $(npm -v 2>/dev/null || echo 'sürüm alınamadı')"
                     else
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
@@ -1350,7 +1374,7 @@ ensure_prerequisites() {
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
     fi
 
-    if command -v conda &>/dev/null; then
+    if command -v conda &>/dev/null && ! command_points_to_windows_exe conda; then
         USE_CONDA=true
         ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
     elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
@@ -1360,6 +1384,9 @@ ensure_prerequisites() {
         USE_CONDA=true
         ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
     else
+        if command -v conda &>/dev/null && command_points_to_windows_exe conda; then
+            warn "WSL interop ile Windows conda tespit edildi; Linux Miniconda kurulacak."
+        fi
         warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
 
         OS="$(uname -s)"
