@@ -402,6 +402,61 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+wait_for_compose_services_health() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local service_name=""
+    local container_id=""
+    local state=""
+
+    [[ ${#services[@]} -gt 0 ]] || return 0
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; compose health bekleme adımı atlanıyor."
+        return 0
+    fi
+
+    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]})..."
+    for service_name in "${services[@]}"; do
+        container_id="$("${compose_cmd[@]}" ps -q "$service_name" 2>/dev/null | head -n1 || true)"
+        if [[ -z "$container_id" ]]; then
+            warn "Servis için container ID alınamadı: ${service_name} (health bekleme atlandı)."
+            continue
+        fi
+
+        for _ in {1..45}; do
+            state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+            case "$state" in
+                healthy|running)
+                    ok "Servis hazır: ${service_name} (${state})"
+                    break
+                    ;;
+                unhealthy|exited|dead)
+                    warn "Servis sağlıksız durumda: ${service_name} (${state})"
+                    return 1
+                    ;;
+            esac
+            sleep 2
+        done
+
+        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+        if [[ "$state" != "healthy" && "$state" != "running" ]]; then
+            warn "Servis health timeout: ${service_name} (son durum: ${state})"
+            return 1
+        fi
+    done
+
+    return 0
+}
+
 maybe_reset_postgres_volume_after_password_hardening() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -3426,6 +3481,7 @@ run_migrations() {
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
             start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
             wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; sonraki adımlarda bağlantı hatası oluşabilir."
         else
             fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
@@ -3479,6 +3535,7 @@ PY
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
                 fi
@@ -3537,6 +3594,7 @@ PY
                     fi
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
 
                     wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
@@ -3619,6 +3677,7 @@ prepare_docker_for_migrations() {
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
+        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
         wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
         return
     fi
@@ -3633,6 +3692,7 @@ prepare_docker_for_migrations() {
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
             wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
             ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
