@@ -3485,7 +3485,12 @@ run_migrations() {
         return
     fi
 
-    info "DATABASE_URL: $DB_URL"
+    # Güvenlik: DB_URL içindeki parolayı loglarda maskele
+    local masked_db_url="$DB_URL"
+    if [[ "$DB_URL" =~ ^(postgresql(\+asyncpg)?://[^:/?#]+:)([^@]+)(@.+)$ ]]; then
+        masked_db_url="${BASH_REMATCH[1]}***${BASH_REMATCH[4]}"
+    fi
+    info "DATABASE_URL: $masked_db_url"
 
     if [[ "$DOCKER_ONLY" == true ]]; then
         DOCKER_COMPOSE_CMD=()
