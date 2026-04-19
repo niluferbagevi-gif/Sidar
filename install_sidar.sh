@@ -1995,19 +1995,34 @@ install_playwright_browsers() {
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-        info "Chromium ve Firefox motorları kuruluyor (timeout=${pw_timeout_ms}ms)..."
-        local _pw_log; _pw_log=$(mktemp)
+        local _pw_deps_log; _pw_deps_log=$(mktemp)
+        local _pw_install_log; _pw_install_log=$(mktemp)
+
+        info "Playwright sistem bağımlılıkları kuruluyor (apt/sudo gerekebilir)..."
         if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-            "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
-            # Zaten kurulu paketlerin "is already the newest version" satırlarını filtrele
+            "${PY_CMD[@]}" -m playwright install-deps chromium firefox >"$_pw_deps_log" 2>&1; then
             grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                "$_pw_log" || true
+                "$_pw_deps_log" || true
+            ok "Playwright sistem bağımlılıkları doğrulandı."
+        else
+            cat "$_pw_deps_log" >&2
+            warn "Playwright sistem bağımlılıkları kurulamadı. Manuel komut: python -m playwright install-deps chromium firefox"
+            rm -f "$_pw_deps_log" "$_pw_install_log"
+            return
+        fi
+
+        info "Chromium ve Firefox motorları kullanıcı bağlamında kuruluyor (timeout=${pw_timeout_ms}ms)..."
+        if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
+            "${PY_CMD[@]}" -m playwright install chromium firefox >"$_pw_install_log" 2>&1; then
+            grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                "$_pw_install_log" || true
             ok "Playwright motorları kuruldu (chromium, firefox)."
         else
-            cat "$_pw_log" >&2
-            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install --with-deps chromium firefox"
+            cat "$_pw_install_log" >&2
+            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install chromium firefox"
         fi
-        rm -f "$_pw_log"
+
+        rm -f "$_pw_deps_log" "$_pw_install_log"
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
