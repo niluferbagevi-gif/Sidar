@@ -14,7 +14,9 @@ from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
 
 
-MODEL_NAME = "qwen2.5-coder:1.5b"
+# Fresh kurulumda installer'ın .env üzerinden hazırladığı model ile hizalı olsun.
+# İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
+MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:3b"
 
 
 def is_gpu_available() -> bool:
