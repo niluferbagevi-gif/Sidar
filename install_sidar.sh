@@ -1942,6 +1942,7 @@ setup_uv() {
             "https://astral.sh/uv/install.sh" \
             "${UV_INSTALL_SHA256:-}" \
             "uv_install"
+        validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
         sh "$DOWNLOADED_SCRIPT_FILE"
         rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
