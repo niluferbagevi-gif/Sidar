@@ -483,6 +483,17 @@ maybe_reset_postgres_volume_after_password_hardening() {
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
             fi
+            if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
+                warn "Agresif container temizliği etkin: projeye ait asılı kalan container'lar zorla kaldırılıyor."
+                local -a project_container_ids=()
+                if [[ -n "$compose_project_name" ]]; then
+                    if mapfile -t project_container_ids < <(docker ps -a --filter "label=com.docker.compose.project=${compose_project_name}" --format '{{.ID}}' 2>/dev/null); then
+                        if [[ ${#project_container_ids[@]} -gt 0 ]]; then
+                            docker rm -f "${project_container_ids[@]}" >/dev/null 2>&1 || warn "Projeye ait bazı container'lar zorla kaldırılamadı."
+                        fi
+                    fi
+                fi
+            fi
             local removed_any=false
             for volume_name in "${existing_pg_volumes[@]}"; do
                 local -a volume_container_ids=()
@@ -490,6 +501,15 @@ maybe_reset_postgres_volume_after_password_hardening() {
                     if [[ ${#volume_container_ids[@]} -gt 0 ]]; then
                         warn "Volume bağlı container(lar) bulundu (${volume_name}); zorla kaldırılıyor."
                         docker rm -f "${volume_container_ids[@]}" >/dev/null 2>&1 || warn "Volume kullanan container'lar kaldırılamadı: ${volume_name}"
+                    fi
+                fi
+                if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
+                    local -a dangling_by_name_container_ids=()
+                    if mapfile -t dangling_by_name_container_ids < <(docker ps -a --filter "name=${volume_name}" --format '{{.ID}}' 2>/dev/null); then
+                        if [[ ${#dangling_by_name_container_ids[@]} -gt 0 ]]; then
+                            warn "Agresif mod: volume adıyla eşleşen asılı container(lar) kaldırılıyor (${volume_name})."
+                            docker rm -f "${dangling_by_name_container_ids[@]}" >/dev/null 2>&1 || warn "Volume adına göre bulunan container'lar kaldırılamadı: ${volume_name}"
+                        fi
                     fi
                 fi
                 if docker volume rm "$volume_name" >/dev/null 2>&1; then
@@ -813,6 +833,7 @@ RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 ENABLE_AUDIO=false
+FORCE_POSTGRES_VOLUME_CLEANUP=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -845,12 +866,14 @@ for arg in "$@"; do
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
+        --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
+            echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
             echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
             echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
             echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
@@ -865,7 +888,7 @@ for arg in "$@"; do
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
     esac
 done
 
