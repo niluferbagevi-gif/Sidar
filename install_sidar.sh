@@ -3381,6 +3381,10 @@ PY
                 fi
                 info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
+                if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
+                    warn "MIGRATION_DOCKER_POLICY=disabled olduğu için kurulum migrasyon olmadan devam ediyor."
+                    return
+                fi
                 fail "Veritabanına erişilemediği için migrasyon tamamlanamadı. Kurulum güvenli şekilde durduruldu."
             fi
         fi
@@ -3487,6 +3491,16 @@ prepare_docker_for_migrations() {
     elif command -v docker-compose &>/dev/null; then
         docker_compose_cmd=(docker-compose)
     else
+        return
+    fi
+
+    if ! ensure_docker_daemon_running; then
+        warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 için öneri: Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+        fi
+        info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
+        MIGRATION_DOCKER_POLICY="disabled"
         return
     fi
 
