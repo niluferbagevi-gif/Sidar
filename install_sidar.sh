@@ -2939,7 +2939,9 @@ collect_api_keys_interactive() {
             lbl="$(_key_label "$mk")"
             printf "  %-46s : " "$lbl"
             input=""
-            read -r input || true
+            # Gizli giriş: anahtarlar terminalde görünmez; satır düzeni için ardından echo basılır.
+            IFS= read -rs input || true
+            echo ""
             _write_key "$mk" "$input"
         done
         echo ""
