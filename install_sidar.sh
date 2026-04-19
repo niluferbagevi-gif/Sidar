@@ -182,6 +182,36 @@ docker_cli_healthy() {
     return 0
 }
 
+is_windows_interop_binary_path() {
+    local bin_path="${1:-}"
+    [[ -z "$bin_path" ]] && return 1
+
+    # WSL üzerinde Windows binary'leri genellikle /mnt/<drive>/... altında ve .exe uzantılıdır.
+    [[ "$bin_path" == /mnt/[A-Za-z]/* ]] && return 0
+    [[ "$bin_path" == *.exe ]] && return 0
+    return 1
+}
+
+resolve_native_binary_path() {
+    local cmd_name="${1:-}"
+    local resolved_path=""
+    [[ -n "$cmd_name" ]] || return 1
+
+    resolved_path="$(type -P "$cmd_name" 2>/dev/null || true)"
+    [[ -n "$resolved_path" ]] || return 1
+
+    if is_windows_interop_binary_path "$resolved_path"; then
+        return 1
+    fi
+
+    echo "$resolved_path"
+}
+
+has_native_binary() {
+    local cmd_name="${1:-}"
+    resolve_native_binary_path "$cmd_name" >/dev/null
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -1235,9 +1265,14 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js (v20.x) durumu kontrol ediliyor..."
-        if command -v node &>/dev/null && node -v | grep -q "^v20"; then
-            ok "Node.js 20.x zaten kurulu: $(node -v)"
+        local node_bin=""
+        node_bin="$(resolve_native_binary_path node || true)"
+        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v20"; then
+            ok "Node.js 20.x zaten kurulu: $("$node_bin" -v)"
         else
+            if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
+                warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
+            fi
             info "Node.js 20.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
@@ -1268,11 +1303,14 @@ install_system_dependencies() {
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                if command -v node &>/dev/null; then
-                    warn "Sistemde node bulundu ($(node -v 2>/dev/null || echo 'sürüm alınamadı'))."
+                node_bin="$(resolve_native_binary_path node || true)"
+                if [[ -n "$node_bin" ]]; then
+                    warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
                     warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    if command -v npm &>/dev/null; then
-                        ok "npm zaten mevcut: $(npm -v 2>/dev/null || echo 'sürüm alınamadı')"
+                    local npm_bin=""
+                    npm_bin="$(resolve_native_binary_path npm || true)"
+                    if [[ -n "$npm_bin" ]]; then
+                        ok "npm zaten mevcut: $("$npm_bin" -v 2>/dev/null || echo 'sürüm alınamadı')"
                     else
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
                     fi
@@ -1350,9 +1388,13 @@ ensure_prerequisites() {
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
     fi
 
-    if command -v conda &>/dev/null; then
+    local conda_bin=""
+    conda_bin="$(resolve_native_binary_path conda || true)"
+    if [[ -n "$conda_bin" ]]; then
         USE_CONDA=true
-        ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
+        ok "Conda $("$conda_bin" --version | cut -d' ' -f2) zaten yüklü."
+    elif command -v conda &>/dev/null; then
+        warn "Sadece Windows Interop conda bulundu ($(command -v conda)); Linux Miniconda kurulacak."
     elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
         # shellcheck disable=SC1091
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
@@ -1894,21 +1936,30 @@ setup_react_frontend() {
         return
     fi
 
-    if ! command -v npm &>/dev/null; then
+    local npm_bin=""
+    npm_bin="$(resolve_native_binary_path npm || true)"
+    if [[ -z "$npm_bin" ]]; then
+        if command -v npm &>/dev/null; then
+            warn "Sadece Windows Interop npm bulundu ($(command -v npm)). Linux Node.js/npm kullanın."
+        fi
         warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
         echo "       cd web_ui_react && npm ci && npm run build"
         REACT_UI_STATUS="npm_yok"
         return
     fi
 
-    if command -v node &>/dev/null; then
-        NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
+    local node_bin=""
+    node_bin="$(resolve_native_binary_path node || true)"
+    if [[ -n "$node_bin" ]]; then
+        NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
         if [[ "$NODE_MAJOR" -lt 20 ]]; then
-            warn "Node.js sürümü düşük: $(node -v). React build için Node.js 20+ önerilir."
+            warn "Node.js sürümü düşük: $("$node_bin" -v). React build için Node.js 20+ önerilir."
             warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından otomatik ayarlanır)"
         else
-            ok "Node.js sürümü uygun: $(node -v)"
+            ok "Node.js sürümü uygun: $("$node_bin" -v)"
         fi
+    elif command -v node &>/dev/null; then
+        warn "Sadece Windows Interop node bulundu ($(command -v node)). React build için Linux Node.js kullanılmalı."
     fi
 
     if [[ "$FORCE_REACT_BUILD" != true && "$INSTALL_DEV" == false && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
