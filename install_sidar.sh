@@ -1438,10 +1438,10 @@ sync_repo() {
 
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
 install_system_dependencies() {
-    step "Sistem Güncelleme ve Temel Paketlerin Kurulumu"
+    step "Temel Sistem Paketlerinin Kurulumu"
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
+        info "Linux temel paketleri kuruluyor (tam sistem upgrade atlanır)..."
         local -a ns_source_files=()
         mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/node_20.x' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
         if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
@@ -1459,8 +1459,6 @@ install_system_dependencies() {
             sudo rm -f /etc/apt/sources.list.d/nodesource.list
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
         fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
-
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
