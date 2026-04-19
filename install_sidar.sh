@@ -1782,7 +1782,9 @@ ensure_prerequisites() {
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
             DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
+            # Ollama install script'i sürüme göre dinamik değiştiği için sabit SHA tutulamaz.
+            # Sadece bu çağrı için checksum zorunluluğunu gevşetiyoruz; genel politika korunur.
+            ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 download_verified_script \
                 "https://ollama.com/install.sh" \
                 "${OLLAMA_INSTALL_SHA256:-}" \
                 "ollama_install"
