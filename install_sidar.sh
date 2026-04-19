@@ -1988,14 +1988,14 @@ install_python_deps() {
         fi
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        if ! run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
+        if ! uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
             rm -f "$uv_export_file"
             fail "uv pip sync başarısız oldu. Conda ortamına bağımlılıklar kurulamadı."
         fi
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
-        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
+        if ! "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
             fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
         fi
     fi
