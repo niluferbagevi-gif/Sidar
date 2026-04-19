@@ -516,7 +516,11 @@ maybe_reset_postgres_volume_after_password_hardening() {
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
         POSTGRES_VOLUME_RESET_FAILED=true
-        return 1
+        if [[ "${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-0}" == "1" ]]; then
+            return 1
+        fi
+        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
+        return 0
     fi
     return 0
 }
