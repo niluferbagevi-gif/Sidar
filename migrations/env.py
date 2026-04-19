@@ -3,9 +3,15 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 import os
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
+    def load_dotenv(*_args, **_kwargs):
+        return False
 try:
     from sqlalchemy import create_engine
 except ImportError:  # pragma: no cover - only for minimal test doubles
@@ -23,6 +29,15 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = None
+
+
+def _preload_dotenv_for_alembic() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+
+
+_preload_dotenv_for_alembic()
 
 
 def _load_database_url() -> str | None:
