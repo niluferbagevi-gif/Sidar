@@ -2539,6 +2539,37 @@ PY
     echo "$generated"
 }
 
+upsert_env_key_value() {
+    local env_file="$1"
+    local env_key="$2"
+    local env_value="$3"
+    local tmp_file=""
+
+    [[ -f "$env_file" ]] || return 1
+    [[ -n "$env_key" ]] || return 1
+
+    tmp_file=$(mktemp)
+    awk -v key="$env_key" -v value="$env_value" '
+        BEGIN { updated=0 }
+        $0 ~ ("^" key "=") {
+            if (!updated) {
+                print key "=" value
+                updated=1
+            }
+            next
+        }
+        { print }
+        END {
+            if (!updated) {
+                print key "=" value
+            }
+        }
+    ' "$env_file" > "$tmp_file"
+
+    mv "$tmp_file" "$env_file"
+    return 0
+}
+
 harden_database_credentials() {
     local env_file="$1"
     local db_url=""
@@ -2568,18 +2599,18 @@ harden_database_credentials() {
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
                         safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        upsert_env_key_value "$env_file" "DATABASE_URL" "$safe_db_url"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
                         # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
                         # DATABASE_URL ile senkron kalmalıdır.
                         if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                            upsert_env_key_value "$env_file" "POSTGRES_PASSWORD" "$generated_password"
                         else
                             echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
                         fi
                         if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                            upsert_env_key_value "$env_file" "POSTGRES_USER" "$db_user"
                         else
                             echo "POSTGRES_USER=${db_user}" >> "$env_file"
                         fi
@@ -2670,14 +2701,14 @@ ensure_database_url_defaults() {
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
-        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
+        upsert_env_key_value "$env_file" "DATABASE_URL" "$DEFAULT_DATABASE_URL"
         ok ".env: DATABASE_URL PostgreSQL varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
         warn ".env içinde eski 'lotus' referansı içeren DATABASE_URL tespit edildi: $current_db_url"
-        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
+        upsert_env_key_value "$env_file" "DATABASE_URL" "$DEFAULT_DATABASE_URL"
         ok ".env: DATABASE_URL Sidar varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
     fi
 }
