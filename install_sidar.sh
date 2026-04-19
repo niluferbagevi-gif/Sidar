@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.1
+# Sürüm : 5.2.2
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -10,6 +10,7 @@
 #   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
+#   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -970,7 +971,7 @@ for arg in "$@"; do
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
-        --ci|--no-interaction) NO_INTERACTION=true ;;
+        --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -981,7 +982,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -998,9 +999,10 @@ for arg in "$@"; do
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
+            echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1040,7 +1042,7 @@ CONDA_BASE_UPDATE_DONE=false
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.2)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
