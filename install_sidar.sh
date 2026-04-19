@@ -4208,6 +4208,43 @@ launch_docker_services() {
     esac
 }
 
+# ── Çalışma Modu Seçimi (Erken) ──────────────────────────────────────────────
+select_runtime_mode_early() {
+    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+    local runtime_answer=""
+
+    if [[ "$runtime_mode" == "ask" ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            runtime_mode="docker"
+            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
+        else
+            echo ""
+            info "Kurulum başlangıcında çalışma modu seçimi:"
+            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+                :
+            else
+                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                runtime_answer="1"
+            fi
+            case "${runtime_answer:-1}" in
+                2) runtime_mode="docker" ;;
+                *) runtime_mode="local" ;;
+            esac
+        fi
+    fi
+
+    APP_RUNTIME_MODE="$runtime_mode"
+    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
+
+    if [[ "$runtime_mode" == "docker" ]]; then
+        info "Seçilen çalışma modu: docker (tam docker akışı uygulanacak)."
+    else
+        info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)."
+    fi
+}
+
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
     local vscode_mode="none"
@@ -4365,35 +4402,51 @@ main() {
     sync_repo
     cd "$SCRIPT_DIR"
     ensure_prerequisites
+    select_runtime_mode_early
     detect_gpu
     setup_nvidia_docker
-    if [[ "$USE_CONDA" == true ]]; then
-        # Conda akışı: environment.yml içindeki uv ile devam et
-        setup_python_env
-        setup_uv
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        if [[ "$USE_CONDA" == true ]]; then
+            # Conda akışı: environment.yml içindeki uv ile devam et
+            setup_python_env
+            setup_uv
+        else
+            # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
+            setup_uv
+            setup_python_env
+        fi
+        install_python_deps
+        verify_torch_cuda
     else
-        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-        setup_uv
-        setup_python_env
+        info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."
     fi
-    install_python_deps
-    verify_torch_cuda
     create_directories
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
-    setup_react_frontend
     setup_env_file
-    install_playwright_browsers
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        setup_react_frontend
+        install_playwright_browsers
+    else
+        info "Tam Docker modu: lokal React build ve Playwright kurulumu atlanıyor."
+    fi
     setup_shell_activation_shortcut
     setup_wsl2_audio
-    # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
-    prepare_docker_for_migrations
-    # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
-    run_migrations
-    # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
-    download_ollama_models
-    run_smoke_tests
-    run_test_artifact_audit
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
+        prepare_docker_for_migrations
+        # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
+        run_migrations
+        # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
+        download_ollama_models
+        run_smoke_tests
+        run_test_artifact_audit
+    else
+        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        info "Tam Docker modu: lokal migrasyon/smoke-test/audit adımları atlanıyor."
+    fi
     launch_docker_services
     print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
