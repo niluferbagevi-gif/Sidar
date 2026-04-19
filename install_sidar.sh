@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.2
+# Sürüm : 5.2.3
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -1042,9 +1042,21 @@ CONDA_BASE_UPDATE_DONE=false
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.2)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+configure_conda_outdated_warning_policy() {
+    if [[ "${USE_CONDA:-false}" != true ]]; then
+        return 0
+    fi
+
+    if conda config --set notify_outdated_conda false >/dev/null 2>&1; then
+        info "Conda 'notify_outdated_conda' uyarısı devre dışı bırakıldı."
+    else
+        warn "Conda notify_outdated_conda ayarı güncellenemedi; varsayılan davranışla devam ediliyor."
+    fi
 }
 
 update_conda_base_if_available() {
@@ -1055,6 +1067,8 @@ update_conda_base_if_available() {
     if [[ "${CONDA_BASE_UPDATE_DONE:-false}" == true ]]; then
         return 0
     fi
+
+    configure_conda_outdated_warning_policy
 
     info "Conda base ortamı sessiz modda güncelleniyor..."
     if conda update -n base -c defaults conda -y --quiet >/dev/null 2>&1; then
