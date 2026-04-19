@@ -297,6 +297,26 @@ wsl_ensure_key_once_in_wsl2_section() {
     return 1
 }
 
+resolve_windows_userprofile_path() {
+    local win_userprofile=""
+
+    # Kurumsal/kısıtlı ortamlarda cmd.exe interop kapalı olabilir.
+    # wslu (wslvar) varsa önce onu dene; yoksa cmd.exe fallback kullan.
+    if command -v wslvar &>/dev/null; then
+        win_userprofile="$(wslvar USERPROFILE 2>/dev/null | tr -d '\r' | tail -n1 || true)"
+    fi
+
+    if [[ -z "$win_userprofile" ]] && command -v cmd.exe &>/dev/null; then
+        win_userprofile="$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
+    fi
+
+    if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
+        echo "$win_userprofile"
+        return 0
+    fi
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -2363,14 +2383,11 @@ ASOUNDRC
     # ── RAM limiti kontrolü ve .wslconfig otomatik yapılandırma ──────────────
     local win_userprofile=""
     local wslconfig_path=""
-    if command -v cmd.exe &>/dev/null; then
-        win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
-            local drive_letter path_rest
-            drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
-            path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
-            wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
-        fi
+    if win_userprofile="$(resolve_windows_userprofile_path)"; then
+        local drive_letter path_rest
+        drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
+        path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
+        wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
     fi
 
     local host_ram_gb
