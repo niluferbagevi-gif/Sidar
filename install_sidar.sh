@@ -402,6 +402,61 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+wait_for_compose_services_health() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local service_name=""
+    local container_id=""
+    local state=""
+
+    [[ ${#services[@]} -gt 0 ]] || return 0
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; compose health bekleme adımı atlanıyor."
+        return 0
+    fi
+
+    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]})..."
+    for service_name in "${services[@]}"; do
+        container_id="$("${compose_cmd[@]}" ps -q "$service_name" 2>/dev/null | head -n1 || true)"
+        if [[ -z "$container_id" ]]; then
+            warn "Servis için container ID alınamadı: ${service_name} (health bekleme atlandı)."
+            continue
+        fi
+
+        for _ in {1..45}; do
+            state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+            case "$state" in
+                healthy|running)
+                    ok "Servis hazır: ${service_name} (${state})"
+                    break
+                    ;;
+                unhealthy|exited|dead)
+                    warn "Servis sağlıksız durumda: ${service_name} (${state})"
+                    return 1
+                    ;;
+            esac
+            sleep 2
+        done
+
+        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+        if [[ "$state" != "healthy" && "$state" != "running" ]]; then
+            warn "Servis health timeout: ${service_name} (son durum: ${state})"
+            return 1
+        fi
+    done
+
+    return 0
+}
+
 maybe_reset_postgres_volume_after_password_hardening() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -536,6 +591,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         E|e)
             reset_attempted=true
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            backup_postgres_before_volume_reset "${compose_cmd[@]}"
             local -a postgres_service_container_ids=()
             if mapfile -t postgres_service_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
                 if [[ ${#postgres_service_container_ids[@]} -gt 0 ]]; then
@@ -635,6 +691,57 @@ maybe_reset_postgres_volume_after_password_hardening() {
         warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
         return 0
     fi
+    return 0
+}
+
+backup_postgres_before_volume_reset() {
+    local -a compose_cmd=("$@")
+    local postgres_container_id=""
+    local backup_dir="$SCRIPT_DIR/backups"
+    local backup_file=""
+    local dump_error_file=""
+    local dump_ok=false
+    local candidate_db_user=""
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
+        return 0
+    fi
+
+    if mapfile -t _postgres_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
+        if [[ ${#_postgres_container_ids[@]} -gt 0 ]]; then
+            postgres_container_id="${_postgres_container_ids[0]}"
+        fi
+    fi
+
+    if [[ -z "$postgres_container_id" ]]; then
+        warn "postgres container bulunamadı; volume sıfırlama öncesi pg_dumpall yedeği alınamadı."
+        return 0
+    fi
+
+    mkdir -p "$backup_dir"
+    backup_file="$backup_dir/postgres_before_volume_reset_$(date +%Y%m%d_%H%M%S).sql"
+    dump_error_file="$(mktemp)"
+
+    for candidate_db_user in postgres sidar; do
+        if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
+            if [[ -s "$backup_file" ]]; then
+                dump_ok=true
+                break
+            fi
+        fi
+    done
+
+    if [[ "$dump_ok" == true ]]; then
+        ok "PostgreSQL hızlı yedek alındı: ${backup_file}"
+        info "Eski verileriniz ${backup_file} olarak kaydedildi, volume sıfırlanıyor."
+        rm -f "$dump_error_file"
+        return 0
+    fi
+
+    rm -f "$backup_file"
+    warn "Volume sıfırlama öncesi pg_dumpall yedeği alınamadı. Detay: $(cat "$dump_error_file" 2>/dev/null || echo 'bilinmeyen_hata')"
+    rm -f "$dump_error_file"
     return 0
 }
 
@@ -977,6 +1084,7 @@ RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 APP_RUNTIME_MODE="ask"
+USE_CONDA=false
 ENABLE_AUDIO=false
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 REACT_UI_STATUS="atlandı"
@@ -1463,79 +1571,8 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    # Conda kontrolü ve otomatik Miniconda kurulumu
-    MINICONDA_PREFIX="$HOME/miniconda3"
-
-    # Önce conda.sh üzerinden PATH'e ekle (terminal yeniden başlatılmamış olabilir)
-    if [[ -f "$MINICONDA_PREFIX/etc/profile.d/conda.sh" ]]; then
-        # shellcheck disable=SC1091
-        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-    fi
-
-    local conda_bin=""
-    conda_bin="$(resolve_native_binary_path conda || true)"
-    if [[ -n "$conda_bin" ]]; then
-        USE_CONDA=true
-        ok "Conda $("$conda_bin" --version | cut -d' ' -f2) zaten yüklü."
-    elif command -v conda &>/dev/null; then
-        warn "Sadece Windows Interop conda bulundu ($(command -v conda)); Linux Miniconda kurulacak."
-    elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
-        # shellcheck disable=SC1091
-        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-        conda init bash >/dev/null 2>&1 || true
-        USE_CONDA=true
-        ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
-    else
-        warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
-
-        OS="$(uname -s)"
-        ARCH="$(uname -m)"
-        MINICONDA_URL=""
-        MINICONDA_INSTALLER="/tmp/miniconda.sh"
-
-        case "$OS" in
-            Linux)
-                case "$ARCH" in
-                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" ;;
-                    aarch64|arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh" ;;
-                esac
-                ;;
-            Darwin)
-                case "$ARCH" in
-                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh" ;;
-                    arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh" ;;
-                esac
-                ;;
-        esac
-
-        if [[ -z "$MINICONDA_URL" ]]; then
-            USE_CONDA=false
-            warn "Miniconda için desteklenmeyen platform ($OS/$ARCH). uv venv fallback kullanılacak."
-        elif ! command -v curl &>/dev/null; then
-            USE_CONDA=false
-            warn "curl bulunamadı, Miniconda indirilemedi. uv venv fallback kullanılacak."
-        else
-            info "Miniconda indiriliyor: $MINICONDA_URL"
-            if curl -fsSL "$MINICONDA_URL" -o "$MINICONDA_INSTALLER"; then
-                info "Miniconda kuruluyor: $MINICONDA_PREFIX"
-                bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_PREFIX"
-                rm -f "$MINICONDA_INSTALLER"
-
-                # shellcheck disable=SC1091
-                source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-                conda init bash >/dev/null 2>&1 || true
-                USE_CONDA=true
-                ok "Miniconda kuruldu ve conda aktif edildi: $(conda --version | cut -d' ' -f2)"
-            else
-                USE_CONDA=false
-                warn "Miniconda indirilemedi. uv venv fallback kullanılacak."
-            fi
-        fi
-    fi
-
-    if [[ "$USE_CONDA" == true ]]; then
-        update_conda_base_if_available
-    fi
+    USE_CONDA=false
+    info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
 
     # Git
     if ! command -v git &>/dev/null; then
@@ -1601,7 +1638,7 @@ ensure_prerequisites() {
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
-    # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
+    # Python 3.11+ kontrolü (uv venv için sistem Python denetimi)
     if command -v python3 &>/dev/null; then
         PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
         PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
@@ -1609,7 +1646,7 @@ ensure_prerequisites() {
         if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 11 ]]; then
             ok "Python $PY_VER (sistem)"
         else
-            warn "Sistem Python'u $PY_VER — conda ortamı Python $PYTHON_VERSION ile oluşturulacak."
+            warn "Sistem Python'u $PY_VER — uv venv için Python $PYTHON_VERSION önerilir."
         fi
     fi
 
@@ -1992,34 +2029,20 @@ install_playwright_browsers() {
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-        local _pw_deps_log; _pw_deps_log=$(mktemp)
         local _pw_install_log; _pw_install_log=$(mktemp)
 
-        info "Playwright sistem bağımlılıkları kuruluyor (apt/sudo gerekebilir)..."
+        info "Playwright headless optimizasyonu: yalnızca Chromium (--with-deps) kuruluyor (timeout=${pw_timeout_ms}ms)..."
         if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-            "${PY_CMD[@]}" -m playwright install-deps chromium firefox >"$_pw_deps_log" 2>&1; then
-            grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                "$_pw_deps_log" || true
-            ok "Playwright sistem bağımlılıkları doğrulandı."
-        else
-            cat "$_pw_deps_log" >&2
-            warn "Playwright sistem bağımlılıkları kurulamadı. Manuel komut: python -m playwright install-deps chromium firefox"
-            rm -f "$_pw_deps_log" "$_pw_install_log"
-            return
-        fi
-
-        info "Chromium ve Firefox motorları kullanıcı bağlamında kuruluyor (timeout=${pw_timeout_ms}ms)..."
-        if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-            "${PY_CMD[@]}" -m playwright install chromium firefox >"$_pw_install_log" 2>&1; then
+            "${PY_CMD[@]}" -m playwright install --with-deps chromium >"$_pw_install_log" 2>&1; then
             grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                 "$_pw_install_log" || true
-            ok "Playwright motorları kuruldu (chromium, firefox)."
+            ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
         else
             cat "$_pw_install_log" >&2
-            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install chromium firefox"
+            warn "Playwright kurulumu başarısız oldu. Manuel komut: python -m playwright install --with-deps chromium"
         fi
 
-        rm -f "$_pw_deps_log" "$_pw_install_log"
+        rm -f "$_pw_install_log"
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
@@ -2716,6 +2739,19 @@ collect_api_keys_interactive() {
         ok ".env: ${key} güncellendi."
     }
 
+    _warn_if_missing_critical_provider_keys() {
+        local openai_key=""
+        local anthropic_key=""
+
+        openai_key=$(grep -E '^OPENAI_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+        anthropic_key=$(grep -E '^ANTHROPIC_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+
+        if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
+            warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
+            warn "[UYARI] Kurulum durdurulmadı. Lütfen .env dosyasını sonradan manuel güncelleyin."
+        fi
+    }
+
     # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
     # Dosya varsa etkileşimli (zenity/whiptail/read) adımı tamamen atlanır.
     _import_api_keys_from_file() {
@@ -2758,6 +2794,7 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2839,6 +2876,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2870,6 +2908,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2896,6 +2935,7 @@ collect_api_keys_interactive() {
         echo ""
     done
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+    _warn_if_missing_critical_provider_keys
 }
 
 report_env_api_key_status() {
@@ -3458,6 +3498,7 @@ run_migrations() {
             info "--docker-only: PostgreSQL/Redis Docker servisleri başlatılıyor..."
             start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
             wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; sonraki adımlarda bağlantı hatası oluşabilir."
         else
             fail "--docker-only aktif ancak docker compose bulunamadı. Migrasyon öncesi servisler başlatılamıyor."
@@ -3511,6 +3552,7 @@ PY
                     info "PostgreSQL erişilemedi ($DB_HOST:$DB_PORT/$DB_NAME). Docker servisleri otomatik başlatılıyor..."
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
                     wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
                 fi
@@ -3569,6 +3611,7 @@ PY
                     fi
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
+                    wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
 
                     wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
@@ -3651,6 +3694,7 @@ prepare_docker_for_migrations() {
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
+        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
         wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
         return
     fi
@@ -3665,6 +3709,7 @@ prepare_docker_for_migrations() {
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
             DOCKER_DB_SERVICES_STARTED=true
+            wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
             wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
             ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
             ;;
@@ -3997,13 +4042,8 @@ print_summary() {
         echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
     fi
     echo ""
-    if [[ "$USE_CONDA" == true ]]; then
-        echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
-        echo "       conda activate $CONDA_ENV_NAME"
-    else
-        echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
-        echo "       source .venv/bin/activate"
-    fi
+    echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
+    echo "       source .venv/bin/activate"
     echo ""
     echo -e "  3️⃣  Arka plan servisleri durumu:"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
@@ -4066,7 +4106,7 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  $CONDA_PYTHON_PATH -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
@@ -4208,6 +4248,43 @@ launch_docker_services() {
     esac
 }
 
+# ── Çalışma Modu Seçimi (Erken) ──────────────────────────────────────────────
+select_runtime_mode_early() {
+    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+    local runtime_answer=""
+
+    if [[ "$runtime_mode" == "ask" ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            runtime_mode="docker"
+            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
+        else
+            echo ""
+            info "Kurulum başlangıcında çalışma modu seçimi:"
+            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+                :
+            else
+                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                runtime_answer="1"
+            fi
+            case "${runtime_answer:-1}" in
+                2) runtime_mode="docker" ;;
+                *) runtime_mode="local" ;;
+            esac
+        fi
+    fi
+
+    APP_RUNTIME_MODE="$runtime_mode"
+    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
+
+    if [[ "$runtime_mode" == "docker" ]]; then
+        info "Seçilen çalışma modu: docker (tam docker akışı uygulanacak)."
+    else
+        info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)."
+    fi
+}
+
 # ── Kurulum Sonrası IDE Başlatma ─────────────────────────────────────────────
 launch_ide() {
     local vscode_mode="none"
@@ -4298,26 +4375,7 @@ setup_shell_activation_shortcut() {
     local marker_begin="# >>> Sidar shell helper >>>"
     local marker_end="# <<< Sidar shell helper <<<"
     local helper_body=""
-
-    if [[ "$USE_CONDA" == true ]]; then
-        local conda_base=""
-        conda_base=$(conda info --base 2>/dev/null || true)
-        helper_body=$(cat <<EOF
-${marker_begin}
-sidar_env() {
-  cd "$TARGET_DIR" || return 1
-  if [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$conda_base/etc/profile.d/conda.sh"
-  fi
-  conda activate "$CONDA_ENV_NAME"
-}
-alias sidar-env='sidar_env'
-${marker_end}
-EOF
-)
-    else
-        helper_body=$(cat <<EOF
+    helper_body=$(cat <<EOF
 ${marker_begin}
 sidar_env() {
   cd "$TARGET_DIR" || return 1
@@ -4328,7 +4386,6 @@ alias sidar-env='sidar_env'
 ${marker_end}
 EOF
 )
-    fi
 
     local rcfile
     for rcfile in "${rc_files[@]}"; do
@@ -4360,40 +4417,50 @@ main() {
     # Kritik sıra:
     # 1) Sistem bağımlılıkları (git/curl vb.)
     # 2) Repo senkronizasyonu (git clone/pull)
-    # 3) Ön koşul doğrulaması (Conda/FFmpeg/Docker/Ollama)
+    # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
     install_system_dependencies
     sync_repo
     cd "$SCRIPT_DIR"
     ensure_prerequisites
+    select_runtime_mode_early
     detect_gpu
     setup_nvidia_docker
-    if [[ "$USE_CONDA" == true ]]; then
-        # Conda akışı: environment.yml içindeki uv ile devam et
-        setup_python_env
-        setup_uv
-    else
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
         setup_uv
         setup_python_env
+        install_python_deps
+        verify_torch_cuda
+    else
+        info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."
     fi
-    install_python_deps
-    verify_torch_cuda
     create_directories
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
-    setup_react_frontend
     setup_env_file
-    install_playwright_browsers
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        setup_react_frontend
+        install_playwright_browsers
+    else
+        info "Tam Docker modu: lokal React build ve Playwright kurulumu atlanıyor."
+    fi
     setup_shell_activation_shortcut
     setup_wsl2_audio
-    # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
-    prepare_docker_for_migrations
-    # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
-    run_migrations
-    # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
-    download_ollama_models
-    run_smoke_tests
-    run_test_artifact_audit
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
+        prepare_docker_for_migrations
+        # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
+        run_migrations
+        # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
+        download_ollama_models
+        run_smoke_tests
+        run_test_artifact_audit
+    else
+        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        info "Tam Docker modu: lokal migrasyon/smoke-test/audit adımları atlanıyor."
+    fi
     launch_docker_services
     print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
