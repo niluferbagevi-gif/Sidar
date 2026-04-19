@@ -977,6 +977,7 @@ RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 APP_RUNTIME_MODE="ask"
+USE_CONDA=false
 ENABLE_AUDIO=false
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 REACT_UI_STATUS="atlandı"
@@ -1463,79 +1464,8 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    # Conda kontrolü ve otomatik Miniconda kurulumu
-    MINICONDA_PREFIX="$HOME/miniconda3"
-
-    # Önce conda.sh üzerinden PATH'e ekle (terminal yeniden başlatılmamış olabilir)
-    if [[ -f "$MINICONDA_PREFIX/etc/profile.d/conda.sh" ]]; then
-        # shellcheck disable=SC1091
-        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-    fi
-
-    local conda_bin=""
-    conda_bin="$(resolve_native_binary_path conda || true)"
-    if [[ -n "$conda_bin" ]]; then
-        USE_CONDA=true
-        ok "Conda $("$conda_bin" --version | cut -d' ' -f2) zaten yüklü."
-    elif command -v conda &>/dev/null; then
-        warn "Sadece Windows Interop conda bulundu ($(command -v conda)); Linux Miniconda kurulacak."
-    elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
-        # shellcheck disable=SC1091
-        source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-        conda init bash >/dev/null 2>&1 || true
-        USE_CONDA=true
-        ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
-    else
-        warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
-
-        OS="$(uname -s)"
-        ARCH="$(uname -m)"
-        MINICONDA_URL=""
-        MINICONDA_INSTALLER="/tmp/miniconda.sh"
-
-        case "$OS" in
-            Linux)
-                case "$ARCH" in
-                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" ;;
-                    aarch64|arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh" ;;
-                esac
-                ;;
-            Darwin)
-                case "$ARCH" in
-                    x86_64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh" ;;
-                    arm64) MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh" ;;
-                esac
-                ;;
-        esac
-
-        if [[ -z "$MINICONDA_URL" ]]; then
-            USE_CONDA=false
-            warn "Miniconda için desteklenmeyen platform ($OS/$ARCH). uv venv fallback kullanılacak."
-        elif ! command -v curl &>/dev/null; then
-            USE_CONDA=false
-            warn "curl bulunamadı, Miniconda indirilemedi. uv venv fallback kullanılacak."
-        else
-            info "Miniconda indiriliyor: $MINICONDA_URL"
-            if curl -fsSL "$MINICONDA_URL" -o "$MINICONDA_INSTALLER"; then
-                info "Miniconda kuruluyor: $MINICONDA_PREFIX"
-                bash "$MINICONDA_INSTALLER" -b -p "$MINICONDA_PREFIX"
-                rm -f "$MINICONDA_INSTALLER"
-
-                # shellcheck disable=SC1091
-                source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
-                conda init bash >/dev/null 2>&1 || true
-                USE_CONDA=true
-                ok "Miniconda kuruldu ve conda aktif edildi: $(conda --version | cut -d' ' -f2)"
-            else
-                USE_CONDA=false
-                warn "Miniconda indirilemedi. uv venv fallback kullanılacak."
-            fi
-        fi
-    fi
-
-    if [[ "$USE_CONDA" == true ]]; then
-        update_conda_base_if_available
-    fi
+    USE_CONDA=false
+    info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
 
     # Git
     if ! command -v git &>/dev/null; then
@@ -1601,7 +1531,7 @@ ensure_prerequisites() {
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
-    # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
+    # Python 3.11+ kontrolü (uv venv için sistem Python denetimi)
     if command -v python3 &>/dev/null; then
         PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
         PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
@@ -1609,7 +1539,7 @@ ensure_prerequisites() {
         if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 11 ]]; then
             ok "Python $PY_VER (sistem)"
         else
-            warn "Sistem Python'u $PY_VER — conda ortamı Python $PYTHON_VERSION ile oluşturulacak."
+            warn "Sistem Python'u $PY_VER — uv venv için Python $PYTHON_VERSION önerilir."
         fi
     fi
 
@@ -3997,13 +3927,8 @@ print_summary() {
         echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
     fi
     echo ""
-    if [[ "$USE_CONDA" == true ]]; then
-        echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
-        echo "       conda activate $CONDA_ENV_NAME"
-    else
-        echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
-        echo "       source .venv/bin/activate"
-    fi
+    echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
+    echo "       source .venv/bin/activate"
     echo ""
     echo -e "  3️⃣  Arka plan servisleri durumu:"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
@@ -4066,7 +3991,7 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  $CONDA_PYTHON_PATH -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
@@ -4335,26 +4260,7 @@ setup_shell_activation_shortcut() {
     local marker_begin="# >>> Sidar shell helper >>>"
     local marker_end="# <<< Sidar shell helper <<<"
     local helper_body=""
-
-    if [[ "$USE_CONDA" == true ]]; then
-        local conda_base=""
-        conda_base=$(conda info --base 2>/dev/null || true)
-        helper_body=$(cat <<EOF
-${marker_begin}
-sidar_env() {
-  cd "$TARGET_DIR" || return 1
-  if [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$conda_base/etc/profile.d/conda.sh"
-  fi
-  conda activate "$CONDA_ENV_NAME"
-}
-alias sidar-env='sidar_env'
-${marker_end}
-EOF
-)
-    else
-        helper_body=$(cat <<EOF
+    helper_body=$(cat <<EOF
 ${marker_begin}
 sidar_env() {
   cd "$TARGET_DIR" || return 1
@@ -4365,7 +4271,6 @@ alias sidar-env='sidar_env'
 ${marker_end}
 EOF
 )
-    fi
 
     local rcfile
     for rcfile in "${rc_files[@]}"; do
@@ -4397,7 +4302,7 @@ main() {
     # Kritik sıra:
     # 1) Sistem bağımlılıkları (git/curl vb.)
     # 2) Repo senkronizasyonu (git clone/pull)
-    # 3) Ön koşul doğrulaması (Conda/FFmpeg/Docker/Ollama)
+    # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
     install_system_dependencies
     sync_repo
     cd "$SCRIPT_DIR"
@@ -4406,15 +4311,9 @@ main() {
     detect_gpu
     setup_nvidia_docker
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        if [[ "$USE_CONDA" == true ]]; then
-            # Conda akışı: environment.yml içindeki uv ile devam et
-            setup_python_env
-            setup_uv
-        else
-            # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-            setup_uv
-            setup_python_env
-        fi
+        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
+        setup_uv
+        setup_python_env
         install_python_deps
         verify_torch_cuda
     else
