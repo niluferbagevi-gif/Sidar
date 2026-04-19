@@ -17,6 +17,15 @@ set -Eeuo pipefail
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
+# Uzak kurulum betikleri için sürüm/URL/checksum pinleri (güvenli varsayılanlar)
+# İhtiyaç halinde URL/SHA değerleri ortam değişkenleriyle override edilebilir.
+OLLAMA_INSTALL_SCRIPT_URL="${OLLAMA_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/ollama/ollama/main/scripts/install.sh}"
+OLLAMA_INSTALL_SHA256="${OLLAMA_INSTALL_SHA256:-25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f}"
+UV_INSTALL_VERSION="${UV_INSTALL_VERSION:-0.11.6}"
+UV_INSTALL_SCRIPT_URL_DEFAULT="https://github.com/astral-sh/uv/releases/download/${UV_INSTALL_VERSION}/uv-installer.sh"
+UV_INSTALL_SCRIPT_URL="${UV_INSTALL_SCRIPT_URL:-$UV_INSTALL_SCRIPT_URL_DEFAULT}"
+UV_INSTALL_SHA256="${UV_INSTALL_SHA256:-02f6fdf8077f97f7bbd901de06054a65e7aefbd54432c8a83784d42a3e360a45}"
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -1697,8 +1706,8 @@ ensure_prerequisites() {
             info "Ollama kurulumu başlatılıyor..."
             DOWNLOADED_SCRIPT_FILE=""
             download_verified_script \
-                "https://ollama.com/install.sh" \
-                "${OLLAMA_INSTALL_SHA256:-}" \
+                "$OLLAMA_INSTALL_SCRIPT_URL" \
+                "$OLLAMA_INSTALL_SHA256" \
                 "ollama_install"
             validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
 
@@ -1925,8 +1934,8 @@ setup_uv() {
         info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
         DOWNLOADED_SCRIPT_FILE=""
         download_verified_script \
-            "https://astral.sh/uv/install.sh" \
-            "${UV_INSTALL_SHA256:-}" \
+            "$UV_INSTALL_SCRIPT_URL" \
+            "$UV_INSTALL_SHA256" \
             "uv_install"
         validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
         sh "$DOWNLOADED_SCRIPT_FILE"
