@@ -2525,8 +2525,9 @@ harden_database_credentials() {
 
     [[ -f "$env_file" ]] || return
 
-    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
-    sidar_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || echo "development")
+    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+    sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    sidar_env="${sidar_env:-development}"
 
     [[ -n "$db_url" ]] || return
 
@@ -2594,7 +2595,7 @@ sync_postgres_env_with_database_url() {
 
     [[ -f "$env_file" ]] || return
 
-    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
     [[ -n "$db_url" ]] || return
 
     if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
@@ -2636,7 +2637,7 @@ ensure_database_url_defaults() {
         return
     fi
 
-    current_db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
 
     if [[ -z "$current_db_url" ]]; then
         echo "DATABASE_URL=${DEFAULT_DATABASE_URL}" >> "$env_file"
