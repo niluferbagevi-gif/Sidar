@@ -979,6 +979,7 @@ RUN_SMOKE_TESTS_MODE="ask"
 RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
+APP_RUNTIME_MODE="ask"
 ENABLE_AUDIO=false
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 REACT_UI_STATUS="atlandı"
@@ -1013,13 +1014,16 @@ for arg in "$@"; do
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
+        --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
+        --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
+            echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
             echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
             echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
             echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
@@ -1036,7 +1040,7 @@ for arg in "$@"; do
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -3924,7 +3928,14 @@ print_summary() {
     fi
     echo ""
     echo -e "  3️⃣  Arka plan servisleri durumu:"
-    echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
+        echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
+        echo "       Altyapı servisleri: docker compose up -d postgres redis ollama jaeger prometheus grafana"
+        echo "       Durdurma: docker compose stop postgres redis ollama jaeger prometheus grafana"
+    else
+        echo "       Çalışma modu: Tam Docker (web/agent dahil)."
+        echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
+    fi
     echo ""
     echo -e "  4️⃣  CLI ile başlat:"
     echo "       python main.py"
@@ -4015,6 +4026,9 @@ launch_docker_services() {
     local docker_compose_cmd=()
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
+    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+    local runtime_answer=""
+    local -a infra_services=(postgres redis ollama jaeger prometheus grafana)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -4036,18 +4050,37 @@ launch_docker_services() {
         fi
     fi
 
-    if [[ "$NO_INTERACTION" == true ]]; then
-        info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
-        info "Gerekirse manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles docker compose up -d"
-        return
+    if [[ "$runtime_mode" == "ask" ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            runtime_mode="docker"
+            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
+        else
+            echo ""
+            info "Çalışma modu seçimi:"
+            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+                :
+            else
+                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                runtime_answer="1"
+            fi
+            case "${runtime_answer:-1}" in
+                2) runtime_mode="docker" ;;
+                *) runtime_mode="local" ;;
+            esac
+        fi
     fi
 
+    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
     echo ""
-    local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
+    local start_prompt="Docker servisleri başlatılsın mı? [E/h] "
     local start_default="E"
     local start_docker=""
     if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
         info "PostgreSQL/Redis migrasyon adımında zaten başlatıldı; kalan Docker servisleri otomatik başlatılacak."
+        start_docker="E"
+    elif [[ "$NO_INTERACTION" == true ]]; then
         start_docker="E"
     else
         start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
@@ -4070,15 +4103,29 @@ launch_docker_services() {
             info "Docker Compose servisleri başlatılıyor..."
             info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
             validate_monitoring_mount_paths
-            info "Docker Compose profili: $compose_profiles"
-            if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
-                ok "Docker servisleri başarıyla başlatıldı."
+            if [[ "$runtime_mode" == "local" ]]; then
+                info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)"
+                if "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                    ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
+                else
+                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                fi
             else
-                warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                info "Seçilen çalışma modu: docker (tüm servisler Docker)"
+                info "Docker Compose profili: $compose_profiles"
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                    ok "Docker servisleri başarıyla başlatıldı."
+                else
+                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                fi
             fi
             ;;
         *)
-            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
+            if [[ "$runtime_mode" == "local" ]]; then
+                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]})"
+            else
+                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
+            fi
             ;;
     esac
 }
