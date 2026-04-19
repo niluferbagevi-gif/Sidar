@@ -999,7 +999,6 @@ ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
 for arg in "$@"; do
     case "$arg" in
-        --dev)  INSTALL_DEV=true ;;  # geriye dönük uyumluluk
         --no-dev) INSTALL_DEV=false ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
@@ -1019,7 +1018,6 @@ for arg in "$@"; do
         --help|-h)
             echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Sadece production bağımlılıklarını kur (geliştirici paketlerini atla)"
-            echo "  --dev  (eski) Geliştirici bağımlılıklarını açık bırakır; geriye dönük uyumluluk için kabul edilir"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
@@ -1038,7 +1036,7 @@ for arg in "$@"; do
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
