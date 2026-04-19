@@ -182,25 +182,34 @@ docker_cli_healthy() {
     return 0
 }
 
-command_points_to_windows_exe() {
-    local cmd_name="$1"
-    local cmd_path=""
-    local resolved_path=""
+is_windows_interop_binary_path() {
+    local bin_path="${1:-}"
+    [[ -z "$bin_path" ]] && return 1
 
-    cmd_path="$(command -v "$cmd_name" 2>/dev/null || true)"
-    [[ -n "$cmd_path" ]] || return 1
-
-    resolved_path="$(readlink -f "$cmd_path" 2>/dev/null || echo "$cmd_path")"
-
-    # WSL interop ile görünen Windows binary'lerini Linux kurulu saymıyoruz.
-    if [[ "$cmd_path" == *.exe ]] || [[ "$resolved_path" == *.exe ]]; then
-        return 0
-    fi
-    if [[ "$resolved_path" =~ ^/mnt/[a-z]/ ]] || [[ "$resolved_path" =~ ^//wsl\\.localhost/ ]]; then
-        return 0
-    fi
-
+    # WSL üzerinde Windows binary'leri genellikle /mnt/<drive>/... altında ve .exe uzantılıdır.
+    [[ "$bin_path" == /mnt/[A-Za-z]/* ]] && return 0
+    [[ "$bin_path" == *.exe ]] && return 0
     return 1
+}
+
+resolve_native_binary_path() {
+    local cmd_name="${1:-}"
+    local resolved_path=""
+    [[ -n "$cmd_name" ]] || return 1
+
+    resolved_path="$(type -P "$cmd_name" 2>/dev/null || true)"
+    [[ -n "$resolved_path" ]] || return 1
+
+    if is_windows_interop_binary_path "$resolved_path"; then
+        return 1
+    fi
+
+    echo "$resolved_path"
+}
+
+has_native_binary() {
+    local cmd_name="${1:-}"
+    resolve_native_binary_path "$cmd_name" >/dev/null
 }
 
 download_verified_script() {
@@ -605,41 +614,46 @@ wait_for_postgres_ready_after_docker_start() {
     local db_password="$5"
     local max_attempts="${6:-30}"
     local sleep_seconds="${7:-2}"
-    local last_auth_rc=1
-    local last_auth_err=""
+    local stable_auth_checks_required="${POSTGRES_READY_STABLE_AUTH_CHECKS:-2}"
+    local stable_auth_checks_passed=0
 
     info "PostgreSQL'in tabloları ve kullanıcıları oluşturması bekleniyor (${db_host}:${db_port}/${db_name})..."
     for ((attempt=1; attempt<=max_attempts; attempt++)); do
         if pg_isready -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" >/dev/null 2>&1; then
             local auth_rc=0
             verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" || auth_rc=$?
-            last_auth_rc="$auth_rc"
-            last_auth_err="${POSTGRES_AUTH_CHECK_ERROR:-}"
             case "$auth_rc" in
                 0)
-                    ok "PostgreSQL tam olarak hazır ve kimlik doğrulaması başarılı."
-                    return 0
+                    ((stable_auth_checks_passed+=1))
+                    if (( stable_auth_checks_passed >= stable_auth_checks_required )); then
+                        ok "PostgreSQL tam olarak hazır ve kimlik doğrulaması başarılı."
+                        return 0
+                    fi
+                    info "Kimlik doğrulaması başarılı (denge kontrolü ${stable_auth_checks_passed}/${stable_auth_checks_required}); kısa bir doğrulama daha yapılacak..."
                     ;;
                 10)
-                    warn "PostgreSQL portu açık ama parola henüz doğrulanamadı (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL henüz hazır değil veya parola senkronize değil (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
                     ;;
                 2)
-                    warn "PostgreSQL erişilebilir, ancak auth doğrulaması için gerekli istemci henüz hazır değil (${attempt}/${max_attempts})."
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL erişilebilir, ancak psql/asyncpg ile auth doğrulaması yapılamadı (${attempt}/${max_attempts})."
+                    warn "Auth doğrulaması yapılamadığından DB hazır kabul ediliyor; Alembic adımında yeniden doğrulanacak."
+                    return 0
                     ;;
                 *)
-                    warn "PostgreSQL erişilebilir, auth denemesi başarısız (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-unknown}"
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL bağlantı kontrolü başarısız (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-bilinmeyen_hata}"
                     ;;
             esac
         else
+            stable_auth_checks_passed=0
             info "⏳ Veritabanı başlatılıyor... (${attempt}/${max_attempts})"
         fi
         sleep "$sleep_seconds"
     done
 
-    if [[ "$last_auth_rc" -eq 10 ]]; then
-        fail "PostgreSQL başlatılamadı veya şifre uyuşmuyor: ${last_auth_err:-password authentication failed}"
-    fi
-
+    warn "PostgreSQL ${max_attempts} denemede tam hazır hale gelmedi."
     return 1
 }
 
@@ -1267,11 +1281,13 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js (v20.x) durumu kontrol ediliyor..."
-        if command -v node &>/dev/null && ! command_points_to_windows_exe node && node -v | grep -q "^v20"; then
-            ok "Node.js 20.x (Linux) zaten kurulu: $(node -v)"
+        local node_bin=""
+        node_bin="$(resolve_native_binary_path node || true)"
+        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v20"; then
+            ok "Node.js 20.x zaten kurulu: $("$node_bin" -v)"
         else
-            if command -v node &>/dev/null && command_points_to_windows_exe node; then
-                warn "WSL interop ile Windows Node.js tespit edildi; Linux kurulumu yapılacak."
+            if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
+                warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
             fi
             info "Node.js 20.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
@@ -1303,11 +1319,14 @@ install_system_dependencies() {
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                if command -v node &>/dev/null && ! command_points_to_windows_exe node; then
-                    warn "Sistemde node bulundu ($(node -v 2>/dev/null || echo 'sürüm alınamadı'))."
+                node_bin="$(resolve_native_binary_path node || true)"
+                if [[ -n "$node_bin" ]]; then
+                    warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
                     warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    if command -v npm &>/dev/null && ! command_points_to_windows_exe npm; then
-                        ok "npm zaten mevcut: $(npm -v 2>/dev/null || echo 'sürüm alınamadı')"
+                    local npm_bin=""
+                    npm_bin="$(resolve_native_binary_path npm || true)"
+                    if [[ -n "$npm_bin" ]]; then
+                        ok "npm zaten mevcut: $("$npm_bin" -v 2>/dev/null || echo 'sürüm alınamadı')"
                     else
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
                     fi
@@ -1385,9 +1404,13 @@ ensure_prerequisites() {
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
     fi
 
-    if command -v conda &>/dev/null && ! command_points_to_windows_exe conda; then
+    local conda_bin=""
+    conda_bin="$(resolve_native_binary_path conda || true)"
+    if [[ -n "$conda_bin" ]]; then
         USE_CONDA=true
-        ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
+        ok "Conda $("$conda_bin" --version | cut -d' ' -f2) zaten yüklü."
+    elif command -v conda &>/dev/null; then
+        warn "Sadece Windows Interop conda bulundu ($(command -v conda)); Linux Miniconda kurulacak."
     elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
         # shellcheck disable=SC1091
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
@@ -1395,9 +1418,6 @@ ensure_prerequisites() {
         USE_CONDA=true
         ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
     else
-        if command -v conda &>/dev/null && command_points_to_windows_exe conda; then
-            warn "WSL interop ile Windows conda tespit edildi; Linux Miniconda kurulacak."
-        fi
         warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
 
         OS="$(uname -s)"
@@ -1932,21 +1952,30 @@ setup_react_frontend() {
         return
     fi
 
-    if ! command -v npm &>/dev/null; then
+    local npm_bin=""
+    npm_bin="$(resolve_native_binary_path npm || true)"
+    if [[ -z "$npm_bin" ]]; then
+        if command -v npm &>/dev/null; then
+            warn "Sadece Windows Interop npm bulundu ($(command -v npm)). Linux Node.js/npm kullanın."
+        fi
         warn "npm bulunamadı. React Web UI için Node.js + npm kurun ve şu komutları çalıştırın:"
         echo "       cd web_ui_react && npm ci && npm run build"
         REACT_UI_STATUS="npm_yok"
         return
     fi
 
-    if command -v node &>/dev/null; then
-        NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
+    local node_bin=""
+    node_bin="$(resolve_native_binary_path node || true)"
+    if [[ -n "$node_bin" ]]; then
+        NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
         if [[ "$NODE_MAJOR" -lt 20 ]]; then
-            warn "Node.js sürümü düşük: $(node -v). React build için Node.js 20+ önerilir."
+            warn "Node.js sürümü düşük: $("$node_bin" -v). React build için Node.js 20+ önerilir."
             warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından otomatik ayarlanır)"
         else
-            ok "Node.js sürümü uygun: $(node -v)"
+            ok "Node.js sürümü uygun: $("$node_bin" -v)"
         fi
+    elif command -v node &>/dev/null; then
+        warn "Sadece Windows Interop node bulundu ($(command -v node)). React build için Linux Node.js kullanılmalı."
     fi
 
     if [[ "$FORCE_REACT_BUILD" != true && "$INSTALL_DEV" == false && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
@@ -2364,31 +2393,6 @@ PY
     echo "$generated"
 }
 
-sync_postgres_env_with_database_url() {
-    local env_file="$1"
-    local db_user="$2"
-    local db_password="$3"
-    local db_name="${4:-sidar}"
-    local db_host="${5:-localhost}"
-    local db_port="${6:-5432}"
-
-    [[ -f "$env_file" ]] || return
-
-    # Sessiz sed başarısızlıkları ve tekrar eden anahtarları önlemek için
-    # kritik PostgreSQL anahtarlarını temizleyip tek kaynaktan yeniden yaz.
-    sed -i '/^DATABASE_URL=/d' "$env_file"
-    sed -i '/^POSTGRES_USER=/d' "$env_file"
-    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-    sed -i '/^POSTGRES_DB=/d' "$env_file"
-
-    {
-        echo "POSTGRES_USER=${db_user}"
-        echo "POSTGRES_PASSWORD=${db_password}"
-        echo "POSTGRES_DB=${db_name}"
-        echo "DATABASE_URL=postgresql+asyncpg://${db_user}:${db_password}@${db_host}:${db_port}/${db_name}"
-    } >> "$env_file"
-}
-
 harden_database_credentials() {
     local env_file="$1"
     local db_url=""
@@ -2408,18 +2412,6 @@ harden_database_credentials() {
         local db_user="${BASH_REMATCH[2]}"
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
-        local db_host_port="${db_host_and_name%%/*}"
-        local db_name="${db_host_and_name#*/}"
-        local db_host="localhost"
-        local db_port="5432"
-
-        if [[ "$db_host_port" == *:* ]]; then
-            db_host="${db_host_port%%:*}"
-            db_port="${db_host_port##*:}"
-        elif [[ -n "$db_host_port" ]]; then
-            db_host="$db_host_port"
-        fi
-        [[ -n "$db_name" && "$db_name" != "$db_host_and_name" ]] || db_name="sidar"
 
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
@@ -2428,17 +2420,24 @@ harden_database_credentials() {
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host}:${db_port}/${db_name}"
-                        sync_postgres_env_with_database_url \
-                            "$env_file" \
-                            "$db_user" \
-                            "$generated_password" \
-                            "$db_name" \
-                            "$db_host" \
-                            "$db_port"
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+
+                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                        # DATABASE_URL ile senkron kalmalıdır.
+                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                        else
+                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                        fi
+                        if grep -q '^POSTGRES_USER=' "$env_file"; then
+                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        else
+                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                        fi
                         DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri DATABASE_URL ile kesin senkronize edildi."
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
                         info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
@@ -2460,6 +2459,46 @@ harden_database_credentials() {
                 fi
                 ;;
         esac
+    fi
+}
+
+sync_postgres_env_with_database_url() {
+    local env_file="$1"
+    local db_url=""
+
+    [[ -f "$env_file" ]] || return
+
+    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    [[ -n "$db_url" ]] || return
+
+    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
+        local db_user="${BASH_REMATCH[2]}"
+        local db_password="${BASH_REMATCH[3]}"
+        local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_name="${db_host_and_name#*/}"
+
+        # Host kısmında "/" yoksa varsayılan adı koru.
+        if [[ "$db_name" == "$db_host_and_name" ]]; then
+            db_name="sidar"
+        fi
+
+        # Olası query string'i temizle.
+        db_name="${db_name%%\?*}"
+
+        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
+        sed -i '/^POSTGRES_USER=/d' "$env_file"
+        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+        sed -i '/^POSTGRES_DB=/d' "$env_file"
+        sed -i '/^DATABASE_URL=/d' "$env_file"
+
+        {
+            echo "POSTGRES_USER=${db_user}"
+            echo "POSTGRES_PASSWORD=${db_password}"
+            echo "POSTGRES_DB=${db_name}"
+            echo "DATABASE_URL=${db_url}"
+        } >> "$env_file"
+
+        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
     fi
 }
 
@@ -2924,6 +2963,7 @@ setup_env_file() {
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
+        sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
@@ -2942,6 +2982,7 @@ setup_env_file() {
     ensure_database_url_defaults "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
+    sync_postgres_env_with_database_url "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
