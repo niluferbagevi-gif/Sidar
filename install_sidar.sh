@@ -2589,6 +2589,7 @@ collect_api_keys_interactive() {
         JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
         TEAMS_WEBHOOK_URL
     )
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
 
     # Gruplar: "Başlık|KEY1,KEY2,..."  (her grup zenity'de ayrı form / whiptail'de bölüm)
     # NOT: GROUPS bash reserved değişkeni olduğundan API_GROUPS adı kullanılıyor.
@@ -2638,8 +2639,50 @@ collect_api_keys_interactive() {
         ok ".env: ${key} güncellendi."
     }
 
+    # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
+    # Dosya varsa etkileşimli (zenity/whiptail/read) adımı tamamen atlanır.
+    _import_api_keys_from_file() {
+        local source_file="$1"
+        local imported_count=0
+        local key raw_val
+
+        [[ -f "$source_file" ]] || return 1
+
+        info "API anahtarları ${source_file} dosyasından içeri alınıyor (etkileşimli giriş atlanacak)..."
+        for key in "${KEY_ORDER[@]}"; do
+            raw_val=$(grep -E "^${key}=" "$source_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
+            raw_val="${raw_val#"${raw_val%%[![:space:]]*}"}"
+            raw_val="${raw_val%"${raw_val##*[![:space:]]}"}"
+
+            # Basit tek satır tırnaklarını temizle: KEY="value" / KEY='value'
+            if [[ "$raw_val" == \"*\" && "$raw_val" == *\" ]]; then
+                raw_val="${raw_val:1:${#raw_val}-2}"
+            elif [[ "$raw_val" == \'*\' && "$raw_val" == *\' ]]; then
+                raw_val="${raw_val:1:${#raw_val}-2}"
+            fi
+
+            if [[ -n "$raw_val" ]]; then
+                _write_key "$key" "$raw_val"
+                ((imported_count += 1))
+            fi
+        done
+
+        if (( imported_count > 0 )); then
+            ok "${imported_count} API anahtarı ${source_file} üzerinden .env dosyasına aktarıldı."
+        else
+            warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri dolu değil."
+        fi
+
+        return 0
+    }
+
     step "API Anahtarları Yapılandırması"
     echo ""
+
+    if _import_api_keys_from_file "$sidar_keys_file"; then
+        info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
+        return
+    fi
 
     # ── Durum tespiti: doğrudan inline (subshell yok, \r temizlendi) ──────────
     local -a missing_keys=()
