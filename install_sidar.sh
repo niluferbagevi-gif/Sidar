@@ -1146,6 +1146,23 @@ is_local_ollama_url() {
     [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
 }
 
+wait_for_ollama_api_ready() {
+    local version_url="$1"
+    local max_wait_seconds="${2:-10}"
+    local poll_interval_seconds="${3:-1}"
+    local elapsed=0
+
+    while (( elapsed < max_wait_seconds )); do
+        if curl -sf "$version_url" &>/dev/null; then
+            return 0
+        fi
+        sleep "$poll_interval_seconds"
+        elapsed=$((elapsed + poll_interval_seconds))
+    done
+
+    return 1
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -1639,7 +1656,8 @@ ensure_prerequisites() {
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
+    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum 10 saniye)..."
+    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" 10 1; then
         ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
         warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
