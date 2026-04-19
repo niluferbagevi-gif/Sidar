@@ -536,6 +536,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         E|e)
             reset_attempted=true
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            backup_postgres_before_volume_reset "${compose_cmd[@]}"
             local -a postgres_service_container_ids=()
             if mapfile -t postgres_service_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
                 if [[ ${#postgres_service_container_ids[@]} -gt 0 ]]; then
@@ -635,6 +636,57 @@ maybe_reset_postgres_volume_after_password_hardening() {
         warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
         return 0
     fi
+    return 0
+}
+
+backup_postgres_before_volume_reset() {
+    local -a compose_cmd=("$@")
+    local postgres_container_id=""
+    local backup_dir="$SCRIPT_DIR/backups"
+    local backup_file=""
+    local dump_error_file=""
+    local dump_ok=false
+    local candidate_db_user=""
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
+        return 0
+    fi
+
+    if mapfile -t _postgres_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
+        if [[ ${#_postgres_container_ids[@]} -gt 0 ]]; then
+            postgres_container_id="${_postgres_container_ids[0]}"
+        fi
+    fi
+
+    if [[ -z "$postgres_container_id" ]]; then
+        warn "postgres container bulunamadı; volume sıfırlama öncesi pg_dumpall yedeği alınamadı."
+        return 0
+    fi
+
+    mkdir -p "$backup_dir"
+    backup_file="$backup_dir/postgres_before_volume_reset_$(date +%Y%m%d_%H%M%S).sql"
+    dump_error_file="$(mktemp)"
+
+    for candidate_db_user in postgres sidar; do
+        if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
+            if [[ -s "$backup_file" ]]; then
+                dump_ok=true
+                break
+            fi
+        fi
+    done
+
+    if [[ "$dump_ok" == true ]]; then
+        ok "PostgreSQL hızlı yedek alındı: ${backup_file}"
+        info "Eski verileriniz ${backup_file} olarak kaydedildi, volume sıfırlanıyor."
+        rm -f "$dump_error_file"
+        return 0
+    fi
+
+    rm -f "$backup_file"
+    warn "Volume sıfırlama öncesi pg_dumpall yedeği alınamadı. Detay: $(cat "$dump_error_file" 2>/dev/null || echo 'bilinmeyen_hata')"
+    rm -f "$dump_error_file"
     return 0
 }
 
