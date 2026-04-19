@@ -3070,7 +3070,7 @@ run_migrations() {
 
     DB_URL=""
     if [[ -f "$ENV_FILE" ]]; then
-        DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
     fi
 
     cd "$SCRIPT_DIR"
@@ -3236,7 +3236,7 @@ PY
 
     local alembic_output_file=""
     alembic_output_file=$(mktemp)
-    if "${ALEMBIC_CMD[@]}" \
+    if DATABASE_URL="$DB_URL" "${ALEMBIC_CMD[@]}" \
         > >(tee -a "$alembic_output_file") \
         2> >(tee -a "$alembic_output_file" >&2); then
         rm -f "$alembic_output_file"
