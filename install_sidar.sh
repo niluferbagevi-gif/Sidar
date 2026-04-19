@@ -2326,6 +2326,31 @@ PY
     echo "$generated"
 }
 
+sync_postgres_env_with_database_url() {
+    local env_file="$1"
+    local db_user="$2"
+    local db_password="$3"
+    local db_name="${4:-sidar}"
+    local db_host="${5:-localhost}"
+    local db_port="${6:-5432}"
+
+    [[ -f "$env_file" ]] || return
+
+    # Sessiz sed başarısızlıkları ve tekrar eden anahtarları önlemek için
+    # kritik PostgreSQL anahtarlarını temizleyip tek kaynaktan yeniden yaz.
+    sed -i '/^DATABASE_URL=/d' "$env_file"
+    sed -i '/^POSTGRES_USER=/d' "$env_file"
+    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+    sed -i '/^POSTGRES_DB=/d' "$env_file"
+
+    {
+        echo "POSTGRES_USER=${db_user}"
+        echo "POSTGRES_PASSWORD=${db_password}"
+        echo "POSTGRES_DB=${db_name}"
+        echo "DATABASE_URL=postgresql+asyncpg://${db_user}:${db_password}@${db_host}:${db_port}/${db_name}"
+    } >> "$env_file"
+}
+
 harden_database_credentials() {
     local env_file="$1"
     local db_url=""
@@ -2345,6 +2370,18 @@ harden_database_credentials() {
         local db_user="${BASH_REMATCH[2]}"
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_host_port="${db_host_and_name%%/*}"
+        local db_name="${db_host_and_name#*/}"
+        local db_host="localhost"
+        local db_port="5432"
+
+        if [[ "$db_host_port" == *:* ]]; then
+            db_host="${db_host_port%%:*}"
+            db_port="${db_host_port##*:}"
+        elif [[ -n "$db_host_port" ]]; then
+            db_host="$db_host_port"
+        fi
+        [[ -n "$db_name" && "$db_name" != "$db_host_and_name" ]] || db_name="sidar"
 
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
@@ -2353,24 +2390,17 @@ harden_database_credentials() {
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host}:${db_port}/${db_name}"
+                        sync_postgres_env_with_database_url \
+                            "$env_file" \
+                            "$db_user" \
+                            "$generated_password" \
+                            "$db_name" \
+                            "$db_host" \
+                            "$db_port"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
-
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
                         DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri DATABASE_URL ile kesin senkronize edildi."
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
                         info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
