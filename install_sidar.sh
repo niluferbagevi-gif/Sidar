@@ -2395,6 +2395,46 @@ harden_database_credentials() {
     fi
 }
 
+sync_postgres_env_with_database_url() {
+    local env_file="$1"
+    local db_url=""
+
+    [[ -f "$env_file" ]] || return
+
+    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    [[ -n "$db_url" ]] || return
+
+    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
+        local db_user="${BASH_REMATCH[2]}"
+        local db_password="${BASH_REMATCH[3]}"
+        local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_name="${db_host_and_name#*/}"
+
+        # Host kısmında "/" yoksa varsayılan adı koru.
+        if [[ "$db_name" == "$db_host_and_name" ]]; then
+            db_name="sidar"
+        fi
+
+        # Olası query string'i temizle.
+        db_name="${db_name%%\?*}"
+
+        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
+        sed -i '/^POSTGRES_USER=/d' "$env_file"
+        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+        sed -i '/^POSTGRES_DB=/d' "$env_file"
+        sed -i '/^DATABASE_URL=/d' "$env_file"
+
+        {
+            echo "POSTGRES_USER=${db_user}"
+            echo "POSTGRES_PASSWORD=${db_password}"
+            echo "POSTGRES_DB=${db_name}"
+            echo "DATABASE_URL=${db_url}"
+        } >> "$env_file"
+
+        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
+    fi
+}
+
 ensure_database_url_defaults() {
     local env_file="$1"
     local current_db_url=""
@@ -2856,6 +2896,7 @@ setup_env_file() {
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
+        sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
@@ -2874,6 +2915,7 @@ setup_env_file() {
     ensure_database_url_defaults "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
+    sync_postgres_env_with_database_url "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
