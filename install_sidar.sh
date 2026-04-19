@@ -264,7 +264,17 @@ ensure_docker_daemon_running() {
 
     if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
-        sleep 8
+        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        local elapsed=0
+        while (( elapsed < 60 )); do
+            if docker info &>/dev/null; then
+                ok "Docker daemon erişilebilir duruma geldi."
+                return 0
+            fi
+            sleep 3
+            ((elapsed += 3))
+        done
+        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
     docker info &>/dev/null
