@@ -483,6 +483,14 @@ maybe_reset_postgres_volume_after_password_hardening() {
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
             fi
+            local postgres_password_changed=0
+            if [[ "$DB_PASSWORD_HARDENED" == true ]]; then
+                postgres_password_changed=1
+            fi
+            if [[ "$postgres_password_changed" == "1" ]]; then
+                warn "Parola değişimi saptandı, Docker süreçleri zorla temizleniyor..."
+                "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+            fi
             if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
                 warn "Agresif container temizliği etkin: projeye ait asılı kalan container'lar zorla kaldırılıyor."
                 local -a project_container_ids=()
@@ -512,7 +520,10 @@ maybe_reset_postgres_volume_after_password_hardening() {
                         fi
                     fi
                 fi
-                if docker volume rm "$volume_name" >/dev/null 2>&1; then
+                if [[ "$postgres_password_changed" == "1" ]]; then
+                    docker volume rm "$volume_name" -f >/dev/null 2>&1 || true
+                fi
+                if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
                     ok "PostgreSQL volume temizlendi: ${volume_name}"
                     removed_any=true
                 else
@@ -533,7 +544,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
-    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data komutlarını çalıştırın."
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
         POSTGRES_VOLUME_RESET_FAILED=true
         if [[ "${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-0}" == "1" ]]; then
@@ -543,6 +554,41 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
     return 0
+}
+
+wait_for_postgres_ready_after_docker_start() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    local max_attempts="${6:-30}"
+    local sleep_seconds="${7:-2}"
+
+    info "PostgreSQL hazır ve erişilebilir olana kadar bekleniyor (${db_host}:${db_port}/${db_name})..."
+    for ((attempt=1; attempt<=max_attempts; attempt++)); do
+        if pg_isready -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" >/dev/null 2>&1; then
+            local auth_rc=0
+            verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" || auth_rc=$?
+            case "$auth_rc" in
+                0)
+                    ok "PostgreSQL erişilebilir ve kimlik doğrulaması başarılı."
+                    return 0
+                    ;;
+                10)
+                    warn "PostgreSQL parola doğrulaması başarısız: ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
+                    fail "PostgreSQL ayakta ancak parola doğrulaması başarısız. Eski volume/parola uyuşmazlığı nedeniyle kurulum durduruldu."
+                    ;;
+                2)
+                    warn "PostgreSQL erişilebilir, ancak psql/asyncpg ile auth doğrulaması yapılamadı. Kurulum devam edecek."
+                    return 0
+                    ;;
+            esac
+        fi
+        sleep "$sleep_seconds"
+    done
+
+    return 1
 }
 
 wait_for_redis_ready_after_docker_start() {
@@ -3095,14 +3141,7 @@ PY
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
                     DOCKER_DB_SERVICES_STARTED=true
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
-                    info "Veritabanının hazır olması bekleniyor..."
-                    for _ in {1..30}; do
-                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            ok "PostgreSQL erişilebilir hale geldi."
-                            break
-                        fi
-                        sleep 2
-                    done
+                    wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
                 fi
             fi
 
@@ -3157,12 +3196,7 @@ PY
                     DOCKER_DB_SERVICES_STARTED=true
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
 
-                    for _ in {1..30}; do
-                        if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            break
-                        fi
-                        sleep 2
-                    done
+                    wait_for_postgres_ready_after_docker_start "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || true
 
                     auth_check_rc=0
                     verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
