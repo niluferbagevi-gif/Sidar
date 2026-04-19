@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.1
+# Sürüm : 5.2.2
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -10,6 +10,7 @@
 #   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
+#   ./install_sidar.sh --headless    # etkileşimsiz + GUI adımlarını atla
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -80,6 +81,12 @@ prompt_yes_no_with_timeout_default_yes() {
     local timeout_seconds="${2:-180}"
     local reply=""
 
+    if [[ "${NO_INTERACTION:-false}" == true ]]; then
+        info "Etkileşimsiz mod aktif: varsayılan seçim uygulanıyor (Evet)."
+        echo "E"
+        return 0
+    fi
+
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
     else
@@ -94,6 +101,12 @@ prompt_yes_no_with_timeout_default_no() {
     local prompt="$1"
     local timeout_seconds="${2:-180}"
     local reply=""
+
+    if [[ "${NO_INTERACTION:-false}" == true ]]; then
+        info "Etkileşimsiz mod aktif: varsayılan seçim uygulanıyor (Hayır)."
+        echo "H"
+        return 0
+    fi
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
@@ -943,6 +956,7 @@ HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="ask"
 RUN_AUDIT=false
 NO_INTERACTION=false
+HEADLESS_MODE=false
 DOCKER_ONLY=false
 ENABLE_AUDIO=false
 FORCE_POSTGRES_VOLUME_CLEANUP=false
@@ -970,7 +984,8 @@ for arg in "$@"; do
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
-        --ci|--no-interaction) NO_INTERACTION=true ;;
+        --ci|--no-interaction|--non-interactive|--yes) NO_INTERACTION=true ;;
+        --headless) NO_INTERACTION=true; HEADLESS_MODE=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -981,7 +996,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction]"
+            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--yes|--headless]"
             echo "  --dev  Geliştirici bağımlılıklarını kur"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -997,10 +1012,11 @@ for arg in "$@"; do
             echo "  --download-models  Ollama modellerini varsayılan olarak indir"
             echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
-            echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
+            echo "  --ci / --no-interaction / --non-interactive / --yes  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
+            echo "  --headless  Etkileşimsiz kurulum + GUI adımlarını atla (CI/sunucu için önerilir)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --yes | --headless kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1014,6 +1030,10 @@ fi
 
 if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
     RUN_SMOKE_TESTS_MODE="never"
+fi
+
+if [[ "$HEADLESS_MODE" == true ]]; then
+    info "--headless modu aktif: GUI adımları ve etkileşimli sorular otomatik atlanır."
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
@@ -1040,7 +1060,7 @@ CONDA_BASE_UPDATE_DONE=false
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.1)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.2)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -1062,6 +1082,22 @@ update_conda_base_if_available() {
     fi
 
     CONDA_BASE_UPDATE_DONE=true
+}
+
+configure_conda_outdated_notice() {
+    if [[ "${USE_CONDA:-false}" != true ]]; then
+        return 0
+    fi
+
+    if ! command -v conda &>/dev/null; then
+        return 0
+    fi
+
+    if conda config --set notify_outdated_conda false >/dev/null 2>&1; then
+        ok "Conda outdated bildirimi sessize alındı (notify_outdated_conda=false)."
+    else
+        warn "Conda notify_outdated_conda ayarı güncellenemedi; mevcut ayarla devam ediliyor."
+    fi
 }
 
 read_env_value_from_file() {
@@ -1467,6 +1503,7 @@ ensure_prerequisites() {
 
     if [[ "$USE_CONDA" == true ]]; then
         update_conda_base_if_available
+        configure_conda_outdated_notice
     fi
 
     # Git
@@ -1567,7 +1604,11 @@ ensure_prerequisites() {
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
             echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
             echo ""
-            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+            if [[ "$NO_INTERACTION" == true ]]; then
+                info "Etkileşimsiz mod aktif: ENTER bekleme adımı atlandı."
+            else
+                read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+            fi
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! docker_cli_healthy; then
@@ -1769,6 +1810,7 @@ setup_python_env() {
         ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
 
         update_conda_base_if_available
+        configure_conda_outdated_notice
 
         if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
@@ -1995,6 +2037,9 @@ setup_react_frontend() {
         fi
         info "npm run build çalıştırılıyor..."
         npm run build
+
+        info "Frontend güvenlik taraması (npm audit --audit-level=moderate)..."
+        npm audit --audit-level=moderate || warn "npm audit orta+ seviye bulgu raporladı. Çözüm için 'cd web_ui_react && npm audit fix' deneyin."
     ); then
         warn "React UI build başarısız oldu. Kurulum devam edecek; özet bölümünde durum işaretlenecek."
         REACT_UI_STATUS="build_hata"
