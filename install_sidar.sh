@@ -42,13 +42,13 @@ run_with_progress_hint() {
     local label="$1"
     shift
     local -a cmd=("$@")
-    local clear_seq=$'\033[K'
 
-    _draw_bar() {
-        local bar_pct="$1"
-        local bar_label="$2"
-        local bar_color="$3"
-        local filled=$((bar_pct / 4))
+    "${cmd[@]}" &
+    local cmd_pid=$!
+    local pct=5
+
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        local filled=$((pct / 4))
         local empty=$((25 - filled))
         local bar_filled
         local bar_empty
@@ -56,16 +56,7 @@ run_with_progress_hint() {
         printf -v bar_empty '%*s' "$empty" ''
         bar_filled="${bar_filled// /█}"
         bar_empty="${bar_empty// /░}"
-        printf "\r%s[%s%s] %s%% %s%s%s" \
-            "$bar_color" "$bar_filled" "$bar_empty" "$bar_pct" "$bar_label" "$NC" "$clear_seq" >&2
-    }
-
-    "${cmd[@]}" >> "$LOG_FILE" 2>&1 &
-    local cmd_pid=$!
-    local pct=5
-
-    while kill -0 "$cmd_pid" 2>/dev/null; do
-        _draw_bar "$pct" "$label" "$BLUE"
+        echo -e "${BLUE}[${bar_filled}${bar_empty}] ${pct}% ${label}${NC}" >&2
 
         pct=$((pct + 5))
         if (( pct > 95 )); then
@@ -77,9 +68,8 @@ run_with_progress_hint() {
     wait "$cmd_pid"
     local cmd_rc=$?
     if [[ "$cmd_rc" -eq 0 ]]; then
-        _draw_bar 100 "$label" "$GREEN"
+        echo -e "${GREEN}[█████████████████████████] 100% ${label}${NC}" >&2
     fi
-    printf '\n' >&2
     return "$cmd_rc"
 }
 
