@@ -699,23 +699,9 @@ backup_postgres_before_volume_reset() {
     local dump_ok=false
     local candidate_db_user=""
     local -a candidate_db_users=()
+    local candidate_db_users_seen="|"
     local env_db_user=""
     local env_postgres_user=""
-
-    add_unique_backup_db_user() {
-        local raw_user="${1:-}"
-        local normalized_user=""
-        normalized_user="$(echo "$raw_user" | tr -d '"'\''[:space:]')"
-        [[ -n "$normalized_user" ]] || return 0
-
-        local existing_user=""
-        for existing_user in "${candidate_db_users[@]:-}"; do
-            if [[ "$existing_user" == "$normalized_user" ]]; then
-                return 0
-            fi
-        done
-        candidate_db_users+=("$normalized_user")
-    }
 
     if ! command -v docker &>/dev/null; then
         warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
@@ -739,22 +725,40 @@ backup_postgres_before_volume_reset() {
 
     # Önce container içi yapılandırmadan ve .env dosyasından özel kullanıcı adlarını dene.
     env_postgres_user="$(docker exec "$postgres_container_id" sh -lc 'printenv POSTGRES_USER' 2>/dev/null || true)"
-    add_unique_backup_db_user "$env_postgres_user"
+    env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+    if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+        candidate_db_users+=("$env_postgres_user")
+        candidate_db_users_seen+="${env_postgres_user}|"
+    fi
 
     if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
         env_postgres_user="$(read_env_value_from_file "POSTGRES_USER" "$ENV_FILE")"
-        add_unique_backup_db_user "$env_postgres_user"
+        env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+            candidate_db_users+=("$env_postgres_user")
+            candidate_db_users_seen+="${env_postgres_user}|"
+        fi
         local env_database_url=""
         env_database_url="$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")"
         if [[ "$env_database_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@ ]]; then
             env_db_user="${BASH_REMATCH[2]}"
         fi
-        add_unique_backup_db_user "$env_db_user"
+        env_db_user="$(echo "$env_db_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_db_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_db_user}|"* ]]; then
+            candidate_db_users+=("$env_db_user")
+            candidate_db_users_seen+="${env_db_user}|"
+        fi
     fi
 
     # Varsayılan fallback kullanıcılarını en sona ekle.
-    add_unique_backup_db_user "postgres"
-    add_unique_backup_db_user "sidar"
+    if [[ "$candidate_db_users_seen" != *"|postgres|"* ]]; then
+        candidate_db_users+=("postgres")
+        candidate_db_users_seen+="postgres|"
+    fi
+    if [[ "$candidate_db_users_seen" != *"|sidar|"* ]]; then
+        candidate_db_users+=("sidar")
+        candidate_db_users_seen+="sidar|"
+    fi
 
     for candidate_db_user in "${candidate_db_users[@]}"; do
         if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
