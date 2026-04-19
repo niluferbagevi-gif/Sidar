@@ -3101,6 +3101,31 @@ download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
     local temp_ollama_pid=""
+    local ollama_tags_url=""
+    local tags_payload=""
+    local existing_model_count=0
+    _count_ollama_models_from_tags() {
+        local payload="$1"
+        if command -v python3 &>/dev/null; then
+            python3 - "$payload" <<'PY' 2>/dev/null || echo "0"
+import json
+import sys
+raw = sys.argv[1] if len(sys.argv) > 1 else ""
+try:
+    data = json.loads(raw)
+except Exception:
+    print("0")
+    raise SystemExit(0)
+models = data.get("models")
+if isinstance(models, list):
+    print(str(sum(1 for m in models if isinstance(m, dict) and m.get("name"))))
+else:
+    print("0")
+PY
+        else
+            printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
+        fi
+    }
     cleanup_temp_ollama() {
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
             info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
@@ -3120,6 +3145,23 @@ download_ollama_models() {
     if [[ "$SKIP_MODELS" == true ]]; then
         info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
         return
+    fi
+
+    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
+    OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
+    ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
+
+    # Etkileşimli "indirilsin mi?" sorusundan önce host'taki mevcut modelleri kontrol et.
+    # Modeller zaten varsa kullanıcıyı gereksiz prompt ile rahatsız etmeden devam et.
+    if [[ "$DOWNLOAD_MODELS" != true ]] && command -v ollama &>/dev/null; then
+        tags_payload=$(curl -sf "$ollama_tags_url" 2>/dev/null || true)
+        if [[ -n "$tags_payload" ]]; then
+            existing_model_count=$(_count_ollama_models_from_tags "$tags_payload")
+            if [[ "$existing_model_count" =~ ^[0-9]+$ ]] && (( existing_model_count > 0 )); then
+                ok "Ollama üzerinde ${existing_model_count} model zaten yüklü (${ollama_tags_url}); model indirme sorusu atlandı."
+                return
+            fi
+        fi
     fi
 
     if [[ "$DOWNLOAD_MODELS" != true ]]; then
@@ -3142,8 +3184,6 @@ download_ollama_models() {
         return
     fi
 
-    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
     if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
         info "Ollama API erişilemedi (${OLLAMA_VERSION_URL})."
         if is_local_ollama_url "$OLLAMA_BASE_URL"; then
