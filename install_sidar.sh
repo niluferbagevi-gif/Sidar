@@ -707,6 +707,8 @@ backup_postgres_before_volume_reset() {
     local dump_error_file=""
     local dump_ok=false
     local candidate_db_user=""
+    local -a candidate_db_users=()
+    local -A seen_candidate_db_users=()
 
     if ! command -v docker &>/dev/null; then
         warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
@@ -728,8 +730,19 @@ backup_postgres_before_volume_reset() {
     backup_file="$backup_dir/postgres_before_volume_reset_$(date +%Y%m%d_%H%M%S).sql"
     dump_error_file="$(mktemp)"
 
-    for candidate_db_user in postgres sidar; do
-        if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
+    if [[ -n "${DB_USER:-}" ]]; then
+        candidate_db_users+=("$DB_USER")
+    fi
+    candidate_db_users+=(postgres sidar)
+
+    for candidate_db_user in "${candidate_db_users[@]}"; do
+        [[ -n "$candidate_db_user" ]] || continue
+        if [[ -n "${seen_candidate_db_users[$candidate_db_user]:-}" ]]; then
+            continue
+        fi
+        seen_candidate_db_users["$candidate_db_user"]=1
+
+        if docker exec -e PGUSER="$candidate_db_user" "$postgres_container_id" sh -lc 'pg_dumpall -U "$PGUSER"' >"$backup_file" 2>"$dump_error_file"; then
             if [[ -s "$backup_file" ]]; then
                 dump_ok=true
                 break
