@@ -273,6 +273,40 @@ ensure_docker_daemon_running() {
     docker info &>/dev/null
 }
 
+ensure_current_user_in_docker_group() {
+    local current_user="${USER:-$(id -un 2>/dev/null || true)}"
+    [[ -n "$current_user" ]] || return 0
+
+    if ! getent group docker >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if id -nG "$current_user" 2>/dev/null | tr ' ' '\n' | grep -qx "docker"; then
+        return 0
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        warn "Kullanıcı '${current_user}' docker grubunda değil; sudo bulunamadığı için otomatik ekleme atlandı."
+        return 0
+    fi
+
+    info "Kullanıcı '${current_user}' docker grubuna ekleniyor (usermod -aG docker)."
+    if [[ "$NO_INTERACTION" == true ]]; then
+        if ! sudo -n usermod -aG docker "$current_user" >/dev/null 2>&1; then
+            warn "--ci/--no-interaction modunda docker grubu güncellenemedi (sudo parolasız değil). Manuel komut: sudo usermod -aG docker $current_user"
+            return 0
+        fi
+    else
+        if ! sudo usermod -aG docker "$current_user"; then
+            warn "Kullanıcı docker grubuna eklenemedi. Manuel komut: sudo usermod -aG docker $current_user"
+            return 0
+        fi
+    fi
+
+    ok "Kullanıcı '${current_user}' docker grubuna eklendi."
+    info "Grup üyeliğinin etkili olması için oturumu kapatıp yeniden açın veya 'newgrp docker' çalıştırın."
+}
+
 validate_monitoring_mount_paths() {
     local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
     local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
@@ -1546,6 +1580,7 @@ ensure_prerequisites() {
         local docker_ver
         docker_ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)
         ok "Docker ${docker_ver:-yüklü}"
+        ensure_current_user_in_docker_group
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
         else
