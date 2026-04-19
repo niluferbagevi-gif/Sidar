@@ -1952,9 +1952,11 @@ install_playwright_browsers() {
     fi
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
-        info "Chromium ve Firefox motorları kuruluyor..."
+        local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
+        info "Chromium ve Firefox motorları kuruluyor (timeout=${pw_timeout_ms}ms)..."
         local _pw_log; _pw_log=$(mktemp)
-        if "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
+        if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
+            "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
             # Zaten kurulu paketlerin "is already the newest version" satırlarını filtrele
             grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                 "$_pw_log" || true
