@@ -2739,6 +2739,19 @@ collect_api_keys_interactive() {
         ok ".env: ${key} güncellendi."
     }
 
+    _warn_if_missing_critical_provider_keys() {
+        local openai_key=""
+        local anthropic_key=""
+
+        openai_key=$(grep -E '^OPENAI_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+        anthropic_key=$(grep -E '^ANTHROPIC_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+
+        if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
+            warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
+            warn "[UYARI] Kurulum durdurulmadı. Lütfen .env dosyasını sonradan manuel güncelleyin."
+        fi
+    }
+
     # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
     # Dosya varsa etkileşimli (zenity/whiptail/read) adımı tamamen atlanır.
     _import_api_keys_from_file() {
@@ -2781,6 +2794,7 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2862,6 +2876,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2893,6 +2908,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+        _warn_if_missing_critical_provider_keys
         return
     fi
 
@@ -2919,6 +2935,7 @@ collect_api_keys_interactive() {
         echo ""
     done
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+    _warn_if_missing_critical_provider_keys
 }
 
 report_env_api_key_status() {
