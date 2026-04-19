@@ -210,6 +210,51 @@ has_native_binary() {
     resolve_native_binary_path "$cmd_name" >/dev/null
 }
 
+windows_path_to_wsl_path() {
+    local windows_path="${1:-}"
+    if [[ "$windows_path" =~ ^[A-Za-z]:\\ ]]; then
+        local drive_letter path_rest
+        drive_letter=$(echo "$windows_path" | cut -d: -f1 | tr 'A-Z' 'a-z')
+        path_rest=$(echo "$windows_path" | cut -d: -f2- | sed 's#\\#/#g')
+        echo "/mnt/${drive_letter}${path_rest}"
+        return 0
+    fi
+    return 1
+}
+
+resolve_windows_userprofile_path() {
+    local win_userprofile=""
+    local resolved_wsl_path=""
+
+    # Birincil yöntem: cmd.exe interop
+    if command -v cmd.exe &>/dev/null; then
+        win_userprofile=$(cmd.exe /d /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    # Fallback: powershell.exe interop (kurumsal cmd policy kısıtlarında işe yarayabilir)
+    if command -v powershell.exe &>/dev/null; then
+        win_userprofile=$(powershell.exe -NoProfile -Command '$env:UserProfile' 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    # Son fallback: yaygın varsayım (C:\Users\<username>)
+    if [[ -n "${USER:-}" && -d "/mnt/c/Users/${USER}" ]]; then
+        echo "/mnt/c/Users/${USER}"
+        return 0
+    fi
+
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -2302,16 +2347,11 @@ ASOUNDRC
     fi
 
     # ── RAM limiti kontrolü ve .wslconfig otomatik yapılandırma ──────────────
-    local win_userprofile=""
     local wslconfig_path=""
-    if command -v cmd.exe &>/dev/null; then
-        win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
-            local drive_letter path_rest
-            drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
-            path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
-            wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
-        fi
+    local resolved_windows_home=""
+    resolved_windows_home="$(resolve_windows_userprofile_path || true)"
+    if [[ -n "$resolved_windows_home" ]]; then
+        wslconfig_path="${resolved_windows_home}/.wslconfig"
     fi
 
     # Mevcut memory değerini GB cinsinden sayıya çevir (örn. "16GB" → 16)
