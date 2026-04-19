@@ -1880,6 +1880,10 @@ setup_python_env() {
 
         update_conda_base_if_available
 
+        if [[ ! -f "$SCRIPT_DIR/environment.yml" ]]; then
+            fail "environment.yml bulunamadı! Conda ortamı kurulamıyor."
+        fi
+
         if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
