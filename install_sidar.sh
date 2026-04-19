@@ -1017,7 +1017,7 @@ for arg in "$@"; do
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
             echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
-            echo "  --no-dev  Sadece production bağımlılıklarını kur (geliştirici paketlerini atla)"
+            echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
