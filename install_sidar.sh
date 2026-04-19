@@ -2004,8 +2004,8 @@ install_python_deps() {
         fi
         rm -f "$uv_export_file"
     else
-        info "Bağımlılıklar senkronlanıyor (uv sync)..."
-        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync -q --index-strategy first-match "${SYNC_ARGS[@]}"; then
+        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
+        if ! "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
             fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
         fi
     fi
