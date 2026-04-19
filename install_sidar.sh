@@ -468,6 +468,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
             "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
     fi
 
+    local strict_postgres_reset_on_password_change="${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-0}}"
+
     case "${should_reset:-E}" in
         E|e)
             reset_attempted=true
@@ -544,13 +546,31 @@ maybe_reset_postgres_volume_after_password_hardening() {
         return 0
     fi
 
+    if [[ "$reset_attempted" == true && "${DB_PASSWORD_HARDENED:-false}" == true ]]; then
+        warn "Volume temizliği tamamlanamadı; kilitli Docker artefaktlarını çözmek için docker system prune -f çalıştırılıyor."
+        docker system prune -f >/dev/null 2>&1 || warn "docker system prune -f adımı tamamlanamadı."
+
+        local removed_after_prune=false
+        for volume_name in "${existing_pg_volumes[@]}"; do
+            if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
+                ok "PostgreSQL volume prune sonrası temizlendi: ${volume_name}"
+                removed_after_prune=true
+            fi
+        done
+        if [[ "$removed_after_prune" == true ]]; then
+            POSTGRES_VOLUME_RESET_DONE=true
+            POSTGRES_VOLUME_RESET_FAILED=false
+            return 0
+        fi
+    fi
+
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
         POSTGRES_VOLUME_RESET_FAILED=true
-        if [[ "${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-0}" == "1" ]]; then
+        if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
             return 1
         fi
-        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
+        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
         return 0
     fi
     return 0
