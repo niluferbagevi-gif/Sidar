@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from alembic import context
 from sqlalchemy import pool
@@ -18,6 +21,9 @@ except Exception:  # pragma: no cover - only for minimal test doubles
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 config = context.config
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -38,8 +44,14 @@ def _load_database_url() -> str | None:
     return None
 
 
-def run_migrations_offline() -> None:
+def _resolve_database_url() -> str:
     url = _load_database_url() or config.get_main_option("sqlalchemy.url")
+    config.set_main_option("sqlalchemy.url", url)
+    return url
+
+
+def run_migrations_offline() -> None:
+    url = _resolve_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -64,11 +76,9 @@ async def run_async_migrations() -> None:
 
     if connectable is None:
         section = config.get_section(config.config_ini_section) or {}
-        x_database_url = _load_database_url()
-        if x_database_url:
-            section["sqlalchemy.url"] = x_database_url
+        url = _resolve_database_url()
+        section["sqlalchemy.url"] = url
 
-        url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
         except InvalidRequestError:
