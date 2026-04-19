@@ -3203,6 +3203,10 @@ run_migrations() {
         return
     fi
 
+    # Alembic'in ortamdan farklı/stale DATABASE_URL okumasını engellemek için
+    # doğrulanmış URL'i hem -x argümanı hem de process env ile zorla geçir.
+    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic -x "database_url=${DB_URL}" upgrade head)
+
     info "DATABASE_URL: $DB_URL"
 
     if [[ "$DOCKER_ONLY" == true ]]; then
@@ -3345,7 +3349,7 @@ PY
 
     local alembic_output_file=""
     alembic_output_file=$(mktemp)
-    if "${ALEMBIC_CMD[@]}" \
+    if DATABASE_URL="$DB_URL" "${ALEMBIC_CMD[@]}" \
         > >(tee -a "$alembic_output_file") \
         2> >(tee -a "$alembic_output_file" >&2); then
         rm -f "$alembic_output_file"
