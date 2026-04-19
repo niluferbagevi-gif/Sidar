@@ -21,12 +21,9 @@ export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
-INITIAL_TARGET_DIR="${HOME}/Sidar"
-if [[ -d "$INITIAL_TARGET_DIR" ]]; then
-    LOG_DIR="$INITIAL_TARGET_DIR/logs"
-else
-    LOG_DIR="$SCRIPT_DIR/logs"
-fi
+# Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
+# Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
+LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -i "$LOG_FILE") 2>&1
