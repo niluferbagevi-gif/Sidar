@@ -3169,6 +3169,12 @@ download_ollama_models() {
     local ollama_tags_url=""
     local tags_payload=""
     local existing_model_count=0
+    local env_file="$SCRIPT_DIR/.env"
+    local missing_required_models=""
+    local resolved_models_csv=""
+    local should_prompt_for_download=true
+    local -a models_to_pull=()
+    local -a models=()
     _count_ollama_models_from_tags() {
         local payload="$1"
         if command -v python3 &>/dev/null; then
@@ -3190,6 +3196,47 @@ PY
         else
             printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
         fi
+    }
+    _model_exists_in_tags() {
+        local payload="$1"
+        local model_name="$2"
+        if [[ -z "$payload" || -z "$model_name" ]]; then
+            return 1
+        fi
+        if command -v python3 &>/dev/null; then
+            python3 - "$payload" "$model_name" <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+raw = sys.argv[1] if len(sys.argv) > 1 else ""
+target = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
+if not target:
+    raise SystemExit(1)
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(1)
+models = data.get("models")
+if not isinstance(models, list):
+    raise SystemExit(1)
+names = {m.get("name") for m in models if isinstance(m, dict) and isinstance(m.get("name"), str)}
+if target in names:
+    raise SystemExit(0)
+# Kullanıcı modeli etiketsiz verdiyse Ollama'da sık görülen :latest eşleşmesini de kabul et.
+if ":" not in target and f"{target}:latest" in names:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+            return $?
+        fi
+
+        if printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}\""; then
+            return 0
+        fi
+        if [[ "$model_name" != *:* ]] && printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}:latest\""; then
+            return 0
+        fi
+        return 1
     }
     cleanup_temp_ollama() {
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
@@ -3216,20 +3263,57 @@ PY
     OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
     ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
 
-    # Etkileşimli "indirilsin mi?" sorusundan önce host'taki mevcut modelleri kontrol et.
-    # Modeller zaten varsa kullanıcıyı gereksiz prompt ile rahatsız etmeden devam et.
-    if [[ "$DOWNLOAD_MODELS" != true ]] && command -v ollama &>/dev/null; then
+    if [[ ! -f "$env_file" ]]; then
+        warn ".env bulunamadı, varsayılan modeller indirilemedi."
+        return
+    fi
+
+    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$env_file")
+    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$env_file")
+    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$env_file")
+    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$env_file")
+
+    if [[ -z "$TEXT_MOD" ]]; then
+        TEXT_MOD="llama3.1:8b"
+        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
+    fi
+    if [[ -z "$CODE_MOD" ]]; then
+        CODE_MOD="qwen2.5-coder:3b"
+        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
+    fi
+    models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
+    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
+        models+=("$VISION_MOD")
+    fi
+
+    # Etkileşimli "indirilsin mi?" sorusundan önce mevcut model adlarını doğrula.
+    # Sadece sayıya göre değil, projede gereken model adlarına göre karar ver.
+    if command -v ollama &>/dev/null; then
         tags_payload=$(curl -sf "$ollama_tags_url" 2>/dev/null || true)
         if [[ -n "$tags_payload" ]]; then
             existing_model_count=$(_count_ollama_models_from_tags "$tags_payload")
-            if [[ "$existing_model_count" =~ ^[0-9]+$ ]] && (( existing_model_count > 0 )); then
-                ok "Ollama üzerinde ${existing_model_count} model zaten yüklü (${ollama_tags_url}); model indirme sorusu atlandı."
+            for model in "${models[@]}"; do
+                [[ -n "$model" ]] || continue
+                if _model_exists_in_tags "$tags_payload" "$model"; then
+                    continue
+                fi
+                models_to_pull+=("$model")
+            done
+
+            if (( ${#models_to_pull[@]} == 0 )); then
+                ok "Ollama üzerinde ${existing_model_count} model mevcut ve gerekli modeller zaten yüklü (${ollama_tags_url})."
                 return
+            fi
+
+            if [[ "$DOWNLOAD_MODELS" != true ]]; then
+                missing_required_models=$(IFS=', '; echo "${models_to_pull[*]}")
+                warn "Ollama'da model(ler) eksik: ${missing_required_models}. Sadece eksik modeller indirilecek."
+                should_prompt_for_download=false
             fi
         fi
     fi
 
-    if [[ "$DOWNLOAD_MODELS" != true ]]; then
+    if [[ "$DOWNLOAD_MODELS" != true && "$should_prompt_for_download" == true ]]; then
         if [[ "$NO_INTERACTION" == true ]]; then
             info "--ci/--no-interaction etkin ve --download-models verilmedi: model indirmeleri atlanıyor (${estimated_size_gb})."
             info "Model indirmek için: ./install_sidar.sh --download-models"
@@ -3278,32 +3362,14 @@ PY
         return
     fi
 
-    ENV_FILE="$SCRIPT_DIR/.env"
-    if [[ ! -f "$ENV_FILE" ]]; then
-        warn ".env bulunamadı, varsayılan modeller indirilemedi."
-        return
+    if (( ${#models_to_pull[@]} == 0 )); then
+        models_to_pull=("${models[@]}")
     fi
 
-    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$ENV_FILE")
-    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$ENV_FILE")
-    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$ENV_FILE")
-    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$ENV_FILE")
+    resolved_models_csv=$(IFS=', '; echo "${models_to_pull[*]}")
+    info "İndirilecek model listesi: ${resolved_models_csv}"
 
-    if [[ -z "$TEXT_MOD" ]]; then
-        TEXT_MOD="llama3.1:8b"
-        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
-    fi
-    if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:3b"
-        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
-    fi
-
-    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
-    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
-        MODELS+=("$VISION_MOD")
-    fi
-
-    for model in "${MODELS[@]}"; do
+    for model in "${models_to_pull[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
             local pull_success=false
