@@ -670,7 +670,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
     esac
 
     if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
-        POSTGRES_VOLUME_RESET_FAILED=false
         return 0
     fi
 
@@ -687,14 +686,12 @@ maybe_reset_postgres_volume_after_password_hardening() {
         done
         if [[ "$removed_after_prune" == true ]]; then
             POSTGRES_VOLUME_RESET_DONE=true
-            POSTGRES_VOLUME_RESET_FAILED=false
             return 0
         fi
     fi
 
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
-        POSTGRES_VOLUME_RESET_FAILED=true
         if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
             return 1
         fi
@@ -1105,7 +1102,6 @@ MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
-POSTGRES_VOLUME_RESET_FAILED=false
 PRE_HARDEN_DB_PASSWORD=""
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
