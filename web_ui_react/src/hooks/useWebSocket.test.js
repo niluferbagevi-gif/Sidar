@@ -14,6 +14,17 @@ function makeWsMock() {
   return ws;
 }
 
+function makeWebSocketCtor(instanceFactory) {
+  const ctor = vi.fn(function webSocketCtorProxy(...args) {
+    return instanceFactory(...args);
+  });
+  ctor.CONNECTING = 0;
+  ctor.OPEN = 1;
+  ctor.CLOSING = 2;
+  ctor.CLOSED = 3;
+  return ctor;
+}
+
 let wsMockInstance = null;
 
 beforeEach(() => {
@@ -25,11 +36,7 @@ beforeEach(() => {
 
   // WebSocket global stub
   wsMockInstance = makeWsMock();
-  globalThis.WebSocket = vi.fn(() => wsMockInstance);
-  globalThis.WebSocket.CONNECTING = 0;
-  globalThis.WebSocket.OPEN = 1;
-  globalThis.WebSocket.CLOSING = 2;
-  globalThis.WebSocket.CLOSED = 3;
+  globalThis.WebSocket = makeWebSocketCtor(() => wsMockInstance);
 });
 
 afterEach(() => {

@@ -19,7 +19,9 @@ function makeWsMock(readyState = 1) {
 }
 
 function withOpenSocketCtor(factory) {
-  const ctor = vi.fn(factory);
+  const ctor = vi.fn(function ctorProxy(...args) {
+    return factory(...args);
+  });
   ctor.OPEN = 1;
   return ctor;
 }
@@ -275,7 +277,9 @@ describe("useVoiceAssistant — cleanup ve recorder hata akışları", () => {
   it("stop() cleanup sırasında recorder, audio context ve track'leri kapatır", async () => {
     const { getStoredToken } = await import("../lib/api.js");
     getStoredToken.mockReturnValue("token");
-    globalThis.WebSocket = vi.fn(() => makeWsMock(WebSocket.OPEN));
+    globalThis.WebSocket = withOpenSocketCtor(function () {
+      return makeWsMock(WebSocket.OPEN);
+    });
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1);
 
     const stopTrack = vi.fn();
@@ -330,7 +334,9 @@ describe("useVoiceAssistant — cleanup ve recorder hata akışları", () => {
   it("recorder ondataavailable boş veri geldiğinde sessizce döner", async () => {
     const { getStoredToken } = await import("../lib/api.js");
     getStoredToken.mockReturnValue("token");
-    globalThis.WebSocket = vi.fn(() => makeWsMock(WebSocket.OPEN));
+    globalThis.WebSocket = withOpenSocketCtor(function () {
+      return makeWsMock(WebSocket.OPEN);
+    });
     let rafLooped = false;
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
       if (!rafLooped) {
