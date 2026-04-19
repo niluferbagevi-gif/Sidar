@@ -7,7 +7,7 @@
 # Kullanım:
 #   chmod +x install_sidar.sh
 #   ./install_sidar.sh           # standart kurulum
-#   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
+#   ./install_sidar.sh --no-dev  # sadece production bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
@@ -966,7 +966,7 @@ PY
 }
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
-INSTALL_DEV=false
+INSTALL_DEV=true
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=false
@@ -999,7 +999,8 @@ ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
 for arg in "$@"; do
     case "$arg" in
-        --dev)  INSTALL_DEV=true ;;
+        --dev)  INSTALL_DEV=true ;;  # geriye dönük uyumluluk
+        --no-dev) INSTALL_DEV=false ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
         --skip-models) SKIP_MODELS=true ;;
@@ -1016,8 +1017,9 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
-            echo "  --dev  Geliştirici bağımlılıklarını kur"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "  --no-dev  Sadece production bağımlılıklarını kur (geliştirici paketlerini atla)"
+            echo "  --dev  (eski) Geliştirici bağımlılıklarını açık bırakır; geriye dönük uyumluluk için kabul edilir"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
@@ -1036,7 +1038,7 @@ for arg in "$@"; do
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -3777,7 +3779,7 @@ run_smoke_tests() {
 
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
-            warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+            warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
@@ -3796,7 +3798,7 @@ run_smoke_tests() {
     fi
 
     if ! python -c "import pytest" >/dev/null 2>&1; then
-        warn "pytest bu ortamda kurulu değil. --dev ile yeniden kurup tekrar deneyin."
+        warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
@@ -3942,7 +3944,7 @@ print_summary() {
         echo "       Manuel build için: cd web_ui_react && npm ci && npm run build"
     fi
     echo ""
-    echo -e "  6️⃣  Testleri çalıştır (--dev ile kurulduysa):"
+    echo -e "  6️⃣  Testleri çalıştır (varsayılan kurulumda hazır):"
     echo "       ./run_tests.sh"
     echo ""
 
