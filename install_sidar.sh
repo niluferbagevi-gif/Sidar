@@ -4320,12 +4320,12 @@ launch_ide() {
         if cmd.exe /c "where code" >/dev/null 2>&1; then
             vscode_mode="windows-code-cli"
             if command -v wslpath &>/dev/null; then
-                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
             fi
         elif [[ -x "/mnt/c/Program Files/Microsoft VS Code/Code.exe" ]]; then
             vscode_mode="windows-code-exe"
             if command -v wslpath &>/dev/null; then
-                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
             fi
         fi
     fi
