@@ -613,14 +613,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
             fi
-            local postgres_password_changed=0
-            if [[ "$DB_PASSWORD_HARDENED" == true ]]; then
-                postgres_password_changed=1
-            fi
-            if [[ "$postgres_password_changed" == "1" ]]; then
-                warn "Parola değişimi saptandı, Docker süreçleri zorla temizleniyor..."
-                "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-            fi
             if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
                 warn "Agresif container temizliği etkin: projeye ait asılı kalan container'lar zorla kaldırılıyor."
                 local -a project_container_ids=()
@@ -649,9 +641,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
                             docker rm -f "${dangling_by_name_container_ids[@]}" >/dev/null 2>&1 || warn "Volume adına göre bulunan container'lar kaldırılamadı: ${volume_name}"
                         fi
                     fi
-                fi
-                if [[ "$postgres_password_changed" == "1" ]]; then
-                    docker volume rm "$volume_name" -f >/dev/null 2>&1 || true
                 fi
                 if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
                     ok "PostgreSQL volume temizlendi: ${volume_name}"
