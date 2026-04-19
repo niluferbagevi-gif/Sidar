@@ -21,12 +21,9 @@ export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
-INITIAL_TARGET_DIR="${HOME}/Sidar"
-if [[ -d "$INITIAL_TARGET_DIR" ]]; then
-    LOG_DIR="$INITIAL_TARGET_DIR/logs"
-else
-    LOG_DIR="$SCRIPT_DIR/logs"
-fi
+# Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
+# Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
+LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -i "$LOG_FILE") 2>&1
@@ -979,6 +976,7 @@ RUN_SMOKE_TESTS_MODE="ask"
 RUN_AUDIT=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
+APP_RUNTIME_MODE="ask"
 ENABLE_AUDIO=false
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 REACT_UI_STATUS="atlandı"
@@ -1013,13 +1011,16 @@ for arg in "$@"; do
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
+        --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
+        --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
+            echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
             echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
             echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
             echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
@@ -1036,7 +1037,7 @@ for arg in "$@"; do
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1991,19 +1992,34 @@ install_playwright_browsers() {
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-        info "Chromium ve Firefox motorları kuruluyor (timeout=${pw_timeout_ms}ms)..."
-        local _pw_log; _pw_log=$(mktemp)
+        local _pw_deps_log; _pw_deps_log=$(mktemp)
+        local _pw_install_log; _pw_install_log=$(mktemp)
+
+        info "Playwright sistem bağımlılıkları kuruluyor (apt/sudo gerekebilir)..."
         if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-            "${PY_CMD[@]}" -m playwright install --with-deps chromium firefox >"$_pw_log" 2>&1; then
-            # Zaten kurulu paketlerin "is already the newest version" satırlarını filtrele
+            "${PY_CMD[@]}" -m playwright install-deps chromium firefox >"$_pw_deps_log" 2>&1; then
             grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                "$_pw_log" || true
+                "$_pw_deps_log" || true
+            ok "Playwright sistem bağımlılıkları doğrulandı."
+        else
+            cat "$_pw_deps_log" >&2
+            warn "Playwright sistem bağımlılıkları kurulamadı. Manuel komut: python -m playwright install-deps chromium firefox"
+            rm -f "$_pw_deps_log" "$_pw_install_log"
+            return
+        fi
+
+        info "Chromium ve Firefox motorları kullanıcı bağlamında kuruluyor (timeout=${pw_timeout_ms}ms)..."
+        if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
+            "${PY_CMD[@]}" -m playwright install chromium firefox >"$_pw_install_log" 2>&1; then
+            grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                "$_pw_install_log" || true
             ok "Playwright motorları kuruldu (chromium, firefox)."
         else
-            cat "$_pw_log" >&2
-            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install --with-deps chromium firefox"
+            cat "$_pw_install_log" >&2
+            warn "Playwright motor kurulumu başarısız oldu. Manuel komut: python -m playwright install chromium firefox"
         fi
-        rm -f "$_pw_log"
+
+        rm -f "$_pw_deps_log" "$_pw_install_log"
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
@@ -3165,6 +3181,12 @@ download_ollama_models() {
     local ollama_tags_url=""
     local tags_payload=""
     local existing_model_count=0
+    local env_file="$SCRIPT_DIR/.env"
+    local missing_required_models=""
+    local resolved_models_csv=""
+    local should_prompt_for_download=true
+    local -a models_to_pull=()
+    local -a models=()
     _count_ollama_models_from_tags() {
         local payload="$1"
         if command -v python3 &>/dev/null; then
@@ -3186,6 +3208,47 @@ PY
         else
             printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
         fi
+    }
+    _model_exists_in_tags() {
+        local payload="$1"
+        local model_name="$2"
+        if [[ -z "$payload" || -z "$model_name" ]]; then
+            return 1
+        fi
+        if command -v python3 &>/dev/null; then
+            python3 - "$payload" "$model_name" <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+raw = sys.argv[1] if len(sys.argv) > 1 else ""
+target = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
+if not target:
+    raise SystemExit(1)
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(1)
+models = data.get("models")
+if not isinstance(models, list):
+    raise SystemExit(1)
+names = {m.get("name") for m in models if isinstance(m, dict) and isinstance(m.get("name"), str)}
+if target in names:
+    raise SystemExit(0)
+# Kullanıcı modeli etiketsiz verdiyse Ollama'da sık görülen :latest eşleşmesini de kabul et.
+if ":" not in target and f"{target}:latest" in names:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+            return $?
+        fi
+
+        if printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}\""; then
+            return 0
+        fi
+        if [[ "$model_name" != *:* ]] && printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}:latest\""; then
+            return 0
+        fi
+        return 1
     }
     cleanup_temp_ollama() {
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
@@ -3212,20 +3275,57 @@ PY
     OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
     ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
 
-    # Etkileşimli "indirilsin mi?" sorusundan önce host'taki mevcut modelleri kontrol et.
-    # Modeller zaten varsa kullanıcıyı gereksiz prompt ile rahatsız etmeden devam et.
-    if [[ "$DOWNLOAD_MODELS" != true ]] && command -v ollama &>/dev/null; then
+    if [[ ! -f "$env_file" ]]; then
+        warn ".env bulunamadı, varsayılan modeller indirilemedi."
+        return
+    fi
+
+    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$env_file")
+    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$env_file")
+    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$env_file")
+    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$env_file")
+
+    if [[ -z "$TEXT_MOD" ]]; then
+        TEXT_MOD="llama3.1:8b"
+        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
+    fi
+    if [[ -z "$CODE_MOD" ]]; then
+        CODE_MOD="qwen2.5-coder:3b"
+        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
+    fi
+    models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
+    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
+        models+=("$VISION_MOD")
+    fi
+
+    # Etkileşimli "indirilsin mi?" sorusundan önce mevcut model adlarını doğrula.
+    # Sadece sayıya göre değil, projede gereken model adlarına göre karar ver.
+    if command -v ollama &>/dev/null; then
         tags_payload=$(curl -sf "$ollama_tags_url" 2>/dev/null || true)
         if [[ -n "$tags_payload" ]]; then
             existing_model_count=$(_count_ollama_models_from_tags "$tags_payload")
-            if [[ "$existing_model_count" =~ ^[0-9]+$ ]] && (( existing_model_count > 0 )); then
-                ok "Ollama üzerinde ${existing_model_count} model zaten yüklü (${ollama_tags_url}); model indirme sorusu atlandı."
+            for model in "${models[@]}"; do
+                [[ -n "$model" ]] || continue
+                if _model_exists_in_tags "$tags_payload" "$model"; then
+                    continue
+                fi
+                models_to_pull+=("$model")
+            done
+
+            if (( ${#models_to_pull[@]} == 0 )); then
+                ok "Ollama üzerinde ${existing_model_count} model mevcut ve gerekli modeller zaten yüklü (${ollama_tags_url})."
                 return
+            fi
+
+            if [[ "$DOWNLOAD_MODELS" != true ]]; then
+                missing_required_models=$(IFS=', '; echo "${models_to_pull[*]}")
+                warn "Ollama'da model(ler) eksik: ${missing_required_models}. Sadece eksik modeller indirilecek."
+                should_prompt_for_download=false
             fi
         fi
     fi
 
-    if [[ "$DOWNLOAD_MODELS" != true ]]; then
+    if [[ "$DOWNLOAD_MODELS" != true && "$should_prompt_for_download" == true ]]; then
         if [[ "$NO_INTERACTION" == true ]]; then
             info "--ci/--no-interaction etkin ve --download-models verilmedi: model indirmeleri atlanıyor (${estimated_size_gb})."
             info "Model indirmek için: ./install_sidar.sh --download-models"
@@ -3274,32 +3374,14 @@ PY
         return
     fi
 
-    ENV_FILE="$SCRIPT_DIR/.env"
-    if [[ ! -f "$ENV_FILE" ]]; then
-        warn ".env bulunamadı, varsayılan modeller indirilemedi."
-        return
+    if (( ${#models_to_pull[@]} == 0 )); then
+        models_to_pull=("${models[@]}")
     fi
 
-    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$ENV_FILE")
-    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$ENV_FILE")
-    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$ENV_FILE")
-    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$ENV_FILE")
+    resolved_models_csv=$(IFS=', '; echo "${models_to_pull[*]}")
+    info "İndirilecek model listesi: ${resolved_models_csv}"
 
-    if [[ -z "$TEXT_MOD" ]]; then
-        TEXT_MOD="llama3.1:8b"
-        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
-    fi
-    if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:3b"
-        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
-    fi
-
-    MODELS=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
-    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
-        MODELS+=("$VISION_MOD")
-    fi
-
-    for model in "${MODELS[@]}"; do
+    for model in "${models_to_pull[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
             local pull_success=false
@@ -3924,7 +4006,14 @@ print_summary() {
     fi
     echo ""
     echo -e "  3️⃣  Arka plan servisleri durumu:"
-    echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
+        echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
+        echo "       Altyapı servisleri: docker compose up -d postgres redis ollama jaeger prometheus grafana"
+        echo "       Durdurma: docker compose stop postgres redis ollama jaeger prometheus grafana"
+    else
+        echo "       Çalışma modu: Tam Docker (web/agent dahil)."
+        echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
+    fi
     echo ""
     echo -e "  4️⃣  CLI ile başlat:"
     echo "       python main.py"
@@ -4015,6 +4104,9 @@ launch_docker_services() {
     local docker_compose_cmd=()
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
+    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+    local runtime_answer=""
+    local -a infra_services=(postgres redis ollama jaeger prometheus grafana)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -4036,18 +4128,37 @@ launch_docker_services() {
         fi
     fi
 
-    if [[ "$NO_INTERACTION" == true ]]; then
-        info "--ci/--no-interaction etkin: Docker servisleri otomatik başlatma onayı atlandı."
-        info "Gerekirse manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles docker compose up -d"
-        return
+    if [[ "$runtime_mode" == "ask" ]]; then
+        if [[ "$NO_INTERACTION" == true ]]; then
+            runtime_mode="docker"
+            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
+        else
+            echo ""
+            info "Çalışma modu seçimi:"
+            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+                :
+            else
+                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                runtime_answer="1"
+            fi
+            case "${runtime_answer:-1}" in
+                2) runtime_mode="docker" ;;
+                *) runtime_mode="local" ;;
+            esac
+        fi
     fi
 
+    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
     echo ""
-    local start_prompt="Arka plan servisleri (PostgreSQL, Redis vb.) Docker ile başlatılsın mı? [E/h] "
+    local start_prompt="Docker servisleri başlatılsın mı? [E/h] "
     local start_default="E"
     local start_docker=""
     if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
         info "PostgreSQL/Redis migrasyon adımında zaten başlatıldı; kalan Docker servisleri otomatik başlatılacak."
+        start_docker="E"
+    elif [[ "$NO_INTERACTION" == true ]]; then
         start_docker="E"
     else
         start_docker=$(prompt_yes_no_with_timeout_default_yes "$start_prompt")
@@ -4070,15 +4181,29 @@ launch_docker_services() {
             info "Docker Compose servisleri başlatılıyor..."
             info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
             validate_monitoring_mount_paths
-            info "Docker Compose profili: $compose_profiles"
-            if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
-                ok "Docker servisleri başarıyla başlatıldı."
+            if [[ "$runtime_mode" == "local" ]]; then
+                info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)"
+                if "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                    ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
+                else
+                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                fi
             else
-                warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                info "Seçilen çalışma modu: docker (tüm servisler Docker)"
+                info "Docker Compose profili: $compose_profiles"
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                    ok "Docker servisleri başarıyla başlatıldı."
+                else
+                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                fi
             fi
             ;;
         *)
-            info "Docker servislerinin başlatılması atlandı. (Manuel başlatmak için: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
+            if [[ "$runtime_mode" == "local" ]]; then
+                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]})"
+            else
+                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
+            fi
             ;;
     esac
 }
