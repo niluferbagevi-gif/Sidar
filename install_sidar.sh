@@ -14,8 +14,8 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
-# Güvenilir kaynaklar için varsayılan olarak unverified indirmelere izin ver
-export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-1}"
+# Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
+export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -264,7 +264,17 @@ ensure_docker_daemon_running() {
 
     if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
-        sleep 8
+        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        local elapsed=0
+        while (( elapsed < 60 )); do
+            if docker info &>/dev/null; then
+                ok "Docker daemon erişilebilir duruma geldi."
+                return 0
+            fi
+            sleep 3
+            ((elapsed += 3))
+        done
+        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
     docker info &>/dev/null
@@ -603,14 +613,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
             if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
                 warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
             fi
-            local postgres_password_changed=0
-            if [[ "$DB_PASSWORD_HARDENED" == true ]]; then
-                postgres_password_changed=1
-            fi
-            if [[ "$postgres_password_changed" == "1" ]]; then
-                warn "Parola değişimi saptandı, Docker süreçleri zorla temizleniyor..."
-                "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-            fi
             if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
                 warn "Agresif container temizliği etkin: projeye ait asılı kalan container'lar zorla kaldırılıyor."
                 local -a project_container_ids=()
@@ -640,9 +642,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
                         fi
                     fi
                 fi
-                if [[ "$postgres_password_changed" == "1" ]]; then
-                    docker volume rm "$volume_name" -f >/dev/null 2>&1 || true
-                fi
                 if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
                     ok "PostgreSQL volume temizlendi: ${volume_name}"
                     removed_any=true
@@ -660,7 +659,6 @@ maybe_reset_postgres_volume_after_password_hardening() {
     esac
 
     if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
-        POSTGRES_VOLUME_RESET_FAILED=false
         return 0
     fi
 
@@ -677,14 +675,12 @@ maybe_reset_postgres_volume_after_password_hardening() {
         done
         if [[ "$removed_after_prune" == true ]]; then
             POSTGRES_VOLUME_RESET_DONE=true
-            POSTGRES_VOLUME_RESET_FAILED=false
             return 0
         fi
     fi
 
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
-        POSTGRES_VOLUME_RESET_FAILED=true
         if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
             return 1
         fi
@@ -839,21 +835,21 @@ PY
                 ok "Redis erişilebilir hale geldi."
                 return 0
             fi
+        elif command -v timeout &>/dev/null; then
+            # Hafif fallback: her döngüde python process spawn etmek yerine bash /dev/tcp kullan.
+            if timeout 1 bash -c "</dev/tcp/$redis_host/$redis_port" >/dev/null 2>&1; then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
         elif [[ ${#python_cmd[@]} -gt 0 ]]; then
+            # timeout yoksa son çare olarak tek TCP connect kontrolü.
             if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
 import socket
 import sys
-
 host = sys.argv[1]
 port = int(sys.argv[2])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(1.0)
-try:
-    sock.connect((host, port))
-except OSError:
-    raise SystemExit(1)
-finally:
-    sock.close()
+with socket.create_connection((host, port), timeout=1.0):
+    pass
 PY
             then
                 ok "Redis erişilebilir hale geldi."
@@ -1095,7 +1091,6 @@ MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
-POSTGRES_VOLUME_RESET_FAILED=false
 PRE_HARDEN_DB_PASSWORD=""
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
@@ -1428,10 +1423,10 @@ sync_repo() {
 
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
 install_system_dependencies() {
-    step "Sistem Güncelleme ve Temel Paketlerin Kurulumu"
+    step "Temel Sistem Paketlerinin Kurulumu"
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        info "Sistem güncelleniyor ve Linux temel paketleri kuruluyor..."
+        info "Linux temel paketleri kuruluyor (tam sistem upgrade atlanır)..."
         local -a ns_source_files=()
         mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/node_20.x' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
         if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
@@ -1449,8 +1444,6 @@ install_system_dependencies() {
             sudo rm -f /etc/apt/sources.list.d/nodesource.list
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
         fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 upgrade -y
-
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
@@ -1571,7 +1564,6 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    USE_CONDA=false
     info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
 
     # Git
@@ -1877,6 +1869,10 @@ setup_python_env() {
 
         update_conda_base_if_available
 
+        if [[ ! -f "$SCRIPT_DIR/environment.yml" ]]; then
+            fail "environment.yml bulunamadı! Conda ortamı kurulamıyor."
+        fi
+
         if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
             info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
             conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
@@ -1932,6 +1928,7 @@ setup_uv() {
             "https://astral.sh/uv/install.sh" \
             "${UV_INSTALL_SHA256:-}" \
             "uv_install"
+        validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
         sh "$DOWNLOADED_SCRIPT_FILE"
         rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
@@ -1991,14 +1988,14 @@ install_python_deps() {
         fi
 
         info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        if ! run_with_progress_hint "Downloading packages..." uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
+        if ! uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
             rm -f "$uv_export_file"
             fail "uv pip sync başarısız oldu. Conda ortamına bağımlılıklar kurulamadı."
         fi
         rm -f "$uv_export_file"
     else
         info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
-        if ! run_with_progress_hint "Downloading packages..." "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
+        if ! "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
             fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
         fi
     fi
@@ -2515,8 +2512,9 @@ harden_database_credentials() {
 
     [[ -f "$env_file" ]] || return
 
-    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
-    sidar_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || echo "development")
+    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+    sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    sidar_env="${sidar_env:-development}"
 
     [[ -n "$db_url" ]] || return
 
@@ -2584,7 +2582,7 @@ sync_postgres_env_with_database_url() {
 
     [[ -f "$env_file" ]] || return
 
-    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
     [[ -n "$db_url" ]] || return
 
     if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
@@ -2626,7 +2624,7 @@ ensure_database_url_defaults() {
         return
     fi
 
-    current_db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
 
     if [[ -z "$current_db_url" ]]; then
         echo "DATABASE_URL=${DEFAULT_DATABASE_URL}" >> "$env_file"
@@ -2929,7 +2927,9 @@ collect_api_keys_interactive() {
             lbl="$(_key_label "$mk")"
             printf "  %-46s : " "$lbl"
             input=""
-            read -r input || true
+            # Gizli giriş: anahtarlar terminalde görünmez; satır düzeni için ardından echo basılır.
+            IFS= read -rs input || true
+            echo ""
             _write_key "$mk" "$input"
         done
         echo ""
@@ -3485,7 +3485,12 @@ run_migrations() {
         return
     fi
 
-    info "DATABASE_URL: $DB_URL"
+    # Güvenlik: DB_URL içindeki parolayı loglarda maskele
+    local masked_db_url="$DB_URL"
+    if [[ "$DB_URL" =~ ^(postgresql(\+asyncpg)?://[^:/?#]+:)([^@]+)(@.+)$ ]]; then
+        masked_db_url="${BASH_REMATCH[1]}***${BASH_REMATCH[4]}"
+    fi
+    info "DATABASE_URL: $masked_db_url"
 
     if [[ "$DOCKER_ONLY" == true ]]; then
         DOCKER_COMPOSE_CMD=()
@@ -3945,7 +3950,7 @@ run_smoke_tests() {
 
 wait_for_core_docker_health_before_smoke_tests() {
     local -a docker_compose_cmd=()
-    local -a containers=("sidar_postgres" "sidar_redis")
+    local -a services=("postgres" "redis")
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -3964,22 +3969,25 @@ wait_for_core_docker_health_before_smoke_tests() {
     info "Smoke test öncesi Docker servis health kontrolleri yapılıyor (postgres/redis)..."
     "${docker_compose_cmd[@]}" ps --status running postgres redis >/dev/null 2>&1 || true
 
-    local container_name=""
+    local svc=""
+    local container_id=""
     local state=""
-    for container_name in "${containers[@]}"; do
-        if ! docker inspect "$container_name" >/dev/null 2>&1; then
+    for svc in "${services[@]}"; do
+        container_id=$("${docker_compose_cmd[@]}" ps -q "$svc" 2>/dev/null | head -n1 || true)
+        if [[ -z "$container_id" ]]; then
+            warn "'$svc' servisi için container bulunamadı. Compose projesi ayakta mı?"
             continue
         fi
 
         for _ in {1..30}; do
-            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || echo "unknown")
+            state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo "unknown")
             case "$state" in
                 healthy|running)
-                    ok "Container hazır: ${container_name} (${state})"
+                    ok "'$svc' servisi hazır: ${container_id} (${state})"
                     break
                     ;;
                 exited|dead|unhealthy)
-                    warn "Container sağlıksız görünüyor: ${container_name} (${state})"
+                    warn "'$svc' servisi sağlıksız görünüyor: ${container_id} (${state})"
                     return 0
                     ;;
             esac
@@ -4301,12 +4309,12 @@ launch_ide() {
         if cmd.exe /c "where code" >/dev/null 2>&1; then
             vscode_mode="windows-code-cli"
             if command -v wslpath &>/dev/null; then
-                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
             fi
         elif [[ -x "/mnt/c/Program Files/Microsoft VS Code/Code.exe" ]]; then
             vscode_mode="windows-code-exe"
             if command -v wslpath &>/dev/null; then
-                vscode_target_path=$(wslpath -w "$SCRIPT_DIR")
+                vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
             fi
         fi
     fi
