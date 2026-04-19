@@ -1917,10 +1917,7 @@ install_python_deps() {
     cd "$SCRIPT_DIR"
     UV_CMD=(uv)
 
-    local -a EXTRAS=(gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams)
-    if [[ "$INSTALL_DEV" == true ]]; then
-        EXTRAS+=(dev)
-    fi
+    local -a EXTRAS=(dev gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams)
     if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
         EXTRAS+=(gpu)
     fi
