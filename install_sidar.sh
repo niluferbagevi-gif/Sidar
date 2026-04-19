@@ -3343,6 +3343,26 @@ PY
         fi
     fi
 
+    # Shell belleğinde kalmış eski değişkenlerin .env değerlerini ezmesini engelle.
+    unset DATABASE_URL
+    unset POSTGRES_PASSWORD
+    if [[ -f "$ENV_FILE" ]]; then
+        local refreshed_db_url=""
+        local refreshed_postgres_password=""
+        refreshed_db_url=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        refreshed_postgres_password=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+
+        if [[ -n "$refreshed_db_url" ]]; then
+            DB_URL="$refreshed_db_url"
+            export DATABASE_URL="$refreshed_db_url"
+        fi
+        if [[ -n "$refreshed_postgres_password" ]]; then
+            export POSTGRES_PASSWORD="$refreshed_postgres_password"
+        fi
+    fi
+
+    ALEMBIC_CMD=(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic upgrade head)
+
     local alembic_output_file=""
     alembic_output_file=$(mktemp)
     if "${ALEMBIC_CMD[@]}" \
