@@ -605,29 +605,40 @@ wait_for_postgres_ready_after_docker_start() {
     local db_password="$5"
     local max_attempts="${6:-30}"
     local sleep_seconds="${7:-2}"
+    local last_auth_rc=1
+    local last_auth_err=""
 
-    info "PostgreSQL hazır ve erişilebilir olana kadar bekleniyor (${db_host}:${db_port}/${db_name})..."
+    info "PostgreSQL'in tabloları ve kullanıcıları oluşturması bekleniyor (${db_host}:${db_port}/${db_name})..."
     for ((attempt=1; attempt<=max_attempts; attempt++)); do
         if pg_isready -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" >/dev/null 2>&1; then
             local auth_rc=0
             verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" || auth_rc=$?
+            last_auth_rc="$auth_rc"
+            last_auth_err="${POSTGRES_AUTH_CHECK_ERROR:-}"
             case "$auth_rc" in
                 0)
-                    ok "PostgreSQL erişilebilir ve kimlik doğrulaması başarılı."
+                    ok "PostgreSQL tam olarak hazır ve kimlik doğrulaması başarılı."
                     return 0
                     ;;
                 10)
-                    warn "PostgreSQL parola doğrulaması başarısız: ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
-                    fail "PostgreSQL ayakta ancak parola doğrulaması başarısız. Eski volume/parola uyuşmazlığı nedeniyle kurulum durduruldu."
+                    warn "PostgreSQL portu açık ama parola henüz doğrulanamadı (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
                     ;;
                 2)
-                    warn "PostgreSQL erişilebilir, ancak psql/asyncpg ile auth doğrulaması yapılamadı. Kurulum devam edecek."
-                    return 0
+                    warn "PostgreSQL erişilebilir, ancak auth doğrulaması için gerekli istemci henüz hazır değil (${attempt}/${max_attempts})."
+                    ;;
+                *)
+                    warn "PostgreSQL erişilebilir, auth denemesi başarısız (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-unknown}"
                     ;;
             esac
+        else
+            info "⏳ Veritabanı başlatılıyor... (${attempt}/${max_attempts})"
         fi
         sleep "$sleep_seconds"
     done
+
+    if [[ "$last_auth_rc" -eq 10 ]]; then
+        fail "PostgreSQL başlatılamadı veya şifre uyuşmuyor: ${last_auth_err:-password authentication failed}"
+    fi
 
     return 1
 }
