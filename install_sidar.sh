@@ -849,21 +849,21 @@ PY
                 ok "Redis erişilebilir hale geldi."
                 return 0
             fi
+        elif command -v timeout &>/dev/null; then
+            # Hafif fallback: her döngüde python process spawn etmek yerine bash /dev/tcp kullan.
+            if timeout 1 bash -c "</dev/tcp/$redis_host/$redis_port" >/dev/null 2>&1; then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
         elif [[ ${#python_cmd[@]} -gt 0 ]]; then
+            # timeout yoksa son çare olarak tek TCP connect kontrolü.
             if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
 import socket
 import sys
-
 host = sys.argv[1]
 port = int(sys.argv[2])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(1.0)
-try:
-    sock.connect((host, port))
-except OSError:
-    raise SystemExit(1)
-finally:
-    sock.close()
+with socket.create_connection((host, port), timeout=1.0):
+    pass
 PY
             then
                 ok "Redis erişilebilir hale geldi."
