@@ -1579,7 +1579,6 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    USE_CONDA=false
     info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
 
     # Git
