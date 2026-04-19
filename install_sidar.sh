@@ -219,6 +219,84 @@ has_native_binary() {
     resolve_native_binary_path "$cmd_name" >/dev/null
 }
 
+wsl_parse_gb_value() {
+    echo "${1:-0}" | grep -oP '^\d+' || echo "0"
+}
+
+wsl_detect_host_ram_gb() {
+    local total_kb="0"
+    if [[ -r /proc/meminfo ]]; then
+        total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
+    fi
+    if [[ -z "$total_kb" || "$total_kb" -le 0 ]]; then
+        echo "16"
+        return
+    fi
+    # Yukarı yuvarla: KB -> GB
+    echo $(((total_kb + 1048575) / 1048576))
+}
+
+wsl_clamp_int() {
+    local val="$1"
+    local min="$2"
+    local max="$3"
+    if [[ "$val" -lt "$min" ]]; then
+        echo "$min"
+        return
+    fi
+    if [[ "$val" -gt "$max" ]]; then
+        echo "$max"
+        return
+    fi
+    echo "$val"
+}
+
+wsl_ensure_key_once_in_wsl2_section() {
+    local cfg_file="$1"
+    local cfg_key="$2"
+    local cfg_value="$3"
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    awk -v key="$cfg_key" -v value="$cfg_value" '
+        BEGIN { in_wsl2=0; seen_key=0 }
+        {
+            if ($0 ~ /^\[.*\]$/) {
+                if (in_wsl2 && !seen_key) {
+                    print key "=" value
+                    seen_key=1
+                }
+                in_wsl2 = ($0 == "[wsl2]")
+                print
+                next
+            }
+
+            if (in_wsl2 && $0 ~ ("^" key "=")) {
+                if (!seen_key) {
+                    print
+                    seen_key=1
+                }
+                next
+            }
+
+            print
+        }
+        END {
+            if (in_wsl2 && !seen_key) {
+                print key "=" value
+            }
+        }
+    ' "$cfg_file" > "$tmp_file"
+
+    if ! cmp -s "$cfg_file" "$tmp_file"; then
+        mv "$tmp_file" "$cfg_file"
+        return 0
+    fi
+
+    rm -f "$tmp_file"
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -2295,99 +2373,18 @@ ASOUNDRC
         fi
     fi
 
-    # Mevcut memory değerini GB cinsinden sayıya çevir (örn. "16GB" → 16)
-    _parse_gb() {
-        echo "${1:-0}" | grep -oP '^\d+' || echo "0"
-    }
-
-    _detect_host_ram_gb() {
-        local total_kb="0"
-        if [[ -r /proc/meminfo ]]; then
-            total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
-        fi
-        if [[ -z "$total_kb" || "$total_kb" -le 0 ]]; then
-            echo "16"
-            return
-        fi
-        # Yukarı yuvarla: KB -> GB
-        echo $(((total_kb + 1048575) / 1048576))
-    }
-
-    _clamp_int() {
-        local val="$1"
-        local min="$2"
-        local max="$3"
-        if [[ "$val" -lt "$min" ]]; then
-            echo "$min"
-            return
-        fi
-        if [[ "$val" -gt "$max" ]]; then
-            echo "$max"
-            return
-        fi
-        echo "$val"
-    }
-
     local host_ram_gb
     local target_memory_gb
     local target_swap_gb
-    host_ram_gb=$(_detect_host_ram_gb)
+    host_ram_gb=$(wsl_detect_host_ram_gb)
     target_memory_gb=$((host_ram_gb * 3 / 4))
-    target_memory_gb=$(_clamp_int "$target_memory_gb" 4 32)
+    target_memory_gb=$(wsl_clamp_int "$target_memory_gb" 4 32)
     target_swap_gb=$((host_ram_gb / 2))
-    target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
+    target_swap_gb=$(wsl_clamp_int "$target_swap_gb" 2 16)
 
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
     info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
-
-    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
-    # Değer zaten varsa korur, yinelenen satırları temizler.
-    _ensure_wsl2_key_once() {
-        local cfg_file="$1"
-        local cfg_key="$2"
-        local cfg_value="$3"
-        local tmp_file
-        tmp_file=$(mktemp)
-
-        awk -v key="$cfg_key" -v value="$cfg_value" '
-            BEGIN { in_wsl2=0; seen_key=0 }
-            {
-                if ($0 ~ /^\[.*\]$/) {
-                    if (in_wsl2 && !seen_key) {
-                        print key "=" value
-                        seen_key=1
-                    }
-                    in_wsl2 = ($0 == "[wsl2]")
-                    print
-                    next
-                }
-
-                if (in_wsl2 && $0 ~ ("^" key "=")) {
-                    if (!seen_key) {
-                        print
-                        seen_key=1
-                    }
-                    next
-                }
-
-                print
-            }
-            END {
-                if (in_wsl2 && !seen_key) {
-                    print key "=" value
-                }
-            }
-        ' "$cfg_file" > "$tmp_file"
-
-        if ! cmp -s "$cfg_file" "$tmp_file"; then
-            mv "$tmp_file" "$cfg_file"
-            return 0
-        fi
-
-        rm -f "$tmp_file"
-        return 1
-    }
 
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
@@ -2411,7 +2408,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
+            if wsl_ensure_key_once_in_wsl2_section "$wslconfig_path" "memory" "$target_memory"; then
                 ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -2422,7 +2419,7 @@ WSLCFG
                 /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
                 in_wsl2 && /^memory=/ { sub(/^memory=/, "", $0); print; exit }
             ' "$wslconfig_path")
-            cur_mem_gb=$(_parse_gb "$cur_mem")
+            cur_mem_gb=$(wsl_parse_gb_value "$cur_mem")
             if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
             else
@@ -2430,7 +2427,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
+            if wsl_ensure_key_once_in_wsl2_section "$wslconfig_path" "swap" "$target_swap"; then
                 ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -2441,7 +2438,7 @@ WSLCFG
                 /^\[.*\]$/ { in_wsl2 = ($0 == "[wsl2]") }
                 in_wsl2 && /^swap=/ { sub(/^swap=/, "", $0); print; exit }
             ' "$wslconfig_path")
-            cur_swap_gb=$(_parse_gb "$cur_swap")
+            cur_swap_gb=$(wsl_parse_gb_value "$cur_swap")
             if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
                 warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
             else
