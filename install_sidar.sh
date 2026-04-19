@@ -210,6 +210,51 @@ has_native_binary() {
     resolve_native_binary_path "$cmd_name" >/dev/null
 }
 
+windows_path_to_wsl_path() {
+    local windows_path="${1:-}"
+    if [[ "$windows_path" =~ ^[A-Za-z]:\\ ]]; then
+        local drive_letter path_rest
+        drive_letter=$(echo "$windows_path" | cut -d: -f1 | tr 'A-Z' 'a-z')
+        path_rest=$(echo "$windows_path" | cut -d: -f2- | sed 's#\\#/#g')
+        echo "/mnt/${drive_letter}${path_rest}"
+        return 0
+    fi
+    return 1
+}
+
+resolve_windows_userprofile_path() {
+    local win_userprofile=""
+    local resolved_wsl_path=""
+
+    # Birincil yöntem: cmd.exe interop
+    if command -v cmd.exe &>/dev/null; then
+        win_userprofile=$(cmd.exe /d /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    # Fallback: powershell.exe interop (kurumsal cmd policy kısıtlarında işe yarayabilir)
+    if command -v powershell.exe &>/dev/null; then
+        win_userprofile=$(powershell.exe -NoProfile -Command '$env:UserProfile' 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    # Son fallback: yaygın varsayım (C:\Users\<username>)
+    if [[ -n "${USER:-}" && -d "/mnt/c/Users/${USER}" ]]; then
+        echo "/mnt/c/Users/${USER}"
+        return 0
+    fi
+
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -698,6 +743,10 @@ backup_postgres_before_volume_reset() {
     local dump_error_file=""
     local dump_ok=false
     local candidate_db_user=""
+    local -a candidate_db_users=()
+    local candidate_db_users_seen="|"
+    local env_db_user=""
+    local env_postgres_user=""
 
     if ! command -v docker &>/dev/null; then
         warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
@@ -719,7 +768,44 @@ backup_postgres_before_volume_reset() {
     backup_file="$backup_dir/postgres_before_volume_reset_$(date +%Y%m%d_%H%M%S).sql"
     dump_error_file="$(mktemp)"
 
-    for candidate_db_user in postgres sidar; do
+    # Önce container içi yapılandırmadan ve .env dosyasından özel kullanıcı adlarını dene.
+    env_postgres_user="$(docker exec "$postgres_container_id" sh -lc 'printenv POSTGRES_USER' 2>/dev/null || true)"
+    env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+    if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+        candidate_db_users+=("$env_postgres_user")
+        candidate_db_users_seen+="${env_postgres_user}|"
+    fi
+
+    if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+        env_postgres_user="$(read_env_value_from_file "POSTGRES_USER" "$ENV_FILE")"
+        env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+            candidate_db_users+=("$env_postgres_user")
+            candidate_db_users_seen+="${env_postgres_user}|"
+        fi
+        local env_database_url=""
+        env_database_url="$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")"
+        if [[ "$env_database_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@ ]]; then
+            env_db_user="${BASH_REMATCH[2]}"
+        fi
+        env_db_user="$(echo "$env_db_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_db_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_db_user}|"* ]]; then
+            candidate_db_users+=("$env_db_user")
+            candidate_db_users_seen+="${env_db_user}|"
+        fi
+    fi
+
+    # Varsayılan fallback kullanıcılarını en sona ekle.
+    if [[ "$candidate_db_users_seen" != *"|postgres|"* ]]; then
+        candidate_db_users+=("postgres")
+        candidate_db_users_seen+="postgres|"
+    fi
+    if [[ "$candidate_db_users_seen" != *"|sidar|"* ]]; then
+        candidate_db_users+=("sidar")
+        candidate_db_users_seen+="sidar|"
+    fi
+
+    for candidate_db_user in "${candidate_db_users[@]}"; do
         if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
             if [[ -s "$backup_file" ]]; then
                 dump_ok=true
@@ -2261,16 +2347,11 @@ ASOUNDRC
     fi
 
     # ── RAM limiti kontrolü ve .wslconfig otomatik yapılandırma ──────────────
-    local win_userprofile=""
     local wslconfig_path=""
-    if command -v cmd.exe &>/dev/null; then
-        win_userprofile=$(cmd.exe /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        if [[ "$win_userprofile" =~ ^[A-Za-z]:\\ ]]; then
-            local drive_letter path_rest
-            drive_letter=$(echo "$win_userprofile" | cut -d: -f1 | tr 'A-Z' 'a-z')
-            path_rest=$(echo "$win_userprofile" | cut -d: -f2- | sed 's#\\#/#g')
-            wslconfig_path="/mnt/${drive_letter}${path_rest}/.wslconfig"
-        fi
+    local resolved_windows_home=""
+    resolved_windows_home="$(resolve_windows_userprofile_path || true)"
+    if [[ -n "$resolved_windows_home" ]]; then
+        wslconfig_path="${resolved_windows_home}/.wslconfig"
     fi
 
     # Mevcut memory değerini GB cinsinden sayıya çevir (örn. "16GB" → 16)
