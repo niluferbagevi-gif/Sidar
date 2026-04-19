@@ -182,6 +182,27 @@ docker_cli_healthy() {
     return 0
 }
 
+command_points_to_windows_exe() {
+    local cmd_name="$1"
+    local cmd_path=""
+    local resolved_path=""
+
+    cmd_path="$(command -v "$cmd_name" 2>/dev/null || true)"
+    [[ -n "$cmd_path" ]] || return 1
+
+    resolved_path="$(readlink -f "$cmd_path" 2>/dev/null || echo "$cmd_path")"
+
+    # WSL interop ile görünen Windows binary'lerini Linux kurulu saymıyoruz.
+    if [[ "$cmd_path" == *.exe ]] || [[ "$resolved_path" == *.exe ]]; then
+        return 0
+    fi
+    if [[ "$resolved_path" =~ ^/mnt/[a-z]/ ]] || [[ "$resolved_path" =~ ^//wsl\\.localhost/ ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -584,29 +605,40 @@ wait_for_postgres_ready_after_docker_start() {
     local db_password="$5"
     local max_attempts="${6:-30}"
     local sleep_seconds="${7:-2}"
+    local last_auth_rc=1
+    local last_auth_err=""
 
-    info "PostgreSQL hazır ve erişilebilir olana kadar bekleniyor (${db_host}:${db_port}/${db_name})..."
+    info "PostgreSQL'in tabloları ve kullanıcıları oluşturması bekleniyor (${db_host}:${db_port}/${db_name})..."
     for ((attempt=1; attempt<=max_attempts; attempt++)); do
         if pg_isready -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" >/dev/null 2>&1; then
             local auth_rc=0
             verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" || auth_rc=$?
+            last_auth_rc="$auth_rc"
+            last_auth_err="${POSTGRES_AUTH_CHECK_ERROR:-}"
             case "$auth_rc" in
                 0)
-                    ok "PostgreSQL erişilebilir ve kimlik doğrulaması başarılı."
+                    ok "PostgreSQL tam olarak hazır ve kimlik doğrulaması başarılı."
                     return 0
                     ;;
                 10)
-                    warn "PostgreSQL parola doğrulaması başarısız: ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
-                    fail "PostgreSQL ayakta ancak parola doğrulaması başarısız. Eski volume/parola uyuşmazlığı nedeniyle kurulum durduruldu."
+                    warn "PostgreSQL portu açık ama parola henüz doğrulanamadı (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
                     ;;
                 2)
-                    warn "PostgreSQL erişilebilir, ancak psql/asyncpg ile auth doğrulaması yapılamadı. Kurulum devam edecek."
-                    return 0
+                    warn "PostgreSQL erişilebilir, ancak auth doğrulaması için gerekli istemci henüz hazır değil (${attempt}/${max_attempts})."
+                    ;;
+                *)
+                    warn "PostgreSQL erişilebilir, auth denemesi başarısız (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-unknown}"
                     ;;
             esac
+        else
+            info "⏳ Veritabanı başlatılıyor... (${attempt}/${max_attempts})"
         fi
         sleep "$sleep_seconds"
     done
+
+    if [[ "$last_auth_rc" -eq 10 ]]; then
+        fail "PostgreSQL başlatılamadı veya şifre uyuşmuyor: ${last_auth_err:-password authentication failed}"
+    fi
 
     return 1
 }
@@ -1235,9 +1267,12 @@ install_system_dependencies() {
             postgresql-client-common postgresql-client
 
         info "Node.js (v20.x) durumu kontrol ediliyor..."
-        if command -v node &>/dev/null && node -v | grep -q "^v20"; then
-            ok "Node.js 20.x zaten kurulu: $(node -v)"
+        if command -v node &>/dev/null && ! command_points_to_windows_exe node && node -v | grep -q "^v20"; then
+            ok "Node.js 20.x (Linux) zaten kurulu: $(node -v)"
         else
+            if command -v node &>/dev/null && command_points_to_windows_exe node; then
+                warn "WSL interop ile Windows Node.js tespit edildi; Linux kurulumu yapılacak."
+            fi
             info "Node.js 20.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
@@ -1268,10 +1303,10 @@ install_system_dependencies() {
                 ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                if command -v node &>/dev/null; then
+                if command -v node &>/dev/null && ! command_points_to_windows_exe node; then
                     warn "Sistemde node bulundu ($(node -v 2>/dev/null || echo 'sürüm alınamadı'))."
                     warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    if command -v npm &>/dev/null; then
+                    if command -v npm &>/dev/null && ! command_points_to_windows_exe npm; then
                         ok "npm zaten mevcut: $(npm -v 2>/dev/null || echo 'sürüm alınamadı')"
                     else
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
@@ -1350,7 +1385,7 @@ ensure_prerequisites() {
         source "$MINICONDA_PREFIX/etc/profile.d/conda.sh"
     fi
 
-    if command -v conda &>/dev/null; then
+    if command -v conda &>/dev/null && ! command_points_to_windows_exe conda; then
         USE_CONDA=true
         ok "Conda $(conda --version | cut -d' ' -f2) zaten yüklü."
     elif [[ -x "$MINICONDA_PREFIX/bin/conda" ]]; then
@@ -1360,6 +1395,9 @@ ensure_prerequisites() {
         USE_CONDA=true
         ok "Miniconda zaten kurulu (PATH güncellendi): $(conda --version | cut -d' ' -f2)"
     else
+        if command -v conda &>/dev/null && command_points_to_windows_exe conda; then
+            warn "WSL interop ile Windows conda tespit edildi; Linux Miniconda kurulacak."
+        fi
         warn "Conda bulunamadı. Miniconda otomatik kurulumu denenecek..."
 
         OS="$(uname -s)"
@@ -2326,6 +2364,31 @@ PY
     echo "$generated"
 }
 
+sync_postgres_env_with_database_url() {
+    local env_file="$1"
+    local db_user="$2"
+    local db_password="$3"
+    local db_name="${4:-sidar}"
+    local db_host="${5:-localhost}"
+    local db_port="${6:-5432}"
+
+    [[ -f "$env_file" ]] || return
+
+    # Sessiz sed başarısızlıkları ve tekrar eden anahtarları önlemek için
+    # kritik PostgreSQL anahtarlarını temizleyip tek kaynaktan yeniden yaz.
+    sed -i '/^DATABASE_URL=/d' "$env_file"
+    sed -i '/^POSTGRES_USER=/d' "$env_file"
+    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+    sed -i '/^POSTGRES_DB=/d' "$env_file"
+
+    {
+        echo "POSTGRES_USER=${db_user}"
+        echo "POSTGRES_PASSWORD=${db_password}"
+        echo "POSTGRES_DB=${db_name}"
+        echo "DATABASE_URL=postgresql+asyncpg://${db_user}:${db_password}@${db_host}:${db_port}/${db_name}"
+    } >> "$env_file"
+}
+
 harden_database_credentials() {
     local env_file="$1"
     local db_url=""
@@ -2345,6 +2408,18 @@ harden_database_credentials() {
         local db_user="${BASH_REMATCH[2]}"
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_host_port="${db_host_and_name%%/*}"
+        local db_name="${db_host_and_name#*/}"
+        local db_host="localhost"
+        local db_port="5432"
+
+        if [[ "$db_host_port" == *:* ]]; then
+            db_host="${db_host_port%%:*}"
+            db_port="${db_host_port##*:}"
+        elif [[ -n "$db_host_port" ]]; then
+            db_host="$db_host_port"
+        fi
+        [[ -n "$db_name" && "$db_name" != "$db_host_and_name" ]] || db_name="sidar"
 
         case "$db_password" in
             sidar|postgres|password|admin|changeme|123456)
@@ -2353,24 +2428,17 @@ harden_database_credentials() {
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host}:${db_port}/${db_name}"
+                        sync_postgres_env_with_database_url \
+                            "$env_file" \
+                            "$db_user" \
+                            "$generated_password" \
+                            "$db_name" \
+                            "$db_host" \
+                            "$db_port"
                         ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
-
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
                         DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri DATABASE_URL ile kesin senkronize edildi."
                         warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
                         warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
                         info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
