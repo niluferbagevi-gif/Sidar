@@ -3375,6 +3375,13 @@ PY
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
             info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
             kill "${temp_ollama_pid:-}" >/dev/null 2>&1 || true
+            # Sürecin tamamen kapanmasını bekle; böylece 11434 portu Docker Ollama
+            # servisi başlamadan önce işletim sistemi tarafından serbest bırakılır.
+            local _i
+            for _i in {1..10}; do
+                kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1 || break
+                sleep 1
+            done
         fi
     }
     trap cleanup_temp_ollama RETURN
@@ -4540,17 +4547,24 @@ main() {
         prepare_docker_for_migrations
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
-        # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
+        # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
+        # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
+        # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
         download_ollama_models
+    else
+        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
+    fi
+    # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
+    launch_docker_services
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         run_smoke_tests
         run_test_artifact_audit
     else
-        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
         SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
         AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal migrasyon/smoke-test/audit adımları atlanıyor."
+        info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
     fi
-    launch_docker_services
     print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
