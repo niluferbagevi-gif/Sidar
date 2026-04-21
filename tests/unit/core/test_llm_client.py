@@ -2295,3 +2295,64 @@ async def test_stream_clients_without_aclose_branch(monkeypatch: pytest.MonkeyPa
     assert await _collect(
         litellm_client._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
     ) == []
+
+
+@pytest.mark.asyncio
+async def test_stream_early_return_fallback_paths_for_missing_provider_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _BrokenAnthropic:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("import-error")
+
+    _mock_anthropic(monkeypatch, _BrokenAnthropic)
+
+    openai_client = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY=""))
+    litellm_client = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL=""))
+    anthropic_client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY=""))
+
+    openai_stream = await openai_client.chat([{"role": "user", "content": "x"}], stream=True)
+    litellm_stream = await litellm_client.chat([{"role": "user", "content": "x"}], stream=True)
+    anthropic_stream = await anthropic_client.chat([{"role": "user", "content": "x"}], stream=True)
+
+    openai_chunks = await _collect(openai_stream)
+    litellm_chunks = await _collect(litellm_stream)
+    anthropic_chunks = await _collect(anthropic_stream)
+
+    assert "OPENAI_API_KEY" in openai_chunks[0]
+    assert "LITELLM_GATEWAY_URL" in litellm_chunks[0]
+    assert "ANTHROPIC_API_KEY" in anthropic_chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_stream_json_shape_errors_fall_back_to_error_chunks(respx_mock_router) -> None:
+    oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
+    llm = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
+
+    malformed_stream_body = "\n".join([
+        "data: []",
+        "data: [DONE]",
+    ])
+
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, text=malformed_stream_body)
+    )
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, text=malformed_stream_body)
+    )
+
+    oa_chunks = await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
+    llm_chunks = await _collect(
+        llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)
+    )
+
+    assert "OpenAI akış hatası" in oa_chunks[0]
+    assert "LiteLLM akış hatası" in llm_chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_json_shape_error_yields_generic_error(respx_mock_router) -> None:
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen"))
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, text='[]\n'))
+
+    out = await _collect(c._stream_response("http://u", {"model": "qwen"}, llm_client.httpx.Timeout(10, connect=1)))
+
+    assert "Akış kesildi" in out[0]
