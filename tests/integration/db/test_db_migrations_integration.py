@@ -15,12 +15,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 @pytest.mark.integration
 def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     """Run alembic migrations end-to-end on a temporary SQLite database."""
-    monkeypatch.delenv("DATABASE_URL", raising=False)
     db_path = (tmp_path / "test_migration.db").resolve()
     db_url = f"sqlite:////{db_path.as_posix().lstrip('/')}"
+    async_db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://")
+
+    monkeypatch.setenv("DATABASE_URL", async_db_url)
 
     alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
-    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+    alembic_cfg.set_main_option("sqlalchemy.url", async_db_url)
     alembic_cfg.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
 
     command.upgrade(alembic_cfg, "head")
