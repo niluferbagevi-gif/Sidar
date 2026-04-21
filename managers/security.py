@@ -216,13 +216,16 @@ class SecurityManager:
             return ValidationResult(allowed=True, risk_score=0, reasons=[], source=source)
 
         reasons = self._scan_prompt_injection_patterns(normalized)
+        output_leak_reasons: list[str] = []
         if source == "agent_output":
-            reasons.extend(self._scan_output_leak_patterns(normalized))
+            output_leak_reasons = self._scan_output_leak_patterns(normalized)
+            reasons.extend(output_leak_reasons)
         reasons.extend(self._run_guardrails_engine(normalized, source=source))
 
         unique_reasons = sorted(set(reasons))
         risk_score = min(100, len(unique_reasons) * 20)
-        allowed = risk_score < 40
+        has_secret_like_leak = bool(output_leak_reasons)
+        allowed = (risk_score < 40) and (not has_secret_like_leak)
         return ValidationResult(allowed=allowed, risk_score=risk_score, reasons=unique_reasons, source=source)
 
     def validate_user_input(self, text: str) -> ValidationResult:
