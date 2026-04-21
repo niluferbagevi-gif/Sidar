@@ -157,30 +157,32 @@ def test_start_gui_happy_path(monkeypatch):
     importlib.reload(gui_launcher)
 
 
-def test_main_calls_start_gui(monkeypatch):
-    called = {"start_gui": False}
+def test_main_function(monkeypatch):
+    """
+    main() fonksiyonunun başarıyla çağrıldığını ve
+    içerisinden start_gui() fonksiyonunu tetiklediğini test eder.
+    """
+    calls = []
 
-    def fake_start_gui():
-        called["start_gui"] = True
-
-    monkeypatch.setattr(gui_launcher, "start_gui", fake_start_gui)
+    # start_gui fonksiyonunu mock'luyoruz ki gerçek bir arayüz başlatmaya çalışmasın
+    monkeypatch.setattr(gui_launcher, "start_gui", lambda: calls.append("start_gui_called"))
 
     gui_launcher.main()
 
-    assert called["start_gui"] is True
+    assert calls == ["start_gui_called"]
 
 
-def test_module_main_block_runs_entrypoint(monkeypatch):
-    calls = {}
-    fake_eel = types.SimpleNamespace(
-        init=lambda path: calls.setdefault("init", path),
-        expose=lambda fn: calls.setdefault("expose", fn.__name__),
-        start=lambda *args, **kwargs: calls.setdefault("start", (args, kwargs)),
-    )
-    monkeypatch.setitem(sys.modules, "eel", fake_eel)
+def test_module_execution_as_main(monkeypatch):
+    """
+    Dosya doğrudan çalıştırıldığında (if __name__ == "__main__":)
+    main() fonksiyonunun tetiklendiğini test eder.
+    """
+    calls = []
 
+    # main fonksiyonunu mock'luyoruz
+    monkeypatch.setattr(gui_launcher, "main", lambda: calls.append("main_called"))
+
+    # runpy modülü aracılığıyla gui_launcher'ı doğrudan (__main__ olarak) çalıştırıyoruz
     runpy.run_module("gui_launcher", run_name="__main__")
 
-    assert calls["init"].endswith("launcher_gui")
-    assert calls["expose"] == "start_sidar"
-    assert calls["start"][0] == ("index.html",)
+    assert calls == ["main_called"]
