@@ -656,6 +656,26 @@ async def test_openai_stream_parser(respx_mock_router) -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_stream_error_returns_raw_error_when_json_mode_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k")
+    client = llm_client.OpenAIClient(cfg)
+
+    async def broken(*_a, **_kw):
+        raise Exception("connection reset")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
+
+    chunks = await _collect(
+        client._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)
+    )
+    assert len(chunks) == 1
+    assert '"tool": "final_answer"' in chunks[0]
+    assert "OpenAI akış hatası: connection reset" in chunks[0]
+
+
+@pytest.mark.asyncio
 async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> None:
     cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)
@@ -691,6 +711,13 @@ async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_con
         c._stream_openai_compatible(stream_endpoint, {}, {}, llm_client.httpx.Timeout(10, connect=1), True)
     )
     assert "LiteLLM" in got2[0]
+
+    got3 = await _collect(
+        c._stream_openai_compatible(stream_endpoint, {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
+    )
+    assert len(got3) == 1
+    assert '"tool": "final_answer"' in got3[0]
+    assert "LiteLLM akış hatası: x" in got3[0]
 
 
 @pytest.mark.asyncio
