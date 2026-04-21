@@ -130,6 +130,7 @@ def test_can_write_sandbox_allows_only_temp(tmp_path: Path) -> None:
     assert not mgr.can_write(str(not_in_temp))
     assert not mgr.can_write("../escape.txt")
     assert not mgr.can_write("   ")
+    assert not mgr.can_write("")
 
 
 def test_can_write_rejects_when_resolution_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,6 +191,25 @@ def test_set_level_changes_and_status_report(tmp_path: Path) -> None:
     assert "Erişim Seviyesi: FULL" in report
     assert "Yazma" in report
     assert "Shell" in report
+
+
+@pytest.mark.parametrize(
+    ("level", "expected_write_permission", "expected_shell_permission"),
+    [
+        ("sandbox", "✓ (yalnızca /temp)", "✗"),
+        ("restricted", "✗", "✗"),
+    ],
+)
+def test_status_report_covers_non_full_branches(
+    tmp_path: Path, level: str, expected_write_permission: str, expected_shell_permission: str
+) -> None:
+    mgr = SecurityManager(access_level=level, base_dir=tmp_path)
+
+    report = mgr.status_report()
+
+    assert f"Erişim Seviyesi: {level.upper()}" in report
+    assert f"Yazma   : {expected_write_permission}" in report
+    assert f"Shell   : {expected_shell_permission}" in report
 
 
 def test_repr_contains_level(tmp_path: Path) -> None:
@@ -296,3 +316,25 @@ def test_validate_prompt_text_allows_empty_or_none_text(tmp_path: Path, text_inp
     assert result.allowed is True
     assert result.risk_score == 0
     assert result.reasons == []
+
+
+def test_validate_prompt_text_blocks_high_risk_without_output_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    monkeypatch.setattr(
+        SecurityManager,
+        "_scan_prompt_injection_patterns",
+        staticmethod(lambda _text: ["r1", "r2", "r3"]),
+    )
+    monkeypatch.setattr(
+        SecurityManager,
+        "_scan_output_leak_patterns",
+        staticmethod(lambda _text: []),
+    )
+
+    result = mgr.validate_prompt_text("benign text", source="agent_output")
+
+    assert result.allowed is False
+    assert result.risk_score == 60
+    assert result.reasons == ["r1", "r2", "r3"]
