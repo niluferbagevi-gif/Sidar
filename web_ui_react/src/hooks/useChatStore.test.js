@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useChatStore } from "./useChatStore.js";
+import { __chatStoreTestUtils, useChatStore } from "./useChatStore.js";
 
 // Her testten önce store'u sıfırla
 beforeEach(() => {
@@ -410,5 +410,52 @@ describe("useChatStore — updateParticipants", () => {
   it("sets empty array for non-array input", () => {
     useChatStore.getState().updateParticipants(null);
     expect(useChatStore.getState().participants).toEqual([]);
+  });
+});
+
+describe("useChatStore — stream flush yardımcıları", () => {
+  it("flushPendingChunk clears an active timer even if there is no buffered chunk", () => {
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+
+    __chatStoreTestUtils.scheduleChunkFlush(useChatStore.setState, useChatStore.getState);
+    expect(__chatStoreTestUtils.getFlushTimer()).toBeTruthy();
+
+    __chatStoreTestUtils.flushPendingChunk(useChatStore.setState, useChatStore.getState);
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(__chatStoreTestUtils.getFlushTimer()).toBeNull();
+
+    clearTimeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("flushPendingChunk writes buffered text and resets stream text on switched request", () => {
+    useChatStore.setState({ streamingText: "önceki", streamingRequestId: "req-eski", isStreaming: false });
+
+    __chatStoreTestUtils.setPendingChunk("yeni parça", "req-yeni");
+    __chatStoreTestUtils.flushPendingChunk(useChatStore.setState, useChatStore.getState);
+
+    const state = useChatStore.getState();
+    expect(state.streamingText).toBe("yeni parça");
+    expect(state.streamingRequestId).toBe("req-yeni");
+    expect(state.isStreaming).toBe(true);
+  });
+
+  it("scheduleChunkFlush does not create duplicate timers", () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    __chatStoreTestUtils.setPendingChunk("parça", "req-1");
+    __chatStoreTestUtils.scheduleChunkFlush(useChatStore.setState, useChatStore.getState);
+    __chatStoreTestUtils.scheduleChunkFlush(useChatStore.setState, useChatStore.getState);
+
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(150);
+    expect(useChatStore.getState().streamingText).toContain("parça");
+
+    setTimeoutSpy.mockRestore();
+    vi.useRealTimers();
   });
 });

@@ -61,6 +61,17 @@ function persistValue(key, value) {
   }
 }
 
+export const __chatStoreTestUtils = {
+  setPendingChunk(text = "", requestId = "") {
+    pendingChunkText = String(text || "");
+    pendingChunkRequestId = String(requestId || "");
+  },
+  flushPendingChunk,
+  scheduleChunkFlush,
+  clearStreamFlushTimer,
+  getFlushTimer: () => flushTimer,
+};
+
 export const useChatStore = create((set, get) => ({
   sessionId: genId(),
   roomId: readStoredValue(ROOM_ID_KEY, "workspace:sidar"),
