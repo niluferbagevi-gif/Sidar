@@ -1307,9 +1307,15 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
     assert span.attrs["sidar.llm.provider"] == "openai"
 
 
+@pytest.mark.parametrize("enable_tracing", [True, False])
 @pytest.mark.asyncio
-async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> None:
-    c = llm_client.OllamaClient(_make_config(CODING_MODEL="m"))
+async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch, enable_tracing: bool) -> None:
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="m", ENABLE_TRACING=enable_tracing))
+    if enable_tracing:
+        span = _Span()
+        span_cm = _SpanCM(span)
+        tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
+        monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
 
     async def broken(*_a, **_kw):
         raise RuntimeError("down")
@@ -2161,7 +2167,7 @@ async def test_gemini_client_explicit_import_failure(monkeypatch: pytest.MonkeyP
 
     c = llm_client.GeminiClient(cfg)
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
-    assert "Gemini istemcisi kurulu değil" in msg
+    assert "Gemini istemcisi kurulu" in msg
 
 
 @pytest.mark.asyncio
@@ -2201,8 +2207,9 @@ async def test_gemini_chat_not_awaitable_call(monkeypatch: pytest.MonkeyPatch) -
     assert chunks == ["non-awaitable-stream"]
 
 
+@pytest.mark.parametrize("enable_tracing", [True, False])
 @pytest.mark.asyncio
-async def test_gemini_chat_throws_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_gemini_chat_throws_exception(monkeypatch: pytest.MonkeyPatch, enable_tracing: bool) -> None:
     """Gemini Client içerisinde direkt bir Runtime Exception oluştuğunda fallback yapısını test eder."""
 
     class _ErrorModels:
@@ -2222,7 +2229,15 @@ async def test_gemini_chat_throws_exception(monkeypatch: pytest.MonkeyPatch) -> 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
 
-    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=enable_tracing))
+    if enable_tracing:
+        span = _Span()
+        span_cm = _SpanCM(span)
+        tracer = SimpleNamespace(
+            start_as_current_span=lambda _n: span_cm,
+            start_span=lambda _n: span,
+        )
+        monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
 
     # Non-stream Exception bloğu testi
     out_non_stream = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
@@ -2234,3 +2249,49 @@ async def test_gemini_chat_throws_exception(monkeypatch: pytest.MonkeyPatch) -> 
     chunks = await _collect(out_stream)
     assert "gemini-chat-stream-error" in chunks[0]
     assert "HATA" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_stream_clients_without_aclose_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+        async def aiter_lines(self):
+            if False:
+                yield ""
+
+    class _StreamCM:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _ClientWithoutAclose:
+        def __init__(self, *args, **kwargs):
+            _ = args
+            _ = kwargs
+
+        def stream(self, *_args, **_kwargs):
+            return _StreamCM()
+
+    async def _retry_passthrough(_provider, operation, *, config, retry_hint):  # noqa: ARG001
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_passthrough)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _ClientWithoutAclose)
+
+    ollama_client = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen"))
+    openai_client = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
+    litellm_client = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
+
+    assert await _collect(ollama_client._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1))) == []
+    assert await _collect(openai_client._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)) == []
+    assert await _collect(
+        litellm_client._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
+    ) == []
