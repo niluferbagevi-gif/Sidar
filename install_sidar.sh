@@ -3952,6 +3952,9 @@ run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
+    local gpu_stress_nodeid="tests/smoke/test_gpu_inference.py::test_real_gpu_inference_stress_vram_and_concurrency"
+    local -a pytest_gpu_stress_args=("$gpu_stress_nodeid" --rootdir="$SCRIPT_DIR" -v --no-cov)
+    local run_gpu_stress_test=false
     local should_run=false
     local smoke_failure_policy="${SMOKE_TEST_FAILURE_POLICY:-fail}"
 
@@ -3998,23 +4001,47 @@ run_smoke_tests() {
     fi
     wait_for_core_docker_health_before_smoke_tests
 
+    if [[ "${RUN_GPU_STRESS:-0}" == "1" ]]; then
+        run_gpu_stress_test=true
+        pytest_smoke_args+=(-k "not test_real_gpu_inference_stress_vram_and_concurrency")
+        info "RUN_GPU_STRESS=1 algılandı; ana smoke turunda stress testi ayrıştırılıp ayrıca zorunlu çalıştırılacak."
+    elif [[ "$GPU_AVAILABLE" == true ]]; then
+        run_gpu_stress_test=true
+        pytest_smoke_args+=(-k "not test_real_gpu_inference_stress_vram_and_concurrency")
+        info "GPU tespit edildiği için stress smoke testi ayrıca RUN_GPU_STRESS=1 ile çalıştırılacak."
+    else
+        info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
+    fi
+
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
             warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
-        if "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
-            ok "Smoke testler başarıyla geçti."
-            SMOKE_TEST_STATUS="tamamlandi"
-        else
+        if ! "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
             SMOKE_TEST_STATUS="hata"
             if [[ "$smoke_failure_policy" == "warn" ]]; then
                 warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
             else
                 fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
             fi
+            return
         fi
+
+        if [[ "$run_gpu_stress_test" == true ]]; then
+            if ! env RUN_GPU_STRESS=1 "${CONDA_RUN[@]}" python -m pytest "${pytest_gpu_stress_args[@]}"; then
+                SMOKE_TEST_STATUS="hata"
+                if [[ "$smoke_failure_policy" == "warn" ]]; then
+                    warn "GPU stress smoke testinde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+                else
+                    fail "GPU stress smoke testinde hata var. Kurulum güvenliği için süreç durduruldu."
+                fi
+                return
+            fi
+        fi
+        ok "Smoke testler başarıyla geçti."
+        SMOKE_TEST_STATUS="tamamlandi"
         return
     fi
 
@@ -4023,17 +4050,29 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if python -m pytest "${pytest_smoke_args[@]}"; then
-        ok "Smoke testler başarıyla geçti."
-        SMOKE_TEST_STATUS="tamamlandi"
-    else
+    if ! python -m pytest "${pytest_smoke_args[@]}"; then
         SMOKE_TEST_STATUS="hata"
         if [[ "$smoke_failure_policy" == "warn" ]]; then
             warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
         else
             fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
         fi
+        return
     fi
+
+    if [[ "$run_gpu_stress_test" == true ]]; then
+        if ! env RUN_GPU_STRESS=1 python -m pytest "${pytest_gpu_stress_args[@]}"; then
+            SMOKE_TEST_STATUS="hata"
+            if [[ "$smoke_failure_policy" == "warn" ]]; then
+                warn "GPU stress smoke testinde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+            else
+                fail "GPU stress smoke testinde hata var. Kurulum güvenliği için süreç durduruldu."
+            fi
+            return
+        fi
+    fi
+    ok "Smoke testler başarıyla geçti."
+    SMOKE_TEST_STATUS="tamamlandi"
 }
 
 wait_for_core_docker_health_before_smoke_tests() {
