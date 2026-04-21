@@ -487,7 +487,7 @@ export function useVoiceAssistant({
       audioContextRef.current.close().catch(() => {});
     }
     audioContextRef.current = null;
-    if (mediaStreamRef.current) {
+    if (mediaStreamRef.current && typeof mediaStreamRef.current.getTracks === "function") {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
     }
     mediaStreamRef.current = null;
