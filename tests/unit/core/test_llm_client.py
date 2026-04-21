@@ -753,6 +753,29 @@ async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_con
 
 
 @pytest.mark.asyncio
+async def test_litellm_chat_stream_branch_executes_real_stream_path(mock_config, respx_mock_router) -> None:
+    cfg = mock_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"])
+    client = llm_client.LiteLLMClient(cfg)
+    stream_text = "\n".join(
+        [
+            'data: {"choices":[{"delta":{"content":"Merhaba"}}]}',
+            "data: [DONE]",
+        ]
+    )
+    respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, text=stream_text)
+    )
+
+    stream = await client.chat(
+        [{"role": "user", "content": "x"}],
+        stream=True,
+        json_mode=False,
+    )
+    chunks = await _collect(stream)
+    assert chunks == ["Merhaba"]
+
+
+@pytest.mark.asyncio
 async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
     cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
