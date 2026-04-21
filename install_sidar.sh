@@ -3952,6 +3952,7 @@ run_smoke_tests() {
     step "Smoke Test Doğrulaması"
     local smoke_dir="$SCRIPT_DIR/tests/smoke"
     local -a pytest_smoke_args=("$smoke_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
+    local -a pytest_smoke_env=()
     local should_run=false
     local smoke_failure_policy="${SMOKE_TEST_FAILURE_POLICY:-fail}"
 
@@ -3998,13 +3999,22 @@ run_smoke_tests() {
     fi
     wait_for_core_docker_health_before_smoke_tests
 
+    if [[ "${RUN_GPU_STRESS:-0}" == "1" ]]; then
+        info "RUN_GPU_STRESS=1 zaten tanımlı; GPU stres smoke testi zorunlu çalıştırılacak."
+    elif [[ "$GPU_AVAILABLE" == true ]]; then
+        pytest_smoke_env+=("RUN_GPU_STRESS=1")
+        info "GPU tespit edildiği için smoke testlerde RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+    else
+        info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
+    fi
+
     if [[ "$USE_CONDA" == true ]]; then
         if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
             warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
             SMOKE_TEST_STATUS="pytest_yok"
             return
         fi
-        if "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
+        if env "${pytest_smoke_env[@]}" "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
             ok "Smoke testler başarıyla geçti."
             SMOKE_TEST_STATUS="tamamlandi"
         else
@@ -4023,7 +4033,7 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if python -m pytest "${pytest_smoke_args[@]}"; then
+    if env "${pytest_smoke_env[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
