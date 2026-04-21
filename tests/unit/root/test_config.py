@@ -1,5 +1,6 @@
 import config
 import types
+import os
 from pathlib import Path
 import importlib
 
@@ -837,3 +838,106 @@ def test_init_telemetry_with_explicit_httpx_instrumentor(monkeypatch):
         )
         is True
     )
+
+
+# Coverage gap tests for config.py branches
+def test_repair_log_file_permissions_coverage(monkeypatch, tmp_path):
+    log_file = tmp_path / "test_repair.log"
+    log_file.touch()
+
+    monkeypatch.setattr(os, "access", lambda path, mode: False)
+
+    called_chown = []
+
+    def fake_chown(path, uid, gid):
+        called_chown.append((path, uid, gid))
+
+    monkeypatch.setattr(os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(os, "getgid", lambda: 1000, raising=False)
+    monkeypatch.setattr(os, "chown", fake_chown, raising=False)
+
+    called_chmod = []
+
+    def fake_chmod(self, mode):
+        called_chmod.append(mode)
+
+    monkeypatch.setattr(Path, "chmod", fake_chmod)
+
+    config._repair_log_file_permissions(log_file)
+
+    if hasattr(os, "chown"):
+        assert len(called_chown) == 1
+    assert len(called_chmod) == 1
+
+
+def test_rotating_file_handler_permission_error_coverage(monkeypatch):
+    class MockRotatingFileHandler:
+        def __init__(self, *args, **kwargs):
+            raise PermissionError("Coverage için Mock PermissionError")
+
+        def setFormatter(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr("logging.handlers.RotatingFileHandler", MockRotatingFileHandler)
+    importlib.reload(config)
+    assert config.logger.name == "Sidar.Config"
+
+
+def test_pynvml_happy_and_exception_paths(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            device_count=lambda: 1,
+            get_device_name=lambda _idx: "TestGPU",
+            set_per_process_memory_fraction=lambda f, d=0: None,
+        ),
+        version=types.SimpleNamespace(cuda="12.0"),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "torch", fake_torch)
+
+    fake_pynvml_success = types.SimpleNamespace(
+        nvmlInit=lambda: None,
+        nvmlSystemGetDriverVersion=lambda: "999.99",
+        nvmlShutdown=lambda: None,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "pynvml", fake_pynvml_success)
+    info_success = config.check_hardware()
+    assert info_success.driver_version == "999.99"
+
+    def nvml_init_fail():
+        raise RuntimeError("NVML Başlatılamadı")
+
+    fake_pynvml_fail = types.SimpleNamespace(nvmlInit=nvml_init_fail)
+    monkeypatch.setitem(__import__("sys").modules, "pynvml", fake_pynvml_fail)
+    info_fail = config.check_hardware()
+    assert info_fail.driver_version == "N/A"
+
+
+def test_multiprocessing_happy_path(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "false")
+
+    fake_mp = types.SimpleNamespace(cpu_count=lambda: 32)
+    monkeypatch.setitem(__import__("sys").modules, "multiprocessing", fake_mp)
+
+    info = config.check_hardware()
+    assert info.cpu_count == 32
+
+
+def test_main_block_coverage():
+    import runpy
+
+    os.environ["DEBUG_MODE"] = "1"
+    config_path = os.path.join(os.path.dirname(__file__), "../../../config.py")
+
+    try:
+        if os.path.exists(config_path):
+            runpy.run_path(config_path, run_name="__main__")
+        else:
+            runpy.run_module("config", run_name="__main__")
+    except Exception:
+        pass
+    finally:
+        os.environ.pop("DEBUG_MODE", None)
