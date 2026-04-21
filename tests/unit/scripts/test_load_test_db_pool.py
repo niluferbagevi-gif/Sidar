@@ -168,3 +168,49 @@ def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
 
     with pytest.raises(SystemExit, match=expected_msg):
         module.main()
+
+
+def test_main_runs_load_test_with_parsed_args(monkeypatch):
+    module = _import_module_with_stubs()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--database-url",
+            "postgresql://user:pass@localhost:5432/sidar",
+            "--concurrency",
+            "3",
+            "--requests",
+            "9",
+            "--warmup-requests",
+            "2",
+            "--acquire-timeout",
+            "1.5",
+        ],
+    )
+
+    captured = {}
+
+    async def fake_run_load_test(database_url, concurrency, requests, warmup_requests, acquire_timeout_s):
+        captured["args"] = (database_url, concurrency, requests, warmup_requests, acquire_timeout_s)
+
+    original_asyncio_run = asyncio.run
+
+    def fake_asyncio_run(coro):
+        captured["asyncio_run_called"] = True
+        return original_asyncio_run(coro)
+
+    monkeypatch.setattr(module, "run_load_test", fake_run_load_test)
+    monkeypatch.setattr(module.asyncio, "run", fake_asyncio_run)
+
+    module.main()
+
+    assert captured["asyncio_run_called"] is True
+    assert captured["args"] == (
+        "postgresql://user:pass@localhost:5432/sidar",
+        3,
+        9,
+        2,
+        1.5,
+    )
