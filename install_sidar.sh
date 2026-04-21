@@ -3299,6 +3299,8 @@ download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
     local temp_ollama_pid=""
+    local systemd_ollama_was_active=false
+    local stop_ollama_service_after_download=false
     local ollama_tags_url=""
     local tags_payload=""
     local existing_model_count=0
@@ -3375,6 +3377,10 @@ PY
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
             info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
             kill "${temp_ollama_pid:-}" >/dev/null 2>&1 || true
+        fi
+        if [[ "$stop_ollama_service_after_download" == true ]] && command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+            info "Bu adım için başlatılan Ollama systemd servisi durduruluyor..."
+            sudo systemctl stop ollama >/dev/null 2>&1 || true
         fi
     }
     trap cleanup_temp_ollama RETURN
@@ -3471,7 +3477,13 @@ PY
         if is_local_ollama_url "$OLLAMA_BASE_URL"; then
             info "Yerel Ollama servisi başlatma deneniyor..."
             if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
+                if sudo systemctl is-active --quiet ollama; then
+                    systemd_ollama_was_active=true
+                fi
                 sudo systemctl enable --now ollama >/dev/null 2>&1 || true
+                if [[ "$systemd_ollama_was_active" != true ]] && sudo systemctl is-active --quiet ollama; then
+                    stop_ollama_service_after_download=true
+                fi
             fi
             # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
             if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
@@ -4542,6 +4554,8 @@ main() {
         run_migrations
         # Smoke testlerde Ollama modeline bağlı senaryolar olabileceği için model indirmeyi öne al.
         download_ollama_models
+        # Smoke test öncesi tüm altyapıyı ayağa kaldır: testler prod'a yakın topolojide koşsun.
+        launch_docker_services
         run_smoke_tests
         run_test_artifact_audit
     else
@@ -4549,8 +4563,8 @@ main() {
         SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
         AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal migrasyon/smoke-test/audit adımları atlanıyor."
+        launch_docker_services
     fi
-    launch_docker_services
     print_summary
     # Yeni eklenen onaylı IDE başlatma adımı
     launch_ide
