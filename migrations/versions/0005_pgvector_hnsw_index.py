@@ -16,6 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Veritabanı motorunu kontrol et. PostgreSQL değilse (örn: testlerdeki SQLite) sessizce atla.
+    bind = op.get_bind()
+    if bind.engine.name != "postgresql":
+        return
+
     # pgvector mevcut değilse migrasyonu sessizce atla (ChromaDB fallback çalışmaya devam eder).
     op.execute(
         """
@@ -56,4 +61,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Downgrade işleminde de veritabanı motorunu kontrol et.
+    bind = op.get_bind()
+    if bind.engine.name != "postgresql":
+        return
+
     op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_embedding_hnsw")
