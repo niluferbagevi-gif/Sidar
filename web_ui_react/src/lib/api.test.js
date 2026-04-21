@@ -161,6 +161,17 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
     const data = await fetchJson("/api/text");
     expect(data).toBe("düz metin yanıt");
   });
+
+  it("returns text when content-type header is missing", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => null },
+      text: async () => "başlıksız yanıt",
+    });
+
+    const data = await fetchJson("/api/no-content-type");
+    expect(data).toBe("başlıksız yanıt");
+  });
 });
 
 describe("fetchJson — hata yanıtları", () => {
