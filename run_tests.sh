@@ -114,7 +114,8 @@ PY
 
   # Benchmark ölçümlerinin doğruluğu için performans testleri bu aşamada
   # özellikle hariç tutulur ve aşağıda tek çekirdekli ayrı fazda çalıştırılır.
-  if [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+  pytest_cmd+=(--ignore=tests/performance)
+  if [ "${PERFORMANCE_TEST_DIR}" != "tests/performance" ] && [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
