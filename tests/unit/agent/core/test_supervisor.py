@@ -884,3 +884,114 @@ def test_run_task_research_routes_p2p_when_delegation_request_returns() -> None:
 
     result = asyncio.run(sup.run_task("web araştırması yap"))
     assert result == "p2p-sonuc"
+
+
+@pytest.mark.parametrize(
+    ("prompt", "_intent_name"),
+    [
+        ("web kaynak araştır", "research"),
+        ("github issue review et", "review"),
+        ("seo kampanya planı", "marketing"),
+        ("eksik test yaz ve coverage artır", "coverage"),
+        ("yeni bir python fonksiyonu yaz", "code"),
+    ],
+)
+def test_run_task_circuit_breaker_first_turn(prompt: str, _intent_name: str) -> None:
+    """İlk turn tüketiminde circuit breaker dallarını kapsar."""
+    sup = _build_supervisor()
+    sup._max_turns = lambda: 0
+
+    result = asyncio.run(sup.run_task(prompt))
+    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+
+
+def test_run_task_circuit_breaker_before_initial_reviewer() -> None:
+    """İlk reviewer çağrısı öncesi circuit breaker dalını kapsar."""
+    sup = _build_supervisor()
+    sup._max_turns = lambda: 1
+
+    async def _delegate(*_args, **_kwargs):
+        return TaskResult(task_id="t1", status="done", summary="kod üretildi")
+
+    sup._delegate = _delegate
+    result = asyncio.run(sup.run_task("yeni kod yaz"))
+
+    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+
+
+def test_run_task_circuit_breaker_while_loop_start() -> None:
+    """while başlangıcındaki turn_count >= max_turns dalını kapsar."""
+    sup = _build_supervisor(max_qa_retries=2)
+    sup._max_turns = lambda: 2
+
+    responses = iter(
+        [
+            TaskResult(task_id="t1", status="done", summary="hatalı kod"),
+            TaskResult(task_id="t2", status="done", summary="risk: yüksek, düzelt"),
+        ]
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    sup._delegate = _delegate
+    result = asyncio.run(sup.run_task("kod yaz"))
+
+    assert "Reviewer QA Özeti (circuit breaker):" in result
+    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+
+
+class MockMaxTurnsForDeadCode:
+    """Defansif dal için karşılaştırma davranışını manipüle eden max_turns mock'u."""
+
+    def __le__(self, _other):
+        return False
+
+    def __ge__(self, other):
+        return other < 3
+
+    def __str__(self):
+        return "3"
+
+
+def test_run_task_circuit_breaker_before_revise_coder() -> None:
+    """while içindeki revise-coder öncesi _consume_turn dalını kapsar."""
+    sup = _build_supervisor(max_qa_retries=2)
+    sup._max_turns = lambda: MockMaxTurnsForDeadCode()
+
+    responses = iter(
+        [
+            TaskResult(task_id="t1", status="done", summary="hatalı kod"),
+            TaskResult(task_id="t2", status="done", summary="risk: yüksek, düzelt"),
+        ]
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    sup._delegate = _delegate
+    result = asyncio.run(sup.run_task("kod yaz"))
+
+    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+
+
+def test_run_task_circuit_breaker_before_second_reviewer() -> None:
+    """while içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
+    sup = _build_supervisor(max_qa_retries=2)
+    sup._max_turns = lambda: 3
+
+    responses = iter(
+        [
+            TaskResult(task_id="c1", status="done", summary="ilk kod"),
+            TaskResult(task_id="r1", status="done", summary="risk: yüksek"),
+            TaskResult(task_id="c2", status="done", summary="düzeltilmiş kod"),
+        ]
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    sup._delegate = _delegate
+    result = asyncio.run(sup.run_task("kod yaz"))
+
+    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
