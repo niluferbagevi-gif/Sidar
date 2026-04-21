@@ -106,3 +106,65 @@ def test_run_load_test_rejects_non_postgres_and_closes_db(monkeypatch):
 
     assert fake_db.connected is True
     assert fake_db.closed is True
+
+
+def test_run_load_test_prints_fail_when_all_requests_fail(monkeypatch, capsys):
+    module = _import_module_with_stubs()
+    fake_db = _FakeDb(backend="postgresql")
+    fake_db._pg_pool = _FakePool(should_fail=True)
+    monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
+
+    asyncio.run(
+        module.run_load_test(
+            database_url="postgresql://user:pass@localhost:5432/sidar",
+            concurrency=2,
+            requests=3,
+            warmup_requests=0,
+            acquire_timeout_s=0.1,
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "POOL_LOAD_TEST_START" in out
+    assert "POOL_LOAD_TEST_FAIL" in out
+    assert "success=0" in out
+    assert fake_db.closed is True
+
+
+def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
+    module = _import_module_with_stubs()
+    fake_db = _FakeDb(backend="postgresql")
+    monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
+
+    asyncio.run(
+        module.run_load_test(
+            database_url="postgresql://user:pass@localhost:5432/sidar",
+            concurrency=2,
+            requests=4,
+            warmup_requests=1,
+            acquire_timeout_s=0.1,
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "POOL_LOAD_TEST_START" in out
+    assert "POOL_LOAD_TEST_OK" in out
+    assert "success=4" in out
+    assert fake_db.closed is True
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_msg"),
+    [
+        (["prog", "--database-url", "postgresql://x", "--concurrency", "0"], "--concurrency en az 1 olmalıdır."),
+        (["prog", "--database-url", "postgresql://x", "--requests", "0"], "--requests en az 1 olmalıdır."),
+        (["prog", "--database-url", "postgresql://x", "--warmup-requests", "-1"], "--warmup-requests negatif olamaz."),
+        (["prog", "--database-url", "postgresql://x", "--acquire-timeout", "0"], "--acquire-timeout 0'dan büyük olmalıdır."),
+    ],
+)
+def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
+    module = _import_module_with_stubs()
+    monkeypatch.setattr(sys, "argv", argv)
+
+    with pytest.raises(SystemExit, match=expected_msg):
+        module.main()
