@@ -197,6 +197,12 @@ filterwarnings = [
   "ignore::FutureWarning:torch",
   "ignore::UserWarning:torch",
   "ignore::ResourceWarning",
+  # nemoguardrails ve langchain_community Pydantic V1→V2 geçişini tamamlamadı;
+  # bu uyarılar üçüncü parti kütüphanelerden kaynaklanır, Sidar kodundan değil.
+  "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+  "ignore::DeprecationWarning:nemoguardrails",
+  "ignore::DeprecationWarning:langchain_community",
+  "ignore::UserWarning:pydantic",
 ]
 log_cli = false
 log_cli_level = "INFO"
