@@ -516,6 +516,23 @@ class OllamaClient(BaseLLMClient):
             async def _do_request():
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(url, json=payload)
+
+                    if resp.is_error:
+                        detail = ""
+                        try:
+                            detail = str(resp.json().get("error", "")).strip()
+                        except Exception:
+                            detail = (resp.text or "").strip()
+
+                        if detail:
+                            retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
+                            raise LLMAPIError(
+                                "ollama",
+                                detail,
+                                status_code=resp.status_code,
+                                retryable=retryable,
+                            )
+
                     resp.raise_for_status()
                     return resp.json()
 
