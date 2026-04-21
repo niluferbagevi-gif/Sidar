@@ -215,6 +215,15 @@ describe("useChatStore — appendChunk", () => {
     useChatStore.getState().appendChunk("devam");
     expect(useChatStore.getState().streamingText).toBe("başlangıç devam");
   });
+
+  it("ignores empty chunk text", () => {
+    useChatStore.setState({ streamingText: "korunmalı", streamingRequestId: "req-1", isStreaming: true });
+    useChatStore.getState().appendChunk("");
+
+    const state = useChatStore.getState();
+    expect(state.streamingText).toBe("korunmalı");
+    expect(state.streamingRequestId).toBe("req-1");
+  });
 });
 
 describe("useChatStore — commitAssistantMessage", () => {
@@ -440,6 +449,39 @@ describe("useChatStore — stream flush yardımcıları", () => {
     expect(state.streamingText).toBe("yeni parça");
     expect(state.streamingRequestId).toBe("req-yeni");
     expect(state.isStreaming).toBe(true);
+  });
+
+  it("flushPendingChunk falls back to active streaming request id when pending id is empty", () => {
+    useChatStore.setState({ streamingText: "devam ", streamingRequestId: "req-aktif", isStreaming: true });
+
+    __chatStoreTestUtils.setPendingChunk("parça", "");
+    __chatStoreTestUtils.flushPendingChunk(useChatStore.setState, useChatStore.getState);
+
+    const state = useChatStore.getState();
+    expect(state.streamingRequestId).toBe("req-aktif");
+    expect(state.streamingText).toBe("devam parça");
+  });
+
+  it("setPendingChunk normalizes non-string values", () => {
+    useChatStore.setState({ streamingText: "önce ", streamingRequestId: "req-1", isStreaming: true });
+
+    __chatStoreTestUtils.setPendingChunk(42, 99);
+    __chatStoreTestUtils.flushPendingChunk(useChatStore.setState, useChatStore.getState);
+
+    const state = useChatStore.getState();
+    expect(state.streamingText).toBe("42");
+    expect(state.streamingRequestId).toBe("99");
+  });
+
+  it("setPendingChunk applies default empty values when args are omitted", () => {
+    useChatStore.setState({ streamingText: "değişmeden", streamingRequestId: "req-aktif", isStreaming: true });
+
+    __chatStoreTestUtils.setPendingChunk();
+    __chatStoreTestUtils.flushPendingChunk(useChatStore.setState, useChatStore.getState);
+
+    const state = useChatStore.getState();
+    expect(state.streamingText).toBe("değişmeden");
+    expect(state.streamingRequestId).toBe("req-aktif");
   });
 
   it("scheduleChunkFlush does not create duplicate timers", () => {
