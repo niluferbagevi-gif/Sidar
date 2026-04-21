@@ -255,6 +255,13 @@ def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path)
     assert resolved == absolute_target
 
 
+def test_run_guardrails_engine_returns_empty_when_engine_missing(tmp_path: Path) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    mgr._guardrails_engine = None
+
+    assert mgr._run_guardrails_engine("example text", source="user") == []
+
+
 @pytest.mark.parametrize(
     "engine,expected_reasons",
     [
