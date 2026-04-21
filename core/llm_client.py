@@ -525,7 +525,18 @@ class OllamaClient(BaseLLMClient):
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
             return _ensure_json_text(content, "Ollama") if json_mode else content
 
-        except LLMAPIError:
+        except LLMAPIError as exc:
+            guidance = None
+            if exc.status_code == 404:
+                guidance = self._build_missing_model_guidance(target_model, str(exc))
+            if guidance:
+                message = f"{exc} {guidance}"
+                raise LLMAPIError(
+                    "ollama",
+                    message,
+                    status_code=exc.status_code,
+                    retryable=exc.retryable,
+                ) from exc
             raise
         except Exception as exc:
             guidance = self._build_missing_model_guidance(target_model, str(exc))
