@@ -649,3 +649,53 @@ def test_webrtc_audio_ingress_decode_packet_rejects_unsupported_mime():
     payload = {"audio_chunk": base64.b64encode(b"raw").decode("ascii"), "mime_type": "application/octet-stream"}
     with pytest.raises(ValueError, match="Desteklenmeyen"):
         ingress.decode_packet(payload)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Eksik Kapsam (Coverage) Testleri: WebRTCAudioIngress Edge Caseleri
+# ──────────────────────────────────────────────────────────────────────────────
+
+def test_webrtc_audio_ingress_decode_packet_empty_audio_data():
+    """Satır 356 ve 385'i kapsar: Ses verisi boş veya anlamsız gönderildiğinde."""
+    ingress = WebRTCAudioIngress()
+
+    # 1) 'audio_chunk' string ama boşluklardan ibaret.
+    with pytest.raises(ValueError, match="boş ses verisi içeriyor"):
+        ingress.decode_packet({"audio_chunk": "   ", "mime_type": "audio/webm"})
+
+    # 2) 'audio_chunk' string değil.
+    with pytest.raises(ValueError, match="boş ses verisi içeriyor"):
+        ingress.decode_packet({"audio_chunk": None, "mime_type": "audio/webm"})
+
+
+def test_webrtc_audio_ingress_decode_packet_exceeds_max_bytes():
+    """Satır 358'i kapsar: Ses verisi belirtilen byte limitini aştığında."""
+    ingress = WebRTCAudioIngress()
+    ingress.max_chunk_bytes = 10
+
+    payload = {"audio_bytes": b"123456789012345", "mime_type": "audio/webm"}
+    with pytest.raises(ValueError, match="limiti aşıldı"):
+        ingress.decode_packet(payload)
+
+
+def test_webrtc_audio_ingress_decode_packet_direct_bytes():
+    """Satır 381'i kapsar: 'audio_bytes' doğrudan byte/bytearray formatında gelirse."""
+    ingress = WebRTCAudioIngress()
+    payload = {"audio_bytes": bytearray(b"direct_byte_data"), "mime_type": "audio/webm", "sequence": 1}
+
+    packet = ingress.decode_packet(payload)
+    assert packet.audio_bytes == b"direct_byte_data"
+    assert packet.mime_type == "audio/webm"
+
+
+def test_webrtc_audio_ingress_decode_packet_alternate_keys():
+    """_decode_audio_bytes içindeki 'audio_b64' ve 'data' alternatif anahtarlarını kapsar."""
+    ingress = WebRTCAudioIngress()
+
+    payload_b64 = {"audio_b64": base64.b64encode(b"b64data").decode("ascii"), "mime_type": "audio/wav"}
+    packet1 = ingress.decode_packet(payload_b64)
+    assert packet1.audio_bytes == b"b64data"
+
+    payload_data = {"data": base64.b64encode(b"datavalue").decode("ascii"), "mime_type": "audio/mp3"}
+    packet2 = ingress.decode_packet(payload_data)
+    assert packet2.audio_bytes == b"datavalue"
