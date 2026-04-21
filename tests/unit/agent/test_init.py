@@ -20,6 +20,9 @@ def _load_agent_module(monkeypatch: pytest.MonkeyPatch):
     registry_mod = types.ModuleType("agent.registry")
     registry_mod.REGISTRY_SENTINEL = True
 
+    swarm_mod = types.ModuleType("agent.swarm")
+    swarm_mod.SWARM_SENTINEL = True
+
     defs_mod = types.ModuleType("agent.definitions")
     defs_mod.SIDAR_SYSTEM_PROMPT = "prompt"
     defs_mod.SIDAR_KEYS = ["k1", "k2"]
@@ -29,6 +32,7 @@ def _load_agent_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "agent.auto_handle", auto_mod)
     monkeypatch.setitem(sys.modules, "agent.roles", roles_mod)
     monkeypatch.setitem(sys.modules, "agent.registry", registry_mod)
+    monkeypatch.setitem(sys.modules, "agent.swarm", swarm_mod)
     monkeypatch.setitem(sys.modules, "agent.definitions", defs_mod)
 
     sys.modules.pop("agent", None)
@@ -48,6 +52,7 @@ def test_getattr_exposes_lazy_module_imports(monkeypatch):
 
     assert mod.roles.ROLES_SENTINEL is True
     assert mod.registry.REGISTRY_SENTINEL is True
+    assert mod.swarm.SWARM_SENTINEL is True
 
 
 def test_getattr_exposes_lazy_constant_imports(monkeypatch):
