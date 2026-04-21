@@ -128,13 +128,20 @@ export const useChatStore = create((set, get) => ({
   appendChunk(text, requestId = "") {
     const normalized = String(text || "");
     if (!normalized) return;
-    const activeRequestId = String(requestId || get().streamingRequestId || "");
-    if (pendingChunkRequestId && activeRequestId && pendingChunkRequestId !== activeRequestId) {
-      flushPendingChunk(set, get);
-    }
-    pendingChunkRequestId = activeRequestId || pendingChunkRequestId;
-    pendingChunkText += normalized;
-    scheduleChunkFlush(set, get);
+    pendingChunkText = "";
+    pendingChunkRequestId = "";
+    clearStreamFlushTimer();
+    set((state) => {
+      const activeRequestId = String(requestId || state.streamingRequestId || "");
+      const switchedRequest = Boolean(
+        activeRequestId && state.streamingRequestId && state.streamingRequestId !== activeRequestId
+      );
+      return {
+        streamingText: (switchedRequest ? "" : state.streamingText) + normalized,
+        streamingRequestId: activeRequestId,
+        isStreaming: true,
+      };
+    });
   },
 
   commitAssistantMessage(message = null, requestId = "") {
