@@ -1522,6 +1522,9 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
         lambda: cli_called.__setitem__("flag", True) or False,
     )
 
+    # Fixture _init_docker'ı lambda self: None olarak patchlediği için gerçek kodu geri yükle.
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _real_init_docker)
+
     manager._init_docker()
 
     # WSL fallback True döndürdüğünde line 334 return çalışmalı;
