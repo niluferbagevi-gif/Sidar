@@ -569,6 +569,38 @@ async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) ->
 
 
 @pytest.mark.asyncio
+async def test_openai_error_response_falls_back_to_text_when_error_json_unparseable(respx_mock_router) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False, LLM_MAX_RETRIES=0)
+    client = llm_client.OpenAIClient(cfg)
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(500, text="temporary upstream error")
+    )
+
+    with pytest.raises(llm_client.LLMAPIError, match="temporary upstream error") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "openai"
+    assert exc.value.status_code == 500
+    assert exc.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_openai_error_response_uses_raise_for_status_when_no_detail(respx_mock_router) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False, LLM_MAX_RETRIES=0)
+    client = llm_client.OpenAIClient(cfg)
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(400, json={"error": {"message": "   "}})
+    )
+
+    with pytest.raises(llm_client.LLMAPIError, match="OpenAI isteği başarısız") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "openai"
+    assert exc.value.status_code == 400
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) -> None:
     client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434"))
     respx_mock_router.post("http://localhost:11434/api/chat").mock(
