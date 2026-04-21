@@ -1,4 +1,5 @@
 import importlib
+import runpy
 import sys
 import types
 
@@ -154,3 +155,32 @@ def test_start_gui_happy_path(monkeypatch):
     assert calls["start"] == ("index.html", (980, 680), (220, 120))
 
     importlib.reload(gui_launcher)
+
+
+def test_main_calls_start_gui(monkeypatch):
+    called = {"start_gui": False}
+
+    def fake_start_gui():
+        called["start_gui"] = True
+
+    monkeypatch.setattr(gui_launcher, "start_gui", fake_start_gui)
+
+    gui_launcher.main()
+
+    assert called["start_gui"] is True
+
+
+def test_module_main_block_runs_entrypoint(monkeypatch):
+    calls = {}
+    fake_eel = types.SimpleNamespace(
+        init=lambda path: calls.setdefault("init", path),
+        expose=lambda fn: calls.setdefault("expose", fn.__name__),
+        start=lambda *args, **kwargs: calls.setdefault("start", (args, kwargs)),
+    )
+    monkeypatch.setitem(sys.modules, "eel", fake_eel)
+
+    runpy.run_module("gui_launcher", run_name="__main__")
+
+    assert calls["init"].endswith("launcher_gui")
+    assert calls["expose"] == "start_sidar"
+    assert calls["start"][0] == ("index.html",)
