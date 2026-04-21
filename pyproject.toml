@@ -197,6 +197,8 @@ filterwarnings = [
   "ignore::FutureWarning:torch",
   "ignore::UserWarning:torch",
   "ignore::ResourceWarning",
+  "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+  "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"
