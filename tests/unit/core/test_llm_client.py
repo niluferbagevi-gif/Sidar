@@ -2103,3 +2103,134 @@ def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list
 def test_test_module_has_no_duplicate_test_function_names() -> None:
     duplicates = _list_duplicate_test_function_names_in_file(pathlib.Path(__file__))
     assert duplicates == []
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_buffer_tail_valid_json_with_error(
+    monkeypatch: pytest.MonkeyPatch, respx_mock_router
+) -> None:
+    """Ollama akışında en sonda newline olmadan dönen geçerli json (missing model hatası içeren) senaryosunu test eder."""
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen"))
+
+    class _DecoderC:
+        def decode(self, _raw, final=False):
+            if final:
+                # Newline yok, buffer.strip() true döner ve json parse edilir.
+                return '{"error": "model \\"qwen\\" not found"}'
+            return ""
+
+    monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderC()))
+
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
+    out = await _collect(c._stream_response("http://u", {"model": "qwen"}, llm_client.httpx.Timeout(10, connect=1)))
+
+    assert len(out) == 1
+    assert "qwen" in out[0]
+    assert "HATA" in out[0]
+    assert "ollama pull qwen" in out[0]
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_buffer_tail_valid_json_success(
+    monkeypatch: pytest.MonkeyPatch, respx_mock_router
+) -> None:
+    """Ollama akışında en sonda newline olmadan başarıyla dönen trailing JSON senaryosunu test eder."""
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen"))
+
+    class _DecoderD:
+        def decode(self, _raw, final=False):
+            if final:
+                return '{"message": {"content": "tail-success"}}'
+            return ""
+
+    monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderD()))
+
+    respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
+    out = await _collect(c._stream_response("http://u", {"model": "qwen"}, llm_client.httpx.Timeout(10, connect=1)))
+
+    assert out == ["tail-success"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_client_explicit_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """google.genai modülü import edilirken özel olarak hata alındığında exception bloğunun tetiklenmesini test eder."""
+    cfg = _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
+
+    # Kasıtlı olarak modülü devre dışı bırakarak ImportError tetikliyoruz.
+    monkeypatch.setitem(sys.modules, "google.genai", None)
+
+    c = llm_client.GeminiClient(cfg)
+    msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert "Gemini istemcisi kurulu değil" in msg
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_not_awaitable_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini SDK'sının (isawaitable == False) olduğu ve direk objenin döndürüldüğü (else call) dalları test eder."""
+
+    class _NonAwaitableModels:
+        def generate_content(self, **kwargs):
+            _ = kwargs
+            return DummyGeminiResponse('{"tool":"final_answer","argument":"non-awaitable","thought":"t"}')
+
+        def generate_content_stream(self, **kwargs):
+            _ = kwargs
+
+            async def gen():
+                yield SimpleNamespace(text="non-awaitable-stream")
+
+            return gen()
+
+    class _Client(DummyGeminiClient):
+        def __init__(self, api_key):
+            _ = api_key
+            self.aio = SimpleNamespace(models=_NonAwaitableModels())
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    _mock_google_genai(monkeypatch, _Client, fake_types)
+
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+
+    # Non-stream çağrı dalı
+    out = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
+    assert "non-awaitable" in out
+
+    # Stream çağrı dalı
+    stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
+    assert chunks == ["non-awaitable-stream"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_throws_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini Client içerisinde direkt bir Runtime Exception oluştuğunda fallback yapısını test eder."""
+
+    class _ErrorModels:
+        async def generate_content(self, **kwargs):
+            _ = kwargs
+            raise RuntimeError("gemini-chat-error")
+
+        async def generate_content_stream(self, **kwargs):
+            _ = kwargs
+            raise RuntimeError("gemini-chat-stream-error")
+
+    class _Client(DummyGeminiClient):
+        def __init__(self, api_key):
+            _ = api_key
+            self.aio = SimpleNamespace(models=_ErrorModels())
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    _mock_google_genai(monkeypatch, _Client, fake_types)
+
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+
+    # Non-stream Exception bloğu testi
+    out_non_stream = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert "gemini-chat-error" in out_non_stream
+    assert "HATA" in out_non_stream
+
+    # Stream Exception bloğu testi
+    out_stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(out_stream)
+    assert "gemini-chat-stream-error" in chunks[0]
+    assert "HATA" in chunks[0]
