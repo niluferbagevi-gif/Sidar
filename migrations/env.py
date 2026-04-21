@@ -34,7 +34,8 @@ target_metadata = None
 def _preload_dotenv_for_alembic() -> None:
     env_path = Path(__file__).resolve().parents[1] / ".env"
     if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
+        # Keep externally-provided env vars (e.g. test DATABASE_URL) as source of truth.
+        load_dotenv(dotenv_path=env_path, override=False)
 
 
 _preload_dotenv_for_alembic()
