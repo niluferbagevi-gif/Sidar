@@ -439,15 +439,15 @@ export function SwarmFlowPanel() {
       const role = String(result?.agent_role || taskNodes[index]?.laneId || taskNodes[taskNodes.length - 1]?.laneId).toLowerCase();
       const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
       const resultHandoffs = handoffNodes.filter((node) => node.id.startsWith(`handoff-${result?.task_id || index}`));
-      if (taskNode) {
-        edges.push({
-          id: `edge-task-result-${resultNode.id}`,
-          from: resultHandoffs[resultHandoffs.length - 1]?.id || taskNode.id,
-          to: resultNode.id,
-          label: result?.status || "result",
-          emphasis: result?.status === "success" ? "success" : "warning",
-        });
-      }
+      const latestResultHandoff = resultHandoffs[resultHandoffs.length - 1];
+      const resultSourceId = [latestResultHandoff?.id, taskNode?.id, supervisorNode.id].find(Boolean);
+      edges.push({
+        id: `edge-task-result-${resultNode.id}`,
+        from: resultSourceId,
+        to: resultNode.id,
+        label: result?.status || "result",
+        emphasis: result?.status === "success" ? "success" : "warning",
+      });
       edges.push({
         id: `edge-agent-result-${resultNode.id}`,
         from: `agent-${role}`,

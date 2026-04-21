@@ -945,6 +945,37 @@ describe("SwarmFlowPanel", () => {
     await waitFor(() => expect(screen.getAllByText("output").length).toBeGreaterThan(1));
   });
 
+
+
+  it("covers result edge fallback when all tasks are removed before execution", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{ status: "success", summary: "tasks removed", agent_role: "reviewer" }],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Görevi Sil" });
+    for (const button of removeButtons) {
+      await user.click(button);
+    }
+
+    await user.click(screen.getByRole("button", { name: "Run node" }));
+
+    expect(await screen.findByText(/Seçili düğüm için hedefli swarm çalıştı/)).toBeInTheDocument();
+    expect(screen.getByText("tasks removed")).toBeInTheDocument();
+    expect(screen.getByText("output")).toBeInTheDocument();
+  });
+
   it("covers omitted activity/pending payload keys on initial loaders", async () => {
     fetchJson.mockImplementation(async (url) => {
       if (url === "/api/autonomy/activity?limit=8") return {};
