@@ -544,6 +544,69 @@ async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_r
 
 
 @pytest.mark.asyncio
+async def test_openai_client_stream_mode_returns_fallback_when_api_key_missing() -> None:
+    client = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY=""))
+    stream = await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
+    assert chunks and "OPENAI_API_KEY" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_openai_client_http_error_without_detail_surfaces_status_error(respx_mock_router) -> None:
+    cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", OPENAI_MAX_RETRIES=0, ENABLE_TRACING=False)
+    client = llm_client.OpenAIClient(cfg)
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(502, content=b"")
+    )
+
+    with pytest.raises(llm_client.LLMAPIError) as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "openai"
+    assert exc.value.status_code == 502
+    assert exc.value.retryable is True
+    assert "502" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_client_non_stream_exception_closes_tracing_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _SpanCM:
+        def __init__(self):
+            self.exit_calls = []
+
+        def __enter__(self):
+            return _Span()
+
+        def __exit__(self, *args):
+            self.exit_calls.append(args)
+            return False
+
+    class _Tracer:
+        def __init__(self, cm):
+            self.cm = cm
+
+        def start_as_current_span(self, _name):
+            return self.cm
+
+    span_cm = _SpanCM()
+    client = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x"))
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: _Tracer(span_cm))
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _boom)
+
+    with pytest.raises(llm_client.LLMAPIError, match="OpenAI hata: boom"):
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert len(span_cm.exit_calls) == 1
+    assert span_cm.exit_calls[0][0] is RuntimeError
+
+
+@pytest.mark.asyncio
 async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False)
     client = llm_client.OpenAIClient(cfg)
@@ -950,6 +1013,25 @@ async def test_litellm_fallback_raise_and_successive_model(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_litellm_no_fallback_breaks_after_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.LiteLLMClient(
+        _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=[])
+    )
+    attempts = {"n": 0}
+
+    async def _boom(*_args, **_kwargs):
+        attempts["n"] += 1
+        raise RuntimeError("first failed")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _boom)
+
+    with pytest.raises(llm_client.LLMAPIError, match="first failed"):
+        await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert attempts["n"] == 1
+
+
+@pytest.mark.asyncio
 async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
@@ -967,6 +1049,14 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
 
     chunks = await _collect(c._stream_gemini_generator(broken_stream()))
     assert "Gemini" in chunks[0] and "HATA" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_gemini_stream_mode_returns_fallback_when_api_key_missing() -> None:
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="", GEMINI_MODEL="g"))
+    stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
+    assert chunks and "GEMINI_API_KEY" in chunks[0]
 
 
 @pytest.mark.asyncio
@@ -999,6 +1089,41 @@ async def test_anthropic_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     c2 = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     out = await _collect(c2._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
     assert "Anthropic" in out[0]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_mode_returns_fallback_when_api_key_missing() -> None:
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY=""))
+    stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
+    assert chunks and "ANTHROPIC_API_KEY" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_handles_retry_failure_before_stream_opens(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Messages:
+        def stream(self, **_kw):
+            class _CM:
+                async def __aenter__(self):
+                    return []
+
+                async def __aexit__(self, *_exc):
+                    return False
+
+            return _CM()
+
+    class _AsyncAnthropic:
+        def __init__(self):
+            self.messages = _Messages()
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("stream init fail")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _boom)
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    out = await _collect(c._stream_anthropic(_AsyncAnthropic(), "m", [{"role": "user", "content": "u"}], "", 0.1, True))
+    assert "Anthropic" in out[0]
+    assert "stream init fail" in out[0]
 
 
 @pytest.mark.asyncio
