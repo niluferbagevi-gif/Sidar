@@ -16,14 +16,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     """Run alembic migrations end-to-end on a temporary SQLite database."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    db_path = tmp_path / "test_migration.db"
-    db_url = f"sqlite:///{db_path}"
+    db_path = (tmp_path / "test_migration.db").resolve()
+    db_url = f"sqlite:////{db_path.as_posix().lstrip('/')}"
 
     alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", db_url)
     alembic_cfg.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
 
     command.upgrade(alembic_cfg, "head")
+    # Driver bağlantısını kesinleştirip dosya oluşturmayı fiziksel olarak tetikle.
+    bootstrap_engine = create_engine(db_url)
+    try:
+        with bootstrap_engine.begin() as conn:
+            conn.exec_driver_sql("SELECT 1")
+    finally:
+        bootstrap_engine.dispose()
     assert db_path.exists(), "SQLite database file should be created after upgrade."
 
     engine = create_engine(db_url)
