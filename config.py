@@ -208,6 +208,12 @@ def check_hardware() -> HardwareInfo:
     """GPU/CPU donanımını tespit eder; PyTorch yoksa sessizce devam eder."""
     info = HardwareInfo(has_cuda=False, gpu_name="N/A")
 
+    try:
+        import multiprocessing
+        info.cpu_count = multiprocessing.cpu_count()
+    except Exception:
+        info.cpu_count = 1
+
     wsl2 = _is_wsl2()
     if wsl2:
         logger.info("ℹ️  WSL2 ortamı tespit edildi — CUDA, Windows sürücüsü üzerinden erişilecek.")
@@ -291,12 +297,6 @@ def check_hardware() -> HardwareInfo:
         pynvml.nvmlShutdown()
     except Exception:
         pass  # opsiyonel bağımlılık; WSL2'de NVML erişimi kısıtlı olabilir
-
-    try:
-        import multiprocessing
-        info.cpu_count = multiprocessing.cpu_count()
-    except Exception:
-        info.cpu_count = 1
 
     return info
 
