@@ -640,6 +640,191 @@ async def test_ollama_stream_missing_model_emits_runtime_guidance(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_ollama_chat_http_error_detail_fallback_text_and_empty_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b"))
+
+    class _RespBadJson:
+        is_error = True
+        status_code = 500
+        text = "upstream exploded"
+
+        def json(self):
+            raise ValueError("not-json")
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("500", request=httpx.Request("POST", "http://u"), response=httpx.Response(500))
+
+    class _RespEmptyDetail:
+        is_error = True
+        status_code = 502
+        text = "   "
+
+        def json(self):
+            return {"error": ""}
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("502", request=httpx.Request("POST", "http://u"), response=httpx.Response(502))
+
+    class _Ctx:
+        def __init__(self, resp):
+            self._resp = resp
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return None
+
+        async def post(self, _url, json):  # noqa: ARG002
+            return self._resp
+
+    responses = [_RespBadJson(), _RespEmptyDetail()]
+
+    def _client_factory(*_args, **_kwargs):
+        return _Ctx(responses.pop(0))
+
+    async def _retry_passthrough(_provider, operation, **_kw):
+        return await operation()
+
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _client_factory)
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_passthrough)
+
+    with pytest.raises(llm_client.LLMAPIError, match="upstream exploded") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert exc.value.provider == "ollama"
+    assert exc.value.status_code == 500
+    assert exc.value.retryable is True
+
+    with pytest.raises(llm_client.LLMAPIError, match="Ollama hata: 502") as exc2:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert exc2.value.provider == "ollama"
+    assert exc2.value.status_code is None
+    assert exc2.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_ollama_chat_generic_exception_with_missing_model_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen2.5-coder:7b"))
+
+    async def _raise_missing_model(*_args, **_kwargs):
+        raise RuntimeError("model not found")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_missing_model)
+
+    with pytest.raises(llm_client.LLMAPIError, match="ollama pull qwen2.5-coder:7b") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert exc.value.provider == "ollama"
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_error_branches_without_and_with_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen2.5-coder:7b"))
+
+    class _DummyResp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"error":"other failure","message":{"content":"A"}}\n'
+            yield b"\n"
+
+    class _DummyCM:
+        async def __aenter__(self):
+            return _DummyResp()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _DummyClient:
+        def stream(self, *_args, **_kwargs):
+            return _DummyCM()
+
+        async def aclose(self):
+            return None
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return (
+                    '{"error":"model not found"}\n'
+                    '{"error":"model not found"}\n'
+                    '{"error":"model not found"}'
+                )
+            return _raw.decode("utf-8", errors="replace")
+
+    async def _fake_retry(_provider, operation, **_kw):
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())  # noqa: ARG005
+    monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
+
+    chunks = await _collect(
+        client._stream_response(
+            "http://localhost:11434/api/chat",
+            {"model": "qwen2.5-coder:7b", "messages": [], "stream": True},
+            llm_client.httpx.Timeout(10, connect=1),
+        )
+    )
+
+    assert chunks[0] == "A"
+    assert len(chunks) == 2
+    assert "ollama pull qwen2.5-coder:7b" in chunks[1]
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_trailing_no_guidance_and_buffer_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = llm_client.OllamaClient(_make_config(CODING_MODEL="qwen2.5-coder:7b"))
+
+    class _DummyResp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+    class _DummyCM:
+        async def __aenter__(self):
+            return _DummyResp()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _DummyClient:
+        def stream(self, *_args, **_kwargs):
+            return _DummyCM()
+
+        async def aclose(self):
+            return None
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return '{"error":"other failure"}\n{"error":"model not found"}'
+            return ""
+
+    async def _fake_retry(_provider, operation, **_kw):
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())  # noqa: ARG005
+    monkeypatch.setattr(llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder()))
+
+    chunks = await _collect(
+        client._stream_response(
+            "http://localhost:11434/api/chat",
+            {"model": "qwen2.5-coder:7b", "messages": [], "stream": True},
+            llm_client.httpx.Timeout(10, connect=1),
+        )
+    )
+
+    assert len(chunks) == 1
+    assert "ollama pull qwen2.5-coder:7b" in chunks[0]
+
+
+@pytest.mark.asyncio
 async def test_openai_stream_parser(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
