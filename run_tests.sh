@@ -61,7 +61,7 @@ open_artifact() {
 }
 
 run_pytest_coverage_report() {
-  echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  echo "🚀 Aşama 1: Genel testler paralel olarak koşturuluyor (xdist aktif, performans testleri hariç)..."
   if ! python - <<'PY' >/dev/null 2>&1
 import tomllib
 from pathlib import Path
@@ -96,10 +96,9 @@ PY
   local pytest_cmd=(pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
   local pytest_targets=("tests")
 
-  # Yeni test klasörleri ayrı mount/volume altında tutuluyorsa açıkça hedefleyelim.
-  # Bu sayede coverage quality gate çalışırken test keşfi dizin bağımlılıklarından etkilenmez.
+  # Performans testleri xdist altında benchmark ölçümlerini engelledigi için Aşama 2'de ayrıca çalıştırılır.
   if [ -d "${PERFORMANCE_TEST_DIR}" ]; then
-    pytest_targets+=("${PERFORMANCE_TEST_DIR}")
+    pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
@@ -153,16 +152,17 @@ PY
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
 run_pytest_coverage_report
 
-# 2) Kritik yol performans baseline testleri (pytest-benchmark)
+# 2) Performans benchmark testleri - xdist olmadan tek çekirdek üzerinde çalıştırılır
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-elif [ -f "tests/performance/test_benchmark.py" ]; then
-  python -m pytest -v tests/performance/test_benchmark.py --no-cov
+elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+  echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
+  pytest -c pyproject.toml "${PERFORMANCE_TEST_DIR}"
   BENCHMARK_EXIT_CODE=$?
 else
-  echo "⚠️ Benchmark testi atlandı: tests/performance/test_benchmark.py bulunamadı."
+  echo "⚠️ Benchmark testleri atlandı: ${PERFORMANCE_TEST_DIR} dizini bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then
-    echo "❌ RUN_BENCHMARKS=required iken benchmark dosyası bulunamadı."
+    echo "❌ RUN_BENCHMARKS=required iken benchmark dizini bulunamadı."
     BENCHMARK_EXIT_CODE=1
   fi
 fi
