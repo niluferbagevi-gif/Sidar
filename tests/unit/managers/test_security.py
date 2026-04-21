@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -223,3 +224,75 @@ def test_validate_agent_output_detects_secret_like_leak(tmp_path: Path) -> None:
     assert result.allowed is False
     assert result.source == "agent_output"
     assert result.reasons
+
+
+def test_init_uses_cfg_defaults_and_skips_guardrails_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"count": 0}
+
+    def fake_init_guardrails(self) -> None:
+        calls["count"] += 1
+
+    monkeypatch.setattr(SecurityManager, "_init_guardrails", fake_init_guardrails)
+    cfg = SimpleNamespace(ACCESS_LEVEL="full", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=False)
+
+    mgr = SecurityManager(cfg=cfg)
+
+    assert mgr.level_name == "full"
+    assert mgr.level == FULL
+    assert mgr.base_dir == tmp_path.resolve()
+    assert mgr.prompt_guard_enabled is False
+    assert calls["count"] == 0
+
+
+def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    absolute_target = (tmp_path.parent / "abs-target.txt").resolve()
+
+    resolved = mgr._resolve_safe(str(absolute_target))
+
+    assert resolved == absolute_target
+
+
+@pytest.mark.parametrize(
+    "engine,expected_reasons",
+    [
+        (SimpleNamespace(validate="not-callable"), []),
+        (SimpleNamespace(validate=lambda **_kwargs: "not-a-dict"), []),
+        (SimpleNamespace(validate=lambda **_kwargs: {"allowed": True, "reason": "ignored"}), []),
+        (SimpleNamespace(validate=lambda **_kwargs: {"allowed": False}), ["guardrails_blocked"]),
+        (SimpleNamespace(validate=lambda **_kwargs: {"allowed": False, "reason": "blocked_by_policy"}), ["blocked_by_policy"]),
+    ],
+)
+def test_run_guardrails_engine_external_engine_branches(
+    tmp_path: Path, engine: object, expected_reasons: list[str]
+) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    mgr._guardrails_engine = engine
+
+    assert mgr._run_guardrails_engine("example text", source="user") == expected_reasons
+
+
+def test_is_safe_path_returns_false_on_unexpected_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+
+    def boom(self):
+        raise RuntimeError("resolve exploded")
+
+    monkeypatch.setattr(Path, "resolve", boom)
+
+    assert mgr.is_safe_path(str(tmp_path / "safe.txt")) is False
+
+
+@pytest.mark.parametrize("text_input", ["", "   ", None])
+def test_validate_prompt_text_allows_empty_or_none_text(tmp_path: Path, text_input: str | None) -> None:
+    mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
+
+    result = mgr.validate_prompt_text(text_input)  # type: ignore[arg-type]
+
+    assert result.allowed is True
+    assert result.risk_score == 0
+    assert result.reasons == []
