@@ -517,3 +517,63 @@ def test_get_project_statuses_deduplicates_and_skips_empty(monkeypatch):
     assert ok is True
     assert err == ""
     assert statuses == ["To Do", "In Progress"]
+
+
+def test_request_retries_on_timeout(monkeypatch):
+    """
+    httpx.TimeoutException fırlatıldığında AsyncRetrying mekanizmasının
+    devreye girdiğini ve doğru hata mesajını döndüğünü test eder.
+    (Satır 105-106 kapsamı)
+    """
+    import httpx
+
+    # Eğer ortamda stub httpx kullanılıyorsa TimeoutException'ı mocklayalım
+    if not hasattr(httpx, "TimeoutException"):
+        httpx.TimeoutException = type("TimeoutException", (Exception,), {})
+    if not hasattr(httpx, "TransportError"):
+        httpx.TransportError = type("TransportError", (Exception,), {})
+
+    class _TimeoutClient(_FakeClient):
+        async def request(self, method, url, **kwargs):
+            raise httpx.TimeoutException("Bağlantı zaman aşımına uğradı")
+
+    def _factory(**kwargs):
+        return _TimeoutClient(**kwargs)
+
+    monkeypatch.setattr("managers.jira_manager.httpx.AsyncClient", _factory)
+    mgr = JiraManager(url="https://jira.local", token="abc")
+
+    # _request fonksiyonu exception fırlatınca retry yapacak ve en sonunda hata dönecek
+    ok, data, err = _run(mgr._request("GET", "issue/PROJ-1"))
+
+    assert ok is False
+    assert data is None
+    assert "Bağlantı zaman aşımına uğradı" in err
+
+
+def test_request_retries_on_service_unavailable(monkeypatch):
+    """
+    HTTP 503 (veya 429/502/504) durum kodlarında AsyncRetrying mekanizmasının
+    _JiraRetryableError fırlattığını test eder.
+    (Satır 107-108 kapsamı)
+    """
+
+    class _503Client(_FakeClient):
+        async def request(self, method, url, **kwargs):
+            return _FakeResponse(
+                status_code=503,
+                text="Service Unavailable Retry Later",
+                content=b"",
+            )
+
+    def _factory(**kwargs):
+        return _503Client(**kwargs)
+
+    monkeypatch.setattr("managers.jira_manager.httpx.AsyncClient", _factory)
+    mgr = JiraManager(url="https://jira.local", token="abc")
+
+    ok, data, err = _run(mgr._request("GET", "issue/PROJ-1"))
+
+    assert ok is False
+    assert data is None
+    assert "HTTP 503: Service Unavailable" in err
