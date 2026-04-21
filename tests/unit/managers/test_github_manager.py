@@ -5,8 +5,9 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from tenacity import Future, RetryError
 
-from managers.github_manager import GitHubManager, _is_not_found_error
+from managers.github_manager import GitHubManager, _is_not_found_error, _is_retryable_github_error
 from tests.fixtures.github_mocks import Err404, FileMock, IssueMock, PRMock, RepoMock
 
 
@@ -25,6 +26,18 @@ def test_is_not_found_error_variants():
     assert _is_not_found_error(RuntimeError("404 gone")) is True
     assert _is_not_found_error(RuntimeError("Not Found")) is True
     assert _is_not_found_error(RuntimeError("boom")) is False
+
+
+def test_is_retryable_github_error_status_and_message_paths():
+    class HttpErr(RuntimeError):
+        def __init__(self, msg: str, status: int | None = None):
+            super().__init__(msg)
+            self.status = status
+
+    assert _is_retryable_github_error(HttpErr("Too many requests", status=429)) is True
+    assert _is_retryable_github_error(HttpErr("API rate limit exceeded", status=403)) is True
+    assert _is_retryable_github_error(RuntimeError("socket timeout while calling api")) is True
+    assert _is_retryable_github_error(RuntimeError("non-retryable validation error")) is False
 
 
 def test_init_token_cleanup_without_client_init(monkeypatch):
@@ -57,6 +70,14 @@ def test_load_repo_failure_and_set_repo_unavailable(manager):
     manager._available = False
     ok, msg = manager.set_repo("x")
     assert (ok, msg) == (False, "GitHub bağlantısı yok.")
+
+
+def test_load_repo_retry_error_path(manager):
+    future = Future(1)
+    future.set_exception(RuntimeError("rate limited"))
+    manager._call_with_retry = lambda *a, **k: (_ for _ in ()).throw(RetryError(future))
+    manager._gh = SimpleNamespace(get_repo=lambda name: SimpleNamespace(name=name))
+    assert manager._load_repo("org/repo") is False
 
 
 def test_load_repo_without_client_and_set_repo_failed_lookup(manager):
