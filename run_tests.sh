@@ -22,6 +22,7 @@ AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
 RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
+BENCHMARK_TEST_FILE="${BENCHMARK_TEST_FILE:-tests/performance/test_benchmark.py}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -102,6 +103,13 @@ PY
     pytest_targets+=("${PERFORMANCE_TEST_DIR}")
   fi
 
+  # pytest-xdist ile paralel coverage koşusunda benchmark testlerini dışarıda bırakırız.
+  # Benchmark senaryosu aşağıdaki ayrı adımda tek süreçte çalıştırılır; böylece gerçek
+  # performans ölçümü korunur ve PytestBenchmarkWarning önlenir.
+  if [ -f "${BENCHMARK_TEST_FILE}" ]; then
+    pytest_cmd+=(--ignore="${BENCHMARK_TEST_FILE}")
+  fi
+
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
@@ -156,11 +164,11 @@ run_pytest_coverage_report
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-elif [ -f "tests/performance/test_benchmark.py" ]; then
-  python -m pytest -v tests/performance/test_benchmark.py --no-cov
+elif [ -f "${BENCHMARK_TEST_FILE}" ]; then
+  python -m pytest -v "${BENCHMARK_TEST_FILE}" --no-cov
   BENCHMARK_EXIT_CODE=$?
 else
-  echo "⚠️ Benchmark testi atlandı: tests/performance/test_benchmark.py bulunamadı."
+  echo "⚠️ Benchmark testi atlandı: ${BENCHMARK_TEST_FILE} bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then
     echo "❌ RUN_BENCHMARKS=required iken benchmark dosyası bulunamadı."
     BENCHMARK_EXIT_CODE=1
