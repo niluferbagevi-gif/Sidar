@@ -96,12 +96,6 @@ PY
   local pytest_cmd=(pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
   local pytest_targets=("tests")
 
-  # Yeni test klasörleri ayrı mount/volume altında tutuluyorsa açıkça hedefleyelim.
-  # Bu sayede coverage quality gate çalışırken test keşfi dizin bağımlılıklarından etkilenmez.
-  if [ -d "${PERFORMANCE_TEST_DIR}" ]; then
-    pytest_targets+=("${PERFORMANCE_TEST_DIR}")
-  fi
-
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     pytest_cmd+=(-m "not gpu")
@@ -116,6 +110,12 @@ PY
 
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
+  fi
+
+  # Benchmark ölçümlerinin doğruluğu için performans testleri bu aşamada
+  # özellikle hariç tutulur ve aşağıda tek çekirdekli ayrı fazda çalıştırılır.
+  if [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+    pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
   pytest_cmd+=("${pytest_targets[@]}")
@@ -156,13 +156,14 @@ run_pytest_coverage_report
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-elif [ -f "tests/performance/test_benchmark.py" ]; then
-  python -m pytest -v tests/performance/test_benchmark.py --no-cov
+elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+  echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
+  python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
   BENCHMARK_EXIT_CODE=$?
 else
-  echo "⚠️ Benchmark testi atlandı: tests/performance/test_benchmark.py bulunamadı."
+  echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then
-    echo "❌ RUN_BENCHMARKS=required iken benchmark dosyası bulunamadı."
+    echo "❌ RUN_BENCHMARKS=required iken benchmark dizini bulunamadı."
     BENCHMARK_EXIT_CODE=1
   fi
 fi
