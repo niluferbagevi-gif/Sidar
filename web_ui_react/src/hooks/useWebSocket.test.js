@@ -310,7 +310,7 @@ describe("useWebSocket — onerror / onclose", () => {
     expect(onError).toHaveBeenCalledWith("WebSocket bağlantı hatası.");
   });
 
-  it("sets status to disconnected on WebSocket close", () => {
+  it("sets status to reconnecting on WebSocket close", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));
 
@@ -318,7 +318,7 @@ describe("useWebSocket — onerror / onclose", () => {
       wsMockInstance.onclose?.();
     });
 
-    expect(result.current.status).toBe("disconnected");
+    expect(result.current.status).toBe("reconnecting");
   });
 });
 
