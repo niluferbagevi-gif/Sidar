@@ -91,7 +91,8 @@ def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gpu_stress_skips_when_env_var_not_enabled():
+async def test_gpu_stress_skips_when_env_var_not_enabled(monkeypatch):
+    monkeypatch.delenv("RUN_GPU_STRESS", raising=False)
     with pytest.raises(pytest.skip.Exception, match="RUN_GPU_STRESS=1"):
         await gpu_smoke.test_real_gpu_inference_stress_vram_and_concurrency()
 
