@@ -23,6 +23,21 @@ def test_load_rows_reads_columns_and_data(tmp_path: Path):
     assert rows == [(1, "alice@example.com")]
 
 
+def test_load_rows_returns_columns_for_empty_table(tmp_path: Path):
+    db_path = tmp_path / "sample.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    cols, rows = migrate_sqlite_to_pg._load_rows(db_path, "users")
+
+    assert cols == ["id", "email"]
+    assert rows == []
+
+
 class _FakeTransaction:
     async def __aenter__(self):
         return self
@@ -104,6 +119,17 @@ def test_copy_table_writes_rows_inside_transaction(tmp_path: Path):
     assert second_params == (2, "bob@example.com")
 
 
+def test_copy_table_returns_zero_when_table_has_no_columns(monkeypatch, tmp_path: Path):
+    fake_conn = _FakeConn()
+
+    monkeypatch.setattr(migrate_sqlite_to_pg, "_load_rows", lambda *_: ([], []))
+
+    count = asyncio.run(migrate_sqlite_to_pg._copy_table(fake_conn, tmp_path / "sample.db", "users", dry_run=False))
+
+    assert count == 0
+    assert fake_conn.executed == []
+
+
 def test_migrate_raises_when_sqlite_file_missing(monkeypatch, tmp_path: Path):
     fake_conn = _FakeAsyncPgConn()
     monkeypatch.setitem(__import__("sys").modules, "asyncpg", _FakeAsyncPg(fake_conn))
@@ -143,3 +169,42 @@ def test_migrate_iterates_all_tables(monkeypatch, tmp_path: Path):
 
     assert [table for _, _, table, _ in calls] == migrate_sqlite_to_pg.TABLES_IN_ORDER
     assert fake_conn.closed is True
+
+
+def test_main_parses_args_and_runs_migrate(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "sample.db"
+    db_path.write_bytes(b"placeholder")
+    seen = {}
+
+    async def _fake_migrate(sqlite_path: Path, postgres_dsn: str, dry_run: bool):
+        seen["sqlite_path"] = sqlite_path
+        seen["postgres_dsn"] = postgres_dsn
+        seen["dry_run"] = dry_run
+
+    original_run = asyncio.run
+
+    def _run(coro):
+        return original_run(coro)
+
+    monkeypatch.setattr(
+        __import__("sys"),
+        "argv",
+        [
+            "migrate_sqlite_to_pg.py",
+            "--sqlite-path",
+            str(db_path),
+            "--postgres-dsn",
+            "postgresql://user:pass@localhost:5432/sidar",
+            "--dry-run",
+        ],
+    )
+    monkeypatch.setattr(migrate_sqlite_to_pg, "migrate", _fake_migrate)
+    monkeypatch.setattr(migrate_sqlite_to_pg.asyncio, "run", _run)
+
+    migrate_sqlite_to_pg.main()
+
+    assert seen == {
+        "sqlite_path": db_path,
+        "postgres_dsn": "postgresql://user:pass@localhost:5432/sidar",
+        "dry_run": True,
+    }
