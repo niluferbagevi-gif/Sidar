@@ -113,7 +113,7 @@ async def test_real_gpu_inference_smoke() -> None:
 @pytest.mark.asyncio
 async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
     """İsteğe bağlı GPU stres testi: eşzamanlı istek, gecikme ve bellek tepe değeri gözlemi."""
-    if os.getenv("RUN_GPU_STRESS", "0") != "1":
+    if os.getenv("RUN_GPU_STRESS", "1") != "1":
         pytest.skip("GPU stres testi varsayılan olarak kapalıdır. (RUN_GPU_STRESS=1 ayarlayın).")
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
