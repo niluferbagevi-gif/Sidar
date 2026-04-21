@@ -870,6 +870,39 @@ def test_repair_log_file_permissions_coverage(monkeypatch, tmp_path):
     assert len(called_chmod) == 1
 
 
+def test_repair_log_file_permissions_returns_when_already_writable(monkeypatch, tmp_path):
+    log_file = tmp_path / "already_writable.log"
+    log_file.touch()
+
+    monkeypatch.setattr(os, "access", lambda path, mode: True)
+
+    called_chmod = []
+
+    def fake_chmod(self, mode):
+        called_chmod.append(mode)
+
+    monkeypatch.setattr(Path, "chmod", fake_chmod)
+
+    config._repair_log_file_permissions(log_file)
+
+    assert called_chmod == []
+
+
+def test_repair_log_file_permissions_skips_chown_when_ids_missing(monkeypatch, tmp_path):
+    log_file = tmp_path / "missing_ids.log"
+    log_file.touch()
+
+    monkeypatch.setattr(os, "access", lambda path, mode: False)
+    monkeypatch.setattr(os, "getuid", lambda: None, raising=False)
+    monkeypatch.setattr(os, "getgid", lambda: None, raising=False)
+
+    called_chmod = []
+    monkeypatch.setattr(Path, "chmod", lambda self, mode: called_chmod.append(mode))
+
+    config._repair_log_file_permissions(log_file)
+    assert len(called_chmod) == 1
+
+
 def test_rotating_file_handler_permission_error_coverage(monkeypatch):
     class MockRotatingFileHandler:
         def __init__(self, *args, **kwargs):
@@ -941,3 +974,60 @@ def test_main_block_coverage():
         pass
     finally:
         os.environ.pop("DEBUG_MODE", None)
+
+
+def test_check_hardware_multi_gpu_and_zero_gpu_device_paths(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("MULTI_GPU", "true")
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+
+    called = []
+
+    fake_torch_multi = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            device_count=lambda: 2,
+            get_device_name=lambda _idx: "MultiGPU",
+            set_per_process_memory_fraction=lambda frac, device=0: called.append((frac, device)),
+        ),
+        version=types.SimpleNamespace(cuda="12.1"),
+    )
+    modules = __import__("sys").modules
+    monkeypatch.setitem(modules, "torch", fake_torch_multi)
+    monkeypatch.setitem(
+        modules,
+        "pynvml",
+        types.SimpleNamespace(
+            nvmlInit=lambda: None,
+            nvmlSystemGetDriverVersion=lambda: "550.1",
+            nvmlShutdown=lambda: None,
+        ),
+    )
+    info = config.check_hardware()
+    assert info.gpu_count == 2
+    assert called == [(0.8, 0), (0.8, 1)]
+
+    monkeypatch.setenv("MULTI_GPU", "false")
+    called.clear()
+    fake_torch_zero = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            device_count=lambda: 0,
+            get_device_name=lambda _idx: "NoDevice",
+            set_per_process_memory_fraction=lambda frac, device=0: called.append((frac, device)),
+        ),
+        version=types.SimpleNamespace(cuda="12.1"),
+    )
+    monkeypatch.setitem(modules, "torch", fake_torch_zero)
+    info_zero = config.check_hardware()
+    assert info_zero.gpu_count == 0
+    assert called == [(0.8, 0)]
+
+
+def test_trusted_proxies_as_list_returns_copy(monkeypatch):
+    monkeypatch.setattr(config.Config, "TRUSTED_PROXIES_LIST", ["10.0.0.1", "10.0.0.2"])
+    result = config.Config.trusted_proxies_as_list()
+    assert result == ["10.0.0.1", "10.0.0.2"]
+    assert result is not config.Config.TRUSTED_PROXIES_LIST
