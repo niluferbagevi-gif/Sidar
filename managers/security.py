@@ -89,18 +89,13 @@ class SecurityManager:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.prompt_guard_enabled = bool(getattr(self.cfg, "PROMPT_GUARD_ENABLED", True))
         self._guardrails_engine: Any = None
-        self._guardrails_unavailable_reason = ""
         if self.prompt_guard_enabled:
             self._init_guardrails()
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
 
     def _init_guardrails(self) -> None:
-        """NeMo Guardrails benzeri motor varsa bağla; yoksa regex fallback kullan."""
-        try:
-            from nemoguardrails import LLMRails  # type: ignore
-        except Exception as exc:  # pragma: no cover - opsiyonel bağımlılık
-            self._guardrails_unavailable_reason = str(exc)
-            return
+        """NeMo Guardrails motorunu başlatır."""
+        from nemoguardrails import LLMRails  # type: ignore
         self._guardrails_engine = LLMRails
 
     # ─────────────────────────────────────────────
