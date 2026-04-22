@@ -674,7 +674,7 @@ async def _dispatch_autonomy_trigger(
     meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     trigger = ExternalTrigger(
         trigger_id=f"trigger-{secrets.token_hex(6)}",
         source=trigger_source,
@@ -1308,7 +1308,7 @@ async def basic_auth_middleware(request: Request, call_next):
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     request.state.user = user
     set_active_user = getattr(agent.memory, "set_active_user", None)
     if callable(set_active_user):
@@ -4700,7 +4700,7 @@ async def github_webhook(
     except json.JSONDecodeError:
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     msg = ""
 
     if x_github_event == "push":
@@ -4739,10 +4739,12 @@ async def github_webhook(
         if bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
             with contextlib.suppress(Exception):
                 payload_dict = data if isinstance(data, dict) else {"payload": data}
-                federation_workflow = None if ci_context else await _run_event_driven_federation_workflow(
-                    source="github",
-                    event_name=x_github_event,
-                    payload=payload_dict,
+                federation_workflow = None if ci_context else await _await_if_needed(
+                    _run_event_driven_federation_workflow(
+                        source="github",
+                        event_name=x_github_event,
+                        payload=payload_dict,
+                    )
                 )
                 dispatch_payload = ci_context if ci_context else payload_dict
                 dispatch_meta = {"source": "github", "provider": "github", "ci_failure": "true" if ci_context else "false"}
@@ -4753,11 +4755,13 @@ async def github_webhook(
                         "workflow_type": str(federation_workflow.get("workflow_type") or "external_event"),
                         "correlation_id": str(federation_workflow.get("correlation_id") or ""),
                     })
-                await _dispatch_autonomy_trigger(
-                    trigger_source="webhook:github:ci_failure" if ci_context else "webhook:github",
-                    event_name="ci_failure_remediation" if ci_context else x_github_event,
-                    payload=dispatch_payload,
-                    meta=dispatch_meta,
+                await _await_if_needed(
+                    _dispatch_autonomy_trigger(
+                        trigger_source="webhook:github:ci_failure" if ci_context else "webhook:github",
+                        event_name="ci_failure_remediation" if ci_context else x_github_event,
+                        payload=dispatch_payload,
+                        meta=dispatch_meta,
+                    )
                 )
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
