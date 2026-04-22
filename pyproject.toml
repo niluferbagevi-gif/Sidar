@@ -201,6 +201,9 @@ filterwarnings = [
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
   "ignore:invalid escape sequence:DeprecationWarning:sentence_transformers.*",
+  "ignore:invalid escape sequence '\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",
+  "ignore:invalid escape sequence '\\d':DeprecationWarning:sentence_transformers.model_card",
+  "ignore:invalid escape sequence '\\_':DeprecationWarning:sentence_transformers.losses.DenoisingAutoEncoderLoss",
 ]
 log_cli = false
 log_cli_level = "INFO"
