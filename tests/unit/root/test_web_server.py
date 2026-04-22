@@ -2317,3 +2317,122 @@ async def test_ws_close_policy_violation_and_close_redis_client(monkeypatch):
     monkeypatch.setattr(web_server, "_redis_client", redis_closed_loop)
     await web_server._close_redis_client()
     assert web_server._redis_client is None
+
+@pytest.mark.asyncio
+async def test_get_redis_initialization_success_and_failure_paths(monkeypatch):
+    class _RedisClient:
+        def __init__(self, should_fail=False):
+            self.should_fail = should_fail
+            self.ping_called = False
+
+        async def ping(self):
+            self.ping_called = True
+            if self.should_fail:
+                raise RuntimeError("redis-down")
+
+    holder = {"client": None}
+
+    class _RedisFactory:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            holder["client"] = _RedisClient(should_fail=False)
+            return holder["client"]
+
+    monkeypatch.setattr(web_server, "Redis", _RedisFactory)
+    monkeypatch.setattr(web_server, "_redis_client", None)
+    monkeypatch.setattr(web_server, "_redis_lock", None)
+
+    first = await web_server._get_redis()
+    second = await web_server._get_redis()
+
+    assert first is holder["client"]
+    assert second is first
+    assert first.ping_called is True
+
+    class _RedisFactoryFail:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            return _RedisClient(should_fail=True)
+
+    monkeypatch.setattr(web_server, "Redis", _RedisFactoryFail)
+    monkeypatch.setattr(web_server, "_redis_client", None)
+    monkeypatch.setattr(web_server, "_redis_lock", None)
+
+    failed = await web_server._get_redis()
+    assert failed is None
+
+
+@pytest.mark.asyncio
+async def test_redis_rate_limit_first_request_sets_expire_and_get_client_ip_real_ip(monkeypatch):
+    calls = {"expire": []}
+
+    class _RedisStub:
+        async def incr(self, *_):
+            return 1
+
+        async def expire(self, key, ttl):
+            calls["expire"].append((key, ttl))
+            return True
+
+    async def _get_redis():
+        return _RedisStub()
+
+    monkeypatch.setattr(web_server, "_get_redis", _get_redis)
+    assert await web_server._redis_is_rate_limited("chat", "2.2.2.2", 5, 60) is False
+    assert calls["expire"]
+
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
+    req_real = _make_request("/x", headers={"X-Real-IP": "8.8.8.8"}, client_ip="127.0.0.1")
+    assert web_server._get_client_ip(req_real) == "8.8.8.8"
+
+    req_untrusted = _make_request("/x", headers={"X-Forwarded-For": "9.9.9.9"}, client_ip="10.0.0.7")
+    assert web_server._get_client_ip(req_untrusted) == "10.0.0.7"
+
+
+@pytest.mark.asyncio
+async def test_ws_helpers_cover_no_close_and_voice_tts_skip_branches():
+    class _NoClose:
+        pass
+
+    await web_server._ws_close_policy_violation(_NoClose(), "no-op")
+
+    class _Ws:
+        def __init__(self):
+            self.payloads = []
+            self._sidar_voice_duplex_state = object()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    class _VoicePipeline:
+        enabled = True
+
+        def buffer_assistant_text(self, _state, text, flush=False):
+            cleaned = text.strip()
+            if not cleaned:
+                return "turn", [{"assistant_turn_id": 1, "audio_sequence": 1, "text": ""}]
+            return "turn", [
+                {"assistant_turn_id": 1, "audio_sequence": 1, "text": "fail-tts"},
+                {"assistant_turn_id": 1, "audio_sequence": 2, "text": "empty-audio"},
+                {"assistant_turn_id": 1, "audio_sequence": 3, "text": "ok"},
+            ]
+
+        async def synthesize_text(self, text):
+            if text == "fail-tts":
+                return {"success": False}
+            if text == "empty-audio":
+                return {"success": True, "audio_bytes": b""}
+            return {"success": True, "audio_bytes": b"ok", "mime_type": "audio/wav"}
+
+    class _Agent:
+        async def respond(self, _prompt):
+            for chunk in [" ", "done"]:
+                yield chunk
+
+    ws = _Ws()
+    ws._sidar_voice_pipeline = _VoicePipeline()
+    await web_server._ws_stream_agent_text_response(ws, _Agent(), "prompt")
+
+    assert {"chunk": " "} in ws.payloads
+    assert {"chunk": "done"} in ws.payloads
+    assert sum(1 for payload in ws.payloads if "audio_chunk" in payload) == 1
