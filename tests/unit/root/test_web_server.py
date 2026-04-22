@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+import importlib.util
 from pathlib import Path
 import re
 import sys
@@ -910,6 +911,106 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
     assert web_server._nightly_memory_task is None or web_server._nightly_memory_task.done()
     assert cleanup["redis"] == 1
     assert cleanup["shutdown"] == 1
+
+
+def test_contracts_fallback_helpers_when_contract_import_fails(monkeypatch, tmp_path):
+    source = Path("web_server.py")
+    module_path = tmp_path / "web_server_fallback_contracts.py"
+    module_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "agent.core.contracts":
+            raise ImportError("forced contracts import error")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    spec = importlib.util.spec_from_file_location("web_server_fallback_contracts", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+
+    assert module.derive_correlation_id("", "  ", " corr-1 ") == "corr-1"
+    assert module.derive_correlation_id("", None) == ""
+    assert module.normalize_federation_protocol("") == "federation.v1"
+    assert module.normalize_federation_protocol("swarm.federation.v1") == "federation.v1"
+    assert module.normalize_federation_protocol("custom.v2") == "custom.v2"
+
+
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
+    stop_event = asyncio.Event()
+    info_logs = []
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+
+    await web_server._autonomous_cron_loop(stop_event)
+    assert any("prompt boş" in msg for msg in info_logs)
+
+
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_logs_warning_when_dispatch_fails(monkeypatch):
+    stop_event = asyncio.Event()
+    calls = {"wait_for": 0}
+    warnings = []
+
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "Görevleri denetle")
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
+
+    async def _wait_for(*_args, **_kwargs):
+        calls["wait_for"] += 1
+        if calls["wait_for"] == 1:
+            raise asyncio.TimeoutError()
+        stop_event.set()
+        return True
+
+    async def _dispatch(**_kwargs):
+        raise RuntimeError("dispatch failed")
+
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    await web_server._autonomous_cron_loop(stop_event)
+    assert any("tetikleme hatası" in msg for msg in warnings)
+
+
+@pytest.mark.asyncio
+async def test_nightly_memory_loop_disabled_and_failure_warning(monkeypatch):
+    stop_event = asyncio.Event()
+    info_logs = []
+    warning_logs = []
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+    await web_server._nightly_memory_loop(stop_event)
+    assert any("devre dışı" in msg for msg in info_logs)
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 1)
+
+    calls = {"wait_for": 0}
+
+    async def _wait_for(*_args, **_kwargs):
+        calls["wait_for"] += 1
+        if calls["wait_for"] == 1:
+            raise asyncio.TimeoutError()
+        stop_event.set()
+        return True
+
+    class _Agent:
+        async def run_nightly_memory_maintenance(self, reason):
+            assert reason == "nightly_loop"
+            raise RuntimeError("maintenance failed")
+
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warning_logs.append(msg % args if args else msg))
+
+    await web_server._nightly_memory_loop(stop_event)
+    assert any("maintenance hatası" in msg for msg in warning_logs)
 
 
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
