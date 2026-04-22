@@ -1203,6 +1203,47 @@ def test_optional_import_fallbacks_on_module_load(monkeypatch):
     assert mod.reset_current_metrics_user_id(None) is None
 
 
+def test_contracts_import_fallback_defines_dataclasses(monkeypatch):
+    mod = _load_web_server_with_import_failures(
+        monkeypatch,
+        module_name="web_server_contracts_fallback_case",
+        fail_rules=set(),
+    )
+
+    import builtins
+    import importlib.util
+    import sys
+
+    original_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "agent.core.contracts":
+            raise ImportError("forced contracts failure")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    spec = importlib.util.spec_from_file_location("web_server_contracts_fallback_forced", Path("web_server.py"))
+    forced = importlib.util.module_from_spec(spec)
+    sys.modules["web_server_contracts_fallback_forced"] = forced
+    assert spec and spec.loader
+    spec.loader.exec_module(forced)
+
+    trigger = forced.ExternalTrigger(trigger_id="t1", source="github", event_name="opened", payload={"x": 1})
+    feedback = forced.ActionFeedback(
+        feedback_id="f1",
+        source_system="github",
+        source_agent="agent",
+        action_name="fix",
+        status="ok",
+        summary="done",
+    )
+    assert trigger.protocol == "trigger.v1"
+    assert feedback.protocol == "action_feedback.v1"
+    assert forced.normalize_federation_protocol(forced.LEGACY_FEDERATION_PROTOCOL_V1) == "federation.v1"
+    assert forced.derive_correlation_id("", None, "corr-1") == "corr-1"
+    assert isinstance(mod.LEGACY_FEDERATION_PROTOCOL_V1, str)
+
+
 @pytest.mark.asyncio
 async def test_async_force_shutdown_paths(monkeypatch):
     events: list[tuple[str, int]] = []
@@ -2084,9 +2125,66 @@ def test_list_child_ollama_pids_windows_and_psutil_failure(monkeypatch):
     assert web_server._list_child_ollama_pids() == []
 
 
+def test_list_child_ollama_pids_psutil_success_path(monkeypatch):
+    class _Child:
+        def __init__(self, pid, comm, args):
+            self.pid = pid
+            self._comm = comm
+            self._args = args
+
+        def name(self):
+            return self._comm
+
+        def cmdline(self):
+            return self._args
+
+    class _Process:
+        def __init__(self, _pid):
+            pass
+
+        def children(self, recursive=False):
+            assert recursive is False
+            return [
+                _Child(11, "ollama", ["ollama", "serve"]),
+                _Child(12, "python", ["python", "app.py"]),
+                _Child(13, "bash", ["bash", "-lc", "ollama serve"]),
+            ]
+
+    class _Psutil:
+        Process = _Process
+
+    monkeypatch.setitem(sys.modules, "psutil", _Psutil)
+    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 999))
+    assert web_server._list_child_ollama_pids() == [11, 13]
+
+
 def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch):
     monkeypatch.setattr(web_server.os, "waitpid", lambda *_: (_ for _ in ()).throw(RuntimeError("boom")))
     assert web_server._reap_child_processes_nonblocking() == 0
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_broadcasts_when_room_survives(monkeypatch):
+    ws_departing = _DummyWebSocket()
+    ws_staying = _DummyWebSocket()
+    setattr(ws_departing, "_sidar_room_id", "team:survive")
+    setattr(ws_staying, "_sidar_room_id", "team:survive")
+
+    room = web_server._CollaborationRoom(
+        room_id="team:survive",
+        participants={
+            web_server._socket_key(ws_departing): web_server._CollaborationParticipant(ws_departing, "u1", "a", "A"),
+            web_server._socket_key(ws_staying): web_server._CollaborationParticipant(ws_staying, "u2", "b", "B"),
+        },
+    )
+    web_server._collaboration_rooms["team:survive"] = room
+
+    await web_server._leave_collaboration_room(ws_departing)
+
+    assert "team:survive" in web_server._collaboration_rooms
+    assert web_server._socket_key(ws_departing) not in room.participants
+    assert ws_staying.messages
+    assert ws_staying.messages[-1]["type"] == "presence"
 
 
 def test_terminate_ollama_child_pids_sends_term_and_kill(monkeypatch):
