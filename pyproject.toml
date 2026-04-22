@@ -192,7 +192,7 @@ markers = [
   "quality_gate: LLM kalite kapısı doğrulamaları",
 ]
 filterwarnings = [
-  "default",  # "error" yerine "default" yapıldı
+  "error",
   "ignore::DeprecationWarning:sentence_transformers\\..*",
   "ignore::DeprecationWarning:setuptools",
   "ignore::FutureWarning:torch",
