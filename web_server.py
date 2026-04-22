@@ -2622,7 +2622,7 @@ async def websocket_chat(websocket: WebSocket):
 
     # Başlık token'ı varsa bağlantı açılır açılmaz doğrula
     if header_token:
-        ws_user = await _resolve_user_from_token(agent, header_token)
+        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
         if not ws_user:
             await _ws_close_policy_violation(websocket, "Invalid or expired token")
             return
@@ -2826,7 +2826,7 @@ async def websocket_chat(websocket: WebSocket):
                 if not auth_token:
                     await _ws_close_policy_violation(websocket, "Authentication token missing")
                     return
-                ws_user = await _resolve_user_from_token(agent, auth_token)
+                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
                 if not ws_user:
                     await _ws_close_policy_violation(websocket, "Invalid or expired token")
                     return
@@ -3154,7 +3154,7 @@ async def websocket_voice(websocket: WebSocket):
         )
 
     if header_token:
-        ws_user = await _resolve_user_from_token(agent, header_token)
+        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
         if not ws_user:
             await _ws_close_policy_violation(websocket, "Invalid or expired token")
             return
@@ -3203,7 +3203,7 @@ async def websocket_voice(websocket: WebSocket):
                 if not auth_token:
                     await _ws_close_policy_violation(websocket, "Authentication token missing")
                     return
-                ws_user = await _resolve_user_from_token(agent, auth_token)
+                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
                 if not ws_user:
                     await _ws_close_policy_violation(websocket, "Invalid or expired token")
                     return
