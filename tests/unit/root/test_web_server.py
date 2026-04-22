@@ -2218,7 +2218,12 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
     monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
-    monkeypatch.setattr(web_server, "asyncio", SimpleNamespace(run=lambda coro: None))
+    def _run_and_finalize(coro):
+        if asyncio.iscoroutine(coro):
+            coro.close()
+        return None
+
+    monkeypatch.setattr(web_server, "asyncio", SimpleNamespace(run=_run_and_finalize))
 
     class _AgentOK:
         VERSION = "9.9.9"
@@ -2237,6 +2242,16 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
     monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom")))
     web_server.main()
     assert run_calls[-1][1]["port"] == 9191
+
+    class _AgentSync:
+        VERSION = "1.2.3"
+
+        def initialize(self):
+            return None
+
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentSync())
+    web_server.main()
+    assert run_calls[-1][1]["host"] == "0.0.0.0"
 
 
 @pytest.mark.asyncio
