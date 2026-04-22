@@ -11,6 +11,7 @@
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
+#   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -635,7 +636,13 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     local should_reset="E"
-    if [[ "$NO_INTERACTION" != true ]]; then
+    if [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "true" ]]; then
+        should_reset="E"
+        info "AUTO_INSTALL: RESET_DB=true olduğu için PostgreSQL volume sıfırlama onayı otomatik verildi."
+    elif [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "false" ]]; then
+        should_reset="H"
+        info "AUTO_INSTALL: RESET_DB=false olduğu için PostgreSQL volume sıfırlama atlandı."
+    elif [[ "$NO_INTERACTION" != true ]]; then
         should_reset=$(prompt_yes_no_with_timeout_default_yes \
             "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
     fi
@@ -1169,6 +1176,12 @@ APP_RUNTIME_MODE="ask"
 USE_CONDA=false
 ENABLE_AUDIO=true
 FORCE_POSTGRES_VOLUME_CLEANUP=false
+AUTO_INSTALL=false
+AUTO_RUNTIME_MODE="ask"
+AUTO_START_DOCKER_SERVICES="ask"
+AUTO_RESET_POSTGRES_VOLUMES="ask"
+AUTO_ENV_TYPE="ask"
+AUTO_OPEN_VSCODE="ask"
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -1224,11 +1237,69 @@ for arg in "$@"; do
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
+            echo ""
+            echo "  Etkileşimsiz çevre değişkenleri:"
+            echo "    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)"
+            echo "    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=tam docker)"
+            echo "    ENV_TYPE=dev|prod              (SIDAR_ENV seçimi: development/production)"
+            echo "    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)"
+            echo "    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)"
+            echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             exit 0
             ;;
         *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
+
+normalize_bool() {
+    local value="${1:-}"
+    value=$(echo "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$value" in
+        1|true|yes|y|evet|e) echo "true" ;;
+        0|false|no|n|hayir|h|hayır) echo "false" ;;
+        *) echo "" ;;
+    esac
+}
+
+resolve_runtime_mode_choice() {
+    local raw="${1:-}"
+    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$raw" in
+        1|local|dev|developer|gelistirici|geliştirici) echo "local" ;;
+        2|docker|full|full-docker|tam-docker) echo "docker" ;;
+        *) echo "ask" ;;
+    esac
+}
+
+resolve_env_type_choice() {
+    local raw="${1:-}"
+    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$raw" in
+        1|dev|development|gelistirme|geliştirme) echo "development" ;;
+        2|prod|production|canli|canlı) echo "production" ;;
+        *) echo "ask" ;;
+    esac
+}
+
+AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
+if [[ "$AUTO_INSTALL" == "true" ]]; then
+    NO_INTERACTION=true
+fi
+
+AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}")"
+if [[ "$AUTO_RUNTIME_MODE" != "ask" ]]; then
+    APP_RUNTIME_MODE="$AUTO_RUNTIME_MODE"
+fi
+
+AUTO_START_DOCKER_SERVICES="$(normalize_bool "${START_DOCKER_SERVICES:-${START_SERVICES:-}}")"
+[[ -z "$AUTO_START_DOCKER_SERVICES" ]] && AUTO_START_DOCKER_SERVICES="ask"
+
+AUTO_RESET_POSTGRES_VOLUMES="$(normalize_bool "${RESET_DB:-${RESET_POSTGRES_VOLUMES:-}}")"
+[[ -z "$AUTO_RESET_POSTGRES_VOLUMES" ]] && AUTO_RESET_POSTGRES_VOLUMES="ask"
+
+AUTO_ENV_TYPE="$(resolve_env_type_choice "${ENV_TYPE:-${SIDAR_ENV_TYPE:-}}")"
+AUTO_OPEN_VSCODE="$(normalize_bool "${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}")"
+[[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
     fail "--skip-models ve --download-models birlikte kullanılamaz."
@@ -3239,7 +3310,10 @@ prompt_post_install_sidar_env_mode() {
         fi
     fi
 
-    if [[ "$NO_INTERACTION" == true ]]; then
+    if [[ "$AUTO_ENV_TYPE" != "ask" ]]; then
+        selected_env="$AUTO_ENV_TYPE"
+        info "AUTO_INSTALL: ENV_TYPE=$selected_env olarak uygulandı."
+    elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
     else
         echo ""
@@ -3851,7 +3925,18 @@ prepare_docker_for_migrations() {
         return
     fi
 
-    if [[ "$NO_INTERACTION" == true ]]; then
+    if [[ "$AUTO_START_DOCKER_SERVICES" == "true" ]]; then
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=true olduğu için migrasyon öncesi servisler otomatik başlatılıyor."
+        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+        DOCKER_DB_SERVICES_STARTED=true
+        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
+        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
+        return
+    elif [[ "$AUTO_START_DOCKER_SERVICES" == "false" ]]; then
+        MIGRATION_DOCKER_POLICY="disabled"
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=false olduğu için migrasyon sırasında servis başlatma atlandı."
+        return
+    elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
         start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
         DOCKER_DB_SERVICES_STARTED=true
@@ -4369,7 +4454,13 @@ launch_docker_services() {
     local start_prompt="Docker servisleri başlatılsın mı? [E/h] "
     local start_default="E"
     local start_docker=""
-    if [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
+    if [[ "$AUTO_START_DOCKER_SERVICES" == "true" ]]; then
+        start_docker="E"
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=true olduğu için Docker servisleri otomatik başlatılacak."
+    elif [[ "$AUTO_START_DOCKER_SERVICES" == "false" ]]; then
+        start_docker="H"
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=false olduğu için Docker servis başlatma adımı atlanacak."
+    elif [[ "$DOCKER_DB_SERVICES_STARTED" == true ]]; then
         info "PostgreSQL/Redis migrasyon adımında zaten başlatıldı; kalan Docker servisleri otomatik başlatılacak."
         start_docker="E"
     elif [[ "$NO_INTERACTION" == true ]]; then
@@ -4464,7 +4555,7 @@ launch_ide() {
     local vscode_mode="none"
     local vscode_target_path="$SCRIPT_DIR"
 
-    if [[ "$NO_INTERACTION" == true ]]; then
+    if [[ "$NO_INTERACTION" == true && "$AUTO_OPEN_VSCODE" != "true" ]]; then
         info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
         return
     fi
@@ -4487,7 +4578,15 @@ launch_ide() {
 
     if [[ "$vscode_mode" != "none" ]]; then
         echo ""
-        open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
+        if [[ "$AUTO_OPEN_VSCODE" == "true" ]]; then
+            open_code="E"
+            info "AUTO_INSTALL: OPEN_VSCODE=true olduğu için VS Code otomatik açılacak."
+        elif [[ "$AUTO_OPEN_VSCODE" == "false" ]]; then
+            open_code="H"
+            info "AUTO_INSTALL: OPEN_VSCODE=false olduğu için VS Code açılmayacak."
+        else
+            open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
+        fi
         case "${open_code:-H}" in
             [EeYy]*)
                 info "VS Code açılıyor..."
