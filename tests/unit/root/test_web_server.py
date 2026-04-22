@@ -999,3 +999,170 @@ async def test_prewarm_rag_embeddings_branches(monkeypatch):
     monkeypatch.setattr(web_server, "get_agent", _agent_fail)
     await web_server._prewarm_rag_embeddings()
     assert any("prewarm başarısız" in m for m in logs["warn"])
+
+
+@pytest.mark.asyncio
+async def test_await_if_needed_and_health_response_branches(monkeypatch):
+    async def _sample():
+        return "awaited"
+
+    assert await web_server._await_if_needed(_sample()) == "awaited"
+    assert await web_server._await_if_needed("raw") == "raw"
+
+    monkeypatch.setattr(web_server.time, "monotonic", lambda: 200.0)
+    monkeypatch.setattr(web_server, "_start_time", 100.0)
+
+    class _HealthOk:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+        def get_dependency_health(self):
+            return {"redis": {"healthy": True}}
+
+    class _AgentOk:
+        cfg = SimpleNamespace(AI_PROVIDER="openai")
+        health = _HealthOk()
+
+    async def _get_agent_ok():
+        return _AgentOk()
+
+    monkeypatch.setattr(web_server, "get_agent", _get_agent_ok)
+    ok_res = await web_server._health_response(require_dependencies=True)
+    assert ok_res.status_code == 200
+    assert b'"uptime_seconds":100' in ok_res.body
+
+    class _HealthDepsBad(_HealthOk):
+        def get_dependency_health(self):
+            return {"redis": {"healthy": False}}
+
+    class _AgentDepsBad(_AgentOk):
+        health = _HealthDepsBad()
+
+    async def _get_agent_deps_bad():
+        return _AgentDepsBad()
+
+    monkeypatch.setattr(web_server, "get_agent", _get_agent_deps_bad)
+    bad_dep_res = await web_server._health_response(require_dependencies=True)
+    assert bad_dep_res.status_code == 503
+    assert b'"status":"degraded"' in bad_dep_res.body
+
+    class _AgentOllamaDown:
+        cfg = SimpleNamespace(AI_PROVIDER="ollama")
+        health = SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": False})
+
+    async def _get_agent_ollama_down():
+        return _AgentOllamaDown()
+
+    monkeypatch.setattr(web_server, "get_agent", _get_agent_ollama_down)
+    ollama_down = await web_server._health_response(require_dependencies=False)
+    assert ollama_down.status_code == 503
+
+    async def _boom_agent():
+        raise RuntimeError("health-boom")
+
+    monkeypatch.setattr(web_server, "get_agent", _boom_agent)
+    degraded = await web_server._health_response(require_dependencies=False)
+    assert degraded.status_code == 503
+    assert b'"health_check_failed"' in degraded.body
+
+
+def test_serialize_record_helpers_cover_defaults_and_values():
+    prompt_payload = web_server._serialize_prompt(
+        SimpleNamespace(
+            id="11",
+            role_name="reviewer",
+            prompt_text="detay",
+            version="2",
+            is_active=1,
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+    )
+    assert prompt_payload["id"] == 11
+    assert prompt_payload["is_active"] is True
+
+    swarm_payload = web_server._serialize_swarm_result(SimpleNamespace(task_id=None, elapsed_ms=None, graph=None))
+    assert swarm_payload["task_id"] == ""
+    assert swarm_payload["elapsed_ms"] == 0
+    assert swarm_payload["graph"] == {}
+
+    campaign_payload = web_server._serialize_campaign(SimpleNamespace(id="9", metadata_json=None, budget="1.5"))
+    assert campaign_payload["id"] == 9
+    assert campaign_payload["budget"] == 1.5
+    assert campaign_payload["metadata_json"] == "{}"
+
+    asset_payload = web_server._serialize_content_asset(SimpleNamespace(id="7", campaign_id="3", content=123))
+    assert asset_payload["campaign_id"] == 3
+    assert asset_payload["content"] == "123"
+
+    checklist_payload = web_server._serialize_operation_checklist(SimpleNamespace(id="4", campaign_id=None, items_json=None))
+    assert checklist_payload["campaign_id"] is None
+    assert checklist_payload["items_json"] == "[]"
+
+
+def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
+    web_server._verify_hmac_signature(b"{}", "", "", label="sig")
+
+    with pytest.raises(HTTPException):
+        web_server._verify_hmac_signature(b"{}", "secret", "", label="sig")
+
+    with pytest.raises(HTTPException):
+        web_server._verify_hmac_signature(b"{}", "secret", "sha256=wrong", label="sig")
+
+    valid = "sha256=" + __import__("hmac").new(b"secret", b"{}", __import__("hashlib").sha256).hexdigest()
+    web_server._verify_hmac_signature(b"{}", "secret", valid, label="sig")
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *a, **k: b"main\n")
+    assert web_server._git_run(["git"], ".") == "main"
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", _raise)
+    assert web_server._git_run(["git"], ".") == ""
+
+
+@pytest.mark.asyncio
+async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
+    class _Req:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        async def body(self):
+            return self._payload
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", False)
+    with pytest.raises(HTTPException):
+        await web_server.autonomy_webhook("github", _Req(b"{}"), x_sidar_signature="")
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *a, **k: None)
+    bad_json_res = await web_server.autonomy_webhook("github", _Req(b"{"), x_sidar_signature="")
+    assert bad_json_res.status_code == 400
+
+    async def _dispatch(**kwargs):
+        return {"ok": True, "trigger_source": kwargs["trigger_source"], "payload": kwargs["payload"]}
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
+    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {"kind": "workflow_run", "run_id": "42"})
+    ci_res = await web_server.autonomy_webhook("github", _Req(b'{"event_name":"workflow_run"}'), x_sidar_signature="")
+    ci_body = ci_res.body.decode("utf-8")
+    assert ci_res.status_code == 200
+    assert "webhook:github:ci_failure" in ci_body
+    assert "event_driven_federation\":null" in ci_body
+
+    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+    async def _run_workflow(**_):
+        return {"workflow_type": "github_pull_request", "correlation_id": "corr-1"}
+
+    monkeypatch.setattr(web_server, "_run_event_driven_federation_workflow", _run_workflow)
+    monkeypatch.setattr(
+        web_server,
+        "_embed_event_driven_federation_payload",
+        lambda payload, workflow: {"embedded": True, "event_payload": payload, "workflow": workflow},
+    )
+    fed_res = await web_server.autonomy_webhook("github", _Req(b'{"event_name":"pull_request"}'), x_sidar_signature="")
+    fed_body = fed_res.body.decode("utf-8")
+    assert fed_res.status_code == 200
+    assert "event_driven_federation" in fed_body
+    assert "github_pull_request" in fed_body
