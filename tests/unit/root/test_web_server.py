@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import jwt
+from pydantic import ValidationError
 from starlette.requests import Request
 
 import web_server
@@ -2054,6 +2055,144 @@ async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monk
     ok = await web_server.spa_fallback("dashboard/home")
     assert ok.status_code == 200
     assert b"<h1>ok</h1>" in ok.body
+
+
+@pytest.mark.asyncio
+async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
+    class _DB:
+        async def register_user(self, username, password, tenant_id):
+            if username == "taken":
+                raise RuntimeError("exists")
+            return SimpleNamespace(id="u1", username=username, role="user", tenant_id=tenant_id)
+
+        async def authenticate_user(self, username, password):
+            if username == "db-error":
+                raise RuntimeError("db down")
+            if password == "ok":
+                return SimpleNamespace(id="u2", username=username, role="admin", tenant_id="t1")
+            return None
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    async def _issue_token(*_):
+        return "jwt-token"
+
+    monkeypatch.setattr(web_server, "_issue_auth_token", _issue_token)
+
+    with pytest.raises(ValidationError):
+        web_server._RegisterRequest(username="ab", password="123456", tenant_id="")
+
+    register_res = await web_server.register_user(
+        web_server._RegisterRequest(username="ada", password="123456", tenant_id="team")
+    )
+    assert register_res.status_code == 200
+    assert b'"access_token":"jwt-token"' in register_res.body
+
+    with pytest.raises(HTTPException):
+        await web_server.register_user(web_server._RegisterRequest(username="taken", password="123456", tenant_id="t1"))
+
+    with pytest.raises(HTTPException):
+        await web_server.login_user(web_server._LoginRequest(username="lin", password="bad"))
+
+    login_ok = await web_server.login_user(web_server._LoginRequest(username="lin", password="ok"))
+    assert login_ok.status_code == 200
+
+    with pytest.raises(HTTPException):
+        await web_server.login_user(web_server._LoginRequest(username="db-error", password="ok"))
+
+    me = await web_server.auth_me(_make_request("/auth/me"), user=SimpleNamespace(id="u", username="ada", role="admin"))
+    assert me.status_code == 200
+    assert b'"username":"ada"' in me.body
+
+
+@pytest.mark.asyncio
+async def test_admin_prompt_and_policy_endpoints(monkeypatch):
+    class _DB:
+        async def list_prompts(self, role_name=None):
+            return [
+                SimpleNamespace(
+                    id="1",
+                    role_name=role_name or "system",
+                    prompt_text="p",
+                    version="1",
+                    is_active=1,
+                    created_at="ts1",
+                    updated_at="ts2",
+                )
+            ]
+
+        async def get_active_prompt(self, role_name):
+            return None if role_name == "none" else SimpleNamespace(
+                id="2", role_name=role_name, prompt_text="live", version="2", is_active=1, created_at="ts1", updated_at="ts2"
+            )
+
+        async def upsert_prompt(self, role_name, prompt_text, activate):
+            return SimpleNamespace(
+                id="3",
+                role_name=role_name,
+                prompt_text=prompt_text,
+                version="3",
+                is_active=1 if activate else 0,
+                created_at="ts1",
+                updated_at="ts2",
+            )
+
+        async def activate_prompt(self, prompt_id):
+            return None if prompt_id == 0 else SimpleNamespace(
+                id=str(prompt_id), role_name="system", prompt_text="new", version="4", is_active=1, created_at="ts1", updated_at="ts2"
+            )
+
+        async def list_access_policies(self, **_):
+            return [SimpleNamespace(user_id="u1", tenant_id="t1", resource_type="rag", resource_id="*", action="read", effect="allow")]
+
+        async def upsert_access_policy(self, **_):
+            return None
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()), system_prompt="old")
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    prompts = await web_server.admin_list_prompts(role_name="reviewer", _user=SimpleNamespace(role="admin"))
+    assert prompts.status_code == 200
+
+    with pytest.raises(HTTPException):
+        await web_server.admin_active_prompt(role_name="none", _user=SimpleNamespace(role="admin"))
+
+    active = await web_server.admin_active_prompt(role_name="system", _user=SimpleNamespace(role="admin"))
+    assert active.status_code == 200
+
+    with pytest.raises(ValidationError):
+        web_server._PromptUpsertRequest(role_name="", prompt_text="", activate=True)
+
+    upsert = await web_server.admin_upsert_prompt(
+        web_server._PromptUpsertRequest(role_name="system", prompt_text="fresh", activate=True),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert upsert.status_code == 200
+    assert agent.system_prompt == "fresh"
+
+    with pytest.raises(ValidationError):
+        web_server._PromptActivateRequest(prompt_id=0)
+
+    activated = await web_server.admin_activate_prompt(
+        web_server._PromptActivateRequest(prompt_id=9), _user=SimpleNamespace(role="admin")
+    )
+    assert activated.status_code == 200
+
+    policies = await web_server.admin_list_policies("u1", tenant_id="t1", _user=SimpleNamespace(role="admin"))
+    assert policies.status_code == 200
+    policy_upsert = await web_server.admin_upsert_policy(
+        web_server._PolicyUpsertRequest(
+            user_id="u1", tenant_id="t1", resource_type="rag", resource_id="*", action="read", effect="allow"
+        ),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert policy_upsert.status_code == 200
 
 
 def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
