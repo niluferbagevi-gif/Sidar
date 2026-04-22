@@ -1878,3 +1878,121 @@ def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatc
     sink(SimpleNamespace(user_id="", provider="x", total_tokens=1))
     monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
     sink(SimpleNamespace(user_id="u-1", provider="x", total_tokens=1))
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_handles_sentinels_and_voice_packets():
+    class _Ws:
+        def __init__(self):
+            self.payloads = []
+            self._sidar_voice_duplex_state = object()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    class _VoicePipeline:
+        enabled = True
+
+        def __init__(self):
+            self.calls = []
+
+        def buffer_assistant_text(self, _state, text, flush=False):
+            self.calls.append((text, flush))
+            packets = []
+            normalized = text.strip()
+            if normalized:
+                packets.append({"assistant_turn_id": 11, "audio_sequence": 1, "text": normalized})
+            return "turn-1", packets
+
+        async def synthesize_text(self, text):
+            return {
+                "success": True,
+                "audio_bytes": text.encode("utf-8"),
+                "mime_type": "audio/wav",
+                "provider": "fake-tts",
+                "voice": "standard",
+            }
+
+    class _Agent:
+        async def respond(self, _prompt):
+            for chunk in ["\x00TOOL:search\x00", "\x00THOUGHT:thinking\x00", "Merhaba"]:
+                yield chunk
+
+    ws = _Ws()
+    ws._sidar_voice_pipeline = _VoicePipeline()
+    await web_server._ws_stream_agent_text_response(ws, _Agent(), "prompt")
+
+    assert {"tool_call": "search"} in ws.payloads
+    assert {"thought": "thinking"} in ws.payloads
+    assert {"chunk": "Merhaba"} in ws.payloads
+    assert any("audio_chunk" in payload and payload["audio_text"] == "Merhaba" for payload in ws.payloads)
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_extract_ready_segments_fallback():
+    class _Ws:
+        def __init__(self):
+            self.payloads = []
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    class _VoicePipeline:
+        enabled = True
+
+        def extract_ready_segments(self, text, flush=False):
+            if flush:
+                return ([text.strip()] if text.strip() else []), ""
+            return [], text
+
+        async def synthesize_text(self, text):
+            return {"success": True, "audio_bytes": text.encode(), "mime_type": "audio/wav"}
+
+    class _Agent:
+        async def respond(self, _prompt):
+            for chunk in ["Parça ", "metin"]:
+                yield chunk
+
+    ws = _Ws()
+    ws._sidar_voice_pipeline = _VoicePipeline()
+    await web_server._ws_stream_agent_text_response(ws, _Agent(), "prompt")
+
+    assert ws.payloads[0] == {"chunk": "Parça "}
+    assert ws.payloads[1] == {"chunk": "metin"}
+    assert any(payload.get("audio_text") == "Parça metin" for payload in ws.payloads)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.accepted = False
+            self.closed = None
+            self.messages = iter(["not-json", '{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.accepted = True
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            return next(self.messages)
+
+        async def send_json(self, _payload):
+            return None
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", lambda *_: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted is True
+    assert ws.closed == {"code": 1008, "reason": "Authentication required"}
