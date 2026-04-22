@@ -206,7 +206,7 @@ log_cli = false
 log_cli_level = "INFO"
 log_file = "tests/pytest.log"
 log_file_level = "DEBUG"
-addopts = "--cov=agent --cov=core --cov=managers --cov=plugins --cov=scripts --cov=cli --cov=config --cov=main --cov=web_server --cov=gui_launcher --cov=github_upload --cov-report=term-missing --cov-report=html --cov-report=xml"
+addopts = "--cov=agent --cov=core --cov=managers --cov=plugins --cov=scripts --cov=config --cov=main --cov=web_server --cov=gui_launcher --cov=github_upload --cov-report=term-missing --cov-report=html --cov-report=xml"
 
 [tool.setuptools.packages.find]
 where = ["."]
