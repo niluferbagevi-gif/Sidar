@@ -2431,6 +2431,66 @@ async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monk
 
 
 @pytest.mark.asyncio
+async def test_spa_fallback_handles_empty_path_async_index_and_extension_guard(monkeypatch):
+    async def _async_index():
+        return web_server.HTMLResponse("<h1>async</h1>", status_code=200)
+
+    monkeypatch.setattr(web_server, "index", _async_index)
+    empty = await web_server.spa_fallback("   ")
+    assert empty.status_code == 200
+    assert b"async" in empty.body
+
+    dotted = await web_server.spa_fallback("nested/app.css")
+    assert dotted.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
+    class _Req:
+        async def body(self):
+            return b'{"workflow_run":{"id":10}}'
+
+    class _Memory:
+        def __init__(self):
+            self.messages = []
+
+        async def add(self, role, content):
+            self.messages.append((role, content))
+
+    dispatch_calls = []
+    workflow_calls = []
+    agent = SimpleNamespace(memory=_Memory())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(
+        web_server,
+        "_resolve_ci_failure_context",
+        lambda *_: {"workflow_name": "CI", "run_id": 10, "conclusion": "failure"},
+    )
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **kwargs: dispatch_calls.append(kwargs) or {"ok": True})
+    monkeypatch.setattr(
+        web_server,
+        "_run_event_driven_federation_workflow",
+        lambda **kwargs: workflow_calls.append(kwargs) or {"workflow_type": "external_event", "correlation_id": "cid-1"},
+    )
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+
+    response = await web_server.github_webhook(_Req(), x_github_event="issues", x_hub_signature_256="")
+    assert response.status_code == 200
+    assert dispatch_calls[-1]["trigger_source"] == "webhook:github:ci_failure"
+    assert workflow_calls == []  # ci_context varken federation workflow çağrılmaz.
+    assert any("[GITHUB CI]" in content for role, content in agent.memory.messages if role == "user")
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", False)
+    dispatch_calls.clear()
+    response_disabled = await web_server.github_webhook(_Req(), x_github_event="issues", x_hub_signature_256="")
+    assert response_disabled.status_code == 200
+    assert dispatch_calls == []
+
+
+@pytest.mark.asyncio
 async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
     class _DB:
         async def register_user(self, username, password, tenant_id):
@@ -2625,6 +2685,43 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
     monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentSync())
     web_server.main()
     assert run_calls[-1][1]["host"] == "0.0.0.0"
+
+
+def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
+    original_level = web_server.cfg.ACCESS_LEVEL
+    original_provider = web_server.cfg.AI_PROVIDER
+
+    class _Args:
+        host = "127.0.0.1"
+        port = 9192
+        level = None
+        provider = None
+        log = "warning"
+
+    class _Parser:
+        def add_argument(self, *_, **__):
+            return None
+
+        def parse_known_args(self):
+            return _Args(), []
+
+    run_calls = []
+    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(
+        web_server,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
+    )
+    monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: SimpleNamespace(VERSION="1.0.0", initialize=lambda: None))
+
+    web_server.main()
+
+    assert run_calls[-1][1]["host"] == "127.0.0.1"
+    assert run_calls[-1][1]["port"] == 9192
+    assert run_calls[-1][1]["log_level"] == "warning"
+    assert web_server.cfg.ACCESS_LEVEL == original_level
+    assert web_server.cfg.AI_PROVIDER == original_provider
 
 
 @pytest.mark.asyncio
