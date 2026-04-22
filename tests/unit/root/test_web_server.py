@@ -534,3 +534,124 @@ def test_register_exception_handlers_http_and_unhandled():
     assert err_res.status_code == 500
     assert err_res.json()["success"] is False
     assert err_res.json()["error"] == "İç sunucu hatası"
+
+
+def test_trim_autonomy_text_truncates_with_suffix():
+    short = web_server._trim_autonomy_text(" kısa ", limit=10)
+    assert short == "kısa"
+
+    truncated = web_server._trim_autonomy_text("abcdefghijk", limit=5)
+    assert truncated == "abcde …[truncated]"
+
+
+def test_build_event_driven_federation_spec_for_jira_issue_created():
+    payload = {
+        "action": "created",
+        "issue": {
+            "key": "PROJ-42",
+            "summary": "Prod hatası",
+            "fields": {
+                "project": {"key": "PROJ"},
+                "status": {"name": "Open"},
+                "issuetype": {"name": "Bug"},
+                "description": "Ayrıntılı açıklama",
+            },
+        },
+    }
+
+    spec = web_server._build_event_driven_federation_spec("jira", "issue_created", payload)
+
+    assert spec is not None
+    assert spec["workflow_type"] == "jira_issue"
+    assert spec["task_id"] == "jira-proj-42"
+    assert spec["context"]["project_key"] == "PROJ"
+    assert any(item.startswith("description=") for item in spec["inputs"])
+
+
+def test_build_event_driven_federation_spec_for_github_pr_opened():
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {
+            "number": 17,
+            "title": "Fix flaky test",
+            "body": "Detaylı PR açıklaması",
+            "node_id": "PR_node_17",
+            "base": {"ref": "main"},
+            "head": {"ref": "feature/flaky"},
+            "user": {"login": "ada"},
+        },
+    }
+
+    spec = web_server._build_event_driven_federation_spec("github", "pull_request", payload)
+
+    assert spec is not None
+    assert spec["workflow_type"] == "github_pull_request"
+    assert spec["task_id"] == "github-pr-17"
+    assert spec["context"]["repo"] == "org/repo"
+    assert spec["context"]["author"] == "ada"
+
+
+def test_build_event_driven_federation_spec_for_system_alert(monkeypatch):
+    monkeypatch.setattr(web_server.secrets, "token_hex", lambda _: "a1b2c3d4")
+
+    spec = web_server._build_event_driven_federation_spec(
+        "system_monitor",
+        "incident",
+        {"severity": "critical", "alert_name": "db-latency", "message": "timeout"},
+    )
+
+    assert spec is not None
+    assert spec["workflow_type"] == "system_error"
+    assert spec["task_id"] == "system-a1b2c3d4"
+    assert spec["context"]["alert_name"] == "db-latency"
+
+
+def test_build_event_driven_federation_spec_returns_none_for_unknown_source():
+    assert web_server._build_event_driven_federation_spec("slack", "message", {"text": "x"}) is None
+
+
+def test_build_swarm_goal_for_role_includes_context_and_role_marker():
+    spec = {"context": {"repo": "org/repo"}, "inputs": ["a=1"]}
+    coder_goal = web_server._build_swarm_goal_for_role("Temel hedef", "coder", spec)
+    reviewer_goal = web_server._build_swarm_goal_for_role("Temel hedef", "reviewer", spec)
+
+    assert "[EVENT_DRIVEN_SWARM:CODER]" in coder_goal
+    assert "[EVENT_DRIVEN_SWARM:REVIEWER]" in reviewer_goal
+    assert '"repo": "org/repo"' in coder_goal
+    assert '["a=1"]' in reviewer_goal
+
+
+def test_embed_event_driven_federation_payload_projects_core_fields():
+    workflow = {
+        "correlation_id": "corr-1",
+        "federation_prompt": "prompt",
+        "federation_task": {
+            "task_id": "task-1",
+            "source_system": "github",
+            "source_agent": "pull_request_webhook",
+            "target_agent": "supervisor",
+        },
+    }
+    out = web_server._embed_event_driven_federation_payload({"hello": "world"}, workflow)
+
+    assert out["kind"] == "federation_task"
+    assert out["task_id"] == "task-1"
+    assert out["source_system"] == "github"
+    assert out["target_agent"] == "supervisor"
+    assert out["event_payload"] == {"hello": "world"}
+
+
+def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
+    monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_: {"kind": "from-core", "run_id": "1"})
+
+    result = web_server._resolve_ci_failure_context("workflow_run", {"x": 1})
+    assert result == {"kind": "from-core", "run_id": "1"}
+
+
+def test_resolve_ci_failure_context_falls_back_when_core_empty(monkeypatch):
+    monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_: {})
+    monkeypatch.setattr(web_server, "_fallback_ci_failure_context", lambda *_: {"kind": "fallback"})
+
+    result = web_server._resolve_ci_failure_context("workflow_run", {"x": 1})
+    assert result == {"kind": "fallback"}
