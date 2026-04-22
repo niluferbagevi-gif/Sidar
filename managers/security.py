@@ -95,7 +95,12 @@ class SecurityManager:
 
     def _init_guardrails(self) -> None:
         """NeMo Guardrails motorunu başlatır."""
-        from nemoguardrails import LLMRails  # type: ignore
+        try:
+            from nemoguardrails import LLMRails  # type: ignore
+        except Exception as exc:  # pragma: no cover - ortama bağlı import hatası
+            logger.warning("NeMo Guardrails başlatılamadı, guardrails devre dışı: %s", exc)
+            self._guardrails_engine = None
+            return
         self._guardrails_engine = LLMRails
 
     # ─────────────────────────────────────────────

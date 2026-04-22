@@ -246,6 +246,26 @@ def test_init_uses_cfg_defaults_and_skips_guardrails_when_disabled(
     assert calls["count"] == 0
 
 
+def test_init_guardrails_import_error_falls_back_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    original_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "nemoguardrails":
+            raise RuntimeError("boom")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
+
+    with caplog.at_level("WARNING"):
+        mgr = SecurityManager(cfg=cfg)
+
+    assert mgr._guardrails_engine is None
+    assert "Guardrails başlatılamadı" in caplog.text
+
+
 def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     absolute_target = (tmp_path.parent / "abs-target.txt").resolve()
