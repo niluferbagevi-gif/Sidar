@@ -349,6 +349,36 @@ def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
     assert web_server._shutdown_cleanup_done is True
 
 
+def test_force_shutdown_local_llm_processes_non_ollama_and_idempotent(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    reaped = {"count": 0}
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1))
+
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped["count"] == 1
+    assert web_server._shutdown_cleanup_done is True
+
+    # ikinci çağrı idempotent olmalı; reaper tekrar çağrılmamalı
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped["count"] == 1
+
+
+def test_force_shutdown_local_llm_processes_ollama_without_force_kill(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
+    calls = {"reap": 0, "terminate": 0}
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: calls.__setitem__("reap", calls["reap"] + 1))
+    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda *_: calls.__setitem__("terminate", calls["terminate"] + 1))
+
+    web_server._force_shutdown_local_llm_processes()
+
+    assert calls["reap"] == 1
+    assert calls["terminate"] == 0
+    assert web_server._shutdown_cleanup_done is True
+
+
 @pytest.mark.asyncio
 async def test_collect_agent_response_joins_chunks():
     class _Agent:
@@ -412,6 +442,48 @@ async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
     assert result["status"] == "success"
     assert result["summary"] == "ok"
     assert result["meta"] == {"x": "1"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_without_handler_uses_action_feedback_prompt(monkeypatch):
+    captured = {"prompt": None}
+
+    class _Agent:
+        async def respond(self, prompt):
+            captured["prompt"] = prompt
+            for chunk in [" özet ", "oluştu "]:
+                yield chunk
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="jira",
+        event_name="feedback",
+        payload={
+            "kind": "action_feedback",
+            "feedback_id": "fb-1",
+            "source_system": "jira",
+            "action_name": "assign_ticket",
+            "status": "ok",
+            "summary": "Ticket atandı",
+            "details": {"k": "v"},
+        },
+        meta={"tenant": "t1"},
+    )
+
+    assert "ACTION FEEDBACK" in (captured["prompt"] or "").upper()
+    assert result["status"] == "success"
+    assert result["summary"] == "özet oluştu"
+    assert result["meta"] == {"tenant": "t1"}
+
+
+@pytest.mark.asyncio
+async def test_get_agent_instance_and_resolve_agent_instance_with_sync_overrides(monkeypatch):
+    fake_agent = SimpleNamespace(name="sync-agent")
+    monkeypatch.setattr(web_server, "get_agent", lambda: fake_agent)
+    assert await web_server._get_agent_instance() is fake_agent
+
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: fake_agent)
+    assert await web_server._resolve_agent_instance() is fake_agent
 
 
 def test_fallback_ci_failure_context_for_workflow_run():
