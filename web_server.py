@@ -674,7 +674,7 @@ async def _dispatch_autonomy_trigger(
     meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
-    agent = await _await_if_needed(_resolve_agent_instance())
+    agent = await _resolve_agent_instance()
     trigger = ExternalTrigger(
         trigger_id=f"trigger-{secrets.token_hex(6)}",
         source=trigger_source,
@@ -4700,7 +4700,7 @@ async def github_webhook(
     except json.JSONDecodeError:
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
-    agent = await _await_if_needed(_resolve_agent_instance())
+    agent = await _resolve_agent_instance()
     msg = ""
 
     if x_github_event == "push":
