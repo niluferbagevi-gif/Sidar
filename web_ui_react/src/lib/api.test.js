@@ -208,6 +208,17 @@ describe("fetchJson — hata yanıtları", () => {
     await expect(fetchJson("/api/unprocessable")).rejects.toThrow("İstek başarısız oldu");
   });
 
+  it("throws default message when JSON payload is null", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: { get: () => "application/json" },
+      json: async () => null,
+    });
+
+    await expect(fetchJson("/api/null-payload")).rejects.toThrow("İstek başarısız oldu");
+  });
+
   it("passes custom options to fetch", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
