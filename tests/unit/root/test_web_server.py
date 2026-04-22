@@ -2684,6 +2684,48 @@ def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch)
     assert web_server._reap_child_processes_nonblocking() == 0
 
 
+def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monkeypatch):
+    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 77))
+    original_import = __import__
+
+    class _Psutil:
+        class Process:
+            def __init__(self, _pid):
+                raise RuntimeError("psutil broken")
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "psutil":
+            return _Psutil
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    monkeypatch.setattr(
+        web_server,
+        "subprocess",
+        SimpleNamespace(
+            DEVNULL=object(),
+            check_output=lambda *args, **kwargs: (
+                b"broken-line-without-columns\n"
+                b" abc 77 ollama ollama serve\n"
+                b" 13 xyz ollama ollama serve\n"
+                b" 15 77 ollama ollama serve\n"
+            ),
+        ),
+    )
+
+    assert web_server._list_child_ollama_pids() == [15]
+
+    monkeypatch.setattr(
+        web_server,
+        "subprocess",
+        SimpleNamespace(
+            DEVNULL=object(),
+            check_output=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ps failed")),
+        ),
+    )
+    assert web_server._list_child_ollama_pids() == []
+
+
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_broadcasts_when_room_survives(monkeypatch):
     ws_departing = _DummyWebSocket()
@@ -2726,6 +2768,17 @@ def test_terminate_ollama_child_pids_sends_term_and_kill(monkeypatch):
     assert calls[4] == (8, web_server.signal.SIGKILL)
 
 
+def test_terminate_ollama_child_pids_without_grace_skips_sleep_and_kill(monkeypatch):
+    calls = []
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(web_server.time, "sleep", lambda seconds: calls.append(("sleep", seconds)))
+
+    web_server._terminate_ollama_child_pids([99], grace_seconds=0)
+    web_server._terminate_ollama_child_pids([], grace_seconds=0.2)
+
+    assert calls == [(99, web_server.signal.SIGTERM)]
+
+
 def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(monkeypatch):
     reaped = {"count": 0}
     monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1) or 0)
@@ -2741,6 +2794,36 @@ def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(mo
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     web_server._force_shutdown_local_llm_processes()
     assert reaped["count"] == 2
+
+
+def test_force_shutdown_local_llm_processes_logs_when_reap_or_pids_present(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [])
+    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda _pids: None)
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 2)
+    infos = []
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: infos.append(msg % args))
+
+    web_server._force_shutdown_local_llm_processes()
+
+    assert any("shutdown cleanup" in msg for msg in infos)
+
+
+@pytest.mark.asyncio
+async def test_async_force_shutdown_handles_idempotent_and_no_force_paths(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", True)
+    reaped = {"count": 0}
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1))
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert reaped["count"] == 0
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert reaped["count"] == 1
 
 
 def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatch):
