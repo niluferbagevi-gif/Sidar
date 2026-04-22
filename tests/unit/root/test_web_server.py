@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 import re
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import jwt
+from starlette.requests import Request
 
 import web_server
 
@@ -655,3 +657,232 @@ def test_resolve_ci_failure_context_falls_back_when_core_empty(monkeypatch):
 
     result = web_server._resolve_ci_failure_context("workflow_run", {"x": 1})
     assert result == {"kind": "fallback"}
+
+
+def test_plugin_role_validation_and_sanitizers():
+    assert web_server._validate_plugin_role_name("  My-Role_1 ") == "my-role_1"
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("x")
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("invalid role")
+
+    assert web_server._sanitize_capabilities(None) == []
+    assert web_server._sanitize_capabilities([" a ", "", "b"]) == ["a", "b"]
+    assert web_server._plugin_source_filename("mod / name.py") == "<sidar-plugin:mod_name.py>"
+
+
+def test_load_plugin_agent_class_discovers_and_validates():
+    source = """
+from agent.base_agent import BaseAgent
+class DemoAgent(BaseAgent):
+    ROLE_NAME = "demo"
+"""
+    cls = web_server._load_plugin_agent_class(source, None, "mod1")
+    assert cls.__name__ == "DemoAgent"
+    assert web_server._load_plugin_agent_class(source, "DemoAgent", "mod2").__name__ == "DemoAgent"
+
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("x = (", None, "bad_syntax")
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("class NotAgent: pass", None, "no_agent")
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class(source, "MissingClass", "missing_cls")
+
+
+def test_persist_and_read_write_plugin_marketplace_state(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    plugin_path = web_server._persist_and_import_plugin_file("my_plugin", b"x = 1\n", "test_plugin_module")
+    assert plugin_path.exists()
+    assert plugin_path.name == "my_plugin.py"
+
+    web_server._write_plugin_marketplace_state({"aws_management": {"installed_at": "now"}})
+    assert web_server._read_plugin_marketplace_state()["aws_management"]["installed_at"] == "now"
+
+    state_path = web_server._plugin_marketplace_state_path()
+    state_path.write_text("{not-json", encoding="utf-8")
+    assert web_server._read_plugin_marketplace_state() == {}
+
+
+def test_get_and_serialize_marketplace_plugin(monkeypatch, tmp_path):
+    entrypoint = tmp_path / "demo.py"
+    entrypoint.write_text("x=1", encoding="utf-8")
+    monkeypatch.setattr(
+        web_server,
+        "PLUGIN_MARKETPLACE_CATALOG",
+        {
+            "demo": {
+                "plugin_id": "demo",
+                "name": "Demo Plugin",
+                "summary": "s",
+                "description": "d",
+                "category": "c",
+                "role_name": "demo_role",
+                "class_name": "DemoAgent",
+                "capabilities": ["x"],
+                "version": "1.2.3",
+                "entrypoint": entrypoint,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        web_server.AgentRegistry,
+        "get",
+        lambda role: SimpleNamespace(
+            role_name=role, description="desc", capabilities=["x", "y"], version="9.9.9", is_builtin=False
+        ),
+    )
+
+    payload = web_server._serialize_marketplace_plugin("demo", installed_state={"installed_at": "t1"})
+    assert payload["installed"] is True
+    assert payload["entrypoint_exists"] is True
+    assert payload["agent"]["role_name"] == "demo_role"
+
+    with pytest.raises(HTTPException):
+        web_server._get_plugin_marketplace_entry("missing")
+
+
+def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path):
+    entrypoint = tmp_path / "demo_plugin.py"
+    entrypoint.write_text("print('ok')", encoding="utf-8")
+    monkeypatch.setattr(
+        web_server,
+        "PLUGIN_MARKETPLACE_CATALOG",
+        {
+            "demo": {
+                "plugin_id": "demo",
+                "name": "Demo Plugin",
+                "summary": "s",
+                "description": "d",
+                "category": "c",
+                "role_name": "demo_role",
+                "class_name": "DemoAgent",
+                "capabilities": ["x"],
+                "version": "1.0.0",
+                "entrypoint": entrypoint,
+            }
+        },
+    )
+    monkeypatch.setattr(web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+    monkeypatch.setattr(
+        web_server,
+        "_register_plugin_agent",
+        lambda **_: {"role_name": "demo_role", "version": "1.0.0", "description": "d"},
+    )
+    monkeypatch.setattr(web_server.AgentRegistry, "unregister", lambda *_: True)
+    state = {}
+    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: dict(state))
+    def _write_state(new_state):
+        state.clear()
+        state.update(new_state)
+
+    monkeypatch.setattr(web_server, "_write_plugin_marketplace_state", _write_state)
+
+    installed = web_server._install_marketplace_plugin("demo", persist=True)
+    assert installed["success"] is True
+    assert "demo" in state
+
+    removed = web_server._uninstall_marketplace_plugin("demo")
+    assert removed["success"] is True
+    assert "demo" not in state
+
+    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"demo": {}, "unknown": {}})
+    monkeypatch.setattr(web_server, "_install_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+    assert web_server._reload_persisted_marketplace_plugins() == [{"plugin_id": "demo"}]
+
+
+def _make_request(path: str, method: str = "GET", headers: dict | None = None, client_ip: str = "127.0.0.1") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": method,
+            "path": path,
+            "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            "client": (client_ip, 12345),
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("testserver", 80),
+        }
+    )
+
+
+def test_policy_resolution_helpers_and_metrics_access(monkeypatch):
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", "GET")) == ("rag", "read", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs/1", "DELETE")) == ("rag", "write", "1")
+    assert web_server._resolve_policy_from_request(_make_request("/github-prs", "POST")) == ("github", "write", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/api/agents/register", "POST")) == ("agents", "register", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/unknown", "GET")) == ("", "", "")
+    assert web_server._build_audit_resource("rag", "") == "rag:*"
+    assert web_server._build_audit_resource("", "1") == ""
+
+    user = SimpleNamespace(role="admin", username="ada", tenant_id="team-1")
+    assert web_server._get_user_tenant(user) == "team-1"
+    assert web_server._is_admin_user(user) is True
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "tok")
+    req = _make_request("/metrics", headers={"Authorization": "Bearer tok"})
+    assert web_server._require_metrics_access(req, user) is user
+    with pytest.raises(HTTPException):
+        web_server._require_metrics_access(_make_request("/metrics"), SimpleNamespace(role="user", username="lin"))
+
+
+@pytest.mark.asyncio
+async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
+    user = SimpleNamespace(id="u1", tenant_id="t1")
+    called = {"audit": None}
+
+    async def _record_audit_log(**kwargs):
+        called["audit"] = kwargs
+
+    async def _get_agent():
+        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log)))
+
+    monkeypatch.setattr(web_server, "get_agent", _get_agent)
+    web_server._schedule_access_audit_log(
+        user=user, resource_type="rag", action="read", resource_id="doc-1", ip_address="1.1.1.1", allowed=True
+    )
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert called["audit"]["resource"] == "rag:doc-1"
+
+    web_server._local_rate_limits.clear()
+    assert await web_server._local_is_rate_limited("k1", limit=2, window_sec=60) is False
+    assert await web_server._local_is_rate_limited("k1", limit=2, window_sec=60) is False
+    assert await web_server._local_is_rate_limited("k1", limit=2, window_sec=60) is True
+
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
+    trusted = "127.0.0.1"
+    req = _make_request("/x", headers={"X-Forwarded-For": "9.9.9.9"}, client_ip=trusted)
+    assert web_server._get_client_ip(req) == "9.9.9.9"
+
+
+@pytest.mark.asyncio
+async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
+    class _RedisOk:
+        def __init__(self):
+            self.count = 0
+
+        async def incr(self, *_):
+            self.count += 1
+            return self.count
+
+        async def expire(self, *_):
+            return True
+
+    async def _get_redis_ok():
+        return _RedisOk()
+
+    monkeypatch.setattr(web_server, "_get_redis", _get_redis_ok)
+    assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 2, 60) is False
+
+    class _RedisErr:
+        async def incr(self, *_):
+            raise RuntimeError("redis down")
+
+    async def _get_redis_err():
+        return _RedisErr()
+
+    monkeypatch.setattr(web_server, "_get_redis", _get_redis_err)
+    web_server._local_rate_limits.clear()
+    assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 1, 60) is False
+    assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 1, 60) is True
