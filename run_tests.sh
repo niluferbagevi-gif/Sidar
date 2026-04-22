@@ -105,6 +105,10 @@ PY
       pytest_cmd+=(-m "not gpu")
     else
       echo "🔥 GPU testleri de dahil ediliyor!"
+      if [ "${RUN_GPU_STRESS:-0}" != "1" ]; then
+        export RUN_GPU_STRESS=1
+        echo "ℹ️ GPU tespit edildiği için testlerde RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+      fi
     fi
   fi
 
