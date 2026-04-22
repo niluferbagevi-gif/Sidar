@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+import jwt
 
 import web_server
 
@@ -431,3 +433,104 @@ def test_fallback_ci_failure_context_for_workflow_run():
     assert context["repo"] == "org/repo"
     assert context["run_id"] == "99"
     assert context["base_branch"] == "main"
+
+
+def test_socket_key_and_participant_serialization():
+    websocket = _DummyWebSocket()
+    participant = web_server._CollaborationParticipant(
+        websocket,
+        "u-1",
+        "ada",
+        "Ada",
+        role="developer",
+        can_write=True,
+        write_scopes=["/tmp/a", "/tmp/b"],
+    )
+
+    assert web_server._socket_key(websocket) == id(websocket)
+    assert web_server._serialize_collaboration_participant(participant) == {
+        "user_id": "u-1",
+        "username": "ada",
+        "display_name": "Ada",
+        "role": "developer",
+        "can_write": "true",
+        "write_scopes": ["/tmp/a", "/tmp/b"],
+        "joined_at": participant.joined_at,
+    }
+
+
+def test_build_user_from_jwt_payload_defaults_and_missing_values():
+    assert web_server._build_user_from_jwt_payload({"sub": "1", "username": "ada"}).tenant_id == "default"
+    assert web_server._build_user_from_jwt_payload({"sub": "", "username": "ada"}) is None
+    assert web_server._build_user_from_jwt_payload({"sub": "1", "username": ""}) is None
+
+
+def test_get_jwt_secret_fallback_logs_critical(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "")
+    critical_messages = []
+    monkeypatch.setattr(web_server.logger, "critical", lambda msg: critical_messages.append(msg))
+
+    assert web_server._get_jwt_secret() == "sidar-dev-secret"
+    assert critical_messages
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
+    monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
+
+    encoded = jwt.encode({"sub": "42", "username": "lin", "role": "admin", "tenant_id": "t1"}, "s3cr3t", algorithm="HS256")
+    user = await web_server._resolve_user_from_token(None, encoded)
+    assert user.id == "42"
+    assert user.username == "lin"
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            return SimpleNamespace(id="db-user", username="dbu", role="user", tenant_id="default") if token == "opaque" else None
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+    fallback_user = await web_server._resolve_user_from_token(agent, "opaque")
+    assert fallback_user.id == "db-user"
+    assert await web_server._resolve_user_from_token(agent, "missing") is None
+
+
+@pytest.mark.asyncio
+async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "token-secret")
+    monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(web_server.cfg, "JWT_TTL_DAYS", 3)
+    user = SimpleNamespace(id="7", username="ada", role="editor", tenant_id="team-1")
+
+    token = await web_server._issue_auth_token(None, user)
+    payload = jwt.decode(token, "token-secret", algorithms=["HS256"])
+
+    assert payload["sub"] == "7"
+    assert payload["username"] == "ada"
+    assert payload["role"] == "editor"
+    assert payload["tenant_id"] == "team-1"
+    assert payload["exp"] > payload["iat"]
+
+
+def test_register_exception_handlers_http_and_unhandled():
+    app = web_server.FastAPI()
+    web_server._register_exception_handlers(app)
+
+    @app.get("/boom-http")
+    async def _boom_http():
+        raise HTTPException(status_code=418, detail={"error": "teapot", "code": "E_TEA"})
+
+    @app.get("/boom-exception")
+    async def _boom_exception():
+        raise RuntimeError("unexpected")
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    http_res = client.get("/boom-http")
+    assert http_res.status_code == 418
+    assert http_res.json()["success"] is False
+    assert http_res.json()["code"] == "E_TEA"
+
+    err_res = client.get("/boom-exception")
+    assert err_res.status_code == 500
+    assert err_res.json()["success"] is False
+    assert err_res.json()["error"] == "İç sunucu hatası"
