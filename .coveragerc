@@ -1,8 +1,6 @@
 [run]
 branch = True
 parallel = True
-disable_warnings =
-    module-not-imported
 source = .
 omit =
     */plug_auto_discover*

@@ -43,6 +43,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# pytest-cov, xdist altında her worker için --cov=cli hedefinin gerçekten import edilmesini bekler.
+# Bu import, "Module cli was never imported" coverage uyarısını proje içinde doğru şekilde çözer.
+import cli  # noqa: F401  # isort: skip
+
 
 @pytest.fixture
 def mock_config() -> Callable[..., Any]:
