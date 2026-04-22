@@ -919,6 +919,228 @@ def test_embed_event_driven_federation_payload_projects_core_fields():
     assert out["event_payload"] == {"hello": "world"}
 
 
+def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
+    calls = {"init": None, "warnings": [], "infos": []}
+
+    original_cfg = web_server.cfg
+
+    def _init_telemetry(**kwargs):
+        calls["init"] = kwargs
+
+    cfg_with_custom = SimpleNamespace(init_telemetry=_init_telemetry, OTEL_SERVICE_NAME="sidar-test")
+    monkeypatch.setattr(web_server, "cfg", cfg_with_custom)
+    web_server._setup_tracing()
+    assert calls["init"]["service_name"]
+
+    # Fallback: tracing kapalı
+    fallback_cfg = SimpleNamespace(
+        ENABLE_TRACING=False,
+        OTEL_SERVICE_NAME="sidar-test",
+        OTEL_EXPORTER_ENDPOINT="http://otel:4318",
+    )
+    monkeypatch.setattr(web_server, "cfg", fallback_cfg)
+    web_server._setup_tracing()
+
+    # Fallback: tracing açık fakat bağımlılık eksik
+    fallback_cfg.ENABLE_TRACING = True
+    monkeypatch.setattr(web_server, "trace", None)
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: calls["warnings"].append(msg))
+    web_server._setup_tracing()
+    assert calls["warnings"]
+
+    # Fallback: full tracing başarıyla kurulur ve info log atılır
+    class _Trace:
+        @staticmethod
+        def set_tracer_provider(provider):
+            calls["provider"] = provider
+
+    class _Resource:
+        @staticmethod
+        def create(payload):
+            calls["resource"] = payload
+            return "resource"
+
+    class _Provider:
+        def __init__(self, resource):
+            self.resource = resource
+
+        def add_span_processor(self, processor):
+            calls["processor"] = processor
+
+    class _Exporter:
+        def __init__(self, endpoint, insecure):
+            calls["exporter"] = (endpoint, insecure)
+
+    class _Batch:
+        def __init__(self, exporter):
+            calls["batch"] = exporter
+
+    class _FastAPIInstrumentor:
+        @staticmethod
+        def instrument_app(_app):
+            calls["fastapi_instrumented"] = True
+
+    class _HTTPXInstrumentor:
+        def instrument(self):
+            raise RuntimeError("test suppress")
+
+    monkeypatch.setattr(web_server, "trace", _Trace())
+    monkeypatch.setattr(web_server, "Resource", _Resource)
+    monkeypatch.setattr(web_server, "TracerProvider", _Provider)
+    monkeypatch.setattr(web_server, "OTLPSpanExporter", _Exporter)
+    monkeypatch.setattr(web_server, "BatchSpanProcessor", _Batch)
+    monkeypatch.setattr(web_server, "FastAPIInstrumentor", _FastAPIInstrumentor)
+    monkeypatch.setattr(web_server, "HTTPXClientInstrumentor", _HTTPXInstrumentor)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: calls["infos"].append(msg))
+    web_server._setup_tracing()
+    assert calls["fastapi_instrumented"] is True
+    assert calls["infos"]
+    monkeypatch.setattr(web_server, "cfg", original_cfg)
+
+
+def test_request_user_admin_and_metrics_guards():
+    req = _make_request("/metrics", method="GET")
+    req.state.user = SimpleNamespace(id="u1", username="ada", role="admin")
+    assert web_server._get_request_user(req).id == "u1"
+    assert web_server._is_admin_user(SimpleNamespace(role="admin", username="x")) is True
+    assert web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is True
+    assert web_server._is_admin_user(SimpleNamespace(role="user", username="ada")) is False
+
+    user = SimpleNamespace(role="user", username="ada")
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._require_admin_user(user)
+    assert exc_info.value.status_code == 403
+
+    req.headers.__dict__["_list"] = [(b"authorization", b"Bearer metrics-secret")]
+    web_server.cfg.METRICS_TOKEN = "metrics-secret"
+    assert web_server._require_metrics_access(req, user) is user
+    admin = SimpleNamespace(role="admin", username="root")
+    req_no_token = _make_request("/metrics", method="GET")
+    assert web_server._require_metrics_access(req_no_token, admin) is admin
+    with pytest.raises(HTTPException):
+        web_server._require_metrics_access(req_no_token, user)
+
+
+def test_policy_resolution_and_audit_resource_builder():
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", method="GET")) == ("rag", "read", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs/42", method="DELETE")) == ("rag", "write", "42")
+    assert web_server._resolve_policy_from_request(_make_request("/github-repos", method="POST")) == ("github", "write", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/api/agents/register", method="POST")) == ("agents", "register", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/api/swarm/execute", method="POST")) == ("swarm", "execute", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/admin/stats", method="GET")) == ("admin", "manage", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/ws/room", method="GET")) == ("swarm", "execute", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/unknown", method="GET")) == ("", "", "")
+    assert web_server._build_audit_resource("rag", "x") == "rag:x"
+    assert web_server._build_audit_resource("", "x") == ""
+
+
+@pytest.mark.asyncio
+async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
+    recorded = {}
+
+    async def _record_audit_log(**kwargs):
+        recorded.update(kwargs)
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log)))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    scheduled = {}
+
+    class _Loop:
+        def create_task(self, coro):
+            scheduled["task"] = asyncio.create_task(coro)
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: _Loop())
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="rag",
+        action="read",
+        resource_id="doc1",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+    await scheduled["task"]
+    assert recorded["resource"] == "rag:doc1"
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no-loop")))
+    debug_logs = []
+    monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg))
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1"),
+        resource_type="",
+        action="read",
+        resource_id="doc1",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1"),
+        resource_type="rag",
+        action="read",
+        resource_id="doc1",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+    assert debug_logs
+
+
+def test_serialize_marketing_records():
+    campaign = SimpleNamespace(id=1, tenant_id="t1", name="Launch", channel="email", objective="signup", status="draft", owner_user_id="u1", budget=99.5, metadata_json="{}", created_at="c", updated_at="u")
+    asset = SimpleNamespace(id=2, campaign_id=1, tenant_id="t1", asset_type="post", title="Hello", content="World", channel="x", metadata_json="{}", created_at="c", updated_at="u")
+    checklist = SimpleNamespace(id=3, campaign_id=None, tenant_id="t1", title="Ops", items_json="[]", status="pending", owner_user_id="u2", created_at="c", updated_at="u")
+
+    assert web_server._serialize_campaign(campaign)["name"] == "Launch"
+    assert web_server._serialize_content_asset(asset)["campaign_id"] == 1
+    assert web_server._serialize_operation_checklist(checklist)["campaign_id"] is None
+
+
+def test_load_plugin_agent_class_branches():
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("not valid py(", None, "bad_mod")
+
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("class X: pass", "Missing", "mod")
+
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("class X: pass", "X", "mod")
+
+    source = "from agent.base_agent import BaseAgent\nclass MyAgent(BaseAgent):\n    ROLE_NAME='my'\n    async def respond(self, prompt):\n        yield prompt\n"
+    cls = web_server._load_plugin_agent_class(source, "MyAgent", "mod")
+    assert cls.__name__ == "MyAgent"
+
+    discovered = web_server._load_plugin_agent_class(source, None, "mod2")
+    assert discovered.__name__ == "MyAgent"
+
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("x = 1", None, "mod3")
+
+
+def test_persist_and_import_plugin_file_paths(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    imported = web_server._persist_and_import_plugin_file("demo", b"x=1\n", "plugin_demo")
+    assert imported.name == "demo.py"
+    assert imported.exists()
+
+    monkeypatch.setattr(web_server.importlib.util, "spec_from_file_location", lambda *_: None)
+    with pytest.raises(HTTPException):
+        web_server._persist_and_import_plugin_file("demo2.py", b"x=1\n", "plugin_bad")
+
+    class _Loader:
+        def exec_module(self, module):
+            raise RuntimeError("boom")
+
+    class _Spec:
+        loader = _Loader()
+
+    monkeypatch.setattr(web_server.importlib.util, "spec_from_file_location", lambda *_: _Spec())
+    monkeypatch.setattr(web_server.importlib.util, "module_from_spec", lambda _spec: object())
+    with pytest.raises(HTTPException):
+        web_server._persist_and_import_plugin_file("demo3.py", b"x=1\n", "plugin_boom")
+
+
 def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
     monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_: {"kind": "from-core", "run_id": "1"})
 
