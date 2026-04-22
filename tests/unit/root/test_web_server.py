@@ -2,6 +2,7 @@ from pathlib import Path
 import asyncio
 import re
 import sys
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -3029,3 +3030,206 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
 
     assert ws.subprotocol == "good-token"
     assert {"auth_ok": True} in ws.payloads
+
+
+@pytest.mark.asyncio
+async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
+    class _Health:
+        def get_gpu_info(self):
+            return {"devices": ["GPU-0"]}
+
+        def check_ollama(self):
+            return True
+
+    class _Agent:
+        VERSION = "1.2.3"
+
+        def __init__(self):
+            self.cfg = SimpleNamespace(
+                AI_PROVIDER="gemini",
+                GEMINI_MODEL="gemini-2.0-flash",
+                CODING_MODEL="ignored",
+                ACCESS_LEVEL="dev",
+                MEMORY_ENCRYPTION_KEY="secret",
+                USE_GPU=True,
+                GPU_INFO={"vendor": "nvidia"},
+                GPU_COUNT=1,
+                CUDA_VERSION="12.4",
+            )
+            self.memory = ["m1"]
+            self.github = SimpleNamespace(is_available=lambda: True)
+            self.web = SimpleNamespace(is_available=lambda: False)
+            self.docs = SimpleNamespace(status=lambda: {"ok": True})
+            self.pkg = SimpleNamespace(status=lambda: {"ok": True})
+            self.health = _Health()
+
+    async def _resolve_agent():
+        return _Agent()
+
+    ticks = iter([10.0, 10.1226, 10.1226])
+    def _monotonic():
+        try:
+            return next(ticks)
+        except StopIteration:
+            return 10.1226
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server.time, "monotonic", _monotonic)
+
+    response = await web_server.status()
+    payload = response.body.decode("utf-8")
+
+    assert '"provider":"gemini"' in payload
+    assert '"model":"gemini-2.0-flash"' in payload
+    assert '"ollama_online":true' in payload
+    assert '"ollama_latency_ms":122' in payload
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_import_error_closes_connection(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self.closed = None
+            self.accepted = False
+
+        async def accept(self, subprotocol=None):
+            self.accepted = True
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    orig_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            raise ImportError("missing")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert ws.accepted is True
+    assert ws.sent[-1]["error"] == "core.multimodal modülü yüklenemedi."
+    assert ws.closed == {"code": 1011, "reason": "multimodal unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            self.enabled = True
+            self.vad_enabled = True
+            self.duplex_enabled = True
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
+            return {
+                "voice_state": event,
+                "buffered_bytes": buffered_bytes,
+                "sequence": sequence,
+                "assistant_turn_id": duplex_state.assistant_turn_id,
+            }
+
+        def begin_assistant_turn(self, duplex_state):
+            duplex_state.assistant_turn_id += 1
+            return duplex_state.assistant_turn_id
+
+        def interrupt_assistant_turn(self, duplex_state, reason):
+            duplex_state.last_interrupt_reason = reason
+            return {
+                "assistant_turn_id": duplex_state.assistant_turn_id,
+                "dropped_text_chars": 0,
+                "cancelled_audio_sequences": 0,
+                "reason": reason,
+            }
+
+        def should_interrupt_response(self, _buffer_len, event):
+            return event == "speech_start"
+
+        def should_commit_audio(self, _buffer_len, event):
+            return event == "speech_end"
+
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "merhaba", "language": "tr", "provider": "fake"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self.accepted = None
+            self.closed = None
+            self._packets = iter([
+                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
+                {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"###"}'},
+                {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_end"}'},
+                {"type": "websocket.receive", "text": '{"action":"cancel"}'},
+                {"type": "websocket.disconnect"},
+            ])
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    async def _fake_stream(ws, _agent, text):
+        await ws.send_json({"chunk": text})
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _fake_stream)
+    monkeypatch.setattr(web_server.cfg, "VOICE_WS_MAX_BYTES", 1024)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert ws.accepted is None
+    assert {"auth_ok": True} in ws.sent
+    assert any(item.get("voice_session") == "ready" for item in ws.sent)
+    assert any(item.get("error") == "Geçersiz base64 ses parçası" for item in ws.sent)
+    assert any(item.get("transcript") == "merhaba" for item in ws.sent)
+    assert any(item.get("assistant_turn") == "completed" for item in ws.sent)
+    assert any(item.get("cancelled") is True for item in ws.sent)
