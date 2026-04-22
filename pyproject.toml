@@ -192,16 +192,7 @@ markers = [
   "quality_gate: LLM kalite kapısı doğrulamaları",
 ]
 filterwarnings = [
-  "default",  # "error" yerine "default" yapıldı
-  "ignore::DeprecationWarning:sentence_transformers\\..*",
-  "ignore::DeprecationWarning:setuptools",
-  "ignore::FutureWarning:torch",
-  "ignore::UserWarning:torch",
-  "ignore::ResourceWarning",
-  "ignore::pydantic.warnings.PydanticDeprecatedSince20",
-  "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
-  "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
-  "ignore:invalid escape sequence.*:DeprecationWarning:sentence_transformers\\..*",
+  "error",
 ]
 log_cli = false
 log_cli_level = "INFO"
