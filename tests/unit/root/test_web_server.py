@@ -886,3 +886,116 @@ async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
     web_server._local_rate_limits.clear()
     assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 1, 60) is False
     assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 1, 60) is True
+
+
+def _load_web_server_with_import_failures(monkeypatch, module_name: str, fail_rules: set[str]):
+    """web_server modülünü seçili import hatalarıyla izole şekilde yükler."""
+    import builtins
+    import importlib.util
+    import sys
+
+    original_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if "anyio" in fail_rules and name == "anyio":
+            raise ImportError("forced anyio failure")
+        if "opentelemetry" in fail_rules and name.startswith("opentelemetry"):
+            raise ImportError("forced otel failure")
+        if "llm_metrics_reset" in fail_rules and name == "core.llm_metrics" and fromlist:
+            if "reset_current_metrics_user_id" in fromlist or "set_current_metrics_user_id" in fromlist:
+                raise ImportError("forced llm metrics reset import failure")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    spec = importlib.util.spec_from_file_location(module_name, Path("web_server.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_optional_import_fallbacks_on_module_load(monkeypatch):
+    mod = _load_web_server_with_import_failures(
+        monkeypatch,
+        module_name="web_server_fallback_case",
+        fail_rules={"anyio", "opentelemetry", "llm_metrics_reset"},
+    )
+
+    assert mod._ANYIO_CLOSED is None
+    assert mod.trace is None
+    assert mod.FastAPIInstrumentor is None
+    assert mod.set_current_metrics_user_id("u1") is None
+    assert mod.reset_current_metrics_user_id(None) is None
+
+
+@pytest.mark.asyncio
+async def test_async_force_shutdown_paths(monkeypatch):
+    events: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 1)
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert web_server._shutdown_cleanup_done is True
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [201, 202])
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: events.append(("kill", pid)))
+
+    async def _fake_sleep(_):
+        events.append(("sleep", 0))
+
+    monkeypatch.setattr(web_server.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 2)
+    await web_server._async_force_shutdown_local_llm_processes()
+
+    killed_pids = [pid for action, pid in events if action == "kill"]
+    assert killed_pids.count(201) == 2
+    assert killed_pids.count(202) == 2
+    assert ("sleep", 0) in events
+
+
+@pytest.mark.asyncio
+async def test_prewarm_rag_embeddings_branches(monkeypatch):
+    logs = {"info": [], "warn": []}
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs["info"].append(msg % args if args else msg))
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: logs["warn"].append(msg % args if args else msg))
+
+    async def _agent_without_rag():
+        return SimpleNamespace(rag=None)
+
+    monkeypatch.setattr(web_server, "get_agent", _agent_without_rag)
+    await web_server._prewarm_rag_embeddings()
+    assert any("rag motoru bulunamadı" in m for m in logs["info"])
+
+    async def _agent_without_chroma():
+        return SimpleNamespace(rag=SimpleNamespace(_chroma_available=False))
+
+    monkeypatch.setattr(web_server, "get_agent", _agent_without_chroma)
+    await web_server._prewarm_rag_embeddings()
+    assert any("ChromaDB kullanılamıyor" in m for m in logs["info"])
+
+    init_calls = {"count": 0}
+
+    class _RagOk:
+        _chroma_available = True
+
+        def _init_chroma(self):
+            init_calls["count"] += 1
+
+    async def _agent_ok():
+        return SimpleNamespace(rag=_RagOk())
+
+    monkeypatch.setattr(web_server, "get_agent", _agent_ok)
+    await web_server._prewarm_rag_embeddings()
+    assert init_calls["count"] == 1
+
+    async def _agent_fail():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(web_server, "get_agent", _agent_fail)
+    await web_server._prewarm_rag_embeddings()
+    assert any("prewarm başarısız" in m for m in logs["warn"])
