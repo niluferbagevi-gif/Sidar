@@ -4011,7 +4011,11 @@ async def test_websocket_voice_auth_token_validation_paths(monkeypatch):
         closed.append(reason)
 
     monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close_policy)
-    monkeypatch.setattr(web_server, "_resolve_user_from_token", lambda *_: None)
+
+    async def _resolve_user_from_token(*_):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user_from_token)
 
     ws_missing = _Ws('{"action":"auth","token":""}')
     await web_server.websocket_voice(ws_missing)
