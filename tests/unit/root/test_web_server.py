@@ -3753,3 +3753,161 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
     assert any(item.get("transcript") == "merhaba" for item in ws.sent)
     assert any(item.get("assistant_turn") == "completed" for item in ws.sent)
     assert any(item.get("cancelled") is True for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_agent_plugin_registration_endpoints(monkeypatch):
+    captured = {}
+
+    def _register_plugin_agent(**kwargs):
+        captured.update(kwargs)
+        return {"role_name": kwargs["role_name"], "status": "ok"}
+
+    monkeypatch.setattr(web_server, "_register_plugin_agent", _register_plugin_agent)
+
+    payload = web_server._AgentPluginRegisterRequest(
+        role_name="demo_role",
+        source_code="class Demo: pass",
+        class_name="Demo",
+        capabilities=["code_generation"],
+        description="demo",
+        version="1.2.3",
+    )
+    response = await web_server.register_agent_plugin(payload, _user=SimpleNamespace(role="admin"))
+
+    assert response.status_code == 200
+    assert response.body
+    assert captured["role_name"] == "demo_role"
+    assert captured["capabilities"] == ["code_generation"]
+
+
+@pytest.mark.asyncio
+async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
+    class _Upload:
+        def __init__(self, filename: str, data: bytes):
+            self.filename = filename
+            self._data = data
+            self.closed = False
+
+        async def read(self):
+            return self._data
+
+        async def close(self):
+            self.closed = True
+
+    with pytest.raises(HTTPException) as empty_exc:
+        await web_server.register_agent_plugin_file(_Upload("demo.py", b""), _user=SimpleNamespace(role="admin"))
+    assert empty_exc.value.status_code == 400
+
+    too_large = b"a" * (web_server.MAX_FILE_CONTENT_BYTES + 1)
+    with pytest.raises(HTTPException) as large_exc:
+        await web_server.register_agent_plugin_file(_Upload("demo.py", too_large), _user=SimpleNamespace(role="admin"))
+    assert large_exc.value.status_code == 413
+
+    with pytest.raises(HTTPException) as utf_exc:
+        await web_server.register_agent_plugin_file(_Upload("demo.py", b"\xff"), _user=SimpleNamespace(role="admin"))
+    assert utf_exc.value.status_code == 400
+
+    captured = {}
+    monkeypatch.setattr(web_server.secrets, "token_hex", lambda _: "beefbeef")
+    monkeypatch.setattr(web_server, "_persist_and_import_plugin_file", lambda *args: captured.setdefault("persist", args))
+
+    def _register_plugin_agent(**kwargs):
+        captured["register"] = kwargs
+        return {"role_name": kwargs["role_name"], "installed": True}
+
+    monkeypatch.setattr(web_server, "_register_plugin_agent", _register_plugin_agent)
+    ok_response = await web_server.register_agent_plugin_file(
+        _Upload("my_plugin.py", b"print('ok')\n"),
+        role_name="",
+        class_name=" AgentClass ",
+        capabilities="alpha, beta ,,",
+        description="desc",
+        version="2.0.0",
+        _user=SimpleNamespace(role="admin"),
+    )
+
+    assert ok_response.status_code == 200
+    assert captured["persist"][2] == "sidar_uploaded_plugin_beefbeef"
+    assert captured["register"]["role_name"] == "my_plugin"
+    assert captured["register"]["class_name"] == "AgentClass"
+    assert captured["register"]["capabilities"] == ["alpha", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_plugin_marketplace_http_handlers(monkeypatch):
+    monkeypatch.setattr(web_server, "PLUGIN_MARKETPLACE_CATALOG", {
+        "x": {"name": "Plugin X"},
+        "a": {"name": "Plugin A"},
+    })
+    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"a": {"installed_at": "now"}})
+    monkeypatch.setattr(
+        web_server,
+        "_serialize_marketplace_plugin",
+        lambda plugin_id, installed_state=None: {"plugin_id": plugin_id, "state": installed_state or {}},
+    )
+    monkeypatch.setattr(web_server, "_install_marketplace_plugin", lambda plugin_id: {"ok": True, "plugin_id": plugin_id})
+    monkeypatch.setattr(web_server, "_uninstall_marketplace_plugin", lambda plugin_id: {"removed": plugin_id})
+
+    catalog = await web_server.plugin_marketplace_catalog(_user=SimpleNamespace(role="admin"))
+    assert b'"plugin_id":"a"' in catalog.body
+    assert b'"plugin_id":"x"' in catalog.body
+
+    payload = web_server._PluginMarketplaceInstallRequest(plugin_id="a")
+    install = await web_server.install_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
+    reload_res = await web_server.reload_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
+    uninstall = await web_server.uninstall_plugin_marketplace_item("a", _user=SimpleNamespace(role="admin"))
+
+    assert install.body == b'{"ok":true,"plugin_id":"a"}'
+    assert reload_res.body == b'{"ok":true,"plugin_id":"a"}'
+    assert uninstall.body == b'{"removed":"a"}'
+
+
+@pytest.mark.asyncio
+async def test_execute_swarm_pipeline_parallel_and_validation(monkeypatch):
+    class _Orchestrator:
+        def __init__(self, _cfg):
+            self.cfg = _cfg
+
+        async def run_pipeline(self, tasks, session_id):
+            return [SimpleNamespace(task_id="p1", status="ok", summary=f"{session_id}:{len(tasks)}")]
+
+        async def run_parallel(self, tasks, session_id, max_concurrency):
+            return [SimpleNamespace(task_id="r1", status="ok", summary=f"{session_id}:{max_concurrency}:{len(tasks)}")]
+
+    monkeypatch.setattr(web_server, "SwarmOrchestrator", _Orchestrator)
+    async def _resolve_agent():
+        return SimpleNamespace(cfg=SimpleNamespace())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    pipeline_payload = web_server._SwarmExecuteRequest(
+        mode="pipeline",
+        tasks=[web_server._SwarmTaskRequest(goal="  Ship  ", intent=" build ", context={"k": "v"})],
+        session_id="sess-1",
+        max_concurrency=3,
+    )
+    user = SimpleNamespace(id="u1")
+    pipeline = await web_server.execute_swarm(pipeline_payload, user=user)
+    assert b'"mode":"pipeline"' in pipeline.body
+    assert b'"task_count":1' in pipeline.body
+
+    parallel_payload = web_server._SwarmExecuteRequest(
+        mode="parallel",
+        tasks=[web_server._SwarmTaskRequest(goal="Analyze")],
+        session_id="",
+        max_concurrency=2,
+    )
+    parallel = await web_server.execute_swarm(parallel_payload, user=user)
+    assert b'"mode":"parallel"' in parallel.body
+    assert b'"session_id":"swarm-u1"' in parallel.body
+
+    bad_payload = web_server._SwarmExecuteRequest(
+        mode="parallel",
+        tasks=[web_server._SwarmTaskRequest(goal="   ")],
+        session_id="",
+        max_concurrency=2,
+    )
+    with pytest.raises(HTTPException) as bad_exc:
+        await web_server.execute_swarm(bad_payload, user=user)
+    assert bad_exc.value.status_code == 400
