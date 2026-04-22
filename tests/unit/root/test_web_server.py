@@ -255,3 +255,181 @@ async def test_hitl_broadcast_and_prompt_helpers():
     assert "room_id=workspace:default" in prompt
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
+
+
+def test_collaboration_participant_backward_compat_and_serialization(monkeypatch):
+    monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "now")
+
+    ws = _DummyWebSocket()
+    participant = web_server._CollaborationParticipant(
+        ws,
+        "u1",
+        "ada",
+        "Ada",
+        "2026-01-01T00:00:00+00:00",
+    )
+    assert participant.role == "user"
+    assert participant.joined_at == "2026-01-01T00:00:00+00:00"
+
+    serialized = web_server._serialize_collaboration_participant(participant)
+    assert serialized["can_write"] == "false"
+
+    participant_write = web_server._CollaborationParticipant(
+        ws,
+        "u2",
+        "lin",
+        "Lin",
+        role="editor",
+        can_write=True,
+        write_scopes=["/tmp/ws"],
+    )
+    serialized_write = web_server._serialize_collaboration_participant(participant_write)
+    assert serialized_write["can_write"] == "true"
+    assert serialized_write["write_scopes"] == ["/tmp/ws"]
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_edge_cases(monkeypatch):
+    ws = _DummyWebSocket()
+
+    # no room bound
+    await web_server._leave_collaboration_room(ws)
+
+    # room id set but room not found
+    setattr(ws, "_sidar_room_id", "missing")
+    await web_server._leave_collaboration_room(ws)
+    assert getattr(ws, "_sidar_room_id") == ""
+
+    # non-empty room should broadcast presence instead of deleting
+    ws2 = _DummyWebSocket()
+    room = web_server._CollaborationRoom(room_id="r1")
+    room.participants = {
+        web_server._socket_key(ws): web_server._CollaborationParticipant(ws, "u1", "a", "A"),
+        web_server._socket_key(ws2): web_server._CollaborationParticipant(ws2, "u2", "b", "B"),
+    }
+    web_server._collaboration_rooms["r1"] = room
+    setattr(ws, "_sidar_room_id", "r1")
+
+    await web_server._leave_collaboration_room(ws)
+    assert "r1" in web_server._collaboration_rooms
+    assert web_server._socket_key(ws) not in room.participants
+
+
+def test_build_collaboration_prompt_defaults():
+    room = web_server._CollaborationRoom(room_id="workspace:default")
+    prompt = web_server._build_collaboration_prompt(room, actor_name="Ghost", command="Oku")
+
+    assert "(henüz ortak geçmiş yok)" in prompt
+    assert "participants=unknown" in prompt
+    assert "requesting_role=user" in prompt
+    assert "requesting_write_scopes=read-only" in prompt
+
+
+def test_reap_child_processes_nonblocking(monkeypatch):
+    calls = iter([(123, 0), (0, 0)])
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: next(calls))
+    assert web_server._reap_child_processes_nonblocking() == 1
+
+
+
+def test_terminate_ollama_child_pids_calls_signals(monkeypatch):
+    sent = []
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    monkeypatch.setattr(web_server.time, "sleep", lambda _s: None)
+
+    web_server._terminate_ollama_child_pids([10, 20], grace_seconds=0.01)
+
+    assert sent[:2] == [
+        (10, web_server.signal.SIGTERM),
+        (20, web_server.signal.SIGTERM),
+    ]
+    assert sent[2:] == [
+        (10, web_server.signal.SIGKILL),
+        (20, web_server.signal.SIGKILL),
+    ]
+
+
+def test_force_shutdown_local_llm_processes_branches(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+
+    reaped = []
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.append(True) or 0)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped == [True]
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped == [True, True]
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    terminated = []
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [7])
+    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda pids: terminated.append(pids))
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    web_server._force_shutdown_local_llm_processes()
+    assert terminated == [[7]]
+
+
+@pytest.mark.asyncio
+async def test_async_force_shutdown_local_llm_processes_branches(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    reaped = []
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.append(True) or 0)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert reaped == [True]
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert reaped == [True, True]
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [111])
+    sent = []
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+
+    await web_server._async_force_shutdown_local_llm_processes()
+
+    assert (111, web_server.signal.SIGTERM) in sent
+    assert (111, web_server.signal.SIGKILL) in sent
+
+
+def test_list_child_ollama_pids_with_psutil_stub(monkeypatch):
+    class _Child:
+        def __init__(self, pid, name, cmd):
+            self.pid = pid
+            self._name = name
+            self._cmd = cmd
+
+        def name(self):
+            return self._name
+
+        def cmdline(self):
+            return self._cmd
+
+    class _Process:
+        def __init__(self, _pid):
+            pass
+
+        def children(self, recursive=False):
+            assert recursive is False
+            return [
+                _Child(1, "ollama", ["ollama", "serve"]),
+                _Child(2, "python", ["python", "x.py"]),
+                _Child(3, "bash", ["ollama serve"]),
+            ]
+
+    class _Psutil:
+        Process = _Process
+
+    monkeypatch.setitem(__import__("sys").modules, "psutil", _Psutil)
+    monkeypatch.setattr(web_server.os, "getpid", lambda: 999)
+
+    pids = web_server._list_child_ollama_pids()
+    assert pids == [1, 3]
