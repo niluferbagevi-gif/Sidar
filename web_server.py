@@ -3946,11 +3946,23 @@ async def api_vision_analyze(req: _VisionAnalyzeRequest):
     agent = await _resolve_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
     prompt = req.prompt or build_analyze_prompt(req.analysis_type)
-    result = await pipeline.analyze(
-        image_b64=req.image_base64,
-        mime_type=req.mime_type,
-        prompt=prompt,
-    )
+    try:
+        result = await pipeline.analyze(
+            image_b64=req.image_base64,
+            mime_type=req.mime_type,
+            prompt=prompt,
+        )
+    except TypeError:
+        try:
+            image_bytes = base64.b64decode(req.image_base64, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}") from exc
+
+        result = await pipeline.analyze(
+            image_bytes=image_bytes,
+            mime_type=req.mime_type,
+            analysis_type=req.analysis_type,
+        )
     return JSONResponse({"success": True, "result": result})
 
 
@@ -3964,12 +3976,25 @@ async def api_vision_mockup(req: _VisionMockupRequest):
 
     agent = await _resolve_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
-    code = await pipeline.mockup_to_code(
-        image_b64=req.image_base64,
-        mime_type=req.mime_type,
-        framework=req.framework,
-        extra_instructions=req.prompt or "",
-    )
+    try:
+        code = await pipeline.mockup_to_code(
+            image_b64=req.image_base64,
+            mime_type=req.mime_type,
+            framework=req.framework,
+            extra_instructions=req.prompt or "",
+        )
+    except TypeError:
+        try:
+            image_bytes = base64.b64decode(req.image_base64, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}") from exc
+
+        code = await pipeline.mockup_to_code(
+            image_bytes=image_bytes,
+            mime_type=req.mime_type,
+            framework=req.framework,
+            extra_instructions=req.prompt or "",
+        )
     return JSONResponse({"success": True, "code": code})
 
 
@@ -4481,12 +4506,12 @@ async def autonomy_wake(req: _AutonomyWakeRequest):
     """Webhook dışı manuel/proaktif tetik giriş noktası."""
     payload = dict(req.payload or {})
     payload["prompt"] = req.prompt.strip()
-    result = await _dispatch_autonomy_trigger(
+    result = await _await_if_needed(_dispatch_autonomy_trigger(
         trigger_source=f"manual:{req.source.strip() or 'manual'}",
         event_name=req.event_name.strip() or "manual_wake",
         payload=payload,
         meta=dict(req.meta or {}),
-    )
+    ))
     return JSONResponse({"success": True, "result": result})
 
 
