@@ -362,6 +362,10 @@ docker compose up -d sidar-web
 ```bash
 ./install_sidar.sh
 
+# Bulut/CI ortamı (ChatGPT Codex Cloud, Gitpod, Codespaces vb.) için
+# etkileşim istemeden test-ready kurulum:
+bash install_sidar.sh --ci
+
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ```
