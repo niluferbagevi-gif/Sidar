@@ -4765,13 +4765,17 @@ async def github_webhook(
 async def spa_fallback(full_path: str):
     normalized = (full_path or "").strip()
     if not normalized:
-        return await index()
+        maybe_response = index()
+        if inspect.isawaitable(maybe_response):
+            return await maybe_response
+        return maybe_response
     first_segment = normalized.split("/", 1)[0].lower()
     if first_segment in {"api", "vendor", "static", "assets", "ws", "webhook"}:
         return Response(status_code=404)
     if "." in Path(normalized).name:
         return Response(status_code=404)
-    response = await index()
+    maybe_response = index()
+    response = await maybe_response if inspect.isawaitable(maybe_response) else maybe_response
     if getattr(response, "status_code", None) == 500:
         return HTMLResponse(
             "<h1>SİDAR arayüzü için SPA fallback etkin.</h1>",
