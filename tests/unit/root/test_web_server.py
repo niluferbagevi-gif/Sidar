@@ -1,5 +1,6 @@
-from pathlib import Path
 import asyncio
+from dataclasses import dataclass
+from pathlib import Path
 import re
 import sys
 import types
@@ -512,6 +513,63 @@ def test_fallback_ci_failure_context_for_workflow_run():
     assert context["base_branch"] == "main"
 
 
+def test_fallback_ci_failure_context_for_check_run_and_suite_and_generic_payload():
+    check_run_payload = {
+        "repository": {"full_name": "org/repo", "default_branch": "main"},
+        "check_run": {
+            "id": 7,
+            "name": "lint",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_sha": "abc",
+            "html_url": "http://example/check/7",
+            "details_url": "http://example/check/7/details",
+            "output": {"title": "Lint failed", "summary": "2 errors", "text": "flake8 E999"},
+        },
+    }
+    check_run_context = web_server._fallback_ci_failure_context("check_run", check_run_payload)
+    assert check_run_context["kind"] == "check_run"
+    assert check_run_context["workflow_name"] == "lint"
+    assert "flake8" in check_run_context["log_excerpt"]
+
+    check_suite_payload = {
+        "repository": {"full_name": "org/repo", "default_branch": "main"},
+        "check_suite": {
+            "id": 9,
+            "status": "completed",
+            "conclusion": "timed_out",
+            "head_branch": "feature/x",
+            "head_sha": "def",
+            "app": {"name": "GitHub Actions"},
+            "url": "http://example/suite/9",
+        },
+    }
+    suite_context = web_server._fallback_ci_failure_context("check_suite", check_suite_payload)
+    assert suite_context["kind"] == "check_suite"
+    assert suite_context["workflow_name"] == "GitHub Actions"
+    assert suite_context["branch"] == "feature/x"
+
+    generic_payload = {
+        "repo": "group/repo",
+        "pipeline_id": 101,
+        "pipeline_number": "55",
+        "target_branch": "main",
+        "ref": "feature/y",
+        "commit": "123abc",
+        "status": "completed",
+        "conclusion": "failed",
+        "pipeline_url": "http://example/pipeline/101",
+        "logs": "Build crashed",
+        "summary": "Pipeline failed",
+        "jobs": [{"name": "test"}],
+    }
+    generic_context = web_server._fallback_ci_failure_context("pipeline_failed", generic_payload)
+    assert generic_context["kind"] == "generic_ci_failure"
+    assert generic_context["repo"] == "group/repo"
+    assert generic_context["run_id"] == "101"
+    assert generic_context["failure_summary"] == "Pipeline failed"
+
+
 def test_socket_key_and_participant_serialization():
     websocket = _DummyWebSocket()
     participant = web_server._CollaborationParticipant(
@@ -917,6 +975,67 @@ def test_embed_event_driven_federation_payload_projects_core_fields():
     assert out["source_system"] == "github"
     assert out["target_agent"] == "supervisor"
     assert out["event_payload"] == {"hello": "world"}
+
+
+@pytest.mark.asyncio
+async def test_run_event_driven_federation_workflow_none_when_spec_missing(monkeypatch):
+    monkeypatch.setattr(web_server, "_build_event_driven_federation_spec", lambda *_: None)
+    result = await web_server._run_event_driven_federation_workflow(source="github", event_name="push", payload={"x": 1})
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_run_event_driven_federation_workflow_builds_result_payload(monkeypatch):
+    monkeypatch.setattr(web_server, "_trim_autonomy_text", lambda value, limit=1200: str(value)[:limit])
+    monkeypatch.setattr(web_server, "_build_swarm_goal_for_role", lambda goal, role, _spec: f"{role}:{goal}")
+    monkeypatch.setattr(web_server, "derive_correlation_id", lambda *args: "corr-42")
+
+    spec = {
+        "workflow_type": "github_pull_request",
+        "task_id": "task-42",
+        "source_system": "github",
+        "source_agent": "pull_request_webhook",
+        "goal": "PR'i değerlendir",
+        "context": {"repo": "org/repo", "pr_number": "42"},
+        "inputs": ["pr_number=42", "title=Fix"],
+        "correlation_id": "corr-42",
+    }
+    monkeypatch.setattr(web_server, "_build_event_driven_federation_spec", lambda *_: spec)
+
+    class _FakeOrchestrator:
+        def __init__(self, _cfg):
+            pass
+
+        async def run_pipeline(self, tasks, session_id):
+            assert session_id == "corr-42"
+            assert len(tasks) == 2
+            @dataclass
+            class _Result:
+                task_id: str
+                role: str
+                status: str
+                summary: str
+
+            return [
+                _Result(task_id="task-42", role="coder", status="success", summary="Kod planı hazır"),
+                _Result(task_id="task-42", role="reviewer", status="success", summary="Review tamam"),
+            ]
+
+    monkeypatch.setattr(web_server, "SwarmOrchestrator", _FakeOrchestrator)
+
+    result = await web_server._run_event_driven_federation_workflow(
+        source="github",
+        event_name="pull_request",
+        payload={"action": "opened"},
+    )
+
+    assert result is not None
+    assert result["workflow_type"] == "github_pull_request"
+    assert result["correlation_id"] == "corr-42"
+    assert result["federation_task"]["task_id"] == "task-42"
+    assert result["federation_result"]["status"] == "success"
+    assert len(result["pipeline"]) == 2
+    assert "SWARM_PIPELINE_RESULT" in result["federation_prompt"]
 
 
 def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
