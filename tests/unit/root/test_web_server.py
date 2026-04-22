@@ -4376,3 +4376,113 @@ async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
             user=user,
         )
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_file_content_covers_security_dir_and_size_guards(tmp_path, monkeypatch):
+    fake_root = tmp_path / "root"
+    fake_root.mkdir()
+    (fake_root / "docs").mkdir()
+    (fake_root / "big.txt").write_text("x" * 20, encoding="utf-8")
+    monkeypatch.setattr(web_server, "__file__", str(fake_root / "web_server.py"))
+    monkeypatch.setattr(web_server, "MAX_FILE_CONTENT_BYTES", 5)
+
+    outside = await web_server.file_content("../secret.txt")
+    assert outside.status_code == 403
+
+    is_dir = await web_server.file_content("docs")
+    assert is_dir.status_code == 400
+
+    too_big = await web_server.file_content("big.txt")
+    assert too_big.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
+    empty_name = await web_server.set_branch(_JsonRequest({"branch": "   "}))
+    assert empty_name.status_code == 400
+
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    def _raise_checkout(*_args, **_kwargs):
+        raise web_server.subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["git", "checkout", "feature/x"],
+            output=b"checkout failed",
+        )
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(web_server.subprocess, "check_output", _raise_checkout)
+    failed = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
+    assert failed.status_code == 400
+    assert b"checkout failed" in failed.body
+
+
+@pytest.mark.asyncio
+async def test_github_endpoints_failure_paths(monkeypatch):
+    class _Github:
+        repo_name = "org/active"
+
+        def list_repos(self, owner="", limit=200):
+            return False, []
+
+        def is_available(self):
+            return False
+
+        def get_pull_requests_detailed(self, **_):
+            return False, [], "boom"
+
+        def get_pull_request(self, number):
+            return False, f"missing-{number}"
+
+    agent = SimpleNamespace(github=_Github())
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
+
+    repos = await web_server.github_repos()
+    prs = await web_server.github_prs()
+    detail = await web_server.github_pr_detail(99)
+
+    assert repos.status_code == 400
+    assert prs.status_code == 503
+    assert detail.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_upload_rag_file_size_error_and_backend_failure(monkeypatch):
+    class _FakeUpload:
+        def __init__(self, filename: str, data: bytes):
+            self.filename = filename
+            self._data = data
+            self.closed = False
+
+        async def read(self, _size: int):
+            return self._data
+
+        async def close(self):
+            self.closed = True
+
+    class _Docs:
+        def add_document_from_file(self, *_args, **_kwargs):
+            return False, "index failed"
+
+    agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id=None))
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
+
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(web_server.Config, "MAX_RAG_UPLOAD_BYTES", 4)
+
+    too_big_file = _FakeUpload("huge.txt", b"012345")
+    with pytest.raises(HTTPException) as too_big_exc:
+        await web_server.upload_rag_file(too_big_file)
+    assert too_big_exc.value.status_code == 413
+    assert too_big_file.closed is True
+
+    small_file = _FakeUpload("safe.txt", b"ok")
+    failed = await web_server.upload_rag_file(small_file)
+    assert failed.status_code == 400
+    assert b"index failed" in failed.body
+    assert small_file.closed is True
