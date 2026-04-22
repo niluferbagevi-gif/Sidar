@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -255,3 +256,178 @@ async def test_hitl_broadcast_and_prompt_helpers():
     assert "room_id=workspace:default" in prompt
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
+
+
+def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
+    monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "fallback-now")
+    ws = _DummyWebSocket()
+
+    participant = web_server._CollaborationParticipant(
+        ws,
+        "u1",
+        "ada",
+        "Ada",
+        "2026-01-01T00:00:00+00:00",
+    )
+
+    assert participant.role == "user"
+    assert participant.joined_at == "2026-01-01T00:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
+    websocket = _DummyWebSocket()
+    setattr(websocket, "_sidar_room_id", "team:cleanup")
+    cancelled = {"value": False}
+
+    class _FakeTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            cancelled["value"] = True
+
+    web_server._collaboration_rooms["team:cleanup"] = web_server._CollaborationRoom(
+        room_id="team:cleanup",
+        participants={},
+        active_task=_FakeTask(),
+    )
+
+    await web_server._leave_collaboration_room(websocket)
+
+    assert cancelled["value"] is True
+    assert "team:cleanup" not in web_server._collaboration_rooms
+
+
+def test_list_child_ollama_pids_parses_ps_output_without_psutil(monkeypatch):
+    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 777))
+    monkeypatch.setattr(web_server, "subprocess", SimpleNamespace(
+        DEVNULL=object(),
+        check_output=lambda *args, **kwargs: (
+            b" 10 777 ollama ollama serve\n"
+            b" 11 777 python python -m app\n"
+            b" 12 999 ollama ollama serve\n"
+        ),
+    ))
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    assert web_server._list_child_ollama_pids() == [10]
+
+
+def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
+    waitpid_results = iter([(101, 0), (102, 0), (0, 0)])
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *args: next(waitpid_results))
+
+    assert web_server._reap_child_processes_nonblocking() == 2
+
+
+def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [21, 22])
+    calls = {"term": None, "reap": 0}
+    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda pids: calls.update({"term": list(pids)}))
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 3)
+
+    web_server._force_shutdown_local_llm_processes()
+
+    assert calls["term"] == [21, 22]
+    assert web_server._shutdown_cleanup_done is True
+
+
+@pytest.mark.asyncio
+async def test_collect_agent_response_joins_chunks():
+    class _Agent:
+        async def respond(self, _prompt):
+            for chunk in [" Mer", "haba ", "dünya "]:
+                yield chunk
+
+    text = await web_server._collect_agent_response(_Agent(), "x")
+    assert text == "Merhaba dünya"
+
+
+def test_bind_llm_usage_sink_sets_sink_once(monkeypatch):
+    sink_holder = {}
+
+    class _Collector:
+        _sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            sink_holder["sink"] = sink
+
+    collector = _Collector()
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: collector)
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+
+    web_server._bind_llm_usage_sink(agent)
+    first_sink = sink_holder.get("sink")
+    web_server._bind_llm_usage_sink(agent)
+
+    assert callable(first_sink)
+    assert sink_holder.get("sink") is first_sink
+    assert collector._sidar_usage_sink_bound is True
+
+
+@pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
+    class _Agent:
+        async def handle_external_trigger(self, trigger):
+            return {
+                "trigger_id": trigger.trigger_id,
+                "source": trigger.source,
+                "event_name": trigger.event_name,
+                "summary": "ok",
+                "status": "success",
+                "meta": {"x": "1"},
+                "created_at": 1.0,
+                "completed_at": 2.0,
+                "remediation": {"action": "none"},
+            }
+
+    async def _get_agent():
+        return _Agent()
+
+    monkeypatch.setattr(web_server, "get_agent", _get_agent)
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="github",
+        event_name="opened",
+        payload={"x": 1},
+        meta={"a": "b"},
+    )
+
+    assert result["status"] == "success"
+    assert result["summary"] == "ok"
+    assert result["meta"] == {"x": "1"}
+
+
+def test_fallback_ci_failure_context_for_workflow_run():
+    payload = {
+        "repository": {"full_name": "org/repo", "default_branch": "main"},
+        "workflow_run": {
+            "status": "completed",
+            "conclusion": "failure",
+            "name": "CI",
+            "id": 99,
+            "run_number": 18,
+            "head_branch": "feature-x",
+            "head_sha": "abc",
+            "html_url": "http://example/run/99",
+            "jobs_url": "http://example/jobs/99",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        },
+    }
+
+    context = web_server._fallback_ci_failure_context("workflow_run", payload)
+
+    assert context["kind"] == "workflow_run"
+    assert context["repo"] == "org/repo"
+    assert context["run_id"] == "99"
+    assert context["base_branch"] == "main"
