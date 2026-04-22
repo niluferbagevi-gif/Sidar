@@ -11,6 +11,7 @@
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
+#   ./install_sidar.sh --auto --mode=local --env=development --reset-db --no-vscode
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
@@ -1182,6 +1183,11 @@ AUTO_START_DOCKER_SERVICES="ask"
 AUTO_RESET_POSTGRES_VOLUMES="ask"
 AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
+CLI_MODE_RAW=""
+CLI_ENV_RAW=""
+CLI_RESET_POSTGRES_VOLUMES="ask"
+CLI_START_DOCKER_SERVICES="ask"
+CLI_OPEN_VSCODE="ask"
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -1202,10 +1208,19 @@ for arg in "$@"; do
         --no-dev) INSTALL_DEV=false ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
+        --auto) AUTO_INSTALL=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
+        --mode=*) CLI_MODE_RAW="${arg#*=}" ;;
+        --env=*) CLI_ENV_RAW="${arg#*=}" ;;
+        --reset-db) CLI_RESET_POSTGRES_VOLUMES="true" ;;
+        --no-reset-db) CLI_RESET_POSTGRES_VOLUMES="false" ;;
+        --start-services) CLI_START_DOCKER_SERVICES="true" ;;
+        --no-start-services) CLI_START_DOCKER_SERVICES="false" ;;
+        --vscode) CLI_OPEN_VSCODE="true" ;;
+        --no-vscode) CLI_OPEN_VSCODE="false" ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -1218,7 +1233,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -1237,6 +1252,12 @@ for arg in "$@"; do
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
+            echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
+            echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
+            echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
+            echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
+            echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
+            echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
             echo ""
             echo "  Etkileşimsiz çevre değişkenleri:"
             echo "    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)"
@@ -1247,7 +1268,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1286,19 +1307,25 @@ if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
 
-AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}")"
+AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${CLI_MODE_RAW:-${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}}")"
+if [[ -n "$CLI_MODE_RAW" && "$AUTO_RUNTIME_MODE" == "ask" ]]; then
+    fail "Geçersiz --mode değeri: '${CLI_MODE_RAW}'. Desteklenen: local|docker"
+fi
 if [[ "$AUTO_RUNTIME_MODE" != "ask" ]]; then
     APP_RUNTIME_MODE="$AUTO_RUNTIME_MODE"
 fi
 
-AUTO_START_DOCKER_SERVICES="$(normalize_bool "${START_DOCKER_SERVICES:-${START_SERVICES:-}}")"
+AUTO_START_DOCKER_SERVICES="$(normalize_bool "${CLI_START_DOCKER_SERVICES:-${START_DOCKER_SERVICES:-${START_SERVICES:-}}}")"
 [[ -z "$AUTO_START_DOCKER_SERVICES" ]] && AUTO_START_DOCKER_SERVICES="ask"
 
-AUTO_RESET_POSTGRES_VOLUMES="$(normalize_bool "${RESET_DB:-${RESET_POSTGRES_VOLUMES:-}}")"
+AUTO_RESET_POSTGRES_VOLUMES="$(normalize_bool "${CLI_RESET_POSTGRES_VOLUMES:-${RESET_DB:-${RESET_POSTGRES_VOLUMES:-}}}")"
 [[ -z "$AUTO_RESET_POSTGRES_VOLUMES" ]] && AUTO_RESET_POSTGRES_VOLUMES="ask"
 
-AUTO_ENV_TYPE="$(resolve_env_type_choice "${ENV_TYPE:-${SIDAR_ENV_TYPE:-}}")"
-AUTO_OPEN_VSCODE="$(normalize_bool "${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}")"
+AUTO_ENV_TYPE="$(resolve_env_type_choice "${CLI_ENV_RAW:-${ENV_TYPE:-${SIDAR_ENV_TYPE:-}}}")"
+if [[ -n "$CLI_ENV_RAW" && "$AUTO_ENV_TYPE" == "ask" ]]; then
+    fail "Geçersiz --env değeri: '${CLI_ENV_RAW}'. Desteklenen: development|production"
+fi
+AUTO_OPEN_VSCODE="$(normalize_bool "${CLI_OPEN_VSCODE:-${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}}")"
 [[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
