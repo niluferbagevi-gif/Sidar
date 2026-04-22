@@ -179,6 +179,8 @@ def test_append_and_serialize_room_data(monkeypatch):
     web_server._append_room_telemetry(room, {"content": "pii123", "error": "boom123"}, limit=1)
     assert room.telemetry[0]["content"] == "pii***"
     assert room.telemetry[0]["error"] == "boom***"
+    web_server._append_room_telemetry(room, {"event": "noop"}, limit=1)
+    assert room.telemetry == [{"event": "noop"}]
 
     serialized = web_server._serialize_collaboration_room(room)
     assert serialized["participants"][0]["display_name"] == "Alpha"
@@ -305,6 +307,14 @@ async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
 
     assert cancelled["value"] is True
     assert "team:cleanup" not in web_server._collaboration_rooms
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_returns_when_room_not_found():
+    websocket = _DummyWebSocket()
+    setattr(websocket, "_sidar_room_id", "team:missing")
+    await web_server._leave_collaboration_room(websocket)
+    assert getattr(websocket, "_sidar_room_id") == ""
 
 
 def test_list_child_ollama_pids_parses_ps_output_without_psutil(monkeypatch):
@@ -911,6 +921,75 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
     assert cleanup["redis"] == 1
     assert cleanup["shutdown"] == 1
 
+
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_handles_blank_prompt_and_timeout_dispatch(monkeypatch):
+    stop_event = asyncio.Event()
+    infos: list[tuple] = []
+
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
+    monkeypatch.setattr(web_server.logger, "info", lambda *args, **kwargs: infos.append(args))
+    await web_server._autonomous_cron_loop(stop_event)
+    assert any("boş" in str(item[0]) for item in infos)
+
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "Run autonomous check")
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 5)
+
+    dispatch_calls: list[dict] = []
+    wait_calls = {"count": 0}
+
+    async def _fake_dispatch(**kwargs):
+        dispatch_calls.append(kwargs)
+        return {"trigger_id": "tri-1"}
+
+    async def _fake_wait_for(awaitable, timeout):
+        wait_calls["count"] += 1
+        if wait_calls["count"] == 1:
+            raise asyncio.TimeoutError
+        stop_event.set()
+        return True
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _fake_dispatch)
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _fake_wait_for)
+    await web_server._autonomous_cron_loop(stop_event)
+
+    assert dispatch_calls
+    assert dispatch_calls[0]["payload"]["interval_seconds"] == 30
+    assert dispatch_calls[0]["meta"] == {"mode": "autonomous_cron"}
+
+
+@pytest.mark.asyncio
+async def test_nightly_memory_loop_disabled_and_timeout_cycle(monkeypatch):
+    stop_event = asyncio.Event()
+    infos: list[tuple] = []
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
+    monkeypatch.setattr(web_server.logger, "info", lambda *args, **kwargs: infos.append(args))
+    await web_server._nightly_memory_loop(stop_event)
+    assert any("devre dışı" in str(item[0]) for item in infos)
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 60)
+
+    wait_calls = {"count": 0}
+    run_calls: list[str] = []
+
+    class _Agent:
+        async def run_nightly_memory_maintenance(self, *, reason: str):
+            run_calls.append(reason)
+            return {"status": "ok"}
+
+    async def _fake_wait_for(awaitable, timeout):
+        wait_calls["count"] += 1
+        if wait_calls["count"] == 1:
+            raise asyncio.TimeoutError
+        stop_event.set()
+        return True
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _fake_wait_for)
+    await web_server._nightly_memory_loop(stop_event)
+    assert run_calls == ["nightly_loop"]
 
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
     with pytest.raises(HTTPException):
@@ -1659,7 +1738,9 @@ def test_contracts_import_fallback_defines_dataclasses(monkeypatch):
     assert trigger.protocol == "trigger.v1"
     assert feedback.protocol == "action_feedback.v1"
     assert forced.normalize_federation_protocol(forced.LEGACY_FEDERATION_PROTOCOL_V1) == "federation.v1"
+    assert forced.normalize_federation_protocol("custom.v2") == "custom.v2"
     assert forced.derive_correlation_id("", None, "corr-1") == "corr-1"
+    assert forced.derive_correlation_id("", None, "   ") == ""
     assert isinstance(mod.LEGACY_FEDERATION_PROTOCOL_V1, str)
 
 
