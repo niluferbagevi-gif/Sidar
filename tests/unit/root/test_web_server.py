@@ -915,6 +915,99 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
     assert cleanup["shutdown"] == 1
 
 
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
+
+    logs: list[str] = []
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+
+    stop_event = asyncio.Event()
+    await web_server._autonomous_cron_loop(stop_event)
+
+    assert any("prompt boş" in item for item in logs)
+
+
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "Durum kontrolü yap")
+
+    class _StopAfterFirstTimeout:
+        def __init__(self):
+            self.calls = 0
+
+        def is_set(self):
+            return self.calls >= 2
+
+        async def wait(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise asyncio.TimeoutError()
+            return True
+
+    async def _wait_for(awaitable, timeout):
+        return await awaitable
+
+    calls = {"dispatch": 0, "warn": []}
+
+    async def _dispatch(**_kwargs):
+        calls["dispatch"] += 1
+        raise RuntimeError("cron boom")
+
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: calls["warn"].append(msg % args if args else msg))
+
+    await web_server._autonomous_cron_loop(_StopAfterFirstTimeout())
+
+    assert calls["dispatch"] == 1
+    assert any("tetikleme hatası" in item for item in calls["warn"])
+
+
+@pytest.mark.asyncio
+async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
+    logs: list[str] = []
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+    await web_server._nightly_memory_loop(asyncio.Event())
+    assert any("devre dışı" in item for item in logs)
+
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 1)
+
+    class _StopAfterFirstTimeout:
+        def __init__(self):
+            self.calls = 0
+
+        def is_set(self):
+            return self.calls >= 2
+
+        async def wait(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise asyncio.TimeoutError()
+            return True
+
+    async def _wait_for(awaitable, timeout):
+        return await awaitable
+
+    warns: list[str] = []
+
+    class _Agent:
+        async def run_nightly_memory_maintenance(self, reason):
+            assert reason == "nightly_loop"
+            raise RuntimeError("nightly boom")
+
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warns.append(msg % args if args else msg))
+
+    await web_server._nightly_memory_loop(_StopAfterFirstTimeout())
+    assert any("maintenance hatası" in item for item in warns)
+
+
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
     with pytest.raises(HTTPException):
         web_server._get_plugin_marketplace_entry("unknown")
@@ -4216,3 +4309,70 @@ async def test_execute_swarm_pipeline_parallel_and_validation(monkeypatch):
     with pytest.raises(HTTPException) as bad_exc:
         await web_server.execute_swarm(bad_payload, user=user)
     assert bad_exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
+    added: list[object] = []
+    pending_items = [SimpleNamespace(to_dict=lambda: {"request_id": "r1"})]
+
+    class _Store:
+        async def pending(self):
+            return pending_items
+
+        async def add(self, request):
+            added.append(request)
+
+    class _Gate:
+        timeout = 42
+
+        async def respond(self, request_id, approved, decided_by, rejection_reason):
+            if request_id == "missing":
+                return None
+            return SimpleNamespace(
+                request_id=request_id,
+                decision=SimpleNamespace(value="approved" if approved else "rejected"),
+            )
+
+    async def _notify(_req):
+        return None
+
+    monkeypatch.setattr(web_server, "get_hitl_store", lambda: _Store())
+    monkeypatch.setattr(web_server, "get_hitl_gate", lambda: _Gate())
+    monkeypatch.setitem(
+        sys.modules,
+        "core.hitl",
+        SimpleNamespace(
+            HITLRequest=lambda **kwargs: SimpleNamespace(**kwargs),
+            notify=_notify,
+            get_hitl_store=lambda: _Store(),
+        ),
+    )
+
+    user = SimpleNamespace(username="ada")
+    pending = await web_server.hitl_pending(user=user)
+    assert pending.status_code == 200
+    assert b'"count":1' in pending.body
+
+    created = await web_server.hitl_create_request(
+        {"action": "deploy", "description": "Prod deploy", "payload": {"env": "prod"}},
+        user=user,
+    )
+    assert created.status_code == 200
+    assert added
+
+    approved = await web_server.hitl_respond(
+        "req-1",
+        payload=web_server._HITLRespondRequest(approved=True, decided_by="", rejection_reason=""),
+        user=user,
+    )
+    assert approved.status_code == 200
+    assert b'"decision":"approved"' in approved.body
+
+    with pytest.raises(HTTPException) as exc_info:
+        await web_server.hitl_respond(
+            "missing",
+            payload=web_server._HITLRespondRequest(approved=False, decided_by="op", rejection_reason="no"),
+            user=user,
+        )
+    assert exc_info.value.status_code == 404
