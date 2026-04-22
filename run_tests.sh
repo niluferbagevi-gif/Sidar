@@ -82,11 +82,24 @@ PY
   if ! python - <<'PY' >/dev/null 2>&1
 import coverage  # noqa: F401
 import pytest_cov  # noqa: F401
+import pytest_asyncio  # noqa: F401
 PY
   then
-    echo "❌ Coverage quality gate için gerekli modüller eksik: coverage ve/veya pytest-cov."
-    BACKEND_EXIT_CODE=1
-    return
+    echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. Proje mimarisine göre otomatik kuruluyor..."
+
+    if command -v uv >/dev/null 2>&1; then
+      echo "ℹ️ 'uv' tespit edildi, dev bağımlılıkları senkronize ediliyor..."
+      uv sync --extra dev
+    else
+      echo "ℹ️ 'uv' bulunamadı, 'pip' ile dev bağımlılıkları kuruluyor..."
+      pip install -e ".[dev]"
+    fi
+
+    if ! python -c "import pytest_asyncio" >/dev/null 2>&1; then
+      echo "❌ Geliştirici bağımlılıklarının otomatik kurulumu başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return
+    fi
   fi
 
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
