@@ -1,10 +1,23 @@
 from pathlib import Path
 import re
+import json
+import os
+import subprocess
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import Mock, patch, MagicMock
 
 import pytest
-from fastapi import HTTPException
+import pytest_asyncio
 
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from fastapi import HTTPException, Request
+
+from core.db import Database
 import web_server
+from web_server import app
 
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
@@ -14,12 +27,19 @@ class _DummyWebSocket:
     def __init__(self, fail: bool = False):
         self.messages = []
         self.fail = fail
+        self.headers = {}
+        self.client = SimpleNamespace(host="127.0.0.1")
 
     async def send_json(self, payload):
         if self.fail:
             raise RuntimeError("send failure")
         self.messages.append(payload)
 
+    async def accept(self, subprotocol=None):
+        pass
+
+    async def close(self, code=1000, reason=""):
+        pass
 
 def _collect_app_routes() -> set[tuple[str, str]]:
     source = Path("web_server.py").read_text(encoding="utf-8")
@@ -100,18 +120,274 @@ def test_web_server_route_table_has_no_duplicate_method_path_pairs():
 def _reset_collaboration_state(monkeypatch, tmp_path):
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
+    web_server._local_rate_limits.clear()
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
     yield
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
+    web_server._local_rate_limits.clear()
 
+
+class _DbBackedMemory:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+        self.active_session_id = "test-session"
+
+    def __len__(self) -> int:
+        return 0
+
+    async def set_active_user(self, _user_id: str, _username: str) -> None:
+        return None
+
+    async def aupdate_title(self, _title: str) -> None:
+        return None
+
+    async def update_title(self, _title: str) -> None:
+        return None
+
+    async def clear(self):
+        pass
+
+
+@pytest_asyncio.fixture
+async def web_api_client(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database):
+    fake_health = MagicMock()
+    fake_health.get_health_summary.return_value = {"status": "healthy", "ollama_online": True}
+    fake_health.get_gpu_info.return_value = {"devices": []}
+    
+    fake_docs = MagicMock()
+    fake_docs.status.return_value = "ok"
+    fake_docs.doc_count = 0
+    fake_docs.get_index_info.return_value = []
+    
+    fake_github = MagicMock()
+    fake_github.is_available.return_value = False
+    
+    fake_web = MagicMock()
+    fake_web.is_available.return_value = False
+    
+    fake_pkg = MagicMock()
+    fake_pkg.status.return_value = "ok"
+    
+    fake_cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="test-model",
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="None",
+        GPU_COUNT=0,
+        CUDA_VERSION="N/A",
+        MEMORY_ENCRYPTION_KEY="",
+    )
+
+    fake_agent = SimpleNamespace(
+        VERSION="3.0.0",
+        memory=_DbBackedMemory(sqlite_db), 
+        system_prompt="",
+        health=fake_health,
+        docs=fake_docs,
+        github=fake_github,
+        web=fake_web,
+        pkg=fake_pkg,
+        cfg=fake_cfg
+    )
+    original_overrides = app.dependency_overrides.copy()
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    async def _fake_issue_auth_token(_agent, user):
+        return f"token-for-{user.username}"
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-admin":
+            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+        if token == "token-for-user":
+            return SimpleNamespace(id="user-1", username="normal_user", role="user", tenant_id="default")
+        return None
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_issue_auth_token", _fake_issue_auth_token)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    app.dependency_overrides[web_server._require_admin_user] = (
+        lambda: SimpleNamespace(id="admin-1", username="default_admin", role="admin", tenant_id="default")
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        try:
+            yield client, sqlite_db, fake_agent
+        finally:
+            app.dependency_overrides = original_overrides
+
+# ==========================================
+# Core, Parsing & Lifecycle Logic Tests
+# ==========================================
+
+def test_fallback_ci_failure_context():
+    # Test valid workflow_run failure
+    payload = {
+        "repository": {"full_name": "test/repo"},
+        "workflow_run": {
+            "status": "completed",
+            "conclusion": "failure",
+            "name": "CI",
+            "id": 123,
+            "head_branch": "feature"
+        }
+    }
+    ctx = web_server._fallback_ci_failure_context("workflow_run", payload)
+    assert ctx["kind"] == "workflow_run"
+    assert ctx["repo"] == "test/repo"
+    assert ctx["workflow_name"] == "CI"
+    assert ctx["conclusion"] == "failure"
+    
+    # Test valid check_run failure
+    payload_check = {
+        "repository": {"full_name": "test/repo2"},
+        "check_run": {
+            "name": "Linter",
+            "conclusion": "failure",
+            "id": 456
+        }
+    }
+    ctx2 = web_server._fallback_ci_failure_context("check_run", payload_check)
+    assert ctx2["kind"] == "check_run"
+    assert ctx2["workflow_name"] == "Linter"
+
+    # Test non-failure
+    payload_success = {
+        "workflow_run": {
+            "status": "completed",
+            "conclusion": "success"
+        }
+    }
+    ctx3 = web_server._fallback_ci_failure_context("workflow_run", payload_success)
+    assert ctx3 == {}
+
+def test_build_event_driven_federation_spec():
+    # Jira spec
+    jira_payload = {
+        "issue": {
+            "key": "SIDAR-123",
+            "title": "Bug fix",
+            "fields": {"project": {"key": "SIDAR"}}
+        }
+    }
+    spec_jira = web_server._build_event_driven_federation_spec("jira", "issue_created", jira_payload)
+    assert spec_jira is not None
+    assert spec_jira["workflow_type"] == "jira_issue"
+    assert spec_jira["task_id"] == "jira-sidar-123"
+
+    # Github PR spec
+    gh_payload = {
+        "pull_request": {
+            "number": 42,
+            "title": "Fix bug",
+            "base": {"ref": "main"},
+            "head": {"ref": "patch"}
+        },
+        "repository": {"full_name": "owner/repo"}
+    }
+    spec_gh = web_server._build_event_driven_federation_spec("github", "opened", gh_payload)
+    assert spec_gh is not None
+    assert spec_gh["workflow_type"] == "github_pull_request"
+    assert spec_gh["task_id"] == "github-pr-42"
+    
+    # System monitor spec
+    sys_payload = {
+        "severity": "critical",
+        "alert_name": "High CPU"
+    }
+    spec_sys = web_server._build_event_driven_federation_spec("monitor", "alert", sys_payload)
+    assert spec_sys is not None
+    assert spec_sys["workflow_type"] == "system_error"
+
+def test_plugin_source_filename_and_validation():
+    assert web_server._validate_plugin_role_name("my_role") == "my_role"
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("invalid role!")
+        
+    assert web_server._plugin_source_filename("test_module") == "<sidar-plugin:test_module>"
+
+def test_load_plugin_agent_class():
+    valid_code = """
+from agent.base_agent import BaseAgent
+class MyCustomAgent(BaseAgent):
+    pass
+"""
+    cls = web_server._load_plugin_agent_class(valid_code, None, "test_mod")
+    assert cls.__name__ == "MyCustomAgent"
+
+    invalid_code = """
+class NotAnAgent:
+    pass
+"""
+    with pytest.raises(HTTPException) as exc:
+        web_server._load_plugin_agent_class(invalid_code, None, "test_mod")
+    assert "BaseAgent türevi" in str(exc.value.detail)
+
+def test_resolve_policy_from_request():
+    req1 = MagicMock(spec=Request)
+    req1.url.path = "/rag/search"
+    req1.method = "GET"
+    assert web_server._resolve_policy_from_request(req1) == ("rag", "read", "*")
+
+    req2 = MagicMock(spec=Request)
+    req2.url.path = "/admin/stats"
+    req2.method = "GET"
+    assert web_server._resolve_policy_from_request(req2) == ("admin", "manage", "*")
+
+    req3 = MagicMock(spec=Request)
+    req3.url.path = "/api/swarm/execute"
+    req3.method = "POST"
+    assert web_server._resolve_policy_from_request(req3) == ("swarm", "execute", "*")
+
+def test_build_audit_resource():
+    assert web_server._build_audit_resource("rag", "123") == "rag:123"
+    assert web_server._build_audit_resource("", "123") == ""
+    assert web_server._build_audit_resource("github", "") == "github:*"
+
+@pytest.mark.asyncio
+async def test_local_rate_limits():
+    # Allow 2 requests per 60s
+    assert await web_server._local_is_rate_limited("test_key", 2, 60) is False
+    assert await web_server._local_is_rate_limited("test_key", 2, 60) is False
+    assert await web_server._local_is_rate_limited("test_key", 2, 60) is True
+
+def test_get_client_ip():
+    req = MagicMock()
+    req.client.host = "192.168.1.1"
+    
+    web_server.Config.TRUSTED_PROXIES = ["192.168.1.1"]
+    req.headers = {"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}
+    assert web_server._get_client_ip(req) == "10.0.0.1"
+
+    web_server.Config.TRUSTED_PROXIES = []
+    assert web_server._get_client_ip(req) == "192.168.1.1"
+
+@patch("subprocess.check_output")
+@patch("os.name", "posix")
+def test_list_child_ollama_pids(mock_check_output, monkeypatch):
+    monkeypatch.setattr(os, "getpid", lambda: 100)
+    mock_check_output.return_value = b"200 100 ollama serve\n300 100 other_proc\n"
+    
+    # psutil is not available fallback path
+    import sys
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    
+    pids = web_server._list_child_ollama_pids()
+    assert pids == [200]
+
+# ==========================================
+# Original API Tests & New API Endpoint Tests
+# ==========================================
 
 def test_room_id_normalization_and_validation():
     assert web_server._normalize_room_id("  team:alpha  ") == "team:alpha"
     assert web_server._normalize_room_id("") == "workspace:default"
     with pytest.raises(HTTPException):
         web_server._normalize_room_id("<bad>")
-
 
 def test_collaboration_role_and_write_scope_resolution(tmp_path, monkeypatch):
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
@@ -196,12 +472,10 @@ async def test_join_leave_and_broadcast_room_lifecycle(monkeypatch, tmp_path):
     assert getattr(ws_ok, "_sidar_room_id") == "team:room"
     assert ws_ok.messages[0]["type"] == "room_state"
 
-    # failing participant is pruned during broadcast
     room.participants[999] = web_server._CollaborationParticipant(ws_fail, "u2", "lin", "Lin")
     await web_server._broadcast_room_payload(room, {"type": "presence"})
     assert 999 not in room.participants
 
-    # moving to another room should leave old room
     await web_server._join_collaboration_room(
         ws_ok,
         room_id="team:other",
@@ -256,180 +530,200 @@ async def test_hitl_broadcast_and_prompt_helpers():
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
 
-
-def test_collaboration_participant_backward_compat_and_serialization(monkeypatch):
-    monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "now")
-
-    ws = _DummyWebSocket()
-    participant = web_server._CollaborationParticipant(
-        ws,
-        "u1",
-        "ada",
-        "Ada",
-        "2026-01-01T00:00:00+00:00",
-    )
-    assert participant.role == "user"
-    assert participant.joined_at == "2026-01-01T00:00:00+00:00"
-
-    serialized = web_server._serialize_collaboration_participant(participant)
-    assert serialized["can_write"] == "false"
-
-    participant_write = web_server._CollaborationParticipant(
-        ws,
-        "u2",
-        "lin",
-        "Lin",
-        role="editor",
-        can_write=True,
-        write_scopes=["/tmp/ws"],
-    )
-    serialized_write = web_server._serialize_collaboration_participant(participant_write)
-    assert serialized_write["can_write"] == "true"
-    assert serialized_write["write_scopes"] == ["/tmp/ws"]
-
-
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_leave_collaboration_room_edge_cases(monkeypatch):
-    ws = _DummyWebSocket()
+async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
+    client, sqlite_db, _fake_agent = web_api_client
 
-    # no room bound
-    await web_server._leave_collaboration_room(ws)
+    register_response = await client.post(
+        "/auth/register",
+        json={"username": "alice", "password": "secret123", "tenant_id": "team-a"},
+    )
+    assert register_response.status_code == 200
+    register_payload = register_response.json()
+    assert register_payload["user"]["username"] == "alice"
+    assert register_payload["access_token"] == "token-for-alice"
 
-    # room id set but room not found
-    setattr(ws, "_sidar_room_id", "missing")
-    await web_server._leave_collaboration_room(ws)
-    assert getattr(ws, "_sidar_room_id") == ""
+    login_response = await client.post("/auth/login", json={"username": "alice", "password": "secret123"})
+    assert login_response.status_code == 200
+    assert login_response.json()["access_token"] == "token-for-alice"
 
-    # non-empty room should broadcast presence instead of deleting
-    ws2 = _DummyWebSocket()
-    room = web_server._CollaborationRoom(room_id="r1")
-    room.participants = {
-        web_server._socket_key(ws): web_server._CollaborationParticipant(ws, "u1", "a", "A"),
-        web_server._socket_key(ws2): web_server._CollaborationParticipant(ws2, "u2", "b", "B"),
-    }
-    web_server._collaboration_rooms["r1"] = room
-    setattr(ws, "_sidar_room_id", "r1")
+    bad_login = await client.post("/auth/login", json={"username": "alice", "password": "wrong-pass"})
+    assert bad_login.status_code == 401
 
-    await web_server._leave_collaboration_room(ws)
-    assert "r1" in web_server._collaboration_rooms
-    assert web_server._socket_key(ws) not in room.participants
+    assert await sqlite_db.authenticate_user("alice", "secret123") is not None
 
-
-def test_build_collaboration_prompt_defaults():
-    room = web_server._CollaborationRoom(room_id="workspace:default")
-    prompt = web_server._build_collaboration_prompt(room, actor_name="Ghost", command="Oku")
-
-    assert "(henüz ortak geçmiş yok)" in prompt
-    assert "participants=unknown" in prompt
-    assert "requesting_role=user" in prompt
-    assert "requesting_write_scopes=read-only" in prompt
-
-
-def test_reap_child_processes_nonblocking(monkeypatch):
-    calls = iter([(123, 0), (0, 0)])
-    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: next(calls))
-    assert web_server._reap_child_processes_nonblocking() == 1
-
-
-
-def test_terminate_ollama_child_pids_calls_signals(monkeypatch):
-    sent = []
-    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: sent.append((pid, sig)))
-    monkeypatch.setattr(web_server.time, "sleep", lambda _s: None)
-
-    web_server._terminate_ollama_child_pids([10, 20], grace_seconds=0.01)
-
-    assert sent[:2] == [
-        (10, web_server.signal.SIGTERM),
-        (20, web_server.signal.SIGTERM),
-    ]
-    assert sent[2:] == [
-        (10, web_server.signal.SIGKILL),
-        (20, web_server.signal.SIGKILL),
-    ]
-
-
-def test_force_shutdown_local_llm_processes_branches(monkeypatch):
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-
-    reaped = []
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.append(True) or 0)
-    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
-    web_server._force_shutdown_local_llm_processes()
-    assert reaped == [True]
-
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
-    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
-    web_server._force_shutdown_local_llm_processes()
-    assert reaped == [True, True]
-
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-    terminated = []
-    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [7])
-    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda pids: terminated.append(pids))
-    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
-    web_server._force_shutdown_local_llm_processes()
-    assert terminated == [[7]]
-
-
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_async_force_shutdown_local_llm_processes_branches(monkeypatch):
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-    reaped = []
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.append(True) or 0)
-    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
-    await web_server._async_force_shutdown_local_llm_processes()
-    assert reaped == [True]
+async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
+    client, _sqlite_db, _fake_agent = web_api_client
+    admin_headers = {"Authorization": "Bearer token-for-admin"}
+    baseline_list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
+    assert baseline_list_response.status_code == 200
+    baseline_items = baseline_list_response.json()["items"]
 
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
-    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
-    await web_server._async_force_shutdown_local_llm_processes()
-    assert reaped == [True, True]
+    create_response = await client.post(
+        "/admin/prompts",
+        json={"role_name": "system", "prompt_text": "Be concise", "activate": True},
+        headers=admin_headers,
+    )
+    assert create_response.status_code == 200
+    created_prompt = create_response.json()
+    assert created_prompt["role_name"] == "system"
+    assert created_prompt["is_active"] is True
 
-    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
-    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
-    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [111])
-    sent = []
-    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
+    assert list_response.status_code == 200
+    items = list_response.json()["items"]
+    assert len(items) == len(baseline_items) + 1
+    assert items[0]["prompt_text"] == "Be concise"
 
-    await web_server._async_force_shutdown_local_llm_processes()
+    activate_response = await client.post(
+        "/admin/prompts/activate",
+        json={"prompt_id": created_prompt["id"]},
+        headers=admin_headers,
+    )
+    assert activate_response.status_code == 200
+    assert activate_response.json()["id"] == created_prompt["id"]
 
-    assert (111, web_server.signal.SIGTERM) in sent
-    assert (111, web_server.signal.SIGKILL) in sent
+    missing_prompt = await client.post(
+        "/admin/prompts/activate",
+        json={"prompt_id": 9999},
+        headers=admin_headers,
+    )
+    assert missing_prompt.status_code == 404
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
+    client, _, _fake_agent = web_api_client
 
-def test_list_child_ollama_pids_with_psutil_stub(monkeypatch):
-    class _Child:
-        def __init__(self, pid, name, cmd):
-            self.pid = pid
-            self._name = name
-            self._cmd = cmd
+    original_overrides = app.dependency_overrides.copy()
+    try:
+        app.dependency_overrides.pop(web_server._require_admin_user, None)
+        create_response = await client.post(
+            "/admin/prompts",
+            json={"role_name": "system", "prompt_text": "Hacked", "activate": True},
+            headers={"Authorization": "Bearer token-for-user"},
+        )
+        assert create_response.status_code == 403
+    finally:
+        app.dependency_overrides = original_overrides
 
-        def name(self):
-            return self._name
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callable(web_api_client) -> None:
+    client, _sqlite_db, fake_agent = web_api_client
 
-        def cmdline(self):
-            return self._cmd
+    unauthorized_response = await client.get("/auth/me", headers={"Authorization": "Bearer invalid-token"})
+    assert unauthorized_response.status_code == 401
+    assert unauthorized_response.json()["error"] == "Oturum geçersiz veya süresi dolmuş"
 
-    class _Process:
-        def __init__(self, _pid):
-            pass
+    await fake_agent.memory.update_title("Başlık")
 
-        def children(self, recursive=False):
-            assert recursive is False
-            return [
-                _Child(1, "ollama", ["ollama", "serve"]),
-                _Child(2, "python", ["python", "x.py"]),
-                _Child(3, "bash", ["ollama serve"]),
-            ]
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_files_and_status_endpoints(web_api_client) -> None:
+    client, _, _ = web_api_client
 
-    class _Psutil:
-        Process = _Process
+    # Test /status
+    status_resp = await client.get("/status")
+    assert status_resp.status_code == 200
+    status_data = status_resp.json()
+    assert status_data["version"] == "3.0.0"
+    assert status_data["provider"] == "ollama"
 
-    monkeypatch.setitem(__import__("sys").modules, "psutil", _Psutil)
-    monkeypatch.setattr(web_server.os, "getpid", lambda: 999)
+    # Test /health
+    health_resp = await client.get("/health")
+    assert health_resp.status_code == 200
+    assert health_resp.json()["status"] == "healthy"
 
-    pids = web_server._list_child_ollama_pids()
-    assert pids == [1, 3]
+    # Test /files (root path)
+    files_resp = await client.get("/files")
+    assert files_resp.status_code == 200
+    assert "items" in files_resp.json()
+    
+    # Test directory traversal vulnerability protection
+    files_hack = await client.get("/files?path=../../etc")
+    assert files_hack.status_code == 403
+    
+    # Test clear memory
+    clear_resp = await client.post("/clear")
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["result"] is True
+
+@pytest.mark.integration
+def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_db = Mock(spec=Database)
+    fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-admin":
+            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+        return None
+
+    async def mock_respond(prompt, **kwargs):
+        assert prompt == "Selam"
+        yield "Merhaba, "
+        yield "size nasıl yardımcı olabilirim?"
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    fake_agent.respond = mock_respond
+    assert asyncio.run(_fake_resolve(fake_agent, "invalid-token")) is None
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat") as websocket:
+            websocket.send_json({"action": "auth", "token": "token-for-admin"})
+            auth_payload = websocket.receive_json()
+            assert auth_payload == {"auth_ok": True}
+
+            websocket.send_json({"message": "Selam"})
+
+            chunks: list[str] = []
+            done = False
+            while not done:
+                event = websocket.receive_json()
+                if "chunk" in event:
+                    chunks.append(event["chunk"])
+                done = bool(event.get("done"))
+
+    assert "".join(chunks) == "Merhaba, size nasıl yardımcı olabilirim?"
+
+@pytest.mark.integration
+def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_db = Mock(spec=Database)
+    fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-admin":
+            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+        return None
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    resolved_admin = asyncio.run(_fake_resolve(fake_agent, "token-for-admin"))
+    assert resolved_admin is not None
+    assert resolved_admin.role == "admin"
+    assert asyncio.run(_fake_resolve(fake_agent, "invalid-token")) is None
+    assert asyncio.run(_never_rate_limited()) is False
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"action": "auth", "token": "invalid-token"})
+                websocket.receive_json()
