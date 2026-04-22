@@ -1362,3 +1362,207 @@ async def test_github_rag_todo_clear_and_level_endpoints(monkeypatch, tmp_path):
     assert b'"result":true' in clear.body
     assert clear_calls["n"] == 1
     assert b'"current_level":"sandbox"' in level.body
+
+
+@pytest.mark.asyncio
+async def test_vision_endpoints_cover_success_and_import_error(monkeypatch):
+    import sys
+    import types
+
+    class _Pipeline:
+        def __init__(self, llm, _cfg):
+            self.llm = llm
+
+        async def analyze(self, **kwargs):
+            return {"mode": "analyze", **kwargs}
+
+        async def mockup_to_code(self, **kwargs):
+            return f"code:{kwargs['framework']}"
+
+    fake_mod = types.ModuleType("core.vision")
+    fake_mod.VisionPipeline = _Pipeline
+    fake_mod.build_analyze_prompt = lambda analysis_type: f"prompt:{analysis_type}"
+    monkeypatch.setitem(sys.modules, "core.vision", fake_mod)
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: SimpleNamespace(llm="fake-llm"))
+
+    analyze_req = web_server._VisionAnalyzeRequest(image_base64="abc", analysis_type="ui")
+    analyze_res = await web_server.api_vision_analyze(analyze_req)
+    assert analyze_res.status_code == 200
+    assert b'"mode":"analyze"' in analyze_res.body
+    assert b'"prompt":"prompt:ui"' in analyze_res.body
+
+    mockup_req = web_server._VisionMockupRequest(image_base64="abc", framework="react")
+    mockup_res = await web_server.api_vision_mockup(mockup_req)
+    assert mockup_res.status_code == 200
+    assert b'"code":"code:react"' in mockup_res.body
+
+    monkeypatch.delitem(sys.modules, "core.vision", raising=False)
+    with pytest.raises(HTTPException):
+        await web_server.api_vision_analyze(analyze_req)
+
+
+@pytest.mark.asyncio
+async def test_entity_and_feedback_store_endpoints(monkeypatch):
+    class _EntityMem:
+        async def initialize(self):
+            return None
+
+        async def upsert(self, **_):
+            return None
+
+        async def get_profile(self, **_):
+            return {"name": "Ada"}
+
+        async def delete(self, **_):
+            return True
+
+    class _Feedback:
+        async def initialize(self):
+            return None
+
+        async def record(self, **_):
+            return None
+
+        async def stats(self):
+            return {"count": 1}
+
+    web_server._entity_memory_instance = _EntityMem()
+    upsert = await web_server.api_entity_upsert(
+        web_server._EntityUpsertRequest(user_id="u1", key="skill", value="python", ttl_days=7)
+    )
+    get_profile = await web_server.api_entity_get_profile("u1")
+    delete = await web_server.api_entity_delete("u1", "skill")
+    assert upsert.status_code == 200
+    assert b'"success":true' in get_profile.body
+    assert b'"name":"Ada"' in get_profile.body
+    assert b'"success":true' in delete.body
+
+    web_server._feedback_store_instance = _Feedback()
+    record = await web_server.api_feedback_record(
+        web_server._FeedbackRecordRequest(user_id="u1", prompt="p", response="r", rating=5)
+    )
+    stats = await web_server.api_feedback_stats()
+    assert record.status_code == 200
+    assert b'"count":1' in stats.body
+
+
+@pytest.mark.asyncio
+async def test_slack_jira_and_teams_endpoints_error_and_success(monkeypatch):
+    class _Slack:
+        def __init__(self, available=True):
+            self.available = available
+
+        def is_available(self):
+            return self.available
+
+        async def send_message(self, **_):
+            return True, None
+
+        async def list_channels(self):
+            return True, ["general"], None
+
+    web_server._slack_mgr_instance = _Slack(available=False)
+    with pytest.raises(HTTPException):
+        await web_server.api_slack_send(web_server._SlackSendRequest(text="x"))
+    web_server._slack_mgr_instance = _Slack(available=True)
+    slack_send = await web_server.api_slack_send(web_server._SlackSendRequest(text="x", channel="#g"))
+    slack_channels = await web_server.api_slack_channels()
+    assert slack_send.status_code == 200
+    assert b'"general"' in slack_channels.body
+
+    class _Jira:
+        def is_available(self):
+            return True
+
+        async def create_issue(self, **kwargs):
+            return True, {"key": f"{kwargs['project_key']}-1"}, None
+
+        async def search_issues(self, **_):
+            return True, [{"key": "SIDAR-1"}], None
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _Jira())
+    jira_create = await web_server.api_jira_create_issue(
+        web_server._JiraCreateRequest(project_key="SIDAR", summary="s")
+    )
+    jira_search = await web_server.api_jira_search_issues("project=SIDAR", max_results=5)
+    assert b'"SIDAR-1"' in jira_create.body
+    assert b'"total":1' in jira_search.body
+
+    class _Teams:
+        def is_available(self):
+            return True
+
+        async def send_message(self, **_):
+            return True, None
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _Teams())
+    teams = await web_server.api_teams_send(web_server._TeamsSendRequest(text="hello", title="t"))
+    assert teams.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
+    class _DB:
+        async def list_marketing_campaigns(self, **_):
+            return [SimpleNamespace(id="1", metadata_json="{}", budget=2.5)]
+
+        async def upsert_marketing_campaign(self, **_):
+            return SimpleNamespace(id="1", metadata_json="{}", budget=2.5)
+
+        async def add_content_asset(self, **_):
+            return SimpleNamespace(id="2", campaign_id="1", content="asset")
+
+        async def add_operation_checklist(self, **_):
+            return SimpleNamespace(id="3", campaign_id="1", items_json='["a"]')
+
+        async def list_content_assets(self, **_):
+            return [SimpleNamespace(id="2", campaign_id="1", content="asset")]
+
+        async def list_operation_checklists(self, **_):
+            return [SimpleNamespace(id="3", campaign_id="1", items_json='["a"]')]
+
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(db=_DB()),
+        get_autonomy_activity=lambda limit=20: [{"id": "a1", "limit": limit}],
+    )
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
+    user = SimpleNamespace(id="u1", tenant_id="t1")
+
+    list_campaigns = await web_server.api_operations_list_campaigns(_user=user)
+    create_campaign = await web_server.api_operations_create_campaign(
+        web_server._CampaignCreateRequest(
+            name="Launch",
+            initial_assets=[web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c")],
+            initial_checklists=[web_server._OperationChecklistCreateRequest(title="todo", items=["a"])],
+        ),
+        _user=user,
+    )
+    assets = await web_server.api_operations_list_assets(1, _user=user)
+    add_asset = await web_server.api_operations_add_asset(
+        1, web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c"), _user=user
+    )
+    checklists = await web_server.api_operations_list_checklists(1, _user=user)
+    add_checklist = await web_server.api_operations_add_checklist(
+        1, web_server._OperationChecklistCreateRequest(title="todo", items=["a"]), _user=user
+    )
+    assert b'"campaigns"' in list_campaigns.body
+    assert b'"assets"' in create_campaign.body
+    assert assets.status_code == 200
+    assert add_asset.status_code == 200
+    assert checklists.status_code == 200
+    assert add_checklist.status_code == 200
+
+    monkeypatch.setattr(
+        web_server,
+        "_dispatch_autonomy_trigger",
+        lambda **kwargs: {"trigger_source": kwargs["trigger_source"], "event_name": kwargs["event_name"]},
+    )
+    wake = await web_server.autonomy_wake(web_server._AutonomyWakeRequest(prompt=" çalış ", source="user"))
+    activity = await web_server.autonomy_activity(limit=7)
+    assert b'"trigger_source":"manual:user"' in wake.body
+    assert b'"limit":7' in activity.body
+
+    monkeypatch.setattr(web_server, "index", lambda: web_server.Response(status_code=500))
+    fallback = await web_server.spa_fallback("deep/link")
+    assert fallback.status_code == 200
+    assert b"fallback" in fallback.body
