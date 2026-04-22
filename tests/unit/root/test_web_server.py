@@ -415,6 +415,83 @@ def test_bind_llm_usage_sink_sets_sink_once(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch):
+    captured = {}
+    persisted = {"calls": []}
+
+    class _Collector:
+        _sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            captured["sink"] = sink
+
+    async def _record_provider_usage_daily(**kwargs):
+        persisted["calls"].append(kwargs)
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)))
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+
+    web_server._bind_llm_usage_sink(agent)
+    sink = captured["sink"]
+
+    sink(SimpleNamespace(user_id="u-1", provider="openai", total_tokens="15"))
+    await asyncio.sleep(0)
+    assert persisted["calls"][0]["user_id"] == "u-1"
+    assert persisted["calls"][0]["tokens_used"] == 15
+
+    debug_logs = []
+    monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+
+    async def _raise_db_error(**_kwargs):
+        raise RuntimeError("db unavailable")
+
+    agent.memory.db.record_provider_usage_daily = _raise_db_error
+    sink(SimpleNamespace(user_id="u-2", provider="openai", total_tokens=3))
+    await asyncio.sleep(0)
+    assert any("LLM usage DB yazımı atlandı" in msg for msg in debug_logs)
+
+
+def test_bind_llm_usage_sink_skips_when_no_running_loop(monkeypatch):
+    captured = {}
+
+    class _Collector:
+        _sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            captured["sink"] = sink
+
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no-loop")))
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+
+    web_server._bind_llm_usage_sink(agent)
+    captured["sink"](SimpleNamespace(user_id="u-1", provider="openai", total_tokens=2))
+
+
+@pytest.mark.asyncio
+async def test_get_agent_initializes_once_and_reuses_singleton(monkeypatch):
+    created = {"count": 0}
+
+    class _FakeAgent:
+        def __init__(self, _cfg):
+            created["count"] += 1
+
+        async def initialize(self):
+            return None
+
+    monkeypatch.setattr(web_server, "SidarAgent", _FakeAgent)
+    monkeypatch.setattr(web_server, "_bind_llm_usage_sink", lambda _agent: None)
+    monkeypatch.setattr(web_server, "_agent", None)
+    monkeypatch.setattr(web_server, "_agent_lock", asyncio.Lock())
+
+    first = await web_server.get_agent()
+    second = await web_server.get_agent()
+
+    assert first is second
+    assert created["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
     class _Agent:
         async def handle_external_trigger(self, trigger):
