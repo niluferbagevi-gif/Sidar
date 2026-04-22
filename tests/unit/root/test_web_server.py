@@ -1581,6 +1581,113 @@ async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
     assert await web_server._redis_is_rate_limited("chat", "1.1.1.1", 1, 60) is True
 
 
+class _ScriptedWebSocket:
+    def __init__(self, *, headers=None, text_messages=None, packets=None, client_host="127.0.0.1"):
+        self.headers = headers or {}
+        self._text_messages = list(text_messages or [])
+        self._packets = list(packets or [])
+        self.client = SimpleNamespace(host=client_host)
+        self.sent = []
+        self.accepted = []
+        self.closed = []
+
+    async def accept(self, subprotocol=None):
+        self.accepted.append(subprotocol)
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+
+    async def close(self, code=1000, reason=""):
+        self.closed.append((code, reason))
+
+    async def receive_text(self):
+        if not self._text_messages:
+            raise web_server.WebSocketDisconnect()
+        item = self._text_messages.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    async def receive(self):
+        if not self._packets:
+            return {"type": "websocket.disconnect"}
+        item = self._packets.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_emits_audio_chunks():
+    class _Agent:
+        async def respond(self, _prompt):
+            for chunk in ["\x00TOOL:search\x00", "\x00THOUGHT:analiz\x00", "Merhaba dünya"]:
+                yield chunk
+
+    class _VoicePipeline:
+        enabled = True
+
+        def buffer_assistant_text(self, _duplex_state, text, flush=False):
+            if not text and not flush:
+                return 1, []
+            return 1, [{"assistant_turn_id": 1, "audio_sequence": 1, "text": text or "flush"}]
+
+        async def synthesize_text(self, text):
+            return {
+                "success": True,
+                "audio_bytes": text.encode("utf-8"),
+                "mime_type": "audio/wav",
+                "provider": "test",
+                "voice": "v1",
+            }
+
+    ws = _ScriptedWebSocket()
+    setattr(ws, "_sidar_voice_pipeline", _VoicePipeline())
+    setattr(ws, "_sidar_voice_duplex_state", SimpleNamespace())
+
+    await web_server._ws_stream_agent_text_response(ws, _Agent(), "selam")
+
+    assert {"tool_call": "search"} in ws.sent
+    assert {"thought": "analiz"} in ws.sent
+    assert any("audio_chunk" in payload for payload in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_closes_when_auth_is_missing(monkeypatch):
+    ws = _ScriptedWebSocket(text_messages=['{"action":"message","message":"merhaba"}'])
+    fake_agent = SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    async def _resolve_agent():
+        return fake_agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted == [None]
+    assert ws.closed and ws.closed[0][0] == 1008
+    assert "Authentication required" in ws.closed[0][1]
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_import_error_closes_connection(monkeypatch):
+    ws = _ScriptedWebSocket()
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            raise ImportError("forced multimodal failure")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    await web_server.websocket_voice(ws)
+
+    assert ws.accepted == [None]
+    assert any(payload.get("error") == "core.multimodal modülü yüklenemedi." for payload in ws.sent)
+    assert ws.closed and ws.closed[0] == (1011, "multimodal unavailable")
+
+
 def _load_web_server_with_import_failures(monkeypatch, module_name: str, fail_rules: set[str]):
     """web_server modülünü seçili import hatalarıyla izole şekilde yükler."""
     import builtins
