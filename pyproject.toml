@@ -200,6 +200,7 @@ filterwarnings = [
   "ignore::pydantic.warnings.PydanticDeprecatedSince20",
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
+  "ignore:invalid escape sequence '\\\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",
   "ignore:invalid escape sequence.*:DeprecationWarning:sentence_transformers.*",
 ]
 log_cli = false
