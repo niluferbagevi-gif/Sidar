@@ -1256,6 +1256,7 @@ for arg in "$@"; do
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
             echo "  --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar"
+            echo "            Not: Etkileşimsiz modda sudo parola sorulamaz; root çalıştırın veya önceden sudo doğrulayın."
             echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
             echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
             echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
@@ -1383,6 +1384,28 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+ensure_noninteractive_sudo_ready() {
+    if [[ "$EUID" -eq 0 ]]; then
+        info "Kurulum root yetkisiyle çalışıyor; sudo parola engeli beklenmiyor."
+        return 0
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
+            fail "Etkileşimsiz kurulum için sudo gerekli ancak sistemde sudo bulunamadı. Kurulumu root olarak başlatın (ör. sudo ./install_sidar.sh)."
+        fi
+        return 0
+    fi
+
+    if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
+        if sudo -n -v >/dev/null 2>&1; then
+            ok "Etkileşimsiz mod için şifresiz/ön-doğrulanmış sudo erişimi hazır."
+        else
+            fail "Sudo parola engeli algılandı. Etkileşimsiz/sessiz kurulum bloke olur. Çözüm: (1) sudo ./install_sidar.sh ile root başlatın, (2) önceden 'sudo -v' çalıştırın, veya (3) gerekli komutlar için NOPASSWD sudo yapılandırın."
+        fi
+    fi
 }
 
 configure_conda_outdated_warning_policy() {
@@ -4723,6 +4746,7 @@ main() {
     banner
     report_repo_lookup_context
     detect_environment
+    ensure_noninteractive_sudo_ready
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
