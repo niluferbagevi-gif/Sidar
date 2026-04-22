@@ -221,4 +221,20 @@ describe("fetchJson — hata yanıtları", () => {
     expect(options.method).toBe("POST");
     expect(options.body).toBe(JSON.stringify({ key: "val" }));
   });
+
+  it("propagates errors thrown while reading response.ok", async () => {
+    const response = {
+      headers: { get: () => "application/json" },
+      json: async () => ({ detail: "ignored" }),
+    };
+
+    Object.defineProperty(response, "ok", {
+      get() {
+        throw new Error("ok değeri okunamadı");
+      },
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(response);
+    await expect(fetchJson("/api/broken-response")).rejects.toThrow("ok değeri okunamadı");
+  });
 });

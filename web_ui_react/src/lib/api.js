@@ -32,12 +32,13 @@ export async function fetchJson(url, options = {}) {
   const isJson = response.headers.get("content-type")?.includes("application/json");
   const payload = isJson ? await response.json() : await response.text();
 
-  if (!response.ok) {
-    const detail = typeof payload === "string"
+  const detail = response.ok
+    ? null
+    : (typeof payload === "string"
       ? payload
-      : payload?.detail || payload?.error || "İstek başarısız oldu";
+      : payload?.detail || payload?.error || "İstek başarısız oldu");
+  if (detail !== null) {
     throw new Error(detail);
   }
-
   return payload;
 }
