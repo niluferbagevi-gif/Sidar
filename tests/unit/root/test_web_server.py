@@ -1910,6 +1910,108 @@ class _JsonRequest:
         return self._payload
 
 
+class _ChatWebSocket:
+    def __init__(self, messages: list[str], headers: dict[str, str] | None = None):
+        self._messages = list(messages)
+        self.headers = headers or {}
+        self.client = SimpleNamespace(host="127.0.0.1")
+        self.sent: list[dict] = []
+        self.accepted: list[str | None] = []
+
+    async def accept(self, subprotocol=None):
+        self.accepted.append(subprotocol)
+
+    async def receive_text(self):
+        if not self._messages:
+            raise web_server.WebSocketDisconnect()
+        return self._messages.pop(0)
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch):
+    ws = _ChatWebSocket([web_server.json.dumps({"action": "noop"})])
+    closed = {}
+
+    async def _close(_websocket, reason):
+        closed["reason"] = reason
+
+    monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close)
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted == [None]
+    assert closed["reason"] == "Authentication required"
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch):
+    user = SimpleNamespace(id="u1", username="ada", role="developer")
+    ws = _ChatWebSocket(
+        [
+            web_server.json.dumps({"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}),
+            web_server.json.dumps({"action": "message", "message": "@sidar   "}),
+            web_server.json.dumps({"action": "message", "message": "hello"}),
+        ],
+        headers={"sec-websocket-protocol": "token-1"},
+    )
+
+    participant = web_server._CollaborationParticipant(
+        ws,
+        "u1",
+        "ada",
+        "Ada",
+        role="developer",
+        can_write=True,
+        write_scopes=["/tmp/workspaces/team/sync"],
+    )
+    room = web_server._CollaborationRoom(room_id="team:sync", participants={web_server._socket_key(ws): participant})
+    broadcast_events: list[dict] = []
+
+    async def _join(*_args, **_kwargs):
+        web_server._collaboration_rooms["team:sync"] = room
+        setattr(ws, "_sidar_room_id", "team:sync")
+        return room
+
+    async def _broadcast(_room, payload):
+        broadcast_events.append(payload)
+
+    async def _resolve_user(*_args, **_kwargs):
+        return user
+
+    async def _set_active_user(*_args, **_kwargs):
+        return None
+
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(set_active_user=_set_active_user),
+    )
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    rate_calls = {"n": 0}
+
+    async def _rate_limited(*_args, **_kwargs):
+        rate_calls["n"] += 1
+        return rate_calls["n"] >= 2
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_join_collaboration_room", _join)
+    monkeypatch.setattr(web_server, "_broadcast_room_payload", _broadcast)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
+
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted == ["token-1"]
+    assert any(event.get("type") == "room_error" for event in broadcast_events)
+    assert any("Hız Sınırı" in payload.get("chunk", "") for payload in ws.sent)
+
 @pytest.mark.asyncio
 async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
     class _DB:
