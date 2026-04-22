@@ -237,3 +237,91 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
             with client.websocket_connect("/ws/chat") as websocket:
                 websocket.send_json({"action": "auth", "token": "invalid-token"})
                 websocket.receive_json()
+
+
+@pytest.mark.integration
+def test_chat_websocket_header_token_auth_and_room_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Memory:
+        active_session_id = None
+
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+    class _Agent:
+        memory = _Memory()
+
+        async def respond(self, _msg):
+            if False:
+                yield ""
+
+        async def _try_multi_agent(self, _prompt):
+            return "ok"
+
+    async def _fake_get_agent():
+        return _Agent()
+
+    async def _fake_resolve(_agent, token):
+        if token == "header-token":
+            return SimpleNamespace(id="u1", username="ada", role="user", tenant_id="default")
+        return None
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat", subprotocols=["header-token"]) as websocket:
+            def _recv_until(expected_type: str, max_attempts: int = 6) -> dict:
+                for _ in range(max_attempts):
+                    event = websocket.receive_json()
+                    if event.get("type") == expected_type:
+                        return event
+                raise AssertionError(f"{expected_type} eventi alınamadı")
+
+            assert websocket.receive_json() == {"auth_ok": True}
+            websocket.send_json({"action": "join_room", "room_id": "team:room-1", "display_name": "Ada"})
+            room_state = _recv_until("room_state")
+            assert room_state["type"] == "room_state"
+
+            websocket.send_json({"message": "@sidar"})
+            room_message = _recv_until("room_message")
+            assert room_message["type"] == "room_message"
+            room_error = _recv_until("room_error")
+            assert room_error["type"] == "room_error"
+            assert "komut bulunamadı" in room_error["error"]
+
+
+@pytest.mark.integration
+def test_chat_websocket_auth_required_and_missing_token_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_db = Mock(spec=Database)
+    fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    async def _fake_resolve(_agent, _token):
+        return None
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "auth yok"})
+                websocket.receive_json()
+
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"action": "auth", "token": ""})
+                websocket.receive_json()
