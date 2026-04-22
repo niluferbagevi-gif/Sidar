@@ -1587,7 +1587,7 @@ class _AgentPluginRegisterRequest(BaseModel):
 
 
 class _PluginMarketplaceInstallRequest(BaseModel):
-    plugin_id: str = Field(..., min_length=2, max_length=64)
+    plugin_id: str = Field(..., min_length=1, max_length=64)
 
 
 class _SwarmTaskRequest(BaseModel):
