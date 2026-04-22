@@ -3837,10 +3837,10 @@ async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_marketplace_http_handlers(monkeypatch):
     monkeypatch.setattr(web_server, "PLUGIN_MARKETPLACE_CATALOG", {
-        "x": {"name": "Plugin X"},
-        "a": {"name": "Plugin A"},
+        "xx": {"name": "Plugin X"},
+        "aa": {"name": "Plugin A"},
     })
-    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"a": {"installed_at": "now"}})
+    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"aa": {"installed_at": "now"}})
     monkeypatch.setattr(
         web_server,
         "_serialize_marketplace_plugin",
@@ -3850,17 +3850,17 @@ async def test_plugin_marketplace_http_handlers(monkeypatch):
     monkeypatch.setattr(web_server, "_uninstall_marketplace_plugin", lambda plugin_id: {"removed": plugin_id})
 
     catalog = await web_server.plugin_marketplace_catalog(_user=SimpleNamespace(role="admin"))
-    assert b'"plugin_id":"a"' in catalog.body
-    assert b'"plugin_id":"x"' in catalog.body
+    assert b'"plugin_id":"aa"' in catalog.body
+    assert b'"plugin_id":"xx"' in catalog.body
 
-    payload = web_server._PluginMarketplaceInstallRequest(plugin_id="a")
+    payload = web_server._PluginMarketplaceInstallRequest(plugin_id="aa")
     install = await web_server.install_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
     reload_res = await web_server.reload_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
-    uninstall = await web_server.uninstall_plugin_marketplace_item("a", _user=SimpleNamespace(role="admin"))
+    uninstall = await web_server.uninstall_plugin_marketplace_item("aa", _user=SimpleNamespace(role="admin"))
 
-    assert install.body == b'{"ok":true,"plugin_id":"a"}'
-    assert reload_res.body == b'{"ok":true,"plugin_id":"a"}'
-    assert uninstall.body == b'{"removed":"a"}'
+    assert install.body == b'{"ok":true,"plugin_id":"aa"}'
+    assert reload_res.body == b'{"ok":true,"plugin_id":"aa"}'
+    assert uninstall.body == b'{"removed":"aa"}'
 
 
 @pytest.mark.asyncio
