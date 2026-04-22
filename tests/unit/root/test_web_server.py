@@ -1,6 +1,7 @@
 from pathlib import Path
 import asyncio
 import re
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -1780,3 +1781,100 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
 
     bad_json = await web_server.github_webhook(_Req(b"{"), x_github_event="push", x_hub_signature_256="")
     assert bad_json.status_code == 400
+
+
+def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
+    monkeypatch.setitem(sys.modules, "core.dlp", SimpleNamespace(mask_pii=lambda value: f"masked:{value}"))
+    assert web_server._mask_collaboration_text("abc") == "masked:abc"
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.dlp":
+            raise ImportError("blocked")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "core.dlp", raising=False)
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    assert web_server._mask_collaboration_text("abc") == "abc"
+
+
+def test_list_child_ollama_pids_windows_and_psutil_failure(monkeypatch):
+    class _Psutil:
+        class Process:
+            def __init__(self, _pid):
+                raise RuntimeError("psutil broken")
+
+    monkeypatch.setitem(sys.modules, "psutil", _Psutil)
+    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="nt", getpid=lambda: 1))
+
+    assert web_server._list_child_ollama_pids() == []
+
+
+def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch):
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert web_server._reap_child_processes_nonblocking() == 0
+
+
+def test_terminate_ollama_child_pids_sends_term_and_kill(monkeypatch):
+    calls = []
+
+    def _kill(pid, sig):
+        calls.append((pid, sig))
+
+    monkeypatch.setattr(web_server.os, "kill", _kill)
+    monkeypatch.setattr(web_server.time, "sleep", lambda _s: calls.append(("sleep", _s)))
+
+    web_server._terminate_ollama_child_pids([7, 8], grace_seconds=0.01)
+
+    assert calls[0] == (7, web_server.signal.SIGTERM)
+    assert calls[1] == (8, web_server.signal.SIGTERM)
+    assert calls[2] == ("sleep", 0.01)
+    assert calls[3] == (7, web_server.signal.SIGKILL)
+    assert calls[4] == (8, web_server.signal.SIGKILL)
+
+
+def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(monkeypatch):
+    reaped = {"count": 0}
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1) or 0)
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped["count"] == 1
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped["count"] == 2
+
+
+def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatch):
+    class _Collector:
+        _sidar_usage_sink_bound = False
+
+    collector = _Collector()
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: collector)
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+    web_server._bind_llm_usage_sink(agent)
+
+    assert collector._sidar_usage_sink_bound is True
+
+    sink_holder = {}
+
+    class _CollectorWithSetter:
+        _sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            sink_holder["sink"] = sink
+
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _CollectorWithSetter())
+    web_server._bind_llm_usage_sink(agent)
+    sink = sink_holder["sink"]
+
+    sink(SimpleNamespace(user_id="", provider="x", total_tokens=1))
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    sink(SimpleNamespace(user_id="u-1", provider="x", total_tokens=1))
