@@ -1264,7 +1264,7 @@ _register_exception_handlers(app)
 async def basic_auth_middleware(request: Request, call_next):
     """Bearer token ile stateless JWT kullanıcı doğrulaması uygular."""
     open_paths = {
-        "/", "/health", "/healthz", "/docs", "/redoc", "/openapi.json",
+        "/", "/status", "/health", "/healthz", "/docs", "/redoc", "/openapi.json",
         "/auth/login", "/auth/register",
         "/files", "/file-content",
     }
