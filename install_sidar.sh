@@ -11,6 +11,7 @@
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
+#   ./install_sidar.sh --silent   # CI/CD için sessiz kurulum (güvenli varsayılanlarla)
 #   ./install_sidar.sh --auto --mode=local --env=development --reset-db --no-vscode
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1188,6 +1189,7 @@ CLI_ENV_RAW=""
 CLI_RESET_POSTGRES_VOLUMES="ask"
 CLI_START_DOCKER_SERVICES="ask"
 CLI_OPEN_VSCODE="ask"
+SILENT_MODE=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
@@ -1208,6 +1210,7 @@ for arg in "$@"; do
         --no-dev) INSTALL_DEV=false ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
+        --silent) SILENT_MODE=true ;;
         --auto) AUTO_INSTALL=true ;;
         --skip-models) SKIP_MODELS=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
@@ -1233,7 +1236,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -1252,6 +1255,7 @@ for arg in "$@"; do
             echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
             echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
             echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
+            echo "  --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar"
             echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
             echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
             echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
@@ -1268,7 +1272,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1327,6 +1331,18 @@ if [[ -n "$CLI_ENV_RAW" && "$AUTO_ENV_TYPE" == "ask" ]]; then
 fi
 AUTO_OPEN_VSCODE="$(normalize_bool "${CLI_OPEN_VSCODE:-${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}}")"
 [[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
+
+if [[ "$SILENT_MODE" == true ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+    NO_INTERACTION=true
+    AUTO_INSTALL=true
+    [[ "$AUTO_RUNTIME_MODE" == "ask" ]] && AUTO_RUNTIME_MODE="docker"
+    [[ "$AUTO_START_DOCKER_SERVICES" == "ask" ]] && AUTO_START_DOCKER_SERVICES="true"
+    [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "ask" ]] && AUTO_RESET_POSTGRES_VOLUMES="true"
+    [[ "$AUTO_ENV_TYPE" == "ask" ]] && AUTO_ENV_TYPE="development"
+    [[ "$AUTO_OPEN_VSCODE" == "ask" ]] && AUTO_OPEN_VSCODE="false"
+    info "⚠️  Sessiz otonom kurulum modu etkin (CI/CD güvenli varsayılanları uygulanıyor)."
+fi
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
     fail "--skip-models ve --download-models birlikte kullanılamaz."
