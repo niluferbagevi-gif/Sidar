@@ -320,6 +320,26 @@ describe("useWebSocket — onerror / onclose", () => {
 
     expect(result.current.status).toBe("reconnecting");
   });
+
+  it("triggers reconnect timer callback and calls connectRef.current (Satır 56)", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    localStorage.setItem("sidar_access_token", "tok");
+    renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      wsMockInstance.onclose?.();
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
 });
 
 describe("useWebSocket — send", () => {
@@ -370,6 +390,24 @@ describe("useWebSocket — disconnect", () => {
     });
 
     expect(wsMockInstance.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not schedule reconnect after manual disconnect onclose", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.disconnect();
+      wsMockInstance.onclose?.();
+      vi.advanceTimersByTime(800);
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });
 
