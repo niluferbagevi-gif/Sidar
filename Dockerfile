@@ -41,6 +41,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     UV_PYTHON=3.11 \
     UV_LINK_MODE=copy \
+    VIRTUAL_ENV=/app/.venv \
+    PYTHONPATH=/app \
     ACCESS_LEVEL=sandbox \
     USE_GPU=${GPU_ENABLED} \
     MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY} \
@@ -77,7 +79,7 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ENV TORCH_INDEX_URL=${TORCH_INDEX_URL} \
     UV_EXTRA_INDEX_URL=${TORCH_INDEX_URL} \
     UV_INDEX_STRATEGY=unsafe-best-match \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -114,4 +116,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Varsayılan başlatma (CLI)
 # Web için (ENTRYPOINT argümanı olarak): docker run ... --quick web --host 0.0.0.0 --port 7860
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["/app/.venv/bin/python", "main.py"]
