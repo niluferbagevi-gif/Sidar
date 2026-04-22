@@ -2237,3 +2237,68 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
     monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom")))
     web_server.main()
     assert run_calls[-1][1]["port"] == 9191
+
+
+@pytest.mark.asyncio
+async def test_favicon_vendor_and_index_paths(tmp_path, monkeypatch):
+    web_server.WEB_DIR = tmp_path
+
+    favicon_res = await web_server.favicon()
+    assert favicon_res.status_code == 204
+
+    vendor_dir = tmp_path / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "bundle.js").write_text("console.log('ok')", encoding="utf-8")
+
+    vendor_ok = await web_server.serve_vendor("bundle.js")
+    assert vendor_ok.status_code == 200
+
+    vendor_missing = await web_server.serve_vendor("missing.js")
+    assert vendor_missing.status_code == 404
+
+    vendor_forbidden = await web_server.serve_vendor("../secret.txt")
+    assert vendor_forbidden.status_code == 403
+
+    monkeypatch.setattr(web_server.cfg, "GRAFANA_URL", "http://grafana.local")
+    index_missing = await web_server.index()
+    assert index_missing.status_code == 500
+
+    (tmp_path / "index.html").write_text("<html><head></head><body>ok</body></html>", encoding="utf-8")
+    index_ok = await web_server.index()
+    assert index_ok.status_code == 200
+    assert "grafana.local" in index_ok.body.decode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_ws_close_policy_violation_and_close_redis_client(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.calls = []
+
+        async def close(self, code, reason):
+            self.calls.append((code, reason))
+
+    ws = _Ws()
+    await web_server._ws_close_policy_violation(ws, "policy")
+    assert ws.calls == [(1008, "policy")]
+
+    class _Redis:
+        def __init__(self, runtime_error=False):
+            self.runtime_error = runtime_error
+            self.closed = False
+
+        async def aclose(self):
+            if self.runtime_error:
+                raise RuntimeError("Event loop is closed")
+            self.closed = True
+
+    redis_ok = _Redis(runtime_error=False)
+    monkeypatch.setattr(web_server, "_redis_client", redis_ok)
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
+    assert redis_ok.closed is True
+
+    redis_closed_loop = _Redis(runtime_error=True)
+    monkeypatch.setattr(web_server, "_redis_client", redis_closed_loop)
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
