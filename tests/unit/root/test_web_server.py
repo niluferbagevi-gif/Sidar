@@ -2262,7 +2262,10 @@ async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
         return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "_resolve_user_from_token", lambda *_: None)
+    async def _resolve_none(*_):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_none)
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
@@ -2708,3 +2711,126 @@ async def test_ws_helpers_cover_no_close_and_voice_tts_skip_branches():
     assert {"chunk": " "} in ws.payloads
     assert {"chunk": "done"} in ws.payloads
     assert sum(1 for payload in ws.payloads if "audio_chunk" in payload) == 1
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_rejects_invalid_header_token(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "bad-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.accepted = None
+            self.closed = None
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    async def _resolve_none(*_):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_none)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert ws.accepted == "bad-token"
+    assert ws.closed == {"code": 1008, "reason": "Invalid or expired token"}
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_auth_message_requires_token(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.closed = None
+            self.messages = iter(['{"action":"auth","token":"   "}'])
+
+        async def accept(self, subprotocol=None):
+            return None
+
+        async def receive_text(self):
+            return next(self.messages)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert ws.closed == {"code": 1008, "reason": "Authentication token missing"}
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            q = asyncio.Queue()
+            return "sub-1", q
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            yield "Merhaba"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert ws.subprotocol == "good-token"
+    assert {"auth_ok": True} in ws.payloads
