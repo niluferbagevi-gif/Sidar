@@ -1166,3 +1166,199 @@ async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
     assert fed_res.status_code == 200
     assert "event_driven_federation" in fed_body
     assert "github_pull_request" in fed_body
+
+
+class _JsonRequest:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    async def json(self):
+        return self._payload
+
+
+@pytest.mark.asyncio
+async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
+    class _DB:
+        async def list_sessions(self, _user_id):
+            return [SimpleNamespace(id="s1", title="ilk", updated_at="ts")]
+
+        async def get_session_messages(self, session_id):
+            if session_id == "s1":
+                return [SimpleNamespace(role="user", content="merhaba", created_at="ts", tokens_used=3)]
+            return []
+
+        async def load_session(self, session_id, _user_id):
+            return SimpleNamespace(id=session_id) if session_id == "s1" else None
+
+        async def create_session(self, _user_id, _title):
+            return SimpleNamespace(id="new-session")
+
+        async def delete_session(self, session_id, _user_id):
+            return session_id == "s1"
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB(), _safe_ts=lambda ts: f"safe-{ts}"))
+    monkeypatch.setattr(web_server, "get_agent", lambda: agent)
+    user = SimpleNamespace(id="u1")
+    req = _make_request("/sessions")
+
+    sessions_res = await web_server.get_sessions(req, user=user)
+    assert sessions_res.status_code == 200
+    assert b'"id":"s1"' in sessions_res.body
+
+    missing_res = await web_server.load_session("missing", req, user=user)
+    assert missing_res.status_code == 404
+
+    load_res = await web_server.load_session("s1", req, user=user)
+    assert load_res.status_code == 200
+    assert b'"success":true' in load_res.body
+
+    new_res = await web_server.new_session(req, user=user)
+    assert b'"session_id":"new-session"' in new_res.body
+
+    delete_ok = await web_server.delete_session("s1", req, user=user)
+    delete_fail = await web_server.delete_session("s2", req, user=user)
+    assert delete_ok.status_code == 200
+    assert delete_fail.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_file_listing_and_content_endpoints_cover_guards(tmp_path, monkeypatch):
+    fake_root = tmp_path / "root"
+    fake_root.mkdir()
+    (fake_root / "visible.txt").write_text("hello", encoding="utf-8")
+    (fake_root / "bad.bin").write_bytes(b"\x00\x01")
+    (fake_root / ".hidden").mkdir()
+    monkeypatch.setattr(web_server, "__file__", str(fake_root / "web_server.py"))
+
+    list_ok = await web_server.list_project_files("")
+    assert list_ok.status_code == 200
+    assert b"visible.txt" in list_ok.body
+    assert b".hidden" not in list_ok.body
+
+    outside = await web_server.list_project_files("../")
+    assert outside.status_code == 403
+
+    file_ok = await web_server.file_content("visible.txt")
+    assert file_ok.status_code == 200
+    assert b'"content":"hello"' in file_ok.body
+
+    file_type = await web_server.file_content("bad.bin")
+    assert file_type.status_code == 415
+
+    missing = await web_server.file_content("missing.txt")
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_git_and_branch_endpoints(monkeypatch):
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(web_server, "_git_run", lambda cmd, *_: {
+        "rev-parse": "feature/x",
+        "remote": "git@github.com:org/repo.git",
+        "symbolic-ref": "origin/main",
+        "branch": "main\nfeature/x",
+    }[[k for k in ("rev-parse", "remote", "symbolic-ref", "branch") if k in " ".join(cmd)][0]])
+
+    info = await web_server.git_info()
+    branches = await web_server.git_branches()
+    assert b'"repo":"org/repo"' in info.body
+    assert b'"current":"feature/x"' in branches.body
+
+    invalid = await web_server.set_branch(_JsonRequest({"branch": "bad name"}))
+    assert invalid.status_code == 400
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *a, **k: b"")
+    ok = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
+    assert ok.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_github_rag_todo_clear_and_level_endpoints(monkeypatch, tmp_path):
+    class _Github:
+        repo_name = "org/active"
+
+        def list_repos(self, owner="", limit=200):
+            return True, [{"full_name": "org/a"}, {"full_name": "org/z"}]
+
+        def is_available(self):
+            return True
+
+        def get_pull_requests_detailed(self, **_):
+            return True, [{"number": 1}], None
+
+        def get_pull_request(self, number):
+            return (number == 1, {"number": number} if number == 1 else "missing")
+
+        def set_repo(self, repo_name):
+            return True, f"set:{repo_name}"
+
+    class _Docs:
+        def get_index_info(self, session_id):
+            return [{"id": "d1", "session_id": session_id}]
+
+        def add_document_from_file(self, *_):
+            return True, "ok-file"
+
+        async def add_document_from_url(self, *_args, **_kwargs):
+            return True, "ok-url"
+
+        def delete_document(self, *_):
+            return "✓ silindi"
+
+        async def search(self, *_):
+            return True, [{"chunk": "x"}]
+
+    clear_calls = {"n": 0}
+
+    async def _clear():
+        clear_calls["n"] += 1
+
+    agent = SimpleNamespace(
+        github=_Github(),
+        docs=_Docs(),
+        memory=SimpleNamespace(active_session_id=None, clear=_clear),
+        todo=SimpleNamespace(get_tasks=lambda: [{"status": "new"}, {"status": "completed"}]),
+        security=SimpleNamespace(level_name="sandbox"),
+        set_access_level=lambda lvl: f"ok:{lvl}",
+    )
+    monkeypatch.setattr(web_server, "get_agent", lambda: agent)
+
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(web_server, "__file__", str(tmp_path / "web_server.py"))
+    sample = tmp_path / "note.txt"
+    sample.write_text("x", encoding="utf-8")
+
+    repos = await web_server.github_repos(owner="org", q="z")
+    prs = await web_server.github_prs()
+    pr_detail = await web_server.github_pr_detail(1)
+    set_repo = await web_server.set_repo(_JsonRequest({"repo": "org/new"}))
+    docs = await web_server.rag_list_docs()
+    rag_file = await web_server.rag_add_file(_JsonRequest({"path": "note.txt"}))
+    rag_url = await web_server.rag_add_url(_JsonRequest({"url": "https://example.com"}))
+    rag_delete = await web_server.rag_delete_doc("d1")
+    rag_search_empty = await web_server.rag_search("")
+    rag_search_ok = await web_server.rag_search("query", top_k=15)
+    todo = await web_server.get_todo()
+    clear = await web_server.clear()
+    level = await web_server.set_level_endpoint(_JsonRequest({"level": "sandbox"}))
+
+    assert b'"repos"' in repos.body
+    assert b'"prs"' in prs.body
+    assert b'"success":true' in pr_detail.body
+    assert b'"success":true' in set_repo.body
+    assert b'"count":1' in docs.body
+    assert rag_file.status_code == 200
+    assert rag_url.status_code == 200
+    assert b'"success":true' in rag_delete.body
+    assert rag_search_empty.status_code == 400
+    assert rag_search_ok.status_code == 200
+    assert b'"active":1' in todo.body
+    assert b'"result":true' in clear.body
+    assert clear_calls["n"] == 1
+    assert b'"current_level":"sandbox"' in level.body
