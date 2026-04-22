@@ -587,6 +587,15 @@ async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
     assert payload["exp"] > payload["iat"]
 
 
+@pytest.mark.asyncio
+async def test_resolve_user_from_token_invalid_jwt_without_db_returns_none(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
+    monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
+
+    user = await web_server._resolve_user_from_token(None, "not-a-jwt-token")
+    assert user is None
+
+
 def test_register_exception_handlers_http_and_unhandled():
     app = web_server.FastAPI()
     web_server._register_exception_handlers(app)
@@ -610,6 +619,65 @@ def test_register_exception_handlers_http_and_unhandled():
     assert err_res.status_code == 500
     assert err_res.json()["success"] is False
     assert err_res.json()["error"] == "İç sunucu hatası"
+
+
+def test_register_exception_handlers_without_exception_handler_attr_is_noop():
+    class _NoExceptionHandler:
+        pass
+
+    web_server._register_exception_handlers(_NoExceptionHandler())
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_middleware_auth_paths(monkeypatch):
+    async def _ok_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    open_req = _make_request("/", method="GET")
+    open_res = await web_server.basic_auth_middleware(open_req, _ok_next)
+    assert open_res.status_code == 200
+
+    denied = await web_server.basic_auth_middleware(_make_request("/secure", method="GET"), _ok_next)
+    assert denied.status_code == 401
+    assert b"Yetkisiz" in denied.body
+
+    empty_token_req = _make_request("/secure", method="GET", headers={"Authorization": "Bearer   "})
+    empty_token_res = await web_server.basic_auth_middleware(empty_token_req, _ok_next)
+    assert empty_token_res.status_code == 401
+    assert b"Ge" in empty_token_res.body  # Geçersiz token
+
+    async def _resolve_none(*_):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_none)
+    invalid_req = _make_request("/secure", method="GET", headers={"Authorization": "Bearer bad"})
+    invalid_res = await web_server.basic_auth_middleware(invalid_req, _ok_next)
+    assert invalid_res.status_code == 401
+    assert b"ge" in invalid_res.body.lower()  # geçersiz/süresi dolmuş
+
+    events = {"active_user": None, "metric_set": None, "metric_reset": None}
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="admin", tenant_id="t1")
+
+    async def _set_active_user(user_id, username):
+        events["active_user"] = (user_id, username)
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=_set_active_user))
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda uid: events.__setitem__("metric_set", uid) or "tok")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: events.__setitem__("metric_reset", token))
+
+    valid_req = _make_request("/secure", method="GET", headers={"Authorization": "Bearer valid-token"})
+    valid_res = await web_server.basic_auth_middleware(valid_req, _ok_next)
+    assert valid_res.status_code == 200
+    assert events["active_user"] == ("u1", "ada")
+    assert events["metric_set"] == "u1"
+    assert events["metric_reset"] == "tok"
+    assert getattr(valid_req.state, "user").id == "u1"
 
 
 def test_trim_autonomy_text_truncates_with_suffix():
@@ -650,6 +718,62 @@ def test_plugin_marketplace_state_read_write_and_bad_payload(monkeypatch, tmp_pa
     monkeypatch.setattr(web_server.logger, "warning", lambda *args, **kwargs: warnings.append(args))
     assert web_server._read_plugin_marketplace_state() == {}
     assert warnings
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
+    cancelled = {"prewarm": False, "cron": False, "nightly": False}
+    thread_calls = {"count": 0}
+    cleanup = {"redis": 0, "shutdown": 0}
+
+    async def _wait_forever(key):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled[key] = True
+            raise
+
+    async def _prewarm():
+        await _wait_forever("prewarm")
+
+    async def _cron(_stop_event):
+        await _wait_forever("cron")
+
+    async def _nightly(_stop_event):
+        await _wait_forever("nightly")
+
+    async def _close_redis():
+        cleanup["redis"] += 1
+
+    async def _shutdown():
+        cleanup["shutdown"] += 1
+
+    async def _to_thread(func, *args, **kwargs):
+        thread_calls["count"] += 1
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(web_server, "_prewarm_rag_embeddings", _prewarm)
+    monkeypatch.setattr(web_server, "_autonomous_cron_loop", _cron)
+    monkeypatch.setattr(web_server, "_nightly_memory_loop", _nightly)
+    monkeypatch.setattr(web_server, "_close_redis_client", _close_redis)
+    monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", _shutdown)
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _to_thread)
+    monkeypatch.setattr(web_server.cfg, "ENABLE_AUTONOMOUS_CRON", True)
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: None))
+    monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: [])
+
+    async with web_server._app_lifespan(web_server.FastAPI()):
+        assert isinstance(web_server._agent_lock, asyncio.Lock)
+        assert isinstance(web_server._redis_lock, asyncio.Lock)
+        assert isinstance(web_server._local_rate_lock, asyncio.Lock)
+
+    assert thread_calls["count"] == 2
+    assert cancelled["prewarm"] is True
+    assert web_server._autonomy_cron_task is None or web_server._autonomy_cron_task.done()
+    assert web_server._nightly_memory_task is None or web_server._nightly_memory_task.done()
+    assert cleanup["redis"] == 1
+    assert cleanup["shutdown"] == 1
 
 
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
