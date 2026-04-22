@@ -1165,6 +1165,7 @@ async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
 def _load_web_server_with_import_failures(monkeypatch, module_name: str, fail_rules: set[str]):
     """web_server modülünü seçili import hatalarıyla izole şekilde yükler."""
     import builtins
+    import importlib
     import importlib.util
     import sys
 
@@ -1181,6 +1182,10 @@ def _load_web_server_with_import_failures(monkeypatch, module_name: str, fail_ru
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", _fake_import)
+    # Bazı testlerde sys.modules üzerinde bırakılan stub'lar nedeniyle
+    # `from agent.core.contracts import ...` sırasında ImportError oluşabiliyor.
+    # İzole yükleme için gerçek modülü zorunlu olarak yerleştiriyoruz.
+    sys.modules["agent.core.contracts"] = importlib.import_module("agent.core.contracts")
     spec = importlib.util.spec_from_file_location(module_name, Path("web_server.py"))
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
