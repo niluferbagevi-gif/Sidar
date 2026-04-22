@@ -606,7 +606,7 @@ def _bind_llm_usage_sink(agent: SidarAgent) -> None:
 async def _prewarm_rag_embeddings() -> None:
     """Sunucu açılışında RAG embedding fonksiyonunu arka planda ısıtır."""
     try:
-        agent = await get_agent()
+        agent = await _get_agent_instance()
         rag = getattr(agent, "rag", None)
         if rag is None:
             logger.info("RAG prewarm atlandı: rag motoru bulunamadı.")
@@ -640,6 +640,14 @@ async def get_agent() -> SidarAgent:
     return _agent
 
 
+async def _get_agent_instance() -> SidarAgent:
+    """get_agent monkeypatch'lerinin sync/async varyantlarını uyumlu şekilde çözer."""
+    maybe_agent = get_agent()
+    if inspect.isawaitable(maybe_agent):
+        return await maybe_agent
+    return maybe_agent
+
+
 async def _collect_agent_response(agent: SidarAgent, prompt: str) -> str:
     """Ajanın stream çıktısını tek metinde birleştir."""
     chunks: list[str] = []
@@ -656,7 +664,7 @@ async def _dispatch_autonomy_trigger(
     meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     trigger = ExternalTrigger(
         trigger_id=f"trigger-{secrets.token_hex(6)}",
         source=trigger_source,
@@ -1105,7 +1113,7 @@ async def _nightly_memory_loop(stop_event: asyncio.Event) -> None:
             break
         except asyncio.TimeoutError:
             try:
-                agent = await get_agent()
+                agent = await _get_agent_instance()
                 report = await agent.run_nightly_memory_maintenance(reason="nightly_loop")
                 logger.info("Nightly memory maintenance sonucu: %s", report.get("status", "unknown"))
             except Exception as exc:
@@ -1290,7 +1298,7 @@ async def basic_auth_middleware(request: Request, call_next):
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     request.state.user = user
     set_active_user = getattr(agent.memory, "set_active_user", None)
     if callable(set_active_user):
@@ -1433,7 +1441,7 @@ def _schedule_access_audit_log(
 
     async def _persist() -> None:
         try:
-            agent = await get_agent()
+            agent = await _get_agent_instance()
             recorder = getattr(agent.memory.db, "record_audit_log", None)
             if recorder is None:
                 return
@@ -1867,7 +1875,7 @@ async def register_user(payload: _RegisterRequest):
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     try:
         user = await agent.memory.db.register_user(username=username, password=password, tenant_id=tenant_id)
     except Exception as exc:
@@ -1881,7 +1889,7 @@ async def register_user(payload: _RegisterRequest):
 async def login_user(payload: _LoginRequest):
     username = payload.username.strip()
     password = payload.password
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     try:
         user = await agent.memory.db.authenticate_user(username=username, password=password)
     except Exception as exc:
@@ -1900,21 +1908,21 @@ async def auth_me(request: Request, user=Depends(_get_request_user)):
 
 @app.get("/admin/stats")
 async def admin_stats(_user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     stats = await agent.memory.db.get_admin_stats()
     return JSONResponse(stats)
 
 
 @app.get("/admin/prompts")
 async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
     return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
 
 
 @app.get("/admin/prompts/active")
 async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     active = await agent.memory.db.get_active_prompt(role_name)
     if not active:
         raise HTTPException(status_code=404, detail="Aktif prompt bulunamadı")
@@ -1928,7 +1936,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
     if not role_name or not prompt_text:
         raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     record = await agent.memory.db.upsert_prompt(role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate))
     if role_name == "system" and bool(record.is_active):
         agent.system_prompt = record.prompt_text
@@ -1937,7 +1945,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
 
 @app.post("/admin/prompts/activate")
 async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     active = await agent.memory.db.activate_prompt(payload.prompt_id)
     if not active:
         raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
@@ -1948,14 +1956,14 @@ async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_
 
 @app.get("/admin/policies/{user_id}")
 async def admin_list_policies(user_id: str, tenant_id: str = "", _user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     records = await agent.memory.db.list_access_policies(user_id=user_id, tenant_id=tenant_id.strip() or None)
     return JSONResponse({"items": [_serialize_policy(r) for r in records]})
 
 
 @app.post("/admin/policies")
 async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     await agent.memory.db.upsert_access_policy(
         user_id=payload.user_id.strip(),
         tenant_id=payload.tenant_id.strip() or "default",
@@ -2050,7 +2058,7 @@ async def uninstall_plugin_marketplace_item(plugin_id: str, _user=Depends(_requi
 
 @app.post("/api/swarm/execute")
 async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request_user)):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
     session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
     tasks = [
@@ -2171,7 +2179,7 @@ async def access_policy_middleware(request: Request, call_next):
 
     allowed = False
     try:
-        agent = await get_agent()
+        agent = await _get_agent_instance()
         checker = getattr(agent.memory.db, "check_access_policy", None)
         if checker is None:
             allowed = True
@@ -2520,7 +2528,7 @@ async def websocket_chat(websocket: WebSocket):
     else:
         await websocket.accept()
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     active_task: asyncio.Task | None = None
     ws_user_id = ""
     ws_username = ""
@@ -2906,7 +2914,7 @@ async def websocket_voice(websocket: WebSocket):
     except ImportError:
         VoicePipeline = None  # type: ignore[assignment]
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     pipeline = MultimodalPipeline(agent.llm, cfg)
     voice_pipeline = VoicePipeline(cfg) if VoicePipeline is not None else None
     max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
@@ -3206,7 +3214,7 @@ async def websocket_voice(websocket: WebSocket):
 )
 async def status():
     """Ajan durum bilgisini JSON olarak döndür."""
-    a = await get_agent()
+    a = await _get_agent_instance()
     gpu_info = a.health.get_gpu_info()
     # Sağlayıcıya göre doğru model adını gönder
     if a.cfg.AI_PROVIDER == "gemini":
@@ -3249,7 +3257,7 @@ async def _await_if_needed(value):
 
 async def _health_response(*, require_dependencies: bool = False) -> JSONResponse:
     try:
-        agent = await get_agent()
+        agent = await _get_agent_instance()
         health_data = agent.health.get_health_summary()
     except Exception as exc:
         logger.warning("Health check güvenli fallback'e düştü: %s", exc)
@@ -3318,7 +3326,7 @@ async def metrics(request: Request, _user=Depends(_require_metrics_access)):
     - Varsayılan: JSON formatı (her istemci için çalışır).
     - 'Accept: text/plain' başlığı + prometheus_client kurulu ise Prometheus formatı döner.
     """
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
     if hasattr(agent.memory, "aget_all_sessions"):
@@ -3405,7 +3413,7 @@ async def llm_budget_metrics(_user=Depends(_require_metrics_access)):
 )
 async def get_sessions(request: Request, user=Depends(_get_request_user)):
     """Yalnızca oturum sahibine ait sohbetleri döndürür."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     sessions = await agent.memory.db.list_sessions(user.id)
     return JSONResponse({
         "active_session": None,
@@ -3418,7 +3426,7 @@ async def get_sessions(request: Request, user=Depends(_get_request_user)):
 @app.get("/sessions/{session_id}")
 async def load_session(session_id: str, request: Request, user=Depends(_get_request_user)):
     """Belirli bir oturumu kullanıcı kimliğiyle doğrulayarak yükler."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session = await agent.memory.db.load_session(session_id, user.id)
     if not session:
         return JSONResponse({"success": False, "error": "Oturum bulunamadı."}, status_code=404)
@@ -3429,14 +3437,14 @@ async def load_session(session_id: str, request: Request, user=Depends(_get_requ
 @app.post("/sessions/new")
 async def new_session(request: Request, user=Depends(_get_request_user)):
     """Aktif kullanıcı için yeni bir oturum oluşturur."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session = await agent.memory.db.create_session(user.id, "Yeni Sohbet")
     return JSONResponse({"success": True, "session_id": session.id})
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, request: Request, user=Depends(_get_request_user)):
     """Kullanıcıya ait belirli bir oturumu siler."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     deleted = await agent.memory.db.delete_session(session_id, user.id)
     if deleted:
         return JSONResponse({"success": True})
@@ -3608,7 +3616,7 @@ async def set_branch(request: Request):
 @app.get("/github-repos")
 async def github_repos(owner: str = "", q: str = ""):
     """GitHub erişimi olan depo listesini döndürür (opsiyonel owner + arama filtresi)."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
 
     # owner verilmezse aktif repodan owner türet
     active_repo = (getattr(agent.github, "repo_name", "") or cfg.GITHUB_REPO or "").strip()
@@ -3645,7 +3653,7 @@ async def github_prs(state: str = "open", limit: int = 10):
     state: open / closed / all
     limit: maksimum PR sayısı (max 50)
     """
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     if not agent.github.is_available():
         return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış.", "prs": []}, status_code=503)
     ok, prs, err = agent.github.get_pull_requests_detailed(state=state, limit=min(limit, 50))
@@ -3657,7 +3665,7 @@ async def github_prs(state: str = "open", limit: int = 10):
 @app.get("/github-prs/{number}")
 async def github_pr_detail(number: int):
     """Belirli bir PR'ın detaylarını döndürür."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     if not agent.github.is_available():
         return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış."}, status_code=503)
     ok, result = agent.github.get_pull_request(number)
@@ -3674,7 +3682,7 @@ async def set_repo(request: Request):
     if not repo_name:
         return JSONResponse({"success": False, "error": "Depo adı boş."}, status_code=400)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     ok, msg = agent.github.set_repo(repo_name)
     if ok:
         cfg.GITHUB_REPO = repo_name
@@ -3688,7 +3696,7 @@ async def set_repo(request: Request):
 @app.get("/rag/docs")
 async def rag_list_docs():
     """RAG deposundaki aktif oturuma ait belgeleri listeler."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
     docs = agent.docs.get_index_info(session_id=session_id)
     return JSONResponse({"success": True, "docs": docs, "count": len(docs)})
@@ -3722,7 +3730,7 @@ async def rag_add_file(request: Request):
     except ValueError:
         return JSONResponse({"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
     ok, msg = await asyncio.to_thread(
         agent.docs.add_document_from_file, str(target), title or target.name, None, session_id
@@ -3739,7 +3747,7 @@ async def rag_add_url(request: Request):
     if not url:
         return JSONResponse({"success": False, "error": "URL boş."}, status_code=400)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
     ok, msg = await agent.docs.add_document_from_url(url, title=title, session_id=session_id)
     return JSONResponse({"success": ok, "message": msg})
@@ -3748,7 +3756,7 @@ async def rag_add_url(request: Request):
 @app.delete("/rag/docs/{doc_id}")
 async def rag_delete_doc(doc_id: str):
     """RAG deposundan belge siler (oturum izolasyonuna uygun)."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
     msg = await asyncio.to_thread(agent.docs.delete_document, doc_id, session_id)
     success = msg.startswith("✓")
@@ -3760,7 +3768,7 @@ async def rag_delete_doc(doc_id: str):
 @app.post("/api/rag/upload")
 async def upload_rag_file(file: UploadFile = File(...)):
     """Web arayüzünden Sürükle-Bırak ile gelen dosyaları RAG deposuna ekler."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
 
     temp_dir = None
@@ -3826,7 +3834,7 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     """RAG deposunda aktif oturuma ait belgelerde arama yapar."""
     if not q.strip():
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     session_id = agent.memory.active_session_id or "global"
     search_call = agent.docs.search
     if asyncio.iscoroutinefunction(search_call):
@@ -3849,7 +3857,7 @@ async def get_todo():
     Aktif görev listesini JSON olarak döndürür.
     UI'daki Todo paneli bu endpoint'i periyodik olarak sorgular.
     """
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     tasks = agent.todo.get_tasks()
     active = sum(1 for t in tasks if t["status"] != "completed")
     return JSONResponse({"tasks": tasks, "count": len(tasks), "active": active})
@@ -3863,7 +3871,7 @@ async def get_todo():
 )
 async def clear():
     """Aktif konuşma belleğini temizle."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     await _await_if_needed(agent.memory.clear())
     return JSONResponse({"result": True})
 
@@ -3884,7 +3892,7 @@ async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user
     if not new_level:
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
     if asyncio.iscoroutine(result_msg):
         result_msg = await result_msg
@@ -3927,7 +3935,7 @@ async def api_vision_analyze(req: _VisionAnalyzeRequest):
     except ImportError:
         raise HTTPException(status_code=501, detail="core.vision modülü yüklenemedi.")
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
     prompt = req.prompt or build_analyze_prompt(req.analysis_type)
     result = await pipeline.analyze(
@@ -3946,7 +3954,7 @@ async def api_vision_mockup(req: _VisionMockupRequest):
     except ImportError:
         raise HTTPException(status_code=501, detail="core.vision modülü yüklenemedi.")
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
     code = await pipeline.mockup_to_code(
         image_b64=req.image_base64,
@@ -4223,7 +4231,7 @@ async def api_operations_list_campaigns(
     limit: int = 50,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     campaigns = await agent.memory.db.list_marketing_campaigns(
         tenant_id=_get_user_tenant(_user),
         status=status,
@@ -4237,7 +4245,7 @@ async def api_operations_create_campaign(
     req: _CampaignCreateRequest,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     db = agent.memory.db
     campaign = await db.upsert_marketing_campaign(
         tenant_id=_get_user_tenant(_user),
@@ -4290,7 +4298,7 @@ async def api_operations_list_assets(
     limit: int = 100,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     assets = await agent.memory.db.list_content_assets(
         tenant_id=_get_user_tenant(_user),
         campaign_id=campaign_id,
@@ -4305,7 +4313,7 @@ async def api_operations_add_asset(
     req: _ContentAssetCreateRequest,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     asset = await agent.memory.db.add_content_asset(
         campaign_id=campaign_id,
         tenant_id=_get_user_tenant(_user),
@@ -4324,7 +4332,7 @@ async def api_operations_list_checklists(
     limit: int = 100,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     checklists = await agent.memory.db.list_operation_checklists(
         tenant_id=_get_user_tenant(_user),
         campaign_id=campaign_id,
@@ -4339,7 +4347,7 @@ async def api_operations_add_checklist(
     req: _OperationChecklistCreateRequest,
     _user=Depends(_get_request_user),
 ):
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     checklist = await agent.memory.db.add_operation_checklist(
         campaign_id=campaign_id,
         tenant_id=_get_user_tenant(_user),
@@ -4481,7 +4489,7 @@ async def autonomy_wake(req: _AutonomyWakeRequest):
 )
 async def autonomy_activity(limit: int = 20):
     """Son proaktif tetik kayıtlarını UI ve operasyon panelleri için sunar."""
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     return JSONResponse({"success": True, "activity": agent.get_autonomy_activity(limit=limit)})
 
 
@@ -4657,7 +4665,7 @@ async def github_webhook(
     except json.JSONDecodeError:
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
-    agent = await get_agent()
+    agent = await _get_agent_instance()
     msg = ""
 
     if x_github_event == "push":
