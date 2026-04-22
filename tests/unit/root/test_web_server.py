@@ -1,8 +1,12 @@
 from pathlib import Path
 import re
+from types import SimpleNamespace
+import io
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
+from starlette.datastructures import UploadFile
 
 import web_server
 
@@ -255,3 +259,178 @@ async def test_hitl_broadcast_and_prompt_helpers():
     assert "room_id=workspace:default" in prompt
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
+
+
+def _make_request(path: str, method: str = "GET", headers: dict | None = None, host: str = "127.0.0.1") -> Request:
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "headers": [(k.lower().encode("utf-8"), v.encode("utf-8")) for k, v in (headers or {}).items()],
+        "client": (host, 12345),
+        "query_string": b"",
+    }
+    return Request(scope)
+
+
+def test_process_helpers_and_shutdown_paths(monkeypatch):
+    calls = []
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (0, 0))
+    assert web_server._reap_child_processes_nonblocking() == 0
+
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (_args and (_ for _ in ()).throw(ChildProcessError())))
+    assert web_server._reap_child_processes_nonblocking() == 0
+
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(web_server.time, "sleep", lambda _s: None)
+    web_server._terminate_ollama_child_pids([10, 11], grace_seconds=0.1)
+    assert calls.count((10, web_server.signal.SIGTERM)) == 1
+    assert calls.count((10, web_server.signal.SIGKILL)) == 1
+
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
+    reaped = []
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.append(True) or 1)
+    web_server._force_shutdown_local_llm_processes()
+    assert reaped
+
+
+@pytest.mark.asyncio
+async def test_async_shutdown_and_ci_context_resolution(monkeypatch):
+    killed = []
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [1])
+    monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    async def _fast_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(web_server.asyncio, "sleep", _fast_sleep)
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 1)
+    await web_server._async_force_shutdown_local_llm_processes()
+    assert (1, web_server.signal.SIGTERM) in killed
+    assert (1, web_server.signal.SIGKILL) in killed
+
+    workflow_payload = {
+        "repository": {"full_name": "acme/repo", "default_branch": "main"},
+        "workflow_run": {"status": "completed", "conclusion": "failure", "id": 55, "name": "CI"},
+    }
+    context = web_server._fallback_ci_failure_context("workflow_run", workflow_payload)
+    assert context["kind"] == "workflow_run"
+
+    monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_args, **_kwargs: {})
+    resolved = web_server._resolve_ci_failure_context("check_suite", {"check_suite": {"conclusion": "failure"}})
+    assert resolved["kind"] == "check_suite"
+
+
+def test_plugin_loading_and_persistence(tmp_path, monkeypatch):
+    valid_code = (
+        "from agent.base_agent import BaseAgent\n"
+        "class DemoAgent(BaseAgent):\n"
+        "    async def run(self, prompt: str):\n"
+        "        return prompt\n"
+    )
+    cls = web_server._load_plugin_agent_class(valid_code, "DemoAgent", "mod.demo")
+    assert cls.__name__ == "DemoAgent"
+    assert web_server._validate_plugin_role_name("Demo_Role-1") == "demo_role-1"
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("bad role!")
+
+    monkeypatch.chdir(tmp_path)
+    path = web_server._persist_and_import_plugin_file("sample", valid_code.encode("utf-8"), "mod.persisted")
+    assert path.exists()
+    assert path.suffix == ".py"
+
+
+def test_policy_and_rbac_helpers():
+    request = _make_request("/rag/docs/abc", method="DELETE")
+    assert web_server._resolve_policy_from_request(request) == ("rag", "write", "abc")
+    assert web_server._build_audit_resource("rag", "x") == "rag:x"
+    assert web_server._is_admin_user(SimpleNamespace(role="admin", username="u"))
+    with pytest.raises(HTTPException):
+        web_server._require_admin_user(SimpleNamespace(role="user", username="normal"))
+
+
+@pytest.mark.asyncio
+async def test_rate_limiting_helpers_and_middlewares(monkeypatch):
+    web_server._local_rate_limits.clear()
+    monkeypatch.setattr(web_server.time, "time", lambda: 100.0)
+    assert not await web_server._local_is_rate_limited("k", 1, 60)
+    assert await web_server._local_is_rate_limited("k", 1, 60)
+
+    class _RedisOK:
+        def __init__(self):
+            self.calls = 0
+
+        async def incr(self, _key):
+            self.calls += 1
+            return self.calls
+
+        async def expire(self, *_args):
+            return True
+
+    async def _fake_get_redis():
+        return _RedisOK()
+
+    monkeypatch.setattr(web_server, "_get_redis", _fake_get_redis)
+    assert not await web_server._redis_is_rate_limited("ns", "ip", 2, 60)
+
+    async def _call_next(_request):
+        return web_server.JSONResponse({"ok": True})
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", lambda *_a, **_k: web_server.asyncio.sleep(0, result=True))
+    blocked = await web_server.ddos_rate_limit_middleware(_make_request("/api/x"), _call_next)
+    assert blocked.status_code == 429
+
+    blocked_chat = await web_server.rate_limit_middleware(_make_request("/ws/chat"), _call_next)
+    assert blocked_chat.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_files_rag_and_upload_endpoints(monkeypatch, tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.txt").write_text("hello", encoding="utf-8")
+    (root / "bin.exe").write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(web_server, "__file__", str(root / "web_server.py"))
+    listed = await web_server.list_project_files("")
+    assert listed.status_code == 200
+
+    ok_file = await web_server.file_content("a.txt")
+    assert ok_file.status_code == 200
+    unsupported = await web_server.file_content("bin.exe")
+    assert unsupported.status_code == 415
+
+    docs = SimpleNamespace(
+        get_index_info=lambda session_id: [{"id": "1", "session_id": session_id}],
+        add_document_from_url=lambda url, title, session_id: web_server.asyncio.sleep(0, result=(True, f"ok:{url}:{title}:{session_id}")),
+        delete_document=lambda doc_id, session_id: f"✓ silindi:{doc_id}:{session_id}",
+        add_document_from_file=lambda path, title, _meta, session_id: (True, f"eklendi:{Path(path).name}:{title}:{session_id}"),
+    )
+    fake_agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
+    async def _fake_get_agent():
+        return fake_agent
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+
+    rag_docs = await web_server.rag_list_docs()
+    assert rag_docs.status_code == 200
+
+    class _Req:
+        async def json(self):
+            return {"url": "https://example.com", "title": "t"}
+
+    rag_url = await web_server.rag_add_url(_Req())
+    assert rag_url.status_code == 200
+    rag_del = await web_server.rag_delete_doc("doc-1")
+    assert rag_del.status_code == 200
+
+    monkeypatch.setattr(web_server.Config, "MAX_RAG_UPLOAD_BYTES", 8)
+    upload = UploadFile(file=io.BytesIO(b"abc"), filename="demo.txt")
+    up_ok = await web_server.upload_rag_file(upload)
+    assert up_ok.status_code == 200
+
+    upload_big = UploadFile(file=io.BytesIO(b"0123456789"), filename="big.txt")
+    with pytest.raises(HTTPException):
+        await web_server.upload_rag_file(upload_big)
