@@ -255,3 +255,158 @@ async def test_hitl_broadcast_and_prompt_helpers():
     assert "room_id=workspace:default" in prompt
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
+
+
+
+def test_collaboration_participant_backward_compat_and_serialization(monkeypatch):
+    monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "fallback-now")
+    ws = _DummyWebSocket()
+
+    participant = web_server._CollaborationParticipant(
+        ws,
+        "u42",
+        "neo",
+        "Neo",
+        "2026-01-01T00:00:00+00:00",
+    )
+    assert participant.role == "user"
+    assert participant.joined_at == "2026-01-01T00:00:00+00:00"
+    assert web_server._socket_key(ws) == id(ws)
+
+    serialized = web_server._serialize_collaboration_participant(
+        web_server._CollaborationParticipant(
+            ws,
+            "u1",
+            "ada",
+            "Ada",
+            role="editor",
+            can_write=True,
+            write_scopes=["/tmp/workspace"],
+            joined_at="2026-01-02T00:00:00+00:00",
+        )
+    )
+    assert serialized["can_write"] == "true"
+    assert serialized["write_scopes"] == ["/tmp/workspace"]
+
+
+def test_mask_collaboration_text_fallback(monkeypatch):
+    real_import = __import__
+
+    def _boom_import(name, *args, **kwargs):
+        if name == "core.dlp":
+            raise ImportError("forced")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _boom_import)
+    assert web_server._mask_collaboration_text("secret") == "secret"
+
+
+def test_access_policy_helpers_and_metrics_access(monkeypatch):
+    from starlette.requests import Request
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/rag/docs/123",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 1234),
+            "server": ("test", 80),
+            "scheme": "http",
+            "http_version": "1.1",
+        }
+    )
+    assert web_server._resolve_policy_from_request(request) == ("rag", "write", "*")
+    assert web_server._build_audit_resource("rag", "42") == "rag:42"
+    assert web_server._build_audit_resource("", "42") == ""
+
+    admin = type("U", (), {"role": "admin", "username": "root", "tenant_id": "t1"})()
+    regular = type("U", (), {"role": "user", "username": "neo", "tenant_id": "t2"})()
+    assert web_server._is_admin_user(admin)
+    assert not web_server._is_admin_user(regular)
+    assert web_server._get_user_tenant(type("U", (), {"tenant_id": ""})()) == "default"
+
+    token = "metrics-secret"
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", token)
+    request_with_token = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/metrics",
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
+            "query_string": b"",
+            "client": ("127.0.0.1", 1),
+            "server": ("test", 80),
+            "scheme": "http",
+            "http_version": "1.1",
+        }
+    )
+    assert web_server._require_metrics_access(request_with_token, regular) is regular
+
+    with pytest.raises(HTTPException):
+        web_server._require_metrics_access(
+            Request(
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "path": "/metrics",
+                    "headers": [],
+                    "query_string": b"",
+                    "client": ("127.0.0.1", 1),
+                    "server": ("test", 80),
+                    "scheme": "http",
+                    "http_version": "1.1",
+                }
+            ),
+            regular,
+        )
+
+
+def test_plugin_validation_loading_and_marketplace_state(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    assert web_server._validate_plugin_role_name("  My_Role-1  ") == "my_role-1"
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("bad role!")
+
+    assert web_server._sanitize_capabilities([" read ", "", "write"]) == ["read", "write"]
+    assert web_server._plugin_source_filename("hello world") == "<sidar-plugin:hello_world>"
+
+    source = """
+from agent.base_agent import BaseAgent
+class DemoAgent(BaseAgent):
+    ROLE_NAME = "demo"
+    async def run(self, prompt: str, context=None) -> str:
+        return "ok"
+"""
+    cls = web_server._load_plugin_agent_class(source, "DemoAgent", "demo_module")
+    assert cls.__name__ == "DemoAgent"
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class("class X: pass", None, "bad")
+
+    state = {"aws_management": {"installed_at": "now"}}
+    web_server._write_plugin_marketplace_state(state)
+    assert web_server._read_plugin_marketplace_state() == state
+
+    broken = web_server._plugin_marketplace_state_path()
+    broken.write_text("[]", encoding="utf-8")
+    assert web_server._read_plugin_marketplace_state() == {}
+
+
+@pytest.mark.asyncio
+async def test_schedule_access_audit_log_handles_missing_loop(monkeypatch):
+    user = type("U", (), {"id": "u1", "tenant_id": "t1"})()
+
+    def _no_loop():
+        raise RuntimeError("no loop")
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", _no_loop)
+    web_server._schedule_access_audit_log(
+        user=user,
+        resource_type="rag",
+        action="read",
+        resource_id="*",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
