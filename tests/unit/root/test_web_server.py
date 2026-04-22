@@ -1,4 +1,5 @@
 import asyncio
+import io
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -11,6 +12,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import jwt
 from pydantic import ValidationError
+from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
 import web_server
@@ -927,6 +929,232 @@ async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
     await web_server._autonomous_cron_loop(stop_event)
 
     assert any("prompt boş" in item for item in logs)
+
+
+@pytest.mark.asyncio
+async def test_metrics_returns_json_payload_and_prometheus_importerror_fallback(monkeypatch):
+    class _Memory:
+        def __len__(self):
+            return 4
+
+        def get_all_sessions(self):
+            return ["s1", "s2"]
+
+    fake_agent = SimpleNamespace(
+        VERSION="test-1.0",
+        cfg=SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False),
+        docs=SimpleNamespace(doc_count=3),
+        memory=_Memory(),
+    )
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: fake_agent)
+    monkeypatch.setattr(web_server, "_local_rate_limits", {"u1": [1, 2]})
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {"calls": 7, "total_tokens": 99}}),
+    )
+
+    json_req = _make_request("/metrics")
+    json_res = await web_server.metrics(json_req, _user=SimpleNamespace(role="admin"))
+    assert json_res.status_code == 200
+    assert b'"llm_calls":7' in json_res.body
+    assert b'"sessions_total":2' in json_res.body
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "prometheus_client":
+            raise ImportError("missing")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    prom_req = _make_request("/metrics", headers={"accept": "text/plain"})
+    prom_res = await web_server.metrics(prom_req, _user=SimpleNamespace(role="admin"))
+    assert prom_res.status_code == 200
+    assert b'"provider":"openai"' in prom_res.body
+
+
+@pytest.mark.asyncio
+async def test_upload_rag_file_success_too_large_and_backend_failure(monkeypatch):
+    calls = {"add": []}
+
+    class _Docs:
+        def add_document_from_file(self, path, original_name, _meta, session_id):
+            calls["add"].append((path, original_name, session_id))
+            return True, "eklendi"
+
+    fake_agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id=None))
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: fake_agent)
+    monkeypatch.setattr(web_server.Config, "MAX_RAG_UPLOAD_BYTES", 8)
+
+    ok_file = UploadFile(filename="demo.txt", file=io.BytesIO(b"hello"))
+    ok_res = await web_server.upload_rag_file(ok_file)
+    assert ok_res.status_code == 200
+    assert b'"success":true' in ok_res.body
+    assert calls["add"][0][1] == "demo.txt"
+    assert calls["add"][0][2] == "global"
+
+    big_file = UploadFile(filename="big.bin", file=io.BytesIO(b"123456789"))
+    with pytest.raises(HTTPException) as exc_info:
+        await web_server.upload_rag_file(big_file)
+    assert exc_info.value.status_code == 413
+
+    class _FailDocs:
+        def add_document_from_file(self, *_args, **_kwargs):
+            return False, "parse failed"
+
+    fake_agent_fail = SimpleNamespace(docs=_FailDocs(), memory=SimpleNamespace(active_session_id="room-1"))
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: fake_agent_fail)
+    fail_file = UploadFile(filename="bad.txt", file=io.BytesIO(b"hello"))
+    fail_res = await web_server.upload_rag_file(fail_file)
+    assert fail_res.status_code == 400
+    assert b'parse failed' in fail_res.body
+
+
+@pytest.mark.asyncio
+async def test_entity_feedback_slack_jira_teams_endpoints(monkeypatch):
+    events = {"upsert": None, "delete": None, "feedback": None}
+
+    class _EntityMemory:
+        async def upsert(self, **kwargs):
+            events["upsert"] = kwargs
+
+        async def get_profile(self, user_id):
+            return {"user_id": user_id, "prefs": {"lang": "tr"}}
+
+        async def delete(self, user_id, key):
+            events["delete"] = (user_id, key)
+            return True
+
+    monkeypatch.setattr(web_server, "_entity_memory_instance", _EntityMemory())
+    upsert_res = await web_server.api_entity_upsert(
+        web_server._EntityUpsertRequest(user_id="u1", key="timezone", value="UTC", ttl_days=7)
+    )
+    assert upsert_res.status_code == 200
+    assert events["upsert"]["key"] == "timezone"
+
+    profile_res = await web_server.api_entity_get_profile("u1")
+    assert profile_res.status_code == 200
+    assert b'"success":true' in profile_res.body
+
+    delete_res = await web_server.api_entity_delete("u1", "timezone")
+    assert delete_res.status_code == 200
+    assert events["delete"] == ("u1", "timezone")
+
+    class _FeedbackStore:
+        async def record(self, **kwargs):
+            events["feedback"] = kwargs
+
+        async def stats(self):
+            return {"avg_rating": 4.5}
+
+    monkeypatch.setattr(web_server, "_feedback_store_instance", _FeedbackStore())
+    record_res = await web_server.api_feedback_record(
+        web_server._FeedbackRecordRequest(
+            user_id="u1",
+            prompt="p",
+            response="r",
+            rating=5,
+            note="ok",
+        )
+    )
+    assert record_res.status_code == 200
+    assert events["feedback"]["rating"] == 5
+    stats_res = await web_server.api_feedback_stats()
+    assert stats_res.status_code == 200
+    assert b'avg_rating' in stats_res.body
+
+    class _SlackMgr:
+        def __init__(self, available=True, send_ok=True, channels_ok=True):
+            self._available = available
+            self._send_ok = send_ok
+            self._channels_ok = channels_ok
+
+        def is_available(self):
+            return self._available
+
+        async def send_message(self, **_kwargs):
+            return self._send_ok, "err"
+
+        async def list_channels(self):
+            if self._channels_ok:
+                return True, [{"id": "C1"}], ""
+            return False, [], "boom"
+
+    monkeypatch.setattr(web_server, "_get_slack_manager", lambda: _SlackMgr(available=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_slack_send(web_server._SlackSendRequest(text="merhaba"))
+    with pytest.raises(HTTPException):
+        await web_server.api_slack_channels()
+
+    monkeypatch.setattr(web_server, "_get_slack_manager", lambda: _SlackMgr(available=True, send_ok=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_slack_send(web_server._SlackSendRequest(text="merhaba"))
+
+    monkeypatch.setattr(web_server, "_get_slack_manager", lambda: _SlackMgr(available=True, send_ok=True, channels_ok=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_slack_channels()
+
+    ok_send = await web_server.api_slack_send(web_server._SlackSendRequest(text="ok"))
+    assert ok_send.status_code == 200
+
+    class _JiraMgr:
+        def __init__(self, available=True, create_ok=True, search_ok=True):
+            self._available = available
+            self._create_ok = create_ok
+            self._search_ok = search_ok
+
+        def is_available(self):
+            return self._available
+
+        async def create_issue(self, **_kwargs):
+            return self._create_ok, {"key": "SID-1"}, "jira err"
+
+        async def search_issues(self, **_kwargs):
+            return self._search_ok, [{"id": "1"}], "jira err"
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraMgr(available=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SID", summary="s"))
+    with pytest.raises(HTTPException):
+        await web_server.api_jira_search_issues()
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraMgr(available=True, create_ok=False, search_ok=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SID", summary="s"))
+    with pytest.raises(HTTPException):
+        await web_server.api_jira_search_issues()
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraMgr())
+    ok_issue = await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SID", summary="s"))
+    assert ok_issue.status_code == 200
+    ok_search = await web_server.api_jira_search_issues()
+    assert ok_search.status_code == 200
+
+    class _TeamsMgr:
+        def __init__(self, available=True, send_ok=True):
+            self._available = available
+            self._send_ok = send_ok
+
+        def is_available(self):
+            return self._available
+
+        async def send_message(self, **_kwargs):
+            return self._send_ok, "teams err"
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _TeamsMgr(available=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_teams_send(web_server._TeamsSendRequest(text="x"))
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _TeamsMgr(available=True, send_ok=False))
+    with pytest.raises(HTTPException):
+        await web_server.api_teams_send(web_server._TeamsSendRequest(text="x"))
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _TeamsMgr())
+    ok_teams = await web_server.api_teams_send(web_server._TeamsSendRequest(text="x"))
+    assert ok_teams.status_code == 200
 
 
 @pytest.mark.asyncio
