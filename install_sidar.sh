@@ -3209,6 +3209,63 @@ ensure_sidar_env_default() {
     fi
 }
 
+prompt_post_install_sidar_env_mode() {
+    local env_file="$SCRIPT_DIR/.env"
+    local example_file="$SCRIPT_DIR/.env.example"
+    local env_choice=""
+    local selected_env="development"
+
+    step "Kurulum Sonrası Uygulama Ortamı Seçimi"
+
+    # Emniyet ağı: .env herhangi bir nedenle yoksa örnek dosyadan oluştur.
+    if [[ ! -f "$env_file" ]]; then
+        if [[ -f "$example_file" ]]; then
+            cp "$example_file" "$env_file"
+            ok ".env dosyası .env.example üzerinden oluşturuldu."
+        else
+            warn ".env.example bulunamadı; SIDAR_ENV güncellemesi atlanıyor."
+            return
+        fi
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
+    else
+        echo ""
+        echo "======================================================"
+        echo "✅ Kurulum işlemleri tamamlandı!"
+        echo "Sistemi hangi modda çalıştırmak istiyorsunuz?"
+        echo "  1) Development (Geliştirme ve Test - Debug logları açık)"
+        echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
+        echo "======================================================"
+
+        if read -r -t 180 -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
+            :
+        else
+            warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
+            env_choice="1"
+        fi
+
+        if [[ "$env_choice" == "2" ]]; then
+            selected_env="production"
+        fi
+    fi
+
+    if grep -qE '^SIDAR_ENV=' "$env_file"; then
+        sed -i "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
+    else
+        echo "SIDAR_ENV=$selected_env" >> "$env_file"
+    fi
+
+    if [[ "$selected_env" == "production" ]]; then
+        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
+    else
+        ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
+    fi
+
+    ok "Sidar kullanıma hazır!"
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -4580,6 +4637,7 @@ main() {
     launch_ide
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
+    prompt_post_install_sidar_env_mode
 }
 
 main "$@"
