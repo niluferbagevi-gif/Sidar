@@ -620,6 +620,82 @@ def test_trim_autonomy_text_truncates_with_suffix():
     assert truncated == "abcde …[truncated]"
 
 
+def test_plugin_role_capabilities_and_filename_helpers():
+    assert web_server._validate_plugin_role_name("  Custom-Role_9 ") == "custom-role_9"
+    with pytest.raises(HTTPException):
+        web_server._validate_plugin_role_name("!")
+
+    assert web_server._sanitize_capabilities([" read ", "", " write", "   "]) == ["read", "write"]
+    assert web_server._sanitize_capabilities(None) == []
+
+    assert web_server._plugin_source_filename(" my/plugin ") == "<sidar-plugin:my_plugin>"
+    assert web_server._plugin_source_filename("") == "<sidar-plugin:plugin>"
+
+
+def test_plugin_marketplace_state_read_write_and_bad_payload(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    assert web_server._read_plugin_marketplace_state() == {}
+
+    state = {"aws_management": {"installed_at": "2026-01-01T00:00:00+00:00"}}
+    web_server._write_plugin_marketplace_state(state)
+    assert web_server._read_plugin_marketplace_state() == state
+
+    bad_path = web_server._plugin_marketplace_state_path()
+    bad_path.write_text("[]", encoding="utf-8")
+    assert web_server._read_plugin_marketplace_state() == {}
+
+    bad_path.write_text("{", encoding="utf-8")
+    warnings = []
+    monkeypatch.setattr(web_server.logger, "warning", lambda *args, **kwargs: warnings.append(args))
+    assert web_server._read_plugin_marketplace_state() == {}
+    assert warnings
+
+
+def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
+    with pytest.raises(HTTPException):
+        web_server._get_plugin_marketplace_entry("unknown")
+
+    fake_spec = SimpleNamespace(
+        role_name="aws_management",
+        description="desc",
+        capabilities=["a"],
+        version="9.9.9",
+        is_builtin=False,
+    )
+    monkeypatch.setattr(web_server.AgentRegistry, "get", lambda role: fake_spec if role == "aws_management" else None)
+
+    serialized = web_server._serialize_marketplace_plugin(
+        "aws_management",
+        installed_state={"installed_at": "now", "last_reloaded_at": "later"},
+    )
+
+    assert serialized["plugin_id"] == "aws_management"
+    assert serialized["installed"] is True
+    assert serialized["live_registered"] is True
+    assert serialized["agent"]["version"] == "9.9.9"
+
+
+def test_verify_hmac_signature_happy_path_and_failures():
+    payload = b'{"ok":true}'
+    secret = "top-secret"
+    expected = "sha256=" + web_server.hmac.new(secret.encode("utf-8"), payload, web_server.hashlib.sha256).hexdigest()
+
+    # no secret => signature checks are bypassed
+    web_server._verify_hmac_signature(payload, "", "", label="Webhook")
+    web_server._verify_hmac_signature(payload, secret, expected, label="Webhook")
+
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(payload, secret, "", label="Webhook")
+    assert exc_info.value.status_code == 401
+    assert "imza başlığı" in str(exc_info.value.detail)
+
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(payload, secret, "sha256=deadbeef", label="Webhook")
+    assert exc_info.value.status_code == 401
+    assert "Geçersiz imza" in str(exc_info.value.detail)
+
+
 def test_build_event_driven_federation_spec_for_jira_issue_created():
     payload = {
         "action": "created",
