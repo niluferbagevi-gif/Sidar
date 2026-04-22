@@ -1996,3 +1996,105 @@ async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
 
     assert ws.accepted is True
     assert ws.closed == {"code": 1008, "reason": "Authentication required"}
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_signature_and_event_variants(monkeypatch):
+    class _Req:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        async def body(self):
+            return self._payload
+
+    class _Memory:
+        def __init__(self):
+            self.messages = []
+
+        async def add(self, role, content):
+            self.messages.append((role, content))
+
+    agent = SimpleNamespace(memory=_Memory())
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **_: {"ok": True})
+    monkeypatch.setattr(web_server, "_run_event_driven_federation_workflow", lambda **_: None)
+
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "sekret")
+    with pytest.raises(HTTPException):
+        await web_server.github_webhook(_Req(b"{}"), x_github_event="push", x_hub_signature_256="")
+
+    with pytest.raises(HTTPException):
+        await web_server.github_webhook(
+            _Req(b"{}"),
+            x_github_event="push",
+            x_hub_signature_256="sha256=invalid",
+        )
+
+    good_sig = "sha256=" + __import__("hmac").new(b"sekret", b"{}", __import__("hashlib").sha256).hexdigest()
+    push_res = await web_server.github_webhook(_Req(b"{}"), x_github_event="push", x_hub_signature_256=good_sig)
+    assert push_res.status_code == 200
+
+    payload = b'{"action":"opened","issue":{"title":"Bug","number":3}}'
+    issue_sig = "sha256=" + __import__("hmac").new(b"sekret", payload, __import__("hashlib").sha256).hexdigest()
+    issues_res = await web_server.github_webhook(_Req(payload), x_github_event="issues", x_hub_signature_256=issue_sig)
+    assert issues_res.status_code == 200
+    assert any("Issue #3" in content for role, content in agent.memory.messages if role == "user")
+
+
+@pytest.mark.asyncio
+async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monkeypatch):
+    api_like = await web_server.spa_fallback("api/metrics")
+    static_like = await web_server.spa_fallback("assets/app.js")
+    assert api_like.status_code == 404
+    assert static_like.status_code == 404
+
+    monkeypatch.setattr(web_server, "index", lambda: web_server.HTMLResponse("<h1>ok</h1>", status_code=200))
+    ok = await web_server.spa_fallback("dashboard/home")
+    assert ok.status_code == 200
+    assert b"<h1>ok</h1>" in ok.body
+
+
+def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
+    class _Args:
+        host = "0.0.0.0"
+        port = 9191
+        level = "sandbox"
+        provider = "openai"
+        log = "INFO"
+
+    class _Parser:
+        def add_argument(self, *_, **__):
+            return None
+
+        def parse_known_args(self):
+            return _Args(), []
+
+    run_calls = []
+    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(
+        web_server,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
+    )
+    monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+    monkeypatch.setattr(web_server, "asyncio", SimpleNamespace(run=lambda coro: None))
+
+    class _AgentOK:
+        VERSION = "9.9.9"
+
+        async def initialize(self):
+            return None
+
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentOK())
+    web_server.main()
+    assert run_calls[-1][1]["host"] == "0.0.0.0"
+    assert run_calls[-1][1]["port"] == 9191
+    assert run_calls[-1][1]["log_level"] == "info"
+    assert web_server.cfg.ACCESS_LEVEL == "sandbox"
+    assert web_server.cfg.AI_PROVIDER == "openai"
+
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom")))
+    web_server.main()
+    assert run_calls[-1][1]["port"] == 9191
