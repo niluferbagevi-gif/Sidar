@@ -1566,3 +1566,217 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
     fallback = await web_server.spa_fallback("deep/link")
     assert fallback.status_code == 200
     assert b"fallback" in fallback.body
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_middleware_branches(monkeypatch):
+    async def _call_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    open_req = _make_request("/healthz")
+    open_res = await web_server.basic_auth_middleware(open_req, _call_next)
+    assert open_res.status_code == 200
+
+    unauthorized = await web_server.basic_auth_middleware(_make_request("/admin/stats"), _call_next)
+    assert unauthorized.status_code == 401
+    assert b"Yetkisiz" in unauthorized.body
+
+    empty_token = await web_server.basic_auth_middleware(
+        _make_request("/admin/stats", headers={"Authorization": "Bearer   "}),
+        _call_next,
+    )
+    assert empty_token.status_code == 401
+    assert b"Gecersiz token" in empty_token.body or b"Ge\xc3\xa7ersiz token" in empty_token.body
+
+    async def _resolve_none(_agent, _token):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_none)
+    invalid_session = await web_server.basic_auth_middleware(
+        _make_request("/admin/stats", headers={"Authorization": "Bearer token-x"}),
+        _call_next,
+    )
+    assert invalid_session.status_code == 401
+
+    calls = {"active_user": None, "set_token": None, "reset_token": None}
+
+    class _Memory:
+        async def set_active_user(self, user_id, username):
+            calls["active_user"] = (user_id, username)
+
+    async def _resolve_user(_agent, _token):
+        return SimpleNamespace(id="u-1", username="ada", role="user")
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=_Memory())
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda uid: calls.update({"set_token": uid}) or "tok-1")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda tok: calls.update({"reset_token": tok}))
+
+    ok = await web_server.basic_auth_middleware(
+        _make_request("/admin/stats", headers={"Authorization": "Bearer good-token"}),
+        _call_next,
+    )
+    assert ok.status_code == 200
+    assert calls["active_user"] == ("u-1", "ada")
+    assert calls["set_token"] == "u-1"
+    assert calls["reset_token"] == "tok-1"
+
+
+@pytest.mark.asyncio
+async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
+    async def _call_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    request_no_user = _make_request("/rag/docs", "GET")
+    assert (await web_server.access_policy_middleware(request_no_user, _call_next)).status_code == 200
+
+    logs = []
+    monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **kwargs: logs.append(kwargs))
+    monkeypatch.setattr(web_server, "_get_client_ip", lambda _request: "9.9.9.9")
+
+    admin_req = _make_request("/rag/docs", "GET")
+    admin_req.state.user = SimpleNamespace(id="admin", role="admin", username="a", tenant_id="t1")
+    admin_res = await web_server.access_policy_middleware(admin_req, _call_next)
+    assert admin_res.status_code == 200
+    assert logs[-1]["allowed"] is True
+
+    class _DB:
+        async def check_access_policy(self, **_):
+            return False
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    denied_req = _make_request("/rag/docs/1", "DELETE")
+    denied_req.state.user = SimpleNamespace(id="u1", role="user", username="lin", tenant_id="t1")
+    denied_res = await web_server.access_policy_middleware(denied_req, _call_next)
+    assert denied_res.status_code == 403
+    assert logs[-1]["allowed"] is False
+
+    async def _raise_policy(**_):
+        raise RuntimeError("db down")
+
+    async def _resolve_agent_fail():
+        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=_raise_policy)))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent_fail)
+    denied_on_error = await web_server.access_policy_middleware(denied_req, _call_next)
+    assert denied_on_error.status_code == 403
+
+    assert (await web_server.ddos_rate_limit_middleware(_make_request("/healthz"), _call_next)).status_code == 200
+    async def _rate_limited(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
+    ddos_block = await web_server.ddos_rate_limit_middleware(_make_request("/api/x"), _call_next)
+    assert ddos_block.status_code == 429
+
+    ws_block = await web_server.rate_limit_middleware(_make_request("/ws/chat", "GET"), _call_next)
+    post_block = await web_server.rate_limit_middleware(_make_request("/set-repo", "POST"), _call_next)
+    get_block = await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
+    assert ws_block.status_code == 429
+    assert post_block.status_code == 429
+    assert get_block.status_code == 429
+
+    async def _rate_open(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_open)
+    assert (await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_federation_and_github_webhook_paths(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+    async def _dispatch_ok(**kwargs):
+        return {
+            "summary": "done",
+            "trigger_id": "tr-1",
+            "trigger_source": kwargs["trigger_source"],
+        }
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch_ok)
+
+    fed_res = await web_server.swarm_federation_execute(
+        web_server._FederationTaskRequest(
+            task_id="task-1",
+            source_system="crewai",
+            source_agent="planner",
+            target_agent="supervisor",
+            goal="review code",
+            protocol="federation.v1",
+            intent="mixed",
+            context={"repo": "org/repo"},
+            inputs=["a=1"],
+            meta={"x": "1"},
+            correlation_id="corr-1",
+        ),
+        x_sidar_signature="sig",
+    )
+    assert fed_res.status_code == 200
+    assert b'"status":"success"' in fed_res.body
+
+    feedback_res = await web_server.swarm_federation_feedback(
+        web_server._FederationFeedbackRequest(
+            feedback_id="fb-1",
+            source_system="crewai",
+            source_agent="executor",
+            action_name="fix_tests",
+            status="completed",
+            summary="all good",
+            related_task_id="task-1",
+            related_trigger_id="tr-1",
+            details={"count": 2},
+            meta={"x": "1"},
+            correlation_id="corr-1",
+        ),
+        x_sidar_signature="sig",
+    )
+    assert feedback_res.status_code == 200
+    assert b'"feedback_id":"fb-1"' in feedback_res.body
+
+    class _Req:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        async def body(self):
+            return self._payload
+
+    memory_calls = []
+
+    class _Memory:
+        async def add(self, role, content):
+            memory_calls.append((role, content))
+
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+    async def _resolve_agent():
+        return SimpleNamespace(memory=_Memory())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+    async def _run_federation(**_):
+        return {"workflow_type": "github_pull_request", "correlation_id": "corr-2"}
+
+    monkeypatch.setattr(web_server, "_run_event_driven_federation_workflow", _run_federation)
+    dispatch_calls = []
+    async def _dispatch_capture(**kwargs):
+        dispatch_calls.append(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch_capture)
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+
+    payload = b'{"action":"opened","pull_request":{"title":"Fix","number":5}}'
+    gh_res = await web_server.github_webhook(_Req(payload), x_github_event="pull_request", x_hub_signature_256="")
+    assert gh_res.status_code == 200
+    assert memory_calls
+    assert dispatch_calls
+
+    bad_json = await web_server.github_webhook(_Req(b"{"), x_github_event="push", x_hub_signature_256="")
+    assert bad_json.status_code == 400
