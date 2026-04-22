@@ -4633,11 +4633,11 @@ main() {
         info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
     fi
     print_summary
-    # Yeni eklenen onaylı IDE başlatma adımı
-    launch_ide
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
     prompt_post_install_sidar_env_mode
+    # En son adım: IDE başlatma onayı
+    launch_ide
 }
 
 main "$@"
