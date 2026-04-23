@@ -5357,3 +5357,134 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
 
     assert send_exc.value.status_code == 502
     assert channels_exc.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_get_agent_skips_init_when_agent_assigned_inside_lock(monkeypatch):
+    fake_agent = SimpleNamespace(name="cached-inside-lock")
+    calls = {"init": 0, "bind": 0}
+
+    class _ShouldNotInit:
+        def __init__(self, _cfg):
+            calls["init"] += 1
+
+        async def initialize(self):
+            calls["init"] += 1
+
+    class _RaceLock:
+        async def __aenter__(self):
+            web_server._agent = fake_agent
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(web_server, "_agent", None)
+    monkeypatch.setattr(web_server, "_agent_lock", _RaceLock())
+    monkeypatch.setattr(web_server, "SidarAgent", _ShouldNotInit)
+    monkeypatch.setattr(web_server, "_bind_llm_usage_sink", lambda _agent: calls.__setitem__("bind", calls["bind"] + 1))
+
+    resolved = await web_server.get_agent()
+    assert resolved is fake_agent
+    assert calls["init"] == 0
+    assert calls["bind"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_accepts_sync_agent_resolution(monkeypatch):
+    class _Agent:
+        async def handle_external_trigger(self, trigger):
+            return SimpleNamespace(
+                status="ok",
+                reason="done",
+                started_at="s",
+                completed_at="c",
+                execution_trace=["x"],
+                remediation={"r": 1},
+            )
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    monkeypatch.setattr(web_server.secrets, "token_hex", lambda _n: "abc123")
+
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="webhook",
+        event_name="build.failed",
+        payload={"k": "v"},
+    )
+
+    assert result["trigger_id"] == "trigger-abc123"
+    assert result["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_cron_and_nightly_loops_exit_when_stop_event_already_set(monkeypatch):
+    cron_logs: list[str] = []
+    night_logs: list[str] = []
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "durum")
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: cron_logs.append(msg % args if args else msg))
+
+    stop_event = asyncio.Event()
+    stop_event.set()
+    await web_server._autonomous_cron_loop(stop_event)
+
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: night_logs.append(msg % args if args else msg))
+    await web_server._nightly_memory_loop(stop_event)
+
+    assert cron_logs == []
+    assert night_logs == []
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_middleware_skips_non_callable_set_active_user(monkeypatch):
+    user = SimpleNamespace(id="u1", username="ada", role="user", tenant_id="default")
+    agent = SimpleNamespace(memory=SimpleNamespace(set_active_user="not-callable"))
+    token_state = {"set": [], "reset": []}
+
+    class _URL:
+        path = "/api/private"
+
+    class _Headers(dict):
+        def get(self, key, default=None):  # noqa: A003
+            return super().get(key, default)
+
+    request = SimpleNamespace(
+        method="GET",
+        url=_URL(),
+        headers=_Headers({"Authorization": "Bearer token-1"}),
+        state=SimpleNamespace(),
+    )
+
+    async def _call_next(req):
+        assert req.state.user is user
+        return JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", lambda *_args: user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: token_state["set"].append(user_id) or "ctx-token")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: token_state["reset"].append(token))
+
+    response = await web_server.basic_auth_middleware(request, _call_next)
+
+    assert response.status_code == 200
+    assert token_state["set"] == ["u1"]
+    assert token_state["reset"] == ["ctx-token"]
+
+
+def test_request_user_admin_and_metrics_guards(monkeypatch):
+    request_without_user = SimpleNamespace(state=SimpleNamespace())
+    with pytest.raises(HTTPException) as no_user_exc:
+        web_server._get_request_user(request_without_user)
+    assert no_user_exc.value.status_code == 401
+
+    admin_user = SimpleNamespace(role="admin", username="root")
+    normal_user = SimpleNamespace(role="user", username="alice")
+
+    assert web_server._require_admin_user(admin_user) is admin_user
+    with pytest.raises(HTTPException) as non_admin_exc:
+        web_server._require_admin_user(normal_user)
+    assert non_admin_exc.value.status_code == 403
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-secret")
+    metrics_request = SimpleNamespace(headers={"Authorization": "Bearer metrics-secret"})
+    assert web_server._require_metrics_access(metrics_request, normal_user) is normal_user
