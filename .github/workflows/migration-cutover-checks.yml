@@ -35,13 +35,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: requirements-dev.txt
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt asyncpg
+          uv sync --frozen --all-extras
 
       - name: Alembic upgrade/downgrade/upgrade chain (PostgreSQL)
         run: |

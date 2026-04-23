@@ -24,11 +24,11 @@ dependencies:
   # ── uv paket yöneticisi (conda-forge) ────────────────────────────────────
   # conda-forge kanalından conda native olarak kurulur; pip subprocess
   # oluşturulmaz, geçici condaenv.*.requirements.txt dosyası üretilmez.
-  # Paket yönetimi uv (requirements.txt) üzerinden yapılır.
+  # Paket yönetimi uv ile lock/tabanlı sync üzerinden yapılır.
   # GPU torch desteği için:
   #   uv pip install torch>=2.4.1 torchvision --extra-index-url https://download.pytorch.org/whl/cu130
-  # Tüm bağımlılıklar için:
-  #   uv pip install -r requirements.txt
+  # Geliştirme + tüm extras için:
+  #   uv sync --all-extras
   - uv>=0.5.0
 
 # ── Kurulum talimatları (WSL2 / Ubuntu / Conda) ───────────────────────────────
@@ -37,8 +37,8 @@ dependencies:
 #      conda env create -f environment.yml
 #      conda activate sidar
 #
-# 2. Tüm bağımlılıkları kur (CPU):
-#      uv pip install -r requirements.txt
+# 2. Tüm bağımlılıkları kur (CPU, CI/CD ile uyumlu):
+#      uv sync --all-extras
 #
 # 3. GPU (RTX 3070, CUDA 13.x) torch kurulumu için:
 #      uv pip install torch>=2.4.1 torchvision --extra-index-url https://download.pytorch.org/whl/cu130

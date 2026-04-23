@@ -189,14 +189,6 @@ dev = [
   "mypy~=1.11.2",
   "bandit>=1.7.0",
   "safety>=3.0.0",
-  # test_web_server telemetri importlarını doğrudan kullandığı için dev ortamına eklendi
-  "prometheus-client~=0.21.0",
-  "opentelemetry-api>=1.29.0",
-  "opentelemetry-sdk>=1.29.0",
-  "opentelemetry-instrumentation-fastapi>=0.50b0",
-  "opentelemetry-instrumentation-httpx>=0.50b0",
-  "opentelemetry-exporter-otlp>=1.29.0",
-  "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
 ]
 
 [tool.pytest.ini_options]
