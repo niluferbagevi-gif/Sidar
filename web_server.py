@@ -1524,14 +1524,20 @@ class _SwarmExecuteRequest(BaseModel):
 
 
 def _serialize_prompt(record) -> dict:
+    prompt_id = getattr(record, "id", 0)
+    try:
+        serialized_id = int(prompt_id)
+    except (TypeError, ValueError):
+        serialized_id = str(prompt_id or "")
+
     return {
-        "id": int(record.id),
-        "role_name": str(record.role_name),
-        "prompt_text": str(record.prompt_text),
-        "version": int(record.version),
-        "is_active": bool(record.is_active),
-        "created_at": str(record.created_at),
-        "updated_at": str(record.updated_at),
+        "id": serialized_id,
+        "role_name": str(getattr(record, "role_name", "") or ""),
+        "prompt_text": str(getattr(record, "prompt_text", "") or ""),
+        "version": int(getattr(record, "version", 1) or 1),
+        "is_active": bool(getattr(record, "is_active", False)),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
     }
 
 
@@ -4118,7 +4124,8 @@ async def _get_slack_manager():
 @app.post("/api/integrations/slack/send", summary="Slack Mesajı Gönder", tags=["Slack"])
 async def api_slack_send(req: _SlackSendRequest):
     """Slack kanalına mesaj gönderir."""
-    mgr = await _get_slack_manager()
+    maybe_mgr = _get_slack_manager()
+    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
     if not mgr.is_available():
         raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
     ok, err = await mgr.send_message(text=req.text, channel=req.channel, thread_ts=req.thread_ts)
@@ -4130,7 +4137,8 @@ async def api_slack_send(req: _SlackSendRequest):
 @app.get("/api/integrations/slack/channels", summary="Slack Kanal Listesi", tags=["Slack"])
 async def api_slack_channels():
     """Workspace'deki Slack kanallarını listeler (SDK gerektirir)."""
-    mgr = await _get_slack_manager()
+    maybe_mgr = _get_slack_manager()
+    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
     if not mgr.is_available():
         raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
     ok, channels, err = await mgr.list_channels()
