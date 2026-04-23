@@ -2106,6 +2106,84 @@ async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_handles_websocketdisconnect_with_room_cleanup(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self.accepted = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted.append(subprotocol)
+
+        async def receive_text(self):
+            raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    ws = _Ws()
+    leave_calls = {"count": 0}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace())
+
+    async def _leave(_websocket):
+        leave_calls["count"] += 1
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_leave_collaboration_room", _leave)
+
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted == [None]
+    assert leave_calls["count"] == 1
+    assert ws.sent == []
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_handles_anyio_closedresource_with_room_cleanup(monkeypatch):
+    class _ClosedResourceError(Exception):
+        pass
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self.accepted = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted.append(subprotocol)
+
+        async def receive_text(self):
+            raise _ClosedResourceError("socket closed by server runtime")
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    ws = _Ws()
+    leave_calls = {"count": 0}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace())
+
+    async def _leave(_websocket):
+        leave_calls["count"] += 1
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_leave_collaboration_room", _leave)
+    monkeypatch.setattr(web_server, "_ANYIO_CLOSED", _ClosedResourceError)
+
+    await web_server.websocket_chat(ws)
+
+    assert ws.accepted == [None]
+    assert leave_calls["count"] == 1
+    assert ws.sent == []
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch):
     user = SimpleNamespace(id="u1", username="ada", role="developer")
     ws = _ChatWebSocket(
