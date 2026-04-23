@@ -1,3 +1,5 @@
+import builtins
+import importlib
 import types
 import asyncio
 from pathlib import Path
@@ -26,6 +28,20 @@ def _override_cfg(agent, **overrides):
 async def test_trace_can_be_set_to_none_for_optional_telemetry(sidar_agent_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sidar_agent, "trace", None, raising=False)
     assert sidar_agent.trace is None
+
+
+async def test_optional_opentelemetry_import_failure_sets_trace_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "opentelemetry":
+            raise RuntimeError("opentelemetry unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _failing_import)
+    reloaded = importlib.reload(sidar_agent)
+    assert reloaded.trace is None
+    importlib.reload(reloaded)
 
 
 async def test_default_derive_correlation_id_returns_first_non_empty_value() -> None:
@@ -2234,4 +2250,3 @@ async def test_summarize_memory_logs_info_on_success(sidar_agent_factory, monkey
 
     await agent._summarize_memory()
     info_mock.assert_called()
-
