@@ -2199,6 +2199,180 @@ async def test_git_and_branch_endpoints(monkeypatch):
     assert b'"repo":"org/repo"' in info.body
     assert b'"current":"feature/x"' in branches.body
 
+
+@pytest.mark.asyncio
+async def test_set_branch_and_set_repo_and_github_pr_endpoints(monkeypatch):
+    async def _ok_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _ok_to_thread)
+    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *args, **kwargs: b"ok")
+
+    ok_req = _JsonRequest({"branch": "feature/demo"})
+    ok_res = await web_server.set_branch(ok_req)
+    assert ok_res.status_code == 200
+    assert b'"success":true' in ok_res.body
+
+    empty_res = await web_server.set_branch(_JsonRequest({"branch": ""}))
+    assert empty_res.status_code == 400
+
+    invalid_res = await web_server.set_branch(_JsonRequest({"branch": "invalid branch!"}))
+    assert invalid_res.status_code == 400
+
+    def _raise_checkout(*_args, **_kwargs):
+        raise web_server.subprocess.CalledProcessError(1, ["git"], output=b"checkout failed")
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", _raise_checkout)
+    fail_res = await web_server.set_branch(_JsonRequest({"branch": "feature/demo"}))
+    assert fail_res.status_code == 400
+    assert b"checkout failed" in fail_res.body
+
+    class _Github:
+        repo_name = "org/current"
+
+        def is_available(self):
+            return True
+
+        def get_pull_requests_detailed(self, state, limit):
+            return True, [{"number": 1, "state": state, "limit": limit}], ""
+
+        def get_pull_request(self, number):
+            return (number == 1), ({"number": number} if number == 1 else "missing")
+
+        def set_repo(self, repo_name):
+            return (repo_name == "org/new"), ("ok" if repo_name == "org/new" else "bad repo")
+
+    agent = SimpleNamespace(github=_Github())
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    prs_ok = await web_server.github_prs(state="open", limit=3)
+    assert prs_ok.status_code == 200
+    assert b'"success":true' in prs_ok.body
+
+    detail_ok = await web_server.github_pr_detail(1)
+    detail_missing = await web_server.github_pr_detail(99)
+    assert detail_ok.status_code == 200
+    assert detail_missing.status_code == 404
+
+    repo_ok = await web_server.set_repo(_JsonRequest({"repo": "org/new"}))
+    repo_empty = await web_server.set_repo(_JsonRequest({"repo": ""}))
+    repo_fail = await web_server.set_repo(_JsonRequest({"repo": "org/bad"}))
+    assert repo_ok.status_code == 200
+    assert repo_empty.status_code == 400
+    assert repo_fail.status_code == 200
+    assert web_server.cfg.GITHUB_REPO == "org/new"
+
+    class _GithubUnavailable(_Github):
+        def is_available(self):
+            return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: SimpleNamespace(github=_GithubUnavailable()))
+    unavailable_prs = await web_server.github_prs()
+    unavailable_detail = await web_server.github_pr_detail(1)
+    assert unavailable_prs.status_code == 503
+    assert unavailable_detail.status_code == 503
+
+    class _GithubPrError(_Github):
+        def get_pull_requests_detailed(self, state, limit):
+            return False, [], "github error"
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: SimpleNamespace(github=_GithubPrError()))
+    prs_fail = await web_server.github_prs()
+    assert prs_fail.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_metrics_and_llm_metric_endpoints(monkeypatch):
+    class _Collector:
+        def snapshot(self):
+            return {"totals": {"calls": 4, "total_tokens": 123}}
+
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+    monkeypatch.setattr(web_server.time, "monotonic", lambda: 50.0)
+    monkeypatch.setattr(web_server, "_start_time", 10.0)
+    web_server._local_rate_limits.clear()
+    web_server._local_rate_limits["k"] = [1, 2]
+
+    class _Memory:
+        def __len__(self):
+            return 2
+
+        async def aget_all_sessions(self):
+            return ["s1", "s2"]
+
+    agent = SimpleNamespace(
+        VERSION="v-test",
+        docs=SimpleNamespace(doc_count=7),
+        memory=_Memory(),
+        cfg=SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False),
+    )
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    req = _make_request("/metrics", headers={"Accept": "application/json"})
+    res = await web_server.metrics(req, _user=SimpleNamespace(role="admin"))
+    assert res.status_code == 200
+    assert b'"uptime_seconds":40' in res.body
+    assert b'"llm_calls":4' in res.body
+
+    monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda _: "llm_metrics 1\n")
+    llm_prom = await web_server.llm_prometheus_metrics(_user=SimpleNamespace(role="admin"))
+    llm_json = await web_server.llm_budget_metrics(_user=SimpleNamespace(role="admin"))
+    assert llm_prom.status_code == 200
+    assert b"llm_metrics 1" in llm_prom.body
+    assert llm_json.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middlewares_and_close_redis(monkeypatch):
+    async def _next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    bypass_req = _make_request("/healthz", method="GET")
+    bypass_res = await web_server.ddos_rate_limit_middleware(bypass_req, _next)
+    assert bypass_res.status_code == 200
+
+    async def _limited(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _limited)
+    blocked_req = _make_request("/api/data", method="GET")
+    blocked_res = await web_server.ddos_rate_limit_middleware(blocked_req, _next)
+    assert blocked_res.status_code == 429
+
+    ws_req = _make_request("/ws/chat", method="GET")
+    ws_res = await web_server.rate_limit_middleware(ws_req, _next)
+    assert ws_res.status_code == 429
+
+    post_req = _make_request("/sessions/new", method="POST")
+    post_res = await web_server.rate_limit_middleware(post_req, _next)
+    assert post_res.status_code == 429
+
+    get_req = _make_request("/rag/docs", method="GET")
+    get_res = await web_server.rate_limit_middleware(get_req, _next)
+    assert get_res.status_code == 429
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", lambda *_args, **_kwargs: asyncio.sleep(0, result=False))
+    pass_res = await web_server.rate_limit_middleware(_make_request("/unknown", method="GET"), _next)
+    assert pass_res.status_code == 200
+
+    class _Redis:
+        def __init__(self, fail=False):
+            self.fail = fail
+            self.closed = False
+
+        async def aclose(self):
+            if self.fail:
+                raise RuntimeError("Event loop is closed")
+            self.closed = True
+
+    web_server._redis_client = _Redis(fail=False)
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
+
+    web_server._redis_client = _Redis(fail=True)
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
+
     invalid = await web_server.set_branch(_JsonRequest({"branch": "bad name"}))
     assert invalid.status_code == 400
 
