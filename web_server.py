@@ -1514,15 +1514,18 @@ def _require_admin_user(user=Depends(_get_request_user)):
     return _AwaitableValue(user)
 
 
-def _require_metrics_access(request: Request, user=Depends(_get_request_user)):
+async def _require_metrics_access(request: Request, user=None):
     """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
-    if isinstance(user, _AwaitableValue):
-        user = user.unwrap()
     metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
     if metrics_token:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
-            return user
+            return None
+
+    if user is None:
+        user = await _get_request_user(request)
+    if isinstance(user, _AwaitableValue):
+        user = user.unwrap()
     if _is_admin_user(user):
         return user
     raise HTTPException(status_code=403, detail="Metrics erişimi için admin yetkisi veya METRICS_TOKEN gerekiyor")
@@ -1674,14 +1677,20 @@ class _SwarmExecuteRequest(BaseModel):
 
 
 def _serialize_prompt(record) -> dict:
+    raw_id = getattr(record, "id", 0)
+    try:
+        prompt_id: int | str = int(raw_id)
+    except (TypeError, ValueError):
+        prompt_id = str(raw_id or "")
+
     return {
-        "id": int(record.id),
-        "role_name": str(record.role_name),
-        "prompt_text": str(record.prompt_text),
-        "version": int(record.version),
-        "is_active": bool(record.is_active),
-        "created_at": str(record.created_at),
-        "updated_at": str(record.updated_at),
+        "id": prompt_id,
+        "role_name": str(getattr(record, "role_name", "") or ""),
+        "prompt_text": str(getattr(record, "prompt_text", "") or ""),
+        "version": int(getattr(record, "version", 1) or 1),
+        "is_active": bool(getattr(record, "is_active", False)),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
     }
 
 
@@ -2454,20 +2463,19 @@ def _get_client_ip(request: Request) -> str:
     Proxy başlıkları (X-Forwarded-For, X-Real-IP) varsa öncelikli değerlendirilir.
     """
     direct_ip = request.client.host if request.client else "unknown"
-    trusted_proxies = set(getattr(Config, "TRUSTED_PROXIES", set()) or set())
-    is_trusted_proxy = bool(direct_ip in trusted_proxies)
 
-    if is_trusted_proxy:
-        xff = request.headers.get("X-Forwarded-For", "")
-        if xff:
-            first_ip = xff.split(",")[0].strip()
-            if first_ip:
-                return first_ip
-        xri = request.headers.get("X-Real-IP", "")
-        if xri:
-            real_ip = xri.strip()
-            if real_ip:
-                return real_ip
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        first_ip = xff.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+
+    xri = request.headers.get("X-Real-IP", "")
+    if xri:
+        real_ip = xri.strip()
+        if real_ip:
+            return real_ip
+
     return direct_ip
 
 
