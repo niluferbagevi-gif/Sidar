@@ -47,15 +47,8 @@ dependencies = [
   # ── Güvenlik / Kimlik doğrulama ────────────────────────────────────────
   "cryptography~=43.0.1",
   "PyJWT~=2.9.0",
-  # ── Observability (temel) ──────────────────────────────────────────────
-  "prometheus-client~=0.21.0",
+  # ── HTTP istemcisi ─────────────────────────────────────────────────────
   "requests~=2.32.0",
-  "opentelemetry-api>=1.29.0",
-  "opentelemetry-sdk>=1.29.0",
-  "opentelemetry-instrumentation-fastapi>=0.50b0",
-  "opentelemetry-instrumentation-httpx>=0.50b0",
-  "opentelemetry-exporter-otlp>=1.29.0",
-  "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
   "tiktoken~=0.8.0",
   "rank-bm25==0.2.2",
@@ -119,6 +112,15 @@ litellm = [
 postgres = [
   "asyncpg~=0.30.0",
   "pgvector~=0.3.6",
+]
+telemetry = [
+  "prometheus-client~=0.21.0",
+  "opentelemetry-api>=1.29.0",
+  "opentelemetry-sdk>=1.29.0",
+  "opentelemetry-instrumentation-fastapi>=0.50b0",
+  "opentelemetry-instrumentation-httpx>=0.50b0",
+  "opentelemetry-exporter-otlp>=1.29.0",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
 ]
 rag = [
   "chromadb~=0.5.5",
