@@ -5497,3 +5497,72 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
 
     assert send_exc.value.status_code == 502
     assert channels_exc.value.status_code == 502
+
+def test_mask_collaboration_text_returns_original_on_runtime_error(monkeypatch):
+    monkeypatch.setattr(web_server.importlib, "import_module", lambda _name: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    assert web_server._mask_collaboration_text("raw-text") == "raw-text"
+
+
+def test_reap_child_processes_nonblocking_breaks_on_unexpected_error(monkeypatch):
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(RuntimeError("waitpid failed")))
+
+    assert web_server._reap_child_processes_nonblocking() == 0
+
+
+def test_force_shutdown_local_llm_processes_without_children_skips_info_log(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [])
+    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda _pids: None)
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 0)
+
+    info_logs = []
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+
+    web_server._force_shutdown_local_llm_processes()
+
+    assert info_logs == []
+    assert web_server._shutdown_cleanup_done is True
+
+
+@pytest.mark.asyncio
+async def test_get_agent_lock_guard_skips_reinitialize_when_agent_set_inside_lock(monkeypatch):
+    class _LockThatSetsAgent:
+        async def __aenter__(self):
+            web_server._agent = "already-created"
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    create_calls = {"count": 0}
+
+    class _UnexpectedAgentCtor:
+        def __init__(self, _cfg):
+            create_calls["count"] += 1
+
+    monkeypatch.setattr(web_server, "SidarAgent", _UnexpectedAgentCtor)
+    monkeypatch.setattr(web_server, "_bind_llm_usage_sink", lambda _agent: None)
+    monkeypatch.setattr(web_server, "_agent", None)
+    monkeypatch.setattr(web_server, "_agent_lock", _LockThatSetsAgent())
+
+    result = await web_server.get_agent()
+
+    assert result == "already-created"
+    assert create_calls["count"] == 0
+
+
+def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch):
+    monkeypatch.setattr(web_server, "_resolve_psutil_module", lambda: (_ for _ in ()).throw(RuntimeError("no psutil")))
+    monkeypatch.setattr(web_server.os, "name", "posix")
+    monkeypatch.setattr(web_server.os, "getpid", lambda: 500)
+
+    ps_output = (
+        b"501 777 ollama ollama serve\n"  # farkli parent pid -> atlanmali
+        b"502 500 python python app.py\n"  # comm ve args ollama degil -> atlanmali
+    )
+    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *_args, **_kwargs: ps_output)
+
+    assert web_server._list_child_ollama_pids() == []
