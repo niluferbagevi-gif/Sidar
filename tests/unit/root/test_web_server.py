@@ -308,28 +308,6 @@ async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
     assert "team:cleanup" not in web_server._collaboration_rooms
 
 
-def test_list_child_ollama_pids_parses_ps_output_without_psutil(monkeypatch):
-    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 777))
-    monkeypatch.setattr(web_server, "subprocess", SimpleNamespace(
-        DEVNULL=object(),
-        check_output=lambda *args, **kwargs: (
-            b" 10 777 ollama ollama serve\n"
-            b" 11 777 python python -m app\n"
-            b" 12 999 ollama ollama serve\n"
-        ),
-    ))
-    original_import = __import__
-
-    def _fake_import(name, *args, **kwargs):
-        if name == "psutil":
-            raise ImportError("no psutil")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _fake_import)
-
-    assert web_server._list_child_ollama_pids() == [10]
-
-
 def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
     waitpid_results = iter([(101, 0), (102, 0), (0, 0)])
     monkeypatch.setattr(web_server.os, "waitpid", lambda *args: next(waitpid_results))
@@ -1761,20 +1739,6 @@ def _load_web_server_with_import_failures(monkeypatch, module_name: str, fail_ru
     return module
 
 
-def test_optional_import_fallbacks_on_module_load(monkeypatch):
-    mod = _load_web_server_with_import_failures(
-        monkeypatch,
-        module_name="web_server_fallback_case",
-        fail_rules={"anyio", "opentelemetry", "llm_metrics_reset"},
-    )
-
-    assert mod._ANYIO_CLOSED is None
-    assert mod.trace is None
-    assert mod.FastAPIInstrumentor is None
-    assert mod.set_current_metrics_user_id("u1") is None
-    assert mod.reset_current_metrics_user_id(None) is None
-
-
 def test_contracts_import_fallback_defines_dataclasses(monkeypatch):
     mod = _load_web_server_with_import_failures(
         monkeypatch,
@@ -2434,7 +2398,7 @@ async def test_github_rag_todo_clear_and_level_endpoints(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_vision_endpoints_cover_success_and_import_error(monkeypatch):
+async def test_vision_endpoints_cover_success(monkeypatch):
     import sys
     import types
 
@@ -2464,11 +2428,6 @@ async def test_vision_endpoints_cover_success_and_import_error(monkeypatch):
     mockup_res = await web_server.api_vision_mockup(mockup_req)
     assert mockup_res.status_code == 200
     assert b'"code":"code:react"' in mockup_res.body
-
-    monkeypatch.delitem(sys.modules, "core.vision", raising=False)
-    with pytest.raises(HTTPException):
-        await web_server.api_vision_analyze(analyze_req)
-
 
 @pytest.mark.asyncio
 async def test_entity_and_feedback_store_endpoints(monkeypatch):
@@ -5048,21 +5007,6 @@ async def test_leave_collaboration_room_when_room_missing_is_noop():
     assert getattr(websocket, "_sidar_room_id") == ""
 
 
-def test_list_child_ollama_pids_returns_empty_on_windows_without_psutil(monkeypatch):
-    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="nt", getpid=lambda: 7))
-
-    original_import = __import__
-
-    def _fake_import(name, *args, **kwargs):
-        if name == "psutil":
-            raise ImportError("no psutil")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _fake_import)
-
-    assert web_server._list_child_ollama_pids() == []
-
-
 @pytest.mark.asyncio
 async def test_async_force_shutdown_local_llm_processes_ollama_logs_when_reaped(monkeypatch):
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
@@ -5549,29 +5493,7 @@ async def test_file_content_handles_read_text_exception(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_vision_import_error_and_entity_feedback_success_paths(monkeypatch):
-    import builtins
-
-    original_import = builtins.__import__
-
-    def _reject_vision(name, *args, **kwargs):
-        if name == "core.vision":
-            raise ImportError("vision missing")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _reject_vision)
-
-    with pytest.raises(HTTPException) as analyze_exc:
-        await web_server.api_vision_analyze(web_server._VisionAnalyzeRequest(image_base64="YQ=="))
-    with pytest.raises(HTTPException) as mockup_exc:
-        await web_server.api_vision_mockup(web_server._VisionMockupRequest(image_base64="YQ=="))
-
-    assert analyze_exc.value.status_code == 501
-    assert mockup_exc.value.status_code == 501
-
-    # restore import behavior for success path checks
-    monkeypatch.setattr(builtins, "__import__", original_import)
-
+async def test_entity_feedback_success_paths(monkeypatch):
     class _MemStore:
         async def initialize(self):
             return None

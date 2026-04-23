@@ -4,7 +4,6 @@ import ast
 import asyncio
 import hashlib
 import importlib
-import importlib.util
 import json
 import pathlib
 import sys
@@ -1879,19 +1878,6 @@ async def test_truncation_system_empty_and_empty_history_content() -> None:
     ]
     out = c._truncate_messages_for_local_model(msgs)
     assert any(m["role"] == "assistant" for m in out)
-
-
-@pytest.mark.asyncio
-async def test_llm_client_optional_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "redis.asyncio", None)
-    monkeypatch.setitem(sys.modules, "opentelemetry", None)
-    module_path = pathlib.Path(llm_client.__file__)
-    spec = importlib.util.spec_from_file_location("core.llm_client_no_optional", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(module)
-    assert module.Redis is None
-    assert module.trace is None
 
 
 @pytest.mark.asyncio

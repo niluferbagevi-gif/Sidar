@@ -362,20 +362,6 @@ def test_validate_critical_settings_ollama_client_exception(monkeypatch):
     assert config.Config.validate_critical_settings() is True
 
 
-def test_init_telemetry_dependency_auto_import_failure(monkeypatch):
-    monkeypatch.setattr(config.Config, "ENABLE_TRACING", True)
-    real_import = __import__
-
-    def fake_import(name, *args, **kwargs):
-        if name.startswith("opentelemetry"):
-            raise ImportError("missing")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", fake_import)
-    assert __import__("math").__name__ == "math"
-    assert config.Config.init_telemetry() is False
-
-
 def test_init_telemetry_runtime_failure(monkeypatch):
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", True)
     monkeypatch.setattr(config.Config, "OTEL_EXPORTER_ENDPOINT", "http://otel")

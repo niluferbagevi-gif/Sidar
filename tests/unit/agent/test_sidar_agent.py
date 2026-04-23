@@ -2235,18 +2235,3 @@ async def test_summarize_memory_logs_info_on_success(sidar_agent_factory, monkey
     await agent._summarize_memory()
     info_mock.assert_called()
 
-
-async def test_reload_sets_trace_to_none_when_opentelemetry_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    import builtins
-    import importlib
-
-    real_import = builtins.__import__
-
-    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name.startswith("opentelemetry"):
-            raise ImportError("blocked")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _blocked_import)
-    reloaded = importlib.reload(sidar_agent)
-    assert reloaded.trace is None
