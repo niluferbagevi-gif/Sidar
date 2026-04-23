@@ -12,6 +12,7 @@ from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import text
 
 _REQUIRED_TEST_MODULES = {
     "pytest_asyncio": "pytest-asyncio",
@@ -23,8 +24,7 @@ _missing_test_deps = [pkg_name for module_name, pkg_name in _REQUIRED_TEST_MODUL
 if _missing_test_deps:
     missing = ", ".join(sorted(set(_missing_test_deps)))
     raise pytest.UsageError(
-        f"Eksik test bağımlılıkları: {missing}. Önce `uv sync --extra dev` "
-        "veya `pip install -e \".[dev]\"` çalıştırın."
+        f"Eksik test bağımlılıkları: {missing}. Önce `uv sync --all-extras` çalıştırın."
     )
 
 import pytest_asyncio
@@ -40,8 +40,7 @@ try:
     import agent.sidar_agent as sidar_agent_module
 except ModuleNotFoundError as exc:
     raise pytest.UsageError(
-        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --extra dev` "
-        "veya `pip install -e \".[dev]\"` çalıştırın."
+        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --all-extras` çalıştırın."
     ) from exc
 
 from tests.helpers import make_test_config
@@ -309,17 +308,44 @@ async def pg_schema_initialized(pg_container: PostgresContainer) -> str:
 
 @pytest_asyncio.fixture
 async def pg_db_session(pg_schema_initialized: str) -> AsyncGenerator[Any, None]:
-    """Test başına transaction rollback ile izole edilmiş PostgreSQL oturumu."""
+    """Test başına rollback + tablo temizliği ile izole edilmiş PostgreSQL oturumu."""
     engine = create_async_engine(pg_schema_initialized)
     SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+    async def _truncate_public_tables() -> None:
+        # Commit edilen verilerin sonraki testlere sızmasını engellemek için
+        # public şemasındaki tüm kullanıcı tablolarını temizler.
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                DO $$
+                DECLARE r RECORD;
+                BEGIN
+                  FOR r IN
+                    SELECT tablename
+                    FROM pg_tables
+                    WHERE schemaname = 'public'
+                      AND tablename != 'schema_versions'
+                  LOOP
+                    EXECUTE format(
+                      'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
+                      'public',
+                      r.tablename
+                    );
+                  END LOOP;
+                END $$;
+            """))
+
     try:
+        # Önceki testte yarım kalan/commit edilen veriler varsa sıfırla.
+        await _truncate_public_tables()
         async with SessionLocal() as db:
             try:
                 yield db
             finally:
                 await db.rollback()
     finally:
+        # Test başarısız olsa bile sonraki test için temiz başlangıç sağla.
+        await _truncate_public_tables()
         await engine.dispose()
 
 
