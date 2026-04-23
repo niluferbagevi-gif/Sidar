@@ -12,60 +12,38 @@ from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-_MISSING_TEST_DEPS: list[str] = []
 
-try:
-    import pytest_asyncio
-except ModuleNotFoundError:
-    class _PytestAsyncioShim:
-        @staticmethod
-        def fixture(*args: Any, **kwargs: Any) -> Any:
-            kwargs.pop("loop_scope", None)
-            return pytest.fixture(*args, **kwargs)
+_REQUIRED_TEST_MODULES = {
+    "pytest_asyncio": "pytest-asyncio",
+    "freezegun": "freezegun",
+    "sqlalchemy": "sqlalchemy",
+    "testcontainers": "testcontainers",
+}
+_missing_test_deps = [pkg_name for module_name, pkg_name in _REQUIRED_TEST_MODULES.items() if importlib.util.find_spec(module_name) is None]
+if _missing_test_deps:
+    missing = ", ".join(sorted(set(_missing_test_deps)))
+    raise pytest.UsageError(
+        f"Eksik test bağımlılıkları: {missing}. Önce `uv sync --extra dev` "
+        "veya `pip install -e \".[dev]\"` çalıştırın."
+    )
 
-    pytest_asyncio = _PytestAsyncioShim()  # type: ignore[assignment]
-    _MISSING_TEST_DEPS.append("pytest-asyncio")
-
-try:
-    from freezegun import freeze_time
-    from freezegun.api import FrozenDateTimeFactory
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("freezegun")
-    FrozenDateTimeFactory = Any  # type: ignore[misc,assignment]
-
-    def freeze_time(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("freezegun paketi kurulu değil")
-try:
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from sqlalchemy.pool import StaticPool
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("sqlalchemy")
-    async_sessionmaker = create_async_engine = StaticPool = None  # type: ignore[assignment]
-try:
-    from testcontainers.postgres import PostgresContainer
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("testcontainers")
-
-    class PostgresContainer:  # type: ignore[no-redef]
-        pass
+import pytest_asyncio
+from freezegun import freeze_time
+from freezegun.api import FrozenDateTimeFactory
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+from testcontainers.postgres import PostgresContainer
 
 try:
     from core.db import Database
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("sidar-runtime-deps")
-    Database = Any  # type: ignore[misc,assignment]
-
-try:
     from agent.core.event_stream import AgentEvent
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("sidar-runtime-deps")
-    AgentEvent = Any  # type: ignore[misc,assignment]
-
-try:
     import agent.sidar_agent as sidar_agent_module
-except ModuleNotFoundError:
-    _MISSING_TEST_DEPS.append("sidar-runtime-deps")
-    sidar_agent_module = None  # type: ignore[assignment]
+except ModuleNotFoundError as exc:
+    raise pytest.UsageError(
+        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --extra dev` "
+        "veya `pip install -e \".[dev]\"` çalıştırın."
+    ) from exc
+
 from tests.helpers import make_test_config
 
 _fakeredis_spec = importlib.util.find_spec("fakeredis")
@@ -90,16 +68,6 @@ if str(PROJECT_ROOT) not in sys.path:
 # Not: `cli` modülünü burada global olarak import etmiyoruz.
 # Böylece pytest-cov ölçümü başlamadan önce `cli.py` yüklenip
 # "already-imported" kaynaklı kapsama sapması oluşturmaz.
-
-
-def pytest_sessionstart(session: pytest.Session) -> None:
-    if _MISSING_TEST_DEPS:
-        missing = ", ".join(sorted(set(_MISSING_TEST_DEPS)))
-        pytest.exit(
-            f"Eksik test bağımlılıkları: {missing}. Önce `uv sync --extra dev` "
-            "veya `pip install -e \".[dev]\"` çalıştırın.",
-            returncode=2,
-        )
 
 
 @pytest.fixture
