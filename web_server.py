@@ -37,14 +37,12 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
 import jwt
+import anyio
 import psutil
+from core.dlp import mask_pii as _mask_pii
 from core.vision import VisionPipeline, build_analyze_prompt
 
-try:
-    import anyio
-    _ANYIO_CLOSED = anyio.ClosedResourceError
-except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep kurulu gelir
-    _ANYIO_CLOSED = None
+_ANYIO_CLOSED = anyio.ClosedResourceError
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -64,87 +62,15 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from agent.base_agent import BaseAgent
-try:
-    from agent.core.contracts import (
-        ActionFeedback,
-        ExternalTrigger,
-        FederationTaskEnvelope,
-        FederationTaskResult,
-        LEGACY_FEDERATION_PROTOCOL_V1,
-        derive_correlation_id,
-        normalize_federation_protocol,
-    )
-except Exception:  # test stub/fallback
-    LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
-
-    def derive_correlation_id(*values: object) -> str:
-        for value in values:
-            text = str(value or "").strip()
-            if text:
-                return text
-        return ""
-
-    def normalize_federation_protocol(protocol: object) -> str:
-        value = str(protocol or "").strip().lower()
-        if not value or value == LEGACY_FEDERATION_PROTOCOL_V1:
-            return "federation.v1"
-        return value
-
-    @dataclass
-    class ExternalTrigger:
-        trigger_id: str
-        source: str
-        event_name: str
-        payload: dict[str, Any]
-        protocol: str = "trigger.v1"
-        meta: dict[str, str] | None = None
-        correlation_id: str = ""
-
-    @dataclass
-    class FederationTaskEnvelope:
-        task_id: str
-        source_system: str
-        source_agent: str
-        target_system: str
-        target_agent: str
-        goal: str
-        intent: str = "mixed"
-        parent_task_id: str | None = None
-        context: dict[str, str] | None = None
-        inputs: list[str] | None = None
-        protocol: str = "federation.v1"
-        meta: dict[str, str] | None = None
-        correlation_id: str = ""
-
-    @dataclass
-    class FederationTaskResult:
-        task_id: str
-        source_system: str
-        source_agent: str
-        target_system: str
-        target_agent: str
-        status: str
-        summary: str
-        protocol: str = "federation.v1"
-        evidence: list[str] | None = None
-        next_actions: list[str] | None = None
-        meta: dict[str, str] | None = None
-        correlation_id: str = ""
-
-    @dataclass
-    class ActionFeedback:
-        feedback_id: str
-        source_system: str
-        source_agent: str
-        action_name: str
-        status: str
-        summary: str
-        related_task_id: str = ""
-        related_trigger_id: str = ""
-        protocol: str = "action_feedback.v1"
-        details: dict[str, Any] | None = None
-        meta: dict[str, str] | None = None
-        correlation_id: str = ""
+from agent.core.contracts import (
+    ActionFeedback,
+    ExternalTrigger,
+    FederationTaskEnvelope,
+    FederationTaskResult,
+    LEGACY_FEDERATION_PROTOCOL_V1,
+    derive_correlation_id,
+    normalize_federation_protocol,
+)
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
@@ -153,17 +79,12 @@ from config import Config
 from core.ci_remediation import build_ci_failure_context
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
-from core.llm_metrics import get_llm_metrics_collector
+from core.llm_metrics import (
+    get_llm_metrics_collector,
+    reset_current_metrics_user_id,
+    set_current_metrics_user_id,
+)
 from managers.system_health import render_llm_metrics_prometheus
-
-try:
-    from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
-except Exception:  # test stub/fallback
-    def set_current_metrics_user_id(_user_id: str):
-        return None
-
-    def reset_current_metrics_user_id(_token) -> None:
-        return None
 
 logger = logging.getLogger(__name__)
 print = builtins.print
@@ -288,11 +209,7 @@ def _collaboration_command_requires_write(command: str) -> bool:
 
 
 def _mask_collaboration_text(text: str) -> str:
-    try:
-        from core.dlp import mask_pii as _mask_pii
-        return _mask_pii(str(text or ""))
-    except Exception:
-        return str(text or "")
+    return _mask_pii(str(text or ""))
 
 
 def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
@@ -505,45 +422,14 @@ MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
-    try:
-        current = psutil.Process(os.getpid())
-        pids: list[int] = []
-        for child in current.children(recursive=False):
-            with contextlib.suppress(Exception):
-                comm = str(child.name() or "").strip().lower()
-                args = " ".join(child.cmdline() or []).strip().lower()
-                if comm == "ollama" or "ollama serve" in args:
-                    pids.append(int(child.pid))
-        return pids
-    except Exception:
-        if os.name == "nt":
-            return []
-
-    if os.name == "nt":
-        return []
-
-    try:
-        out = subprocess.check_output(["ps", "-eo", "pid=,ppid=,comm=,args="], stderr=subprocess.DEVNULL).decode("utf-8", errors="replace")
-    except Exception:
-        return []
-
-    me = os.getpid()
+    current = psutil.Process(os.getpid())
     pids: list[int] = []
-    for line in out.splitlines():
-        parts = line.strip().split(None, 3)
-        if len(parts) < 4:
-            continue
-        try:
-            pid = int(parts[0])
-            ppid = int(parts[1])
-        except Exception:
-            continue
-        comm = parts[2].strip().lower()
-        args = parts[3].strip().lower()
-        if ppid != me:
-            continue
-        if comm == "ollama" or "ollama serve" in args:
-            pids.append(pid)
+    for child in current.children(recursive=False):
+        with contextlib.suppress(Exception):
+            comm = str(child.name() or "").strip().lower()
+            args = " ".join(child.cmdline() or []).strip().lower()
+            if comm == "ollama" or "ollama serve" in args:
+                pids.append(int(child.pid))
     return pids
 
 
