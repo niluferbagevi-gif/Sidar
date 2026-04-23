@@ -37,6 +37,8 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
 import jwt
+import psutil
+from core.vision import VisionPipeline, build_analyze_prompt
 
 try:
     import anyio
@@ -53,22 +55,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
-try:
-    from opentelemetry import trace
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-except Exception:  # OpenTelemetry opsiyoneldir
-    trace = None
-    OTLPSpanExporter = None
-    FastAPIInstrumentor = None
-    HTTPXClientInstrumentor = None
-    TracerProvider = None
-    Resource = None
-    BatchSpanProcessor = None
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from agent.base_agent import BaseAgent
 try:
@@ -513,24 +506,18 @@ MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
     try:
-        import psutil
-    except ImportError:
-        psutil = None
-
-    if psutil is not None:
-        try:
-            current = psutil.Process(os.getpid())
-            pids: list[int] = []
-            for child in current.children(recursive=False):
-                with contextlib.suppress(Exception):
-                    comm = str(child.name() or "").strip().lower()
-                    args = " ".join(child.cmdline() or []).strip().lower()
-                    if comm == "ollama" or "ollama serve" in args:
-                        pids.append(int(child.pid))
-            return pids
-        except Exception:
-            if os.name == "nt":
-                return []
+        current = psutil.Process(os.getpid())
+        pids: list[int] = []
+        for child in current.children(recursive=False):
+            with contextlib.suppress(Exception):
+                comm = str(child.name() or "").strip().lower()
+                args = " ".join(child.cmdline() or []).strip().lower()
+                if comm == "ollama" or "ollama serve" in args:
+                    pids.append(int(child.pid))
+        return pids
+    except Exception:
+        if os.name == "nt":
+            return []
 
     if os.name == "nt":
         return []
@@ -1415,10 +1402,6 @@ def _setup_tracing() -> None:
 
     if not getattr(cfg, "ENABLE_TRACING", False):
         return
-    if not all([trace, OTLPSpanExporter, FastAPIInstrumentor, TracerProvider, Resource, BatchSpanProcessor]):
-        logger.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-        return
-
     resource = Resource.create({"service.name": getattr(cfg, "OTEL_SERVICE_NAME", "sidar-web")})
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=cfg.OTEL_EXPORTER_ENDPOINT, insecure=True)
@@ -4016,11 +3999,6 @@ class _VisionMockupRequest(BaseModel):
 @app.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])
 async def api_vision_analyze(req: _VisionAnalyzeRequest):
     """VisionPipeline ile görüntüyü analiz eder."""
-    try:
-        from core.vision import VisionPipeline, build_analyze_prompt
-    except ImportError:
-        raise HTTPException(status_code=501, detail="core.vision modülü yüklenemedi.")
-
     agent = await _resolve_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
     prompt = req.prompt or build_analyze_prompt(req.analysis_type)
@@ -4047,11 +4025,6 @@ async def api_vision_analyze(req: _VisionAnalyzeRequest):
 @app.post("/api/vision/mockup", summary="Mockup → Kod Dönüşümü", tags=["Vision"])
 async def api_vision_mockup(req: _VisionMockupRequest):
     """VisionPipeline ile mockup görüntüsünden kod üretir."""
-    try:
-        from core.vision import VisionPipeline
-    except ImportError:
-        raise HTTPException(status_code=501, detail="core.vision modülü yüklenemedi.")
-
     agent = await _resolve_agent_instance()
     pipeline = VisionPipeline(agent.llm, cfg)
     try:

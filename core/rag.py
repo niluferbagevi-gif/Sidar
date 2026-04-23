@@ -32,11 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from config import Config
-
-try:
-    from opentelemetry import trace as _otel_trace
-except Exception:
-    _otel_trace = None  # type: ignore[assignment]
+from opentelemetry import trace as _otel_trace
 
 try:
     import bleach as _bleach
@@ -1564,19 +1560,15 @@ class DocumentStore:
         mode: str = "auto",
         session_id: str = "global",
     ) -> Tuple[bool, str]:
-        tracer = _otel_trace.get_tracer(__name__) if _otel_trace else None
-        if tracer:
-            with tracer.start_as_current_span("rag.search") as span:
-                span.set_attribute("sidar.rag.mode", mode)
-                span.set_attribute("sidar.rag.session_id", session_id)
-                span.set_attribute("sidar.rag.query_len", len(query))
-                result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
-                span.set_attribute("sidar.rag.success", result[0])
-                self._schedule_judge(query, result[1])
-                return result
-        result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
-        self._schedule_judge(query, result[1])
-        return result
+        tracer = _otel_trace.get_tracer(__name__)
+        with tracer.start_as_current_span("rag.search") as span:
+            span.set_attribute("sidar.rag.mode", mode)
+            span.set_attribute("sidar.rag.session_id", session_id)
+            span.set_attribute("sidar.rag.query_len", len(query))
+            result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+            span.set_attribute("sidar.rag.success", result[0])
+            self._schedule_judge(query, result[1])
+            return result
 
     @staticmethod
     def _schedule_judge(query: str, answer_text: str) -> None:

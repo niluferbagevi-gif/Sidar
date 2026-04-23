@@ -37,10 +37,7 @@ from core.cache_metrics import (
     set_cache_items,
 )
 
-try:
-    from opentelemetry import trace
-except Exception:  # OpenTelemetry opsiyoneldir
-    trace = None
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +207,7 @@ async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
 
 
 def _get_tracer(config):
-    if trace and getattr(config, "ENABLE_TRACING", False):
+    if getattr(config, "ENABLE_TRACING", False):
         return trace.get_tracer(__name__)
     return None
 
