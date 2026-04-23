@@ -2743,13 +2743,19 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
     ddos_block = await web_server.ddos_rate_limit_middleware(_make_request("/api/x"), _call_next)
     assert ddos_block.status_code == 429
+    assert "Rate Limit Aşıldı" in ddos_block.body.decode("utf-8")
 
     ws_block = await web_server.rate_limit_middleware(_make_request("/ws/chat", "GET"), _call_next)
     post_block = await web_server.rate_limit_middleware(_make_request("/set-repo", "POST"), _call_next)
     get_block = await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
+    non_io_get = await web_server.rate_limit_middleware(_make_request("/status", "GET"), _call_next)
     assert ws_block.status_code == 429
     assert post_block.status_code == 429
     assert get_block.status_code == 429
+    assert non_io_get.status_code == 200
+    assert "Çok fazla istek" in ws_block.body.decode("utf-8")
+    assert "Çok fazla işlem isteği" in post_block.body.decode("utf-8")
+    assert "Çok fazla sorgu isteği" in get_block.body.decode("utf-8")
 
     async def _rate_open(*_args, **_kwargs):
         return False
