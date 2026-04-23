@@ -171,7 +171,7 @@ teams = [
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools,aws,jira,teams]",
+  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools,aws,jira,teams,dev]",
 ]
 dev = [
   "pytest>=8.0.0",
