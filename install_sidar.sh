@@ -2234,13 +2234,13 @@ install_python_deps() {
         fi
     fi
 
-    info "Sidar paketi editable modda kuruluyor (uv pip install -e .)..."
+    info "Sidar paketi editable modda kuruluyor (all+dev ekstralarıyla: -e .[all,dev])..."
     if [[ "$USE_CONDA" == true ]]; then
-        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR"; then
+        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR[all,dev]"; then
             fail "Sidar paketi conda ortamına editable olarak kurulamadı."
         fi
     else
-        if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR"; then
+        if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[all,dev]"; then
             fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
         fi
     fi
