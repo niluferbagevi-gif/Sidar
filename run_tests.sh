@@ -88,7 +88,7 @@ from pathlib import Path
 
 data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 opt_deps = data.get("project", {}).get("optional-dependencies", {})
-deps = opt_deps.get("test") or opt_deps.get("dev") or []
+deps = opt_deps.get("test") or opt_deps.get("dev") or opt_deps.get("all") or []
 deps_l = [d.lower() for d in deps]
 assert any("pytest-cov" in d for d in deps_l), "pytest-cov"
 assert any("pytest-xdist" in d for d in deps_l), "pytest-xdist"
@@ -105,14 +105,14 @@ import pytest_cov  # noqa: F401
 import pytest_asyncio  # noqa: F401
 PY
   then
-    echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. Proje mimarisine göre otomatik kuruluyor..."
+    echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. all+dev opsiyonel bağımlılıkları otomatik kuruluyor..."
 
     if command -v uv >/dev/null 2>&1; then
-      echo "ℹ️ 'uv' tespit edildi, dev bağımlılıkları senkronize ediliyor..."
-      uv sync --extra dev
+      echo "ℹ️ 'uv' tespit edildi, all+dev bağımlılıkları senkronize ediliyor..."
+      uv sync --extra all --extra dev
     else
-      echo "ℹ️ 'uv' bulunamadı, 'pip' ile dev bağımlılıkları kuruluyor..."
-      pip install -e ".[dev]"
+      echo "ℹ️ 'uv' bulunamadı, 'pip' ile all+dev bağımlılıkları kuruluyor..."
+      pip install -e ".[all,dev]"
     fi
 
     if ! python -c "import pytest_asyncio" >/dev/null 2>&1; then
