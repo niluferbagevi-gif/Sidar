@@ -402,6 +402,8 @@ def test_init_telemetry_runtime_failure(monkeypatch):
 
 
 def test_init_telemetry_dependency_auto_import_failure(monkeypatch):
+    import builtins
+
     class _Log:
         def __init__(self):
             self.warned = []
@@ -411,6 +413,15 @@ def test_init_telemetry_dependency_auto_import_failure(monkeypatch):
 
     log = _Log()
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", True)
+
+    original_import = builtins.__import__
+
+    def _fail_otel_import(name, *args, **kwargs):
+        if name.startswith("opentelemetry"):
+            raise ImportError("opentelemetry unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fail_otel_import)
 
     assert (
         config.Config.init_telemetry(
