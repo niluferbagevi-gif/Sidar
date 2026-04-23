@@ -4511,3 +4511,84 @@ async def test_rag_add_file_guards_and_upload_unexpected_error(monkeypatch, tmp_
     failed = await web_server.upload_rag_file(_FailingUpload())
     assert failed.status_code == 500
     assert b"cannot read stream" in failed.body
+
+
+def test_append_room_telemetry_handles_missing_optional_fields():
+    room = web_server._CollaborationRoom(room_id="workspace:default")
+
+    web_server._append_room_telemetry(room, {"type": "status"}, limit=1)
+    web_server._append_room_telemetry(room, {"type": "status-2"}, limit=1)
+
+    assert room.telemetry == [{"type": "status-2"}]
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_when_room_missing_is_noop():
+    websocket = _DummyWebSocket()
+    setattr(websocket, "_sidar_room_id", "team:missing")
+
+    await web_server._leave_collaboration_room(websocket)
+
+    assert getattr(websocket, "_sidar_room_id") == ""
+
+
+def test_list_child_ollama_pids_returns_empty_on_windows_without_psutil(monkeypatch):
+    monkeypatch.setattr(web_server, "os", SimpleNamespace(name="nt", getpid=lambda: 7))
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    assert web_server._list_child_ollama_pids() == []
+
+
+@pytest.mark.asyncio
+async def test_async_force_shutdown_local_llm_processes_ollama_logs_when_reaped(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [31])
+
+    calls = {"kills": [], "reaped": 0, "logs": []}
+
+    def _kill(pid, sig):
+        calls["kills"].append((pid, sig))
+
+    monkeypatch.setattr(web_server.os, "kill", _kill)
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 2)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: calls["logs"].append(msg % args if args else msg))
+
+    await web_server._async_force_shutdown_local_llm_processes()
+
+    assert (31, web_server.signal.SIGTERM) in calls["kills"]
+    assert (31, web_server.signal.SIGKILL) in calls["kills"]
+    assert any("async shutdown cleanup" in item for item in calls["logs"])
+
+
+@pytest.mark.asyncio
+async def test_async_force_shutdown_local_llm_processes_without_children_skips_log(monkeypatch):
+    monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
+    monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
+    monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [])
+    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 0)
+
+    logs: list[str] = []
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+
+    await web_server._async_force_shutdown_local_llm_processes()
+
+    assert logs == []
+
+
+@pytest.mark.asyncio
+async def test_get_agent_returns_cached_instance_without_reinitialization(monkeypatch):
+    cached = SimpleNamespace(name="cached-agent")
+    monkeypatch.setattr(web_server, "_agent", cached)
+
+    assert await web_server.get_agent() is cached
