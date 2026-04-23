@@ -3438,7 +3438,9 @@ async def metrics(request: Request, _user=Depends(_require_metrics_access)):
 
     # Prometheus formatı: istemci açıkça talep ederse VE kütüphane kuruluysa sun
     accept = request.headers.get("Accept", "")
-    if "text/plain" in accept:
+    # Yalnızca gerçek HTTP isteğinde Prometheus çıktısı üret;
+    # test/yardımcı çağrılarda JSON fallback davranışını koru.
+    if isinstance(request, Request) and "text/plain" in accept:
         try:
             from prometheus_client import (
                 CONTENT_TYPE_LATEST,
