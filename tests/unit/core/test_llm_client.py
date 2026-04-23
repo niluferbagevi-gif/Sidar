@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import builtins
 import hashlib
 import importlib
 import json
@@ -18,6 +19,27 @@ from redis import exceptions as redis_exceptions
 import core.llm_client as llm_client
 from tests.helpers import collect_async_chunks as _collect
 from tests.helpers import make_test_config as _make_config
+
+
+def test_llm_client_sets_redis_none_when_redis_asyncio_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_path = pathlib.Path(llm_client.__file__)
+    module_name = "core.llm_client_no_redis"
+    original_import = builtins.__import__
+
+    def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "redis.asyncio":
+            raise RuntimeError("redis unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _failing_import)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.Redis is None
 
 
 def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object]) -> None:
