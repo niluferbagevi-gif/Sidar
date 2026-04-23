@@ -1756,6 +1756,8 @@ def test_contracts_import_fallback_defines_dataclasses(monkeypatch):
     assert feedback.protocol == "action_feedback.v1"
     assert forced.normalize_federation_protocol(forced.LEGACY_FEDERATION_PROTOCOL_V1) == "federation.v1"
     assert forced.derive_correlation_id("", None, "corr-1") == "corr-1"
+    assert forced.derive_correlation_id("", None, "   ") == ""
+    assert forced.normalize_federation_protocol("custom.v2") == "custom.v2"
     assert isinstance(mod.LEGACY_FEDERATION_PROTOCOL_V1, str)
 
 
@@ -4802,3 +4804,123 @@ async def test_swarm_federation_disabled_returns_503(monkeypatch):
             x_sidar_signature="",
         )
     assert feedback_err.value.status_code == 503
+
+
+def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
+    import importlib.util
+
+    module_name = "web_server_otel_success_case"
+    sys.modules.pop(module_name, None)
+
+    otel_root = types.ModuleType("opentelemetry")
+    otel_root.trace = object()
+
+    fake_modules = {
+        "opentelemetry": otel_root,
+        "opentelemetry.trace": types.ModuleType("opentelemetry.trace"),
+        "opentelemetry.exporter": types.ModuleType("opentelemetry.exporter"),
+        "opentelemetry.exporter.otlp": types.ModuleType("opentelemetry.exporter.otlp"),
+        "opentelemetry.exporter.otlp.proto": types.ModuleType("opentelemetry.exporter.otlp.proto"),
+        "opentelemetry.exporter.otlp.proto.grpc": types.ModuleType("opentelemetry.exporter.otlp.proto.grpc"),
+        "opentelemetry.exporter.otlp.proto.grpc.trace_exporter": types.SimpleNamespace(
+            OTLPSpanExporter=type("OTLPSpanExporter", (), {})
+        ),
+        "opentelemetry.instrumentation": types.ModuleType("opentelemetry.instrumentation"),
+        "opentelemetry.instrumentation.fastapi": types.SimpleNamespace(
+            FastAPIInstrumentor=type("FastAPIInstrumentor", (), {})
+        ),
+        "opentelemetry.instrumentation.httpx": types.SimpleNamespace(
+            HTTPXClientInstrumentor=type("HTTPXClientInstrumentor", (), {})
+        ),
+        "opentelemetry.sdk": types.ModuleType("opentelemetry.sdk"),
+        "opentelemetry.sdk.resources": types.SimpleNamespace(Resource=type("Resource", (), {})),
+        "opentelemetry.sdk.trace": types.SimpleNamespace(TracerProvider=type("TracerProvider", (), {})),
+        "opentelemetry.sdk.trace.export": types.SimpleNamespace(BatchSpanProcessor=type("BatchSpanProcessor", (), {})),
+    }
+    for name, mod in fake_modules.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    spec = importlib.util.spec_from_file_location(module_name, Path("web_server.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+
+    assert module.trace is otel_root.trace
+    assert module.OTLPSpanExporter.__name__ == "OTLPSpanExporter"
+    assert module.FastAPIInstrumentor.__name__ == "FastAPIInstrumentor"
+    assert module.HTTPXClientInstrumentor.__name__ == "HTTPXClientInstrumentor"
+    assert module.Resource.__name__ == "Resource"
+    assert module.TracerProvider.__name__ == "TracerProvider"
+    assert module.BatchSpanProcessor.__name__ == "BatchSpanProcessor"
+
+
+@pytest.mark.asyncio
+async def test_autonomous_cron_loop_logs_success(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "durum")
+
+    class _StopAfterFirstTimeout:
+        def __init__(self):
+            self.calls = 0
+
+        def is_set(self):
+            return self.calls >= 2
+
+        async def wait(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise asyncio.TimeoutError()
+            return True
+
+    async def _wait_for(awaitable, timeout):
+        return await awaitable
+
+    async def _dispatch(**_kwargs):
+        return {"trigger_id": "trg-123"}
+
+    info_logs: list[str] = []
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+
+    await web_server._autonomous_cron_loop(_StopAfterFirstTimeout())
+    assert any("Autonomous cron tetiklendi" in item for item in info_logs)
+
+
+@pytest.mark.asyncio
+async def test_nightly_memory_loop_logs_success(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    monkeypatch.setattr(web_server.cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 1)
+
+    class _StopAfterFirstTimeout:
+        def __init__(self):
+            self.calls = 0
+
+        def is_set(self):
+            return self.calls >= 2
+
+        async def wait(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise asyncio.TimeoutError()
+            return True
+
+    async def _wait_for(awaitable, timeout):
+        return await awaitable
+
+    class _Agent:
+        async def run_nightly_memory_maintenance(self, reason):
+            assert reason == "nightly_loop"
+            return {"status": "ok"}
+
+    async def _resolve():
+        return _Agent()
+
+    info_logs: list[str] = []
+    monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+
+    await web_server._nightly_memory_loop(_StopAfterFirstTimeout())
+    assert any("Nightly memory maintenance sonucu: ok" in item for item in info_logs)
