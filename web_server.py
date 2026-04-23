@@ -2925,7 +2925,14 @@ async def websocket_voice(websocket: WebSocket):
 
     agent = await _resolve_agent_instance()
     pipeline = MultimodalPipeline(agent.llm, cfg)
-    voice_pipeline = VoicePipeline(cfg) if VoicePipeline is not None else None
+    voice_pipeline = None
+    voice_init_error = ""
+    if VoicePipeline is not None:
+        try:
+            voice_pipeline = VoicePipeline(cfg)
+        except Exception as exc:
+            voice_init_error = f"Voice Disabled: {exc.__class__.__name__}"
+            logger.warning("Voice pipeline başlatılamadı, voice devre dışı: %s", exc)
     max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
 
     audio_buffer = bytearray()
@@ -2959,6 +2966,7 @@ async def websocket_voice(websocket: WebSocket):
                     "duplex_enabled": bool(getattr(voice_pipeline, "duplex_enabled", False)) if voice_pipeline is not None else False,
                     "interrupt_ready": False,
                     "tts_enabled": bool(getattr(voice_pipeline, "enabled", False)) if voice_pipeline is not None else False,
+                    "voice_disabled_reason": voice_init_error,
                     "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
                     "output_buffer_chars": len(getattr(duplex_state, "output_text_buffer", "") or ""),
                     "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
@@ -3151,6 +3159,10 @@ async def websocket_voice(websocket: WebSocket):
                         "mime_type": session_mime_type,
                         "duplex": True,
                         "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)),
+                        "tts_enabled": bool(getattr(voice_pipeline, "enabled", False)) if voice_pipeline is not None else False,
+                        "voice_disabled_reason": str(
+                            getattr(voice_pipeline, "voice_disabled_reason", "") or voice_init_error
+                        ),
                     }
                 )
                 await _emit_voice_state("ready")

@@ -269,6 +269,8 @@ def _make_pipeline(**cfg_attrs):
     cfg.VOICE_VAD_MIN_SPEECH_BYTES = cfg_attrs.get("vad_min_speech_bytes", 1024)
     cfg.VOICE_DUPLEX_ENABLED = cfg_attrs.get("duplex_enabled", True)
     cfg.VOICE_VAD_INTERRUPT_MIN_BYTES = cfg_attrs.get("vad_interrupt_min_bytes", 384)
+    cfg.ENABLE_MULTIMODAL = cfg_attrs.get("enable_multimodal", True)
+    cfg.VOICE_ENABLED = cfg_attrs.get("voice_enabled", True)
     return VoicePipeline(cfg)
 
 
@@ -281,6 +283,12 @@ def test_pipeline_init_mock_provider():
 def test_pipeline_init_no_config():
     p = VoicePipeline(None)
     assert p.provider == "pyttsx3"
+
+
+def test_pipeline_init_respects_disable_flags():
+    p = _make_pipeline(enable_multimodal=False)
+    assert p.enabled is False
+    assert "ENABLE_MULTIMODAL" in p.voice_disabled_reason
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -584,6 +592,25 @@ async def test_synthesize_text_whitespace_only():
     p = _make_pipeline(provider="mock")
     result = await p.synthesize_text("   ")
     assert result["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_synthesize_text_degrades_gracefully_on_adapter_error():
+    p = _make_pipeline(provider="mock")
+
+    async def _boom(_text: str, *, voice: str = "") -> dict:
+        _ = voice
+        raise RuntimeError("device lost")
+
+    p.adapter.synthesize = _boom  # type: ignore[assignment]
+    first = await p.synthesize_text("Merhaba")
+    assert first["success"] is False
+    assert "Voice Disabled" in first["reason"]
+    assert p.enabled is False
+
+    second = await p.synthesize_text("Tekrar")
+    assert second["success"] is False
+    assert second["reason"] == p.voice_disabled_reason
 
 
 def test_webrtc_audio_ingress_decode_packet_success():

@@ -4340,6 +4340,73 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_degrades_when_voice_pipeline_init_fails(monkeypatch):
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            raise RuntimeError("audio device unavailable")
+
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter([
+                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
+                {"type": "websocket.disconnect"},
+            ])
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            _ = (code, reason)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    ready_payloads = [item for item in ws.sent if item.get("voice_session") == "ready"]
+    assert ready_payloads
+    assert ready_payloads[0]["tts_enabled"] is False
+    assert "Voice Disabled" in str(ready_payloads[0].get("voice_disabled_reason", ""))
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_rejects_invalid_header_token(monkeypatch):
     class _MultimodalPipeline:
         def __init__(self, *_):

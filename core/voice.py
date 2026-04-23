@@ -101,6 +101,8 @@ class VoicePipeline:
 
     def __init__(self, config: Any = None) -> None:
         provider = str(getattr(config, "VOICE_TTS_PROVIDER", "auto") or "auto")
+        self.multimodal_enabled = bool(getattr(config, "ENABLE_MULTIMODAL", True))
+        self.voice_enabled = bool(getattr(config, "VOICE_ENABLED", True))
         self.voice = str(getattr(config, "VOICE_TTS_VOICE", "") or "")
         self.segment_chars = max(20, int(getattr(config, "VOICE_TTS_SEGMENT_CHARS", 48) or 48))
         self.buffer_chars = max(
@@ -116,10 +118,15 @@ class VoicePipeline:
         )
         self.adapter = _build_tts_adapter(provider)
         self.provider = self.adapter.provider
+        self.voice_disabled_reason = ""
+        if not self.multimodal_enabled:
+            self.voice_disabled_reason = "ENABLE_MULTIMODAL devre dışı."
+        elif not self.voice_enabled:
+            self.voice_disabled_reason = "VOICE_ENABLED devre dışı."
 
     @property
     def enabled(self) -> bool:
-        return bool(self.adapter.available)
+        return bool(self.adapter.available) and not self.voice_disabled_reason
 
     def extract_ready_segments(self, buffer: str, *, flush: bool = False) -> tuple[list[str], str]:
         text = str(buffer or "")
@@ -273,6 +280,7 @@ class VoicePipeline:
             "duplex_enabled": self.duplex_enabled,
             "interrupt_ready": self.should_interrupt_response(buffered_bytes, event=normalized),
             "tts_enabled": self.enabled,
+            "voice_disabled_reason": self.voice_disabled_reason,
             "assistant_turn_id": assistant_turn_id,
             "output_buffer_chars": output_buffer_chars,
             "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
@@ -289,7 +297,27 @@ class VoicePipeline:
                 "voice": self.voice,
                 "reason": "Boş metin için TTS üretilmedi.",
             }
-        return await self.adapter.synthesize(normalized, voice=self.voice)
+        if not self.enabled:
+            return {
+                "success": False,
+                "audio_bytes": b"",
+                "mime_type": "audio/mock",
+                "provider": self.provider,
+                "voice": self.voice,
+                "reason": self.voice_disabled_reason or "Voice pipeline devre dışı.",
+            }
+        try:
+            return await self.adapter.synthesize(normalized, voice=self.voice)
+        except Exception as exc:
+            self.voice_disabled_reason = f"Voice Disabled: {exc.__class__.__name__}"
+            return {
+                "success": False,
+                "audio_bytes": b"",
+                "mime_type": "audio/mock",
+                "provider": self.provider,
+                "voice": self.voice,
+                "reason": self.voice_disabled_reason,
+            }
 
 
 @dataclass(frozen=True)
