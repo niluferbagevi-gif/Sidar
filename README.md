@@ -557,10 +557,14 @@ Sidar/
 
 ```bash
 cd Sidar
-pytest tests/ -v
-pytest tests/ -v --cov=. --cov-report=term-missing
+uv sync --extra dev
+python -m pytest -c pyproject.toml tests/ -v
+python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
 ```
+
+> Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
+> kullanıyorsanız komutları doğrudan `python -m pytest ...` ile çalıştırın.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
