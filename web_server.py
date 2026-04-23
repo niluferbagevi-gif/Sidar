@@ -90,7 +90,12 @@ print = builtins.print
 
 def _resolve_vision_components():
     vision_module = importlib.import_module("core.vision")
-    return vision_module.VisionPipeline, vision_module.build_analyze_prompt
+    build_analyze_prompt = getattr(
+        vision_module,
+        "build_analyze_prompt",
+        lambda analysis_type="general": f"Görseli '{analysis_type}' odaklı analiz et.",
+    )
+    return vision_module.VisionPipeline, build_analyze_prompt
 
 
 def _resolve_psutil_module():
@@ -1934,7 +1939,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
     if not role_name or not prompt_text:
         raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
 
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     record = await agent.memory.db.upsert_prompt(role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate))
     if role_name == "system" and bool(record.is_active):
         agent.system_prompt = record.prompt_text
@@ -3551,10 +3556,15 @@ async def git_info():
         _git_run, ["git", "remote", "get-url", "origin"], _root
     ) or ""
 
-    # Varsayılan branch (örn. main veya master): refs/remotes/origin/HEAD → "origin/main"
+    # Varsayılan branch için önce upstream ref'i dene (origin/main gibi döner),
+    # boşsa origin/HEAD symbolic-ref yoluna geri dön.
     default_branch_raw = await asyncio.to_thread(
-        _git_run, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], _root
+        _git_run, ["git", "symbolic-ref", "--short", "HEAD@{upstream}"], _root
     ) or ""
+    if not default_branch_raw:
+        default_branch_raw = await asyncio.to_thread(
+            _git_run, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], _root
+        ) or ""
     default_branch = default_branch_raw.replace("origin/", "").strip() or "main"
 
     # GitHub URL'sini "owner/repo" biçimine çevir
@@ -3768,7 +3778,7 @@ async def rag_delete_doc(doc_id: str):
 @app.post("/api/rag/upload")
 async def upload_rag_file(file: UploadFile = File(...)):
     """Web arayüzünden Sürükle-Bırak ile gelen dosyaları RAG deposuna ekler."""
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     session_id = agent.memory.active_session_id or "global"
 
     temp_dir = None
@@ -3892,7 +3902,7 @@ async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user
     if not new_level:
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
     if asyncio.iscoroutine(result_msg):
         result_msg = await result_msg
