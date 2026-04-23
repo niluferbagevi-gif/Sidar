@@ -12,6 +12,21 @@ from typing import Any, AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+_REQUIRED_TEST_MODULES = {
+    "pytest_asyncio": "pytest-asyncio",
+    "freezegun": "freezegun",
+    "sqlalchemy": "sqlalchemy",
+    "testcontainers": "testcontainers",
+}
+_missing_test_deps = [pkg_name for module_name, pkg_name in _REQUIRED_TEST_MODULES.items() if importlib.util.find_spec(module_name) is None]
+if _missing_test_deps:
+    missing = ", ".join(sorted(set(_missing_test_deps)))
+    raise pytest.UsageError(
+        f"Eksik test bağımlılıkları: {missing}. Önce `uv sync --extra dev` "
+        "veya `pip install -e \".[dev]\"` çalıştırın."
+    )
+
 import pytest_asyncio
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
@@ -19,9 +34,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 from testcontainers.postgres import PostgresContainer
 
-from core.db import Database
-from agent.core.event_stream import AgentEvent
-import agent.sidar_agent as sidar_agent_module
+try:
+    from core.db import Database
+    from agent.core.event_stream import AgentEvent
+    import agent.sidar_agent as sidar_agent_module
+except ModuleNotFoundError as exc:
+    raise pytest.UsageError(
+        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --extra dev` "
+        "veya `pip install -e \".[dev]\"` çalıştırın."
+    ) from exc
+
 from tests.helpers import make_test_config
 
 _fakeredis_spec = importlib.util.find_spec("fakeredis")
