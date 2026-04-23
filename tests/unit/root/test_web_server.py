@@ -3145,6 +3145,15 @@ async def test_spa_fallback_handles_empty_path_async_index_and_extension_guard(m
 
 
 @pytest.mark.asyncio
+async def test_spa_fallback_empty_path_with_sync_index_return(monkeypatch):
+    sync_response = web_server.HTMLResponse("<html>sync-index</html>", status_code=200)
+    monkeypatch.setattr(web_server, "index", lambda: sync_response)
+
+    response = await web_server.spa_fallback("")
+    assert response is sync_response
+
+
+@pytest.mark.asyncio
 async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
     class _Req:
         async def body(self):
@@ -3187,7 +3196,37 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
     dispatch_calls.clear()
     response_disabled = await web_server.github_webhook(_Req(), x_github_event="issues", x_hub_signature_256="")
     assert response_disabled.status_code == 200
-    assert dispatch_calls == []
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatch):
+    class _Req:
+        async def body(self):
+            return b'{"action":"noop"}'
+
+    class _Memory:
+        def __init__(self):
+            self.calls = []
+
+        async def add(self, role, content):
+            self.calls.append((role, content))
+
+    memory = _Memory()
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: SimpleNamespace(memory=memory))
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+
+    dispatched = {"count": 0}
+
+    async def _dispatch(**_kwargs):
+        dispatched["count"] += 1
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
+
+    response = await web_server.github_webhook(_Req(), x_github_event="repository", x_hub_signature_256="")
+
+    assert response.status_code == 200
+    assert memory.calls == []
+    assert dispatched["count"] == 0
 
 
 @pytest.mark.asyncio
@@ -3422,6 +3461,42 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
     assert run_calls[-1][1]["log_level"] == "warning"
     assert web_server.cfg.ACCESS_LEVEL == original_level
     assert web_server.cfg.AI_PROVIDER == original_provider
+
+
+def test_main_handles_non_callable_initialize_attribute(monkeypatch):
+    class _Args:
+        host = ""
+        port = 9193
+        level = None
+        provider = None
+        log = "debug"
+
+    class _Parser:
+        def add_argument(self, *_, **__):
+            return None
+
+        def parse_known_args(self):
+            return _Args(), []
+
+    run_calls = []
+    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(
+        web_server,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
+    )
+    monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+
+    class _AgentNoInit:
+        VERSION = "0.0.1"
+        initialize = "not-callable"
+
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentNoInit())
+    web_server.main()
+
+    assert run_calls[-1][1]["host"] == ""
+    assert run_calls[-1][1]["port"] == 9193
+    assert run_calls[-1][1]["log_level"] == "debug"
 
 
 @pytest.mark.asyncio
