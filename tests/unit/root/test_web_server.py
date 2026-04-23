@@ -4486,3 +4486,28 @@ async def test_upload_rag_file_size_error_and_backend_failure(monkeypatch):
     assert failed.status_code == 400
     assert b"index failed" in failed.body
     assert small_file.closed is True
+
+
+@pytest.mark.asyncio
+async def test_rag_add_file_guards_and_upload_unexpected_error(monkeypatch, tmp_path):
+    empty_path = await web_server.rag_add_file(_JsonRequest({"path": "   "}))
+    assert empty_path.status_code == 400
+
+    monkeypatch.setattr(web_server, "__file__", str((tmp_path / "web_server.py").resolve()))
+    traversal = await web_server.rag_add_file(_JsonRequest({"path": "../outside.txt"}))
+    assert traversal.status_code == 403
+
+    class _FailingUpload:
+        filename = "bad.txt"
+
+        async def read(self, _size: int):
+            raise RuntimeError("cannot read stream")
+
+        async def close(self):
+            raise RuntimeError("cannot close stream")
+
+    agent = SimpleNamespace(docs=SimpleNamespace(), memory=SimpleNamespace(active_session_id=None))
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
+    failed = await web_server.upload_rag_file(_FailingUpload())
+    assert failed.status_code == 500
+    assert b"cannot read stream" in failed.body
