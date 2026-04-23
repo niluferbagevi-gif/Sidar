@@ -46,6 +46,8 @@ PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
+DOCKER_TEST_SERVICES_STARTED=0
+DOCKER_COMPOSE_CMD=()
 
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
@@ -79,6 +81,72 @@ open_artifact() {
     echo "ℹ️ Otomatik açma için desteklenen komut bulunamadı: $target"
   fi
 }
+
+resolve_docker_compose_cmd() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+
+ensure_test_services() {
+  if [ "${AUTO_DOCKER_TEST_SERVICES:-1}" != "1" ]; then
+    echo "ℹ️ AUTO_DOCKER_TEST_SERVICES=0 verildi, Redis/PostgreSQL otomatik başlatma adımı atlanıyor."
+    return 0
+  fi
+
+  if ! resolve_docker_compose_cmd; then
+    echo "⚠️ Docker Compose bulunamadı; Redis/PostgreSQL otomatik başlatılamadı."
+    return 0
+  fi
+
+  local running_services
+  running_services="$("${DOCKER_COMPOSE_CMD[@]}" ps --status running --services 2>/dev/null || true)"
+  local redis_running=0
+  local postgres_running=0
+
+  if printf '%s\n' "${running_services}" | grep -qx "redis"; then
+    redis_running=1
+  fi
+  if printf '%s\n' "${running_services}" | grep -qx "postgres"; then
+    postgres_running=1
+  fi
+
+  if [ "${redis_running}" -eq 1 ] && [ "${postgres_running}" -eq 1 ]; then
+    echo "ℹ️ Redis ve PostgreSQL zaten çalışıyor; mevcut servisler kullanılacak."
+    return 0
+  fi
+
+  echo "🐳 Test öncesi bağımlı servisler başlatılıyor: redis, postgres"
+  if ! "${DOCKER_COMPOSE_CMD[@]}" up -d redis postgres; then
+    echo "❌ Redis/PostgreSQL docker servisleri başlatılamadı."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  DOCKER_TEST_SERVICES_STARTED=1
+}
+
+cleanup_test_services() {
+  if [ "${DOCKER_TEST_SERVICES_STARTED}" -ne 1 ]; then
+    return 0
+  fi
+  if [ "${#DOCKER_COMPOSE_CMD[@]}" -eq 0 ] && ! resolve_docker_compose_cmd; then
+    echo "⚠️ Test sonrası servisler durdurulamadı: Docker Compose komutu bulunamadı."
+    return 0
+  fi
+
+  echo "🧹 Test sonrası docker servisleri durduruluyor: redis, postgres"
+  "${DOCKER_COMPOSE_CMD[@]}" stop redis postgres >/dev/null 2>&1 || \
+    echo "⚠️ Redis/PostgreSQL servisleri durdurulurken hata oluştu."
+}
+
+trap cleanup_test_services EXIT
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
@@ -189,7 +257,12 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-run_pytest_coverage_report
+if ensure_test_services; then
+  run_pytest_coverage_report
+else
+  echo "❌ Backend testleri atlandı: bağımlı docker servisleri ayağa kaldırılamadı."
+  BACKEND_EXIT_CODE=1
+fi
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
