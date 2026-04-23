@@ -401,6 +401,31 @@ def test_init_telemetry_runtime_failure(monkeypatch):
     )
 
 
+def test_init_telemetry_dependency_auto_import_failure(monkeypatch):
+    class _Log:
+        def __init__(self):
+            self.warned = []
+
+        def warning(self, msg, *args):
+            self.warned.append(msg % args if args else msg)
+
+    log = _Log()
+    monkeypatch.setattr(config.Config, "ENABLE_TRACING", True)
+
+    assert (
+        config.Config.init_telemetry(
+            logger_obj=log,
+            trace_module=config._DEPENDENCY_AUTO,
+            otlp_exporter_cls=config._DEPENDENCY_AUTO,
+            tracer_provider_cls=config._DEPENDENCY_AUTO,
+            resource_cls=config._DEPENDENCY_AUTO,
+            batch_span_processor_cls=config._DEPENDENCY_AUTO,
+        )
+        is False
+    )
+    assert any("OpenTelemetry bağımlılıkları yüklenemedi" in m for m in log.warned)
+
+
 def test_module_reload_env_branches(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     calls = {"base": False, "spec": False}
