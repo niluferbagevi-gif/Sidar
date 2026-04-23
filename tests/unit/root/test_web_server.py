@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 import jwt
 from pydantic import ValidationError
