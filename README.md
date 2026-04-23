@@ -272,20 +272,19 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ```bash
 cd Sidar
-uv venv .venv
+python -m venv .venv
 source .venv/bin/activate
-uv sync --extra dev
+uv pip install -e ".[dev]"
 ```
 
-> Not: `uv sync --extra dev` komutu runtime + geliştirme bağımlılıklarını `pyproject.toml`
-> ve `uv.lock` üzerinden senkronize eder.
+> Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
 ```bash
 cd Sidar
-uv venv .venv
-uv sync --extra dev
+python -m venv .venv
+uv pip install -e ".[dev]"
 uv run python main.py
 ```
 
