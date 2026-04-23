@@ -5601,7 +5601,7 @@ async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkey
             return SimpleNamespace(is_active=True, role_name="system", prompt_text="sys-new", id="p1")
 
         async def activate_prompt(self, prompt_id):
-            if prompt_id == "missing":
+            if prompt_id == 999:
                 return None
             return SimpleNamespace(role_name="system", prompt_text="sys-active", id=prompt_id, is_active=True)
 
@@ -5624,13 +5624,13 @@ async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkey
 
     with pytest.raises(HTTPException) as activate_exc:
         await web_server.admin_activate_prompt(
-            web_server._PromptActivateRequest(prompt_id="missing"),
+            web_server._PromptActivateRequest(prompt_id=999),
             _user=SimpleNamespace(role="admin"),
         )
     assert activate_exc.value.status_code == 404
 
     activated = await web_server.admin_activate_prompt(
-        web_server._PromptActivateRequest(prompt_id="p2"),
+        web_server._PromptActivateRequest(prompt_id=2),
         _user=SimpleNamespace(role="admin"),
     )
     assert activated.status_code == 200
