@@ -4671,6 +4671,9 @@ async def test_get_agent_returns_cached_instance_without_reinitialization(monkey
 
 @pytest.mark.asyncio
 async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatch):
+    original_get_jira_manager = web_server._get_jira_manager
+    original_get_teams_manager = web_server._get_teams_manager
+
     class _SlackErr:
         def is_available(self):
             return True
@@ -4760,6 +4763,8 @@ async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatc
     monkeypatch.setattr(web_server.cfg, "JIRA_API_TOKEN", "token")
     monkeypatch.setattr(web_server.cfg, "JIRA_DEFAULT_PROJECT", "SIDAR")
     monkeypatch.setattr(web_server.cfg, "TEAMS_WEBHOOK_URL", "https://teams.example")
+    monkeypatch.setattr(web_server, "_get_jira_manager", original_get_jira_manager)
+    monkeypatch.setattr(web_server, "_get_teams_manager", original_get_teams_manager)
 
     jira_mgr = web_server._get_jira_manager()
     teams_mgr = web_server._get_teams_manager()
