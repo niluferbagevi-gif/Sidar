@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pyttsx3
+
 
 class _BaseTTSAdapter:
     provider = "base"
@@ -46,20 +48,13 @@ class _Pyttsx3Adapter(_BaseTTSAdapter):
     provider = "pyttsx3"
 
     def __init__(self) -> None:
-        try:
-            import pyttsx3  # noqa: F401
-
-            self._import_error = ""
-        except Exception as exc:  # pragma: no cover - opsiyonel bağımlılık
-            self._import_error = str(exc)
+        self._import_error = ""
 
     @property
     def available(self) -> bool:
-        return not self._import_error
+        return True
 
     def _synthesize_sync(self, text: str, voice: str) -> dict[str, Any]:
-        import pyttsx3
-
         engine = pyttsx3.init()
         if voice:
             for candidate in engine.getProperty("voices") or []:
@@ -88,15 +83,6 @@ class _Pyttsx3Adapter(_BaseTTSAdapter):
         }
 
     async def synthesize(self, text: str, *, voice: str = "") -> dict[str, Any]:
-        if not self.available:
-            return {
-                "success": False,
-                "audio_bytes": b"",
-                "mime_type": "audio/wav",
-                "provider": self.provider,
-                "voice": voice,
-                "reason": self._import_error or "pyttsx3 kullanılamıyor.",
-            }
         return await asyncio.to_thread(self._synthesize_sync, text, voice)
 
 
@@ -104,13 +90,7 @@ def _build_tts_adapter(provider: str) -> _BaseTTSAdapter:
     normalized = (provider or "auto").strip().lower()
     if normalized == "mock":
         return _MockTTSAdapter()
-    if normalized == "pyttsx3":
-        return _Pyttsx3Adapter()
-
-    pyttsx3_adapter = _Pyttsx3Adapter()
-    if pyttsx3_adapter.available:
-        return pyttsx3_adapter
-    return _MockTTSAdapter()
+    return _Pyttsx3Adapter()
 
 
 class VoicePipeline:

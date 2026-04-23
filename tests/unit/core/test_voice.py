@@ -1,7 +1,6 @@
 """core/voice.py için unit testler."""
 from __future__ import annotations
 
-import sys
 import types
 import base64
 from pathlib import Path
@@ -55,40 +54,12 @@ def test_mock_adapter_available():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# _Pyttsx3Adapter (pyttsx3 yokken)
+# _Pyttsx3Adapter
 # ──────────────────────────────────────────────────────────────────────────────
 
-def test_pyttsx3_adapter_not_available_when_import_fails(monkeypatch):
-    # pyttsx3'ü import edilemez hale getir
-    if "pyttsx3" not in sys.modules:
-        sys.modules["pyttsx3"] = types.ModuleType("pyttsx3")
-    real = sys.modules.pop("pyttsx3", None)
-    monkeypatch.setitem(sys.modules, "pyttsx3", None)
-    try:
-        adapter = _Pyttsx3Adapter()
-        assert adapter.available is False
-    finally:
-        if real is not None:
-            sys.modules["pyttsx3"] = real
-        else:
-            sys.modules.pop("pyttsx3", None)
-
-
-def test_pyttsx3_adapter_not_available_when_import_fails_with_none_module(monkeypatch):
-    # sys.modules içinde anahtar var ama değer None ise finally/else kolu çalışmalı
-    monkeypatch.setitem(sys.modules, "pyttsx3", None)
+def test_pyttsx3_adapter_available():
     adapter = _Pyttsx3Adapter()
-    assert adapter.available is False
-    sys.modules.pop("pyttsx3", None)
-
-
-@pytest.mark.asyncio
-async def test_pyttsx3_adapter_synthesize_when_unavailable(monkeypatch):
-    monkeypatch.setitem(sys.modules, "pyttsx3", None)
-    adapter = _Pyttsx3Adapter()
-    result = await adapter.synthesize("test")
-    assert result["success"] is False
-    assert result["provider"] == "pyttsx3"
+    assert adapter.available is True
 
 
 def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_reads_audio(monkeypatch, tmp_path):
@@ -121,7 +92,7 @@ def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_reads_audio(monkeypat
 
     fake_engine = FakeEngine()
     fake_module = types.SimpleNamespace(init=lambda: fake_engine)
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+    monkeypatch.setattr("core.voice.pyttsx3", fake_module)
 
     class _TmpDir:
         def __init__(self, _prefix):
@@ -163,7 +134,7 @@ def test_pyttsx3_adapter_synthesize_sync_handles_stop_exception(monkeypatch, tmp
             raise RuntimeError("cannot stop")
 
     fake_module = types.SimpleNamespace(init=lambda: FakeEngine())
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+    monkeypatch.setattr("core.voice.pyttsx3", fake_module)
 
     class _TmpDir:
         def __init__(self, _prefix):
@@ -207,7 +178,7 @@ def test_pyttsx3_adapter_synthesize_sync_without_voice_skips_voice_selection(mon
 
     engine = FakeEngine()
     fake_module = types.SimpleNamespace(init=lambda: engine)
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+    monkeypatch.setattr("core.voice.pyttsx3", fake_module)
 
     class _TmpDir:
         def __init__(self, _prefix):
@@ -236,7 +207,7 @@ async def test_pyttsx3_adapter_synthesize_available_path_uses_to_thread(monkeypa
         def init():
             raise AssertionError("init should not be called in this test")
 
-    monkeypatch.setitem(sys.modules, "pyttsx3", FakeModule())
+    monkeypatch.setattr("core.voice.pyttsx3", FakeModule())
     adapter = _Pyttsx3Adapter()
     assert adapter.available is True
 
@@ -268,11 +239,9 @@ def test_build_tts_adapter_pyttsx3():
     assert isinstance(adapter, _Pyttsx3Adapter)
 
 
-def test_build_tts_adapter_auto_falls_back_to_mock(monkeypatch):
-    monkeypatch.setitem(sys.modules, "pyttsx3", None)
+def test_build_tts_adapter_auto_returns_pyttsx3():
     adapter = _build_tts_adapter("auto")
-    # pyttsx3 yoksa mock'a düşmeli
-    assert isinstance(adapter, _MockTTSAdapter)
+    assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 def test_build_tts_adapter_auto_prefers_available_pyttsx3(monkeypatch):
@@ -281,10 +250,9 @@ def test_build_tts_adapter_auto_prefers_available_pyttsx3(monkeypatch):
     assert isinstance(adapter, _Pyttsx3Adapter)
 
 
-def test_build_tts_adapter_empty_string_treated_as_auto(monkeypatch):
-    monkeypatch.setitem(sys.modules, "pyttsx3", None)
+def test_build_tts_adapter_empty_string_treated_as_auto():
     adapter = _build_tts_adapter("")
-    assert isinstance(adapter, _MockTTSAdapter)
+    assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -312,7 +280,7 @@ def test_pipeline_init_mock_provider():
 
 def test_pipeline_init_no_config():
     p = VoicePipeline(None)
-    assert p.provider in ("mock", "pyttsx3")
+    assert p.provider == "pyttsx3"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
