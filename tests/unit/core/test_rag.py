@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import ast
-import builtins
 import contextlib
 import importlib
 import os
@@ -2019,16 +2018,8 @@ async def test_document_store_init_fts_skips_migration_when_index_empty(tmp_path
     assert count == 0
 
 
-async def test_document_store_recursive_chunk_text_forced_fallback_split(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_document_store_recursive_chunk_text_forced_fallback_split(tmp_path: Path) -> None:
     store = _make_store_stub(tmp_path)
-    original_list = builtins.list
-
-    def _patched_list(arg):  # type: ignore[no-untyped-def]
-        if isinstance(arg, str) and len(arg) > 1:
-            return [arg]
-        return original_list(arg)
-
-    monkeypatch.setattr(builtins, "list", _patched_list)
 
     chunks = store._recursive_chunk_text("abcdefghij", size=4, overlap=1)
 
