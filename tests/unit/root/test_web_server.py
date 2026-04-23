@@ -5566,3 +5566,183 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
     monkeypatch.setattr(web_server.subprocess, "check_output", lambda *_args, **_kwargs: ps_output)
 
     assert web_server._list_child_ollama_pids() == []
+
+
+def test_reload_persisted_marketplace_plugins_tolerates_reload_failures(monkeypatch):
+    monkeypatch.setattr(
+        web_server,
+        "_read_plugin_marketplace_state",
+        lambda: {"known-http": {}, "known-generic": {}, "unknown": {}},
+    )
+    monkeypatch.setattr(
+        web_server,
+        "PLUGIN_MARKETPLACE_CATALOG",
+        {"known-http": {}, "known-generic": {}},
+    )
+
+    def _install(plugin_id):
+        if plugin_id == "known-http":
+            raise HTTPException(status_code=400, detail="bad plugin")
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(web_server, "_install_marketplace_plugin", _install)
+    warns: list[str] = []
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warns.append(msg % args))
+
+    assert web_server._reload_persisted_marketplace_plugins() == []
+    assert any("known-http" in item for item in warns)
+    assert any("known-generic" in item for item in warns)
+
+
+@pytest.mark.asyncio
+async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkeypatch):
+    class _DB:
+        async def upsert_prompt(self, **_kwargs):
+            return SimpleNamespace(is_active=True, role_name="system", prompt_text="sys-new", id="p1")
+
+        async def activate_prompt(self, prompt_id):
+            if prompt_id == "missing":
+                return None
+            return SimpleNamespace(role_name="system", prompt_text="sys-active", id=prompt_id, is_active=True)
+
+    agent = SimpleNamespace(system_prompt="old", memory=SimpleNamespace(db=_DB()))
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    with pytest.raises(HTTPException) as exc:
+        await web_server.admin_upsert_prompt(
+            web_server._PromptUpsertRequest(role_name=" ", prompt_text=" "),
+            _user=SimpleNamespace(role="admin"),
+        )
+    assert exc.value.status_code == 400
+
+    upsert = await web_server.admin_upsert_prompt(
+        web_server._PromptUpsertRequest(role_name="system", prompt_text="hello", activate=True),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert b'"role_name":"system"' in upsert.body
+    assert agent.system_prompt == "sys-new"
+
+    with pytest.raises(HTTPException) as activate_exc:
+        await web_server.admin_activate_prompt(
+            web_server._PromptActivateRequest(prompt_id="missing"),
+            _user=SimpleNamespace(role="admin"),
+        )
+    assert activate_exc.value.status_code == 404
+
+    activated = await web_server.admin_activate_prompt(
+        web_server._PromptActivateRequest(prompt_id="p2"),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert activated.status_code == 200
+    assert agent.system_prompt == "sys-active"
+
+
+@pytest.mark.asyncio
+async def test_rag_add_url_and_set_level_additional_error_paths(monkeypatch):
+    class _Agent:
+        def __init__(self):
+            self.memory = SimpleNamespace(active_session_id=None)
+            self.security = SimpleNamespace(level_name="strict")
+
+        async def _set_level_async(self):
+            return "ok-async"
+
+        def set_access_level(self, _level):
+            return self._set_level_async()
+
+    agent = _Agent()
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    rag_empty = await web_server.rag_add_url(_JsonRequest({"url": " ", "title": "x"}))
+    assert rag_empty.status_code == 400
+
+    missing_level = await web_server.set_level_endpoint(_JsonRequest({"level": " "}), _user=SimpleNamespace(role="admin"))
+    assert missing_level.status_code == 400
+
+    level_ok = await web_server.set_level_endpoint(_JsonRequest({"level": "strict"}), _user=SimpleNamespace(role="admin"))
+    assert level_ok.status_code == 200
+    assert b'"message":"ok-async"' in level_ok.body
+
+
+@pytest.mark.asyncio
+async def test_upload_rag_file_sanitizes_empty_filename_and_cleanup_error(monkeypatch):
+    class _Upload:
+        filename = "???"
+
+        async def read(self, _n):
+            return b"abc"
+
+        async def close(self):
+            return None
+
+    class _Docs:
+        def add_document_from_file(self, path, original_name, _unused, _session_id):
+            assert path.endswith("uploaded_file.txt")
+            assert original_name == "???"
+            return True, "ok-upload"
+
+    agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id="s1"))
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server.Config, "MAX_RAG_UPLOAD_BYTES", 1024)
+
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(web_server.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")))
+
+    res = await web_server.upload_rag_file(_Upload())
+    assert res.status_code == 200
+    assert b'"success":true' in res.body
+
+
+@pytest.mark.asyncio
+async def test_git_info_without_remote_and_slack_unavailable(monkeypatch):
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+    monkeypatch.setattr(
+        web_server,
+        "_git_run",
+        lambda cmd, *_: {
+            "rev-parse": "main",
+            "remote": "",
+            "symbolic-ref": "origin/develop",
+        }[[k for k in ("rev-parse", "remote", "symbolic-ref") if k in " ".join(cmd)][0]],
+    )
+
+    info = await web_server.git_info()
+    assert b'"repo":"Sidar"' in info.body
+    assert b'"default_branch":"develop"' in info.body
+
+    monkeypatch.setattr(web_server, "_get_slack_manager", lambda: SimpleNamespace(is_available=lambda: False))
+    with pytest.raises(HTTPException) as slack_exc:
+        await web_server.api_slack_channels()
+    assert slack_exc.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_api_vision_mockup_invalid_base64_in_legacy_fallback(monkeypatch):
+    import sys
+    import types
+
+    class _Pipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def mockup_to_code(self, **kwargs):
+            if "image_b64" in kwargs:
+                raise TypeError("legacy signature")
+            return "ok"
+
+    fake_mod = types.ModuleType("core.vision")
+    fake_mod.VisionPipeline = _Pipeline
+    monkeypatch.setitem(sys.modules, "core.vision", fake_mod)
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: SimpleNamespace(llm="fake"))
+
+    with pytest.raises(HTTPException) as exc:
+        await web_server.api_vision_mockup(
+            web_server._VisionMockupRequest(image_base64="not-base64-%%%", framework="react")
+        )
+    assert exc.value.status_code == 400
