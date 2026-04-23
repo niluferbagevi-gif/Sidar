@@ -4924,3 +4924,150 @@ async def test_nightly_memory_loop_logs_success(monkeypatch):
 
     await web_server._nightly_memory_loop(_StopAfterFirstTimeout())
     assert any("Nightly memory maintenance sonucu: ok" in item for item in info_logs)
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_and_metrics_json_fallback(monkeypatch):
+    calls: list[bool] = []
+
+    async def _health_response(require_dependencies=False):
+        calls.append(require_dependencies)
+        return JSONResponse({"ok": True, "require_dependencies": require_dependencies})
+
+    class _Memory:
+        def __len__(self):
+            return 2
+
+        def get_all_sessions(self):
+            async def _awaitable():
+                return [{"id": "s1"}, {"id": "s2"}]
+
+            return _awaitable()
+
+    async def _resolve():
+        return SimpleNamespace(
+            VERSION="v-test",
+            cfg=SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False),
+            docs=SimpleNamespace(doc_count=3),
+            memory=_Memory(),
+        )
+
+    monkeypatch.setattr(web_server, "_health_response", _health_response)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+    monkeypatch.setattr(web_server, "_local_rate_limits", {"127.0.0.1": [1, 2, 3]})
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {"calls": 5, "total_tokens": 99}}),
+    )
+
+    request = SimpleNamespace(headers={"Accept": "text/plain"})
+    readiness = await web_server.readiness_check()
+    metrics = await web_server.metrics(request, _user=SimpleNamespace(role="admin"))
+
+    assert readiness.status_code == 200
+    assert calls == [True]
+    assert metrics.status_code == 200
+    assert b'"sessions_total":2' in metrics.body
+    assert b'"llm_calls":5' in metrics.body
+
+
+@pytest.mark.asyncio
+async def test_github_endpoints_cover_error_branches(monkeypatch):
+    class _Github:
+        repo_name = "org/repo"
+
+        def list_repos(self, **_):
+            return False, []
+
+        def is_available(self):
+            return False
+
+        def get_pull_requests_detailed(self, **_):
+            return False, [], "downstream"
+
+        def get_pull_request(self, _number):
+            return False, "missing"
+
+        def set_repo(self, _repo_name):
+            return False, "cannot set"
+
+    async def _resolve():
+        return SimpleNamespace(github=_Github())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    repos = await web_server.github_repos(owner="org")
+    prs = await web_server.github_prs()
+    pr_detail = await web_server.github_pr_detail(7)
+    set_repo_empty = await web_server.set_repo(_JsonRequest({"repo": "  "}))
+    set_repo_fail = await web_server.set_repo(_JsonRequest({"repo": "org/new"}))
+
+    assert repos.status_code == 400
+    assert prs.status_code == 503
+    assert pr_detail.status_code == 503
+    assert set_repo_empty.status_code == 400
+    assert set_repo_fail.status_code == 200
+    assert b'"success":false' in set_repo_fail.body
+
+
+@pytest.mark.asyncio
+async def test_vision_endpoints_cover_typeerror_fallback_and_invalid_base64(monkeypatch):
+    import sys
+    import types
+
+    class _Pipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze(self, **kwargs):
+            if "image_b64" in kwargs:
+                raise TypeError("legacy signature")
+            return {"bytes": len(kwargs["image_bytes"])}
+
+        async def mockup_to_code(self, **kwargs):
+            if "image_b64" in kwargs:
+                raise TypeError("legacy signature")
+            return "ok-code"
+
+    fake_mod = types.ModuleType("core.vision")
+    fake_mod.VisionPipeline = _Pipeline
+    fake_mod.build_analyze_prompt = lambda analysis_type: f"prompt:{analysis_type}"
+    monkeypatch.setitem(sys.modules, "core.vision", fake_mod)
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: SimpleNamespace(llm="fake"))
+
+    analyze_ok = await web_server.api_vision_analyze(
+        web_server._VisionAnalyzeRequest(image_base64="YQ==", analysis_type="ui")
+    )
+    mockup_ok = await web_server.api_vision_mockup(
+        web_server._VisionMockupRequest(image_base64="YQ==", framework="react")
+    )
+    assert analyze_ok.status_code == 200
+    assert mockup_ok.status_code == 200
+
+    with pytest.raises(HTTPException):
+        await web_server.api_vision_analyze(
+            web_server._VisionAnalyzeRequest(image_base64="%%%invalid%%%", analysis_type="ui")
+        )
+
+
+@pytest.mark.asyncio
+async def test_entity_and_feedback_store_init_error_paths(monkeypatch):
+    web_server._entity_memory_instance = None
+    web_server._feedback_store_instance = None
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def _boom_import(name, *args, **kwargs):
+        if name in {"core.entity_memory", "core.active_learning"}:
+            raise RuntimeError("module boom")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _boom_import)
+
+    with pytest.raises(HTTPException):
+        await web_server._get_entity_memory()
+    with pytest.raises(HTTPException):
+        await web_server._get_feedback_store()
