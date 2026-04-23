@@ -1408,9 +1408,8 @@ def _setup_tracing() -> None:
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(app)
-    if HTTPXClientInstrumentor is not None:
-        with contextlib.suppress(Exception):
-            HTTPXClientInstrumentor().instrument()
+    with contextlib.suppress(Exception):
+        HTTPXClientInstrumentor().instrument()
     logger.info("✅ OpenTelemetry aktif: %s", cfg.OTEL_EXPORTER_ENDPOINT)
 
 

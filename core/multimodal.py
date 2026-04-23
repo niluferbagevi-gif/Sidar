@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from core.vision import VisionPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -689,8 +690,6 @@ class MultimodalPipeline:
 
         media_kind = detect_media_kind(mime_type=mime_type, path=source)
         if media_kind == "image":
-            from core.vision import VisionPipeline
-
             pipeline = VisionPipeline(self._llm, self._config)
             return await pipeline.analyze(image_path=str(source))
 
@@ -709,25 +708,22 @@ class MultimodalPipeline:
                         prompt=prompt,
                     )
 
-                with contextlib.suppress(Exception):
-                    from core.vision import VisionPipeline
-
-                    vision = VisionPipeline(self._llm, self._config)
-                    frames = await extract_video_frames(
-                        source,
-                        interval_seconds=frame_interval_seconds,
-                        max_frames=max_frames,
-                        output_dir=Path(tmpdir) / "frames",
+                vision = VisionPipeline(self._llm, self._config)
+                frames = await extract_video_frames(
+                    source,
+                    interval_seconds=frame_interval_seconds,
+                    max_frames=max_frames,
+                    output_dir=Path(tmpdir) / "frames",
+                )
+                for frame in frames:
+                    analysis = await vision.analyze(image_path=frame.path)
+                    frame_analyses.append(
+                        {
+                            "timestamp_seconds": frame.timestamp_seconds,
+                            "analysis": analysis.get("analysis", "") if isinstance(analysis, dict) else "",
+                            "frame_path": frame.path,
+                        }
                     )
-                    for frame in frames:
-                        analysis = await vision.analyze(image_path=frame.path)
-                        frame_analyses.append(
-                            {
-                                "timestamp_seconds": frame.timestamp_seconds,
-                                "analysis": analysis.get("analysis", "") if isinstance(analysis, dict) else "",
-                                "frame_path": frame.path,
-                            }
-                        )
             elif media_kind == "audio":
                 transcript = await transcribe_audio(
                     source,
