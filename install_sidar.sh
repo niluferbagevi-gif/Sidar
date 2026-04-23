@@ -2200,16 +2200,7 @@ install_python_deps() {
     fi
     ok "uv.lock güncellendi."
 
-    if [[ ! -f "$SCRIPT_DIR/requirements.txt" ]]; then
-        info "requirements.txt bulunamadı — 'all' profili kapsamındaki bağımlılıklarla oluşturuluyor..."
-        if ! "${UV_CMD[@]}" export --extra all --no-hashes -o "$SCRIPT_DIR/requirements.txt"; then
-            warn "requirements.txt dosyası oluşturulamadı."
-        else
-            ok "requirements.txt başarıyla oluşturuldu."
-        fi
-    else
-        info "requirements.txt bulundu — mevcut dosya korunuyor."
-    fi
+    info "Kilitlenmiş bağımlılık kaynağı olarak yalnızca uv.lock kullanılıyor (requirements.txt üretilmiyor)."
 
     if [[ "$USE_CONDA" == true ]]; then
         local uv_export_file

@@ -278,6 +278,7 @@ uv sync --all-extras
 ```
 
 > Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
+> Kilitli ve platformlar arası deterministik çözüm için kaynak dosya `uv.lock` kabul edilir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 

@@ -5,7 +5,6 @@
 include .env.example
 include alembic.ini
 include environment.yml
-include requirements.txt
 
 # Docker
 include Dockerfile
