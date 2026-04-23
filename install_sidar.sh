@@ -2234,13 +2234,23 @@ install_python_deps() {
         fi
     fi
 
-    info "Sidar paketi editable modda kuruluyor (all+dev ekstralarıyla: -e .[all,dev])..."
+    local editable_extras=""
+    local editable_profile_label=""
+    if [[ "$INSTALL_DEV" == true ]]; then
+        editable_extras="all"
+        editable_profile_label="tam profil"
+    else
+        editable_extras="$(IFS=,; echo "${EXTRAS[*]}")"
+        editable_profile_label="production/minimal profil"
+    fi
+
+    info "Sidar paketi editable modda kuruluyor (${editable_profile_label}, -e .[${editable_extras}])..."
     if [[ "$USE_CONDA" == true ]]; then
-        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR[all,dev]"; then
+        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR[$editable_extras]"; then
             fail "Sidar paketi conda ortamına editable olarak kurulamadı."
         fi
     else
-        if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[all,dev]"; then
+        if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[$editable_extras]"; then
             fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
         fi
     fi
