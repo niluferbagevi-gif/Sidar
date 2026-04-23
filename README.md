@@ -274,7 +274,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 cd Sidar
 python -m venv .venv
 source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,postgres,telemetry]"
 ```
 
 > Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
@@ -284,7 +284,7 @@ uv pip install -e ".[dev]"
 ```bash
 cd Sidar
 python -m venv .venv
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,postgres,telemetry]"
 uv run python main.py
 ```
 
@@ -305,7 +305,7 @@ Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui
 v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
 
 ```bash
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,postgres,telemetry]"
 alembic upgrade head
 ```
 
@@ -375,6 +375,9 @@ bash install_sidar.sh --ci
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ```
+
+> Kurulum sırasında bir hata alırsanız betik loglarını `logs/install_YYYYMMDD_HHMMSS.log` altında inceleyin.
+> En güncel log: `ls -1t logs/install_*.log | head -n 1`
 
 ---
 
@@ -560,9 +563,13 @@ Sidar/
 
 ## Testleri Çalıştır
 
+> Kritik not: Sadece `dev` extra ile kurulum yapmak (`uv sync --extra dev` veya `uv pip install -e ".[dev]"),
+> PostgreSQL (`asyncpg`) ve telemetri (`opentelemetry-*`) paketlerini **kurmaz**.
+> Test ve kurumsal runtime paritesi için en az `dev + postgres + telemetry` extras birlikte kurulmalıdır.
+
 ```bash
 cd Sidar
-uv sync --extra dev
+uv sync --extra dev --extra postgres --extra telemetry
 python -m pytest -c pyproject.toml tests/ -v
 python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
