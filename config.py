@@ -637,6 +637,9 @@ class Config:
     JIRA_TOKEN: str = os.getenv("JIRA_TOKEN", "")
     JIRA_EMAIL: str = os.getenv("JIRA_EMAIL", "")
     JIRA_DEFAULT_PROJECT: str = os.getenv("JIRA_DEFAULT_PROJECT", "")
+    # Geriye dönük/alternatif adlandırma uyumluluğu
+    JIRA_BASE_URL: str = os.getenv("JIRA_BASE_URL", JIRA_URL)
+    JIRA_API_TOKEN: str = os.getenv("JIRA_API_TOKEN", JIRA_TOKEN)
 
     # ─── Microsoft Teams Entegrasyonu (v6.0) ────────────────────
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")

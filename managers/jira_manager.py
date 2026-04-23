@@ -38,9 +38,13 @@ class JiraManager:
         token: str = "",
         email: str = "",
         default_project: str = "",
+        base_url: str = "",
+        api_token: str = "",
     ) -> None:
-        self.url = (url or "").rstrip("/")
-        self.token = (token or "").strip()
+        resolved_url = url or base_url
+        resolved_token = token or api_token
+        self.url = (resolved_url or "").rstrip("/")
+        self.token = (resolved_token or "").strip()
         self.email = (email or "").strip()
         self.default_project = (default_project or "").strip()
         self._available = False
