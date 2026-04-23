@@ -973,7 +973,7 @@ def _build_event_driven_federation_spec(source: str, event_name: str, payload: d
             conclusion = str(ci_context.get("conclusion") or "failure").strip()
             branch = str(ci_context.get("branch") or "").strip()
             return {
-                "workflow_type": "github_ci_failure",
+                "workflow_type": "ci_failure",
                 "task_id": f"github-ci-{run_id or secrets.token_hex(4)}",
                 "source_system": "github",
                 "source_agent": "workflow_webhook",
@@ -982,7 +982,7 @@ def _build_event_driven_federation_spec(source: str, event_name: str, payload: d
                     "Coder kök neden + düzeltme patch/test planı çıkarsın, Reviewer risk/rollback/QA doğrulaması yapsın."
                 ),
                 "context": {
-                    "workflow_type": "github_ci_failure",
+                    "workflow_type": "ci_failure",
                     "repo": repo,
                     "workflow_name": workflow_name,
                     "run_id": run_id,
@@ -1474,11 +1474,30 @@ def _setup_tracing() -> None:
 
 _setup_tracing()
 
-async def _get_request_user(request: Request):
+class _AwaitableValue:
+    """Senkron/asenkron çağrı uyumluluğu için hafif sarmalayıcı."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def __await__(self):
+        async def _resolve():
+            return self._value
+
+        return _resolve().__await__()
+
+    def __getattr__(self, item):
+        return getattr(self._value, item)
+
+    def unwrap(self):
+        return self._value
+
+
+def _get_request_user(request: Request):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Yetkisiz erişim")
-    return user
+    return _AwaitableValue(user)
 
 
 def _is_admin_user(user) -> bool:
@@ -1488,13 +1507,17 @@ def _is_admin_user(user) -> bool:
 
 
 def _require_admin_user(user=Depends(_get_request_user)):
+    if isinstance(user, _AwaitableValue):
+        user = user.unwrap()
     if not _is_admin_user(user):
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
-    return user
+    return _AwaitableValue(user)
 
 
 def _require_metrics_access(request: Request, user=Depends(_get_request_user)):
     """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
+    if isinstance(user, _AwaitableValue):
+        user = user.unwrap()
     metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
     if metrics_token:
         auth_header = request.headers.get("Authorization", "")
@@ -1607,6 +1630,11 @@ class _PromptUpsertRequest(BaseModel):
 
 class _PromptActivateRequest(BaseModel):
     prompt_id: int = Field(..., gt=0)
+
+
+# Geriye dönük test/çağrı uyumluluğu
+_AdminPromptUpsertRequest = _PromptUpsertRequest
+_AdminPromptActivateRequest = _PromptActivateRequest
 
 
 class _PolicyUpsertRequest(BaseModel):
@@ -2426,14 +2454,20 @@ def _get_client_ip(request: Request) -> str:
     Proxy başlıkları (X-Forwarded-For, X-Real-IP) varsa öncelikli değerlendirilir.
     """
     direct_ip = request.client.host if request.client else "unknown"
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        first_ip = xff.split(",")[0].strip()
-        if first_ip:
-            return first_ip
-    xri = request.headers.get("X-Real-IP", "")
-    if xri:
-        return xri.strip()
+    trusted_proxies = set(getattr(Config, "TRUSTED_PROXIES", set()) or set())
+    is_trusted_proxy = bool(direct_ip in trusted_proxies)
+
+    if is_trusted_proxy:
+        xff = request.headers.get("X-Forwarded-For", "")
+        if xff:
+            first_ip = xff.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+        xri = request.headers.get("X-Real-IP", "")
+        if xri:
+            real_ip = xri.strip()
+            if real_ip:
+                return real_ip
     return direct_ip
 
 
