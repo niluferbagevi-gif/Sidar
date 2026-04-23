@@ -5590,3 +5590,138 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
 
     assert send_exc.value.status_code == 502
     assert channels_exc.value.status_code == 502
+
+
+def test_build_event_driven_federation_spec_ci_variants_cover_failure_paths():
+    workflow_payload = {
+        "action": "completed",
+        "repository": {"full_name": "org/repo", "default_branch": "main"},
+        "workflow_run": {
+            "status": "completed",
+            "conclusion": "failure",
+            "name": "CI",
+            "id": 77,
+            "head_branch": "feature/a",
+            "head_sha": "abc",
+            "pull_requests": [{"base": {"ref": "release"}}],
+        },
+    }
+    workflow_spec = web_server._build_event_driven_federation_spec("github", "workflow_run", workflow_payload)
+    assert workflow_spec is not None
+    assert workflow_spec["workflow_type"] == "ci_failure"
+    assert workflow_spec["context"]["base_branch"] == "release"
+
+    check_run_payload = {
+        "repository": {"full_name": "org/repo"},
+        "check_run": {
+            "id": 12,
+            "name": "lint",
+            "conclusion": "failure",
+            "head_sha": "def",
+            "output": {"summary": "flake8 failed"},
+        },
+    }
+    check_run_spec = web_server._build_event_driven_federation_spec("github", "check_run", check_run_payload)
+    assert check_run_spec is not None
+    assert check_run_spec["workflow_type"] == "ci_failure"
+
+    check_suite_payload = {
+        "repository": {"full_name": "org/repo"},
+        "check_suite": {"id": 13, "conclusion": "timed_out", "head_branch": "main", "head_sha": "xyz"},
+    }
+    check_suite_spec = web_server._build_event_driven_federation_spec("github", "check_suite", check_suite_payload)
+    assert check_suite_spec is not None
+    assert check_suite_spec["workflow_type"] == "ci_failure"
+
+
+@pytest.mark.asyncio
+async def test_request_user_admin_and_metrics_access_guards(monkeypatch):
+    request = _make_request("/admin/stats")
+    with pytest.raises(HTTPException):
+        await web_server._get_request_user(request)
+
+    user = SimpleNamespace(id="1", username="ada", role="admin", tenant_id="default")
+    request.state.user = user
+    assert await web_server._get_request_user(request) is user
+    assert await web_server._require_admin_user(user) is user
+
+    with pytest.raises(HTTPException):
+        await web_server._require_admin_user(SimpleNamespace(id="2", username="u", role="user", tenant_id="default"))
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-secret")
+    token_request = _make_request("/metrics", headers={"Authorization": "Bearer metrics-secret"})
+    assert (await web_server._require_metrics_access(token_request)) is None
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_and_prompt_system_activation_paths(monkeypatch):
+    class _Prompt:
+        def __init__(self, prompt_id, role_name, prompt_text, is_active):
+            self.id = prompt_id
+            self.role_name = role_name
+            self.prompt_text = prompt_text
+            self.is_active = is_active
+            self.updated_at = None
+
+    class _DB:
+        async def get_admin_stats(self):
+            return {"users": 3}
+
+        async def upsert_prompt(self, **_kwargs):
+            return _Prompt("p1", "system", "Yeni sistem promptu", True)
+
+        async def activate_prompt(self, _prompt_id):
+            return _Prompt("p1", "system", "Aktif prompt", True)
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()), system_prompt="old")
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    stats = await web_server.admin_stats(_user=SimpleNamespace(role="admin"))
+    assert isinstance(stats, JSONResponse)
+    upsert_res = await web_server.admin_upsert_prompt(
+        payload=web_server._AdminPromptUpsertRequest(role_name="system", prompt_text="x", activate=True),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert upsert_res.status_code == 200
+    assert agent.system_prompt == "Yeni sistem promptu"
+
+    activated = await web_server.admin_activate_prompt(
+        payload=web_server._AdminPromptActivateRequest(prompt_id="p1"),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert activated.status_code == 200
+    assert agent.system_prompt == "Aktif prompt"
+
+
+@pytest.mark.asyncio
+async def test_access_policy_options_and_no_resource_shortcuts():
+    async def _call_next(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    options_req = _make_request("/api/unknown", method="OPTIONS")
+    options_req.state.user = SimpleNamespace(id="1", username="ada", role="user", tenant_id="default")
+    options_res = await web_server.access_policy_middleware(options_req, _call_next)
+    assert options_res.status_code == 200
+
+    no_resource_req = _make_request("/healthz", method="GET")
+    no_resource_req.state.user = SimpleNamespace(id="1", username="ada", role="user", tenant_id="default")
+    no_resource_res = await web_server.access_policy_middleware(no_resource_req, _call_next)
+    assert no_resource_res.status_code == 200
+
+
+def test_make_static_files_fallback_and_client_ip_headers(monkeypatch):
+    class _StaticFiles:
+        def __init__(self, directory, check_dir=None):
+            if check_dir is not None:
+                raise TypeError("legacy starlette")
+            self.directory = directory
+
+    monkeypatch.setattr(web_server, "StaticFiles", _StaticFiles)
+    static = web_server._make_static_files(Path("web_ui"))
+    assert isinstance(static, _StaticFiles)
+
+    req_xff = _make_request("/", headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}, client_ip="127.0.0.1")
+    assert web_server._get_client_ip(req_xff) == "10.0.0.1"
+
+    req_xri = _make_request("/", headers={"X-Real-IP": "10.10.10.10"}, client_ip="127.0.0.1")
+    assert web_server._get_client_ip(req_xri) == "10.10.10.10"
