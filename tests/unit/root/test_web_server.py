@@ -4667,3 +4667,133 @@ async def test_get_agent_returns_cached_instance_without_reinitialization(monkey
     monkeypatch.setattr(web_server, "_agent", cached)
 
     assert await web_server.get_agent() is cached
+
+
+@pytest.mark.asyncio
+async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatch):
+    class _SlackErr:
+        def is_available(self):
+            return True
+
+        async def send_message(self, **_):
+            return False, "boom"
+
+        async def list_channels(self):
+            return False, [], "no_scope"
+
+    web_server._slack_mgr_instance = _SlackErr()
+    with pytest.raises(HTTPException) as slack_send_err:
+        await web_server.api_slack_send(web_server._SlackSendRequest(text="x"))
+    assert slack_send_err.value.status_code == 502
+
+    with pytest.raises(HTTPException) as slack_channels_err:
+        await web_server.api_slack_channels()
+    assert slack_channels_err.value.status_code == 502
+
+    class _JiraUnavailable:
+        def is_available(self):
+            return False
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraUnavailable())
+    with pytest.raises(HTTPException) as jira_unavailable:
+        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SIDAR", summary="s"))
+    assert jira_unavailable.value.status_code == 503
+
+    with pytest.raises(HTTPException) as jira_search_unavailable:
+        await web_server.api_jira_search_issues("project=SIDAR")
+    assert jira_search_unavailable.value.status_code == 503
+
+    class _JiraErr:
+        def is_available(self):
+            return True
+
+        async def create_issue(self, **_):
+            return False, None, "jira-create"
+
+        async def search_issues(self, **_):
+            return False, [], "jira-search"
+
+    monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraErr())
+    with pytest.raises(HTTPException) as jira_create_err:
+        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SIDAR", summary="s"))
+    assert jira_create_err.value.status_code == 502
+
+    with pytest.raises(HTTPException) as jira_search_err:
+        await web_server.api_jira_search_issues("project=SIDAR")
+    assert jira_search_err.value.status_code == 502
+
+    class _TeamsUnavailable:
+        def is_available(self):
+            return False
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _TeamsUnavailable())
+    with pytest.raises(HTTPException) as teams_unavailable:
+        await web_server.api_teams_send(web_server._TeamsSendRequest(text="hello"))
+    assert teams_unavailable.value.status_code == 503
+
+    class _TeamsErr:
+        def is_available(self):
+            return True
+
+        async def send_message(self, **_):
+            return False, "teams-boom"
+
+    monkeypatch.setattr(web_server, "_get_teams_manager", lambda: _TeamsErr())
+    with pytest.raises(HTTPException) as teams_err:
+        await web_server.api_teams_send(web_server._TeamsSendRequest(text="hello"))
+    assert teams_err.value.status_code == 502
+
+    class _JiraManager:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class _TeamsManager:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(web_server, "_jira_mgr_instance", None)
+    monkeypatch.setattr(web_server, "_teams_mgr_instance", None)
+    monkeypatch.setitem(sys.modules, "managers.jira_manager", types.SimpleNamespace(JiraManager=_JiraManager))
+    monkeypatch.setitem(sys.modules, "managers.teams_manager", types.SimpleNamespace(TeamsManager=_TeamsManager))
+    monkeypatch.setattr(web_server.cfg, "JIRA_BASE_URL", "https://jira.example")
+    monkeypatch.setattr(web_server.cfg, "JIRA_EMAIL", "bot@example.com")
+    monkeypatch.setattr(web_server.cfg, "JIRA_API_TOKEN", "token")
+    monkeypatch.setattr(web_server.cfg, "JIRA_DEFAULT_PROJECT", "SIDAR")
+    monkeypatch.setattr(web_server.cfg, "TEAMS_WEBHOOK_URL", "https://teams.example")
+
+    jira_mgr = web_server._get_jira_manager()
+    teams_mgr = web_server._get_teams_manager()
+    assert jira_mgr.kwargs["default_project"] == "SIDAR"
+    assert teams_mgr.kwargs["webhook_url"] == "https://teams.example"
+    assert web_server._get_jira_manager() is jira_mgr
+    assert web_server._get_teams_manager() is teams_mgr
+
+
+@pytest.mark.asyncio
+async def test_swarm_federation_disabled_returns_503(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", False)
+    with pytest.raises(HTTPException) as exec_err:
+        await web_server.swarm_federation_execute(
+            web_server._FederationTaskRequest(
+                task_id="t1",
+                source_system="crewai",
+                source_agent="planner",
+                goal="g",
+            ),
+            x_sidar_signature="",
+        )
+    assert exec_err.value.status_code == 503
+
+    with pytest.raises(HTTPException) as feedback_err:
+        await web_server.swarm_federation_feedback(
+            web_server._FederationFeedbackRequest(
+                feedback_id="fb1",
+                source_system="crewai",
+                source_agent="executor",
+                action_name="fix",
+                status="failed",
+                summary="x",
+            ),
+            x_sidar_signature="",
+        )
+    assert feedback_err.value.status_code == 503
