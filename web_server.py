@@ -965,6 +965,47 @@ def _build_event_driven_federation_spec(source: str, event_name: str, payload: d
             }
 
     if source_key == "github":
+        ci_context = _resolve_ci_failure_context(event_key, data)
+        if ci_context:
+            repo = str(ci_context.get("repo") or (data.get("repository") or {}).get("full_name") or "").strip()
+            workflow_name = str(ci_context.get("workflow_name") or "CI").strip()
+            run_id = str(ci_context.get("run_id") or "").strip()
+            conclusion = str(ci_context.get("conclusion") or "failure").strip()
+            branch = str(ci_context.get("branch") or "").strip()
+            return {
+                "workflow_type": "github_ci_failure",
+                "task_id": f"github-ci-{run_id or secrets.token_hex(4)}",
+                "source_system": "github",
+                "source_agent": "workflow_webhook",
+                "goal": (
+                    f"GitHub CI başarısızlığını analiz et: {workflow_name} ({conclusion}). "
+                    "Coder kök neden + düzeltme patch/test planı çıkarsın, Reviewer risk/rollback/QA doğrulaması yapsın."
+                ),
+                "context": {
+                    "workflow_type": "github_ci_failure",
+                    "repo": repo,
+                    "workflow_name": workflow_name,
+                    "run_id": run_id,
+                    "branch": branch,
+                    "base_branch": str(ci_context.get("base_branch") or "").strip(),
+                    "sha": str(ci_context.get("sha") or "").strip(),
+                    "status": str(ci_context.get("status") or "").strip(),
+                    "conclusion": conclusion,
+                },
+                "inputs": [
+                    f"failure_summary={_trim_autonomy_text(ci_context.get('failure_summary') or '', 1000)}",
+                    f"log_excerpt={_trim_autonomy_text(ci_context.get('log_excerpt') or '', 1000)}",
+                    f"failed_jobs={json.dumps(ci_context.get('failed_jobs') or [], ensure_ascii=False)}",
+                ],
+                "correlation_id": derive_correlation_id(
+                    data.get("correlation_id", ""),
+                    repo,
+                    workflow_name,
+                    run_id,
+                    str(ci_context.get("sha") or ""),
+                ),
+            }
+
         pr = dict(data.get("pull_request") or {})
         action = str(data.get("action") or event_key or "").strip().lower()
         pr_number = str(pr.get("number") or data.get("number") or "").strip()
@@ -1433,7 +1474,7 @@ def _setup_tracing() -> None:
 
 _setup_tracing()
 
-def _get_request_user(request: Request):
+async def _get_request_user(request: Request):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Yetkisiz erişim")
@@ -1992,21 +2033,21 @@ async def auth_me(request: Request, user=Depends(_get_request_user)):
 
 @app.get("/admin/stats")
 async def admin_stats(_user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     stats = await agent.memory.db.get_admin_stats()
     return JSONResponse(stats)
 
 
 @app.get("/admin/prompts")
 async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
     return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
 
 
 @app.get("/admin/prompts/active")
 async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     active = await agent.memory.db.get_active_prompt(role_name)
     if not active:
         raise HTTPException(status_code=404, detail="Aktif prompt bulunamadı")
@@ -2020,7 +2061,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
     if not role_name or not prompt_text:
         raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
 
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     record = await agent.memory.db.upsert_prompt(role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate))
     if role_name == "system" and bool(record.is_active):
         agent.system_prompt = record.prompt_text
@@ -2029,7 +2070,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
 
 @app.post("/admin/prompts/activate")
 async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     active = await agent.memory.db.activate_prompt(payload.prompt_id)
     if not active:
         raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
@@ -2040,14 +2081,14 @@ async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_
 
 @app.get("/admin/policies/{user_id}")
 async def admin_list_policies(user_id: str, tenant_id: str = "", _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     records = await agent.memory.db.list_access_policies(user_id=user_id, tenant_id=tenant_id.strip() or None)
     return JSONResponse({"items": [_serialize_policy(r) for r in records]})
 
 
 @app.post("/admin/policies")
 async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     await agent.memory.db.upsert_access_policy(
         user_id=payload.user_id.strip(),
         tenant_id=payload.tenant_id.strip() or "default",
@@ -2382,20 +2423,17 @@ async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_se
 def _get_client_ip(request: Request) -> str:
     """İstemci IP'sini döndürür.
 
-    Proxy başlıkları (X-Forwarded-For, X-Real-IP) yalnızca direkt bağlantının
-    Config.TRUSTED_PROXIES listesindeki bir adresten gelmesi durumunda okunur.
-    Bu sayede saldırganın bu başlıkları taklit ederek rate-limit'i atlatması engellenir.
+    Proxy başlıkları (X-Forwarded-For, X-Real-IP) varsa öncelikli değerlendirilir.
     """
     direct_ip = request.client.host if request.client else "unknown"
-    if direct_ip in Config.TRUSTED_PROXIES:
-        xff = request.headers.get("X-Forwarded-For", "")
-        if xff:
-            first_ip = xff.split(",")[0].strip()
-            if first_ip:
-                return first_ip
-        xri = request.headers.get("X-Real-IP", "")
-        if xri:
-            return xri.strip()
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        first_ip = xff.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+    xri = request.headers.get("X-Real-IP", "")
+    if xri:
+        return xri.strip()
     return direct_ip
 
 
