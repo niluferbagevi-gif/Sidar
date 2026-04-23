@@ -262,7 +262,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Sistem Gereksinimleri
 
-- Python 3.11
+- Python 3.11 veya 3.12 (`>=3.11, <3.13`)
+- Not: Python 3.13 ile bağımlılık çözümü başarısız olabilir (ör. SQLAlchemy kurulamadığı için `ModuleNotFoundError`).
 - `ffmpeg` (multimodal video/ses ayrıştırma için zorunlu sistem bağımlılığı)
 - `psutil` (sistem sağlık ölçümleri ve child-process cleanup akışları için Python bağımlılığı; `pyproject.toml` içinde tanımlı)
 - İsteğe bağlı: Docker, Ollama, PostgreSQL/pgvector, Playwright tarayıcıları
