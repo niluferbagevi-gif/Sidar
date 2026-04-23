@@ -268,19 +268,25 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - `psutil` (sistem sağlık ölçümleri ve child-process cleanup akışları için Python bağımlılığı; `pyproject.toml` içinde tanımlı)
 - İsteğe bağlı: Docker, Ollama, PostgreSQL/pgvector, Playwright tarayıcıları
 
-### Conda ile (Önerilen)
+### Önerilen: `.venv` + `uv` ile kurulum
 
 ```bash
 cd Sidar
-conda env create -f environment.yml
-conda activate sidar
+uv venv .venv
+source .venv/bin/activate
+uv sync --extra dev
 ```
 
-### pip ile (Conda dışı)
+> Not: `uv sync --extra dev` komutu runtime + geliştirme bağımlılıklarını `pyproject.toml`
+> ve `uv.lock` üzerinden senkronize eder.
+
+### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
 ```bash
-# Runtime + geliştirme bağımlılıkları (pyproject.toml tek kaynak)
-uv pip install -e ".[dev]"
+cd Sidar
+uv venv .venv
+uv sync --extra dev
+uv run python main.py
 ```
 
 ### Opsiyonel: Masaüstü GUI Launcher
