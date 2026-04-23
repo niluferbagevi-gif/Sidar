@@ -5072,3 +5072,138 @@ async def test_entity_and_feedback_store_init_error_paths(monkeypatch):
         await web_server._get_entity_memory()
     with pytest.raises(HTTPException):
         await web_server._get_feedback_store()
+
+
+@pytest.mark.asyncio
+async def test_list_project_files_returns_404_and_400_for_invalid_targets(tmp_path, monkeypatch):
+    fake_root = tmp_path / "root"
+    fake_root.mkdir()
+    (fake_root / "just_a_file.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(web_server, "__file__", str(fake_root / "web_server.py"))
+
+    missing_dir = await web_server.list_project_files("nope")
+    assert missing_dir.status_code == 404
+
+    not_a_dir = await web_server.list_project_files("just_a_file.txt")
+    assert not_a_dir.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_file_content_handles_read_text_exception(tmp_path, monkeypatch):
+    fake_root = tmp_path / "root"
+    fake_root.mkdir()
+    target = fake_root / "ok.txt"
+    target.write_text("hello", encoding="utf-8")
+    monkeypatch.setattr(web_server, "__file__", str(fake_root / "web_server.py"))
+
+    original_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self == target:
+            raise OSError("disk error")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+
+    response = await web_server.file_content("ok.txt")
+    assert response.status_code == 500
+    assert b"disk error" in response.body
+
+
+@pytest.mark.asyncio
+async def test_vision_import_error_and_entity_feedback_success_paths(monkeypatch):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def _reject_vision(name, *args, **kwargs):
+        if name == "core.vision":
+            raise ImportError("vision missing")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _reject_vision)
+
+    with pytest.raises(HTTPException) as analyze_exc:
+        await web_server.api_vision_analyze(web_server._VisionAnalyzeRequest(image_base64="YQ=="))
+    with pytest.raises(HTTPException) as mockup_exc:
+        await web_server.api_vision_mockup(web_server._VisionMockupRequest(image_base64="YQ=="))
+
+    assert analyze_exc.value.status_code == 501
+    assert mockup_exc.value.status_code == 501
+
+    # restore import behavior for success path checks
+    monkeypatch.setattr(builtins, "__import__", original_import)
+
+    class _MemStore:
+        async def initialize(self):
+            return None
+
+    class _FeedbackStore:
+        async def initialize(self):
+            return None
+
+    mem_obj = _MemStore()
+    fb_obj = _FeedbackStore()
+
+    import types
+    import sys
+
+    entity_mod = types.ModuleType("core.entity_memory")
+    entity_mod.get_entity_memory = lambda _cfg: mem_obj
+    active_mod = types.ModuleType("core.active_learning")
+    active_mod.get_feedback_store = lambda _cfg: fb_obj
+
+    monkeypatch.setitem(sys.modules, "core.entity_memory", entity_mod)
+    monkeypatch.setitem(sys.modules, "core.active_learning", active_mod)
+    web_server._entity_memory_instance = None
+    web_server._feedback_store_instance = None
+
+    first_mem = await web_server._get_entity_memory()
+    second_mem = await web_server._get_entity_memory()
+    first_fb = await web_server._get_feedback_store()
+    second_fb = await web_server._get_feedback_store()
+
+    assert first_mem is mem_obj and second_mem is mem_obj
+    assert first_fb is fb_obj and second_fb is fb_obj
+
+
+@pytest.mark.asyncio
+async def test_slack_manager_init_and_error_branches(monkeypatch):
+    web_server._slack_mgr_instance = None
+
+    class _SlackManager:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.initialized = 0
+
+        async def initialize(self):
+            self.initialized += 1
+
+        def is_available(self):
+            return True
+
+        async def send_message(self, **_kwargs):
+            return False, "send failed"
+
+        async def list_channels(self):
+            return False, [], "list failed"
+
+    import types
+    import sys
+
+    mgr_mod = types.ModuleType("managers.slack_manager")
+    mgr_mod.SlackManager = _SlackManager
+    monkeypatch.setitem(sys.modules, "managers.slack_manager", mgr_mod)
+
+    mgr_first = await web_server._get_slack_manager()
+    mgr_second = await web_server._get_slack_manager()
+    assert mgr_first is mgr_second
+    assert mgr_first.initialized == 1
+
+    with pytest.raises(HTTPException) as send_exc:
+        await web_server.api_slack_send(web_server._SlackSendRequest(text="x"))
+    with pytest.raises(HTTPException) as channels_exc:
+        await web_server.api_slack_channels()
+
+    assert send_exc.value.status_code == 502
+    assert channels_exc.value.status_code == 502
