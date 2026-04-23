@@ -452,6 +452,33 @@ async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch
     assert any("LLM usage DB yazımı atlandı" in msg for msg in debug_logs)
 
 
+@pytest.mark.asyncio
+async def test_bind_llm_usage_sink_early_exit_for_empty_user_id(monkeypatch):
+    captured = {}
+    persisted_calls = []
+
+    class _Collector:
+        _sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            captured["sink"] = sink
+
+    async def _record_provider_usage_daily(**kwargs):
+        persisted_calls.append(kwargs)
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)))
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+
+    web_server._bind_llm_usage_sink(agent)
+    sink = captured["sink"]
+
+    sink(SimpleNamespace(user_id="", provider="openai", total_tokens=10))
+    sink(SimpleNamespace(user_id=None, provider="openai", total_tokens=10))
+    await asyncio.sleep(0)
+
+    assert persisted_calls == []
+
+
 def test_bind_llm_usage_sink_skips_when_no_running_loop(monkeypatch):
     captured = {}
 
@@ -1377,6 +1404,35 @@ async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
         allowed=False,
     )
     assert debug_logs
+
+
+def test_schedule_access_audit_log_early_exit_when_resource_type_missing(monkeypatch):
+    loop_calls = {"count": 0}
+
+    def _fake_loop():
+        loop_calls["count"] += 1
+        raise AssertionError("event loop should not be requested for empty resource_type")
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", _fake_loop)
+
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1"),
+        resource_type="",
+        action="read",
+        resource_id="doc1",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1"),
+        resource_type=None,
+        action="read",
+        resource_id="doc1",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+
+    assert loop_calls["count"] == 0
 
 
 def test_serialize_marketing_records():
