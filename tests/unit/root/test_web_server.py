@@ -3719,7 +3719,10 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
-    monkeypatch.setattr(web_server, "_redis_is_rate_limited", lambda *_args, **_kwargs: False)
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
     monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
@@ -3729,6 +3732,79 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
 
     assert ws.subprotocol == "good-token"
     assert {"auth_ok": True} in ws.payloads
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_collaboration_mentions_cover_error_and_rbac_paths(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            return "sub-1", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            yield "ok"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(
+                [
+                    '{"action":"join_room","room_id":"team:alpha"}',
+                    '{"action":"message","message":"@sidar   "}',
+                    '{"action":"message","message":"@sidar dosya oluştur"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="user")
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert {"auth_ok": True} in ws.payloads
+    room_errors = [payload for payload in ws.payloads if payload.get("type") == "room_error"]
+    assert any("komut bulunamadı" in payload.get("error", "") for payload in room_errors)
+    assert any("yazma yetkisine sahip değil" in payload.get("error", "") for payload in room_errors)
 
 
 @pytest.mark.asyncio
@@ -4376,6 +4452,49 @@ async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
             user=user,
         )
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_hitl_request_and_response_use_user_defaults_when_fields_missing(monkeypatch):
+    captured = {"added": None, "decision": None}
+
+    class _Store:
+        async def add(self, request):
+            captured["added"] = request
+
+    class _Gate:
+        timeout = 5
+
+        async def respond(self, request_id, approved, decided_by, rejection_reason):
+            captured["decision"] = (request_id, approved, decided_by, rejection_reason)
+            return SimpleNamespace(request_id=request_id, decision=SimpleNamespace(value="rejected"))
+
+    async def _notify(_req):
+        return None
+
+    monkeypatch.setattr(web_server, "get_hitl_gate", lambda: _Gate())
+    monkeypatch.setitem(
+        sys.modules,
+        "core.hitl",
+        SimpleNamespace(
+            HITLRequest=lambda **kwargs: SimpleNamespace(**kwargs),
+            notify=_notify,
+            get_hitl_store=lambda: _Store(),
+        ),
+    )
+
+    user = SimpleNamespace(username="default-user")
+    created = await web_server.hitl_create_request({"payload": {"x": 1}}, user=user)
+    assert created.status_code == 200
+    assert captured["added"].requested_by == "default-user"
+
+    rejected = await web_server.hitl_respond(
+        "req-2",
+        payload=web_server._HITLRespondRequest(approved=False, decided_by="", rejection_reason="denied"),
+        user=user,
+    )
+    assert rejected.status_code == 200
+    assert captured["decision"] == ("req-2", False, "default-user", "denied")
 
 
 @pytest.mark.asyncio
