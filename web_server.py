@@ -17,6 +17,7 @@ import builtins
 import contextlib
 import hashlib
 import hmac
+import importlib
 import importlib.util
 import inspect
 import json
@@ -38,9 +39,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import jwt
 import anyio
-import psutil
-from core.dlp import mask_pii as _mask_pii
-from core.vision import VisionPipeline, build_analyze_prompt
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
@@ -88,6 +86,15 @@ from managers.system_health import render_llm_metrics_prometheus
 
 logger = logging.getLogger(__name__)
 print = builtins.print
+
+
+def _resolve_vision_components():
+    vision_module = importlib.import_module("core.vision")
+    return vision_module.VisionPipeline, vision_module.build_analyze_prompt
+
+
+def _resolve_psutil_module():
+    return importlib.import_module("psutil")
 
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
@@ -209,7 +216,14 @@ def _collaboration_command_requires_write(command: str) -> bool:
 
 
 def _mask_collaboration_text(text: str) -> str:
-    return _mask_pii(str(text or ""))
+    try:
+        dlp_module = importlib.import_module("core.dlp")
+        mask_pii = getattr(dlp_module, "mask_pii", None)
+        if callable(mask_pii):
+            return str(mask_pii(str(text or "")))
+    except Exception:
+        pass
+    return str(text or "")
 
 
 def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
@@ -422,15 +436,44 @@ MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
-    current = psutil.Process(os.getpid())
     pids: list[int] = []
-    for child in current.children(recursive=False):
-        with contextlib.suppress(Exception):
-            comm = str(child.name() or "").strip().lower()
-            args = " ".join(child.cmdline() or []).strip().lower()
-            if comm == "ollama" or "ollama serve" in args:
-                pids.append(int(child.pid))
-    return pids
+    try:
+        psutil_module = _resolve_psutil_module()
+        current = psutil_module.Process(os.getpid())
+        for child in current.children(recursive=False):
+            with contextlib.suppress(Exception):
+                comm = str(child.name() or "").strip().lower()
+                args = " ".join(child.cmdline() or []).strip().lower()
+                if comm == "ollama" or "ollama serve" in args:
+                    pids.append(int(child.pid))
+        return sorted(set(pids))
+    except Exception:
+        if os.name == "nt":
+            return []
+
+    try:
+        raw = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid=,comm=,args="],
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return []
+
+    parent_pid = int(os.getpid())
+    for line in raw.decode("utf-8", errors="ignore").splitlines():
+        parts = line.strip().split(None, 3)
+        if len(parts) < 4:
+            continue
+        pid_str, ppid_str, comm, args = parts
+        if not pid_str.isdigit() or not ppid_str.isdigit():
+            continue
+        if int(ppid_str) != parent_pid:
+            continue
+        comm = comm.strip().lower()
+        args = args.strip().lower()
+        if comm == "ollama" or "ollama serve" in args:
+            pids.append(int(pid_str))
+    return sorted(set(pids))
 
 
 def _reap_child_processes_nonblocking() -> int:
@@ -1287,6 +1330,9 @@ def _setup_tracing() -> None:
         return
 
     if not getattr(cfg, "ENABLE_TRACING", False):
+        return
+    if trace is None:
+        logger.warning("OpenTelemetry trace modülü bulunamadı; tracing kapalı.")
         return
     resource = Resource.create({"service.name": getattr(cfg, "OTEL_SERVICE_NAME", "sidar-web")})
     provider = TracerProvider(resource=resource)
@@ -3885,6 +3931,7 @@ class _VisionMockupRequest(BaseModel):
 async def api_vision_analyze(req: _VisionAnalyzeRequest):
     """VisionPipeline ile görüntüyü analiz eder."""
     agent = await _resolve_agent_instance()
+    VisionPipeline, build_analyze_prompt = _resolve_vision_components()
     pipeline = VisionPipeline(agent.llm, cfg)
     prompt = req.prompt or build_analyze_prompt(req.analysis_type)
     try:
@@ -3911,6 +3958,7 @@ async def api_vision_analyze(req: _VisionAnalyzeRequest):
 async def api_vision_mockup(req: _VisionMockupRequest):
     """VisionPipeline ile mockup görüntüsünden kod üretir."""
     agent = await _resolve_agent_instance()
+    VisionPipeline, _build_analyze_prompt = _resolve_vision_components()
     pipeline = VisionPipeline(agent.llm, cfg)
     try:
         code = await pipeline.mockup_to_code(

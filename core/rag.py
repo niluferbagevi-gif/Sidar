@@ -12,6 +12,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 """
 
 import ast
+import builtins
 import hashlib
 import importlib
 import json
@@ -37,6 +38,7 @@ import bleach as _bleach
 _BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
+list = builtins.list
 
 
 class GraphIndex:
@@ -1555,7 +1557,12 @@ class DocumentStore:
         mode: str = "auto",
         session_id: str = "global",
     ) -> Tuple[bool, str]:
-        tracer = _otel_trace.get_tracer(__name__)
+        tracer = _otel_trace.get_tracer(__name__) if _otel_trace is not None else None
+        if tracer is None:
+            result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+            self._schedule_judge(query, result[1])
+            return result
+
         with tracer.start_as_current_span("rag.search") as span:
             span.set_attribute("sidar.rag.mode", mode)
             span.set_attribute("sidar.rag.session_id", session_id)

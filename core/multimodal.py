@@ -14,6 +14,7 @@ import html
 import json
 import logging
 import mimetypes
+import importlib
 import re
 import shutil
 import subprocess
@@ -25,7 +26,6 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from core.vision import VisionPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -690,7 +690,8 @@ class MultimodalPipeline:
 
         media_kind = detect_media_kind(mime_type=mime_type, path=source)
         if media_kind == "image":
-            pipeline = VisionPipeline(self._llm, self._config)
+            vision_module = importlib.import_module("core.vision")
+            pipeline = vision_module.VisionPipeline(self._llm, self._config)
             return await pipeline.analyze(image_path=str(source))
 
         transcript: dict[str, Any] | None = transcript_override
@@ -708,7 +709,7 @@ class MultimodalPipeline:
                         prompt=prompt,
                     )
 
-                vision = VisionPipeline(self._llm, self._config)
+                vision = importlib.import_module("core.vision").VisionPipeline(self._llm, self._config)
                 frames = await extract_video_frames(
                     source,
                     interval_seconds=frame_interval_seconds,
