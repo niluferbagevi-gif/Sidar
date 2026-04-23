@@ -317,20 +317,14 @@ async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> Non
     assert "BM25" in store.status()
 
 
-async def test_document_store_clean_html_with_and_without_bleach(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_document_store_clean_html_with_bleach(monkeypatch: pytest.MonkeyPatch) -> None:
     html = "<script>alert(1)</script><p>Hello&nbsp; <b>World</b></p>"
-
-    monkeypatch.setattr(rag, "_BLEACH_AVAILABLE", False)
-    cleaned = rag.DocumentStore._clean_html(html)
-    assert "alert" not in cleaned
-    assert "Hello" in cleaned and "World" in cleaned
 
     class _FakeBleach:
         @staticmethod
         def clean(_html: str, **_: object) -> str:
             return "<ignored>Clean Text</ignored>"
 
-    monkeypatch.setattr(rag, "_BLEACH_AVAILABLE", True)
     monkeypatch.setattr(rag, "_bleach", _FakeBleach)
     assert rag.DocumentStore._clean_html(html) == "<ignored>Clean Text</ignored>"
 
@@ -1218,24 +1212,6 @@ async def test_document_store_load_and_bm25_fetch_and_keyword_paths(monkeypatch:
     assert ok is True and "First" in text
 
 
-async def test_rag_module_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    original_import = builtins.__import__
-
-    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
-        if name.startswith("opentelemetry") or name == "bleach":
-            raise ImportError("blocked for test")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
-    reloaded = importlib.reload(rag)
-    try:
-        assert reloaded._otel_trace is None
-        assert reloaded._BLEACH_AVAILABLE is False
-    finally:
-        monkeypatch.setattr(builtins, "__import__", original_import)
-        importlib.reload(rag)
-
-
 async def test_graph_index_iter_source_files_limits_and_excludes(tmp_path: Path) -> None:
     root = tmp_path
     (root / "a.py").write_text("print('a')", encoding="utf-8")
@@ -1720,23 +1696,6 @@ async def test_embedding_function_mixed_precision_cuda_branch(monkeypatch: pytes
     ef = rag._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
     assert ef is not None
     assert ef.__call__(["x"])[0] == "ok"
-
-
-async def test_rag_module_bleach_available_import_branch(monkeypatch: pytest.MonkeyPatch) -> None:
-    original_import = builtins.__import__
-
-    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "bleach":
-            return SimpleNamespace(clean=lambda html, **_kw: html)
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
-    reloaded = importlib.reload(rag)
-    try:
-        assert reloaded._BLEACH_AVAILABLE is True
-    finally:
-        monkeypatch.setattr(builtins, "__import__", original_import)
-        importlib.reload(rag)
 
 
 async def test_graph_index_parse_and_search_additional_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

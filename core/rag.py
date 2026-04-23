@@ -33,13 +33,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from config import Config
 from opentelemetry import trace as _otel_trace
-
-try:
-    import bleach as _bleach
-    _BLEACH_AVAILABLE = True
-except ImportError:
-    _bleach = None  # type: ignore[assignment]
-    _BLEACH_AVAILABLE = False
+import bleach as _bleach
+_BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -1967,27 +1962,8 @@ class DocumentStore:
 
     @staticmethod
     def _clean_html(html: str) -> str:
-        """HTML'yi temiz metne dönüştür.
-
-        bleach kütüphanesi mevcutsa güvenilir DOM tabanlı sanitizasyon kullanılır;
-        yoksa regex tabanlı fallback devreye girer.
-        """
-        if _BLEACH_AVAILABLE:
-            # Tüm HTML etiketlerini strip et, içerik metnini koru
-            clean = _bleach.clean(html, tags=[], attributes={}, strip=True, strip_comments=True)
-            clean = re.sub(r"\s+", " ", clean)
-            return clean.strip()
-
-        # Fallback: regex tabanlı sanitizasyon (bleach yoksa)
-        clean = re.sub(
-            r"<(script|style)[^>]*>.*?</(script|style)>",
-            "",
-            html,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        clean = re.sub(r"<[^>]+>", " ", clean)
-        clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-        clean = clean.replace("&nbsp;", " ").replace("&quot;", '"')
+        """HTML'yi bleach ile temiz metne dönüştür."""
+        clean = _bleach.clean(html, tags=[], attributes={}, strip=True, strip_comments=True)
         clean = re.sub(r"\s+", " ", clean)
         return clean.strip()
 
