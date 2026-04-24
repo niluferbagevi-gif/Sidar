@@ -2096,46 +2096,7 @@ activate_conda_env_in_current_shell() {
 
 setup_python_env() {
     if [[ "$USE_CONDA" == true ]]; then
-        step "Conda Ortamı: $CONDA_ENV_NAME"
-
-        info "Conda Terms of Service (TOS) otomatik kabul adımı çalıştırılıyor..."
-        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
-        conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
-        ok "Conda TOS kabul adımı tamamlandı (gerekliyse)."
-
-        update_conda_base_if_available
-
-        if [[ ! -f "$SCRIPT_DIR/environment.yml" ]]; then
-            fail "environment.yml bulunamadı! Conda ortamı kurulamıyor."
-        fi
-
-        if conda info --envs | awk '{print $1}' | grep -Eq "^${CONDA_ENV_NAME}$"; then
-            info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
-            conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
-            ok "Conda ortamı güncellendi."
-        else
-            info "Yeni conda ortamı oluşturuluyor: $CONDA_ENV_NAME (Python $PYTHON_VERSION)..."
-            conda env create -f "$SCRIPT_DIR/environment.yml"
-            ok "Conda ortamı oluşturuldu."
-        fi
-
-        CONDA_RUN=(conda run --no-capture-output --cwd "$SCRIPT_DIR" -n "$CONDA_ENV_NAME")
-        if "${CONDA_RUN[@]}" python -c "import sys; print(sys.version)" >/dev/null 2>&1; then
-            ok "Conda ortamı hazır: $CONDA_ENV_NAME (komutlar conda run ile çalıştırılacak)"
-        else
-            fail "Conda ortamı doğrulanamadı: $CONDA_ENV_NAME"
-        fi
-
-        if [[ ! -x "$CONDA_PYTHON_PATH" ]]; then
-            fail "Conda ortamı oluşturuldu ancak python ikilisi bulunamadı: $CONDA_PYTHON_PATH"
-        fi
-
-        activate_conda_env_in_current_shell "$CONDA_ENV_NAME"
-
-        if [[ "$(command -v python || true)" != "$CONDA_PYTHON_PATH" ]]; then
-            warn "Aktif python conda env ile eşleşmiyor. PATH zorlanıyor: $CONDA_PYTHON_PATH"
-            hash -r
-        fi
+        fail "Conda akışı projeden kaldırıldı. Lütfen uv tabanlı kurulum için USE_CONDA=false kullanın."
     else
         step "uv venv Ortamı"
         VENV_DIR="$SCRIPT_DIR/.venv"

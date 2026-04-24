@@ -4,7 +4,6 @@
 # Konfigürasyon ve ortam şablonları
 include .env.example
 include alembic.ini
-include environment.yml
 
 # Docker
 include Dockerfile

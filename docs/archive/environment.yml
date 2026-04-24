@@ -1,3 +1,6 @@
+# DEPRECATED (archived): Conda environment definition is kept only for historical reference.
+# Active dependency management is uv-based (`pyproject.toml` + `uv sync`).
+
 name: sidar
 
 # ── Kanal öncelik sırası ──────────────────────────────────────────────────────

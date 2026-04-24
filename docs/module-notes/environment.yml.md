@@ -1,6 +1,6 @@
 # environment.yml
 
-- **Kaynak dosya:** `environment.yml`
+- **Kaynak dosya:** `docs/archive/environment.yml`
 - **Not dosyası:** `docs/module-notes/environment.yml.md`
-- **Amaç:** Bağımlılık/proje yapılandırma dosyası.
-- **Durum:** İncelendi ve `docs/module-notes` altında dokümante edildi.
+- **Amaç:** Geçmişte kullanılan Conda ortam tanımı (arşiv).
+- **Durum:** Conda akışı devreden çıkarıldı; aktif kurulum yolu `uv` + `pyproject.toml` üzerinden yürütülüyor.
