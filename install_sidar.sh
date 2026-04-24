@@ -1801,6 +1801,35 @@ install_system_dependencies() {
         sudo dnf upgrade -y
         sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
         info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
+    elif command -v pacman &>/dev/null; then
+        warn "Arch tabanlı sistem tespit edildi. Paketler pacman ile kuruluyor..."
+        sudo pacman -Sy --noconfirm --needed \
+            curl wget git zstd nodejs npm portaudio alsa-utils v4l-utils ffmpeg
+        node_bin="$(resolve_native_binary_path node || true)"
+        if [[ -n "$node_bin" ]]; then
+            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
+            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
+                warn "Arch depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
+            else
+                ok "Node.js sürümü uygun: $("$node_bin" -v)"
+            fi
+        fi
+        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
+    elif command -v zypper &>/dev/null; then
+        warn "OpenSUSE/SLES tabanlı sistem tespit edildi. Paketler zypper ile kuruluyor..."
+        sudo zypper --non-interactive refresh
+        sudo zypper --non-interactive install --no-recommends \
+            curl wget git zstd nodejs npm portaudio19-devel alsa-utils v4l-utils ffmpeg
+        node_bin="$(resolve_native_binary_path node || true)"
+        if [[ -n "$node_bin" ]]; then
+            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
+            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
+                warn "OpenSUSE depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
+            else
+                ok "Node.js sürümü uygun: $("$node_bin" -v)"
+            fi
+        fi
+        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
     elif command -v brew &>/dev/null; then
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
@@ -1818,7 +1847,7 @@ install_system_dependencies() {
 
         ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
     else
-        warn "apt-get veya sudo bulunamadı. Lütfen paketleri manuel kurun:"
+        warn "Desteklenen paket yöneticileri (apt/dnf/pacman/zypper/brew) bulunamadı. Lütfen paketleri manuel kurun:"
         info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
     fi
 }
@@ -1863,6 +1892,10 @@ ensure_prerequisites() {
             info "Kurulum için: sudo apt-get update && sudo apt-get install -y ffmpeg"
         elif command -v dnf &>/dev/null; then
             info "Kurulum için: sudo dnf install -y ffmpeg ffmpeg-devel"
+        elif command -v pacman &>/dev/null; then
+            info "Kurulum için: sudo pacman -Sy --noconfirm --needed ffmpeg"
+        elif command -v zypper &>/dev/null; then
+            info "Kurulum için: sudo zypper --non-interactive install ffmpeg"
         elif command -v brew &>/dev/null; then
             info "Kurulum için: brew install ffmpeg"
         else
