@@ -4060,8 +4060,8 @@ print(f'available={avail} cuda={ver} device={dev}')
                 ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
             else
                 warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-                info "GPU wheel için PyTorch yeniden kuruluyor (CUDA 12.4 arayüzü ile)..."
-                "${CONDA_RUN[@]}" uv pip install torch torchvision torchaudio --reinstall --extra-index-url https://download.pytorch.org/whl/cu124
+                info "GPU wheel için PyTorch yeniden kuruluyor (pyproject.toml içindeki [tool.uv] index ayarları kullanılarak)..."
+                "${CONDA_RUN[@]}" uv pip install torch torchvision torchaudio --reinstall
 
                 if "${CONDA_RUN[@]}" python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
                     ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."

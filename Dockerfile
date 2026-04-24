@@ -9,7 +9,6 @@
 #    docker build \
 #      --build-arg BASE_IMAGE=nvidia/cuda:13.0.0-runtime-ubuntu22.04 \
 #      --build-arg GPU_ENABLED=true \
-#      --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130 \
 #      -t sidar-ai-gpu .
 #
 #  WSL2 + Docker GPU notu:
@@ -74,21 +73,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
-# GPU build: --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-ENV TORCH_INDEX_URL=${TORCH_INDEX_URL} \
-    UV_EXTRA_INDEX_URL=${TORCH_INDEX_URL} \
-    UV_INDEX_STRATEGY=unsafe-best-match \
+ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
-      uv sync --frozen --no-install-project --index-strategy unsafe-best-match; \
+      uv sync --frozen --no-install-project; \
     else \
-      uv sync --frozen --no-dev --no-install-project --index-strategy unsafe-best-match; \
+      uv sync --frozen --no-dev --no-install-project; \
     fi
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
@@ -106,9 +100,9 @@ COPY . .
 
 # Proje paketini mevcut lock dosyasına göre ortama kur
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
-      uv sync --frozen --index-strategy unsafe-best-match; \
+      uv sync --frozen; \
     else \
-      uv sync --frozen --no-dev --index-strategy unsafe-best-match; \
+      uv sync --frozen --no-dev; \
     fi
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
