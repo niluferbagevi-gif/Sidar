@@ -4383,6 +4383,12 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
     async def _resolve_user(*_):
         return SimpleNamespace(id="u1", username="ada")
 
+    async def _noop_stream(*_args, **_kwargs):
+        return None
+
+    async def _fake_stream(*_args, **_kwargs):
+        return None
+
     async def _fake_stream(ws, _agent, text):
         await ws.send_json({"chunk": text})
 
@@ -4395,7 +4401,7 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
     monkeypatch.setitem(sys.modules, "core.voice", voice_module)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
-    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _fake_stream)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _noop_stream)
     monkeypatch.setattr(web_server.cfg, "VOICE_WS_MAX_BYTES", 1024)
 
     ws = _Ws()
@@ -4457,6 +4463,9 @@ async def test_websocket_voice_degrades_when_voice_pipeline_init_fails(monkeypat
 
     async def _resolve_user(*_):
         return SimpleNamespace(id="u1", username="ada")
+
+    async def _fake_stream(*_args, **_kwargs):
+        return None
 
     mm_module = types.ModuleType("core.multimodal")
     mm_module.MultimodalPipeline = _MultimodalPipeline
@@ -4573,6 +4582,9 @@ async def test_websocket_voice_closes_on_binary_before_auth_and_payload_limit(mo
     async def _resolve_user(*_):
         return SimpleNamespace(id="u1", username="ada")
 
+    async def _noop_stream(*_args, **_kwargs):
+        return None
+
     mm_module = types.ModuleType("core.multimodal")
     mm_module.MultimodalPipeline = _MultimodalPipeline
     monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
@@ -4656,6 +4668,168 @@ async def test_websocket_voice_auth_token_validation_paths(monkeypatch):
     ws_invalid = _Ws('{"action":"auth","token":"bad"}')
     await web_server.websocket_voice(ws_invalid)
     assert closed[-1] == "Invalid or expired token"
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_handles_malformed_packets_and_empty_chunks(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "", "language": "tr", "provider": "fake"}
+
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            self.enabled = False
+            self.vad_enabled = False
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
+            return {
+                "voice_state": event,
+                "buffered_bytes": buffered_bytes,
+                "sequence": sequence,
+                "assistant_turn_id": duplex_state.assistant_turn_id,
+            }
+
+        def should_commit_audio(self, *_args, **_kwargs):
+            return False
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive"},
+                    {"type": "websocket.receive", "text": "{invalid json"},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":""}'},
+                    {"type": "websocket.receive", "text": '{"action":"unknown"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            _ = (code, reason)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    async def _noop_stream(*_args, **_kwargs):
+        return None
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _noop_stream)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert {"auth_ok": True} in ws.sent
+    assert any(item.get("voice_session") == "ready" for item in ws.sent)
+    assert any(item.get("buffered_bytes") == 1 for item in ws.sent)
+    assert any(item.get("transcript") == "" for item in ws.sent)
+    assert any(item.get("done") is True for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_reports_transcription_failure_reason(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": False, "reason": "mic decode failed"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            _ = (code, reason)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert any(item.get("error") == "mic decode failed" for item in ws.sent)
+    assert any(item.get("done") is True for item in ws.sent)
 
 
 @pytest.mark.asyncio
