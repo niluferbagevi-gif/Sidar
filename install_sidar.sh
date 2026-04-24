@@ -4436,10 +4436,13 @@ print_summary() {
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
+        echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
         echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
