@@ -7580,6 +7580,28 @@ async def test_rate_limit_middleware_get_non_io_path_falls_through(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_rate_limit_middleware_put_method_falls_through(monkeypatch):
+    async def _never_limited(*_args, **_kwargs):
+        return False
+
+    async def _next(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_limited)
+    response = await web_server.rate_limit_middleware(_make_request("/files", "PUT"), _next)
+    assert response.status_code == 200
+
+
+def test_load_plugin_agent_class_rejects_baseagent_itself():
+    with pytest.raises(web_server.HTTPException):
+        web_server._load_plugin_agent_class(
+            "from agent.base_agent import BaseAgent\n",
+            "BaseAgent",
+            "plugin_baseagent_only",
+        )
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_error(monkeypatch):
     class _Memory:
         async def set_active_user(self, *_):
@@ -7769,6 +7791,79 @@ async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_clo
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_llm_error_send_failure_and_cleanup(monkeypatch):
+    unsubscribed: list[str] = []
+    warnings: list[str] = []
+    event_bus = None
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub-llm", asyncio.Queue()
+
+        def unsubscribe(self, sub_id):
+            unsubscribed.append(sub_id)
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.7)  # status pump timeout branch
+            raise web_server.LLMAPIError("openai", "boom", status_code=429, retryable=True)
+            yield ""
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "ok-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(2.0)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            if "chunk" in payload and "LLM Hatası" in str(payload.get("chunk")):
+                raise RuntimeError("socket-write-failed")
+            return None
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    event_bus = _EventBus()
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: event_bus)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx-1")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    await web_server.websocket_chat(_Ws())
+
+    assert any("LLM sağlayıcı hatası" in item for item in warnings)
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(monkeypatch):
     class _MultimodalPipeline:
         def __init__(self, *_):
@@ -7847,6 +7942,246 @@ async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(m
     await web_server.websocket_voice(ws2)
     assert any("[Sistem Hatası]" in str(item.get("chunk", "")) for item in ws2.sent)
 
+
+@pytest.mark.asyncio
+async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            await asyncio.sleep(0.7)
+            return "bad-result"
+
+    class _VoicePipeline:
+        enabled = False
+        vad_enabled = False
+        duplex_enabled = False
+
+        def __init__(self, _cfg):
+            self.voice_disabled_reason = ""
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def interrupt_assistant_turn(self, duplex_state, *, reason: str):
+            duplex_state.last_interrupt_reason = reason
+            return {"assistant_turn_id": 0, "reason": reason}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive", "bytes": b"abc"},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            try:
+                return next(self._packets)
+            except StopIteration:
+                await asyncio.sleep(1.0)
+                raise web_server.WebSocketDisconnect()
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", lambda *_a, **_k: asyncio.sleep(0))
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert any(item.get("error") == "Ses transkripsiyonu başarısız oldu." for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_cancel_action_emits_voice_interruption(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            await asyncio.sleep(2.0)
+            return {"success": True, "text": "ok"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive", "bytes": b"abc"},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.receive", "text": '{"action":"cancel"}'},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            try:
+                return next(self._packets)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert any(item.get("cancelled") is True and item.get("done") is True for item in ws.sent)
+    assert any("voice_interruption" in item for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_exception_branch_logs_warning(monkeypatch):
+    warnings: list[str] = []
+
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "ok"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        headers = {}
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive(self):
+            raise RuntimeError("voice-boom")
+
+        async def send_json(self, _payload):
+            return None
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(web_server, "_ANYIO_CLOSED", None)
+
+    await web_server.websocket_voice(_Ws())
+    assert any("Voice WebSocket beklenmedik hata" in item for item in warnings)
+
+
+@pytest.mark.asyncio
+async def test_metrics_get_all_sessions_non_awaitable_branch(monkeypatch):
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def get_all_sessions(self):
+            return ["s1"]
+
+    class _Agent:
+        VERSION = "x"
+
+        def __init__(self):
+            self.docs = SimpleNamespace(doc_count=0)
+            self.memory = _Memory()
+            self.cfg = SimpleNamespace(AI_PROVIDER="test", USE_GPU=False)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "query_string": b"",
+        "headers": [(b"accept", b"application/json")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "http_version": "1.1",
+    }
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    assert response.status_code == 200
 
 @pytest.mark.asyncio
 async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeypatch):
