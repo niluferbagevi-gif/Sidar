@@ -5433,6 +5433,15 @@ async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapsho
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
     monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda snap: f"calls={snap['totals']['calls']}\n")
 
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.agent_metrics":
+            raise ImportError("delegation metrics unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
     prom_response = await web_server.llm_prometheus_metrics(_user=SimpleNamespace(role="admin"))
     budget_response = await web_server.llm_budget_metrics(_user=SimpleNamespace(role="admin"))
 
