@@ -77,6 +77,11 @@ python scripts/migrate_sqlite_to_pg.py \
 6. Uygulama `DATABASE_URL` ayarını PostgreSQL'e çevirin.
 7. Trafiği yeniden açın ve sağlık kontrollerini izleyin.
 
+> ⚠️ **Veri kaybı güvenlik notu (kritik):**
+> Production/staging ortamlarında kurulum betiğinin parola hardening tetiklediği otomatik PostgreSQL volume reset akışı **varsayılan olarak devre dışıdır**.
+> Cutover sırasında kalıcı volume'leri (`*_postgres_data` / `sidar_postgres_data`) otomatik veya manuel olarak silmeyin.
+> Sadece felaket kurtarma / bilinçli reset senaryosunda ve güncel yedek doğrulandıktan sonra operatör onayıyla hareket edin.
+
 ## 3) Rollback planı
 
 - İlk 24 saat `data/sidar.backup.db` saklanmalıdır.

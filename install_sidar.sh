@@ -548,10 +548,23 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
     sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
 
-    if [[ "$sidar_env" == "production" ]]; then
-        warn "DB parola hardening algılandı ancak SIDAR_ENV=production olduğu için PostgreSQL volume otomatik sıfırlanmadı."
-        return 0
-    fi
+    local allow_production_volume_reset="${ALLOW_PRODUCTION_DB_VOLUME_RESET:-0}"
+    case "$sidar_env" in
+        development|dev|local|test)
+            ;;
+        production|prod|staging|preprod)
+            if [[ "$allow_production_volume_reset" != "1" ]]; then
+                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için PostgreSQL volume otomatik sıfırlanmadı (güvenlik freni)."
+                warn "Sadece bilinçli operasyonlarda ALLOW_PRODUCTION_DB_VOLUME_RESET=1 ile açıkça izin verin."
+                return 0
+            fi
+            warn "ALLOW_PRODUCTION_DB_VOLUME_RESET=1 verildi; SIDAR_ENV=${sidar_env} için PostgreSQL volume sıfırlama güvenlik freni operatör onayıyla bypass edildi."
+            ;;
+        *)
+            warn "SIDAR_ENV='${sidar_env}' tanınmadı; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı."
+            return 0
+            ;;
+    esac
 
     if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
         warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
