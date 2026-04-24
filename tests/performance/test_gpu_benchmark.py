@@ -40,6 +40,13 @@ _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 5, min_value=2, max
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "1.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
+_PREWARM_REQUESTS: int = _gpu_smoke._env_int("GPU_BENCH_PREWARM_REQUESTS", 3, min_value=1, max_value=12)
+_PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
+    "GPU_BENCH_PREWARM_CONCURRENCY",
+    2,
+    min_value=1,
+    max_value=8,
+)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -85,11 +92,30 @@ async def _prepare_client(client: OllamaClient) -> None:
         pytest.skip("Ollama servisine ulaşılamıyor.")
     if _MODEL not in await client.list_models():
         pytest.skip(f"{_MODEL} modeli yüklü değil.")
-    await client.chat(
-        messages=[{"role": "user", "content": "ısınma"}],
-        model=_MODEL,
-        json_mode=False,
-    )
+    warmup_prompt = "ısınma"
+    await client.chat(messages=[{"role": "user", "content": warmup_prompt}], model=_MODEL, json_mode=False)
+
+    # Tail latency'yi azaltmak için ek ön ısınma:
+    # - ardışık çağrılar: model/runtime kod-path'i stabilize edilir
+    # - eşzamanlı çağrılar: GPU scheduler + KV-cache tahsisi önceden tetiklenir
+    for idx in range(_PREWARM_REQUESTS):
+        await client.chat(
+            messages=[{"role": "user", "content": f"{warmup_prompt}-{idx}"}],
+            model=_MODEL,
+            json_mode=False,
+        )
+
+    for _ in range(_PREWARM_CONCURRENCY):
+        await asyncio.gather(
+            *[
+                client.chat(
+                    messages=[{"role": "user", "content": f"{warmup_prompt}-concurrent-{idx}"}],
+                    model=_MODEL,
+                    json_mode=False,
+                )
+                for idx in range(_PREWARM_CONCURRENCY)
+            ]
+        )
 
 
 @dataclasses.dataclass(slots=True)
