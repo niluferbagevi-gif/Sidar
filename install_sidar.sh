@@ -46,7 +46,32 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
-    fail "Gerekli modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
+
+    mkdir -p "$INSTALL_MODULE_DIR"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
+    TMP_HELPERS_PATH="$(mktemp "${TMPDIR:-/tmp}/sidar_install_helpers.XXXXXX.sh")"
+
+    if command -v curl &>/dev/null; then
+        if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
+            rm -f "$TMP_HELPERS_PATH"
+            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
+        fi
+    elif command -v wget &>/dev/null; then
+        if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
+            rm -f "$TMP_HELPERS_PATH"
+            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
+        fi
+    else
+        rm -f "$TMP_HELPERS_PATH"
+        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+    fi
+
+    install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
+    rm -f "$TMP_HELPERS_PATH"
+    ok "Modül indirildi ve kaydedildi: $INSTALL_HELPERS_MODULE"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
