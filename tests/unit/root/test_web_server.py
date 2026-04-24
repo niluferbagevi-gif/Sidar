@@ -9177,3 +9177,183 @@ async def test_health_check_delegates_to_health_response(monkeypatch):
     monkeypatch.setattr(web_server, "_health_response", _health)
     response = await web_server.health_check()
     assert response is expected
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset_when_status_task_creation_fails(monkeypatch):
+    calls = {"unsubscribe": [], "reset": []}
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub-cleanup", asyncio.Queue()
+
+        def unsubscribe(self, sub_id):
+            calls["unsubscribe"].append(sub_id)
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, *_):
+            yield "cevap"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "message", "message": "durum"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self._messages)
+            except StopIteration:
+                await asyncio.sleep(0.1)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    _orig_create_task = web_server.asyncio.create_task
+
+    def _fake_create_task(coro):
+        coro_name = getattr(coro, "cr_code", None)
+        coro_label = getattr(coro_name, "co_name", "")
+        if coro_label == "_status_pump":
+            coro.close()
+            raise RuntimeError("status pump create failed")
+        return _orig_create_task(coro)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(web_server.asyncio, "create_task", _fake_create_task)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert calls["unsubscribe"] == ["sub-cleanup"]
+    assert calls["reset"] == ["ctx:u1"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_task_creation_fails(monkeypatch):
+    calls = {"unsubscribe": [], "reset": []}
+    room = web_server._CollaborationRoom("team:cleanup")
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub-room-cleanup", asyncio.Queue()
+
+        def unsubscribe(self, sub_id):
+            calls["unsubscribe"].append(sub_id)
+
+    class _DoneTask:
+        def done(self):
+            return True
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, *_):
+            return "ok"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "join_room", "room_id": "team:cleanup", "display_name": "Ada"}),
+                    json.dumps({"action": "message", "message": "@sidar cleanup et"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self._messages)
+            except StopIteration:
+                await asyncio.sleep(0.1)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            return None
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    async def _join_room(*_args, **_kwargs):
+        return room
+
+    _orig_create_task = web_server.asyncio.create_task
+
+    def _fake_create_task(coro):
+        coro_name = getattr(coro, "cr_code", None)
+        coro_label = getattr(coro_name, "co_name", "")
+        if coro_label == "_status_pump":
+            coro.close()
+            raise RuntimeError("status pump create failed")
+        return _orig_create_task(coro)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    async def _broadcast(room_obj, *_args, **_kwargs):
+        room_obj.active_task = _DoneTask()
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(web_server, "_join_collaboration_room", _join_room)
+    monkeypatch.setattr(web_server, "_broadcast_room_payload", _broadcast)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(web_server.asyncio, "create_task", _fake_create_task)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert calls["unsubscribe"] == ["sub-room-cleanup"]
+    assert calls["reset"] == ["ctx:u1"]
+    assert room.active_task is None
