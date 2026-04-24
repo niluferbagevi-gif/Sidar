@@ -35,8 +35,8 @@ pytestmark = pytest.mark.skipif(
 _MODEL: str = _gpu_smoke.MODEL_NAME
 _TIMEOUT: int = _gpu_smoke._env_int("GPU_BENCH_TIMEOUT", 60, min_value=10, max_value=300)
 _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1, max_value=16)
-_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 1, min_value=1, max_value=4)
-_BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 5, min_value=2, max_value=20)
+_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 3, min_value=1, max_value=8)
+_BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 20, min_value=5, max_value=50)
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "10.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
@@ -250,8 +250,8 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     raporlanan mean/stddev yalnızca kararlı durumu (steady-state) yansıtır.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 1)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
       GPU_BENCH_LATENCY_BUDGET — maksimum kabul edilebilir gecikme (sn, varsayılan: 30)
     """
     _require_gpu_stress()
@@ -278,6 +278,10 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     assert mean_s <= _LATENCY_BUDGET_S, (
         f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
     )
+    stddev_s: float = benchmark.stats["stddev"]
+    if mean_s > 0:
+        cv = stddev_s / mean_s
+        assert cv < 0.15, f"Inference varyansı çok yüksek: CV={cv:.2%}"
 
 
 @pytest.mark.benchmark
@@ -291,8 +295,8 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 1)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
@@ -338,8 +342,8 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 1)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
@@ -421,7 +425,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 1)
+      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 3)
       GPU_BENCH_TPS_ROUNDS         — ölçüm tur sayısı              (varsayılan: 20)
       GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 96)
       GPU_BENCH_NUM_CTX            — context window                 (varsayılan: 2048)
@@ -477,8 +481,8 @@ def test_gpu_time_to_first_token(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_TTFT_BUDGET    — maksimum kabul edilebilir TTFT (sn, varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 1)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı               (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 3)
+      GPU_BENCH_ROUNDS         — ölçüm tur sayısı               (varsayılan: 20)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
