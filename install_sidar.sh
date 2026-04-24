@@ -1188,7 +1188,6 @@ RUN_AUDIT=true
 NO_INTERACTION=false
 DOCKER_ONLY=false
 APP_RUNTIME_MODE="ask"
-USE_CONDA=false
 ENABLE_AUDIO=true
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 AUTO_INSTALL=false
@@ -1371,8 +1370,6 @@ if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
-CONDA_ENV_NAME="sidar"
-CONDA_PYTHON_PATH="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -1389,7 +1386,6 @@ DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
-CONDA_BASE_UPDATE_DONE=false
 
 banner() {
     echo -e "${BOLD}${BLUE}"
@@ -1421,38 +1417,6 @@ ensure_noninteractive_sudo_ready() {
     fi
 }
 
-configure_conda_outdated_warning_policy() {
-    if [[ "${USE_CONDA:-false}" != true ]]; then
-        return 0
-    fi
-
-    if conda config --set notify_outdated_conda false >/dev/null 2>&1; then
-        info "Conda 'notify_outdated_conda' uyarısı devre dışı bırakıldı."
-    else
-        warn "Conda notify_outdated_conda ayarı güncellenemedi; varsayılan davranışla devam ediliyor."
-    fi
-}
-
-update_conda_base_if_available() {
-    if [[ "${USE_CONDA:-false}" != true ]]; then
-        return 0
-    fi
-
-    if [[ "${CONDA_BASE_UPDATE_DONE:-false}" == true ]]; then
-        return 0
-    fi
-
-    configure_conda_outdated_warning_policy
-
-    info "Conda base ortamı sessiz modda güncelleniyor..."
-    if conda update -n base -c defaults conda -y --quiet >/dev/null 2>&1; then
-        ok "Conda base ortamı güncellendi."
-    else
-        warn "Conda base güncellemesi başarısız/atlanmış olabilir. Mevcut sürümle devam ediliyor."
-    fi
-
-    CONDA_BASE_UPDATE_DONE=true
-}
 
 read_env_value_from_file() {
     local key="$1"
@@ -2067,50 +2031,19 @@ setup_nvidia_docker() {
     fi
 }
 
-# ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
-activate_conda_env_in_current_shell() {
-    local env_name="$1"
-    local conda_base=""
-
-    if ! command -v conda &>/dev/null; then
-        fail "conda komutu bulunamadı; ortam aktive edilemiyor."
-    fi
-
-    conda_base="$(conda info --base 2>/dev/null || true)"
-    if [[ -n "$conda_base" ]] && [[ -f "$conda_base/etc/profile.d/conda.sh" ]]; then
-        # shellcheck disable=SC1090
-        source "$conda_base/etc/profile.d/conda.sh"
-    elif [[ -x "$HOME/miniconda3/bin/conda" ]]; then
-        # shellcheck disable=SC1091
-        eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
-    fi
-
-    if ! conda activate "$env_name"; then
-        fail "Conda ortamı aktive edilemedi: $env_name"
-    fi
-
-    export PATH="$HOME/miniconda3/envs/$env_name/bin:$PATH"
-    export CONDA_DEFAULT_ENV="$env_name"
-    ok "Conda ortamı aktif edildi (current shell): $env_name"
-}
-
 setup_python_env() {
-    if [[ "$USE_CONDA" == true ]]; then
-        fail "Conda akışı projeden kaldırıldı. Lütfen uv tabanlı kurulum için USE_CONDA=false kullanın."
+    step "uv venv Ortamı"
+    VENV_DIR="$SCRIPT_DIR/.venv"
+    if [[ -d "$VENV_DIR" ]]; then
+        info "Mevcut uv venv bulundu: $VENV_DIR"
     else
-        step "uv venv Ortamı"
-        VENV_DIR="$SCRIPT_DIR/.venv"
-        if [[ -d "$VENV_DIR" ]]; then
-            info "Mevcut uv venv bulundu: $VENV_DIR"
-        else
-            info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-            ok "uv venv oluşturuldu."
-        fi
-        # shellcheck disable=SC1091
-        source "$VENV_DIR/bin/activate"
-        ok "Ortam aktif: $VENV_DIR"
+        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
+        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+        ok "uv venv oluşturuldu."
     fi
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate"
+    ok "Ortam aktif: $VENV_DIR"
 }
 
 # ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
@@ -2157,46 +2090,14 @@ install_python_deps() {
         EXTRAS+=(gpu)
     fi
 
-    local -a LOCK_ARGS=(--index-strategy first-match)
     local -a SYNC_ARGS=(--frozen)
     for _extra in "${EXTRAS[@]}"; do
         SYNC_ARGS+=(--extra "$_extra")
     done
 
-    # uv.lock yönetimi: extras seti belirlendikten sonra oluştur/güncelle
-    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
-        info "uv.lock bulunamadı — seçili extras ile oluşturuluyor..."
-    else
-        info "uv.lock bulundu — seçili extras ile güncelleniyor..."
-    fi
-    if ! "${UV_CMD[@]}" lock "${LOCK_ARGS[@]}"; then
-        fail "uv lock başarısız oldu. Bağımlılık çözümleme tamamlanamadı; kurulum durduruluyor."
-    fi
-    ok "uv.lock güncellendi."
-
-    info "Kilitlenmiş bağımlılık kaynağı olarak yalnızca uv.lock kullanılıyor (requirements.txt üretilmiyor)."
-
-    if [[ "$USE_CONDA" == true ]]; then
-        local uv_export_file
-        uv_export_file="$(mktemp)"
-
-        info "Conda ortamına hızlı kurulum için kilit dosyasından requirements export ediliyor (uv export)..."
-        if ! "${UV_CMD[@]}" export --index-strategy first-match "${SYNC_ARGS[@]}" --no-hashes -o "$uv_export_file"; then
-            rm -f "$uv_export_file"
-            fail "uv export başarısız oldu. Conda için requirements dosyası üretilemedi."
-        fi
-
-        info "Bağımlılıklar conda ortamına uv pip sync ile kuruluyor..."
-        if ! uv pip sync --python "$CONDA_PYTHON_PATH" "$uv_export_file"; then
-            rm -f "$uv_export_file"
-            fail "uv pip sync başarısız oldu. Conda ortamına bağımlılıklar kurulamadı."
-        fi
-        rm -f "$uv_export_file"
-    else
-        info "Bağımlılıklar senkronlanıyor (uv sync --frozen, --index-strategy first-match)..."
-        if ! "${UV_CMD[@]}" sync --index-strategy first-match "${SYNC_ARGS[@]}"; then
-            fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
-        fi
+    info "Bağımlılıklar uv.lock üzerinden senkronlanıyor (uv sync --frozen)..."
+    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
+        fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
     fi
 
     local editable_extras=""
@@ -2210,14 +2111,8 @@ install_python_deps() {
     fi
 
     info "Sidar paketi editable modda kuruluyor (${editable_profile_label}, -e .[${editable_extras}])..."
-    if [[ "$USE_CONDA" == true ]]; then
-        if ! "$CONDA_PYTHON_PATH" -m pip install -e "$SCRIPT_DIR[$editable_extras]"; then
-            fail "Sidar paketi conda ortamına editable olarak kurulamadı."
-        fi
-    else
-        if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[$editable_extras]"; then
-            fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
-        fi
+    if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[$editable_extras]"; then
+        fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
     fi
 
     ok "Python bağımlılıkları senkronlandı."
@@ -2227,11 +2122,7 @@ install_python_deps() {
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
-    if [[ "$USE_CONDA" == true ]]; then
-        PY_CMD=("${CONDA_RUN[@]}" python)
-    else
-        PY_CMD=(python)
-    fi
+    PY_CMD=(python)
 
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
@@ -2671,12 +2562,7 @@ setup_vscode_workspace() {
 
     mkdir -p "$vscode_dir"
 
-    local python_path
-    if [[ "$USE_CONDA" == true ]]; then
-        python_path="$HOME/miniconda3/envs/$CONDA_ENV_NAME/bin/python"
-    else
-        python_path="$SCRIPT_DIR/.venv/bin/python"
-    fi
+    local python_path="$SCRIPT_DIR/.venv/bin/python"
 
     cat > "$vscode_dir/settings.json" <<EOF
 {
@@ -3738,9 +3624,7 @@ run_migrations() {
     cd "$SCRIPT_DIR"
 
     ALEMBIC_PYTHON=""
-    if [[ "$USE_CONDA" == true ]] && [[ -n "${CONDA_PYTHON_PATH:-}" ]] && [[ -x "${CONDA_PYTHON_PATH:-}" ]]; then
-        ALEMBIC_PYTHON="$CONDA_PYTHON_PATH"
-    elif command -v python3 &>/dev/null; then
+    if command -v python3 &>/dev/null; then
         ALEMBIC_PYTHON="python3"
     elif command -v python &>/dev/null; then
         ALEMBIC_PYTHON="python"
@@ -4007,31 +3891,27 @@ prepare_docker_for_migrations() {
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
-        if [[ "$USE_CONDA" == true ]]; then
-            if "${CONDA_RUN[@]}" python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                CUDA_OK=$("${CONDA_RUN[@]}" python -c "
+        if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
+                CUDA_OK=$(python -c "
 import torch
 avail = torch.cuda.is_available()
 ver   = torch.version.cuda or 'N/A'
 dev   = torch.cuda.get_device_name(0) if avail else 'N/A'
 print(f'available={avail} cuda={ver} device={dev}')
 " 2>/dev/null || echo "available=true cuda=N/A device=N/A")
-                TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
-                TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
-                ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
-            else
-                warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-                info "GPU wheel için PyTorch yeniden kuruluyor (pyproject.toml içindeki [tool.uv] index ayarları kullanılarak)..."
-                "${CONDA_RUN[@]}" uv pip install torch torchvision torchaudio --reinstall
-
-                if "${CONDA_RUN[@]}" python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                    ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
-                else
-                    fail "PyTorch CUDA kurulumu yine başarısız oldu. Lütfen manuel kontrol edin."
-                fi
-            fi
+            TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
+            TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
+            ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
         else
-            info "Conda kullanılmıyor, PyTorch CUDA kontrolü atlanıyor."
+            warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
+            info "GPU wheel için PyTorch yeniden kuruluyor (pyproject.toml içindeki [tool.uv] index ayarları kullanılarak)..."
+            uv pip install torch torchvision torchaudio --reinstall
+
+            if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
+                ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
+            else
+                fail "PyTorch CUDA kurulumu yine başarısız oldu. Lütfen manuel kontrol edin."
+            fi
         fi
     fi
 }
@@ -4055,9 +3935,7 @@ wait_for_redis_before_smoke_tests() {
         redis_url="redis://localhost:6379/0"
     fi
 
-    if [[ "$USE_CONDA" == true ]]; then
-        python_cmd=("${CONDA_RUN[@]}" python)
-    elif command -v python3 &>/dev/null; then
+    if command -v python3 &>/dev/null; then
         python_cmd=(python3)
     elif command -v python &>/dev/null; then
         python_cmd=(python)
@@ -4200,26 +4078,6 @@ run_smoke_tests() {
         info "GPU tespit edildiği için smoke testlerde RUN_GPU_STRESS=1 otomatik etkinleştirildi."
     else
         info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
-    fi
-
-    if [[ "$USE_CONDA" == true ]]; then
-        if ! "${CONDA_RUN[@]}" python -c "import pytest" >/dev/null 2>&1; then
-            warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
-            SMOKE_TEST_STATUS="pytest_yok"
-            return
-        fi
-        if env "${pytest_smoke_env[@]}" "${CONDA_RUN[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
-            ok "Smoke testler başarıyla geçti."
-            SMOKE_TEST_STATUS="tamamlandi"
-        else
-            SMOKE_TEST_STATUS="hata"
-            if [[ "$smoke_failure_policy" == "warn" ]]; then
-                warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
-            else
-                fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
-            fi
-        fi
-        return
     fi
 
     if ! python -c "import pytest" >/dev/null 2>&1; then
@@ -4634,9 +4492,6 @@ launch_ide() {
         case "${open_code:-H}" in
             [EeYy]*)
                 info "VS Code açılıyor..."
-                if [[ "$USE_CONDA" == true ]]; then
-                    info "Not: .vscode/settings.json ile yeni entegre terminallerde '$CONDA_ENV_NAME' ortamı otomatik aktive edilir."
-                fi
                 case "$vscode_mode" in
                     code-cli)
                         code "$SCRIPT_DIR"
