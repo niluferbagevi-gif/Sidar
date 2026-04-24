@@ -84,8 +84,17 @@ def _require_gpu_stress() -> None:
 
 
 def _ollama_num_parallel() -> int:
-    """Ollama'nın eşzamanlı request işleme kapasitesi (server env üzerinden)."""
-    return _gpu_smoke._env_int("OLLAMA_NUM_PARALLEL", 1, min_value=1, max_value=64)
+    """Ollama'nın eşzamanlı request işleme kapasitesi (server env üzerinden).
+
+    Varsayılanı benchmark concurrency değeriyle hizalarız; böylece `.env` veya
+    docker-compose varsayılanı kullanılmadığında testler gereksiz yere skip olmaz.
+    """
+    return _gpu_smoke._env_int(
+        "OLLAMA_NUM_PARALLEL",
+        _CONCURRENCY,
+        min_value=1,
+        max_value=64,
+    )
 
 
 def _make_ollama_client() -> OllamaClient:

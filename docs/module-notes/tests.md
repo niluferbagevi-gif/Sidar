@@ -76,6 +76,8 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `GPU_BENCH_CONCURRENCY` kadar (genellikle `4`) olmasını bekler:
   - `test_gpu_concurrent_throughput`
   - `test_gpu_vram_peak_under_load`
+- Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
+  yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.
 - Örnek başlatma komutları:
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`
