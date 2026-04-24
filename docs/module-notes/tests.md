@@ -71,3 +71,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Kapı davranışı:
   - TTFT testi fail ederse job fail olur.
   - Test skip olursa (GPU/Ollama hazır değilse) job yine fail olur; böylece PR onayı için gerçek benchmark zorunlu tutulur.
+
+### `warmup=False` uyarısı hakkında not
+
+- `pytest-benchmark` başlık çıktısındaki `warmup=False` ifadesi global `benchmark()` varsayılanını gösterir.
+- Bu depo için kritik benchmark testleri `benchmark.pedantic(..., warmup_rounds=1)` kullandığı için her turdan önce ısınma çalıştırılır.
+- Pedantic warmup turları ölçüm istatistiklerine dahil edilmez; dolayısıyla global satır, test içi warmup davranışını geçersiz kılmaz.
+
+### Eşiği sıkılaştırma örnekleri
+
+- TTFT eşiğini 100ms'e çekmek için:
+  - `GPU_BENCH_TTFT_BUDGET=0.1 pytest tests/performance/test_gpu_benchmark.py -k test_gpu_time_to_first_token`
+- Token/sn taban çizgisini yükseltmek için:
+  - `GPU_BENCH_MIN_TOKENS_PER_SEC=10 pytest tests/performance/test_gpu_benchmark.py -k test_gpu_tokens_per_second`
