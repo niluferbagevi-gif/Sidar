@@ -21,7 +21,12 @@ from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
 import tests.smoke.test_gpu_inference as _gpu_smoke
 
-pytestmark = [pytest.mark.benchmark, pytest.mark.gpu, pytest.mark.gpu_stress]
+# GPU donanımı yoksa tüm modül atlanır; bireysel testler ek olarak
+# RUN_GPU_STRESS=1 denetimi yapar (ikinci katman).
+pytestmark = pytest.mark.skipif(
+    not _gpu_smoke.is_gpu_available(),
+    reason="Sistemde veya WSL2 katmanında NVIDIA GPU bulunamadı, GPU benchmark atlanıyor.",
+)
 
 _MODEL: str = _gpu_smoke.MODEL_NAME
 _TIMEOUT: int = _gpu_smoke._env_int("GPU_BENCH_TIMEOUT", 60, min_value=10, max_value=300)
@@ -62,6 +67,9 @@ async def _prepare_client(client: OllamaClient) -> None:
     )
 
 
+@pytest.mark.benchmark
+@pytest.mark.gpu
+@pytest.mark.gpu_stress
 def test_gpu_single_inference_latency(benchmark) -> None:
     """Tek GPU inference isteğinin gecikme dağılımını ölçer.
 
@@ -105,6 +113,9 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     )
 
 
+@pytest.mark.benchmark
+@pytest.mark.gpu
+@pytest.mark.gpu_stress
 def test_gpu_concurrent_throughput(benchmark) -> None:
     """Eşzamanlı GPU isteklerinin toplam tur süresini ölçer.
 
@@ -153,6 +164,9 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
     assert all(isinstance(r, str) and r.strip() for r in results), "Bazı yanıtlar boş döndü."
 
 
+@pytest.mark.benchmark
+@pytest.mark.gpu
+@pytest.mark.gpu_stress
 def test_gpu_vram_peak_under_load(benchmark) -> None:
     """Benchmark döngüsü sırasında GPU VRAM tepe değerini gözlemler ve doğrular.
 
