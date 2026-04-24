@@ -40,7 +40,7 @@ def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
     return SimpleNamespace(
         DATABASE_URL=f"sqlite+aiosqlite:///{base_dir / db_name}",
         BASE_DIR=str(base_dir),
-        DB_POOL_SIZE=8,
+        DB_POOL_SIZE=20,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret",
