@@ -59,6 +59,17 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - Baseline karşılaştırmasını her sürümde tekrarlayın ve stddev değerini release notuna ekleyin.
   - Dalgalanma süreklilik kazanırsa yük profili (concurrency, warmup_rounds, model) sabitlenerek yeniden ölçüm alın.
 
+### Çoklu kullanıcı oturum ölçekleme iyileştirme notu
+
+- `test_multi_user_session_message_workload_scales_with_concurrency` metriği,
+  webhook tabanlı kurumsal entegrasyonlarda (Jira/Slack/Teams) kritik bir erken sinyaldir.
+- İyileştirme kontrol listesi:
+  1. `asyncio.gather` ile kullanıcı/oturum oluşturma akışında gereksiz seri adımlar bırakmayın.
+  2. PostgreSQL dağıtımlarında `DB_POOL_SIZE` değerini eşzamanlı istek profiline göre yükseltin.
+  3. Sık okunan oturum geçmişleri için Redis/semantic cache katmanını aktif tutun.
+  4. Benchmark ölçümünde schema init/bağlantı aç-kapat maliyetini workload dışında tutarak
+     gerçek mesajlaşma throughput'unu ayrı izleyin.
+
 ### GPU eşzamanlılık benchmark notu
 
 - Aşağıdaki testler, gerçek paralellik doğrulaması için `OLLAMA_NUM_PARALLEL` değerinin

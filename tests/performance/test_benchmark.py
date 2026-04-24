@@ -53,41 +53,43 @@ def test_multi_user_session_message_workload_scales_with_concurrency(benchmark, 
     """Çoklu kullanıcı + oturum + mesaj yazım iş yükünü benchmark eder ve bütünlüğü doğrular."""
     users = 20
     messages_per_session = 8
+    cfg = _make_cfg(tmp_path, "benchmark_multi_user_scale.db")
+    db = Database(cfg)
+    asyncio.run(db.connect())
+    asyncio.run(db.init_schema())
 
     async def _workload(run_id: str) -> int:
-        cfg = _make_cfg(tmp_path, f"benchmark_{run_id}.db")
-        db = Database(cfg)
-        await db.connect()
-        await db.init_schema()
-        try:
-            created_users = await asyncio.gather(
-                *[db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}", password="pw") for idx in range(users)]
-            )
-            sessions = await asyncio.gather(
-                *[db.create_session(user.id, f"session-{i}") for i, user in enumerate(created_users)]
-            )
+        created_users = await asyncio.gather(
+            # Benchmark odak noktası oturum+mesaj akışı olduğu için burada
+            # pahalı PBKDF2 parola hash maliyetini devre dışı bırakıyoruz.
+            *[db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}") for idx in range(users)]
+        )
+        sessions = await asyncio.gather(
+            *[db.create_session(user.id, f"session-{run_id}-{i}") for i, user in enumerate(created_users)]
+        )
 
-            inserted = await db.add_messages_bulk(
-                [
-                    {
-                        "session_id": session.id,
-                        "role": "user",
-                        "content": f"hello-{j}",
-                        "tokens_used": j,
-                    }
-                    for session in sessions
-                    for j in range(messages_per_session)
-                ]
-            )
-            assert inserted == users * messages_per_session
+        inserted = await db.add_messages_bulk(
+            [
+                {
+                    "session_id": session.id,
+                    "role": "user",
+                    "content": f"hello-{j}",
+                    "tokens_used": j,
+                }
+                for session in sessions
+                for j in range(messages_per_session)
+            ]
+        )
+        assert inserted == users * messages_per_session
 
-            grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
-            per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
-            assert all(len(items) == messages_per_session for items in per_session_messages)
-            assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
-            return sum(len(items) for items in per_session_messages)
-        finally:
-            await db.close()
+        grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
+        per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
+        assert all(len(items) == messages_per_session for items in per_session_messages)
+        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
+        return sum(len(items) for items in per_session_messages)
 
-    total_messages = benchmark(lambda: asyncio.run(_workload(uuid4().hex)))
-    assert total_messages == users * messages_per_session
+    try:
+        total_messages = benchmark(lambda: asyncio.run(_workload(uuid4().hex)))
+        assert total_messages == users * messages_per_session
+    finally:
+        asyncio.run(db.close())
