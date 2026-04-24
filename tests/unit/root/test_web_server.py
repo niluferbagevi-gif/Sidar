@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -3121,7 +3122,9 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
             self.messages.append((role, content))
 
     agent = SimpleNamespace(memory=_Memory())
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    async def _resolve_agent():
+        return agent
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **_: {"ok": True})
@@ -3202,7 +3205,9 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
     workflow_calls = []
     agent = SimpleNamespace(memory=_Memory())
 
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    async def _resolve_agent():
+        return agent
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(
         web_server,
         "_resolve_ci_failure_context",
@@ -5813,3 +5818,236 @@ async def test_api_vision_mockup_invalid_base64_in_legacy_fallback(monkeypatch):
             web_server._VisionMockupRequest(image_base64="not-base64-%%%", framework="react")
         )
     assert exc.value.status_code == 400
+
+
+def _decode_json_response(resp):
+    return json.loads(resp.body.decode("utf-8"))
+
+
+@pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_awaitable_agent_branch(monkeypatch):
+    class _Agent:
+        async def respond(self, _prompt):
+            yield "ok"
+
+    async def _fake_resolve():
+        return _Agent()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _fake_resolve)
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda maybe: maybe)
+
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="system",
+        event_name="ping",
+        payload={"federation_prompt": "x"},
+    )
+    assert result["summary"] == "ok"
+
+
+def test_auth_helpers_and_metrics_access_paths(monkeypatch):
+    req = SimpleNamespace(state=SimpleNamespace())
+    with pytest.raises(HTTPException):
+        web_server._get_request_user(req)
+
+    user = SimpleNamespace(id="1", username="alice", role="user")
+    with pytest.raises(HTTPException):
+        web_server._require_admin_user(user)
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "token-123")
+    request = SimpleNamespace(headers={"Authorization": "Bearer token-123"})
+    assert web_server._require_metrics_access(request, user) is user
+
+
+@pytest.mark.asyncio
+async def test_schedule_access_audit_log_recorder_missing_and_no_loop(monkeypatch):
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=None)))
+
+    async def _resolve():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    class _Loop:
+        def create_task(self, _coro):
+            _coro.close()
+            return None
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: _Loop())
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="github_repo",
+        action="read",
+        resource_id="repo",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+
+    monkeypatch.setattr(
+        web_server.asyncio,
+        "get_running_loop",
+        lambda: (_ for _ in ()).throw(RuntimeError("no loop")),
+    )
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="github_repo",
+        action="read",
+        resource_id="repo",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_plugin_install_missing_source_raises(monkeypatch):
+    pid = next(iter(web_server.PLUGIN_MARKETPLACE_CATALOG.keys()))
+    entry = dict(web_server.PLUGIN_MARKETPLACE_CATALOG[pid])
+    monkeypatch.setitem(web_server.PLUGIN_MARKETPLACE_CATALOG, pid, {**entry, "entrypoint": "plugins/missing.py"})
+    with pytest.raises(HTTPException):
+        web_server._install_marketplace_plugin(pid)
+
+
+@pytest.mark.asyncio
+async def test_admin_prompt_and_stats_branches(monkeypatch):
+    db = SimpleNamespace(
+        get_admin_stats=lambda: {"k": 1},
+        upsert_prompt=lambda **_: SimpleNamespace(role_name="assistant", prompt_text="x", is_active=False, id=1, created_at="n", updated_at="n"),
+        activate_prompt=lambda _pid: None,
+    )
+
+    async def _stats():
+        return {"k": 1}
+
+    async def _upsert(**_kwargs):
+        return SimpleNamespace(id=1, role_name="assistant", prompt_text="x", is_active=False, created_at="n", updated_at="n")
+
+    async def _activate(_pid):
+        return None
+
+    db.get_admin_stats = _stats
+    db.upsert_prompt = _upsert
+    db.activate_prompt = _activate
+    agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="old")
+    async def _resolve_agent():
+        return agent
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda x: x)
+
+    stats_resp = await web_server.admin_stats(_user=SimpleNamespace())
+    assert _decode_json_response(stats_resp)["k"] == 1
+
+    with pytest.raises(ValidationError):
+        await web_server.admin_upsert_prompt(web_server._PromptUpsertRequest(role_name="", prompt_text=""), _user=SimpleNamespace())
+
+    with pytest.raises(HTTPException):
+        await web_server.admin_activate_prompt(web_server._PromptActivateRequest(prompt_id=1), _user=SimpleNamespace())
+
+
+@pytest.mark.asyncio
+async def test_access_policy_middleware_and_rate_limit_helpers(monkeypatch):
+    async def _next(_request):
+        return JSONResponse({"ok": True})
+
+    req = SimpleNamespace(method="OPTIONS", state=SimpleNamespace(user=None), url=SimpleNamespace(path="/x"), headers={}, client=None)
+    resp = await web_server.access_policy_middleware(req, _next)
+    assert _decode_json_response(resp)["ok"] is True
+
+    user_req = SimpleNamespace(method="GET", state=SimpleNamespace(user=SimpleNamespace(id="u", username="u", role="user", tenant_id="t")), url=SimpleNamespace(path="/x"), headers={}, client=None)
+    monkeypatch.setattr(web_server, "_resolve_policy_from_request", lambda _req: ("repo", "read", "1"))
+    monkeypatch.setattr(web_server, "_get_client_ip", lambda _req: "127.0.0.1")
+    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=None)))
+    async def _resolve_agent():
+        return agent
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **_: None)
+    allow_resp = await web_server.access_policy_middleware(user_req, _next)
+    assert _decode_json_response(allow_resp)["ok"] is True
+
+    async def _deny(**_kwargs):
+        return False
+
+    agent.memory.db.check_access_policy = _deny
+    deny_resp = await web_server.access_policy_middleware(user_req, _next)
+    assert deny_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_redis_and_client_ip_and_static_and_close_helpers(monkeypatch, tmp_path):
+    class _Redis:
+        def __init__(self):
+            self.expire_calls = 0
+
+        async def incr(self, _key):
+            return 1
+
+        async def expire(self, _key, _ttl):
+            self.expire_calls += 1
+
+    redis = _Redis()
+    async def _get_redis_obj():
+        return redis
+    monkeypatch.setattr(web_server, "_get_redis", _get_redis_obj)
+    assert await web_server._redis_is_rate_limited("ns", "k", 5, 60) is False
+    assert redis.expire_calls == 1
+
+    async def _broken_redis():
+        raise Exception("x")
+    monkeypatch.setattr(web_server, "_get_redis", _broken_redis)
+
+    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={"X-Forwarded-For": "1.2.3.4"})
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", ["127.0.0.1"])
+    assert web_server._get_client_ip(req) == "1.2.3.4"
+
+    original_static = web_server.StaticFiles
+
+    class _Boom:
+        first = True
+        def __init__(self, *args, **kwargs):
+            if _Boom.first and "check_dir" in kwargs:
+                _Boom.first = False
+                raise TypeError("boom")
+
+    monkeypatch.setattr(web_server, "StaticFiles", _Boom)
+    web_server._make_static_files(tmp_path)
+    monkeypatch.setattr(web_server, "StaticFiles", original_static)
+
+    await web_server._ws_close_policy_violation(SimpleNamespace(), "x")
+
+
+@pytest.mark.asyncio
+async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
+    class _Github:
+        repo_name = "org/repo"
+
+        def list_repos(self, owner, limit):
+            return True, [{"full_name": "org/repo-b"}, {"full_name": "org/repo-a"}]
+
+        def is_available(self):
+            return True
+
+        def get_pull_requests_detailed(self, **_kwargs):
+            return False, [], "boom"
+
+        def get_pull_request(self, _number):
+            return False, "not found"
+
+    async def _search_sync(*_args):
+        return True, []
+
+    docs = SimpleNamespace(search=lambda *args: (True, {"args": args}))
+    agent = SimpleNamespace(github=_Github(), memory=SimpleNamespace(active_session_id="s1"), docs=docs)
+    async def _resolve_agent():
+        return agent
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    repos_resp = await web_server.github_repos(owner="", q="repo-a")
+    repos_payload = _decode_json_response(repos_resp)
+    assert repos_payload["repos"][0]["full_name"] == "org/repo-a"
+
+    prs_resp = await web_server.github_prs()
+    assert prs_resp.status_code == 500
+
+    pr_resp = await web_server.github_pr_detail(1)
+    assert pr_resp.status_code == 404
+
+    rag_resp = await web_server.rag_search(q="merhaba", mode="auto", top_k=3)
+    assert _decode_json_response(rag_resp)["success"] is True
