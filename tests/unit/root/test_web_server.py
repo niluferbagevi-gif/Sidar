@@ -1034,6 +1034,7 @@ async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatc
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: [])
 
     async with web_server._app_lifespan(web_server.FastAPI()):
+        await asyncio.sleep(0)
         assert web_server._autonomy_cron_task is None
         assert web_server._nightly_memory_task is None
 
@@ -3401,6 +3402,27 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
     assert response.status_code == 200
     assert memory.calls == []
     assert dispatched["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
+    class _Req:
+        async def body(self):
+            return b'{"action":"noop"}'
+
+    class _Memory:
+        async def add(self, *_args, **_kwargs):
+            return None
+
+    agent = SimpleNamespace(memory=_Memory())
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **_kwargs: {"ok": True})
+
+    response = await web_server.github_webhook(_Req(), x_github_event="repository", x_hub_signature_256="")
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
