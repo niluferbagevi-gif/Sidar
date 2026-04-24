@@ -5358,6 +5358,133 @@ async def test_readiness_check_and_metrics_json_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_health_response_dependency_exception_marks_degraded(monkeypatch):
+    class _Health:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+        def get_dependency_health(self):
+            raise RuntimeError("deps-boom")
+
+    async def _resolve():
+        return SimpleNamespace(cfg=SimpleNamespace(AI_PROVIDER="openai"), health=_Health())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    response = await web_server._health_response(require_dependencies=True)
+
+    assert response.status_code == 503
+    assert b'"dependencies"' in response.body
+    assert b'"deps-boom"' in response.body
+
+
+@pytest.mark.asyncio
+async def test_metrics_prometheus_importerror_falls_back_to_json(monkeypatch):
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "headers": [(b"accept", b"text/plain")],
+        "query_string": b"",
+    }
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        async def aget_all_sessions(self):
+            return [{"id": "s1"}]
+
+    async def _resolve():
+        return SimpleNamespace(
+            VERSION="v-test",
+            cfg=SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False),
+            docs=SimpleNamespace(doc_count=1),
+            memory=_Memory(),
+        )
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "prometheus_client":
+            raise ImportError("missing prometheus_client")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(web_server, "_local_rate_limits", {})
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.asyncio
+async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapshot(monkeypatch):
+    class _Collector:
+        def snapshot(self):
+            return {"totals": {"calls": 2}}
+
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+    monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda snap: f"calls={snap['totals']['calls']}\n")
+
+    prom_response = await web_server.llm_prometheus_metrics(_user=SimpleNamespace(role="admin"))
+    budget_response = await web_server.llm_budget_metrics(_user=SimpleNamespace(role="admin"))
+
+    assert prom_response.status_code == 200
+    assert prom_response.body == b"calls=2\n"
+    assert budget_response.status_code == 200
+    assert budget_response.body == b'{"totals":{"calls":2}}'
+
+
+@pytest.mark.asyncio
+async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(monkeypatch):
+    calls: list[list[str]] = []
+
+    async def _to_thread(fn, cmd, cwd):
+        calls.append(cmd)
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return "feature/x"
+        if cmd[:3] == ["git", "remote", "get-url"]:
+            return "git@github.com:acme/sidar.git"
+        if cmd == ["git", "symbolic-ref", "--short", "HEAD@{upstream}"]:
+            return ""
+        if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+            return "origin/develop"
+        return ""
+
+    class _Github:
+        repo_name = "acme/sidar"
+
+        def list_repos(self, **_kwargs):
+            return True, [
+                {"full_name": "acme/Sidar"},
+                {"full_name": "acme/infra"},
+            ]
+
+    async def _resolve_agent():
+        return SimpleNamespace(github=_Github())
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _to_thread)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    info = await web_server.git_info()
+    repos = await web_server.github_repos(q="sid")
+
+    assert info.status_code == 200
+    assert b'"default_branch":"develop"' in info.body
+    assert ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"] in calls
+    assert repos.status_code == 200
+    assert b'"full_name":"acme/Sidar"' in repos.body
+    assert b'"full_name":"acme/infra"' not in repos.body
+
+
+@pytest.mark.asyncio
 async def test_github_endpoints_cover_error_branches(monkeypatch):
     class _Github:
         repo_name = "org/repo"
