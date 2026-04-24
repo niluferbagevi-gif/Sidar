@@ -7545,3 +7545,202 @@ async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(m
     rag_payload = _decode_json_response(rag_resp)
     assert rag_payload["success"] is True
     assert rag_payload["result"]["k"] == 10
+
+
+@pytest.mark.asyncio
+async def test_get_client_ip_prefers_x_real_ip_for_trusted_proxy(monkeypatch):
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"),
+        headers={"X-Forwarded-For": "", "X-Real-IP": " 8.8.8.8 "},
+    )
+    assert web_server._get_client_ip(req) == "8.8.8.8"
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_error(monkeypatch):
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.2)
+            yield "ok"
+
+    class _WsDisconnect:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    class _WsUnexpected(_WsDisconnect):
+        async def receive_text(self):
+            raise RuntimeError("boom")
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws_disconnect = _WsDisconnect()
+    await web_server.websocket_chat(ws_disconnect)
+    assert ws_disconnect.subprotocol == "good-token"
+
+    ws_unexpected = _WsUnexpected()
+    await web_server.websocket_chat(ws_unexpected)
+    assert any(item.get("error") for item in ws_unexpected.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "merhaba", "language": "tr", "provider": "fake"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YWE="}'},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    closed = []
+
+    async def _close_policy(_ws, reason):
+        closed.append(reason)
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close_policy)
+    monkeypatch.setattr(web_server.cfg, "VOICE_WS_MAX_BYTES", 1)
+
+    async def _raise_llm(*_args, **_kwargs):
+        raise web_server.LLMAPIError("openai", "kapalı", status_code=429, retryable=True)
+
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _raise_llm)
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+    assert any("[LLM Hatası]" in str(item.get("chunk", "")) for item in ws.sent)
+    assert closed[-1] == "Voice payload too large"
+
+    async def _raise_system(*_args, **_kwargs):
+        raise RuntimeError("stream fail")
+
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _raise_system)
+    ws2 = _Ws()
+    await web_server.websocket_voice(ws2)
+    assert any("[Sistem Hatası]" in str(item.get("chunk", "")) for item in ws2.sent)
+
+
+@pytest.mark.asyncio
+async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeypatch):
+    class _Memory:
+        def __len__(self):
+            return 2
+
+        def get_all_sessions(self):
+            async def _sessions():
+                return ["s1", "s2", "s3"]
+
+            return _sessions()
+
+    class _Agent:
+        VERSION = "1.0.0"
+
+        def __init__(self):
+            self.docs = SimpleNamespace(doc_count=5)
+            self.memory = _Memory()
+            self.cfg = SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "query_string": b"",
+        "headers": [(b"accept", b"application/json")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "http_version": "1.1",
+    }
+    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    payload = json.loads(response.body.decode("utf-8"))
+    assert payload["sessions_total"] == 3
