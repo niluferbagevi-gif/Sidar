@@ -18,32 +18,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build CI image (Dockerfile)
-        run: |
-          docker build --build-arg INSTALL_DEV=true -t sidar-ci:${{ github.sha }} .
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Run backend quality gates + tests in container
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install system dependencies (PortAudio via project script)
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
         run: |
-          mkdir -p .ci-artifacts
-          docker run --rm \
-            -v "${{ github.workspace }}/.ci-artifacts:/ci-artifacts" \
-            --entrypoint bash \
-            sidar-ci:${{ github.sha }} \
-            -lc '
-              uv run ruff check . &&
-              uv run ruff format --check . &&
-              uv run bandit -q -r . -x tests,web_ui_react,node_modules,.venv &&
-              uv run safety check --full-report &&
-              bash scripts/collect_repo_metrics.sh &&
-              bash scripts/audit_metrics.sh . markdown &&
-              bash scripts/audit_metrics.sh . json &&
-              bash scripts/check_empty_test_artifacts.sh &&
-              uv run pytest -q -m quality_gate tests/quality/test_llm_quality_gate.py &&
-              uv run bash run_tests.sh &&
-              bash scripts/check_env_parity.sh &&
-              cp -r htmlcov /ci-artifacts/htmlcov 2>/dev/null || true &&
-              cp -r web_ui_react/coverage /ci-artifacts/frontend-coverage 2>/dev/null || true
-            '
+          uv sync --frozen --all-extras
 
       - name: Set up Node.js (with npm cache)
         uses: actions/setup-node@v4
@@ -52,18 +42,46 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web_ui_react/package-lock.json
 
+      - name: Run Python lint gate (ruff)
+        run: uv run ruff check .
+
+      - name: Run Python format check gate (ruff format)
+        run: uv run ruff format --check .
+
       - name: Run frontend lint gate (eslint)
         run: |
           cd web_ui_react
           npm ci
           npm run lint
 
+      - name: Run SAST gates (Bandit + Safety)
+        run: |
+          uv run bandit -q -r . -x tests,web_ui_react,node_modules,.venv
+          uv run safety check --full-report
+
+      - name: Collect repository metrics
+        run: bash scripts/collect_repo_metrics.sh
+
+      - name: Audit source line metrics (standardized)
+        run: |
+          bash scripts/audit_metrics.sh . markdown
+          bash scripts/audit_metrics.sh . json
+
+      - name: Check empty test artifacts
+        run: bash scripts/check_empty_test_artifacts.sh
+
+      - name: Run deterministic LLM quality gate
+        run: uv run pytest -q -m quality_gate tests/quality/test_llm_quality_gate.py
+
+      - name: Run test suite (single pass + coverage gate)
+        run: uv run bash run_tests.sh
+
       - name: Upload Backend Coverage Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage-report
-          path: .ci-artifacts/htmlcov/
+          path: htmlcov/
           if-no-files-found: warn
           retention-days: 14
 
@@ -72,9 +90,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage-report
-          path: .ci-artifacts/frontend-coverage/
+          path: web_ui_react/coverage/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Check .env.example ↔ config.py parity
+        run: bash scripts/check_env_parity.sh
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
@@ -103,18 +124,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build CI image (Dockerfile)
-        run: |
-          docker build --build-arg INSTALL_DEV=true -t sidar-ci:${{ github.sha }} .
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Run DB migration + PostgreSQL stress tests in container
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install system dependencies (PortAudio via project script)
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
         run: |
-          docker run --rm \
-            --network host \
-            -e DATABASE_URL="${{ env.DATABASE_URL }}" \
-            --entrypoint bash \
-            sidar-ci:${{ github.sha }} \
-            -lc '
-              uv run alembic upgrade head &&
-              uv run pytest -v -m pg_stress tests/integration/db/ --timeout=120 -x
-            '
+          uv sync --frozen --all-extras
+
+      - name: Run DB schema migration
+        run: uv run alembic upgrade head
+
+      - name: Run PostgreSQL connection pool stress tests
+        run: |
+          uv run pytest -v -m pg_stress tests/integration/db/ \
+            --timeout=120 \
+            -x
