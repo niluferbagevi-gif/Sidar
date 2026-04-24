@@ -723,6 +723,20 @@ def test_fallback_ci_failure_context_for_check_run_and_suite_and_generic_payload
     assert generic_context["failure_summary"] == "Pipeline failed"
 
 
+def test_fallback_ci_failure_context_returns_empty_for_non_failure_payloads():
+    non_failure_workflow = {
+        "repository": {"full_name": "org/repo"},
+        "workflow_run": {"status": "in_progress", "conclusion": "", "name": "CI"},
+    }
+    assert web_server._fallback_ci_failure_context("workflow_run", non_failure_workflow) == {}
+
+    neutral_check_run = {
+        "repository": {"full_name": "org/repo"},
+        "check_run": {"status": "completed", "conclusion": "success", "name": "lint"},
+    }
+    assert web_server._fallback_ci_failure_context("check_run", neutral_check_run) == {}
+
+
 def test_socket_key_and_participant_serialization():
     websocket = _DummyWebSocket()
     participant = web_server._CollaborationParticipant(
@@ -989,6 +1003,46 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatch):
+    thread_calls = {"count": 0}
+    cleanup = {"redis": 0, "shutdown": 0}
+
+    async def _prewarm():
+        return None
+
+    async def _close_redis():
+        cleanup["redis"] += 1
+
+    async def _shutdown():
+        cleanup["shutdown"] += 1
+
+    async def _to_thread(func, *args, **kwargs):
+        thread_calls["count"] += 1
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(web_server, "_prewarm_rag_embeddings", _prewarm)
+    monkeypatch.setattr(web_server, "_close_redis_client", _close_redis)
+    monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", _shutdown)
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _to_thread)
+    monkeypatch.setattr(web_server.cfg, "ENABLE_AUTONOMOUS_CRON", False)
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
+    monkeypatch.setattr(web_server, "_autonomy_cron_task", None)
+    monkeypatch.setattr(web_server, "_autonomy_cron_stop", None)
+    monkeypatch.setattr(web_server, "_nightly_memory_task", None)
+    monkeypatch.setattr(web_server, "_nightly_memory_stop", None)
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: None))
+    monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: [])
+
+    async with web_server._app_lifespan(web_server.FastAPI()):
+        assert web_server._autonomy_cron_task is None
+        assert web_server._nightly_memory_task is None
+
+    assert thread_calls["count"] == 2
+    assert cleanup["redis"] == 1
+    assert cleanup["shutdown"] == 1
+
+
+@pytest.mark.asyncio
 async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
@@ -1190,6 +1244,23 @@ def test_build_event_driven_federation_spec_for_system_alert(monkeypatch):
 
 def test_build_event_driven_federation_spec_returns_none_for_unknown_source():
     assert web_server._build_event_driven_federation_spec("slack", "message", {"text": "x"}) is None
+
+
+def test_build_event_driven_federation_spec_returns_none_for_unqualified_payloads():
+    jira_payload = {
+        "action": "updated",
+        "issue": {"key": "SID-10", "summary": "Mevcut issue"},
+    }
+    assert web_server._build_event_driven_federation_spec("jira", "issue_updated", jira_payload) is None
+
+    github_payload = {
+        "action": "closed",
+        "pull_request": {"number": 17, "title": "Refactor"},
+    }
+    assert web_server._build_event_driven_federation_spec("github", "pull_request", github_payload) is None
+
+    system_payload = {"severity": "info", "alert_name": "cpu ok"}
+    assert web_server._build_event_driven_federation_spec("system", "heartbeat", system_payload) is None
 
 
 def test_build_swarm_goal_for_role_includes_context_and_role_marker():
