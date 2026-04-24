@@ -2782,7 +2782,12 @@ setup_vscode_workspace() {
 {
     "python.defaultInterpreterPath": "${python_path}",
     "python.terminal.activateEnvironment": true,
-    "terminal.integrated.defaultProfile.linux": "bash"
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.env.linux": {
+        "VIRTUAL_ENV": "$SCRIPT_DIR/.venv",
+        "PATH": "$SCRIPT_DIR/.venv/bin:\${env:PATH}"
+    }
 }
 EOF
 
