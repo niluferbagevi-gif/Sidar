@@ -1954,7 +1954,7 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
 
 @app.post("/admin/prompts/activate")
 async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_require_admin_user)):
-    agent = await _resolve_agent_instance()
+    agent = await _await_if_needed(_resolve_agent_instance())
     active = await agent.memory.db.activate_prompt(payload.prompt_id)
     if not active:
         raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
