@@ -35,7 +35,7 @@ pytestmark = pytest.mark.skipif(
 _MODEL: str = _gpu_smoke.MODEL_NAME
 _TIMEOUT: int = _gpu_smoke._env_int("GPU_BENCH_TIMEOUT", 60, min_value=10, max_value=300)
 _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1, max_value=16)
-_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 3, min_value=1, max_value=8)
+_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 5, min_value=1, max_value=8)
 _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 20, min_value=20, max_value=50)
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "10.0"))
@@ -48,7 +48,7 @@ _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
     max_value=8,
 )
 _NUM_BATCH: int = _gpu_smoke._env_int("GPU_BENCH_NUM_BATCH", 512, min_value=1, max_value=4096)
-_NUM_PREDICT: int = _gpu_smoke._env_int("GPU_BENCH_NUM_PREDICT", 96, min_value=8, max_value=1024)
+_NUM_PREDICT: int = _gpu_smoke._env_int("GPU_BENCH_NUM_PREDICT", 128, min_value=8, max_value=1024)
 _NUM_CTX: int = _gpu_smoke._env_int("GPU_BENCH_NUM_CTX", 2048, min_value=256, max_value=32768)
 _TPS_BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_TPS_ROUNDS", 20, min_value=20, max_value=50)
 
@@ -264,7 +264,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     raporlanan mean/stddev yalnızca kararlı durumu (steady-state) yansıtır.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
       GPU_BENCH_LATENCY_BUDGET — maksimum kabul edilebilir gecikme (sn, varsayılan: 30)
     """
@@ -293,8 +293,12 @@ def test_gpu_single_inference_latency(benchmark) -> None:
         f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
     )
     stddev_s: float = benchmark.stats["stddev"]
+    iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
+    benchmark.extra_info["latency_stddev_ms"] = round(stddev_s * 1000, 3)
+    benchmark.extra_info["latency_iqr_ms"] = round(iqr_s * 1000, 3)
     if mean_s > 0:
         cv = stddev_s / mean_s
+        benchmark.extra_info["latency_cv_percent"] = round(cv * 100, 3)
         assert cv < 0.15, f"Inference varyansı çok yüksek: CV={cv:.2%}"
 
 
@@ -309,7 +313,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
@@ -365,7 +369,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
     """
     _require_gpu_stress()
@@ -454,9 +458,9 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 3)
+      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 5)
       GPU_BENCH_TPS_ROUNDS         — ölçüm tur sayısı              (varsayılan: 20)
-      GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 96)
+      GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 128)
       GPU_BENCH_NUM_CTX            — context window                 (varsayılan: 2048)
     """
     _require_gpu_stress()
@@ -491,6 +495,13 @@ def test_gpu_tokens_per_second(benchmark) -> None:
         "Model veya Ollama sürümünü kontrol edin."
     )
     tps = result.tokens_per_second
+    tps_stddev_s: float = float(benchmark.stats.get("stddev", 0.0))
+    tps_iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
+    tps_mean_s: float = float(benchmark.stats.get("mean", 0.0))
+    benchmark.extra_info["tps_stddev_ms"] = round(tps_stddev_s * 1000, 3)
+    benchmark.extra_info["tps_iqr_ms"] = round(tps_iqr_s * 1000, 3)
+    if tps_mean_s > 0:
+        benchmark.extra_info["tps_cv_percent"] = round((tps_stddev_s / tps_mean_s) * 100, 3)
     assert tps >= _MIN_TOKENS_PER_SEC, (
         f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
     )
@@ -510,7 +521,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_TTFT_BUDGET    — maksimum kabul edilebilir TTFT (sn, varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 3)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 5)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı               (varsayılan: 20)
     """
     _require_gpu_stress()

@@ -11,8 +11,9 @@ export RUN_GPU_STRESS="${RUN_GPU_STRESS:-1}"
 # Gate bütçeleri jitter payı bırakarak bunun üstünde tutulur.
 export GPU_BENCH_TTFT_BUDGET="${GPU_BENCH_TTFT_BUDGET:-0.2}"        # 200ms
 export GPU_BENCH_LATENCY_BUDGET="${GPU_BENCH_LATENCY_BUDGET:-0.25}" # 250ms
-export GPU_BENCH_WARMUP_ROUNDS="${GPU_BENCH_WARMUP_ROUNDS:-1}"
+export GPU_BENCH_WARMUP_ROUNDS="${GPU_BENCH_WARMUP_ROUNDS:-5}"
 export GPU_BENCH_ROUNDS="${GPU_BENCH_ROUNDS:-3}"
+export GPU_BENCH_NUM_PREDICT="${GPU_BENCH_NUM_PREDICT:-128}"
 
 uv run pytest -q \
   tests/performance/test_gpu_benchmark.py::test_gpu_time_to_first_token \
