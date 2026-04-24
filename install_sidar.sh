@@ -741,7 +741,9 @@ maybe_reset_postgres_volume_after_password_hardening() {
         E|e)
             reset_attempted=true
             warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
-            backup_postgres_before_volume_reset "${compose_cmd[@]}"
+            if ! backup_postgres_before_volume_reset "${compose_cmd[@]}"; then
+                warn "PostgreSQL yedeği alınamadı; volume yine de sıfırlanıyor (geliştirme ortamı — veri kurtarılamaz durumda)."
+            fi
             local -a postgres_service_container_ids=()
             if mapfile -t postgres_service_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
                 if [[ ${#postgres_service_container_ids[@]} -gt 0 ]]; then
@@ -855,8 +857,8 @@ backup_postgres_before_volume_reset() {
     fi
 
     if [[ -z "$postgres_container_id" ]]; then
-        warn "postgres container bulunamadı; volume sıfırlama öncesi pg_dumpall yedeği alınamadı."
-        return 0
+        warn "postgres container bulunamadı; volume sıfırlama öncesi pg_dumpall yedeği alınamadı (kurulum otomatik devam edecek)."
+        return 1
     fi
 
     mkdir -p "$backup_dir"
@@ -902,7 +904,9 @@ backup_postgres_before_volume_reset() {
 
     for candidate_db_user in "${candidate_db_users[@]}"; do
         if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
-            if [[ -s "$backup_file" ]]; then
+            local backup_size=0
+            backup_size=$(stat -c%s "$backup_file" 2>/dev/null || echo 0)
+            if [[ -s "$backup_file" && "$backup_size" -gt 512 ]] && grep -qE '^(CREATE|INSERT|--.*PostgreSQL)' "$backup_file" 2>/dev/null; then
                 dump_ok=true
                 break
             fi
@@ -919,7 +923,7 @@ backup_postgres_before_volume_reset() {
     rm -f "$backup_file"
     warn "Volume sıfırlama öncesi pg_dumpall yedeği alınamadı. Detay: $(cat "$dump_error_file" 2>/dev/null || echo 'bilinmeyen_hata')"
     rm -f "$dump_error_file"
-    return 0
+    return 1
 }
 
 wait_for_postgres_ready_after_docker_start() {
@@ -2849,19 +2853,13 @@ harden_database_credentials() {
                         fi
                         DB_PASSWORD_HARDENED=true
                         ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        warn "Docker kullanıyorsanız PostgreSQL servisini yeni şifreyle yeniden başlatın."
-                        warn "Mevcut PostgreSQL volume'ü eski şifreyle initialize edildiyse yeni şifreyi kabul etmeyebilir."
-                        info "Önerilen sıfırlama (GELİŞTİRME ortamı): docker compose down -v && docker compose up -d postgres redis"
+                        info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                         if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                             local detected_pg_volume=""
                             detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
                             if [[ -n "$detected_pg_volume" ]]; then
-                                warn "Tespit edilen PostgreSQL volume: ${detected_pg_volume}"
-                                info "Sadece PostgreSQL volume temizleme: docker compose down && docker volume rm ${detected_pg_volume} && docker compose up -d postgres redis"
+                                info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
                             fi
-                        else
-                            warn "Docker daemon erişilemediği için PostgreSQL volume tespiti atlandı."
-                            info "Docker entegrasyonunu tamamladıktan sonra manuel çalıştırın: docker compose up -d postgres redis"
                         fi
                     else
                         warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
