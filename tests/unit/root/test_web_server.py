@@ -4222,6 +4222,154 @@ async def test_websocket_chat_streams_tool_thought_and_done_packets(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_status_pump_stops_cleanly_when_flag_set(monkeypatch):
+    class _DeferredTask:
+        def __init__(self, coro):
+            self._coro = coro
+
+        def cancel(self):
+            return None
+
+        def done(self):
+            return False
+
+        def __await__(self):
+            return self._coro.__await__()
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub-1", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            yield "ok"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.01)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    original_create_task = web_server.asyncio.create_task
+
+    def _patched_create_task(coro):
+        if getattr(coro, "cr_code", None) and coro.cr_code.co_name == "_status_pump":
+            return _DeferredTask(coro)
+        return original_create_task(coro)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server.asyncio, "create_task", _patched_create_task)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert {"done": True} in ws.payloads
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_generate_response_finally_skips_unset_sub_and_ctx(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            raise RuntimeError("subscription failed")
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            yield "never"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.01)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    reset_called = {"count": 0}
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1))
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert any("[Sistem Hatası]" in item.get("chunk", "") for item in ws.payloads)
+    assert reset_called["count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
     class _EventBus:
         def subscribe(self):
@@ -4294,6 +4442,163 @@ async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
     assert "assistant_stream_start" in types
     assert "assistant_chunk" in types
     assert "assistant_done" in types
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            raise RuntimeError("subscription failed")
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            return "unused"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.messages = iter(
+                [
+                    '{"action":"join_room","room_id":"team:zeta","display_name":"Ada"}',
+                    '{"action":"message","message":"@sidar planı güncelle"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.01)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            return None
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    reset_called = {"count": 0}
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1))
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert ws.subprotocol == "good-token"
+    assert reset_called["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_status_pump_stops_cleanly_when_flag_set(monkeypatch):
+    class _DeferredTask:
+        def __init__(self, coro):
+            self._coro = coro
+
+        def cancel(self):
+            return None
+
+        def done(self):
+            return False
+
+        def __await__(self):
+            return self._coro.__await__()
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub-1", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            return "ok"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(
+                [
+                    '{"action":"join_room","room_id":"team:eta","display_name":"Ada"}',
+                    '{"action":"message","message":"@sidar planı güncelle"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.01)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    original_create_task = web_server.asyncio.create_task
+
+    def _patched_create_task(coro):
+        if getattr(coro, "cr_code", None) and coro.cr_code.co_name == "_status_pump":
+            return _DeferredTask(coro)
+        return original_create_task(coro)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server.asyncio, "create_task", _patched_create_task)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert any(item.get("type") == "assistant_done" for item in ws.payloads if isinstance(item, dict))
 
 
 @pytest.mark.asyncio

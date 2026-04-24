@@ -3038,7 +3038,7 @@ async def websocket_voice(websocket: WebSocket):
             )
         )
 
-    async def _cancel_active_response(reason: str, *, notify: bool = True) -> None:
+    async def _cancel_active_response(reason: str) -> None:
         nonlocal active_response_task
         interrupt_payload = (
             voice_pipeline.interrupt_assistant_turn(duplex_state, reason=reason)
@@ -3055,8 +3055,7 @@ async def websocket_voice(websocket: WebSocket):
         active_response_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await active_response_task
-        if notify:
-            await websocket.send_json({"voice_interruption": reason, "cancelled": True, **interrupt_payload})
+        await websocket.send_json({"voice_interruption": reason, "cancelled": True, **interrupt_payload})
         active_response_task = None
 
     async def _run_voice_turn(
@@ -3129,7 +3128,7 @@ async def websocket_voice(websocket: WebSocket):
             return
 
         if active_response_task and not active_response_task.done():
-            await _cancel_active_response("superseded_by_new_turn", notify=True)
+            await _cancel_active_response("superseded_by_new_turn")
 
         commit_audio = bytes(audio_buffer)
         audio_buffer.clear()
@@ -3243,7 +3242,7 @@ async def websocket_voice(websocket: WebSocket):
 
             if action == "cancel":
                 audio_buffer.clear()
-                await _cancel_active_response("user_cancelled", notify=True)
+                await _cancel_active_response("user_cancelled")
                 await _emit_voice_state("cancelled")
                 await websocket.send_json({"cancelled": True, "done": True})
                 continue
@@ -3256,7 +3255,7 @@ async def websocket_voice(websocket: WebSocket):
                     and hasattr(voice_pipeline, "should_interrupt_response")
                     and voice_pipeline.should_interrupt_response(len(audio_buffer), event=vad_state)
                 ):
-                    await _cancel_active_response("barge_in", notify=True)
+                    await _cancel_active_response("barge_in")
                 if voice_pipeline and voice_pipeline.should_commit_audio(len(audio_buffer), event=vad_state):
                     await _process_audio_commit()
                 continue
