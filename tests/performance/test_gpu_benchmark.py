@@ -48,6 +48,8 @@ _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
     max_value=8,
 )
 _NUM_BATCH: int = _gpu_smoke._env_int("GPU_BENCH_NUM_BATCH", 512, min_value=1, max_value=4096)
+_NUM_PREDICT: int = _gpu_smoke._env_int("GPU_BENCH_NUM_PREDICT", 96, min_value=8, max_value=1024)
+_NUM_CTX: int = _gpu_smoke._env_int("GPU_BENCH_NUM_CTX", 2048, min_value=256, max_value=32768)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -129,6 +131,10 @@ def _ollama_options() -> dict[str, int | float]:
         # num_batch, Ollama tarafında mikro-batch davranışını etkiler.
         # Düşük değerler throughput'u düşürüp tail latency dalgalanmasını artırabilir.
         "num_batch": _NUM_BATCH,
+        # Üretim uzunluğunu sınırlamak benchmark toplam süresini (wall-clock) düşürür.
+        "num_predict": _NUM_PREDICT,
+        # Çok uzun context penceresi VRAM baskısını artırabilir; kontrollü tutuyoruz.
+        "num_ctx": _NUM_CTX,
     }
 
 
@@ -145,6 +151,23 @@ async def _chat_content(prompt: str) -> str:
         resp.raise_for_status()
         data = resp.json()
     return str(data.get("message", {}).get("content", ""))
+
+
+async def _model_runtime_profile() -> dict[str, str]:
+    """Model runtime profilini döndürür (quantization / attention mimarisi ipuçları)."""
+    payload = {"name": _MODEL}
+    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as http:
+        resp = await http.post(f"{_OLLAMA_BASE_URL}/api/show", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+    details = data.get("details") or {}
+    model_info = data.get("model_info") or {}
+    return {
+        "quantization_level": str(details.get("quantization_level", "") or "unknown"),
+        "architecture": str(model_info.get("general.architecture", "") or "unknown"),
+    }
 
 
 @dataclasses.dataclass(slots=True)
@@ -399,6 +422,8 @@ def test_gpu_tokens_per_second(benchmark) -> None:
       GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 1.0)
       GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 1)
       GPU_BENCH_ROUNDS             — ölçüm tur sayısı              (varsayılan: 5)
+      GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 96)
+      GPU_BENCH_NUM_CTX            — context window                 (varsayılan: 2048)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
@@ -407,10 +432,11 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     client = _make_ollama_client()
     asyncio.run(_prepare_client(client))
 
-    prompt = (
-        "GPU benchmark: Python'da bağlantılı liste (linked list) nasıl uygulanır? "
-        "Kısa bir kod örneği ile açıkla."
-    )
+    runtime_profile = asyncio.run(_model_runtime_profile())
+    benchmark.extra_info["quantization_level"] = runtime_profile["quantization_level"]
+    benchmark.extra_info["architecture"] = runtime_profile["architecture"]
+
+    prompt = "GPU benchmark: Linked list nedir? En fazla iki cümlede açıkla."
     observed: list[_InferenceMetrics] = []
 
     def _run() -> _InferenceMetrics:
