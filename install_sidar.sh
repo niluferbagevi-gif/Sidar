@@ -2090,20 +2090,24 @@ install_python_deps() {
         EXTRAS+=(gpu)
     fi
 
-    local -a SYNC_ARGS=()
-    local sync_mode_message=""
-    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
-        SYNC_ARGS+=(--frozen)
-        sync_mode_message="Bağımlılıklar uv.lock üzerinden senkronlanıyor (uv sync --frozen)..."
-    else
-        warn "uv.lock bulunamadı. İlk kurulum modu etkinleştiriliyor (uv sync, --frozen olmadan)."
-        sync_mode_message="Bağımlılıklar lock dosyası olmadan senkronlanıyor (uv sync)..."
-    fi
+    local -a LOCK_ARGS=()
+    local -a SYNC_ARGS=(--frozen)
     for _extra in "${EXTRAS[@]}"; do
+        LOCK_ARGS+=(--extra "$_extra")
         SYNC_ARGS+=(--extra "$_extra")
     done
 
-    info "$sync_mode_message"
+    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
+        info "uv.lock bulundu. Lock dosyası yeniden oluşturulup güncellenecek (uv lock --upgrade)..."
+    else
+        warn "uv.lock bulunamadı. Yeni lock dosyası oluşturulacak (uv lock --upgrade)..."
+    fi
+
+    if ! "${UV_CMD[@]}" lock --upgrade "${LOCK_ARGS[@]}"; then
+        fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
+    fi
+
+    info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen)..."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
     fi
