@@ -2972,6 +2972,47 @@ class Database:
         msg_id = await self._run_sqlite_op(_run)
         return MessageRecord(id=msg_id, session_id=session_id, role=role, content=content, tokens_used=tokens, created_at=now)
 
+    async def add_messages_bulk(self, items: list[dict[str, object]]) -> int:
+        """Birden çok mesajı tek transaction içinde yazar ve eklenen satır sayısını döndürür."""
+        prepared: list[tuple[str, str, str, int, datetime, str]] = []
+        for item in items:
+            session_id = str(item.get("session_id", "") or "").strip()
+            role = str(item.get("role", "") or "").strip() or "user"
+            content = str(item.get("content", "") or "")
+            tokens = max(0, int(item.get("tokens_used", 0) or 0))
+            if not session_id:
+                continue
+            now_dt = datetime.now(timezone.utc)
+            prepared.append((session_id, role, content, tokens, now_dt, now_dt.isoformat()))
+
+        if not prepared:
+            return 0
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO messages (session_id, role, content, tokens_used, created_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    [(s, r, c, t, dt) for s, r, c, t, dt, _iso in prepared],
+                )
+            return len(prepared)
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> int:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.executemany(
+                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
+            )
+            self._sqlite_conn.commit()
+            return len(prepared)
+
+        return await self._run_sqlite_op(_run)
+
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -3014,6 +3055,56 @@ class Database:
             )
             for r in rows
         ]
+
+    async def get_messages_for_sessions(self, session_ids: list[str]) -> dict[str, list[MessageRecord]]:
+        """Birden çok oturumun mesajlarını tek sorguda getirir."""
+        normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
+        if not normalized_ids:
+            return {}
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, session_id, role, content, tokens_used, created_at
+                    FROM messages
+                    WHERE session_id = ANY($1::text[])
+                    ORDER BY session_id ASC, id ASC
+                    """,
+                    normalized_ids,
+                )
+        else:
+            assert self._sqlite_conn is not None
+            placeholders = ",".join(["?"] * len(normalized_ids))
+
+            def _run() -> list[sqlite3.Row]:
+                assert self._sqlite_conn is not None
+                cur = self._sqlite_conn.execute(
+                    f"""
+                    SELECT id, session_id, role, content, tokens_used, created_at
+                    FROM messages
+                    WHERE session_id IN ({placeholders})
+                    ORDER BY session_id ASC, id ASC
+                    """,
+                    normalized_ids,
+                )
+                return cur.fetchall()
+
+            rows = await self._run_sqlite_op(_run)
+
+        grouped: dict[str, list[MessageRecord]] = {session_id: [] for session_id in normalized_ids}
+        for r in rows:
+            record = MessageRecord(
+                id=int(r["id"]),
+                session_id=str(r["session_id"]),
+                role=str(r["role"]),
+                content=str(r["content"]),
+                tokens_used=int(r["tokens_used"]),
+                created_at=str(r["created_at"]),
+            )
+            grouped.setdefault(record.session_id, []).append(record)
+        return grouped
 
     async def replace_session_messages(self, session_id: str, messages: list[dict[str, object]]) -> int:
         """Bir oturumun mesajlarını atomik olarak yenileriyle değiştirir."""

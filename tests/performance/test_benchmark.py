@@ -40,7 +40,7 @@ def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
     return SimpleNamespace(
         DATABASE_URL=f"sqlite+aiosqlite:///{base_dir / db_name}",
         BASE_DIR=str(base_dir),
-        DB_POOL_SIZE=2,
+        DB_POOL_SIZE=8,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret",
@@ -67,14 +67,22 @@ def test_multi_user_session_message_workload_scales_with_concurrency(benchmark, 
                 *[db.create_session(user.id, f"session-{i}") for i, user in enumerate(created_users)]
             )
 
-            await asyncio.gather(
-                *[
-                    db.add_message(session.id, "user", f"hello-{j}", tokens_used=j)
+            inserted = await db.add_messages_bulk(
+                [
+                    {
+                        "session_id": session.id,
+                        "role": "user",
+                        "content": f"hello-{j}",
+                        "tokens_used": j,
+                    }
                     for session in sessions
                     for j in range(messages_per_session)
                 ]
             )
-            per_session_messages = await asyncio.gather(*[db.get_session_messages(session.id) for session in sessions])
+            assert inserted == users * messages_per_session
+
+            grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
+            per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
             assert all(len(items) == messages_per_session for items in per_session_messages)
             assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
             return sum(len(items) for items in per_session_messages)

@@ -214,6 +214,29 @@ async def test_user_session_message_lifecycle(sqlite_db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -> None:
+    user = await sqlite_db.create_user("bulk-user", password="pw")
+    first = await sqlite_db.create_session(user.id, "first")
+    second = await sqlite_db.create_session(user.id, "second")
+
+    inserted = await sqlite_db.add_messages_bulk(
+        [
+            {"session_id": first.id, "role": "user", "content": "f-1", "tokens_used": 1},
+            {"session_id": first.id, "role": "assistant", "content": "f-2", "tokens_used": 2},
+            {"session_id": second.id, "role": "user", "content": "s-1", "tokens_used": 3},
+            {"session_id": "", "role": "user", "content": "ignore-me", "tokens_used": 4},
+        ]
+    )
+    assert inserted == 3
+
+    grouped = await sqlite_db.get_messages_for_sessions([first.id, second.id])
+    assert [m.content for m in grouped[first.id]] == ["f-1", "f-2"]
+    assert [m.tokens_used for m in grouped[first.id]] == [1, 2]
+    assert [m.content for m in grouped[second.id]] == ["s-1"]
+    assert [m.tokens_used for m in grouped[second.id]] == [3]
+
+
+@pytest.mark.asyncio
 async def test_create_duplicate_user_raises_integrity_error(sqlite_db: Database) -> None:
     await sqlite_db.create_user("unique_user", password="pw")
     with pytest.raises(sqlite3.IntegrityError):
