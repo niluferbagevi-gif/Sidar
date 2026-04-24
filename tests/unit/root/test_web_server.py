@@ -3780,6 +3780,18 @@ async def test_ws_close_policy_violation_and_close_redis_client(monkeypatch):
     await web_server._close_redis_client()
     assert web_server._redis_client is None
 
+
+@pytest.mark.asyncio
+async def test_close_redis_client_reraises_unexpected_runtime_error(monkeypatch):
+    class _Redis:
+        async def aclose(self):
+            raise RuntimeError("unexpected close failure")
+
+    monkeypatch.setattr(web_server, "_redis_client", _Redis())
+    with pytest.raises(RuntimeError, match="unexpected close failure"):
+        await web_server._close_redis_client()
+
+
 @pytest.mark.asyncio
 async def test_get_redis_initialization_success_and_failure_paths(monkeypatch):
     class _RedisClient:
@@ -4320,6 +4332,76 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
     assert any(item.get("type") == "assistant_stream_start" for item in events)
     assert any(item.get("type") == "room_error" and "network timeout" in item.get("error", "") for item in events)
 
+
+@pytest.mark.asyncio
+async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            return "sub-1", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(
+                [
+                    '{"action":"join_room","room_id":"team:epsilon","display_name":"Ada"}',
+                    '{"action":"cancel"}',
+                    '{"action":"message","message":"   "}',
+                    '{"action":"message","message":"@sidar   "}',
+                    '{"action":"message","message":"@sidar dosya oluştur ve kaydet"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.01)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="user")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    room_errors = [item for item in ws.payloads if item.get("type") == "room_error"]
+    assert ws.subprotocol == "good-token"
+    assert {"auth_ok": True} in ws.payloads
+    assert any("komut bulunamadı" in item.get("error", "") for item in room_errors)
+    assert any("yazma yetkisine sahip değil" in item.get("error", "") for item in room_errors)
 
 @pytest.mark.asyncio
 async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
@@ -5013,6 +5095,170 @@ async def test_websocket_voice_reports_transcription_failure_reason(monkeypatch)
     assert any(item.get("error") == "mic decode failed" for item in ws.sent)
     assert any(item.get("done") is True for item in ws.sent)
 
+
+@pytest.mark.asyncio
+async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_actions(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self, headers, packets):
+            self.headers = headers
+            self.sent = []
+            self._packets = iter(packets)
+            self.accepted = None
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    closed_reasons = []
+
+    async def _close_policy(_ws, reason):
+        closed_reasons.append(reason)
+
+    monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close_policy)
+
+    ws_header_auth = _Ws({"sec-websocket-protocol": "good-token"}, [{"type": "websocket.disconnect"}])
+    await web_server.websocket_voice(ws_header_auth)
+    assert ws_header_auth.accepted == "good-token"
+    assert {"auth_ok": True} in ws_header_auth.sent
+
+    ws_unauth_action = _Ws({}, [{"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'}])
+    await web_server.websocket_voice(ws_unauth_action)
+    assert closed_reasons[-1] == "Authentication required"
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_active_turn(monkeypatch):
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            self.enabled = True
+            self.vad_enabled = True
+            self.duplex_enabled = True
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
+            return {"voice_state": event, "buffered_bytes": buffered_bytes, "sequence": sequence}
+
+        def begin_assistant_turn(self, duplex_state):
+            duplex_state.assistant_turn_id += 1
+            return duplex_state.assistant_turn_id
+
+        def interrupt_assistant_turn(self, duplex_state, reason):
+            return {
+                "assistant_turn_id": duplex_state.assistant_turn_id,
+                "dropped_text_chars": 0,
+                "cancelled_audio_sequences": 0,
+                "reason": reason,
+            }
+
+        def should_interrupt_response(self, _buffer_len, event):
+            return event == "speech_start"
+
+        def should_commit_audio(self, _buffer_len, event):
+            return event == "speech_end"
+
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "merhaba", "language": "tr", "provider": "fake"}
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_start"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            _ = (code, reason)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    async def _slow_stream(*_args, **_kwargs):
+        await asyncio.sleep(0.05)
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _slow_stream)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert any(item.get("error") == "İşlenecek ses verisi bulunamadı." for item in ws.sent)
+    assert any(item.get("voice_interruption") == "barge_in" and item.get("cancelled") is True for item in ws.sent)
 
 @pytest.mark.asyncio
 async def test_status_uses_coding_model_for_non_gemini_provider(monkeypatch):
