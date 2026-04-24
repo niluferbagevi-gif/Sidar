@@ -5784,6 +5784,163 @@ async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapsho
     assert budget_response.body == b'{"totals":{"calls":2}}'
 
 
+def test_load_plugin_agent_class_handles_typeerror_from_issubclass(monkeypatch):
+    monkeypatch.setattr(web_server, "BaseAgent", 123)
+    source = "class PluginAgent: pass"
+    with pytest.raises(HTTPException) as exc:
+        web_server._load_plugin_agent_class(source, "PluginAgent", "typeerr_mod")
+    assert exc.value.status_code == 400
+    assert "BaseAgent" in exc.value.detail
+
+
+def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
+    class _PluginAgent:
+        __name__ = "PluginAgent"
+
+    captured: dict[str, object] = {}
+
+    def _fake_register_type(**kwargs):
+        captured["registered"] = kwargs
+
+    def _fake_get(_role_name):
+        return SimpleNamespace(
+            capabilities=["cap-a", "cap-b"],
+            description="registered description",
+            version="9.9.9",
+            is_builtin=False,
+        )
+
+    monkeypatch.setattr(web_server, "_load_plugin_agent_class", lambda *_args, **_kwargs: _PluginAgent)
+    monkeypatch.setattr(web_server.AgentRegistry, "register_type", _fake_register_type)
+    monkeypatch.setattr(web_server.AgentRegistry, "get", _fake_get)
+    monkeypatch.setattr(web_server.secrets, "token_hex", lambda _n: "cafebabe")
+
+    result = web_server._register_plugin_agent(
+        role_name=" Demo-Role ",
+        source_code="class PluginAgent: pass",
+        class_name="PluginAgent",
+        capabilities=[" cap-a ", "cap-b"],
+        description="demo",
+        version="1.2.3",
+    )
+
+    assert result == {
+        "role_name": "demo-role",
+        "class_name": "_PluginAgent",
+        "capabilities": ["cap-a", "cap-b"],
+        "description": "registered description",
+        "version": "9.9.9",
+        "is_builtin": False,
+    }
+    assert captured["registered"]["role_name"] == "demo-role"
+
+
+@pytest.mark.asyncio
+async def test_register_user_rejects_invalid_short_credentials_without_db_call(monkeypatch):
+    called = {"resolve": 0}
+
+    async def _resolve():
+        called["resolve"] += 1
+        return SimpleNamespace()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    with pytest.raises(HTTPException) as exc:
+        await web_server.register_user(SimpleNamespace(username="ab", password="12345", tenant_id="default"))
+
+    assert exc.value.status_code == 400
+    assert called["resolve"] == 0
+
+
+@pytest.mark.asyncio
+async def test_access_policy_middleware_bypasses_when_resource_not_resolved(monkeypatch):
+    async def _call_next(_request):
+        return JSONResponse({"ok": True})
+
+    request = SimpleNamespace(method="GET", state=SimpleNamespace(user=SimpleNamespace(id="u1")))
+    monkeypatch.setattr(web_server, "_resolve_policy_from_request", lambda _req: ("", "read", "*"))
+
+    response = await web_server.access_policy_middleware(request, _call_next)
+    assert response.status_code == 200
+    assert response.body == b'{"ok":true}'
+
+
+@pytest.mark.asyncio
+async def test_metrics_prometheus_plain_text_success_path(monkeypatch):
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "headers": [(b"accept", b"text/plain")],
+        "query_string": b"",
+    }
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    class _Memory:
+        def __len__(self):
+            return 3
+
+        async def aget_all_sessions(self):
+            return [{"id": "s1"}]
+
+    async def _resolve():
+        return SimpleNamespace(
+            VERSION="v-test",
+            cfg=SimpleNamespace(AI_PROVIDER="openai", USE_GPU=True),
+            docs=SimpleNamespace(doc_count=5),
+            memory=_Memory(),
+        )
+
+    class _Gauge:
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+        def set(self, _value):
+            return None
+
+    fake_prom = SimpleNamespace(
+        CONTENT_TYPE_LATEST="text/plain; version=0.0.4",
+        CollectorRegistry=lambda: object(),
+        Gauge=lambda *a, **k: _Gauge(),
+        generate_latest=lambda _reg: b"sidar_metric 1\n",
+    )
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(web_server, "_local_rate_limits", {})
+    monkeypatch.setitem(sys.modules, "prometheus_client", fake_prom)
+
+    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.body == b"sidar_metric 1\n"
+
+
+@pytest.mark.asyncio
+async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available(monkeypatch):
+    class _Collector:
+        def snapshot(self):
+            return {"totals": {"calls": 1}}
+
+    class _AgentCollector:
+        def render_prometheus(self):
+            return "agent_tasks_total 7\n"
+
+    fake_agent_metrics_mod = SimpleNamespace(get_agent_metrics_collector=lambda: _AgentCollector())
+
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
+    monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda _snap: "llm_calls_total 1\n")
+    monkeypatch.setitem(sys.modules, "core.agent_metrics", fake_agent_metrics_mod)
+
+    response = await web_server.llm_prometheus_metrics(_user=SimpleNamespace(role="admin"))
+
+    assert response.status_code == 200
+    assert response.body == b"llm_calls_total 1\nagent_tasks_total 7\n"
+
+
 @pytest.mark.asyncio
 async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(monkeypatch):
     calls: list[list[str]] = []
