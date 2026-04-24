@@ -253,7 +253,7 @@ class ConversationMemory:
             import tiktoken
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(total_text))
-        except ImportError:
+        except Exception:
             return int(len(total_text) / 3.5)
 
     def needs_summarization(self) -> bool:

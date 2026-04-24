@@ -97,11 +97,15 @@ resolve_docker_compose_cmd() {
 ensure_test_services() {
   if [ "${AUTO_DOCKER_TEST_SERVICES:-1}" != "1" ]; then
     echo "ℹ️ AUTO_DOCKER_TEST_SERVICES=0 verildi, Redis/PostgreSQL otomatik başlatma adımı atlanıyor."
+    export SMOKE_SKIP_EXTERNAL_INFRA="${SMOKE_SKIP_EXTERNAL_INFRA:-1}"
+    echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=${SMOKE_SKIP_EXTERNAL_INFRA} (otomatik servis başlatma kapalı)."
     return 0
   fi
 
   if ! resolve_docker_compose_cmd; then
     echo "⚠️ Docker Compose bulunamadı; Redis/PostgreSQL otomatik başlatılamadı."
+    export SMOKE_SKIP_EXTERNAL_INFRA=1
+    echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
     return 0
   fi
 
@@ -125,6 +129,8 @@ ensure_test_services() {
   echo "🐳 Test öncesi bağımlı servisler başlatılıyor: redis, postgres"
   if ! "${DOCKER_COMPOSE_CMD[@]}" up -d redis postgres; then
     echo "❌ Redis/PostgreSQL docker servisleri başlatılamadı."
+    export SMOKE_SKIP_EXTERNAL_INFRA=1
+    echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
     BACKEND_EXIT_CODE=1
     return 1
   fi

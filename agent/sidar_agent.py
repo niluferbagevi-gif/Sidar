@@ -188,6 +188,8 @@ class SidarAgent:
 
         selected_cfg = config if config is not None else cfg
         self.cfg = selected_cfg or Config()
+        raw_database_url = getattr(selected_cfg, "DATABASE_URL", "") if selected_cfg is not None else getattr(self.cfg, "DATABASE_URL", "")
+        has_explicit_database_url = isinstance(raw_database_url, str) and bool(raw_database_url.strip())
         self._normalize_config_defaults()
         # Bulgu D: asyncio.Lock() __init__ içinde (senkron bağlam) oluşturulmamalı.
         # Python <3.10'da event loop bağlanma hatalarına yol açar.
@@ -206,7 +208,7 @@ class SidarAgent:
         self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
 
         self.memory = ConversationMemory(
-            database_url=getattr(self.cfg, "DATABASE_URL", ""),
+            database_url=getattr(self.cfg, "DATABASE_URL", "") if has_explicit_database_url else None,
             base_dir=self.cfg.BASE_DIR,
             file_path=self.cfg.MEMORY_FILE,
             max_turns=self.cfg.MAX_MEMORY_TURNS,
