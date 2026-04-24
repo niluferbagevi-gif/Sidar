@@ -1830,15 +1830,15 @@ ensure_prerequisites() {
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
-    # Python 3.11+ kontrolü (uv venv için sistem Python denetimi)
+    # Python 3.11 kontrolü (uv venv için sistem Python denetimi)
     if command -v python3 &>/dev/null; then
         PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
         PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
         PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
-        if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 11 ]]; then
+        if [[ "$PY_MAJOR" -eq 3 && "$PY_MINOR" -eq 11 ]]; then
             ok "Python $PY_VER (sistem)"
         else
-            warn "Sistem Python'u $PY_VER — uv venv için Python $PYTHON_VERSION önerilir."
+            warn "Sistem Python'u $PY_VER — yalnızca Python $PYTHON_VERSION desteklenir."
         fi
     fi
 
