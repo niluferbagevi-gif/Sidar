@@ -83,6 +83,11 @@ def _require_gpu_stress() -> None:
         pytest.skip("GPU benchmark varsayılan olarak kapalıdır (RUN_GPU_STRESS=1 ayarlayın).")
 
 
+def _ollama_num_parallel() -> int:
+    """Ollama'nın eşzamanlı request işleme kapasitesi (server env üzerinden)."""
+    return _gpu_smoke._env_int("OLLAMA_NUM_PARALLEL", 1, min_value=1, max_value=64)
+
+
 def _make_ollama_client() -> OllamaClient:
     cfg = make_test_config(
         USE_GPU=True,
@@ -297,10 +302,19 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 3)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
+      OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
+    num_parallel = _ollama_num_parallel()
+    benchmark.extra_info["ollama_num_parallel"] = num_parallel
+    if num_parallel < _CONCURRENCY:
+        pytest.skip(
+            "Gerçek paralellik için OLLAMA_NUM_PARALLEL değeri yetersiz: "
+            f"{num_parallel} < {_CONCURRENCY}. "
+            f"En az OLLAMA_NUM_PARALLEL={_CONCURRENCY} önerilir."
+        )
 
     client = _make_ollama_client()
     asyncio.run(_prepare_client(client))
@@ -348,6 +362,12 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
     _require_gpu_stress()
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
+    num_parallel = _ollama_num_parallel()
+    if num_parallel < _CONCURRENCY:
+        pytest.skip(
+            "VRAM yük testinde gerçek paralellik için OLLAMA_NUM_PARALLEL yetersiz: "
+            f"{num_parallel} < {_CONCURRENCY}."
+        )
     if _gpu_smoke._read_gpu_memory_used_mib() is None:
         pytest.skip("nvidia-smi VRAM ölçümü kullanılamıyor.")
 
