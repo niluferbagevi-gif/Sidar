@@ -6663,3 +6663,35 @@ async def test_readiness_check_returns_degraded_when_dependency_health_crashes(m
     assert response.status_code == 503
     assert b'"status":"degraded"' in response.body
     assert b'"redis down"' in response.body
+
+
+@pytest.mark.asyncio
+async def test_broadcast_room_payload_removes_stale_websocket_client():
+    class _WsOK:
+        def __init__(self):
+            self.messages = []
+
+        async def send_json(self, payload):
+            self.messages.append(payload)
+
+    class _WsBroken:
+        async def send_json(self, _payload):
+            raise RuntimeError("socket closed")
+
+    ws_ok = _WsOK()
+    ws_broken = _WsBroken()
+
+    room = web_server._CollaborationRoom(
+        room_id="team:stale",
+        participants={
+            1: web_server._CollaborationParticipant(ws_ok, "u1", "ada", "Ada"),
+            2: web_server._CollaborationParticipant(ws_broken, "u2", "lin", "Lin"),
+        },
+    )
+
+    payload = {"type": "presence", "room_id": "team:stale"}
+    await web_server._broadcast_room_payload(room, payload)
+
+    assert ws_ok.messages == [payload]
+    assert 2 not in room.participants
+    assert 1 in room.participants
