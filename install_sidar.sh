@@ -2102,7 +2102,10 @@ install_python_deps() {
         warn "uv.lock bulunamadı. Yeni lock dosyası oluşturulacak (uv lock --upgrade)..."
     fi
 
-    if ! "${UV_CMD[@]}" lock --upgrade "${LOCK_ARGS[@]}"; then
+    # Bazı ortamlarda (örn. kullanıcı shell profilinden miras kalan UV_EXTRA)
+    # uv lock komutuna desteklenmeyen --extra argümanı enjekte edilebilir.
+    # Lock adımını extras env değişkenlerinden izole ederek deterministik çalıştır.
+    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade "${LOCK_ARGS[@]}"; then
         fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
     fi
 
