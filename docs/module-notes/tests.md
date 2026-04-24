@@ -58,3 +58,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Operasyonel pratik:
   - Baseline karşılaştırmasını her sürümde tekrarlayın ve stddev değerini release notuna ekleyin.
   - Dalgalanma süreklilik kazanırsa yük profili (concurrency, warmup_rounds, model) sabitlenerek yeniden ölçüm alın.
+
+### CI quality gate (TTFT <= 200ms)
+
+- GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-ttft-quality-gate`.
+- Bu job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır.
+- Runner gereksinimi: `self-hosted`, `linux`, `gpu` etiketli runner.
+- Quality gate komutu:
+  - `bash scripts/ci/run_ttft_quality_gate.sh`
+- Varsayılan eşik:
+  - `GPU_BENCH_TTFT_BUDGET=0.2` (200 ms)
+- Kapı davranışı:
+  - TTFT testi fail ederse job fail olur.
+  - Test skip olursa (GPU/Ollama hazır değilse) job yine fail olur; böylece PR onayı için gerçek benchmark zorunlu tutulur.

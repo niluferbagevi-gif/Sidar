@@ -38,9 +38,27 @@ _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1,
 _WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 1, min_value=1, max_value=4)
 _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 5, min_value=2, max_value=20)
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
-_TTFT_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_TTFT_BUDGET", 10, min_value=1, max_value=60)
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "1.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
+
+
+def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(min_value, min(max_value, value))
+
+
+_TTFT_BUDGET_S: float = _env_float(
+    "GPU_BENCH_TTFT_BUDGET",
+    10.0,
+    min_value=0.05,
+    max_value=60.0,
+)
 
 
 def _require_gpu_stress() -> None:
@@ -382,7 +400,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     ve etkileşimli uygulamalar için en kritik GPU performans metriğidir.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_TTFT_BUDGET    — maksimum kabul edilebilir TTFT (sn, varsayılan: 10)
+      GPU_BENCH_TTFT_BUDGET    — maksimum kabul edilebilir TTFT (sn, varsayılan: 10.0)
       GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 1)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı               (varsayılan: 5)
     """

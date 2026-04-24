@@ -161,3 +161,42 @@ jobs:
           uv run pytest -v -m pg_stress tests/integration/db/ \
             --timeout=120 \
             -x
+
+  gpu-ttft-quality-gate:
+    name: GPU TTFT Quality Gate (<=200ms)
+    if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
+    runs-on: [self-hosted, linux, gpu]
+    needs: test
+
+    env:
+      GPU_BENCH_TTFT_BUDGET: "0.2"
+      RUN_GPU_STRESS: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run TTFT benchmark quality gate
+        run: bash scripts/ci/run_ttft_quality_gate.sh
+
+      - name: Upload TTFT gate JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttft-quality-gate-junit
+          path: ttft-quality-gate.junit.xml
+          if-no-files-found: warn
+          retention-days: 14
