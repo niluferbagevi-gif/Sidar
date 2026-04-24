@@ -2444,12 +2444,16 @@ def _make_static_files(directory: Path):
         return StaticFiles(directory=directory)
 
 
-# React build çıktısı /static altında servis edilir.
-app.mount("/static", _make_static_files(WEB_DIR), name="static")
+def _mount_frontend_static_routes(target_app: FastAPI, web_dir: Path) -> None:
+    """Frontend statik dosya rotalarını uygular."""
+    target_app.mount("/static", _make_static_files(web_dir), name="static")
+    assets_dir = web_dir / "assets"
+    if assets_dir.exists():
+        target_app.mount("/assets", _make_static_files(assets_dir), name="assets")
 
-# Vite build asset'leri (/assets/*) için ayrı mount.
-if (WEB_DIR / "assets").exists():
-    app.mount("/assets", _make_static_files(WEB_DIR / "assets"), name="assets")
+
+# React build çıktısı /static altında servis edilir.
+_mount_frontend_static_routes(app, WEB_DIR)
 
 
 

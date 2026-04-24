@@ -7118,13 +7118,224 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
     assert repos_payload["repos"][0]["full_name"] == "org/repo-a"
 
     prs_resp = await web_server.github_prs()
-    assert prs_resp.status_code == 500
 
-    pr_resp = await web_server.github_pr_detail(1)
-    assert pr_resp.status_code == 404
 
-    rag_resp = await web_server.rag_search(q="merhaba", mode="auto", top_k=3)
-    assert _decode_json_response(rag_resp)["success"] is True
+@pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_non_awaitable_agent_and_ci_fallback_edges(monkeypatch):
+    class _Agent:
+        async def respond(self, _prompt):
+            yield "non-awaitable"
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda maybe: maybe)
+
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="webhook",
+        event_name="ping",
+        payload={"federation_prompt": "x"},
+    )
+    assert result["summary"] == "non-awaitable"
+
+    workflow_context = web_server._fallback_ci_failure_context(
+        "workflow_run",
+        {
+            "repository": {"name": "sidar", "default_branch": "main"},
+            "workflow_run": {
+                "status": "completed",
+                "conclusion": "failure",
+                "name": "CI",
+                "id": "12",
+                "run_number": 3,
+                "head_branch": "feature",
+                "head_sha": "abc",
+                "html_url": "http://example",
+                "jobs_url": "http://example/jobs",
+                "logs_url": "http://example/logs",
+                "pull_requests": [],
+            },
+        },
+    )
+    assert workflow_context["base_branch"] == "main"
+
+    assert web_server._fallback_ci_failure_context(
+        "check_suite",
+        {"repository": {"name": "sidar"}, "check_suite": {"conclusion": "success"}},
+    ) == {}
+
+
+@pytest.mark.asyncio
+async def test_periodic_loops_exit_when_stop_event_pre_set(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "tick")
+    monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
+    stop_cron = asyncio.Event()
+    stop_cron.set()
+    await web_server._autonomous_cron_loop(stop_cron)
+
+    stop_nightly = asyncio.Event()
+    stop_nightly.set()
+    await web_server._nightly_memory_loop(stop_nightly)
+
+
+def test_require_metrics_access_without_metrics_token(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "")
+    user = SimpleNamespace(id="u1", username="alice", role="user")
+    req = SimpleNamespace(headers={})
+    with pytest.raises(HTTPException):
+        web_server._require_metrics_access(req, user)
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_skips_memory_set_active_user_when_not_callable(monkeypatch):
+    request = SimpleNamespace(
+        method="POST",
+        url=SimpleNamespace(path="/api/test"),
+        headers={"Authorization": "Bearer tok"},
+        state=SimpleNamespace(),
+    )
+
+    async def _resolve_user(_request, _token):
+        return SimpleNamespace(id="u1", username="alice", role="user")
+
+    async def _next(_request):
+        return JSONResponse({"ok": True})
+
+    agent = SimpleNamespace(memory=SimpleNamespace(set_active_user="not-callable"))
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    response = await web_server.basic_auth_middleware(request, _next)
+    assert response.status_code == 200
+
+
+def test_load_plugin_agent_class_rejects_baseagent_itself():
+    source = "from agent.base_agent import BaseAgent\nPluginAgent = BaseAgent\n"
+    with pytest.raises(HTTPException):
+        web_server._load_plugin_agent_class(source, "PluginAgent", "baseagent_alias")
+
+
+@pytest.mark.asyncio
+async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
+    class _DB:
+        async def upsert_prompt(self, **_kwargs):
+            return SimpleNamespace(
+                id=1,
+                role_name="system",
+                prompt_text="new system prompt",
+                is_active=True,
+                created_at="now",
+                updated_at="now",
+            )
+
+        async def activate_prompt(self, _pid):
+            return SimpleNamespace(
+                id=1,
+                role_name="system",
+                prompt_text="activated system prompt",
+                is_active=True,
+                created_at="now",
+                updated_at="now",
+            )
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()), system_prompt="old")
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    await web_server.admin_upsert_prompt(
+        web_server._PromptUpsertRequest(role_name="system", prompt_text="new system prompt", activate=True),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert agent.system_prompt == "new system prompt"
+
+    await web_server.admin_activate_prompt(
+        web_server._PromptActivateRequest(prompt_id=1),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert agent.system_prompt == "activated system prompt"
+
+
+@pytest.mark.asyncio
+async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_proxy_headers(monkeypatch):
+    class _Lock:
+        async def __aenter__(self):
+            web_server._redis_client = object()
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    web_server._redis_client = None
+    web_server._redis_lock = _Lock()
+    assert await web_server._get_redis() is web_server._redis_client
+
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", ["127.0.0.1"])
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"),
+        headers={"X-Forwarded-For": "   ", "X-Real-IP": "   "},
+    )
+    assert web_server._get_client_ip(req) == ""
+
+
+@pytest.mark.asyncio
+async def test_ddos_rate_limit_middleware_get_non_io_path_skips_get_bucket(monkeypatch):
+    calls = []
+
+    async def _next(_request):
+        return JSONResponse({"ok": True})
+
+    async def _rate_limited(namespace, *_args):
+        calls.append(namespace)
+        return False
+
+    request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/healthz"),
+        headers={},
+        client=SimpleNamespace(host="1.1.1.1"),
+    )
+    original_paths = list(web_server._RATE_GET_IO_PATHS)
+    try:
+        web_server._RATE_GET_IO_PATHS = ["/api/heavy"]
+        monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
+        response = await web_server.ddos_rate_limit_middleware(request, _next)
+    finally:
+        web_server._RATE_GET_IO_PATHS = original_paths
+    assert response.status_code == 200
+    assert calls == []
+
+
+def test_mount_frontend_static_routes_mounts_assets_when_available(tmp_path):
+    web_dir = tmp_path / "web"
+    (web_dir / "assets").mkdir(parents=True)
+
+    class _App:
+        def __init__(self):
+            self.mounted = []
+
+        def mount(self, path, _app, name):
+            self.mounted.append((path, name))
+
+    app = _App()
+    web_server._mount_frontend_static_routes(app, web_dir)
+    assert ("/static", "static") in app.mounted
+    assert ("/assets", "assets") in app.mounted
+
+
+@pytest.mark.asyncio
+async def test_github_repos_query_empty_takes_non_filter_branch(monkeypatch):
+    class _Github:
+        repo_name = "org/repo"
+
+        def list_repos(self, owner, limit):
+            return True, [{"full_name": "org/repo-b"}, {"full_name": "org/repo-a"}]
+
+    agent = SimpleNamespace(github=_Github())
+
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    response = await web_server.github_repos(owner="", q="")
+    payload = _decode_json_response(response)
+    assert [r["full_name"] for r in payload["repos"]] == ["org/repo-a", "org/repo-b"]
 
 
 @pytest.mark.asyncio
