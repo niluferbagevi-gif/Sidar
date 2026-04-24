@@ -5259,9 +5259,14 @@ async def test_swarm_federation_disabled_returns_503(monkeypatch):
 
 def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
     import importlib.util
+    import importlib
 
     module_name = "web_server_otel_success_case"
     sys.modules.pop(module_name, None)
+    # Bu testte web_server'ı yeniden import ederken bazı worker süreçlerinde
+    # agent.core.contracts modülü test doubles ile kirlenmiş olabiliyor.
+    # Gerçek modülü tekrar sabitleyerek import zincirini deterministik tutarız.
+    monkeypatch.setitem(sys.modules, "agent.core.contracts", importlib.import_module("agent.core.contracts"))
 
     otel_root = types.ModuleType("opentelemetry")
     otel_root.trace = object()

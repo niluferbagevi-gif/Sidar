@@ -7,6 +7,16 @@ from tests.helpers import collect_async_chunks as _collect_stream
 from unittest.mock import AsyncMock
 
 
+def _integration_cfg(tmp_path, **overrides):
+    base = {
+        "BASE_DIR": str(tmp_path),
+        "ENABLE_TRACING": False,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path}/integration_memory.db",
+    }
+    base.update(overrides)
+    return types.SimpleNamespace(**base)
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
@@ -17,7 +27,7 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     tmp_path,
 ) -> None:
     """Gerçek supervisor + researcher akışını, yalnızca dış web bağımlılığını izole ederek doğrular."""
-    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    cfg = _integration_cfg(tmp_path)
     agent = sidar_agent_factory(cfg=cfg)
 
     # LLM bağımlılığını izole ederek testi deterministik hale getir.
@@ -46,7 +56,7 @@ async def test_sidar_agent_workflow_handles_search_failure(
     tmp_path,
 ) -> None:
     """Arama başarısız olduğunda supervisor'ın çökmediğini ve durumu yönettiğini doğrular."""
-    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    cfg = _integration_cfg(tmp_path)
     agent = sidar_agent_factory(cfg=cfg)
 
     # LLM bağımlılığını izole ederek testi deterministik hale getir.
@@ -77,7 +87,7 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     tmp_path,
 ) -> None:
     """LLM araç kararı + araç icrası + memory kaydını uçtan uca doğrular."""
-    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    cfg = _integration_cfg(tmp_path)
     agent = sidar_agent_factory(cfg=cfg)
 
     agent.llm = types.SimpleNamespace(
@@ -115,7 +125,7 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
     tmp_path,
 ) -> None:
     """RAG/vector araması patladığında akışın zarifçe sürdüğünü doğrular."""
-    cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
+    cfg = _integration_cfg(tmp_path)
     agent = sidar_agent_factory(cfg=cfg)
 
     agent.llm = types.SimpleNamespace(
