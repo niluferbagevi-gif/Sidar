@@ -344,6 +344,11 @@ download_verified_script() {
     local script_file
     script_file=$(mktemp)
 
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        rm -f "$script_file"
+        fail "${script_label}: --offline/--air-gapped modunda uzak betik indirilemez (${script_url}). offline_packages kullanın."
+    fi
+
     if ! curl -fsSL --retry 3 --retry-all-errors \
         -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
         "$script_url" -o "$script_file"; then
@@ -1275,6 +1280,8 @@ AUTO_START_DOCKER_SERVICES="ask"
 AUTO_RESET_POSTGRES_VOLUMES="ask"
 AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
+OFFLINE_MODE=false
+OFFLINE_PACKAGES_DIR=""
 CLI_MODE_RAW=""
 CLI_ENV_RAW=""
 CLI_RESET_POSTGRES_VOLUMES="ask"
@@ -1315,6 +1322,7 @@ for arg in "$@"; do
         --no-start-services) CLI_START_DOCKER_SERVICES="false" ;;
         --vscode) CLI_OPEN_VSCODE="true" ;;
         --no-vscode) CLI_OPEN_VSCODE="false" ;;
+        --offline|--air-gapped) OFFLINE_MODE=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -1327,7 +1335,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -1354,6 +1362,7 @@ for arg in "$@"; do
             echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
             echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
             echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
+            echo "  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan"
             echo ""
             echo "  Etkileşimsiz çevre değişkenleri:"
             echo "    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)"
@@ -1362,9 +1371,10 @@ for arg in "$@"; do
             echo "    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)"
             echo "    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)"
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
+            echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1401,6 +1411,11 @@ resolve_env_type_choice() {
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
+fi
+
+OFFLINE_MODE_RAW="$(normalize_bool "${OFFLINE_INSTALL:-${AIR_GAPPED_INSTALL:-}}")"
+if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
+    OFFLINE_MODE=true
 fi
 
 AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${CLI_MODE_RAW:-${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}}")"
@@ -1465,6 +1480,7 @@ DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
+OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
 banner() {
     echo -e "${BOLD}${BLUE}"
@@ -1472,6 +1488,44 @@ banner() {
     echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+resolve_offline_packages_dir() {
+    local -a candidates=(
+        "${SCRIPT_DIR}/${OFFLINE_PACKAGES_DIR_DEFAULT_NAME}"
+        "${ORIGINAL_SCRIPT_DIR}/${OFFLINE_PACKAGES_DIR_DEFAULT_NAME}"
+        "${TARGET_DIR}/${OFFLINE_PACKAGES_DIR_DEFAULT_NAME}"
+    )
+    local candidate=""
+    for candidate in "${candidates[@]}"; do
+        if [[ -d "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+resolve_offline_package_file() {
+    local relative_path="$1"
+    local -a candidate_dirs=()
+    local candidate_dir=""
+
+    if [[ -n "${OFFLINE_PACKAGES_DIR:-}" && -d "${OFFLINE_PACKAGES_DIR:-}" ]]; then
+        candidate_dirs+=("$OFFLINE_PACKAGES_DIR")
+    fi
+
+    while IFS= read -r candidate_dir; do
+        [[ -n "$candidate_dir" ]] && candidate_dirs+=("$candidate_dir")
+    done < <(resolve_offline_packages_dir || true)
+
+    for candidate_dir in "${candidate_dirs[@]}"; do
+        if [[ -f "${candidate_dir}/${relative_path}" ]]; then
+            echo "${candidate_dir}/${relative_path}"
+            return 0
+        fi
+    done
+    return 1
 }
 
 ensure_noninteractive_sudo_ready() {
@@ -1635,6 +1689,22 @@ report_repo_lookup_context() {
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
+
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        if [[ -d "$SCRIPT_DIR/.git" ]]; then
+            TARGET_DIR="$SCRIPT_DIR"
+            ok "Çevrimdışı mod: mevcut repo kullanılacak (git clone/pull atlandı): $SCRIPT_DIR"
+            return
+        fi
+
+        if [[ -d "$TARGET_DIR/.git" ]]; then
+            SCRIPT_DIR="$TARGET_DIR"
+            ok "Çevrimdışı mod: mevcut hedef repo kullanılacak (git clone/pull atlandı): $TARGET_DIR"
+            return
+        fi
+
+        fail "Çevrimdışı modda git clone yapılamaz. Lütfen repo içinden çalıştırın veya $TARGET_DIR altında önceden klonlanmış repo sağlayın."
+    fi
 
     # Bu adım git clone/pull çalıştırdığı için, akış sırası değişse bile
     # git erişimi burada da kesin olarak doğrulanır.
@@ -1978,12 +2048,21 @@ ensure_prerequisites() {
             # Eski bozuk dosya kalıntılarını temizle
             sudo rm -f /usr/local/bin/ollama
             info "Ollama kurulumu başlatılıyor..."
-            DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
-                "https://ollama.com/install.sh" \
-                "${OLLAMA_INSTALL_SHA256:-}" \
-                "ollama_install"
-            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
+            local ollama_install_script=""
+            if [[ "$OFFLINE_MODE" == true ]]; then
+                ollama_install_script="$(resolve_offline_package_file "ollama/install.sh" || true)"
+                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
+                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
+                [[ -n "$ollama_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
+            else
+                DOWNLOADED_SCRIPT_FILE=""
+                download_verified_script \
+                    "https://ollama.com/install.sh" \
+                    "${OLLAMA_INSTALL_SHA256:-}" \
+                    "ollama_install"
+                validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
+                ollama_install_script="$DOWNLOADED_SCRIPT_FILE"
+            fi
 
             info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
             if [[ "$NO_INTERACTION" == true ]]; then
@@ -1992,8 +2071,8 @@ ensure_prerequisites() {
                 sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
             fi
 
-            sh "$DOWNLOADED_SCRIPT_FILE"
-            rm -f "$DOWNLOADED_SCRIPT_FILE"
+            sh "$ollama_install_script"
+            [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
@@ -2135,15 +2214,26 @@ setup_uv() {
     export UV_PROGRESS_BAR=on
 
     if ! command -v uv &>/dev/null; then
-        info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-        DOWNLOADED_SCRIPT_FILE=""
-        download_verified_script \
-            "https://astral.sh/uv/install.sh" \
-            "${UV_INSTALL_SHA256:-}" \
-            "uv_install"
-        validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
-        sh "$DOWNLOADED_SCRIPT_FILE"
-        rm -f "$DOWNLOADED_SCRIPT_FILE"
+        local uv_install_script=""
+        if [[ "$OFFLINE_MODE" == true ]]; then
+            info "uv bulunamadı — çevrimdışı paketlerden kurulacak."
+            uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
+            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
+            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
+            [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
+        else
+            info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
+            DOWNLOADED_SCRIPT_FILE=""
+            download_verified_script \
+                "https://astral.sh/uv/install.sh" \
+                "${UV_INSTALL_SHA256:-}" \
+                "uv_install"
+            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
+            uv_install_script="$DOWNLOADED_SCRIPT_FILE"
+        fi
+
+        sh "$uv_install_script"
+        [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck disable=SC1090
             source "$HOME/.cargo/env"
@@ -4687,6 +4777,14 @@ main() {
     banner
     report_repo_lookup_context
     detect_environment
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
+        if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
+            info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
+        else
+            warn "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı. İndirme gerektiren adımlar bu modda hata verebilir."
+        fi
+    fi
     ensure_noninteractive_sudo_ready
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
