@@ -277,15 +277,22 @@ class Database:
             return conn
 
         self._sqlite_conn = await asyncio.to_thread(_open)
-        self._sqlite_lock = asyncio.Lock()
 
     async def _run_sqlite_op(self, operation):
         """SQLite işlemlerini tek bağlantı üzerinde sıralı çalıştır (thread-safe).
         initialize() çağrılmadan bu metot kullanılmamalıdır."""
         if self._sqlite_conn is None:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
+        running_loop = asyncio.get_running_loop()
         if self._sqlite_lock is None:
             self._sqlite_lock = asyncio.Lock()
+        else:
+            lock_loop = getattr(self._sqlite_lock, "_loop", None)
+            if lock_loop is not None and lock_loop is not running_loop:
+                logger.warning(
+                    "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
+                )
+                self._sqlite_lock = asyncio.Lock()
         async with self._sqlite_lock:
             try:
                 return await asyncio.to_thread(operation)
