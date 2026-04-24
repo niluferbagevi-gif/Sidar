@@ -4246,7 +4246,8 @@ async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
-    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    event_bus = _EventBus()
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: event_bus)
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
     monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
 
@@ -8645,3 +8646,245 @@ async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
     monkeypatch.setattr(web_server, "_ANYIO_CLOSED", _AnyioClosed)
 
     await web_server.websocket_voice(_Ws())
+
+
+def test_register_exception_handlers_http_string_detail_branch():
+    app = web_server.FastAPI()
+    web_server._register_exception_handlers(app)
+
+    @app.get("/boom-string")
+    async def _boom_string():
+        raise HTTPException(status_code=400, detail="bad-input")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/boom-string")
+    assert response.status_code == 400
+    assert response.json() == {"success": False, "error": "bad-input"}
+
+
+@pytest.mark.asyncio
+async def test_close_redis_client_when_client_is_none_is_noop():
+    web_server._redis_client = None
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middleware_post_path_falls_through_when_not_limited(monkeypatch):
+    async def _never_limited(*_args, **_kwargs):
+        return False
+
+    async def _next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_limited)
+    response = await web_server.rate_limit_middleware(_make_request("/set-repo", "POST"), _next)
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_auth_message_success_and_cancel_response_branch(monkeypatch):
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, *_):
+            await asyncio.sleep(0.05)
+            yield "hello"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "message", "message": "selam"}),
+                    json.dumps({"action": "cancel"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                msg = next(self._messages)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+            if '"action": "cancel"' in msg:
+                await asyncio.sleep(0.1)
+            return msg
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert {"auth_ok": True} in ws.sent
+    assert any(item.get("done") is True for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_without_voice_pipeline_sends_plain_chunks():
+    class _Ws:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    class _Agent:
+        async def respond(self, *_):
+            yield "plain"
+
+    ws = _Ws()
+    await web_server._ws_stream_agent_text_response(ws, _Agent(), "prompt")
+    assert ws.sent == [{"chunk": "plain"}]
+
+
+@pytest.mark.asyncio
+async def test_ddos_rate_limit_uses_local_fallback_and_allows_request(monkeypatch):
+    async def _no_redis():
+        return None
+
+    async def _allow_local(*_args, **_kwargs):
+        return False
+
+    async def _next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_get_redis", _no_redis)
+    monkeypatch.setattr(web_server, "_local_is_rate_limited", _allow_local)
+
+    req = _make_request("/api/v1/chat", method="GET", client_ip="127.0.0.1")
+    response = await web_server.ddos_rate_limit_middleware(req, _next)
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(monkeypatch):
+    calls = {"title": [], "reset_tokens": [], "unsubscribed": [], "broadcasts": []}
+
+    class _EventBus:
+        def __init__(self):
+            self.queue = asyncio.Queue()
+
+        def subscribe(self):
+            self.queue.put_nowait(SimpleNamespace(source="qa", message="status-update"))
+            return "sub-1", self.queue
+
+        def unsubscribe(self, sub_id):
+            calls["unsubscribed"].append(sub_id)
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        async def set_active_user(self, *_):
+            return None
+
+        async def aupdate_title(self, title):
+            calls["title"].append(title)
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, *_):
+            await asyncio.sleep(0.05)
+            yield "reply"
+
+        async def _try_multi_agent(self, *_):
+            return "room-result"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "message", "message": "hello from websocket"}),
+                    json.dumps({"action": "join_room", "room_id": "team:qa", "display_name": "Ada"}),
+                    json.dumps({"action": "message", "message": "@sidar check room status"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                msg = next(self._messages)
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+            return msg
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    def _set_metrics(user_id):
+        return f"ctx:{user_id}"
+
+    def _reset_metrics(token):
+        calls["reset_tokens"].append(token)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    event_bus = _EventBus()
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: event_bus)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", _set_metrics)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", _reset_metrics)
+    monkeypatch.setattr(web_server, "_broadcast_room_payload", lambda room, payload: calls["broadcasts"].append((room.room_id, payload)) or asyncio.sleep(0))
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert calls["title"] and calls["title"][0].startswith("hello from websocket")
+
+
+@pytest.mark.asyncio
+async def test_health_check_delegates_to_health_response(monkeypatch):
+    expected = web_server.JSONResponse({"status": "ok"}, status_code=200)
+
+    async def _health(require_dependencies: bool):
+        assert require_dependencies is False
+        return expected
+
+    monkeypatch.setattr(web_server, "_health_response", _health)
+    response = await web_server.health_check()
+    assert response is expected
