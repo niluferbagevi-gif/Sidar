@@ -33,3 +33,14 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Bu doküman sprint başında test ağacından yeniden üretilmeli/güncellenmelidir.
 - Yeni test eklerken önce modül klasörü belirlenmeli, sonra mevcut dosyaya genişletme
   mümkünse yeni dosya açılmamalıdır.
+
+## Performance benchmark baseline yönetimi
+
+- `tests/performance` altında bulunan benchmark testleri için düzenli baseline kaydı alın.
+- Önerilen komut:
+  - `pytest tests/performance/ --benchmark-save=baseline_master`
+- Yeni performans değişikliklerinde karşılaştırma için:
+  - `pytest tests/performance/ --benchmark-compare=baseline_master`
+- İsimlendirme önerisi:
+  - Ana dal için `baseline_master`
+  - Sürüm/sprint için `baseline_<release_tag>` (ör. `baseline_v5_2_0`)
