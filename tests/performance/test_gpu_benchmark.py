@@ -38,7 +38,7 @@ _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1,
 _WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 1, min_value=1, max_value=4)
 _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 5, min_value=2, max_value=20)
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
-_MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "1.0"))
+_MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "10.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
 _PREWARM_REQUESTS: int = _gpu_smoke._env_int("GPU_BENCH_PREWARM_REQUESTS", 3, min_value=1, max_value=12)
 _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
@@ -50,6 +50,7 @@ _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
 _NUM_BATCH: int = _gpu_smoke._env_int("GPU_BENCH_NUM_BATCH", 512, min_value=1, max_value=4096)
 _NUM_PREDICT: int = _gpu_smoke._env_int("GPU_BENCH_NUM_PREDICT", 96, min_value=8, max_value=1024)
 _NUM_CTX: int = _gpu_smoke._env_int("GPU_BENCH_NUM_CTX", 2048, min_value=256, max_value=32768)
+_TPS_BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_TPS_ROUNDS", 20, min_value=5, max_value=50)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -419,9 +420,9 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     Bu değer GPU'nun gerçek üretim hızını yansıtır; toplam gecikmeyi değil.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 1.0)
+      GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 10.0)
       GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 1)
-      GPU_BENCH_ROUNDS             — ölçüm tur sayısı              (varsayılan: 5)
+      GPU_BENCH_TPS_ROUNDS         — ölçüm tur sayısı              (varsayılan: 20)
       GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 96)
       GPU_BENCH_NUM_CTX            — context window                 (varsayılan: 2048)
     """
@@ -447,7 +448,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     result: _InferenceMetrics = benchmark.pedantic(
         _run,
         warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_BENCH_ROUNDS,
+        rounds=_TPS_BENCH_ROUNDS,
         iterations=1,
     )
 
