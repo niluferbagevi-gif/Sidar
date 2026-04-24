@@ -284,9 +284,16 @@ class Database:
         initialize() çağrılmadan bu metot kullanılmamalıdır."""
         if self._sqlite_conn is None:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
-        if self._sqlite_lock is None:
-            self._sqlite_lock = asyncio.Lock()
-        async with self._sqlite_lock:
+        running_loop = asyncio.get_running_loop()
+        lock = self._sqlite_lock
+        # asyncio.Lock, ilk eşzamanlı kullanımında bir event loop'a bağlanır.
+        # benchmark gibi ardışık asyncio.run() çağrıları her seferinde yeni bir
+        # loop oluşturur; eski loop'a bağlı Lock bu durumda RuntimeError fırlatır.
+        # Bağlı loop mevcut loop'tan farklıysa Lock yeniden oluşturulur.
+        if lock is None or getattr(lock, "_loop", None) not in (None, running_loop):
+            lock = asyncio.Lock()
+            self._sqlite_lock = lock
+        async with lock:
             try:
                 return await asyncio.to_thread(operation)
             except Exception:
