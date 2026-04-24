@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
 # Sürüm: 5.2.0  (GPU & CPU destekli çift mod)
@@ -79,7 +81,8 @@ ENV UV_INDEX_STRATEGY=first-index \
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$INSTALL_DEV" = "true" ]; then \
       uv sync --frozen --no-install-project; \
     else \
       uv sync --frozen --no-dev --no-install-project; \
@@ -99,7 +102,8 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
 COPY . .
 
 # Proje paketini mevcut lock dosyasına göre ortama kur
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$INSTALL_DEV" = "true" ]; then \
       uv sync --frozen; \
     else \
       uv sync --frozen --no-dev; \
