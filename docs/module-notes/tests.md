@@ -69,17 +69,21 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`
 
-### CI quality gate (TTFT <= 200ms)
+### CI quality gate (TTFT + single inference latency)
 
-- GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-ttft-quality-gate`.
+- GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-inference-quality-gate`.
 - Bu job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır.
 - Runner gereksinimi: `self-hosted`, `linux`, `gpu` etiketli runner.
 - Quality gate komutu:
   - `bash scripts/ci/run_ttft_quality_gate.sh`
-- Varsayılan eşik:
+- Baseline referansı (2026-04):
+  - TTFT: ~93 ms
+  - Single inference latency: ~120 ms
+- Varsayılan gate eşikleri:
   - `GPU_BENCH_TTFT_BUDGET=0.2` (200 ms)
+  - `GPU_BENCH_LATENCY_BUDGET=0.25` (250 ms)
 - Kapı davranışı:
-  - TTFT testi fail ederse job fail olur.
+  - TTFT veya single latency testi fail ederse job fail olur.
   - Test skip olursa (GPU/Ollama hazır değilse) job yine fail olur; böylece PR onayı için gerçek benchmark zorunlu tutulur.
 
 ### `warmup=False` uyarısı hakkında not

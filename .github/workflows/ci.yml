@@ -162,14 +162,15 @@ jobs:
             --timeout=120 \
             -x
 
-  gpu-ttft-quality-gate:
-    name: GPU TTFT Quality Gate (<=200ms)
+  gpu-inference-quality-gate:
+    name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
     runs-on: [self-hosted, linux, gpu]
     needs: test
 
     env:
       GPU_BENCH_TTFT_BUDGET: "0.2"
+      GPU_BENCH_LATENCY_BUDGET: "0.25"
       RUN_GPU_STRESS: "1"
 
     steps:
@@ -189,14 +190,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
-      - name: Run TTFT benchmark quality gate
+      - name: Run GPU inference benchmark quality gate
         run: bash scripts/ci/run_ttft_quality_gate.sh
 
-      - name: Upload TTFT gate JUnit report
+      - name: Upload GPU inference gate JUnit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ttft-quality-gate-junit
-          path: ttft-quality-gate.junit.xml
+          name: gpu-inference-quality-gate-junit
+          path: gpu-inference-quality-gate.junit.xml
           if-no-files-found: warn
           retention-days: 14
