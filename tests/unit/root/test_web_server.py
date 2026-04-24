@@ -6520,3 +6520,178 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
 
     rag_resp = await web_server.rag_search(q="merhaba", mode="auto", top_k=3)
     assert _decode_json_response(rag_resp)["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_prewarm_rag_embeddings_handles_init_chroma_exception(monkeypatch):
+    logs = {"warn": []}
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: logs["warn"].append(msg % args if args else msg))
+
+    class _BrokenRag:
+        _chroma_available = True
+
+        def _init_chroma(self):
+            raise RuntimeError("init failed")
+
+    async def _resolve_agent():
+        return SimpleNamespace(rag=_BrokenRag())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    await web_server._prewarm_rag_embeddings()
+
+    assert any("prewarm başarısız" in item for item in logs["warn"])
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_core_voice_import_error_falls_back_to_text_only(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter([
+                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                {"type": "websocket.receive", "text": '{"action":"start"}'},
+                {"type": "websocket.disconnect"},
+            ])
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.voice":
+            raise ImportError("voice unavailable")
+        return original_import(name, *args, **kwargs)
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    ready_payload = next(item for item in ws.sent if item.get("voice_session") == "ready")
+    assert ready_payload["tts_enabled"] is False
+    assert ready_payload["voice_disabled_reason"] == ""
+    assert any(item.get("voice_state") == "ready" for item in ws.sent)
+
+
+def test_register_exception_handlers_http_exception_string_detail_branch():
+    app = web_server.FastAPI()
+    web_server._register_exception_handlers(app)
+
+    @app.get("/boom-string")
+    async def _boom_string():
+        raise HTTPException(status_code=400, detail="bad-request")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/boom-string")
+
+    assert response.status_code == 400
+    assert response.json() == {"success": False, "error": "bad-request"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_from_token_pyjwt_error_uses_db_fallback(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
+    monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
+
+    class _JWTError(web_server.jwt.PyJWTError):
+        pass
+
+    monkeypatch.setattr(web_server.jwt, "decode", lambda *_args, **_kwargs: (_ for _ in ()).throw(_JWTError("expired")))
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == "expired-token":
+                return SimpleNamespace(id="db-u", username="db-user", role="user", tenant_id="default")
+            return None
+
+    agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+
+    resolved = await web_server._resolve_user_from_token(agent, "expired-token")
+    assert resolved is not None
+    assert resolved.id == "db-u"
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_returns_degraded_when_dependency_health_crashes(monkeypatch):
+    class _Health:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+        def get_dependency_health(self):
+            raise RuntimeError("redis down")
+
+    async def _resolve_agent():
+        return SimpleNamespace(cfg=SimpleNamespace(AI_PROVIDER="openai"), health=_Health())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    response = await web_server.readiness_check()
+    assert response.status_code == 503
+    assert b'"status":"degraded"' in response.body
+    assert b'"redis down"' in response.body
+
+
+@pytest.mark.asyncio
+async def test_broadcast_room_payload_removes_stale_websocket_client():
+    class _WsOK:
+        def __init__(self):
+            self.messages = []
+
+        async def send_json(self, payload):
+            self.messages.append(payload)
+
+    class _WsBroken:
+        async def send_json(self, _payload):
+            raise RuntimeError("socket closed")
+
+    ws_ok = _WsOK()
+    ws_broken = _WsBroken()
+
+    room = web_server._CollaborationRoom(
+        room_id="team:stale",
+        participants={
+            1: web_server._CollaborationParticipant(ws_ok, "u1", "ada", "Ada"),
+            2: web_server._CollaborationParticipant(ws_broken, "u2", "lin", "Lin"),
+        },
+    )
+
+    payload = {"type": "presence", "room_id": "team:stale"}
+    await web_server._broadcast_room_payload(room, payload)
+
+    assert ws_ok.messages == [payload]
+    assert 2 not in room.participants
+    assert 1 in room.participants
