@@ -1924,6 +1924,27 @@ async def test_prewarm_rag_embeddings_branches(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_prewarm_rag_embeddings_logs_when_init_chroma_raises(monkeypatch):
+    warnings: list[str] = []
+    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    class _RagBroken:
+        _chroma_available = True
+
+        def _init_chroma(self):
+            raise RuntimeError("chroma boot failed")
+
+    async def _agent_with_broken_rag():
+        return SimpleNamespace(rag=_RagBroken())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _agent_with_broken_rag)
+    await web_server._prewarm_rag_embeddings()
+
+    assert any("RAG prewarm başarısız oldu" in item for item in warnings)
+    assert any("chroma boot failed" in item for item in warnings)
+
+
+@pytest.mark.asyncio
 async def test_await_if_needed_and_health_response_branches(monkeypatch):
     async def _sample():
         return "awaited"
@@ -4385,6 +4406,74 @@ async def test_websocket_voice_import_error_closes_connection(monkeypatch):
     assert ws.accepted is True
     assert ws.sent[-1]["error"] == "core.multimodal modülü yüklenemedi."
     assert ws.closed == {"code": 1011, "reason": "multimodal unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_core_voice_import_error_falls_back_without_crashing(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+    class _Memory:
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent: list[dict[str, object]] = []
+            self._packets = iter([
+                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
+                {"type": "websocket.disconnect"},
+            ])
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.sent.append({"close_code": code, "close_reason": reason})
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_args, **_kwargs):
+        return SimpleNamespace(id="u-1", username="ada")
+
+    original_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            mod = types.ModuleType("core.multimodal")
+            mod.MultimodalPipeline = _MultimodalPipeline
+            return mod
+        if name == "core.voice":
+            raise ImportError("voice unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    ready = next(item for item in ws.sent if item.get("voice_session") == "ready")
+    assert ready["tts_enabled"] is False
+    assert ready["voice_disabled_reason"] == ""
+    assert {"auth_ok": True} in ws.sent
 
 
 @pytest.mark.asyncio
