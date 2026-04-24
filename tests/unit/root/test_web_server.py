@@ -2814,6 +2814,23 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monkeypatch):
+    async def _never_limited(*_args, **_kwargs):
+        return False
+
+    async def _call_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_limited)
+
+    ws_resp = await web_server.rate_limit_middleware(_make_request("/ws/chat", "GET"), _call_next)
+    get_resp = await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
+
+    assert ws_resp.status_code == 200
+    assert get_resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_federation_and_github_webhook_paths(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
@@ -2919,6 +2936,11 @@ def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
 
     monkeypatch.delitem(sys.modules, "core.dlp", raising=False)
     monkeypatch.setattr("builtins.__import__", _fake_import)
+    assert web_server._mask_collaboration_text("abc") == "abc"
+
+
+def test_mask_collaboration_text_returns_original_when_masker_not_callable(monkeypatch):
+    monkeypatch.setitem(sys.modules, "core.dlp", SimpleNamespace(mask_pii="not-callable"))
     assert web_server._mask_collaboration_text("abc") == "abc"
 
 
@@ -3864,6 +3886,31 @@ async def test_redis_rate_limit_first_request_sets_expire_and_get_client_ip_real
 
 
 @pytest.mark.asyncio
+async def test_is_rate_limited_wrapper_and_redis_second_hit_branch(monkeypatch):
+    class _RedisStub:
+        def __init__(self):
+            self.expire_calls = 0
+
+        async def incr(self, *_):
+            return 2
+
+        async def expire(self, *_):
+            self.expire_calls += 1
+            return True
+
+    redis = _RedisStub()
+
+    async def _get_redis():
+        return redis
+
+    monkeypatch.setattr(web_server, "_get_redis", _get_redis)
+
+    assert await web_server._is_rate_limited("k-wrapper", 1, 60) is False
+    assert await web_server._redis_is_rate_limited("chat", "3.3.3.3", 1, 60) is True
+    assert redis.expire_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_ws_helpers_cover_no_close_and_voice_tts_skip_branches():
     class _NoClose:
         pass
@@ -4231,6 +4278,72 @@ async def test_websocket_chat_suppresses_send_error_when_agent_response_crashes(
 
         async def send_json(self, payload):
             if "[Sistem Hatası]" in payload.get("chunk", ""):
+                raise RuntimeError("socket write failed")
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert ws.subprotocol == "good-token"
+    assert {"auth_ok": True} in ws.payloads
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypatch):
+    class _EventBus:
+        def subscribe(self):
+            return "sub-1", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            raise web_server.LLMAPIError("openai", "boom", status_code=503, retryable=True)
+            yield "never"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(['{"action":"message","message":"selam"}'])
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                await asyncio.sleep(0.02)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            if "[LLM Hatası]" in payload.get("chunk", ""):
                 raise RuntimeError("socket write failed")
             self.payloads.append(payload)
 
@@ -7012,3 +7125,60 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
 
     rag_resp = await web_server.rag_search(q="merhaba", mode="auto", top_k=3)
     assert _decode_json_response(rag_resp)["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_filter_branch(monkeypatch):
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def get_all_sessions(self):
+            async def _co():
+                return ["s1", "s2"]
+            return _co()
+
+    class _Agent:
+        VERSION = "v"
+
+        def __init__(self):
+            self.cfg = SimpleNamespace(AI_PROVIDER="openai", USE_GPU=False)
+            self.memory = _Memory()
+            self.docs = SimpleNamespace(doc_count=0)
+            self.github = SimpleNamespace(
+                repo_name="org/repo",
+                list_repos=lambda owner, limit: (
+                    True,
+                    [{"full_name": "org/repo-b"}, {"full_name": "org/repo-a"}],
+                ),
+            )
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "headers": [],
+        "client": ("127.0.0.1", 0),
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("testserver", 80),
+    }
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(web_server, "_local_rate_limits", {})
+
+    metrics_resp = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    repos_resp = await web_server.github_repos(q="repo-a")
+
+    assert metrics_resp.status_code == 200
+    assert b'"sessions_total":2' in metrics_resp.body
+    assert repos_resp.status_code == 200
+    assert b'"full_name":"org/repo-a"' in repos_resp.body
+    assert b'"full_name":"org/repo-b"' not in repos_resp.body
