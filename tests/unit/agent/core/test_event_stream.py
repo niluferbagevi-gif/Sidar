@@ -234,6 +234,18 @@ def test_ensure_listener_early_return_and_non_busygroup_error(
     assert cleaned["ok"] is True
 
 
+@pytest.mark.asyncio
+async def test_ensure_listener_returns_when_listener_task_running(bus: AgentEventBus) -> None:
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._redis_listener_task = _RunningTask()
+    bus._redis_loop = asyncio.get_running_loop()
+    await bus._ensure_redis_listener()
+    assert isinstance(bus._redis_listener_task, _RunningTask)
+
+
 def test_ensure_listener_failure_triggers_cleanup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
     class _BadRedis(DummyRedis):
         async def ping(self) -> None:
@@ -468,6 +480,24 @@ def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: py
     asyncio.run(bus._ensure_redis_loop_compatibility())
 
     assert cleaned["ok"] is True
+    assert bus._redis_available is None
+
+
+def test_ensure_redis_loop_compatibility_returns_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._redis_client = object()
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    asyncio.run(bus._ensure_redis_loop_compatibility())
+    assert bus._redis_client is not None
+
+
+@pytest.mark.asyncio
+async def test_ensure_redis_loop_compatibility_returns_when_same_loop() -> None:
+    bus = AgentEventBus()
+    current_loop = asyncio.get_running_loop()
+    bus._redis_client = object()
+    bus._redis_loop = current_loop
+    await bus._ensure_redis_loop_compatibility()
     assert bus._redis_available is None
 
 

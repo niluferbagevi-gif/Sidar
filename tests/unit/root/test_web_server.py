@@ -382,6 +382,11 @@ def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
     assert web_server._reap_child_processes_nonblocking() == 2
 
 
+def test_reap_child_processes_nonblocking_handles_childprocesserror(monkeypatch):
+    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(ChildProcessError()))
+    assert web_server._reap_child_processes_nonblocking() == 0
+
+
 def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
@@ -1041,6 +1046,27 @@ async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatc
     assert thread_calls["count"] == 2
     assert cleanup["redis"] == 1
     assert cleanup["shutdown"] == 1
+
+
+@pytest.mark.asyncio
+async def test_close_redis_client_handles_sync_close_and_unknown_client(monkeypatch):
+    class _SyncCloseRedis:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    redis_client = _SyncCloseRedis()
+    monkeypatch.setattr(web_server, "_redis_client", redis_client)
+
+    await web_server._close_redis_client()
+    assert redis_client.closed is True
+    assert web_server._redis_client is None
+
+    monkeypatch.setattr(web_server, "_redis_client", object())
+    await web_server._close_redis_client()
+    assert web_server._redis_client is None
 
 
 @pytest.mark.asyncio

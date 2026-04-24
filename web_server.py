@@ -2412,7 +2412,13 @@ async def _close_redis_client() -> None:
     global _redis_client
     if _redis_client is not None:
         try:
-            await _redis_client.aclose()
+            closer = getattr(_redis_client, "aclose", None)
+            if closer is None:
+                close_fn = getattr(_redis_client, "close", None)
+                if callable(close_fn):
+                    await _await_if_needed(close_fn())
+            else:
+                await _await_if_needed(closer())
         except RuntimeError as exc:
             # Bazı test teardown senaryolarında (özellikle lifespan kapanışında)
             # redis istemcisinin bağlı olduğu event loop kapanmış olabilir.
