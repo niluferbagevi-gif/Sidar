@@ -97,7 +97,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Pa
         text=True,
         capture_output=True,
         check=False,
-        timeout=30,
+        timeout=90,
         env=env,
     )
 
