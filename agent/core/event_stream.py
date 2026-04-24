@@ -44,6 +44,7 @@ class AgentEventBus:
         self._redis_listener_task: asyncio.Task | None = None
         self._redis_bootstrap_task: asyncio.Task | None = None
         self._redis_available: bool | None = None
+        self._redis_loop: asyncio.AbstractEventLoop | None = None
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
@@ -75,10 +76,12 @@ class AgentEventBus:
     async def _ensure_redis_listener(self) -> None:
         if self._redis_available is False:
             return
+        await self._ensure_redis_loop_compatibility()
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
             return
 
         try:
+            loop = asyncio.get_running_loop()
             if self._redis_client is None:
                 self._redis_client = Redis.from_url(
                     self._redis_url,
@@ -89,6 +92,7 @@ class AgentEventBus:
                     socket_timeout=self._redis_socket_timeout,
                 )
                 await self._redis_client.ping()
+                self._redis_loop = loop
 
             try:
                 await self._redis_client.xgroup_create(
@@ -102,7 +106,7 @@ class AgentEventBus:
                     raise
 
             self._redis_available = True
-            self._redis_listener_task = asyncio.create_task(self._redis_listener_loop())
+            self._redis_listener_task = loop.create_task(self._redis_listener_loop())
         except Exception as exc:
             self._redis_available = False
             logger.debug("AgentEventBus Redis bootstrap başarısız, local fallback kullanılacak: %s", exc)
@@ -112,6 +116,7 @@ class AgentEventBus:
         if self._redis_available is False:
             return False
 
+        await self._ensure_redis_loop_compatibility()
         await self._ensure_redis_listener()
         if not self._redis_client or self._redis_available is not True:
             return False
@@ -227,8 +232,11 @@ class AgentEventBus:
 
     async def _cleanup_redis(self) -> None:
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
-            self._redis_listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            cancel = getattr(self._redis_listener_task, "cancel", None)
+            with contextlib.suppress(RuntimeError):
+                if callable(cancel):
+                    cancel()
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
                 await self._redis_listener_task
         self._redis_listener_task = None
 
@@ -237,6 +245,19 @@ class AgentEventBus:
                 closer = getattr(self._redis_client, "aclose", None) or self._redis_client.close
                 await closer()
         self._redis_client = None
+        self._redis_loop = None
+
+    async def _ensure_redis_loop_compatibility(self) -> None:
+        if self._redis_client is None and self._redis_listener_task is None:
+            return
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if self._redis_loop is current_loop:
+            return
+        self._redis_available = None
+        await self._cleanup_redis()
 
     async def _write_dead_letter(self, *, reason: str, payload: dict[str, object], error: Exception | None = None) -> None:
         item = {

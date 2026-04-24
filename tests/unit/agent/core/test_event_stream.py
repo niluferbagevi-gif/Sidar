@@ -214,8 +214,10 @@ def test_ensure_listener_early_return_and_non_busygroup_error(
     asyncio.run(bus._ensure_redis_listener())
 
     redis = DummyRedis()
+    bus._redis_available = None
     bus._redis_listener_task = None
     bus._redis_client = redis
+    monkeypatch.setattr(bus, "_ensure_redis_loop_compatibility", lambda: asyncio.sleep(0))
 
     async def _group_create(**_kwargs):
         raise event_stream.ResponseError("unexpected response error")
@@ -269,6 +271,7 @@ def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEven
         bus._redis_available = True
 
     monkeypatch.setattr(bus, "_ensure_redis_listener", _ensure_without_client)
+    monkeypatch.setattr(bus, "_ensure_redis_loop_compatibility", lambda: asyncio.sleep(0))
     assert asyncio.run(bus._publish_via_redis(evt)) is False
 
     redis = DummyRedis()
@@ -278,6 +281,7 @@ def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEven
         bus._redis_available = True
 
     monkeypatch.setattr(bus, "_ensure_redis_listener", _ensure_with_client)
+    monkeypatch.setattr(bus, "_ensure_redis_loop_compatibility", lambda: asyncio.sleep(0))
     assert asyncio.run(bus._publish_via_redis(evt)) is True
     payload = json.loads(redis.xadd_calls[0][0][1]["payload"])
     assert payload["source"] == "qa"
@@ -444,6 +448,27 @@ def test_cleanup_redis_without_client_or_listener() -> None:
     asyncio.run(bus._cleanup_redis())
     assert bus._redis_listener_task is None
     assert bus._redis_client is None
+    assert bus._redis_loop is None
+
+
+def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._redis_client = DummyRedis()
+    bus._redis_loop = object()
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+        bus._redis_client = None
+        bus._redis_listener_task = None
+        bus._redis_loop = None
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup)
+    asyncio.run(bus._ensure_redis_loop_compatibility())
+
+    assert cleaned["ok"] is True
+    assert bus._redis_available is None
 
 
 def test_write_dead_letter_local_and_redis(bus: AgentEventBus) -> None:
