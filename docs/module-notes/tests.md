@@ -44,3 +44,17 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - İsimlendirme önerisi:
   - Ana dal için `baseline_master`
   - Sürüm/sprint için `baseline_<release_tag>` (ör. `baseline_v5_2_0`)
+
+### StdDev odaklı izleme (VRAM + çoklu kullanıcı iş yükü)
+
+- Benchmark raporunda standart sapma (stddev) değerlerini yalnızca `mean` ile birlikte okuyun.
+- Özellikle aşağıdaki testler için yüksek dalgalanma, bellek tahsisi/jitter sinyali olabilir:
+  - `test_gpu_vram_peak_under_load`
+  - `test_multi_user_session_message_workload_scales_with_concurrency`
+- Bu testlerde artan stddev görüldüğünde acil hata varsayımı yapmadan, canlı ortamda trend takibi başlatın:
+  1. Prometheus üzerinden latency + bellek eğrilerini zaman serisi olarak toplayın.
+  2. Grafana dashboard'larında p95/p99 gecikme ve RAM/VRAM göstergelerini aynı zaman penceresinde korele edin.
+  3. Uzun süreli yükselen bellek trendi varsa olası memory leak için alarm eşiği tanımlayın.
+- Operasyonel pratik:
+  - Baseline karşılaştırmasını her sürümde tekrarlayın ve stddev değerini release notuna ekleyin.
+  - Dalgalanma süreklilik kazanırsa yük profili (concurrency, warmup_rounds, model) sabitlenerek yeniden ölçüm alın.
