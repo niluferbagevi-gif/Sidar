@@ -2770,6 +2770,33 @@ async def test_basic_auth_middleware_branches(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_basic_auth_middleware_skips_non_callable_set_active_user(monkeypatch):
+    calls = {"set_token": None, "reset_token": None}
+
+    async def _call_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    async def _resolve_user(_agent, _token):
+        return SimpleNamespace(id="u-2", username="lin", role="user")
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user="not-callable"))
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda uid: calls.update({"set_token": uid}) or "tok-2")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda tok: calls.update({"reset_token": tok}))
+
+    ok = await web_server.basic_auth_middleware(
+        _make_request("/admin/stats", headers={"Authorization": "Bearer good-token"}),
+        _call_next,
+    )
+    assert ok.status_code == 200
+    assert calls["set_token"] == "u-2"
+    assert calls["reset_token"] == "tok-2"
+
+
+@pytest.mark.asyncio
 async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
     async def _call_next(_request):
         return web_server.JSONResponse({"ok": True}, status_code=200)
