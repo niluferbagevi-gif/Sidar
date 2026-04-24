@@ -13,6 +13,7 @@
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
 #   ./install_sidar.sh --silent   # CI/CD için sessiz kurulum (güvenli varsayılanlarla)
 #   ./install_sidar.sh --auto --mode=local --env=development --reset-db --no-vscode
+#   ./install_sidar.sh --with-browsers  # Playwright Chromium + deps kurulumunu zorla
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
@@ -1245,6 +1246,7 @@ AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
 OFFLINE_MODE=false
 OFFLINE_PACKAGES_DIR=""
+PLAYWRIGHT_BROWSERS_MODE="auto"
 CLI_MODE_RAW=""
 CLI_ENV_RAW=""
 CLI_RESET_POSTGRES_VOLUMES="ask"
@@ -1285,6 +1287,8 @@ for arg in "$@"; do
         --no-start-services) CLI_START_DOCKER_SERVICES="false" ;;
         --vscode) CLI_OPEN_VSCODE="true" ;;
         --no-vscode) CLI_OPEN_VSCODE="false" ;;
+        --with-browsers) PLAYWRIGHT_BROWSERS_MODE="always" ;;
+        --skip-browsers) PLAYWRIGHT_BROWSERS_MODE="never" ;;
         --offline|--air-gapped) OFFLINE_MODE=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
@@ -1298,7 +1302,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
@@ -1325,6 +1329,7 @@ for arg in "$@"; do
             echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
             echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
             echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
+            echo "  --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla"
             echo "  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan"
             echo ""
             echo "  Etkileşimsiz çevre değişkenleri:"
@@ -1334,10 +1339,11 @@ for arg in "$@"; do
             echo "    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)"
             echo "    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)"
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
+            echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1381,6 +1387,13 @@ if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
     OFFLINE_MODE=true
 fi
 
+PLAYWRIGHT_BROWSERS_RAW="$(normalize_bool "${INSTALL_PLAYWRIGHT_BROWSERS:-}")"
+if [[ "$PLAYWRIGHT_BROWSERS_RAW" == "true" ]]; then
+    PLAYWRIGHT_BROWSERS_MODE="always"
+elif [[ "$PLAYWRIGHT_BROWSERS_RAW" == "false" ]]; then
+    PLAYWRIGHT_BROWSERS_MODE="never"
+fi
+
 AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${CLI_MODE_RAW:-${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}}")"
 if [[ -n "$CLI_MODE_RAW" && "$AUTO_RUNTIME_MODE" == "ask" ]]; then
     fail "Geçersiz --mode değeri: '${CLI_MODE_RAW}'. Desteklenen: local|docker"
@@ -1411,6 +1424,7 @@ if [[ "$SILENT_MODE" == true ]]; then
     [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "ask" ]] && AUTO_RESET_POSTGRES_VOLUMES="true"
     [[ "$AUTO_ENV_TYPE" == "ask" ]] && AUTO_ENV_TYPE="development"
     [[ "$AUTO_OPEN_VSCODE" == "ask" ]] && AUTO_OPEN_VSCODE="false"
+    [[ "$PLAYWRIGHT_BROWSERS_MODE" == "auto" ]] && PLAYWRIGHT_BROWSERS_MODE="never"
     info "⚠️  Sessiz otonom kurulum modu etkin (CI/CD güvenli varsayılanları uygulanıyor)."
 fi
 
@@ -2264,8 +2278,32 @@ install_python_deps() {
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
+should_install_playwright_browsers() {
+    case "$PLAYWRIGHT_BROWSERS_MODE" in
+        always) return 0 ;;
+        never) return 1 ;;
+    esac
+
+    local env_file="$SCRIPT_DIR/.env"
+    local sidar_env="development"
+    if [[ -f "$env_file" ]]; then
+        sidar_env="$(read_env_value_from_file "SIDAR_ENV" "$env_file")"
+    fi
+    sidar_env=$(echo "${sidar_env:-development}" | tr '[:upper:]' '[:lower:]' | tr -d '"'\''[:space:]')
+
+    case "$sidar_env" in
+        development|dev|local|test) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
+
+    if ! should_install_playwright_browsers; then
+        info "Playwright tarayıcı kurulumu atlandı (mode=${PLAYWRIGHT_BROWSERS_MODE}, SIDAR_ENV tabanlı otomatik politika)."
+        return
+    fi
 
     PY_CMD=(python)
 
