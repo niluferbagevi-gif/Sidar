@@ -291,6 +291,12 @@ def test_pipeline_init_respects_disable_flags():
     assert "ENABLE_MULTIMODAL" in p.voice_disabled_reason
 
 
+def test_pipeline_init_respects_voice_enabled_flag():
+    p = _make_pipeline(voice_enabled=False)
+    assert p.enabled is False
+    assert p.voice_disabled_reason == "VOICE_ENABLED devre dışı."
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.extract_ready_segments
 # ──────────────────────────────────────────────────────────────────────────────
