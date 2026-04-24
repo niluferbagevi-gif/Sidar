@@ -4043,6 +4043,38 @@ async def test_websocket_chat_auth_message_requires_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_auth_message_rejects_invalid_token(monkeypatch):
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.closed = None
+            self.messages = iter(['{"action":"auth","token":"bad-token"}'])
+
+        async def accept(self, subprotocol=None):
+            return None
+
+        async def receive_text(self):
+            return next(self.messages)
+
+        async def close(self, code, reason):
+            self.closed = {"code": code, "reason": reason}
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    async def _resolve_user(*_):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    assert ws.closed == {"code": 1008, "reason": "Invalid or expired token"}
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
     class _EventBus:
         def subscribe(self):
@@ -4199,6 +4231,9 @@ async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
             return None
 
     class _Memory:
+        def __len__(self):
+            return 1
+
         async def set_active_user(self, *_):
             return None
 
@@ -4343,6 +4378,9 @@ async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypat
             return None
 
     class _Memory:
+        def __len__(self):
+            return 1
+
         async def set_active_user(self, *_):
             return None
 
@@ -4409,6 +4447,9 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
             return None
 
     class _Memory:
+        def __len__(self):
+            return 1
+
         async def set_active_user(self, *_):
             return None
 
@@ -4485,6 +4526,9 @@ async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(
             return None
 
     class _Memory:
+        def __len__(self):
+            return 1
+
         async def set_active_user(self, *_):
             return None
 
@@ -4544,6 +4588,92 @@ async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(
     assert {"auth_ok": True} in ws.payloads
     assert any("komut bulunamadı" in item.get("error", "") for item in room_errors)
     assert any("yazma yetkisine sahip değil" in item.get("error", "") for item in room_errors)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(monkeypatch):
+    state = {"cancelled": False}
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _prompt):
+            yield "never"
+
+    class _Task:
+        def done(self):
+            return False
+
+        def cancel(self):
+            state["cancelled"] = True
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.payloads = []
+            self.messages = iter(
+                [
+                    '{"action":"message","message":"uzun işlem"}',
+                    '{"action":"cancel"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                message = next(self.messages)
+                return message
+            except StopIteration:
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.payloads.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    class _EventBus:
+        def subscribe(self):
+            return "sub", asyncio.Queue()
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+    def _fake_create_task(coro):
+        coro.close()
+        return _Task()
+
+    monkeypatch.setattr(web_server.asyncio, "create_task", _fake_create_task)
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+
+    assert state["cancelled"] is True
+    assert any(item.get("done") is True and "iptal edildi" in item.get("chunk", "") for item in ws.payloads)
+
 
 @pytest.mark.asyncio
 async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
