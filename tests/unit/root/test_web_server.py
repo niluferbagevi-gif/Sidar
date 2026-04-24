@@ -7841,6 +7841,23 @@ def test_mount_frontend_static_routes_mounts_assets_when_available(tmp_path):
     assert ("/assets", "assets") in app.mounted
 
 
+def test_mount_frontend_static_routes_skips_assets_when_missing(tmp_path):
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True)
+
+    class _App:
+        def __init__(self):
+            self.mounted = []
+
+        def mount(self, path, _app, name):
+            self.mounted.append((path, name))
+
+    app = _App()
+    web_server._mount_frontend_static_routes(app, web_dir)
+    assert ("/static", "static") in app.mounted
+    assert ("/assets", "assets") not in app.mounted
+
+
 @pytest.mark.asyncio
 async def test_github_repos_query_empty_takes_non_filter_branch(monkeypatch):
     class _Github:
