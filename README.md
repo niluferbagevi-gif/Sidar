@@ -335,13 +335,15 @@ cp .env.example .env
 ```bash
 # Resmi Linux kurulumu: https://ollama.com/download/linux
 ollama pull qwen2.5-coder:7b
-ollama serve
+OLLAMA_NUM_PARALLEL=4 ollama serve
 ```
 
 > Güvenlik notu: `install_sidar.sh` varsayılan olarak uzaktan kurulum scripti çalıştırmaz.
 > Otomatik kurulum gerekiyorsa bilinçli opt-in ile çalıştırın: `ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh`.
 
 ### Docker ile
+
+> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).
 
 > **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
 > Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
@@ -352,7 +354,7 @@ ollama serve
 docker compose up --build sidar-web
 
 # GPU modu (NVIDIA)
-docker compose up --build sidar-web-gpu
+OLLAMA_NUM_PARALLEL=4 docker compose up --build sidar-web-gpu
 ```
 
 Production ortamında host izin (uid/gid/chown) sorunlarını azaltmak için bind mount yerine named volume kullanabilirsiniz:
@@ -612,6 +614,7 @@ bash run_tests.sh
 AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
 CODING_MODEL=qwen2.5-coder:3b
 OLLAMA_URL=http://localhost:11434/api
+OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
 TEXT_MODEL=llama3.1:8b
 GEMINI_API_KEY=                 # Gemini kullanılacaksa
 OPENAI_API_KEY=                 # OpenAI kullanılacaksa

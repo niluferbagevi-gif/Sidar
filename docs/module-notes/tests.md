@@ -59,6 +59,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - Baseline karşılaştırmasını her sürümde tekrarlayın ve stddev değerini release notuna ekleyin.
   - Dalgalanma süreklilik kazanırsa yük profili (concurrency, warmup_rounds, model) sabitlenerek yeniden ölçüm alın.
 
+### GPU eşzamanlılık benchmark notu
+
+- Aşağıdaki testler, gerçek paralellik doğrulaması için `OLLAMA_NUM_PARALLEL` değerinin
+  `GPU_BENCH_CONCURRENCY` kadar (genellikle `4`) olmasını bekler:
+  - `test_gpu_concurrent_throughput`
+  - `test_gpu_vram_peak_under_load`
+- Örnek başlatma komutları:
+  - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
+  - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`
+
 ### CI quality gate (TTFT <= 200ms)
 
 - GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-ttft-quality-gate`.
