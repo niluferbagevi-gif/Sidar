@@ -9008,6 +9008,165 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_message_status_stream_emits_and_cleans_context(monkeypatch):
+    calls = {"unsubscribe": [], "reset": [], "statuses": []}
+
+    class _EventBus:
+        def subscribe(self):
+            q: asyncio.Queue = asyncio.Queue()
+            q.put_nowait(SimpleNamespace(source="reviewer", message="analiz başladı"))
+            return "sub-status", q
+
+        def unsubscribe(self, sub_id):
+            calls["unsubscribe"].append(sub_id)
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, *_):
+            await asyncio.sleep(0.55)  # status pump timeout=0.5 için en az bir tur daha
+            yield "tamam"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "message", "message": "durum nedir?"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self._messages)
+            except StopIteration:
+                await asyncio.sleep(1.2)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            if "status" in payload:
+                calls["statuses"].append(payload["status"])
+            self.sent.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    await asyncio.sleep(0.05)
+
+    assert {"auth_ok": True} in ws.sent
+    assert any("reviewer: analiz başladı" == status for status in calls["statuses"])
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkeypatch):
+    calls = {"broadcast": [], "unsubscribe": [], "reset": []}
+
+    class _EventBus:
+        def subscribe(self):
+            q: asyncio.Queue = asyncio.Queue()
+            q.put_nowait(SimpleNamespace(source="qa", message="oda analizi başlatıldı"))
+            return "sub-room-status", q
+
+        def unsubscribe(self, sub_id):
+            calls["unsubscribe"].append(sub_id)
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, *_):
+            await asyncio.sleep(0.55)  # queue event sonrası timeout branch'ini zorlar
+            return "oda tamam"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self._messages = iter(
+                [
+                    json.dumps({"action": "auth", "token": "ok"}),
+                    json.dumps({"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}),
+                    json.dumps({"action": "message", "message": "@sidar plan çıkar"}),
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self._messages)
+            except StopIteration:
+                await asyncio.sleep(1.5)
+                raise web_server.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            return None
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    async def _capture_broadcast(room, payload):
+        calls["broadcast"].append((room.room_id, payload))
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+    monkeypatch.setattr(web_server, "_broadcast_room_payload", _capture_broadcast)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+
+    ws = _Ws()
+    await web_server.websocket_chat(ws)
+    await asyncio.sleep(0.05)
+
+    assert any(
+        payload.get("type") == "collaboration_event" and payload.get("event", {}).get("kind") == "status"
+        for _, payload in calls["broadcast"]
+    )
+
+@pytest.mark.asyncio
 async def test_health_check_delegates_to_health_response(monkeypatch):
     expected = web_server.JSONResponse({"status": "ok"}, status_code=200)
 
