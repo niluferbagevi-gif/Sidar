@@ -7393,3 +7393,155 @@ async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_
     assert repos_resp.status_code == 200
     assert b'"full_name":"org/repo-a"' in repos_resp.body
     assert b'"full_name":"org/repo-b"' not in repos_resp.body
+
+
+def test_install_marketplace_plugin_without_persist_does_not_write_state(monkeypatch, tmp_path):
+    entrypoint = tmp_path / "demo_plugin.py"
+    entrypoint.write_text("print('ok')", encoding="utf-8")
+    monkeypatch.setattr(
+        web_server,
+        "PLUGIN_MARKETPLACE_CATALOG",
+        {
+            "demo": {
+                "plugin_id": "demo",
+                "name": "Demo Plugin",
+                "summary": "s",
+                "description": "d",
+                "category": "c",
+                "role_name": "demo_role",
+                "class_name": "DemoAgent",
+                "capabilities": ["x"],
+                "version": "1.0.0",
+                "entrypoint": entrypoint,
+            }
+        },
+    )
+    monkeypatch.setattr(web_server.AgentRegistry, "unregister", lambda *_: True)
+    monkeypatch.setattr(web_server, "_register_plugin_agent", lambda **_: {"role_name": "demo_role"})
+    monkeypatch.setattr(web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+
+    writes: list[dict] = []
+    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {})
+    monkeypatch.setattr(web_server, "_write_plugin_marketplace_state", lambda state: writes.append(state))
+
+    payload = web_server._install_marketplace_plugin("demo", persist=False)
+    assert payload["success"] is True
+    assert writes == []
+
+
+@pytest.mark.asyncio
+async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_system_role(monkeypatch):
+    class _Record:
+        def __init__(self, role_name: str):
+            self.id = 1
+            self.role_name = role_name
+            self.prompt_text = "kept"
+            self.is_active = True
+            self.created_at = web_server.datetime.now(web_server.timezone.utc)
+            self.updated_at = self.created_at
+
+    class _Db:
+        async def upsert_prompt(self, **_kwargs):
+            return _Record("assistant")
+
+        async def activate_prompt(self, _prompt_id):
+            return _Record("assistant")
+
+    agent = SimpleNamespace(system_prompt="do-not-touch", memory=SimpleNamespace(db=_Db()))
+
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
+    upsert = await web_server.admin_upsert_prompt(
+        web_server._PromptUpsertRequest(role_name="assistant", prompt_text="new text", activate=True),
+        _user=SimpleNamespace(role="admin"),
+    )
+    activate = await web_server.admin_activate_prompt(
+        web_server._PromptActivateRequest(prompt_id=1),
+        _user=SimpleNamespace(role="admin"),
+    )
+    assert upsert.status_code == 200
+    assert activate.status_code == 200
+    assert agent.system_prompt == "do-not-touch"
+
+
+@pytest.mark.asyncio
+async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(monkeypatch):
+    async def _sessions_coroutine():
+        return ["s1"]
+
+    class _Memory:
+        active_session_id = None
+
+        def __len__(self):
+            return 0
+
+        def get_all_sessions(self):
+            return _sessions_coroutine()
+
+    class _Docs:
+        doc_count = 3
+
+        def search(self, query, top_k, mode, session_id):
+            return True, {"query": query, "k": top_k, "mode": mode, "session_id": session_id}
+
+        def status(self):
+            return {"ok": True}
+
+    class _Health:
+        def get_gpu_info(self):
+            return {}
+
+        def check_ollama(self):
+            return True
+
+    class _Github:
+        def is_available(self):
+            return True
+
+        def get_pull_request(self, _number):
+            return False, "missing"
+
+    agent = SimpleNamespace(
+        VERSION="1.0.0",
+        cfg=SimpleNamespace(
+            AI_PROVIDER="openai",
+            CODING_MODEL="gpt-x",
+            USE_GPU=False,
+            ACCESS_LEVEL="standard",
+            GPU_INFO={},
+            GPU_COUNT=0,
+            CUDA_VERSION="n/a",
+        ),
+        docs=_Docs(),
+        memory=_Memory(),
+        health=_Health(),
+        github=_Github(),
+        web=SimpleNamespace(is_available=lambda: True),
+        pkg=SimpleNamespace(status=lambda: {"ok": True}),
+    )
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server, "_start_time", 0.0)
+    monkeypatch.setattr(web_server.time, "monotonic", lambda: 5.0)
+    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+
+    async def _inline_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
+
+    status_resp = await web_server.status()
+    pr_detail = await web_server.github_pr_detail(42)
+    rag_resp = await web_server.rag_search("q", mode="auto", top_k=20)
+
+    assert status_resp.status_code == 200
+    assert pr_detail.status_code == 404
+    rag_payload = _decode_json_response(rag_resp)
+    assert rag_payload["success"] is True
+    assert rag_payload["result"]["k"] == 10
