@@ -5837,6 +5837,65 @@ async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_act
     assert any(item.get("error") == "İşlenecek ses verisi bulunamadı." for item in ws.sent)
     assert any(item.get("voice_interruption") == "barge_in" and item.get("cancelled") is True for item in ws.sent)
 
+
+@pytest.mark.asyncio
+async def test_websocket_voice_vad_event_without_voice_pipeline_skips_commit_path(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_end"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            _ = (code, reason)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert any(item.get("voice_state") == "speech_end" for item in ws.sent)
+
 @pytest.mark.asyncio
 async def test_status_uses_coding_model_for_non_gemini_provider(monkeypatch):
     class _Health:
