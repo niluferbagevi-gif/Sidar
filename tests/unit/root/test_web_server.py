@@ -6955,6 +6955,26 @@ async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(
 
 
 @pytest.mark.asyncio
+async def test_git_info_uses_main_and_sidar_defaults_when_git_metadata_missing(monkeypatch):
+    calls: list[list[str]] = []
+
+    async def _to_thread(fn, cmd, cwd):
+        calls.append(cmd)
+        # git komutları başarısız/boş döndüğünde endpoint'in fallback davranışını doğrular.
+        return ""
+
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _to_thread)
+
+    info = await web_server.git_info()
+
+    assert info.status_code == 200
+    assert b'"branch":"main"' in info.body
+    assert b'"default_branch":"main"' in info.body
+    assert b'"repo":"Sidar"' in info.body
+    assert ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"] in calls
+
+
+@pytest.mark.asyncio
 async def test_github_endpoints_cover_error_branches(monkeypatch):
     class _Github:
         repo_name = "org/repo"
