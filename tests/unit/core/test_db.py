@@ -237,6 +237,12 @@ async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -
 
 
 @pytest.mark.asyncio
+async def test_bulk_and_grouped_messages_empty_inputs_return_empty(sqlite_db: Database) -> None:
+    assert await sqlite_db.add_messages_bulk([]) == 0
+    assert await sqlite_db.get_messages_for_sessions(["", "   "]) == {}
+
+
+@pytest.mark.asyncio
 async def test_sqlite_connection_uses_wal_mode(sqlite_db: Database) -> None:
     assert sqlite_db._sqlite_conn is not None
 
@@ -512,6 +518,38 @@ async def test_postgresql_session_ops_with_fake_adapter() -> None:
 
     messages = await db.get_session_messages("s1")
     assert len(messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgresql_bulk_and_grouped_message_paths() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    inserted = await db.add_messages_bulk(
+        [
+            {"session_id": "s1", "role": "user", "content": "one", "tokens_used": 2},
+            {"session_id": "s2", "role": "assistant", "content": "two", "tokens_used": 4},
+            {"session_id": " ", "role": "user", "content": "skip"},
+        ]
+    )
+    assert inserted == 2
+    assert fake_pg.conn.executemany.await_count == 1
+    exec_args = fake_pg.conn.executemany.await_args
+    assert exec_args is not None
+    rows = exec_args.args[1]
+    assert len(rows) == 2
+
+    fake_pg.conn.fetch.return_value = [
+        {"id": 1, "session_id": "s1", "role": "user", "content": "one", "tokens_used": 2, "created_at": "c1"},
+        {"id": 2, "session_id": "s2", "role": "assistant", "content": "two", "tokens_used": 4, "created_at": "c2"},
+    ]
+    grouped = await db.get_messages_for_sessions(["s1", "s2"])
+    assert [m.content for m in grouped["s1"]] == ["one"]
+    assert [m.content for m in grouped["s2"]] == ["two"]
+    assert fake_pg.conn.fetch.await_count == 1
+
+    assert await db.get_messages_for_sessions(["", "   "]) == {}
 
 
 @pytest.mark.asyncio
