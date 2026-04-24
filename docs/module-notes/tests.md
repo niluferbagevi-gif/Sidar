@@ -69,6 +69,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
   3. Sık okunan oturum geçmişleri için Redis/semantic cache katmanını aktif tutun.
   4. Benchmark ölçümünde schema init/bağlantı aç-kapat maliyetini workload dışında tutarak
      gerçek mesajlaşma throughput'unu ayrı izleyin.
+- Doğrulama notu:
+  - SQLite tarafında WAL modu ve `messages(session_id)` indeksinin varlığı
+    `tests/unit/core/test_db.py` içinde güvence altına alınmıştır.
 
 ### GPU eşzamanlılık benchmark notu
 

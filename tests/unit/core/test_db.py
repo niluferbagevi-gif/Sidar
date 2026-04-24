@@ -237,6 +237,39 @@ async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -
 
 
 @pytest.mark.asyncio
+async def test_sqlite_connection_uses_wal_mode(sqlite_db: Database) -> None:
+    assert sqlite_db._sqlite_conn is not None
+
+    def _run() -> str:
+        assert sqlite_db._sqlite_conn is not None
+        row = sqlite_db._sqlite_conn.execute("PRAGMA journal_mode;").fetchone()
+        assert row is not None
+        return str(row[0]).lower()
+
+    mode = await sqlite_db._run_sqlite_op(_run)
+    assert mode == "wal"
+
+
+@pytest.mark.asyncio
+async def test_messages_session_index_exists_in_sqlite_schema(sqlite_db: Database) -> None:
+    assert sqlite_db._sqlite_conn is not None
+
+    def _run() -> list[str]:
+        assert sqlite_db._sqlite_conn is not None
+        rows = sqlite_db._sqlite_conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type='index' AND tbl_name='messages'
+            """
+        ).fetchall()
+        return [str(r["name"]) for r in rows]
+
+    index_names = await sqlite_db._run_sqlite_op(_run)
+    assert "idx_messages_session_id" in index_names
+
+
+@pytest.mark.asyncio
 async def test_create_duplicate_user_raises_integrity_error(sqlite_db: Database) -> None:
     await sqlite_db.create_user("unique_user", password="pw")
     with pytest.raises(sqlite3.IntegrityError):

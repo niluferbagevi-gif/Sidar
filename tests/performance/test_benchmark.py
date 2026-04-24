@@ -49,14 +49,23 @@ def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
     )
 
 
-def test_multi_user_session_message_workload_scales_with_concurrency(benchmark, tmp_path) -> None:
-    """Çoklu kullanıcı + oturum + mesaj yazım iş yükünü benchmark eder ve bütünlüğü doğrular."""
-    users = 20
-    messages_per_session = 8
+@pytest.fixture
+def benchmark_multi_user_db(tmp_path: Path) -> Database:
     cfg = _make_cfg(tmp_path, "benchmark_multi_user_scale.db")
     db = Database(cfg)
     asyncio.run(db.connect())
     asyncio.run(db.init_schema())
+    try:
+        yield db
+    finally:
+        asyncio.run(db.close())
+
+
+def test_multi_user_session_message_workload_scales_with_concurrency(benchmark, benchmark_multi_user_db: Database) -> None:
+    """Çoklu kullanıcı + oturum + mesaj yazım iş yükünü benchmark eder ve bütünlüğü doğrular."""
+    users = 20
+    messages_per_session = 8
+    db = benchmark_multi_user_db
 
     async def _workload(run_id: str) -> int:
         created_users = await asyncio.gather(
@@ -88,8 +97,5 @@ def test_multi_user_session_message_workload_scales_with_concurrency(benchmark, 
         assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
         return sum(len(items) for items in per_session_messages)
 
-    try:
-        total_messages = benchmark(lambda: asyncio.run(_workload(uuid4().hex)))
-        assert total_messages == users * messages_per_session
-    finally:
-        asyncio.run(db.close())
+    total_messages = benchmark(lambda: asyncio.run(_workload(uuid4().hex)))
+    assert total_messages == users * messages_per_session
