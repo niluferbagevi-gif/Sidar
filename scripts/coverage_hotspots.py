@@ -8,7 +8,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import io
 import os
 from dataclasses import dataclass
 from typing import Iterable
@@ -69,12 +68,13 @@ def rank_hotspots(files: Iterable[FileCoverage], top: int = 10) -> list[FileCove
 
 
 def format_table(files: Iterable[FileCoverage]) -> str:
-    buf = io.StringIO()
-    buf.write("| File | Coverage | Missed | Covered |\n")
-    buf.write("|---|---:|---:|---:|\n")
+    lines = [
+        "| File | Coverage | Missed | Covered |",
+        "|---|---:|---:|---:|",
+    ]
     for rec in files:
-        buf.write(f"| {rec.path} | {rec.coverage_pct:.2f}% | {rec.missed} | {rec.covered} |\n")
-    return buf.getvalue().rstrip("\n")
+        lines.append(f"| {rec.path} | {rec.coverage_pct:.2f}% | {rec.missed} | {rec.covered} |")
+    return "\n".join(lines)
 
 
 def main() -> int:
