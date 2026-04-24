@@ -7560,6 +7560,26 @@ async def test_get_client_ip_prefers_x_real_ip_for_trusted_proxy(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_client_ip_trusted_proxy_without_forward_headers_returns_direct_ip(monkeypatch):
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
+    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={})
+    assert web_server._get_client_ip(req) == "127.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_middleware_get_non_io_path_falls_through(monkeypatch):
+    async def _never_limited(*_args, **_kwargs):
+        return False
+
+    async def _next(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_limited)
+    response = await web_server.rate_limit_middleware(_make_request("/docs", "GET"), _next)
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_error(monkeypatch):
     class _Memory:
         async def set_active_user(self, *_):
@@ -7621,6 +7641,131 @@ async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_e
     ws_unexpected = _WsUnexpected()
     await web_server.websocket_chat(ws_unexpected)
     assert any(item.get("error") for item in ws_unexpected.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_closed(monkeypatch):
+    cancelled_flags = {"top_level": False, "room_task": False}
+
+    class _PendingTask:
+        def __init__(self, key: str):
+            self._key = key
+            self._done = False
+
+        def done(self):
+            return self._done
+
+        def cancel(self):
+            cancelled_flags[self._key] = True
+            self._done = True
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.2)
+            yield "first"
+
+        async def _try_multi_agent(self, _prompt):
+            return "ok"
+
+    room = web_server._CollaborationRoom(room_id="team:rejoin")
+    room.active_task = _PendingTask("room_task")
+
+    class _AnyIoClosed(RuntimeError):
+        pass
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "good-token"}
+            self.client = SimpleNamespace(host="127.0.0.1", port=9999)
+            self.sent = []
+            self.messages = iter(
+                [
+                    '{"action":"auth","token":"good-token"}',
+                    '{"action":"message","message":"uzun görev"}',
+                    '{"action":"join_room","room_id":"team:rejoin","display_name":"Ada"}',
+                    '{"action":"message","message":"not düş"}',
+                    '{"action":"message","message":"@sidar planı güncelle"}',
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            try:
+                return next(self.messages)
+            except StopIteration:
+                raise _AnyIoClosed("closed")
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="developer")
+
+    async def _join_room(_ws, **_kwargs):
+        return room
+
+    async def _never_limited(*_a, **_k):
+        return False
+
+    async def _leave(_ws):
+        return None
+
+    original_create_task = asyncio.create_task
+
+    def _create_task_wrapper(coro):
+        task = original_create_task(coro)
+        name = getattr(getattr(coro, "cr_code", None), "co_name", "")
+        if name == "generate_response":
+            original_cancel = task.cancel
+
+            def _cancel():
+                cancelled_flags["top_level"] = True
+                return original_cancel()
+
+            task.cancel = _cancel  # type: ignore[assignment]
+        return task
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_join_collaboration_room", _join_room)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_limited)
+    monkeypatch.setattr(web_server, "_leave_collaboration_room", _leave)
+    monkeypatch.setattr(web_server, "_ANYIO_CLOSED", _AnyIoClosed)
+    monkeypatch.setattr(web_server.asyncio, "create_task", _create_task_wrapper)
+    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "tok")
+    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+    monkeypatch.setattr(web_server, "_collaboration_rooms", {})
+
+    ws = _Ws()
+    room.participants[web_server._socket_key(ws)] = web_server._CollaborationParticipant(
+        websocket=ws,
+        user_id="u1",
+        username="ada",
+        display_name="Ada",
+        role="developer",
+        can_write=True,
+        write_scopes=["room:team:rejoin:write"],
+    )
+    await web_server.websocket_chat(ws)
+
+    assert ws.subprotocol == "good-token"
+    assert cancelled_flags["top_level"] is True
+    assert cancelled_flags["room_task"] is True
 
 
 @pytest.mark.asyncio
