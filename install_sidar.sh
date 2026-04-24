@@ -290,6 +290,53 @@ resolve_windows_localappdata_path() {
     return 1
 }
 
+extract_node_major_from_spec() {
+    local version_spec="${1:-}"
+    local extracted_major=""
+    extracted_major="$(echo "$version_spec" | tr -d '[:space:]' | grep -oE '[0-9]+' | head -n1 || true)"
+    if [[ "$extracted_major" =~ ^[0-9]+$ ]]; then
+        echo "$extracted_major"
+        return 0
+    fi
+    return 1
+}
+
+resolve_target_node_major() {
+    local default_major="20"
+    local nvmrc_path=""
+    local nvmrc_spec=""
+    local major=""
+    local package_path=""
+    local engines_node_spec=""
+
+    for nvmrc_path in "$SCRIPT_DIR/.nvmrc" "$SCRIPT_DIR/web_ui_react/.nvmrc"; do
+        if [[ -f "$nvmrc_path" ]]; then
+            nvmrc_spec="$(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$nvmrc_path" | head -n1 || true)"
+            major="$(extract_node_major_from_spec "$nvmrc_spec" || true)"
+            if [[ -n "$major" ]]; then
+                info "Hedef Node.js sürümü .nvmrc dosyasından algılandı: ${major}.x (${nvmrc_path})"
+                echo "$major"
+                return 0
+            fi
+        fi
+    done
+
+    for package_path in "$SCRIPT_DIR/package.json" "$SCRIPT_DIR/web_ui_react/package.json"; do
+        if [[ -f "$package_path" ]]; then
+            engines_node_spec="$(sed -n 's/.*"node"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$package_path" | head -n1 || true)"
+            major="$(extract_node_major_from_spec "$engines_node_spec" || true)"
+            if [[ -n "$major" ]]; then
+                info "Hedef Node.js sürümü package.json engines.node alanından algılandı: ${major}.x (${package_path})"
+                echo "$major"
+                return 0
+            fi
+        fi
+    done
+
+    info ".nvmrc veya package.json engines.node bulunamadı; Node.js için varsayılan hedef sürüm kullanılacak: ${default_major}.x"
+    echo "$default_major"
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -1656,17 +1703,21 @@ sync_repo() {
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
 install_system_dependencies() {
     step "Temel Sistem Paketlerinin Kurulumu"
+    local node_target_major=""
+    node_target_major="$(resolve_target_node_major)"
+    local node_target_series="node_${node_target_major}.x"
+    local node_brew_formula="node@${node_target_major}"
 
     if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
         info "Linux temel paketleri kuruluyor (tam sistem upgrade atlanır)..."
         local -a ns_source_files=()
-        mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/node_20.x' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
+        mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
         if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
             info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
             local src_file=""
             for src_file in "${ns_source_files[@]}"; do
                 sudo sed -E -i \
-                    's#(deb(\s+\[[^]]+\])?\s+https?://deb\.nodesource\.com/node_20\.x)\s+[[:alnum:]_.-]+\s+main#\1 nodistro main#g' \
+                    "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
                     "$src_file"
             done
         fi
@@ -1681,16 +1732,16 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
             postgresql-client-common postgresql-client
 
-        info "Node.js (v20.x) durumu kontrol ediliyor..."
+        info "Node.js (v${node_target_major}.x) durumu kontrol ediliyor..."
         local node_bin=""
         node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v20"; then
-            ok "Node.js 20.x zaten kurulu: $("$node_bin" -v)"
+        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
+            ok "Node.js ${node_target_major}.x zaten kurulu: $("$node_bin" -v)"
         else
             if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
                 warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
             fi
-            info "Node.js 20.x (NodeSource nodistro) kuruluyor..."
+            info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
             local ns_key_tmp=""
@@ -1703,7 +1754,7 @@ install_system_dependencies() {
                 if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
                     sudo chmod 0644 "$ns_keyring"
                     sudo rm -f "$ns_repo_file"
-                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee "$ns_repo_file" >/dev/null
+                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/${node_target_series} nodistro main" | sudo tee "$ns_repo_file" >/dev/null
                     sudo chmod 0644 "$ns_repo_file"
                     ns_ready=true
                 else
@@ -1759,12 +1810,12 @@ install_system_dependencies() {
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
-            curl wget git zstd node@20 ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+            curl wget git zstd "${node_brew_formula}" ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
         info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
 
-        if brew list node@20 &>/dev/null; then
-            info "Node.js 20 için brew link işlemi deneniyor..."
-            brew link --overwrite --force node@20 >/dev/null 2>&1 || true
+        if brew list "${node_brew_formula}" &>/dev/null; then
+            info "Node.js ${node_target_major} için brew link işlemi deneniyor..."
+            brew link --overwrite --force "${node_brew_formula}" >/dev/null 2>&1 || true
             ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
         fi
 
@@ -2222,11 +2273,13 @@ setup_react_frontend() {
 
     local node_bin=""
     node_bin="$(resolve_native_binary_path node || true)"
+    local node_target_major=""
+    node_target_major="$(resolve_target_node_major)"
     if [[ -n "$node_bin" ]]; then
         NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
-        if [[ "$NODE_MAJOR" -lt 20 ]]; then
-            warn "Node.js sürümü düşük: $("$node_bin" -v). React build için Node.js 20+ önerilir."
-            warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından otomatik ayarlanır)"
+        if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
+            warn "Node.js sürümü düşük: $("$node_bin" -v). React build için Node.js ${node_target_major}+ önerilir."
+            warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından hedef sürüme göre otomatik ayarlanır)"
         else
             ok "Node.js sürümü uygun: $("$node_bin" -v)"
         fi
