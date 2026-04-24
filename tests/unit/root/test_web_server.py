@@ -8404,3 +8404,244 @@ async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypa
     assert ws.subprotocol == "good-token"
     assert any(item.get("type") == "collaboration_event" for item in events)
     assert any(item.get("type") == "assistant_done" and item.get("cancelled") is True for item in events)
+
+
+@pytest.mark.asyncio
+async def test_local_rate_limiter_initializes_lock_when_missing(monkeypatch):
+    monkeypatch.setattr(web_server, "_local_rate_lock", None)
+    web_server._local_rate_limits.clear()
+    assert await web_server._local_is_rate_limited("init-lock", limit=1, window_sec=30) is False
+    assert await web_server._local_is_rate_limited("init-lock", limit=1, window_sec=30) is True
+    assert web_server._local_rate_lock is not None
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_anyio_closed_cancels_active_task(monkeypatch):
+    class _AnyioClosed(Exception):
+        pass
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(10)
+            yield "never"
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "tok"}
+            self.client = SimpleNamespace(host="127.0.0.1")
+            self._calls = 0
+
+        async def accept(self, subprotocol=None):
+            self.subprotocol = subprotocol
+
+        async def receive_text(self):
+            self._calls += 1
+            if self._calls == 1:
+                return '{"action":"message","message":"selam"}'
+            raise _AnyioClosed("closed")
+
+        async def send_json(self, _payload):
+            return None
+
+    cancelled = {"value": False}
+
+    class _FakeTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            cancelled["value"] = True
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada", role="user")
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "_ANYIO_CLOSED", _AnyioClosed)
+    monkeypatch.setattr(
+        web_server.asyncio,
+        "create_task",
+        lambda _coro: (_coro.close(), _FakeTask())[1],
+    )
+
+    await web_server.websocket_chat(_Ws())
+    assert cancelled["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_recommit_cancels_active_task_and_disconnect_waits(monkeypatch):
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "ok", "language": "tr", "provider": "fake"}
+
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            self.enabled = False
+            self.vad_enabled = False
+            self.duplex_enabled = True
+            self.voice_disabled_reason = ""
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=1, output_text_buffer="", last_interrupt_reason="")
+
+        def interrupt_assistant_turn(self, duplex_state, *, reason: str):
+            duplex_state.last_interrupt_reason = reason
+            return {"assistant_turn_id": duplex_state.assistant_turn_id, "reason": reason}
+
+        def should_commit_audio(self, *_args, **_kwargs):
+            return False
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.sent = []
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
+                    {"type": "websocket.receive", "text": '{"action":"start"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {"type": "websocket.receive", "text": '{"action":"commit"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return next(self._packets)
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    async def _slow_stream(*_args, **_kwargs):
+        await asyncio.sleep(0.25)
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", _slow_stream)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+    assert any(item.get("voice_interruption") == "superseded_by_new_turn" for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_health_response_without_dependencies_returns_success(monkeypatch):
+    class _Health:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+    async def _resolve_agent():
+        return SimpleNamespace(cfg=SimpleNamespace(AI_PROVIDER="openai"), health=_Health())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    response = await web_server._health_response(require_dependencies=False)
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
+    class _AnyioClosed(Exception):
+        pass
+
+    class _MultimodalPipeline:
+        def __init__(self, *_):
+            pass
+
+    class _VoicePipeline:
+        def __init__(self, _cfg):
+            self.enabled = False
+            self.vad_enabled = False
+            self.voice_disabled_reason = ""
+
+        def create_duplex_state(self):
+            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+    class _Memory:
+        async def set_active_user(self, *_):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.llm = object()
+            self.memory = _Memory()
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self._packets = iter([{"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'}])
+
+        async def accept(self, subprotocol=None):
+            _ = subprotocol
+
+        async def send_json(self, _payload):
+            return None
+
+        async def receive(self):
+            try:
+                return next(self._packets)
+            except StopIteration:
+                raise _AnyioClosed("closed")
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(*_):
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    voice_module = types.ModuleType("core.voice")
+    voice_module.VoicePipeline = _VoicePipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.setitem(sys.modules, "core.voice", voice_module)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ANYIO_CLOSED", _AnyioClosed)
+
+    await web_server.websocket_voice(_Ws())
