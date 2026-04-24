@@ -258,6 +258,38 @@ resolve_windows_userprofile_path() {
     return 1
 }
 
+resolve_windows_localappdata_path() {
+    local win_localappdata=""
+    local resolved_wsl_path=""
+
+    if command -v cmd.exe &>/dev/null; then
+        win_localappdata=$(cmd.exe /d /c "echo %LocalAppData%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_localappdata" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    if command -v powershell.exe &>/dev/null; then
+        win_localappdata=$(powershell.exe -NoProfile -Command '$env:LocalAppData' 2>/dev/null | tr -d '\r' | tail -n1 || true)
+        resolved_wsl_path="$(windows_path_to_wsl_path "$win_localappdata" || true)"
+        if [[ -n "$resolved_wsl_path" ]]; then
+            echo "$resolved_wsl_path"
+            return 0
+        fi
+    fi
+
+    local userprofile_path=""
+    userprofile_path="$(resolve_windows_userprofile_path 2>/dev/null || true)"
+    if [[ -n "$userprofile_path" && -d "${userprofile_path}/AppData/Local" ]]; then
+        echo "${userprofile_path}/AppData/Local"
+        return 0
+    fi
+
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -4470,6 +4502,7 @@ select_runtime_mode_early() {
 launch_ide() {
     local vscode_mode="none"
     local vscode_target_path="$SCRIPT_DIR"
+    local vscode_exe_path="/mnt/c/Program Files/Microsoft VS Code/Code.exe"
 
     if [[ "$NO_INTERACTION" == true && "$AUTO_OPEN_VSCODE" != "true" ]]; then
         info "--ci/--no-interaction etkin: IDE açma adımı atlandı."
@@ -4484,7 +4517,15 @@ launch_ide() {
             if command -v wslpath &>/dev/null; then
                 vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
             fi
-        elif [[ -x "/mnt/c/Program Files/Microsoft VS Code/Code.exe" ]]; then
+        else
+            local localappdata_path=""
+            localappdata_path="$(resolve_windows_localappdata_path 2>/dev/null || true)"
+            if [[ -n "$localappdata_path" && -x "${localappdata_path}/Programs/Microsoft VS Code/Code.exe" ]]; then
+                vscode_exe_path="${localappdata_path}/Programs/Microsoft VS Code/Code.exe"
+            fi
+        fi
+
+        if [[ -x "$vscode_exe_path" ]]; then
             vscode_mode="windows-code-exe"
             if command -v wslpath &>/dev/null; then
                 vscode_target_path=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
@@ -4514,7 +4555,7 @@ launch_ide() {
                         cmd.exe /c code "$vscode_target_path" >/dev/null 2>&1 || warn "Windows code CLI ile VS Code başlatılamadı."
                         ;;
                     windows-code-exe)
-                        "/mnt/c/Program Files/Microsoft VS Code/Code.exe" "$vscode_target_path" >/dev/null 2>&1 || warn "Code.exe ile VS Code başlatılamadı."
+                        "$vscode_exe_path" "$vscode_target_path" >/dev/null 2>&1 || warn "Code.exe ile VS Code başlatılamadı."
                         ;;
                 esac
                 ;;
