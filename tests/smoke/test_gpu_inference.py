@@ -69,6 +69,36 @@ def _read_gpu_memory_used_mib() -> int | None:
     return sum(values)
 
 
+def _read_gpu_memory_total_mib() -> int | None:
+    """nvidia-smi ile toplam GPU belleğini MiB cinsinden döndürür."""
+    if not is_gpu_available():
+        return None
+    try:
+        output = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    values: list[int] = []
+    for line in output.splitlines():
+        value = line.strip()
+        if not value:
+            continue
+        try:
+            values.append(int(value))
+        except ValueError:
+            continue
+    if not values:
+        return None
+    return sum(values)
+
+
 pytestmark = pytest.mark.skipif(
     not is_gpu_available(),
     reason="Sistemde veya WSL2 katmanında NVIDIA GPU bulunamadı, GPU smoke testi atlanıyor.",

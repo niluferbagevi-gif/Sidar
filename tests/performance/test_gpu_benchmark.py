@@ -47,6 +47,7 @@ _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
     min_value=1,
     max_value=8,
 )
+_NUM_BATCH: int = _gpu_smoke._env_int("GPU_BENCH_NUM_BATCH", 512, min_value=1, max_value=4096)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -65,6 +66,12 @@ _TTFT_BUDGET_S: float = _env_float(
     10.0,
     min_value=0.05,
     max_value=60.0,
+)
+_MAX_VRAM_UTILIZATION: float = _env_float(
+    "GPU_BENCH_MAX_VRAM_UTILIZATION",
+    0.90,
+    min_value=0.50,
+    max_value=0.98,
 )
 
 
@@ -108,14 +115,36 @@ async def _prepare_client(client: OllamaClient) -> None:
     for _ in range(_PREWARM_CONCURRENCY):
         await asyncio.gather(
             *[
-                client.chat(
-                    messages=[{"role": "user", "content": f"{warmup_prompt}-concurrent-{idx}"}],
-                    model=_MODEL,
-                    json_mode=False,
-                )
+                _chat_content(f"{warmup_prompt}-concurrent-{idx}")
                 for idx in range(_PREWARM_CONCURRENCY)
             ]
         )
+
+
+def _ollama_options() -> dict[str, int | float]:
+    """GPU throughput dalgalanmasını azaltmak için tek noktadan Ollama opsiyonları."""
+    return {
+        "temperature": 0.0,
+        "num_gpu": -1,
+        # num_batch, Ollama tarafında mikro-batch davranışını etkiler.
+        # Düşük değerler throughput'u düşürüp tail latency dalgalanmasını artırabilir.
+        "num_batch": _NUM_BATCH,
+    }
+
+
+async def _chat_content(prompt: str) -> str:
+    payload = {
+        "model": _MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": _ollama_options(),
+    }
+    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as http:
+        resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+    return str(data.get("message", {}).get("content", ""))
 
 
 @dataclasses.dataclass(slots=True)
@@ -143,7 +172,7 @@ async def _chat_with_metrics(prompt: str) -> _InferenceMetrics:
         "model": _MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
-        "options": {"temperature": 0.0, "num_gpu": -1},
+        "options": _ollama_options(),
     }
     timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as http:
@@ -167,7 +196,7 @@ async def _first_token_seconds(prompt: str) -> float:
         "model": _MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
-        "options": {"temperature": 0.0, "num_gpu": -1},
+        "options": _ollama_options(),
     }
     timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
     started_at = time.perf_counter()
@@ -211,13 +240,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     prompt = "GPU benchmark: Türkiye'nin başkenti nedir? Tek cümle yanıt ver."
 
     def _single_call() -> str:
-        return asyncio.run(
-            client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                model=_MODEL,
-                json_mode=False,
-            )
-        )
+        return asyncio.run(_chat_content(prompt))
 
     result: str = benchmark.pedantic(
         _single_call,
@@ -260,11 +283,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
         return list(
             await asyncio.gather(
                 *[
-                    client.chat(
-                        messages=[{"role": "user", "content": prompt}],
-                        model=_MODEL,
-                        json_mode=False,
-                    )
+                    _chat_content(prompt)
                     for _ in range(_CONCURRENCY)
                 ]
             )
@@ -325,11 +344,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
         try:
             await asyncio.gather(
                 *[
-                    client.chat(
-                        messages=[{"role": "user", "content": prompt}],
-                        model=_MODEL,
-                        json_mode=False,
-                    )
+                    _chat_content(prompt)
                     for _ in range(_CONCURRENCY)
                 ]
             )
@@ -356,6 +371,14 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
         "Beklenen VRAM kullanımı (>0 MiB) gözlemlenmedi; "
         "GPU aktif olmayabilir veya nvidia-smi yanıt vermedi."
     )
+    total_vram = _gpu_smoke._read_gpu_memory_total_mib()
+    if total_vram is not None:
+        utilization_limit_mib = int(total_vram * _MAX_VRAM_UTILIZATION)
+        assert max(observed_peaks) <= utilization_limit_mib, (
+            "VRAM tepe kullanımı limiti aştı: "
+            f"{max(observed_peaks)} MiB > {utilization_limit_mib} MiB "
+            f"({_MAX_VRAM_UTILIZATION:.0%} of {total_vram} MiB)."
+        )
 
 
 @pytest.mark.benchmark
