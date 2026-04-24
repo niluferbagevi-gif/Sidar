@@ -15,6 +15,10 @@ import jwt
 from pydantic import ValidationError
 from starlette.requests import Request
 
+if "opentelemetry.instrumentation.httpx" not in sys.modules:
+    fake_httpx_mod = SimpleNamespace(HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None))
+    sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
+
 import web_server
 
 
@@ -123,6 +127,68 @@ def test_room_id_normalization_and_validation():
     with pytest.raises(HTTPException):
         web_server._normalize_room_id("<bad>")
 
+
+def test_require_admin_and_metrics_access_paths(monkeypatch):
+    user = SimpleNamespace(id="u1", username="normal", role="user")
+    admin = SimpleNamespace(id="a1", username="default_admin", role="user")
+
+    with pytest.raises(HTTPException):
+        web_server._require_admin_user(user)
+    assert web_server._require_admin_user(admin) is admin
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-123")
+    req = SimpleNamespace(headers={"Authorization": "Bearer metrics-123"})
+    assert web_server._require_metrics_access(req, user) is user
+
+    req_bad = SimpleNamespace(headers={"Authorization": "Bearer nope"})
+    with pytest.raises(HTTPException):
+        web_server._require_metrics_access(req_bad, user)
+    assert web_server._require_metrics_access(req_bad, admin) is admin
+
+
+@pytest.mark.asyncio
+async def test_schedule_access_audit_log_missing_recorder_and_error_paths(monkeypatch):
+    calls = {"created": []}
+
+    class _Loop:
+        def create_task(self, coro):
+            calls["created"].append(asyncio.create_task(coro))
+
+    async def _resolve_without_recorder():
+        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=None)))
+
+    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: _Loop())
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_without_recorder)
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u1", tenant_id="default"),
+        resource_type="rag",
+        action="read",
+        resource_id="*",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+    await asyncio.sleep(0)
+    assert len(calls["created"]) == 1
+
+    async def _resolve_raising():
+        async def _raise(**_kwargs):
+            raise RuntimeError("db down")
+
+        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_raise)))
+
+    debug_logs = []
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_raising)
+    monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+    web_server._schedule_access_audit_log(
+        user=SimpleNamespace(id="u2", tenant_id="default"),
+        resource_type="agents",
+        action="register",
+        resource_id="*",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+    await asyncio.sleep(0)
+    assert any("ACL audit log yazımı atlandı" in line for line in debug_logs)
 
 def test_collaboration_role_and_write_scope_resolution(tmp_path, monkeypatch):
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))

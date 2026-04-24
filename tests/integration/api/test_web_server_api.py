@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
+import sys
 
 import pytest
 import pytest_asyncio
@@ -12,8 +13,14 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from core.db import Database
+
+if "opentelemetry.instrumentation.httpx" not in sys.modules:
+    fake_httpx_mod = SimpleNamespace(HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None))
+    sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
+
 import web_server
 from web_server import app
+from core.llm_client import LLMAPIError
 
 
 class _DbBackedMemory:
@@ -325,3 +332,95 @@ def test_chat_websocket_auth_required_and_missing_token_paths(monkeypatch: pytes
             with client.websocket_connect("/ws/chat") as websocket:
                 websocket.send_json({"action": "auth", "token": ""})
                 websocket.receive_json()
+
+
+@pytest.mark.integration
+def test_chat_websocket_rate_limit_and_cancel_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+    class _Agent:
+        memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.2)
+            yield "late"
+
+    async def _fake_get_agent():
+        return _Agent()
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-user":
+            return SimpleNamespace(id="u1", username="ada", role="user", tenant_id="default")
+        return None
+
+    limiter = {"calls": 0}
+
+    async def _rate_limit_once(*_args, **_kwargs):
+        limiter["calls"] += 1
+        return limiter["calls"] == 1
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limit_once)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat") as websocket:
+            websocket.send_json({"action": "auth", "token": "token-for-user"})
+            assert websocket.receive_json() == {"auth_ok": True}
+
+            websocket.send_json({"message": "rate-limited"})
+            limited = websocket.receive_json()
+            assert limited["done"] is True
+            assert "Hız Sınırı" in limited["chunk"]
+
+            websocket.send_json({"message": "uzun işlem"})
+            websocket.send_json({"action": "cancel"})
+            cancelled = websocket.receive_json()
+            assert cancelled["done"] is True
+            assert "iptal edildi" in cancelled["chunk"]
+
+
+@pytest.mark.integration
+def test_chat_websocket_llm_api_error_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+    class _Agent:
+        memory = _Memory()
+
+        async def respond(self, _msg):
+            raise LLMAPIError("openai", "provider failure", status_code=429, retryable=True)
+            yield ""
+
+    async def _fake_get_agent():
+        return _Agent()
+
+    async def _fake_resolve(_agent, token):
+        if token == "token-for-user":
+            return SimpleNamespace(id="u1", username="ada", role="user", tenant_id="default")
+        return None
+
+    async def _never_rate_limited(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/chat") as websocket:
+            websocket.send_json({"action": "auth", "token": "token-for-user"})
+            assert websocket.receive_json() == {"auth_ok": True}
+            websocket.send_json({"message": "Selam"})
+            event = websocket.receive_json()
+            assert event["done"] is True
+            assert "LLM Hatası" in event["chunk"]
