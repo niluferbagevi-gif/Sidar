@@ -154,6 +154,60 @@ cleanup_test_services() {
 
 trap cleanup_test_services EXIT
 
+run_static_lint_gate() {
+  echo "🧹 Statik analiz quality gate (ruff) çalıştırılıyor..."
+  local lint_targets=()
+  local merge_base=""
+  local diff_base="HEAD"
+
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if git show-ref --verify --quiet refs/remotes/origin/main; then
+      merge_base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+    elif git show-ref --verify --quiet refs/heads/main; then
+      merge_base="$(git merge-base HEAD main 2>/dev/null || true)"
+    elif git show-ref --verify --quiet refs/heads/master; then
+      merge_base="$(git merge-base HEAD master 2>/dev/null || true)"
+    fi
+
+    if [ -n "${merge_base}" ]; then
+      diff_base="${merge_base}"
+    fi
+
+    mapfile -t lint_targets < <(
+      git diff --name-only --diff-filter=ACMRTUXB "${diff_base}"...HEAD \
+        | awk '/\.pyi?$/ {print}'
+    )
+  fi
+
+  if [ "${#lint_targets[@]}" -eq 0 ]; then
+    echo "ℹ️ Lint için değişen Python dosyası bulunamadı; statik analiz adımı atlanıyor."
+    return 0
+  fi
+
+  echo "ℹ️ Ruff yalnızca değişen dosyalarda çalıştırılacak: ${lint_targets[*]}"
+
+  if command -v uv >/dev/null 2>&1; then
+    if ! uv run ruff check "${lint_targets[@]}"; then
+      echo "❌ Ruff lint quality gate başarısız."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    return 0
+  fi
+
+  if command -v ruff >/dev/null 2>&1; then
+    if ! ruff check "${lint_targets[@]}"; then
+      echo "❌ Ruff lint quality gate başarısız."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "⚠️ Ruff bulunamadı; statik analiz adımı atlandı."
+  echo "ℹ️ Öneri: uv sync --extra all --extra dev veya pip install -e \".[all,dev]\""
+}
+
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   if ! python - <<'PY' >/dev/null 2>&1
@@ -263,7 +317,9 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_test_services; then
+if ! run_static_lint_gate; then
+  echo "❌ Backend testleri atlandı: statik analiz quality gate başarısız."
+elif ensure_test_services; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: bağımlı docker servisleri ayağa kaldırılamadı."
