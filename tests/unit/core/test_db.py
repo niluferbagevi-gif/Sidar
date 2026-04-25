@@ -1315,6 +1315,43 @@ async def test_postgresql_policy_audit_and_listing_branches() -> None:
 
 
 @pytest.mark.asyncio
+async def test_postgresql_timestamp_writes_use_datetime_instances() -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+
+    fake_pg.conn.fetchval = AsyncMock(return_value=0)
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            {"id": 1, "role_name": "system", "prompt_text": "p", "version": 1, "is_active": True, "created_at": "c", "updated_at": "u"},
+            {"id": 10, "tenant_id": "t1", "name": "Launch", "channel": "", "objective": "", "status": "active", "owner_user_id": "", "budget": 0.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"},
+            {"id": 11, "campaign_id": 10, "tenant_id": "t1", "asset_type": "post", "title": "hello", "content": "world", "channel": "", "metadata_json": "{}", "created_at": "c", "updated_at": "u"},
+            {"id": 12, "campaign_id": 10, "tenant_id": "t1", "title": "ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"},
+            {"id": 13, "tenant_id": "t1", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "", "suggested_test_path": "", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"},
+            {"id": 14, "task_id": 13, "finding_type": "missing_test", "target_path": "core/db.py", "summary": "line missed", "severity": "medium", "details_json": "{}", "created_at": "c"},
+        ]
+    )
+
+    await db.upsert_prompt("system", "p", activate=True)
+    await db.upsert_access_policy(user_id="u1", tenant_id="default", resource_type="repo", action="read", effect="allow")
+    await db.record_audit_log(user_id="u1", tenant_id="default", action="read", resource="repo/1", ip_address="127.0.0.1", allowed=True)
+    await db.upsert_marketing_campaign(tenant_id="t1", name="Launch", status="ACTIVE")
+    await db.add_content_asset(campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world")
+    await db.add_operation_checklist(tenant_id="t1", title="ops", items=["a"], campaign_id=10)
+    await db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok")
+    await db.add_coverage_finding(task_id=13, finding_type="missing_test", target_path="core/db.py", summary="line missed")
+    await db.create_user("pg-user", role="user", password="pw")
+
+    datetime_args = []
+    for call in fake_pg.conn.execute.await_args_list:
+        datetime_args.extend([arg for arg in call.args[1:] if isinstance(arg, datetime)])
+    for call in fake_pg.conn.fetchrow.await_args_list:
+        datetime_args.extend([arg for arg in call.args[1:] if isinstance(arg, datetime)])
+
+    assert datetime_args
+
+
+@pytest.mark.asyncio
 async def test_postgresql_listing_without_optional_filters() -> None:
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()

@@ -169,6 +169,18 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _utc_now_pair() -> tuple[datetime, str]:
+    now_dt = datetime.now(timezone.utc)
+    return now_dt, now_dt.isoformat()
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _hash_password(password: str, salt: Optional[str] = None) -> str:
     real_salt = salt or secrets.token_hex(16)
     # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
@@ -1142,7 +1154,7 @@ class Database:
         if not role or not text:
             raise ValueError("role_name ve prompt_text boş olamaz")
 
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -1152,7 +1164,7 @@ class Database:
                 )
                 new_version = int(current_version or 0) + 1
                 if activate:
-                    await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now)
+                    await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now_dt)
                 row = await conn.fetchrow(
                     """
                     INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
@@ -1163,8 +1175,8 @@ class Database:
                     text,
                     new_version,
                     activate,
-                    now,
-                    now,
+                    now_dt,
+                    now_dt,
                 )
             return PromptRecord(
                 id=int(row["id"]),
@@ -1226,7 +1238,7 @@ class Database:
         if target_id <= 0:
             return None
 
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -1237,8 +1249,8 @@ class Database:
                 if not row:
                     return None
                 role = str(row["role_name"])
-                await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now)
-                await conn.execute("UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1", target_id, now)
+                await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now_dt)
+                await conn.execute("UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1", target_id, now_dt)
             return await self.get_active_prompt(role)
 
         assert self._sqlite_conn is not None
@@ -1498,8 +1510,7 @@ class Database:
         return await self._run_sqlite_op(_run)
     async def create_user(self, username: str, role: str = "user", password: Optional[str] = None, tenant_id: str = "default") -> UserRecord:
         user_id = _new_entity_id()
-        created_at_dt = datetime.now(timezone.utc)
-        created_at = created_at_dt.isoformat()
+        created_at_dt, created_at = _utc_now_pair()
         password_hash = _hash_password(password) if password else None
 
         if self._backend == "postgresql":
@@ -1512,7 +1523,7 @@ class Database:
                     password_hash,
                     role,
                     tenant_id,
-                    created_at,
+                    created_at_dt,
                 )
             return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
 
@@ -1790,7 +1801,7 @@ class Database:
         action: str,
         effect: str = "allow",
     ) -> None:
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         tenant = (tenant_id or "default").strip() or "default"
         r_type = (resource_type or "").strip().lower()
         r_id = (resource_id or "*").strip() or "*"
@@ -1817,7 +1828,7 @@ class Database:
                     r_id,
                     act,
                     eff,
-                    now,
+                    now_dt,
                 )
             return
 
@@ -1879,6 +1890,7 @@ class Database:
         timestamp: Optional[str] = None,
     ) -> None:
         event_time = (timestamp or _utc_now_iso()).strip() or _utc_now_iso()
+        event_time_dt = _parse_iso_datetime(event_time)
         tenant = (tenant_id or "default").strip() or "default"
         user = (user_id or "").strip()
         act = (action or "").strip().lower()
@@ -1901,7 +1913,7 @@ class Database:
                     res,
                     ip,
                     bool(allowed),
-                    event_time,
+                    event_time_dt,
                 )
             return
 
@@ -2016,7 +2028,7 @@ class Database:
         campaign_name = (name or "").strip()
         if not campaign_name:
             raise ValueError("campaign name is required")
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         normalized_status = (status or "draft").strip().lower() or "draft"
         metadata_json = _json_dumps(metadata or {})
         if self._backend == "postgresql":
@@ -2040,7 +2052,7 @@ class Database:
                         (owner_user_id or "").strip(),
                         float(budget or 0.0),
                         metadata_json,
-                        now,
+                        now_dt,
                     )
                 else:
                     row = await conn.fetchrow(
@@ -2057,7 +2069,7 @@ class Database:
                         (owner_user_id or "").strip(),
                         float(budget or 0.0),
                         metadata_json,
-                        now,
+                        now_dt,
                     )
             if row is None:
                 raise ValueError("campaign not found")
@@ -2235,7 +2247,7 @@ class Database:
         channel: str = "",
         metadata: Optional[dict[str, Any]] = None,
     ) -> ContentAssetRecord:
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         tenant = (tenant_id or "default").strip() or "default"
         asset_kind = (asset_type or "").strip().lower()
         asset_title = (title or "").strip()
@@ -2259,7 +2271,7 @@ class Database:
                     asset_content,
                     (channel or "").strip(),
                     metadata_json,
-                    now,
+                    now_dt,
                 )
             return ContentAssetRecord(
                 id=int(row["id"]),
@@ -2417,7 +2429,7 @@ class Database:
             text = str(item).strip()
             if text:
                 normalized_items.append(text)
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         items_json = _json_dumps(normalized_items)
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -2434,7 +2446,7 @@ class Database:
                     items_json,
                     (status or "pending").strip().lower() or "pending",
                     (owner_user_id or "").strip(),
-                    now,
+                    now_dt,
                 )
             return OperationChecklistRecord(
                 id=int(row["id"]),
@@ -2573,7 +2585,7 @@ class Database:
         review_payload_json: str = "{}",
     ) -> CoverageTaskRecord:
         tenant = (tenant_id or "default").strip() or "default"
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         if not str(command or "").strip():
             raise ValueError("command is required")
         if self._backend == "postgresql":
@@ -2597,7 +2609,7 @@ class Database:
                     str(target_path or ""),
                     str(suggested_test_path or ""),
                     str(review_payload_json or "{}"),
-                    now,
+                    now_dt,
                 )
             return CoverageTaskRecord(
                 id=int(row["id"]),
@@ -2675,7 +2687,7 @@ class Database:
         severity: str = "medium",
         details: Optional[dict[str, Any]] = None,
     ) -> CoverageFindingRecord:
-        now = _utc_now_iso()
+        now_dt, now = _utc_now_pair()
         if not str(finding_type or "").strip() or not str(summary or "").strip():
             raise ValueError("finding_type and summary are required")
         details_json = _json_dumps(details or {})
@@ -2694,7 +2706,7 @@ class Database:
                     str(summary),
                     str(severity or "medium"),
                     details_json,
-                    now,
+                    now_dt,
                 )
             return CoverageFindingRecord(
                 id=int(row["id"]),
