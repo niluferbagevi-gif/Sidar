@@ -8,7 +8,7 @@ import sys
 import types
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock
 from core.db import (
     Database,
     _parse_asyncpg_affected_rows,
+    _parse_iso_datetime,
     _expires_in,
     _hash_password,
     _json_dumps,
@@ -1516,3 +1517,52 @@ async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
     with pytest.raises(ValueError, match="campaign not found"):
         await db.upsert_marketing_campaign(campaign_id=999_999, tenant_id="t", name="x")
     await db.close()
+
+
+def test_parse_iso_datetime_assumes_utc_for_naive_input() -> None:
+    parsed = _parse_iso_datetime("2026-01-02T03:04:05")
+    assert parsed.tzinfo == timezone.utc
+    assert parsed.isoformat() == "2026-01-02T03:04:05+00:00"
+
+
+def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+
+    monkeypatch.delattr(uuid, "uuid7", raising=False)
+    monkeypatch.delitem(sys.modules, "uuid6", raising=False)
+
+    original_import = builtins.__import__
+
+    def _patched_import(name, *args, **kwargs):
+        if name == "uuid6":
+            raise ModuleNotFoundError("uuid6 unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _patched_import)
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000099"))
+
+    assert _new_entity_id() == "00000000-0000-4000-8000-000000000099"
+
+
+def test_expires_in_uses_default_days_when_no_argument() -> None:
+    now = datetime.now(timezone.utc)
+    expiry = datetime.fromisoformat(_expires_in())
+    assert timedelta(days=6, hours=23, minutes=59) < (expiry - now) < timedelta(days=7, minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(sqlite_db: Database) -> None:
+    token = await sqlite_db.create_auth_token(
+        user_id="missing-user",
+        role="analyst",
+        username="jwt-only",
+        tenant_id="tenant-z",
+        ttl_days=1,
+    )
+
+    resolved = await sqlite_db.get_user_by_token(token.token)
+    assert resolved is not None
+    assert resolved.id == "missing-user"
+    assert resolved.username == "jwt-only"
+    assert resolved.role == "analyst"
+    assert resolved.tenant_id == "tenant-z"
