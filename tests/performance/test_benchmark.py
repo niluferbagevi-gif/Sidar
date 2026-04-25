@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -36,9 +37,24 @@ def test_format_table_handles_large_dataset_quickly(benchmark, large_dataset_row
     assert "module_99/file_09999.py" in output
 
 
-def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
+def _postgresql_benchmark_url() -> str | None:
+    """Benchmark için kullanılacak PostgreSQL URL'sini ortamdan bulur."""
+    candidates = (
+        "SIDAR_BENCHMARK_POSTGRES_URL",
+        "TEST_DATABASE_URL",
+        "DATABASE_URL",
+    )
+    for env_name in candidates:
+        raw = os.getenv(env_name, "").strip()
+        lowered = raw.lower()
+        if lowered.startswith("postgresql://") or lowered.startswith("postgresql+asyncpg://"):
+            return raw
+    return None
+
+
+def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
     return SimpleNamespace(
-        DATABASE_URL=f"sqlite+aiosqlite:///{base_dir / db_name}",
+        DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
         DB_POOL_SIZE=20,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
@@ -49,13 +65,40 @@ def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
     )
 
 
-@pytest.fixture
-def benchmark_multi_user_db(tmp_path: Path) -> tuple[Database, asyncio.AbstractEventLoop]:
-    cfg = _make_cfg(tmp_path, "benchmark_multi_user_scale.db")
+def _benchmark_db_variants() -> list[object]:
+    variants: list[object] = [
+        pytest.param("sqlite", id="sqlite"),
+    ]
+    if _postgresql_benchmark_url():
+        variants.append(pytest.param("postgresql", id="postgresql"))
+    return variants
+
+
+@pytest.fixture(params=_benchmark_db_variants())
+def benchmark_multi_user_db(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> tuple[Database, asyncio.AbstractEventLoop]:
+    backend = request.param
+    if backend == "postgresql":
+        pg_url = _postgresql_benchmark_url()
+        if not pg_url:
+            pytest.skip("PostgreSQL benchmark URL bulunamadı.")
+        database_url = pg_url
+    else:
+        database_url = f"sqlite+aiosqlite:///{tmp_path / 'benchmark_multi_user_scale.db'}"
+
+    cfg = _make_cfg(tmp_path, database_url)
     db = Database(cfg)
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(db.connect())
-    loop.run_until_complete(db.init_schema())
+    try:
+        loop.run_until_complete(db.connect())
+        loop.run_until_complete(db.init_schema())
+    except Exception as exc:
+        loop.close()
+        if backend == "postgresql":
+            pytest.skip(f"PostgreSQL benchmark backend kullanılamadı: {exc}")
+        raise
     try:
         yield db, loop
     finally:
@@ -64,7 +107,8 @@ def benchmark_multi_user_db(tmp_path: Path) -> tuple[Database, asyncio.AbstractE
 
 
 def test_multi_user_session_message_workload_scales_with_concurrency(
-    benchmark, benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop]
+    benchmark,
+    benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
 ) -> None:
     """Çoklu kullanıcı + oturum + mesaj yazım iş yükünü benchmark eder ve bütünlüğü doğrular."""
     users = 20
