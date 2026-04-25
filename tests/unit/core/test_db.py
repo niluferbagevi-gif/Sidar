@@ -70,6 +70,27 @@ class FakePgAdapter:
         self.conn.execute.side_effect = ConnectionError("database connection lost")
 
 
+def _set_asyncpg_module(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    create_pool,
+    pool_error_type: type[Exception] | None = None,
+) -> type[Exception]:
+    """Inject a lightweight asyncpg stub into sys.modules for connection tests."""
+    if pool_error_type is None:
+        class _PoolError(Exception):
+            pass
+
+        pool_error_type = _PoolError
+
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=create_pool, PoolError=pool_error_type),
+    )
+    return pool_error_type
+
+
 @pytest.mark.asyncio
 async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
@@ -935,26 +956,22 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     with pytest.raises(RuntimeError, match="asyncpg"):
         await missing_dep._connect_postgresql()
 
-    class _AsyncpgStub:
-        class PoolError(Exception):
-            pass
-
     timeout_db = Database(cfg)
 
     async def _raise_timeout(**_kwargs):
         raise TimeoutError("pool timeout")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_timeout, PoolError=_AsyncpgStub.PoolError))
+    pool_error_type = _set_asyncpg_module(monkeypatch, create_pool=_raise_timeout)
     with pytest.raises(TimeoutError):
         await timeout_db._connect_postgresql()
 
     pool_error_db = Database(cfg)
 
     async def _raise_pool(**_kwargs):
-        raise _AsyncpgStub.PoolError("pool is down")
+        raise pool_error_type("pool is down")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_pool, PoolError=_AsyncpgStub.PoolError))
-    with pytest.raises(_AsyncpgStub.PoolError):
+    _set_asyncpg_module(monkeypatch, create_pool=_raise_pool, pool_error_type=pool_error_type)
+    with pytest.raises(pool_error_type):
         await pool_error_db._connect_postgresql()
 
     generic_db = Database(cfg)
@@ -962,7 +979,7 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     async def _raise_generic(**_kwargs):
         raise RuntimeError("connection failed")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_generic, PoolError=_AsyncpgStub.PoolError))
+    _set_asyncpg_module(monkeypatch, create_pool=_raise_generic, pool_error_type=pool_error_type)
     with pytest.raises(RuntimeError, match="connection failed"):
         await generic_db._connect_postgresql()
 
@@ -1217,7 +1234,7 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
     assert tasks
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="function")
 async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
     sqlite_db: Database, caplog: pytest.LogCaptureFixture
 ) -> None:

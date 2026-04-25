@@ -154,6 +154,31 @@ cleanup_test_services() {
 
 trap cleanup_test_services EXIT
 
+run_static_lint_gate() {
+  echo "🧹 Statik analiz quality gate (ruff) çalıştırılıyor..."
+
+  if command -v uv >/dev/null 2>&1; then
+    if ! uv run ruff check .; then
+      echo "❌ Ruff lint quality gate başarısız."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    return 0
+  fi
+
+  if command -v ruff >/dev/null 2>&1; then
+    if ! ruff check .; then
+      echo "❌ Ruff lint quality gate başarısız."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "⚠️ Ruff bulunamadı; statik analiz adımı atlandı."
+  echo "ℹ️ Öneri: uv sync --extra all --extra dev veya pip install -e \".[all,dev]\""
+}
+
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   if ! python - <<'PY' >/dev/null 2>&1
@@ -263,7 +288,9 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_test_services; then
+if ! run_static_lint_gate; then
+  echo "❌ Backend testleri atlandı: statik analiz quality gate başarısız."
+elif ensure_test_services; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: bağımlı docker servisleri ayağa kaldırılamadı."
