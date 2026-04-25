@@ -81,6 +81,17 @@ class FailingCloseRedis:
         self.closed = True
 
 
+class AwaitableCloseRedis:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self):
+        async def _close() -> None:
+            self.closed = True
+
+        return _close()
+
+
 @pytest.fixture
 def bus() -> AgentEventBus:
     return AgentEventBus()
@@ -452,6 +463,12 @@ def test_cleanup_redis_handles_cancel_and_close() -> None:
 
     bus._redis_client = FailingCloseRedis()
     asyncio.run(bus._cleanup_redis())
+    assert bus._redis_client is None
+
+    redis_with_awaitable_close = AwaitableCloseRedis()
+    bus._redis_client = redis_with_awaitable_close
+    asyncio.run(bus._cleanup_redis())
+    assert redis_with_awaitable_close.closed is True
     assert bus._redis_client is None
 
 

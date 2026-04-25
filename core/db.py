@@ -322,7 +322,7 @@ class Database:
                     SELECT {columns}
                     FROM messages
                     WHERE session_id = ANY($1::text[])
-                    ORDER BY session_id ASC, id ASC
+                    ORDER BY session_id ASC, created_at ASC, id ASC
                     """,
                     normalized_ids,
                 )
@@ -338,7 +338,7 @@ class Database:
                 SELECT {columns}
                 FROM messages
                 WHERE session_id IN ({placeholders})
-                ORDER BY session_id ASC, id ASC
+                ORDER BY session_id ASC, created_at ASC, id ASC
                 """,
                 normalized_ids,
             )

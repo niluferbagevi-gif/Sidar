@@ -694,6 +694,9 @@ async def test_postgresql_bulk_and_grouped_message_paths() -> None:
     assert [m.content for m in grouped["s1"]] == ["one"]
     assert [m.content for m in grouped["s2"]] == ["two"]
     assert fake_pg.conn.fetch.await_count == 1
+    fetch_args = fake_pg.conn.fetch.await_args
+    assert fetch_args is not None
+    assert "ORDER BY session_id ASC, created_at ASC, id ASC" in fetch_args.args[0]
 
     assert await db.get_messages_for_sessions(["", "   "]) == {}
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import os
@@ -242,8 +243,15 @@ class AgentEventBus:
 
         if self._redis_client is not None:
             with contextlib.suppress(Exception):
-                closer = getattr(self._redis_client, "aclose", None) or self._redis_client.close
-                await closer()
+                close_async = getattr(self._redis_client, "aclose", None)
+                if callable(close_async):
+                    await close_async()
+                else:
+                    close_sync = getattr(self._redis_client, "close", None)
+                    if callable(close_sync):
+                        maybe_awaitable = close_sync()
+                        if inspect.isawaitable(maybe_awaitable):
+                            await maybe_awaitable
         self._redis_client = None
         self._redis_loop = None
 
