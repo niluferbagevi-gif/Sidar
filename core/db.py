@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import sqlite3
 import uuid
@@ -234,6 +235,15 @@ class Database:
 
         self._configure_backend()
 
+    @property
+    def _sqlite_lock(self) -> Optional[asyncio.Lock]:
+        """Geriye dönük uyumluluk için eski kilit adı."""
+        return self._sqlite_write_lock
+
+    @_sqlite_lock.setter
+    def _sqlite_lock(self, value: Optional[asyncio.Lock]) -> None:
+        self._sqlite_write_lock = value
+
     def _configure_backend(self) -> None:
         lowered = self.database_url.lower()
         if lowered.startswith("postgresql://") or lowered.startswith("postgresql+asyncpg://"):
@@ -382,7 +392,10 @@ class Database:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
-                async with conn.transaction():
+                tx_ctx = conn.transaction()
+                if inspect.isawaitable(tx_ctx):
+                    tx_ctx = await tx_ctx
+                async with tx_ctx:
                     yield conn
             return
 
@@ -3151,7 +3164,10 @@ class Database:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
-                async with conn.transaction():
+                tx_ctx = conn.transaction()
+                if inspect.isawaitable(tx_ctx):
+                    tx_ctx = await tx_ctx
+                async with tx_ctx:
                     await conn.execute("DELETE FROM messages WHERE session_id=$1", session_id)
                     for item in normalized_messages:
                         await conn.execute(
