@@ -205,8 +205,11 @@ def test_apply_gpu_memory_safety_check_second_scale_branch(monkeypatch):
 
     config.Config._apply_gpu_memory_safety_check()
 
-    assert config.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(0.043, rel=1e-3)
-    assert config.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(0.757, rel=1e-3)
+    assert config.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(0.0433, rel=1e-3)
+    assert config.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(0.7567, rel=1e-3)
+    assert (
+        config.Config.LLM_GPU_MEMORY_FRACTION + config.Config.RAG_GPU_MEMORY_FRACTION
+    ) == pytest.approx(0.8, rel=1e-3)
     assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
 
 
