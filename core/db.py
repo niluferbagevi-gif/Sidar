@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import logging
 import sqlite3
@@ -13,7 +12,8 @@ import jwt
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
+from contextlib import asynccontextmanager
 
 from config import Config
 
@@ -358,11 +358,53 @@ class Database:
             try:
                 return await asyncio.to_thread(operation)
             except Exception:
-                # Hata durumunda açık transaction'ı geri al; aksi halde aynı bağlantıda
-                # sonraki çağrılar beklenmedik yarım-kalmış değişiklikler görebilir.
-                with contextlib.suppress(Exception):
+                # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa
+                # hatayı yutmak yerine üst katmana açıkça bildir.
+                try:
                     await asyncio.to_thread(self._sqlite_conn.rollback)
+                except Exception as rollback_exc:
+                    logger.exception(
+                        "SQLite rollback başarısız oldu; veri bütünlüğü riske girebilir."
+                    )
+                    raise RuntimeError(
+                        "SQLite işlemi ve rollback başarısız oldu."
+                    ) from rollback_exc
                 raise
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        """Backend bağımsız transaction context manager.
+
+        Kullanım:
+            async with db.transaction() as conn:
+                ...
+        """
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                async with conn.transaction():
+                    yield conn
+            return
+
+        if self._sqlite_conn is None:
+            raise RuntimeError("SQLite bağlantısı başlatılmadı.")
+        running_loop = asyncio.get_running_loop()
+        if self._sqlite_write_lock is None:
+            self._sqlite_write_lock = asyncio.Lock()
+        else:
+            lock_loop = getattr(self._sqlite_write_lock, "_loop", None)
+            if lock_loop is not None and lock_loop is not running_loop:
+                self._sqlite_write_lock = asyncio.Lock()
+
+        async with self._sqlite_write_lock:
+            await asyncio.to_thread(self._sqlite_conn.execute, "BEGIN")
+            try:
+                yield self._sqlite_conn
+            except Exception:
+                await asyncio.to_thread(self._sqlite_conn.rollback)
+                raise
+            else:
+                await asyncio.to_thread(self._sqlite_conn.commit)
 
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
@@ -3057,9 +3099,8 @@ class Database:
         if not prepared:
             return 0
 
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
+        async with self.transaction() as conn:
+            if self._backend == "postgresql":
                 await conn.executemany(
                     """
                     INSERT INTO messages (session_id, role, content, tokens_used, created_at)
@@ -3067,20 +3108,16 @@ class Database:
                     """,
                     [(s, r, c, t, dt) for s, r, c, t, dt, _iso in prepared],
                 )
-            return len(prepared)
+                return len(prepared)
 
-        assert self._sqlite_conn is not None
+            def _run() -> int:
+                conn.executemany(
+                    "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                    [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
+                )
+                return len(prepared)
 
-        def _run() -> int:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.executemany(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
-            )
-            self._sqlite_conn.commit()
-            return len(prepared)
-
-        return await self._run_sqlite_op(_run)
+            return await asyncio.to_thread(_run)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
         return [self._to_message_record(r) for r in await self._fetch_message_rows_by_session_ids([session_id])]
