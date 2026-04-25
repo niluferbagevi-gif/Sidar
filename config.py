@@ -686,14 +686,14 @@ class Config:
         rag = float(cls.RAG_GPU_MEMORY_FRACTION or 0.0)
         total = llm + rag
 
-        if total <= 1.0:
-            return
-
         target_total = 0.8
         if total <= 0:
             cls.LLM_GPU_MEMORY_FRACTION = 0.4
             cls.RAG_GPU_MEMORY_FRACTION = 0.4
             cls.GPU_MEMORY_FRACTION = target_total
+            return
+
+        if total <= 1.0:
             return
 
         scale = target_total / total

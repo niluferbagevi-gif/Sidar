@@ -186,6 +186,30 @@ def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypat
     assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
 
 
+def test_apply_gpu_memory_safety_check_resets_when_total_is_non_positive(monkeypatch):
+    monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", -0.4)
+    monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.0)
+    monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)
+
+    config.Config._apply_gpu_memory_safety_check()
+
+    assert config.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(0.4)
+    assert config.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(0.4)
+    assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8)
+
+
+def test_apply_gpu_memory_safety_check_second_scale_branch(monkeypatch):
+    monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", -0.1)
+    monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 1.2)
+    monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)
+
+    config.Config._apply_gpu_memory_safety_check()
+
+    assert config.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(0.043, rel=1e-3)
+    assert config.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(0.757, rel=1e-3)
+    assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
+
+
 def test_validate_critical_settings_exits_in_production_without_memory_key(monkeypatch):
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
     monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None))
