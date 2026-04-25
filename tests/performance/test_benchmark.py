@@ -178,7 +178,9 @@ def test_user_registration_password_hash_cpu_cost(
     user_id = benchmark.pedantic(
         _run_once,
         warmup_rounds=1,
-        rounds=5,
+        # PBKDF2 (600k iterasyon) CPU-bound olduğu için çok uzun rounds
+        # değeri PostgreSQL koşularında testin takılmış gibi görünmesine neden oluyor.
+        rounds=2,
         iterations=1,
     )
     assert isinstance(user_id, str) and bool(user_id.strip())
