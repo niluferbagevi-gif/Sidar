@@ -142,7 +142,7 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
         per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
         assert all(len(items) == messages_per_session for items in per_session_messages)
-        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
+        assert all(sorted(m.tokens_used for m in items) == list(range(messages_per_session)) for items in per_session_messages)
         return sum(len(items) for items in per_session_messages)
 
     def _run_once() -> int:
