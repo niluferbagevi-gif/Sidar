@@ -155,3 +155,61 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         iterations=1,
     )
     assert total_messages == users * messages_per_session
+
+
+def test_user_registration_password_hash_cpu_cost(
+    benchmark,
+    benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
+) -> None:
+    """PBKDF2 maliyetini içeren kullanıcı kayıt akışını benchmark eder."""
+    db, loop = benchmark_multi_user_db
+
+    def _run_once() -> str:
+        username = f"bench-reg-{uuid4().hex}"
+        user = loop.run_until_complete(
+            db.register_user(
+                username=username,
+                password="benchmark-password-123!",
+                tenant_id="benchmark-tenant",
+            )
+        )
+        return user.id
+
+    user_id = benchmark.pedantic(
+        _run_once,
+        warmup_rounds=1,
+        rounds=5,
+        iterations=1,
+    )
+    assert isinstance(user_id, str) and bool(user_id.strip())
+
+
+def test_user_authentication_password_verify_cpu_cost(
+    benchmark,
+    benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
+) -> None:
+    """PBKDF2 doğrulama maliyetini ölçmek için login akışını benchmark eder."""
+    db, loop = benchmark_multi_user_db
+    username = f"bench-auth-{uuid4().hex}"
+    password = "benchmark-password-123!"
+
+    created = loop.run_until_complete(
+        db.register_user(
+            username=username,
+            password=password,
+            tenant_id="benchmark-tenant",
+        )
+    )
+    assert created.id
+
+    def _run_once() -> str | None:
+        user = loop.run_until_complete(db.authenticate_user(username, password))
+        return None if user is None else user.id
+
+    authenticated_user_id = benchmark.pedantic(
+        _run_once,
+        warmup_rounds=1,
+        rounds=5,
+        iterations=1,
+    )
+    assert authenticated_user_id == created.id
