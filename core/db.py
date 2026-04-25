@@ -255,6 +255,59 @@ class Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._sqlite_path = path
 
+    @staticmethod
+    def _message_columns_sql() -> str:
+        return "id, session_id, role, content, tokens_used, created_at"
+
+    @staticmethod
+    def _to_message_record(row: Any) -> MessageRecord:
+        return MessageRecord(
+            id=int(row["id"]),
+            session_id=str(row["session_id"]),
+            role=str(row["role"]),
+            content=str(row["content"]),
+            tokens_used=int(row["tokens_used"]),
+            created_at=str(row["created_at"]),
+        )
+
+    async def _fetch_message_rows_by_session_ids(self, session_ids: list[str]) -> list[Any]:
+        normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
+        if not normalized_ids:
+            return []
+
+        columns = self._message_columns_sql()
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT {columns}
+                    FROM messages
+                    WHERE session_id = ANY($1::text[])
+                    ORDER BY session_id ASC, id ASC
+                    """,
+                    normalized_ids,
+                )
+            return list(rows)
+
+        assert self._sqlite_conn is not None
+        placeholders = ",".join(["?"] * len(normalized_ids))
+
+        def _run() -> list[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                f"""
+                SELECT {columns}
+                FROM messages
+                WHERE session_id IN ({placeholders})
+                ORDER BY session_id ASC, id ASC
+                """,
+                normalized_ids,
+            )
+            return cur.fetchall()
+
+        return await self._run_sqlite_op(_run, write=False)
+
     async def connect(self) -> None:
         if self._backend == "postgresql":
             await self._connect_postgresql()
@@ -3030,95 +3083,18 @@ class Database:
         return await self._run_sqlite_op(_run)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, session_id, role, content, tokens_used, created_at FROM messages WHERE session_id=$1 ORDER BY id ASC",
-                    session_id,
-                )
-            return [
-                MessageRecord(
-                    id=int(r["id"]),
-                    session_id=str(r["session_id"]),
-                    role=str(r["role"]),
-                    content=str(r["content"]),
-                    tokens_used=int(r["tokens_used"]),
-                    created_at=str(r["created_at"]),
-                )
-                for r in rows
-            ]
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> list[sqlite3.Row]:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                "SELECT id, session_id, role, content, tokens_used, created_at FROM messages WHERE session_id=? ORDER BY id ASC",
-                (session_id,),
-            )
-            return cur.fetchall()
-
-        rows = await self._run_sqlite_op(_run, write=False)
-        return [
-            MessageRecord(
-                id=int(r["id"]),
-                session_id=str(r["session_id"]),
-                role=str(r["role"]),
-                content=str(r["content"]),
-                tokens_used=int(r["tokens_used"]),
-                created_at=str(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [self._to_message_record(r) for r in await self._fetch_message_rows_by_session_ids([session_id])]
 
     async def get_messages_for_sessions(self, session_ids: list[str]) -> dict[str, list[MessageRecord]]:
         """Birden çok oturumun mesajlarını tek sorguda getirir."""
         normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
         if not normalized_ids:
             return {}
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, session_id, role, content, tokens_used, created_at
-                    FROM messages
-                    WHERE session_id = ANY($1::text[])
-                    ORDER BY session_id ASC, id ASC
-                    """,
-                    normalized_ids,
-                )
-        else:
-            assert self._sqlite_conn is not None
-            placeholders = ",".join(["?"] * len(normalized_ids))
-
-            def _run() -> list[sqlite3.Row]:
-                assert self._sqlite_conn is not None
-                cur = self._sqlite_conn.execute(
-                    f"""
-                    SELECT id, session_id, role, content, tokens_used, created_at
-                    FROM messages
-                    WHERE session_id IN ({placeholders})
-                    ORDER BY session_id ASC, id ASC
-                    """,
-                    normalized_ids,
-                )
-                return cur.fetchall()
-
-            rows = await self._run_sqlite_op(_run, write=False)
+        rows = await self._fetch_message_rows_by_session_ids(normalized_ids)
 
         grouped: dict[str, list[MessageRecord]] = {session_id: [] for session_id in normalized_ids}
         for r in rows:
-            record = MessageRecord(
-                id=int(r["id"]),
-                session_id=str(r["session_id"]),
-                role=str(r["role"]),
-                content=str(r["content"]),
-                tokens_used=int(r["tokens_used"]),
-                created_at=str(r["created_at"]),
-            )
+            record = self._to_message_record(r)
             grouped.setdefault(record.session_id, []).append(record)
         return grouped
 
