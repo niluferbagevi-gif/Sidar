@@ -6,6 +6,7 @@ import importlib.util
 import sqlite3
 import sys
 import types
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -15,9 +16,11 @@ from unittest.mock import AsyncMock
 
 from core.db import (
     Database,
+    _parse_asyncpg_affected_rows,
     _expires_in,
     _hash_password,
     _json_dumps,
+    _new_entity_id,
     _quote_sql_identifier,
     _utc_now_iso,
     _verify_password,
@@ -171,6 +174,27 @@ def test_helper_functions_basic_contracts() -> None:
 
     assert _quote_sql_identifier("schema_versions") == '"schema_versions"'
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+
+
+@pytest.mark.parametrize(
+    ("command_tag", "expected"),
+    [
+        ("UPDATE 1", 1),
+        ("DELETE 0", 0),
+        ("INSERT 0 15", 15),
+        ("", 0),
+        (None, 0),
+        ("UNKNOWN", 0),
+    ],
+)
+def test_parse_asyncpg_affected_rows(command_tag, expected: int) -> None:
+    assert _parse_asyncpg_affected_rows(command_tag) == expected
+
+
+def test_new_entity_id_returns_valid_uuid() -> None:
+    generated = _new_entity_id()
+    parsed = uuid.UUID(generated)
+    assert str(parsed) == generated
 
 
 @pytest.mark.parametrize("identifier", ["", "1abc", "bad-name", "bad space"])

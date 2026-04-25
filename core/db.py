@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import logging
+import re
 import sqlite3
 import uuid
 import secrets
@@ -20,6 +21,7 @@ from config import Config
 
 
 logger = logging.getLogger(__name__)
+_ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
 
 
 @dataclass
@@ -202,6 +204,32 @@ def _json_dumps(payload: Any) -> str:
     import json
 
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _new_entity_id() -> str:
+    """Tercihen zaman-sıralı UUID üretir; bulunamazsa UUIDv4'e geri döner."""
+    uuid7_builtin = getattr(uuid, "uuid7", None)
+    if callable(uuid7_builtin):
+        return str(uuid7_builtin())
+
+    try:
+        from uuid6 import uuid7 as uuid7_external  # type: ignore[import-not-found]
+
+        return str(uuid7_external())
+    except Exception:
+        return str(uuid.uuid4())
+
+
+def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
+    """asyncpg command tag çıktısından etkilenen satır sayısını güvenle döndürür."""
+    text = str(command_tag or "").strip()
+    match = _ASYNCPG_COMMAND_TAG_COUNT_RE.search(text)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return 0
 
 
 class Database:
@@ -1431,12 +1459,7 @@ class Database:
                     now_dt,
                     session_id,
                 )
-            # asyncpg "UPDATE N" veya "UPDATE 0" formatında string döndürür;
-            # endswith("1") 10+ satır güncellemelerinde hatalı False verebilir.
-            try:
-                return int(str(result).split()[-1]) > 0
-            except (ValueError, IndexError, AttributeError):
-                return False
+            return _parse_asyncpg_affected_rows(result) > 0
 
         assert self._sqlite_conn is not None
 
@@ -1459,11 +1482,7 @@ class Database:
                     result = await conn.execute("DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id)
                 else:
                     result = await conn.execute("DELETE FROM sessions WHERE id=$1", session_id)
-            # asyncpg "DELETE N" formatında string döndürür; sayısal parse ile > 0 kontrolü.
-            try:
-                return int(str(result).split()[-1]) > 0
-            except (ValueError, IndexError, AttributeError):
-                return False
+            return _parse_asyncpg_affected_rows(result) > 0
 
         assert self._sqlite_conn is not None
 
@@ -1478,7 +1497,7 @@ class Database:
 
         return await self._run_sqlite_op(_run)
     async def create_user(self, username: str, role: str = "user", password: Optional[str] = None, tenant_id: str = "default") -> UserRecord:
-        user_id = str(uuid.uuid4())
+        user_id = _new_entity_id()
         created_at_dt = datetime.now(timezone.utc)
         created_at = created_at_dt.isoformat()
         password_hash = _hash_password(password) if password else None
@@ -3029,7 +3048,7 @@ class Database:
         }
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
-        session_id = str(uuid.uuid4())
+        session_id = _new_entity_id()
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
 
