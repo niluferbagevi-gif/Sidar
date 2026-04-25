@@ -76,6 +76,12 @@ _MAX_VRAM_UTILIZATION: float = _env_float(
     min_value=0.50,
     max_value=0.98,
 )
+_VRAM_SAMPLE_INTERVAL_S: float = _env_float(
+    "GPU_BENCH_VRAM_SAMPLE_INTERVAL",
+    0.05,
+    min_value=0.01,
+    max_value=0.50,
+)
 
 
 def _require_gpu_stress() -> None:
@@ -364,13 +370,14 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 def test_gpu_vram_peak_under_load(benchmark) -> None:
     """Benchmark döngüsü sırasında GPU VRAM tepe değerini gözlemler ve doğrular.
 
-    Ölçüm: eşzamanlı istek paketi gönderilirken nvidia-smi her 200 ms'de
+    Ölçüm: eşzamanlı istek paketi gönderilirken nvidia-smi varsayılan olarak her 50 ms'de
     bir örneklenir; her tur için tepe değer kaydedilir.
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
+      GPU_BENCH_VRAM_SAMPLE_INTERVAL — VRAM örnekleme aralığı (sn, varsayılan: 0.05)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
@@ -399,7 +406,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
                 reading = _gpu_smoke._read_gpu_memory_used_mib()
                 if reading is not None:
                     round_peak[0] = max(round_peak[0], reading)
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(_VRAM_SAMPLE_INTERVAL_S)
 
         sampler = asyncio.create_task(_sample())
         try:

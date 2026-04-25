@@ -101,5 +101,13 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
         return sum(len(items) for items in per_session_messages)
 
-    total_messages = benchmark(lambda: loop.run_until_complete(_workload(uuid4().hex)))
+    def _run_once() -> int:
+        return loop.run_until_complete(_workload(uuid4().hex))
+
+    total_messages = benchmark.pedantic(
+        _run_once,
+        warmup_rounds=3,
+        rounds=12,
+        iterations=1,
+    )
     assert total_messages == users * messages_per_session

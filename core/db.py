@@ -228,7 +228,7 @@ class Database:
         self._backend = "sqlite"
         self._sqlite_path: Optional[Path] = None
         self._sqlite_conn: Optional[sqlite3.Connection] = None
-        self._sqlite_lock: Optional[asyncio.Lock] = None
+        self._sqlite_write_lock: Optional[asyncio.Lock] = None
 
         self._pg_pool = None
 
@@ -278,22 +278,30 @@ class Database:
 
         self._sqlite_conn = await asyncio.to_thread(_open)
 
-    async def _run_sqlite_op(self, operation):
-        """SQLite işlemlerini tek bağlantı üzerinde sıralı çalıştır (thread-safe).
-        initialize() çağrılmadan bu metot kullanılmamalıdır."""
+    async def _run_sqlite_op(self, operation, *, write: bool = True):
+        """SQLite işlemini çalıştırır.
+
+        Varsayılan davranış yazma işlemlerini tek bir kilit ile sıralamaktır.
+        Sadece-okuma çağrılarında `write=False` verilerek gereksiz lock contention
+        azaltılabilir.
+        """
         if self._sqlite_conn is None:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
         running_loop = asyncio.get_running_loop()
-        if self._sqlite_lock is None:
-            self._sqlite_lock = asyncio.Lock()
+        if self._sqlite_write_lock is None:
+            self._sqlite_write_lock = asyncio.Lock()
         else:
-            lock_loop = getattr(self._sqlite_lock, "_loop", None)
+            lock_loop = getattr(self._sqlite_write_lock, "_loop", None)
             if lock_loop is not None and lock_loop is not running_loop:
                 logger.warning(
                     "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
                 )
-                self._sqlite_lock = asyncio.Lock()
-        async with self._sqlite_lock:
+                self._sqlite_write_lock = asyncio.Lock()
+
+        if not write:
+            return await asyncio.to_thread(operation)
+
+        async with self._sqlite_write_lock:
             try:
                 return await asyncio.to_thread(operation)
             except Exception:
@@ -345,7 +353,7 @@ class Database:
         if self._sqlite_conn is not None:
             conn = self._sqlite_conn
             self._sqlite_conn = None
-            self._sqlite_lock = None
+            self._sqlite_write_lock = None
             await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
@@ -920,7 +928,7 @@ class Database:
             )
             return cur.fetchall()
 
-        rows = await self._run_sqlite_op(_run)
+        rows = await self._run_sqlite_op(_run, write=False)
         return [
             PromptRecord(
                 id=int(r["id"]),
@@ -1239,7 +1247,7 @@ class Database:
             )
             return cur.fetchall()
 
-        rows = await self._run_sqlite_op(_run)
+        rows = await self._run_sqlite_op(_run, write=False)
         return [
             SessionRecord(
                 id=str(r["id"]),
@@ -1629,7 +1637,7 @@ class Database:
                     (user_id,),
                 )
             return cur.fetchall()
-        rows = await self._run_sqlite_op(_run)
+        rows = await self._run_sqlite_op(_run, write=False)
         return [
             AccessPolicyRecord(
                 id=int(r["id"]),
@@ -1849,7 +1857,7 @@ class Database:
                 )
             return cur.fetchall()
 
-        rows = await self._run_sqlite_op(_run)
+        rows = await self._run_sqlite_op(_run, write=False)
         return [
             AuditLogRecord(
                 id=int(r["id"]),
@@ -2071,7 +2079,7 @@ class Database:
                     )
                 return cur.fetchall()
 
-            rows = await self._run_sqlite_op(_run)
+            rows = await self._run_sqlite_op(_run, write=False)
         return [
             MarketingCampaignRecord(
                 id=int(row["id"]),
@@ -2237,7 +2245,7 @@ class Database:
                     )
                 return cur.fetchall()
 
-            rows = await self._run_sqlite_op(_run)
+            rows = await self._run_sqlite_op(_run, write=False)
         return [
             ContentAssetRecord(
                 id=int(row["id"]),
@@ -2409,7 +2417,7 @@ class Database:
                     )
                 return cur.fetchall()
 
-            rows = await self._run_sqlite_op(_run)
+            rows = await self._run_sqlite_op(_run, write=False)
         return [
             OperationChecklistRecord(
                 id=int(row["id"]),
@@ -2670,7 +2678,7 @@ class Database:
                     )
                 return cur.fetchall()
 
-            rows = await self._run_sqlite_op(_run)
+            rows = await self._run_sqlite_op(_run, write=False)
         return [
             CoverageTaskRecord(
                 id=int(row["id"]),
@@ -3051,7 +3059,7 @@ class Database:
             )
             return cur.fetchall()
 
-        rows = await self._run_sqlite_op(_run)
+        rows = await self._run_sqlite_op(_run, write=False)
         return [
             MessageRecord(
                 id=int(r["id"]),
@@ -3099,7 +3107,7 @@ class Database:
                 )
                 return cur.fetchall()
 
-            rows = await self._run_sqlite_op(_run)
+            rows = await self._run_sqlite_op(_run, write=False)
 
         grouped: dict[str, list[MessageRecord]] = {session_id: [] for session_id in normalized_ids}
         for r in rows:
