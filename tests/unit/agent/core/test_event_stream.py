@@ -92,6 +92,20 @@ class AwaitableCloseRedis:
         return _close()
 
 
+class NonCallableCloseRedis:
+    def __init__(self) -> None:
+        self.close = "not-callable"
+
+
+class NonAwaitableCloseRedis:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> str:
+        self.closed = True
+        return "closed"
+
+
 @pytest.fixture
 def bus() -> AgentEventBus:
     return AgentEventBus()
@@ -478,6 +492,20 @@ def test_cleanup_redis_without_client_or_listener() -> None:
     assert bus._redis_listener_task is None
     assert bus._redis_client is None
     assert bus._redis_loop is None
+
+
+def test_cleanup_redis_handles_non_callable_and_non_awaitable_close() -> None:
+    bus = AgentEventBus()
+
+    bus._redis_client = NonCallableCloseRedis()
+    asyncio.run(bus._cleanup_redis())
+    assert bus._redis_client is None
+
+    redis_with_sync_close = NonAwaitableCloseRedis()
+    bus._redis_client = redis_with_sync_close
+    asyncio.run(bus._cleanup_redis())
+    assert redis_with_sync_close.closed is True
+    assert bus._redis_client is None
 
 
 def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: pytest.MonkeyPatch) -> None:
