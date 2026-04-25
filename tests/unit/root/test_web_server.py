@@ -7736,6 +7736,20 @@ def test_load_plugin_agent_class_rejects_baseagent_itself():
         web_server._load_plugin_agent_class(source, "PluginAgent", "baseagent_alias")
 
 
+
+def test_load_plugin_agent_class_class_name_path_uses_direct_issubclass_branch():
+    source = (
+        "from web_server import BaseAgent\n"
+        "class PluginAgent(BaseAgent):\n"
+        "    ROLE_NAME = 'plugin'\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
+
+    cls = web_server._load_plugin_agent_class(source, "PluginAgent", "plugin_issubclass_mod")
+    assert cls.__name__ == "PluginAgent"
+
+
 @pytest.mark.asyncio
 async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
     class _DB:
