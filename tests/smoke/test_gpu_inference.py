@@ -17,15 +17,22 @@ from tests.helpers import make_test_config
 # Fresh kurulumda installer'ın .env üzerinden hazırladığı model ile hizalı olsun.
 # İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
 MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:3b"
+_NVIDIA_SMI_TIMEOUT_S = 0.4
+
+
+def _nvidia_smi_cmd() -> str | None:
+    """Kullanılabilir nvidia-smi binary yolunu döndürür."""
+    system_bin = shutil.which("nvidia-smi")
+    if system_bin is not None:
+        return system_bin
+    wsl_bin = "/usr/lib/wsl/lib/nvidia-smi"
+    if os.path.exists(wsl_bin):
+        return wsl_bin
+    return None
 
 
 def is_gpu_available() -> bool:
-    if shutil.which("nvidia-smi") is not None:
-        return True
-    # WSL2 özel CUDA yolu kontrolü
-    if os.path.exists("/usr/lib/wsl/lib/nvidia-smi"):
-        return True
-    return False
+    return _nvidia_smi_cmd() is not None
 
 
 def _env_int(name: str, default: int, min_value: int = 1, max_value: int = 256) -> int:
@@ -41,18 +48,20 @@ def _env_int(name: str, default: int, min_value: int = 1, max_value: int = 256) 
 
 def _read_gpu_memory_used_mib() -> int | None:
     """nvidia-smi ile toplam kullanılan GPU belleğini MiB cinsinden döndürür."""
-    if not is_gpu_available():
+    nvidia_smi = _nvidia_smi_cmd()
+    if nvidia_smi is None:
         return None
     try:
         output = subprocess.check_output(
             [
-                "nvidia-smi",
+                nvidia_smi,
                 "--query-gpu=memory.used",
                 "--format=csv,noheader,nounits",
             ],
             text=True,
+            timeout=_NVIDIA_SMI_TIMEOUT_S,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
         return None
 
     values: list[int] = []
@@ -71,18 +80,20 @@ def _read_gpu_memory_used_mib() -> int | None:
 
 def _read_gpu_memory_total_mib() -> int | None:
     """nvidia-smi ile toplam GPU belleğini MiB cinsinden döndürür."""
-    if not is_gpu_available():
+    nvidia_smi = _nvidia_smi_cmd()
+    if nvidia_smi is None:
         return None
     try:
         output = subprocess.check_output(
             [
-                "nvidia-smi",
+                nvidia_smi,
                 "--query-gpu=memory.total",
                 "--format=csv,noheader,nounits",
             ],
             text=True,
+            timeout=_NVIDIA_SMI_TIMEOUT_S,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
         return None
 
     values: list[int] = []

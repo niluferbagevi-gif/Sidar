@@ -80,7 +80,7 @@ _VRAM_SAMPLE_INTERVAL_S: float = _env_float(
     "GPU_BENCH_VRAM_SAMPLE_INTERVAL",
     0.05,
     min_value=0.01,
-    max_value=0.50,
+    max_value=0.05,
 )
 
 
