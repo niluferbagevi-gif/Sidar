@@ -399,6 +399,95 @@ async def test_run_sqlite_op_requires_initialized_connection(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_message_rows_by_session_ids_returns_empty_for_blank_input(sqlite_db: Database) -> None:
+    assert await sqlite_db._fetch_message_rows_by_session_ids([]) == []
+    assert await sqlite_db._fetch_message_rows_by_session_ids(["", "   "]) == []
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_raises_runtime_error_when_rollback_also_fails(
+    sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _BrokenConn:
+        def rollback(self) -> None:
+            raise sqlite3.OperationalError("rollback failed")
+
+    monkeypatch.setattr(sqlite_db, "_sqlite_conn", _BrokenConn())
+
+    def _failing_op() -> None:
+        raise ValueError("write failed")
+
+    with pytest.raises(RuntimeError, match="SQLite işlemi ve rollback başarısız oldu"):
+        await sqlite_db._run_sqlite_op(_failing_op)
+
+
+@pytest.mark.asyncio
+async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-no-conn.db'}", BASE_DIR=str(tmp_path)))
+    db._backend = "sqlite"
+    db._sqlite_conn = None
+    with pytest.raises(RuntimeError, match="SQLite bağlantısı başlatılmadı"):
+        async with db.transaction():
+            pass
+
+    sqlite_db._sqlite_lock = None
+    async with sqlite_db.transaction():
+        pass
+    assert isinstance(sqlite_db._sqlite_lock, asyncio.Lock)
+
+    class _ForeignLoopLock:
+        def __init__(self) -> None:
+            self._loop = object()
+
+    sqlite_db._sqlite_lock = _ForeignLoopLock()  # type: ignore[assignment]
+    with pytest.raises(RuntimeError, match="tx failure"):
+        async with sqlite_db.transaction():
+            raise RuntimeError("tx failure")
+    assert isinstance(sqlite_db._sqlite_lock, asyncio.Lock)
+
+
+@pytest.mark.asyncio
+async def test_transaction_postgresql_supports_awaitable_transaction_factory(tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    fake_pg = FakePgAdapter()
+    db._backend = "postgresql"
+    db._pg_pool = fake_pg
+
+    class _Tx:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def _tx_factory():
+        return _Tx()
+
+    fake_pg.conn.transaction = _tx_factory
+    async with db.transaction() as conn:
+        assert conn is fake_pg.conn
+
+
+@pytest.mark.asyncio
+async def test_transaction_postgresql_supports_sync_transaction_factory(tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    fake_pg = FakePgAdapter()
+    db._backend = "postgresql"
+    db._pg_pool = fake_pg
+
+    class _Tx:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    fake_pg.conn.transaction = lambda: _Tx()
+    async with db.transaction() as conn:
+        assert conn is fake_pg.conn
+
+
+@pytest.mark.asyncio
 async def test_ensure_default_prompt_registry_branches(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database) -> None:
     class _BrokenLoader:
         def exec_module(self, module):
@@ -889,6 +978,28 @@ async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
     fake_pg.conn.transaction = lambda: _Tx()
     replaced = await db.replace_session_messages("s1", [{"content": "x"}, {"role": "user", "content": "y"}])
     assert replaced == 2
+
+
+@pytest.mark.asyncio
+async def test_replace_session_messages_postgresql_supports_awaitable_transaction_factory(tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    fake_pg = FakePgAdapter()
+    db._backend = "postgresql"
+    db._pg_pool = fake_pg
+
+    class _Tx:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def _tx_factory():
+        return _Tx()
+
+    fake_pg.conn.transaction = _tx_factory
+    replaced = await db.replace_session_messages("s-awaitable", [{"role": "user", "content": "hello"}])
+    assert replaced == 1
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -> None:
