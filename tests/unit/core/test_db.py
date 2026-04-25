@@ -1217,6 +1217,24 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
 
 
 @pytest.mark.asyncio
+async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
+    sqlite_db: Database, caplog: pytest.LogCaptureFixture
+) -> None:
+    class _ForeignLoopLock:
+        def __init__(self) -> None:
+            self._loop = object()
+
+    sqlite_db._sqlite_lock = _ForeignLoopLock()  # type: ignore[assignment]
+
+    with caplog.at_level("WARNING"):
+        result = await sqlite_db._run_sqlite_op(lambda: 7)
+
+    assert result == 7
+    assert isinstance(sqlite_db._sqlite_lock, asyncio.Lock)
+    assert "kilidi farklı event loop'a bağlı" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
     fake_pg = FakePgAdapter()
