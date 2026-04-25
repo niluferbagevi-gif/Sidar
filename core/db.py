@@ -1394,6 +1394,58 @@ class Database:
         await self._run_sqlite_op(_run)
         return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
 
+    async def create_users_bulk(self, items: list[dict[str, object]]) -> list[UserRecord]:
+        """Kullanıcıları tek transaction içinde toplu oluşturur."""
+        prepared: list[tuple[str, str, Optional[str], str, str, datetime]] = []
+        records: list[UserRecord] = []
+        for item in items:
+            username = str(item.get("username", "") or "").strip()
+            if not username:
+                continue
+            role = str(item.get("role", "user") or "user").strip() or "user"
+            tenant_id = str(item.get("tenant_id", "default") or "default").strip() or "default"
+            password_raw = item.get("password")
+            password = str(password_raw) if password_raw is not None else None
+            user_id = str(uuid.uuid4())
+            created_at_dt = datetime.now(timezone.utc)
+            created_at = created_at_dt.isoformat()
+            password_hash = _hash_password(password) if password else None
+            prepared.append((user_id, username, password_hash, role, tenant_id, created_at_dt))
+            records.append(
+                UserRecord(
+                    id=user_id,
+                    username=username,
+                    role=role,
+                    created_at=created_at,
+                    tenant_id=tenant_id,
+                )
+            )
+
+        if not prepared:
+            return []
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.executemany(
+                    "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                    prepared,
+                )
+            return records
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.executemany(
+                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [(user_id, username, password_hash, role, tenant_id, created_at_dt.isoformat()) for user_id, username, password_hash, role, tenant_id, created_at_dt in prepared],
+            )
+            self._sqlite_conn.commit()
+
+        await self._run_sqlite_op(_run)
+        return records
+
     async def register_user(self, username: str, password: str, role: str = "user", tenant_id: str = "default") -> UserRecord:
         return await self.create_user(username=username, role=role, password=password, tenant_id=tenant_id)
 
@@ -2942,6 +2994,54 @@ class Database:
 
         await self._run_sqlite_op(_run)
         return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
+
+    async def create_sessions_bulk(self, items: list[dict[str, object]]) -> list[SessionRecord]:
+        """Oturumları tek transaction içinde toplu oluşturur."""
+        prepared: list[tuple[str, str, str, datetime]] = []
+        records: list[SessionRecord] = []
+        for item in items:
+            user_id = str(item.get("user_id", "") or "").strip()
+            if not user_id:
+                continue
+            title = str(item.get("title", "") or "").strip() or "Yeni Oturum"
+            session_id = str(uuid.uuid4())
+            now_dt = datetime.now(timezone.utc)
+            now = now_dt.isoformat()
+            prepared.append((session_id, user_id, title, now_dt))
+            records.append(
+                SessionRecord(
+                    id=session_id,
+                    user_id=user_id,
+                    title=title,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+        if not prepared:
+            return []
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.executemany(
+                    "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+                    [(session_id, user_id, title, now_dt, now_dt) for session_id, user_id, title, now_dt in prepared],
+                )
+            return records
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.executemany(
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                [(session_id, user_id, title, now_dt.isoformat(), now_dt.isoformat()) for session_id, user_id, title, now_dt in prepared],
+            )
+            self._sqlite_conn.commit()
+
+        await self._run_sqlite_op(_run)
+        return records
 
     async def add_message(self, session_id: str, role: str, content: str, tokens_used: int = 0) -> MessageRecord:
         now_dt = datetime.now(timezone.utc)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -36,9 +37,9 @@ def test_format_table_handles_large_dataset_quickly(benchmark, large_dataset_row
     assert "module_99/file_09999.py" in output
 
 
-def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
+def _make_cfg(base_dir: Path, db_name: str, database_url: str) -> SimpleNamespace:
     return SimpleNamespace(
-        DATABASE_URL=f"sqlite+aiosqlite:///{base_dir / db_name}",
+        DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
         DB_POOL_SIZE=20,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
@@ -49,9 +50,18 @@ def _make_cfg(base_dir: Path, db_name: str) -> SimpleNamespace:
     )
 
 
-@pytest.fixture
-def benchmark_multi_user_db(tmp_path: Path) -> tuple[Database, asyncio.AbstractEventLoop]:
-    cfg = _make_cfg(tmp_path, "benchmark_multi_user_scale.db")
+@pytest.fixture(params=["sqlite", "postgresql"], ids=["sqlite", "postgresql"])
+def benchmark_multi_user_db(request, tmp_path: Path) -> tuple[Database, asyncio.AbstractEventLoop]:
+    backend_name: str = str(request.param)
+    if backend_name == "postgresql":
+        postgres_dsn = (os.getenv("PERF_BENCH_POSTGRES_DSN") or "").strip()
+        if not postgres_dsn:
+            pytest.skip("PostgreSQL benchmark için PERF_BENCH_POSTGRES_DSN tanımlı değil.")
+        database_url = postgres_dsn
+    else:
+        database_url = f"sqlite+aiosqlite:///{tmp_path / 'benchmark_multi_user_scale_sqlite.db'}"
+
+    cfg = _make_cfg(tmp_path, f"benchmark_multi_user_scale_{backend_name}.db", database_url)
     db = Database(cfg)
     loop = asyncio.new_event_loop()
     loop.run_until_complete(db.connect())
@@ -72,13 +82,23 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
     db, loop = benchmark_multi_user_db
 
     async def _workload(run_id: str) -> int:
-        created_users = await asyncio.gather(
-            # Benchmark odak noktası oturum+mesaj akışı olduğu için burada
-            # pahalı PBKDF2 parola hash maliyetini devre dışı bırakıyoruz.
-            *[db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}") for idx in range(users)]
+        created_users = await db.create_users_bulk(
+            [
+                {
+                    "username": f"user_{run_id}_{idx}",
+                    "tenant_id": f"tenant-{idx % 4}",
+                }
+                for idx in range(users)
+            ]
         )
-        sessions = await asyncio.gather(
-            *[db.create_session(user.id, f"session-{run_id}-{i}") for i, user in enumerate(created_users)]
+        sessions = await db.create_sessions_bulk(
+            [
+                {
+                    "user_id": user.id,
+                    "title": f"session-{run_id}-{i}",
+                }
+                for i, user in enumerate(created_users)
+            ]
         )
 
         inserted = await db.add_messages_bulk(

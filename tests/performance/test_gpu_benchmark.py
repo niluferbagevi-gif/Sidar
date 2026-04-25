@@ -76,6 +76,14 @@ _MAX_VRAM_UTILIZATION: float = _env_float(
     min_value=0.50,
     max_value=0.98,
 )
+_VRAM_SAMPLE_INTERVAL_S: float = _env_float(
+    "GPU_BENCH_VRAM_SAMPLE_INTERVAL",
+    0.05,
+    min_value=0.02,
+    max_value=0.50,
+)
+
+_HTTP_CLIENTS: dict[int, httpx.AsyncClient] = {}
 
 
 def _require_gpu_stress() -> None:
@@ -95,6 +103,27 @@ def _ollama_num_parallel() -> int:
         min_value=1,
         max_value=64,
     )
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    key = id(loop)
+    client = _HTTP_CLIENTS.get(key)
+    if client is None or client.is_closed:
+        timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
+        client = httpx.AsyncClient(timeout=timeout)
+        _HTTP_CLIENTS[key] = client
+    return client
+
+
+def _run_in_loop(loop: asyncio.AbstractEventLoop, coro):
+    return loop.run_until_complete(coro)
+
+
+def _close_http_client_for_loop(loop: asyncio.AbstractEventLoop) -> None:
+    client = _HTTP_CLIENTS.pop(id(loop), None)
+    if client is not None and not client.is_closed:
+        loop.run_until_complete(client.aclose())
 
 
 def _make_ollama_client() -> OllamaClient:
@@ -160,22 +189,20 @@ async def _chat_content(prompt: str) -> str:
         "stream": False,
         "options": _ollama_options(),
     }
-    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as http:
-        resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+    http = await _get_http_client()
+    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
+    resp.raise_for_status()
+    data = resp.json()
     return str(data.get("message", {}).get("content", ""))
 
 
 async def _model_runtime_profile() -> dict[str, str]:
     """Model runtime profilini döndürür (quantization / attention mimarisi ipuçları)."""
     payload = {"name": _MODEL}
-    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as http:
-        resp = await http.post(f"{_OLLAMA_BASE_URL}/api/show", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+    http = await _get_http_client()
+    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/show", json=payload)
+    resp.raise_for_status()
+    data = resp.json()
 
     details = data.get("details") or {}
     model_info = data.get("model_info") or {}
@@ -212,11 +239,10 @@ async def _chat_with_metrics(prompt: str) -> _InferenceMetrics:
         "stream": False,
         "options": _ollama_options(),
     }
-    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as http:
-        resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+    http = await _get_http_client()
+    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
+    resp.raise_for_status()
+    data = resp.json()
     return _InferenceMetrics(
         content=data.get("message", {}).get("content", ""),
         eval_count=int(data.get("eval_count") or 0),
@@ -236,21 +262,20 @@ async def _first_token_seconds(prompt: str) -> float:
         "stream": True,
         "options": _ollama_options(),
     }
-    timeout = httpx.Timeout(_TIMEOUT, connect=10.0)
     started_at = time.perf_counter()
-    async with httpx.AsyncClient(timeout=timeout) as http:
-        async with http.stream("POST", f"{_OLLAMA_BASE_URL}/api/chat", json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.strip():
-                    continue
-                try:
-                    body = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if body.get("message", {}).get("content", ""):
-                    # İlk token geldi — bağlantıyı kapat ve TTFT'yi döndür.
-                    return time.perf_counter() - started_at
+    http = await _get_http_client()
+    async with http.stream("POST", f"{_OLLAMA_BASE_URL}/api/chat", json=payload) as resp:
+        resp.raise_for_status()
+        async for line in resp.aiter_lines():
+            if not line.strip():
+                continue
+            try:
+                body = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if body.get("message", {}).get("content", ""):
+                # İlk token geldi — bağlantıyı kapat ve TTFT'yi döndür.
+                return time.perf_counter() - started_at
     return 0.0
 
 
@@ -272,20 +297,25 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
 
-    client = _make_ollama_client()
-    asyncio.run(_prepare_client(client))
+    loop = asyncio.new_event_loop()
+    try:
+        client = _make_ollama_client()
+        _run_in_loop(loop, _prepare_client(client))
 
-    prompt = "GPU benchmark: Türkiye'nin başkenti nedir? Tek cümle yanıt ver."
+        prompt = "GPU benchmark: Türkiye'nin başkenti nedir? Tek cümle yanıt ver."
 
-    def _single_call() -> str:
-        return asyncio.run(_chat_content(prompt))
+        def _single_call() -> str:
+            return _run_in_loop(loop, _chat_content(prompt))
 
-    result: str = benchmark.pedantic(
-        _single_call,
-        warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_BENCH_ROUNDS,
-        iterations=1,
-    )
+        result: str = benchmark.pedantic(
+            _single_call,
+            warmup_rounds=_WARMUP_ROUNDS,
+            rounds=_BENCH_ROUNDS,
+            iterations=1,
+        )
+    finally:
+        _close_http_client_for_loop(loop)
+        loop.close()
 
     assert isinstance(result, str) and result.strip(), "Benchmark yanıtı boş döndü."
     mean_s: float = benchmark.stats["mean"]
@@ -329,30 +359,34 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
             f"En az OLLAMA_NUM_PARALLEL={_CONCURRENCY} önerilir."
         )
 
-    client = _make_ollama_client()
-    asyncio.run(_prepare_client(client))
+    loop = asyncio.new_event_loop()
+    try:
+        client = _make_ollama_client()
+        _run_in_loop(loop, _prepare_client(client))
 
-    prompt = "Evet veya Hayır: GPU paralel inference çalışıyor mu?"
+        prompt = "Evet veya Hayır: GPU paralel inference çalışıyor mu?"
 
-    async def _concurrent_round() -> list[str]:
-        return list(
-            await asyncio.gather(
-                *[
-                    _chat_content(prompt)
-                    for _ in range(_CONCURRENCY)
-                ]
+        async def _concurrent_round() -> list[str]:
+            return list(
+                await asyncio.gather(
+                    *[
+                        _chat_content(prompt)
+                        for _ in range(_CONCURRENCY)
+                    ]
+                )
             )
+        def _run() -> list[str]:
+            return _run_in_loop(loop, _concurrent_round())
+
+        results: list[str] = benchmark.pedantic(
+            _run,
+            warmup_rounds=_WARMUP_ROUNDS,
+            rounds=_BENCH_ROUNDS,
+            iterations=1,
         )
-
-    def _run() -> list[str]:
-        return asyncio.run(_concurrent_round())
-
-    results: list[str] = benchmark.pedantic(
-        _run,
-        warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_BENCH_ROUNDS,
-        iterations=1,
-    )
+    finally:
+        _close_http_client_for_loop(loop)
+        loop.close()
 
     assert len(results) == _CONCURRENCY, "Bazı eşzamanlı istekler yanıt döndürmedi."
     assert all(isinstance(r, str) and r.strip() for r in results), "Bazı yanıtlar boş döndü."
@@ -384,48 +418,53 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
     if _gpu_smoke._read_gpu_memory_used_mib() is None:
         pytest.skip("nvidia-smi VRAM ölçümü kullanılamıyor.")
 
-    client = _make_ollama_client()
-    asyncio.run(_prepare_client(client))
+    loop = asyncio.new_event_loop()
+    try:
+        client = _make_ollama_client()
+        _run_in_loop(loop, _prepare_client(client))
 
-    prompt = "GPU VRAM stres testi. Kısa bir cümle yaz."
-    observed_peaks: list[int] = []
+        prompt = "GPU VRAM stres testi. Kısa bir cümle yaz."
+        observed_peaks: list[int] = []
 
-    async def _workload_with_vram_sampling() -> int:
-        stop = asyncio.Event()
-        round_peak: list[int] = [0]
+        async def _workload_with_vram_sampling() -> int:
+            stop = asyncio.Event()
+            round_peak: list[int] = [0]
 
-        async def _sample() -> None:
-            while not stop.is_set():
-                reading = _gpu_smoke._read_gpu_memory_used_mib()
-                if reading is not None:
-                    round_peak[0] = max(round_peak[0], reading)
-                await asyncio.sleep(0.2)
+            async def _sample() -> None:
+                while not stop.is_set():
+                    reading = _gpu_smoke._read_gpu_memory_used_mib()
+                    if reading is not None:
+                        round_peak[0] = max(round_peak[0], reading)
+                    await asyncio.sleep(_VRAM_SAMPLE_INTERVAL_S)
 
-        sampler = asyncio.create_task(_sample())
-        try:
-            await asyncio.gather(
-                *[
-                    _chat_content(prompt)
-                    for _ in range(_CONCURRENCY)
-                ]
-            )
-        finally:
-            stop.set()
-            await sampler
+            sampler = asyncio.create_task(_sample())
+            try:
+                await asyncio.gather(
+                    *[
+                        _chat_content(prompt)
+                        for _ in range(_CONCURRENCY)
+                    ]
+                )
+            finally:
+                stop.set()
+                await sampler
 
-        return round_peak[0]
+            return round_peak[0]
 
-    def _run() -> int:
-        peak = asyncio.run(_workload_with_vram_sampling())
-        observed_peaks.append(peak)
-        return peak
+        def _run() -> int:
+            peak = _run_in_loop(loop, _workload_with_vram_sampling())
+            observed_peaks.append(peak)
+            return peak
 
-    benchmark.pedantic(
-        _run,
-        warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_BENCH_ROUNDS,
-        iterations=1,
-    )
+        benchmark.pedantic(
+            _run,
+            warmup_rounds=_WARMUP_ROUNDS,
+            rounds=_BENCH_ROUNDS,
+            iterations=1,
+        )
+    finally:
+        _close_http_client_for_loop(loop)
+        loop.close()
 
     assert observed_peaks, "VRAM örneklemesi hiç tamamlanamadı."
     assert max(observed_peaks) > 0, (
@@ -467,27 +506,32 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
 
-    client = _make_ollama_client()
-    asyncio.run(_prepare_client(client))
+    loop = asyncio.new_event_loop()
+    try:
+        client = _make_ollama_client()
+        _run_in_loop(loop, _prepare_client(client))
 
-    runtime_profile = asyncio.run(_model_runtime_profile())
-    benchmark.extra_info["quantization_level"] = runtime_profile["quantization_level"]
-    benchmark.extra_info["architecture"] = runtime_profile["architecture"]
+        runtime_profile = _run_in_loop(loop, _model_runtime_profile())
+        benchmark.extra_info["quantization_level"] = runtime_profile["quantization_level"]
+        benchmark.extra_info["architecture"] = runtime_profile["architecture"]
 
-    prompt = "GPU benchmark: Linked list nedir? En fazla iki cümlede açıkla."
-    observed: list[_InferenceMetrics] = []
+        prompt = "GPU benchmark: Linked list nedir? En fazla iki cümlede açıkla."
+        observed: list[_InferenceMetrics] = []
 
-    def _run() -> _InferenceMetrics:
-        metrics = asyncio.run(_chat_with_metrics(prompt))
-        observed.append(metrics)
-        return metrics
+        def _run() -> _InferenceMetrics:
+            metrics = _run_in_loop(loop, _chat_with_metrics(prompt))
+            observed.append(metrics)
+            return metrics
 
-    result: _InferenceMetrics = benchmark.pedantic(
-        _run,
-        warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_TPS_BENCH_ROUNDS,
-        iterations=1,
-    )
+        result: _InferenceMetrics = benchmark.pedantic(
+            _run,
+            warmup_rounds=_WARMUP_ROUNDS,
+            rounds=_TPS_BENCH_ROUNDS,
+            iterations=1,
+        )
+    finally:
+        _close_http_client_for_loop(loop)
+        loop.close()
 
     assert result.content.strip(), "Benchmark yanıtı boş döndü."
     assert result.eval_count > 0, (
@@ -528,25 +572,30 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
 
-    client = _make_ollama_client()
-    asyncio.run(_prepare_client(client))
+    loop = asyncio.new_event_loop()
+    try:
+        client = _make_ollama_client()
+        _run_in_loop(loop, _prepare_client(client))
 
-    # Kısa, tek kelimelik yanıt beklenen prompt: TTFT ölçümü tam yanıt
-    # süresinden bağımsız olmalıdır.
-    prompt = "GPU TTFT benchmark: Evet mi Hayır mı? Tek kelime yaz."
-    ttft_readings: list[float] = []
+        # Kısa, tek kelimelik yanıt beklenen prompt: TTFT ölçümü tam yanıt
+        # süresinden bağımsız olmalıdır.
+        prompt = "GPU TTFT benchmark: Evet mi Hayır mı? Tek kelime yaz."
+        ttft_readings: list[float] = []
 
-    def _run() -> float:
-        ttft = asyncio.run(_first_token_seconds(prompt))
-        ttft_readings.append(ttft)
-        return ttft
+        def _run() -> float:
+            ttft = _run_in_loop(loop, _first_token_seconds(prompt))
+            ttft_readings.append(ttft)
+            return ttft
 
-    result: float = benchmark.pedantic(
-        _run,
-        warmup_rounds=_WARMUP_ROUNDS,
-        rounds=_BENCH_ROUNDS,
-        iterations=1,
-    )
+        result: float = benchmark.pedantic(
+            _run,
+            warmup_rounds=_WARMUP_ROUNDS,
+            rounds=_BENCH_ROUNDS,
+            iterations=1,
+        )
+    finally:
+        _close_http_client_for_loop(loop)
+        loop.close()
 
     assert result > 0.0, "TTFT sıfır döndü; streaming yanıt alınamadı."
     assert result <= _TTFT_BUDGET_S, (
