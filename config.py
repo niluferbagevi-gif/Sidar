@@ -647,6 +647,7 @@ class Config:
     def __init__(self) -> None:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
+        self.__class__._apply_gpu_memory_safety_check()
 
 
     @classmethod
@@ -677,6 +678,46 @@ class Config:
     def trusted_proxies_as_list(cls) -> List[str]:
         """Middleware entegrasyonları için güvenilir proxy değerlerini list[str] verir."""
         return list(cls.TRUSTED_PROXIES_LIST)
+
+    @classmethod
+    def _apply_gpu_memory_safety_check(cls) -> None:
+        """LLM+RAG VRAM fraksiyonu 1.0'ı aşarsa toplamı güvenli 0.8'e normalize eder."""
+        llm = float(cls.LLM_GPU_MEMORY_FRACTION or 0.0)
+        rag = float(cls.RAG_GPU_MEMORY_FRACTION or 0.0)
+        total = llm + rag
+
+        if total <= 1.0:
+            return
+
+        target_total = 0.8
+        if total <= 0:
+            cls.LLM_GPU_MEMORY_FRACTION = 0.4
+            cls.RAG_GPU_MEMORY_FRACTION = 0.4
+            cls.GPU_MEMORY_FRACTION = target_total
+            return
+
+        scale = target_total / total
+        normalized_llm = max(0.05, llm * scale)
+        normalized_rag = max(0.05, rag * scale)
+        normalized_total = normalized_llm + normalized_rag
+
+        # Min floor nedeniyle hedef toplamın üstüne çıkarsa oranı koruyarak tekrar ölçekle.
+        if normalized_total > target_total:
+            second_scale = target_total / normalized_total
+            normalized_llm *= second_scale
+            normalized_rag *= second_scale
+
+        cls.LLM_GPU_MEMORY_FRACTION = round(normalized_llm, 4)
+        cls.RAG_GPU_MEMORY_FRACTION = round(normalized_rag, 4)
+        cls.GPU_MEMORY_FRACTION = round(target_total, 4)
+        logger.warning(
+            "LLM/RAG GPU bellek fraksiyonları toplamı %.2f bulundu; OOM riskini azaltmak için %.2f toplamına normalize edildi "
+            "(LLM=%.2f, RAG=%.2f).",
+            total,
+            target_total,
+            cls.LLM_GPU_MEMORY_FRACTION,
+            cls.RAG_GPU_MEMORY_FRACTION,
+        )
 
     @classmethod
     def initialize_directories(cls) -> bool:
@@ -715,6 +756,7 @@ class Config:
         """Kritik yapılandırmaları doğrular; uyarıları loglar."""
         is_valid = True
         cls._ensure_hardware_info_loaded()
+        cls._apply_gpu_memory_safety_check()
         cls.initialize_directories()
 
         if cls.REQUIRE_GPU and not cls.USE_GPU:
@@ -763,6 +805,11 @@ class Config:
                 "   Yeni anahtar üretmek için: python -c \"from cryptography.fernet import "
                 "Fernet; print(Fernet.generate_key().decode())\""
             )
+            if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
+                logger.critical(
+                    "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
+                )
+                raise SystemExit(1)
 
         if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
             logger.error(

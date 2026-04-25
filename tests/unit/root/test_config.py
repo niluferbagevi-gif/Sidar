@@ -174,6 +174,47 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
     assert config.Config.validate_critical_settings() is False
 
 
+def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
+    monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
+    monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
+    monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)
+
+    config.Config._apply_gpu_memory_safety_check()
+
+    total = config.Config.LLM_GPU_MEMORY_FRACTION + config.Config.RAG_GPU_MEMORY_FRACTION
+    assert total == pytest.approx(0.8, rel=1e-3)
+    assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
+
+
+def test_validate_critical_settings_exits_in_production_without_memory_key(monkeypatch):
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None))
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://x")
+    monkeypatch.setenv("SIDAR_ENV", "production")
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, _url):
+            return types.SimpleNamespace(status_code=200)
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_Client))
+    with pytest.raises(SystemExit):
+        config.Config.validate_critical_settings()
+
+
 def test_validate_critical_settings_ollama_http_paths(monkeypatch):
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
