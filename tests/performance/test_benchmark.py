@@ -53,16 +53,55 @@ def _postgresql_benchmark_url() -> str | None:
 
 
 def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
+    worker_count = _pytest_worker_count()
+    pool_budget = _benchmark_pool_budget()
+    per_worker_pool_size = max(1, pool_budget // max(1, worker_count))
     return SimpleNamespace(
         DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
-        DB_POOL_SIZE=20,
+        DB_POOL_SIZE=per_worker_pool_size,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )
+
+
+def _pytest_worker_count() -> int:
+    raw = os.getenv("PYTEST_XDIST_WORKER_COUNT", "1").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 1
+
+
+def _benchmark_pool_budget() -> int:
+    raw = os.getenv("SIDAR_BENCHMARK_POOL_BUDGET", "60").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 60
+
+
+async def _initialize_schema_safely(db: Database) -> None:
+    """PostgreSQL benchmark şemasını process'ler arası advisory lock ile kurar."""
+    if getattr(db, "_backend", "") != "postgresql":
+        await db.init_schema()
+        return
+
+    pool = getattr(db, "_pg_pool", None)
+    if pool is None:
+        raise RuntimeError("PostgreSQL pool başlatılmadan şema kurulamaz.")
+
+    # Sabit lock-id ile xdist worker'ları arasında DDL yarışını engeller.
+    lock_id = 4_226_031
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT pg_advisory_lock($1)", lock_id)
+        try:
+            await db.init_schema()
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1)", lock_id)
 
 
 def _benchmark_db_variants() -> list[object]:
@@ -93,7 +132,7 @@ def benchmark_multi_user_db(
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(db.connect())
-        loop.run_until_complete(db.init_schema())
+        loop.run_until_complete(_initialize_schema_safely(db))
     except Exception as exc:
         loop.close()
         if backend == "postgresql":

@@ -20,6 +20,7 @@ services:
     image: pgvector/pgvector:pg16
     container_name: sidar_postgres
     restart: unless-stopped
+    command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
