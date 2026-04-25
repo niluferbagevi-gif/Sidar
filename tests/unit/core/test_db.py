@@ -197,6 +197,38 @@ def test_new_entity_id_returns_valid_uuid() -> None:
     assert str(parsed) == generated
 
 
+def test_new_entity_id_prefers_builtin_uuid7(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeUUID7:
+        def __call__(self):
+            return uuid.UUID("00000000-0000-7000-8000-000000000001")
+
+    monkeypatch.setattr(uuid, "uuid7", _FakeUUID7(), raising=False)
+    assert _new_entity_id() == "00000000-0000-7000-8000-000000000001"
+
+
+def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(uuid, "uuid7", raising=False)
+
+    fake_uuid6 = types.ModuleType("uuid6")
+    fake_uuid6.uuid7 = lambda: uuid.UUID("00000000-0000-7000-8000-000000000002")
+    monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
+
+    assert _new_entity_id() == "00000000-0000-7000-8000-000000000002"
+
+
+def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeMatch:
+        def group(self, _index: int) -> str:
+            return "not-a-number"
+
+    class _FakeRegex:
+        def search(self, _text: str):
+            return _FakeMatch()
+
+    monkeypatch.setattr("core.db._ASYNCPG_COMMAND_TAG_COUNT_RE", _FakeRegex())
+    assert _parse_asyncpg_affected_rows("UPDATE 3") == 0
+
+
 @pytest.mark.parametrize("identifier", ["", "1abc", "bad-name", "bad space"])
 def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
     with pytest.raises(ValueError, match="SQL identifier cannot be empty|Invalid SQL identifier"):
