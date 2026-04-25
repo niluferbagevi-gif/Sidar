@@ -1512,7 +1512,7 @@ class Database:
                     password_hash,
                     role,
                     tenant_id,
-                    created_at,
+                    created_at_dt,
                 )
             return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
 
