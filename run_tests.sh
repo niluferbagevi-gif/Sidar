@@ -42,6 +42,8 @@ AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
 RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
+BENCHMARK_MAXFAIL="${BENCHMARK_MAXFAIL:-1}"
+BENCHMARK_TIMEOUT="${BENCHMARK_TIMEOUT:-300}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -275,7 +277,13 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
-  python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+  local_benchmark_cmd=(
+    python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+    --maxfail="${BENCHMARK_MAXFAIL}"
+    --timeout="${BENCHMARK_TIMEOUT}"
+  )
+  echo "➡️ Çalıştırılan komut: ${local_benchmark_cmd[*]}"
+  "${local_benchmark_cmd[@]}"
   BENCHMARK_EXIT_CODE=$?
 else
   echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."
