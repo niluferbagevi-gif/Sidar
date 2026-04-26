@@ -732,6 +732,30 @@ def test_write_dead_letter_local_and_redis(bus: AgentEventBus) -> None:
     asyncio.run(bus._write_dead_letter(reason="r3", payload={"c": 3}))
 
 
+@pytest.mark.asyncio
+async def test_write_dead_letter_without_error_keeps_item_minimal(bus: AgentEventBus) -> None:
+    await bus._write_dead_letter(reason="no_error", payload={"kind": "minimal"}, error=None)
+
+    assert len(bus._dlq_buffer) == 1
+    last_item = bus._dlq_buffer[-1]
+    assert last_item["reason"] == "no_error"
+    assert last_item["payload"] == {"kind": "minimal"}
+    assert "error" not in last_item
+
+
+@pytest.mark.asyncio
+async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavailable(bus: AgentEventBus) -> None:
+    bus._backend = "redis"
+    bus._redis_available = False
+    bus._redis_client = DummyRedis()
+
+    await bus._write_dead_letter(reason="redis_unavailable", payload={"case": "no_xadd"})
+
+    assert len(bus._dlq_buffer) == 1
+    assert bus._dlq_buffer[-1]["reason"] == "redis_unavailable"
+    assert bus._redis_client.xadd_calls == []
+
+
 def test_get_agent_event_bus_singleton() -> None:
     assert get_agent_event_bus() is event_stream._BUS
     assert isinstance(get_agent_event_bus(), AgentEventBus)
