@@ -697,3 +697,57 @@ def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch
     monkeypatch.setattr(manager, "analyze_visual_drift", _fake_visual)
     signal = manager.collect_session_signals("v3", include_visual_qa=True)
     assert signal["visual_qa"]["ok"] is True
+
+
+def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v4"
+    manager._sessions["v4"] = sess
+
+    baseline = manager.artifact_dir / "baseline-v4.png"
+    current = manager.artifact_dir / "current-v4.png"
+    baseline.write_bytes(b"baseline")
+    current.write_bytes(b"current")
+
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
+    monkeypatch.setattr(manager, "_compute_visual_drift", lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.016})
+
+    calls = {"mm": 0}
+
+    async def _mm(*_a, **_k):
+        calls["mm"] += 1
+        return {"success": True}
+
+    monkeypatch.setattr(manager, "_analyze_screenshot_with_multimodal", _mm)
+    result = asyncio.run(manager.analyze_visual_drift("v4", baseline_path=str(baseline), run_multimodal_analysis=True))
+
+    assert calls["mm"] == 1
+    assert result["multimodal_check"]["triggered"] is True
+    assert result["multimodal_analysis"]["success"] is True
+
+
+def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v5"
+    manager._sessions["v5"] = sess
+
+    baseline = manager.artifact_dir / "baseline-v5.png"
+    current = manager.artifact_dir / "current-v5.png"
+    baseline.write_bytes(b"baseline")
+    current.write_bytes(b"current")
+
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
+    monkeypatch.setattr(manager, "_compute_visual_drift", lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.9})
+
+    async def _mm(*_a, **_k):
+        raise AssertionError("multimodal should not be called when drift score is far from threshold")
+
+    monkeypatch.setattr(manager, "_analyze_screenshot_with_multimodal", _mm)
+    result = asyncio.run(manager.analyze_visual_drift("v5", baseline_path=str(baseline), run_multimodal_analysis=True))
+
+    assert result["multimodal_check"]["triggered"] is False
+    assert "multimodal_analysis" not in result

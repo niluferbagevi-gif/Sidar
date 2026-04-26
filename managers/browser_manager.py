@@ -222,6 +222,7 @@ class BrowserManager:
         self.timeout_ms = int(getattr(self.cfg, "BROWSER_TIMEOUT_MS", 15_000) or 15_000)
         self.visual_qa_enabled = bool(getattr(self.cfg, "BROWSER_VISUAL_QA_ENABLED", True))
         self.visual_qa_drift_threshold = float(getattr(self.cfg, "BROWSER_VISUAL_QA_DRIFT_THRESHOLD", 0.015) or 0.015)
+        self.visual_qa_multimodal_margin = float(getattr(self.cfg, "BROWSER_VISUAL_QA_MULTIMODAL_MARGIN", 0.005) or 0.005)
         self.allowed_domains = {
             domain.strip().lower()
             for domain in (getattr(self.cfg, "BROWSER_ALLOWED_DOMAINS", []) or [])
@@ -494,6 +495,11 @@ class BrowserManager:
                 "current_hash": current_hash,
             }
 
+    def _should_run_multimodal_for_drift(self, drift_score: float) -> bool:
+        threshold = self.visual_qa_drift_threshold
+        margin = max(0.0, self.visual_qa_multimodal_margin)
+        return abs(float(drift_score) - threshold) <= margin
+
     async def analyze_visual_drift(
         self,
         session_id: str,
@@ -542,7 +548,16 @@ class BrowserManager:
             "threshold": self.visual_qa_drift_threshold,
             **drift,
         }
-        if run_multimodal_analysis:
+        drift_score = float(result.get("drift_score", 0.0) or 0.0)
+        should_run_multimodal = run_multimodal_analysis and self._should_run_multimodal_for_drift(drift_score)
+        result["multimodal_check"] = {
+            "enabled": bool(run_multimodal_analysis),
+            "triggered": bool(should_run_multimodal),
+            "threshold": self.visual_qa_drift_threshold,
+            "margin": max(0.0, self.visual_qa_multimodal_margin),
+            "drift_score": drift_score,
+        }
+        if should_run_multimodal:
             prompt = (
                 "Bu ekran görüntüsünü UI regresyon açısından analiz et. "
                 "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift bulgularını listele."
