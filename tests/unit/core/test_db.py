@@ -15,6 +15,7 @@ import jwt
 import pytest
 from unittest.mock import AsyncMock
 
+import core.db as core_db
 from core.db import (
     Database,
     _parse_asyncpg_affected_rows,
@@ -189,6 +190,11 @@ def test_verify_password_accepts_legacy_120k_hash_format() -> None:
     assert not _verify_password("wrong", encoded)
 
 
+def test_verify_password_rejects_unknown_algorithm_and_invalid_iterations() -> None:
+    assert _verify_password("abc123", "unknown_algo$600000$salt$deadbeef") is False
+    assert _verify_password("abc123", "pbkdf2_sha256$not-a-number$salt$deadbeef") is False
+
+
 @pytest.mark.parametrize(
     ("command_tag", "expected"),
     [
@@ -227,6 +233,16 @@ def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(monkeypatch: pyt
     monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
 
     assert _new_entity_id() == "00000000-0000-7000-8000-000000000002"
+
+
+def test_new_entity_id_falls_back_to_uuid4_when_uuid7_not_callable_and_uuid6_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(uuid, "uuid7", "not-callable", raising=False)
+    monkeypatch.setitem(sys.modules, "uuid6", None)
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000111"))
+
+    assert _new_entity_id() == "00000000-0000-4000-8000-000000000111"
 
 
 def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -506,6 +522,37 @@ async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database
 
 
 @pytest.mark.asyncio
+async def test_run_sqlite_op_raises_after_max_retries_for_locked_database(sqlite_db: Database) -> None:
+    attempts = {"count": 0}
+
+    def _always_locked() -> int:
+        attempts["count"] += 1
+        raise sqlite3.OperationalError("database is locked")
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        await sqlite_db._run_sqlite_op(_always_locked)
+
+    assert attempts["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_re_raises_non_lock_operational_error(sqlite_db: Database) -> None:
+    def _op() -> int:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        await sqlite_db._run_sqlite_op(_op)
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_covers_empty_retry_range_exit(
+    sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(core_db, "range", lambda *_args, **_kwargs: [], raising=False)
+    assert await sqlite_db._run_sqlite_op(lambda: 99) is None
+
+
+@pytest.mark.asyncio
 async def test_run_sqlite_op_initializes_write_lock_and_keeps_reads_unlocked(tmp_path) -> None:
     cfg = DummyCfg(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_lock.db'}",
@@ -545,6 +592,41 @@ async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -
         async with sqlite_db.transaction():
             raise RuntimeError("tx failure")
     assert isinstance(sqlite_db._sqlite_lock, asyncio.Lock)
+
+
+@pytest.mark.asyncio
+async def test_transaction_sqlite_rolls_back_on_operational_error(tmp_path) -> None:
+    db = Database(DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-rollback.db'}", BASE_DIR=str(tmp_path)))
+    db._backend = "sqlite"
+
+    class _Conn:
+        def __init__(self) -> None:
+            self.begin_calls = 0
+            self.rollback_calls = 0
+            self.commit_calls = 0
+
+        def execute(self, sql: str):
+            if sql == "BEGIN":
+                self.begin_calls += 1
+            return None
+
+        def rollback(self) -> None:
+            self.rollback_calls += 1
+
+        def commit(self) -> None:
+            self.commit_calls += 1
+
+    conn = _Conn()
+    db._sqlite_conn = conn
+    db._sqlite_write_lock = asyncio.Lock()
+
+    with pytest.raises(sqlite3.OperationalError, match="forced tx error"):
+        async with db.transaction():
+            raise sqlite3.OperationalError("forced tx error")
+
+    assert conn.begin_calls == 1
+    assert conn.rollback_calls == 1
+    assert conn.commit_calls == 0
 
 
 @pytest.mark.asyncio
