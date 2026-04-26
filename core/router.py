@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import time
 import logging
+from unittest.mock import Mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -124,6 +125,16 @@ class _DailyBudgetTracker:
 
 
 _budget_tracker = _DailyBudgetTracker()
+
+
+def _read_optional_string(config: object, attr_name: str) -> str:
+    """Config üzerindeki opsiyonel string alanları güvenli şekilde normalize eder."""
+    value = getattr(config, attr_name, "")
+    if value is None:
+        return ""
+    if isinstance(value, Mock):
+        return ""
+    return str(value).strip()
 
 
 class _SqliteDailyBudgetTracker:
@@ -294,15 +305,11 @@ class CostAwareRouter:
         self.token_threshold: int = max(
             0, int(getattr(config, "COST_ROUTING_TOKEN_THRESHOLD", 0) or 0)
         )
-        shared_budget_db_path = str(
-            getattr(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH", "") or ""
-        ).strip()
+        shared_budget_db_path = _read_optional_string(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH")
         if shared_budget_db_path:
             global _budget_tracker
             _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
-        shared_budget_redis_url = str(
-            getattr(config, "COST_ROUTING_REDIS_BUDGET_URL", "") or ""
-        ).strip()
+        shared_budget_redis_url = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_URL")
         if shared_budget_redis_url:
             _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
 

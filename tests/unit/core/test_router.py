@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -334,3 +335,22 @@ def test_router_uses_redis_shared_budget_tracker_when_configured(monkeypatch: py
         "default-model",
     )
     assert (provider, model) == ("ollama", "llama3")
+
+
+def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    class _FakeRedis:
+        @classmethod
+        def from_url(cls, redis_url: str, **_kwargs):
+            calls.append(redis_url)
+            return cls()
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    cfg = _make_config()
+    cfg.COST_ROUTING_REDIS_BUDGET_URL = MagicMock(name="COST_ROUTING_REDIS_BUDGET_URL")
+
+    CostAwareRouter(cfg)
+
+    assert calls == []
+    assert isinstance(router._budget_tracker, router._DailyBudgetTracker)
