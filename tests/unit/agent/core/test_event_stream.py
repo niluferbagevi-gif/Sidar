@@ -1023,6 +1023,36 @@ def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus
     assert written[-1]["reason"] == "publish_failed"
 
 
+def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    evt = AgentEvent(ts=7.5, source="coverage", message="kafka fail-safe")
+    producer = DummyKafkaProducer()
+    producer.raise_on_send = True
+    bus._kafka_available = True
+    bus._kafka_producer = producer
+
+    monkeypatch.setattr(bus, "_ensure_kafka_listener", lambda: asyncio.sleep(0))
+
+    dlq_entries: list[dict] = []
+    cleaned = {"ok": False}
+
+    async def _dlq(**kwargs):
+        dlq_entries.append(kwargs)
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+
+    assert asyncio.run(bus._publish_via_kafka(evt)) is False
+    assert bus._kafka_available is False
+    assert cleaned["ok"] is True
+    assert len(dlq_entries) == 1
+    assert dlq_entries[0]["reason"] == "publish_failed"
+    assert dlq_entries[0]["payload"]["event"]["source"] == "coverage"
+    assert dlq_entries[0]["payload"]["event"]["message"] == "kafka fail-safe"
+
+
 def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
     evt = AgentEvent(ts=1.0, source="coder", message="route")
     called = {"redis": 0, "rabbit": 0, "kafka": 0}
