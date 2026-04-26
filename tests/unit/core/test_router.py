@@ -31,13 +31,17 @@ def reset_budget_tracker() -> None:
         with tracker._lock:
             tracker._daily_cost = 0.0
             tracker._day_start = router.time.time()
-    else:
+    elif hasattr(tracker, "_db_path"):
         conn = sqlite3.connect(tracker._db_path)
         try:
             conn.execute(f"DELETE FROM {tracker._TABLE_NAME}")
             conn.commit()
         finally:
             conn.close()
+    elif hasattr(tracker, "_fallback"):
+        with tracker._fallback._lock:
+            tracker._fallback._daily_cost = 0.0
+            tracker._fallback._day_start = router.time.time()
 
 
 def test_query_complexity_score_returns_zero_without_user_messages() -> None:
@@ -266,6 +270,62 @@ def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> N
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_SHARED_BUDGET_DB_PATH=db_path)
     cost_router = CostAwareRouter(cfg)
     assert isinstance(router._budget_tracker, router._SqliteDailyBudgetTracker)
+
+    record_routing_cost(0.6)
+    provider, model = cost_router.select(
+        [{"role": "user", "content": "analyze distributed architecture tradeoffs in detail"}],
+        "default-provider",
+        "default-model",
+    )
+    assert (provider, model) == ("ollama", "llama3")
+
+
+def test_router_uses_redis_shared_budget_tracker_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakePipe:
+        def __init__(self, redis_obj):
+            self.redis_obj = redis_obj
+            self.ops = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def incrbyfloat(self, key: str, value: float):
+            self.ops.append(("incr", key, value))
+            self.redis_obj.store[key] = self.redis_obj.store.get(key, 0.0) + value
+            return self
+
+        def expireat(self, key: str, _expire: int):
+            self.ops.append(("expire", key))
+            return self
+
+        def execute(self):
+            return True
+
+    class _FakeRedis:
+        store: dict[str, float] = {}
+
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+        def pipeline(self, transaction: bool = True):
+            assert transaction is True
+            return _FakePipe(self)
+
+        def get(self, key: str):
+            value = self.store.get(key)
+            return str(value) if value is not None else None
+
+        def expireat(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_REDIS_BUDGET_URL="redis://fake:6379/0")
+    cost_router = CostAwareRouter(cfg)
+    assert isinstance(router._budget_tracker, router._RedisDailyBudgetTracker)
 
     record_routing_cost(0.6)
     provider, model = cost_router.select(
