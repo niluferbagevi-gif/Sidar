@@ -1,6 +1,6 @@
 # SİDAR v5.1 — Faz C Derinleşme ve İleri Otonomi Mimari Raporu
 
-> **Durum:** v5.0.0-alpha runtime baseline üzerinde Faz C yetenekleri ile Faz D kurumsal ölçekleme teslimatları senkronize edilmiş, Faz E (Coverage ve Poyraz ajanları) fiili olarak mimariye entegre edilmiştir.
+> **Durum:** v5.2.0 runtime baseline üzerinde Faz C yetenekleri ile Faz D kurumsal ölçekleme teslimatları senkronize edilmiş, Faz E (Coverage ve Poyraz ajanları) fiili olarak mimariye entegre edilmiştir.
 > **Hazırlanma Tarihi:** 2026-03-21
 > **Kapsam:** `web_ui_react/src/components/VoiceAssistantPanel.jsx`, `web_ui_react/src/hooks/useVoiceAssistant.js`, `core/voice.py`, `web_server.py`, `core/ci_remediation.py`, `agent/sidar_agent.py`, `agent/roles/reviewer_agent.py`, `agent/roles/coverage_agent.py`, `agent/roles/poyraz_agent.py`, `managers/code_manager.py`, `managers/browser_manager.py`, `agent/swarm.py`, `github_upload.py`, `web_ui_react/src/components/PluginMarketplacePanel.jsx`, `web_ui_react/src/components/AgentManagerPanel.jsx`, `web_ui_react/src/hooks/useWebSocket.js`, `tests/test_plugin_marketplace_hot_reload.py`, `tests/test_collaboration_workspace.py`, `tests/test_nightly_memory_maintenance.py`, `tests/test_system_health_dependency_checks.py`, `runbooks/chaos_live_rehearsal.md`, `agent/tooling.py`, `core/multimodal.py`, `core/db.py`, `migrations/versions/0001_baseline_schema.py`, `migrations/versions/0002_prompt_registry.py`, `migrations/versions/0003_audit_trail.py`, `migrations/versions/0004_faz_e_tables.py`
 
@@ -201,3 +201,26 @@ Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır:
 - FFmpeg ile çıkarılan sahne/kare segmentleri `media_scene_segments` içinde zaman kodlarıyla tutulur; transcript ve özet parçaları `media_transcripts` altında aranabilir metin olarak saklanıp RAG'e bağlanabilir.
 - Poyraz içindeki `ingest_video_insights` aracı, dış video URL'sini doğrudan `MultimodalPipeline.analyze_media_source(...)` çağrısına vererek job benzeri bir ingest sonucu üretir; sahne özeti ve ingest metadata'sı ajan yanıtına geri taşınır.
 - Bu akış sonunda üretilen sahne özeti ve transcript, `DocumentStore` içine ingest edilerek hem pazarlama üretimini hem de kurumsal bilgi geri çağırımını besler.
+
+### 9.5 Öncelikli Uygulama Sprinti (Faz E → Faz F Geçiş Kapısı)
+
+#### 9.5.1 Poyraz ve Coverage REST uçlarını üretime alma
+
+- **Hedef:** Taslak durumda listelenen `/api/operations/campaigns`, `/api/operations/content/generate`, `/api/integrations/social/publish`, `/api/qa/coverage/run`, `/api/qa/coverage/findings` uçlarını `web_server.py` içinde resmi route olarak aktifleştirmek.
+- **Teslimat yaklaşımı:** Önce read-only listeleme + detay uçları, ardından tetikleyici (run/publish/generate) uçları; tüm write operasyonları için audit + tenant zorunluluğu.
+- **Frontend bağı:** `web_ui_react` içinde Campaign/Coverage panelleri bu uçlara bağlanmalı; SwarmFlowPanel üstünden coverage görev rerun ve kampanya tetikleme aksiyonları sağlanmalı.
+- **Çıkış kriteri:** En az bir uçtan uca akışın (UI → API → DB → audit log) otomasyon testleriyle doğrulanması.
+
+#### 9.5.2 Dağıtık Swarm çekirdeğini başlatma
+
+- **Hedef:** Tek event-loop ve `asyncio.Lock` tabanlı süreç içi koordinasyondan, broker destekli worker topolojisine kontrollü geçiş.
+- **İlk adım:** `SwarmOrchestrator` için `TaskEnvelope` (tenant_id, correlation_id, trace_id, retry_count, timeout_ms) sözleşmesini sabitlemek ve queue adapter arayüzü (`publish`, `consume`, `ack`, `nack`) tanımlamak.
+- **Broker seçimi:** İlk sprintte RabbitMQ ile kuyruk prototipi; ikinci sprintte Kafka opsiyonu için aynı adapter sözleşmesi korunmalı.
+- **Çıkış kriteri:** En az iki ajan rolünün (ör. coder + reviewer) ayrı worker process/pod üzerinde dağıtık çalıştırıldığı demo ve failure retry gözlemi.
+
+#### 9.5.3 GraphRAG + Knowledge Graph genişlemesi
+
+- **Hedef:** `pgvector` retrieval katmanını, ilişki/varlık tabanlı sorgu yeteneği ile tamamlayacak Graph katmanını devreye almak.
+- **Teknik yön:** Neo4j (veya eşdeğer graph store) için `entity`, `relation`, `evidence_ref` şeması; GraphRAG sorgularında vektör sonuçlarıyla graph traversal sonuçlarının birleştirilmesi.
+- **Entegrasyon noktası:** Reviewer ajanında risk analizi ve kök neden ilişkilendirmesinde graph sinyali ek bir karar girdisi olarak kullanılmalı.
+- **Çıkış kriteri:** Aynı vaka için “yalnızca vektör” ve “vektör + graph” çıktılarının kalite karşılaştırmasını gösteren ölçümlü değerlendirme raporu.
