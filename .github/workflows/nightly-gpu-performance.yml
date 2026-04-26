@@ -18,6 +18,8 @@ jobs:
     env:
       RUN_GPU_STRESS: "1"
       PYTHONUNBUFFERED: "1"
+      GPU_TREND_WINDOW: "7"
+      GPU_TREND_THRESHOLD_PERCENT: "20"
 
     steps:
       - name: Checkout
@@ -36,12 +38,46 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
+      - name: Restore GPU trend history cache
+        id: gpu-trend-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-history/gpu_trend_history.json
+          key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
+
+      - name: Detect GPU driver version
+        id: gpu-driver
+        run: |
+          DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1 | tr -d ' ')"
+          if [[ -z "$DRIVER" ]]; then
+            DRIVER="unknown-driver"
+          fi
+          echo "value=$DRIVER" >> "$GITHUB_OUTPUT"
+
       - name: Run nightly GPU performance benchmarks
         run: |
+          mkdir -p artifacts/gpu
           uv run pytest -c pyproject.toml -v tests/performance \
             -m "benchmark and gpu" \
             -n 0 \
-            --no-cov
+            --no-cov \
+            --benchmark-json=artifacts/gpu/benchmark.json
+
+      - name: Check 7-run median trend guards (TTFT/TPS/VRAM)
+        run: |
+          python scripts/ci/check_gpu_benchmark_trend.py \
+            artifacts/gpu/benchmark.json \
+            .ci-history/gpu_trend_history.json \
+            "$GPU_TREND_WINDOW" \
+            "$GPU_TREND_THRESHOLD_PERCENT" \
+            "${{ steps.gpu-driver.outputs.value }}"
+
+      - name: Save GPU trend history cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ci-history/gpu_trend_history.json
+          key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
 
       - name: Upload benchmark artifacts
         if: always()
@@ -49,6 +85,8 @@ jobs:
         with:
           name: nightly-gpu-performance-artifacts
           path: |
+            artifacts/gpu/
+            .ci-history/gpu_trend_history.json
             .benchmarks/
             .pytest_cache/
           if-no-files-found: ignore

@@ -597,6 +597,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
 > Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
 > ile sabitler.
+> GPU benchmarkları için `Nightly GPU Performance` hattında TTFT/TPS/VRAM metrikleri
+> geçmiş 7 koşu medyanına göre (`GPU_TREND_WINDOW=7`) varsayılan ±%20 trend eşiği
+> (`GPU_TREND_THRESHOLD_PERCENT`) ile korunur; quantization + architecture + driver
+> profiline göre ayrı baseline/history tutulur.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri

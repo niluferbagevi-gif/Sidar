@@ -461,6 +461,8 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
             f"{max(observed_peaks)} MiB > {utilization_limit_mib} MiB "
             f"({_MAX_VRAM_UTILIZATION:.0%} of {total_vram} MiB)."
         )
+    benchmark.extra_info["vram_peak_mib"] = int(max(observed_peaks))
+    benchmark.extra_info["vram_peak_mean_mib"] = round(sum(observed_peaks) / len(observed_peaks), 3)
 
 
 @pytest.mark.benchmark
@@ -522,6 +524,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
         "Model veya Ollama sürümünü kontrol edin."
     )
     tps = result.tokens_per_second
+    benchmark.extra_info["tokens_per_second"] = round(tps, 3)
     tps_stddev_s: float = float(benchmark.stats.get("stddev", 0.0))
     tps_iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
     tps_mean_s: float = float(benchmark.stats.get("mean", 0.0))
@@ -586,6 +589,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
         f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
     )
     mean_ttft: float = benchmark.stats["mean"]
+    benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
     assert mean_ttft <= _TTFT_BUDGET_S, (
         f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
     )
