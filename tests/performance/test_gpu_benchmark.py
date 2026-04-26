@@ -330,6 +330,11 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
     num_parallel = _ollama_num_parallel()
     benchmark.extra_info["ollama_num_parallel"] = num_parallel
+    benchmark.extra_info["benchmark_concurrency"] = _CONCURRENCY
+    if _CONCURRENCY > 0:
+        benchmark.extra_info["parallel_saturation_percent"] = round(
+            (num_parallel / _CONCURRENCY) * 100, 3
+        )
     if num_parallel < _CONCURRENCY:
         pytest.skip(
             "Gerçek paralellik için OLLAMA_NUM_PARALLEL değeri yetersiz: "

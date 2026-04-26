@@ -133,6 +133,13 @@ def benchmark_multi_user_db(
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(db.connect())
+        if backend == "sqlite":
+            # Benchmark stabilizasyonu için SQLite runtime ayarlarını fixture seviyesinde
+            # açıkça uygularız. Böylece varsayılanlar değişse bile ölçüm tutarlılığı korunur.
+            assert db._sqlite_conn is not None
+            db._sqlite_conn.execute("PRAGMA journal_mode = WAL;")
+            db._sqlite_conn.execute("PRAGMA synchronous = NORMAL;")
+            db._sqlite_conn.execute("PRAGMA busy_timeout = 10000;")
         loop.run_until_complete(_initialize_schema_safely(db))
     except Exception as exc:
         loop.close()
