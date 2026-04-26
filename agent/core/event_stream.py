@@ -81,13 +81,11 @@ class AgentEventBus:
         await self._publish_via_remote(evt)
 
     def _schedule_remote_bootstrap(self) -> None:
-        if self._backend == "rabbitmq":
-            self._schedule_rabbit_bootstrap()
-            return
-        if self._backend == "kafka":
-            self._schedule_kafka_bootstrap()
-            return
-        self._schedule_redis_bootstrap()
+        schedule_fn = {
+            "rabbitmq": self._schedule_rabbit_bootstrap,
+            "kafka": self._schedule_kafka_bootstrap,
+        }.get(self._backend, self._schedule_redis_bootstrap)
+        schedule_fn()
 
     def _schedule_redis_bootstrap(self) -> None:
         if self._redis_available is False:
@@ -206,11 +204,32 @@ class AgentEventBus:
             await self._cleanup_kafka()
 
     async def _publish_via_remote(self, evt: AgentEvent) -> bool:
-        if self._backend == "rabbitmq":
-            return await self._publish_via_rabbit(evt)
-        if self._backend == "kafka":
-            return await self._publish_via_kafka(evt)
-        return await self._publish_via_redis(evt)
+        publish_fn = {
+            "rabbitmq": self._publish_via_rabbit,
+            "kafka": self._publish_via_kafka,
+        }.get(self._backend, self._publish_via_redis)
+        return await publish_fn(evt)
+
+    def _serialize_event_payload(self, evt: AgentEvent) -> str:
+        return json.dumps(
+            {
+                "sid": self._instance_id,
+                "ts": evt.ts,
+                "source": evt.source,
+                "message": evt.message,
+            },
+            ensure_ascii=False,
+        )
+
+    def _deserialize_event_payload(self, payload_raw: object) -> AgentEvent | None:
+        payload = json.loads(str(payload_raw))
+        if payload.get("sid") == self._instance_id:
+            return None
+        return AgentEvent(
+            ts=float(payload.get("ts", time.time())),
+            source=str(payload.get("source", "agent")),
+            message=str(payload.get("message", "")),
+        )
 
     async def _publish_via_redis(self, evt: AgentEvent) -> bool:
         if self._redis_available is False:
@@ -221,15 +240,7 @@ class AgentEventBus:
         if not self._redis_client or self._redis_available is not True:
             return False
 
-        payload = json.dumps(
-            {
-                "sid": self._instance_id,
-                "ts": evt.ts,
-                "source": evt.source,
-                "message": evt.message,
-            },
-            ensure_ascii=False,
-        )
+        payload = self._serialize_event_payload(evt)
         try:
             await self._redis_client.xadd(self._channel, {"payload": payload})
             return True
@@ -250,7 +261,7 @@ class AgentEventBus:
         await self._ensure_rabbit_listener()
         if self._rabbit_channel is None or self._rabbit_available is not True:
             return False
-        payload = json.dumps({"sid": self._instance_id, "ts": evt.ts, "source": evt.source, "message": evt.message}, ensure_ascii=False)
+        payload = self._serialize_event_payload(evt)
         try:
             aio_pika = importlib.import_module("aio_pika")
             message = aio_pika.Message(body=payload.encode("utf-8"), content_type="application/json")
@@ -273,7 +284,7 @@ class AgentEventBus:
         await self._ensure_kafka_listener()
         if self._kafka_producer is None or self._kafka_available is not True:
             return False
-        payload = json.dumps({"sid": self._instance_id, "ts": evt.ts, "source": evt.source, "message": evt.message}, ensure_ascii=False)
+        payload = self._serialize_event_payload(evt)
         try:
             await self._kafka_producer.send_and_wait(self._kafka_topic, payload.encode("utf-8"))
             return True
@@ -314,13 +325,8 @@ class AgentEventBus:
                 for msg_id, fields in entries:
                     payload_raw = fields.get("payload", "{}")
                     try:
-                        payload = json.loads(str(payload_raw))
-                        if payload.get("sid") != self._instance_id:
-                            evt = AgentEvent(
-                                ts=float(payload.get("ts", time.time())),
-                                source=str(payload.get("source", "agent")),
-                                message=str(payload.get("message", "")),
-                            )
+                        evt = self._deserialize_event_payload(payload_raw)
+                        if evt is not None:
                             self._fanout_local(evt)
                     except Exception as exc:
                         await self._write_dead_letter(
@@ -345,13 +351,8 @@ class AgentEventBus:
         async with self._rabbit_queue.iterator() as queue_iter:
             async for incoming in queue_iter:
                 try:
-                    payload = json.loads(incoming.body.decode("utf-8"))
-                    if payload.get("sid") != self._instance_id:
-                        evt = AgentEvent(
-                            ts=float(payload.get("ts", time.time())),
-                            source=str(payload.get("source", "agent")),
-                            message=str(payload.get("message", "")),
-                        )
+                    evt = self._deserialize_event_payload(incoming.body.decode("utf-8"))
+                    if evt is not None:
                         self._fanout_local(evt)
                 except Exception as exc:
                     await self._write_dead_letter(
@@ -378,13 +379,8 @@ class AgentEventBus:
                 return
 
             try:
-                payload = json.loads(message.value.decode("utf-8"))
-                if payload.get("sid") != self._instance_id:
-                    evt = AgentEvent(
-                        ts=float(payload.get("ts", time.time())),
-                        source=str(payload.get("source", "agent")),
-                        message=str(payload.get("message", "")),
-                    )
+                evt = self._deserialize_event_payload(message.value.decode("utf-8"))
+                if evt is not None:
                     self._fanout_local(evt)
             except Exception as exc:
                 await self._write_dead_letter(
