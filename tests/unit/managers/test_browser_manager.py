@@ -654,6 +654,74 @@ def test_start_selenium_non_headless_and_close_partial(manager: BrowserManager, 
     assert manager.close_session("blank")[0] is True
 
 
+@pytest.mark.parametrize(
+    ("browser_name", "headless", "expected_arg"),
+    [
+        ("chrome", True, "--headless=new"),
+        ("chrome", False, None),
+        ("firefox", True, "-headless"),
+        ("firefox", False, None),
+    ],
+)
+def test_start_selenium_session_parametrized_headless_flags(
+    manager: BrowserManager,
+    monkeypatch: pytest.MonkeyPatch,
+    browser_name: str,
+    headless: bool,
+    expected_arg: str | None,
+) -> None:
+    _register_fake_selenium(monkeypatch)
+    session = manager._start_selenium_session(browser_name, headless)
+    assert session.provider == "selenium"
+    if expected_arg is None:
+        assert expected_arg not in session.driver.options.args
+    else:
+        assert expected_arg in session.driver.options.args
+
+
+@pytest.mark.parametrize("clear", [True, False])
+def test_selenium_fill_form_impl_parametrized_clear_flag(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, clear: bool
+) -> None:
+    _register_fake_selenium(monkeypatch)
+    session = manager._start_selenium_session("chrome", True)
+    session.session_id = f"se-fill-{int(clear)}"
+    manager._sessions[session.session_id] = session
+
+    ok, _ = manager._fill_form_impl(session.session_id, "#inp", "abc", clear=clear)
+    assert ok is True
+    assert session.driver.element.typed[-1] == "abc"
+    assert session.driver.element.cleared is clear
+
+
+@pytest.mark.parametrize(
+    ("action", "args"),
+    [
+        ("click", ("#btn",)),
+        ("select", ("#sel", "v2")),
+    ],
+)
+def test_selenium_interaction_impls_parametrized(
+    manager: BrowserManager,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+    args: tuple[str, ...],
+) -> None:
+    reg = _register_fake_selenium(monkeypatch)
+    session = manager._start_selenium_session("chrome", True)
+    session.session_id = f"se-{action}"
+    manager._sessions[session.session_id] = session
+
+    if action == "click":
+        ok, _ = manager._click_element_impl(session.session_id, *args)
+        assert ok is True
+        assert session.driver.element.clicked is True
+    else:
+        ok, _ = manager._select_option_impl(session.session_id, *args)
+        assert ok is True
+        assert reg["selected_values"][-1] == "v2"
+
+
 def test_analyze_visual_drift_reports_missing_baseline(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
     sess = _session("playwright")
     sess.session_id = "v1"
