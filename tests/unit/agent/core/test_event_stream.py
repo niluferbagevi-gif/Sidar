@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import sys
 import time
@@ -1597,3 +1598,58 @@ def test_cleanup_rabbit_and_kafka() -> None:
     assert bus._kafka_consumer is None
     assert producer.stopped is True
     assert consumer.stopped is True
+
+
+def test_cleanup_rabbit_and_kafka_suppress_close_errors() -> None:
+    bus = AgentEventBus()
+
+    class _FailingRabbitChannel:
+        async def close(self) -> None:
+            raise RuntimeError("rabbit channel close failed")
+
+    class _FailingRabbitConnection:
+        async def close(self) -> None:
+            raise RuntimeError("rabbit connection close failed")
+
+    class _FailingKafkaConsumer:
+        async def stop(self) -> None:
+            raise RuntimeError("kafka consumer stop failed")
+
+    class _FailingKafkaProducer:
+        async def stop(self) -> None:
+            raise RuntimeError("kafka producer stop failed")
+
+    bus._rabbit_channel = _FailingRabbitChannel()
+    bus._rabbit_connection = _FailingRabbitConnection()
+    asyncio.run(bus._cleanup_rabbit())
+    assert bus._rabbit_channel is None
+    assert bus._rabbit_connection is None
+
+    bus._kafka_consumer = _FailingKafkaConsumer()
+    bus._kafka_producer = _FailingKafkaProducer()
+    asyncio.run(bus._cleanup_kafka())
+    assert bus._kafka_consumer is None
+    assert bus._kafka_producer is None
+
+
+def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_path = str(tmp_path / "dlq" / "events.jsonl")
+
+    debug_calls: list[str] = []
+
+    def _broken_open(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    def _debug(message: str, exc: Exception) -> None:
+        debug_calls.append(f"{message}:{exc}")
+
+    monkeypatch.setattr(builtins, "open", _broken_open)
+    monkeypatch.setattr(event_stream.logger, "debug", _debug)
+
+    bus._persist_dead_letter_item_sync({"reason": "io_error"})
+
+    assert len(debug_calls) == 1
+    assert "persistent DLQ yazımı başarısız" in debug_calls[0]
