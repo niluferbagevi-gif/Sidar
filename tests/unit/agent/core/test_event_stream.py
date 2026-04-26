@@ -114,6 +114,14 @@ class _DummyConnectionPool:
         self.disconnected = True
 
 
+class _SyncDisconnectConnectionPool:
+    def __init__(self) -> None:
+        self.disconnected = False
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+
 class RedisWithAsyncPoolDisconnect:
     def __init__(self) -> None:
         self.closed = False
@@ -663,6 +671,24 @@ def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
     assert bus._redis_client is None
 
 
+def test_cleanup_redis_handles_non_awaitable_pool_disconnect() -> None:
+    class RedisWithSyncPoolDisconnect:
+        def __init__(self) -> None:
+            self.connection_pool = _SyncDisconnectConnectionPool()
+
+        async def aclose(self) -> None:
+            return None
+
+    bus = AgentEventBus()
+    redis_client = RedisWithSyncPoolDisconnect()
+    bus._redis_client = redis_client
+
+    asyncio.run(bus._cleanup_redis())
+
+    assert redis_client.connection_pool.disconnected is True
+    assert bus._redis_client is None
+
+
 def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: pytest.MonkeyPatch) -> None:
     bus = AgentEventBus()
     bus._redis_client = DummyRedis()
@@ -974,6 +1000,68 @@ def test_ensure_rabbit_listener_success_and_failure(monkeypatch: pytest.MonkeyPa
     asyncio.run(bus._ensure_rabbit_listener())
     assert bus._rabbit_available is False
     assert cleaned["ok"] is True
+
+
+def test_ensure_rabbit_listener_returns_when_unavailable_or_running(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    bus._rabbit_available = False
+    called = {"imported": False}
+
+    def _import_module(_name: str):
+        called["imported"] = True
+        raise AssertionError("import should not be called")
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", _import_module)
+    asyncio.run(bus._ensure_rabbit_listener())
+    assert called["imported"] is False
+
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._rabbit_available = None
+    bus._rabbit_listener_task = _RunningTask()
+    asyncio.run(bus._ensure_rabbit_listener())
+    assert called["imported"] is False
+
+
+def test_ensure_rabbit_listener_reuses_existing_connection(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    channel = DummyRabbitChannel()
+    queue = DummyRabbitQueue()
+    channel.queue = queue
+    connection = DummyRabbitConnection(channel=channel)
+
+    bus._rabbit_connection = connection
+    bus._rabbit_channel = channel
+    bus._rabbit_queue = queue
+
+    created = {"task": None}
+    connect_calls = {"count": 0}
+
+    async def _connect_robust(_url: str):
+        connect_calls["count"] += 1
+        return connection
+
+    class _AioPika:
+        connect_robust = staticmethod(_connect_robust)
+
+    def _create_task(coro):
+        coro.close()
+        created["task"] = object()
+        return created["task"]
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _AioPika)
+    monkeypatch.setattr(asyncio, "create_task", _create_task)
+
+    asyncio.run(bus._ensure_rabbit_listener())
+
+    assert connect_calls["count"] == 0
+    assert bus._rabbit_available is True
+    assert bus._rabbit_connection is connection
+    assert bus._rabbit_channel is channel
+    assert bus._rabbit_queue is queue
+    assert bus._rabbit_listener_task is created["task"]
 
 
 def test_ensure_rabbit_listener_handles_missing_optional_dependency(
