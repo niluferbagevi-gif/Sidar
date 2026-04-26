@@ -65,7 +65,7 @@ export function AgentManagerPanel() {
   }, [file, form]);
 
   return (
-    <section className="panel panel--stacked">
+    <section className="panel panel--stacked" role="region" aria-label="Agent Manager paneli">
       <div className="panel-toolbar">
         <div>
           <h2>Agent Manager</h2>

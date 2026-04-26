@@ -25,6 +25,11 @@ describe("AgentManagerPanel", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("renders panel as accessible region", () => {
+    render(<AgentManagerPanel />);
+    expect(screen.getByRole("region", { name: /agent manager paneli/i })).toBeInTheDocument();
+  });
+
   it("submits the selected plugin file and renders the success preview", async () => {
     const user = userEvent.setup();
     global.fetch.mockResolvedValue({

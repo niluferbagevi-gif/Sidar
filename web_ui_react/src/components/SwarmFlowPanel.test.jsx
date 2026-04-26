@@ -91,6 +91,13 @@ describe("SwarmFlowPanel", () => {
     expect(fetchJson).toHaveBeenCalledWith("/api/hitl/pending");
   });
 
+  it("renders accessible region and operation log live region", async () => {
+    fetchJson.mockImplementation(bootstrapApiMock());
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByRole("region", { name: /swarm görev akışı paneli/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/operasyon günlüğü/i)).toHaveAttribute("aria-live", "polite");
+  });
+
   it("handles node actions, HITL review flow, approval response and empty-task validation", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation(async (url, options) => {

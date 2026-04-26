@@ -724,7 +724,7 @@ export function SwarmFlowPanel() {
   }, [loadPendingApprovals, pushOperationLog]);
 
   return (
-    <section className="panel panel--stacked">
+    <section className="panel panel--stacked" role="region" aria-label="Swarm görev akışı paneli">
       <div className="panel-toolbar">
         <div>
           <h2>Swarm Görev Akışı</h2>
@@ -953,7 +953,7 @@ export function SwarmFlowPanel() {
 
               <div className="swarm-graph__operation-card">
                 <strong>Operasyon Günlüğü</strong>
-                <ol className="timeline swarm-graph__operation-log">
+                <ol className="timeline swarm-graph__operation-log" aria-live="polite" aria-label="Operasyon günlüğü">
                   {operationLog.length === 0 && <li className="empty-state">Henüz kullanıcı aksiyonu kaydedilmedi.</li>}
                   {operationLog.map((entry, idx) => (
                     <li key={entry.id} className="timeline__item">

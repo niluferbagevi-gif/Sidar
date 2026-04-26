@@ -94,4 +94,11 @@ describe("P2PDialoguePanel", () => {
 
     expect(container.querySelector(".event-list__item--tool_call")).toBeInTheDocument();
   });
+
+  it("exposes accessible region and live log attributes", () => {
+    useChatStoreMock.mockReturnValue({ telemetryEvents: [] });
+    render(<P2PDialoguePanel />);
+    expect(screen.getByRole("region", { name: /canlı p2p ajan diyaloğu paneli/i })).toBeInTheDocument();
+    expect(screen.getByRole("log", { name: /p2p diyalog olayları/i })).toBeInTheDocument();
+  });
 });

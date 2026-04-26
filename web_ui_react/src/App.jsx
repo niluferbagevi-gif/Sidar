@@ -7,6 +7,7 @@ import { TenantAdminPanel } from "./components/TenantAdminPanel.jsx";
 import { PromptAdminPanel } from "./components/PromptAdminPanel.jsx";
 import { AgentManagerPanel } from "./components/AgentManagerPanel.jsx";
 import { PluginMarketplacePanel } from "./components/PluginMarketplacePanel.jsx";
+import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, setStoredToken } from "./lib/api.js";
 
 const NAV_ITEMS = [
@@ -67,11 +68,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<ChatPanel key={`chat-${savedAt}`} />} />
-          <Route path="/p2p" element={<P2PDialoguePanel />} />
-          <Route path="/swarm" element={<SwarmFlowPanel />} />
+          <Route path="/p2p" element={withPanelErrorBoundary(<P2PDialoguePanel />)} />
+          <Route path="/swarm" element={withPanelErrorBoundary(<SwarmFlowPanel />)} />
           <Route path="/admin/prompts" element={<PromptAdminPanel />} />
           <Route path="/admin/plugins" element={<PluginMarketplacePanel />} />
-          <Route path="/admin/agents" element={<AgentManagerPanel />} />
+          <Route path="/admin/agents" element={withPanelErrorBoundary(<AgentManagerPanel />)} />
           <Route path="/admin/tenants" element={<TenantAdminPanel />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>

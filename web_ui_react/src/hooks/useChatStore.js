@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createThrottledStreamController } from "./useThrottledStream.js";
 
 const genId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -8,43 +9,7 @@ const genId = () =>
 const DISPLAY_NAME_KEY = "sidar_collab_display_name";
 const ROOM_ID_KEY = "sidar_collab_room_id";
 const STREAM_THROTTLE_MS = 120;
-
-let pendingChunkText = "";
-let pendingChunkRequestId = "";
-let flushTimer = null;
-
-function clearStreamFlushTimer() {
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
-  }
-}
-
-function flushPendingChunk(set, get) {
-  if (!pendingChunkText) {
-    clearStreamFlushTimer();
-    return;
-  }
-  const chunk = pendingChunkText;
-  const requestId = pendingChunkRequestId;
-  pendingChunkText = "";
-  pendingChunkRequestId = "";
-  clearStreamFlushTimer();
-  set((state) => {
-    const currentRequestId = requestId || state.streamingRequestId;
-    const switchedRequest = Boolean(state.streamingRequestId && state.streamingRequestId !== currentRequestId);
-    return {
-      streamingText: switchedRequest ? chunk : state.streamingText + chunk,
-      streamingRequestId: currentRequestId,
-      isStreaming: true,
-    };
-  });
-}
-
-function scheduleChunkFlush(set, get) {
-  if (flushTimer) return;
-  flushTimer = setTimeout(() => flushPendingChunk(set, get), STREAM_THROTTLE_MS);
-}
+const streamController = createThrottledStreamController({ throttleMs: STREAM_THROTTLE_MS });
 
 function readStoredValue(key, fallback) {
   if (typeof localStorage === "undefined") return fallback;
@@ -63,13 +28,16 @@ function persistValue(key, value) {
 
 export const __chatStoreTestUtils = {
   setPendingChunk(text = "", requestId = "") {
-    pendingChunkText = String(text || "");
-    pendingChunkRequestId = String(requestId || "");
+    streamController.setPending(text, requestId);
   },
-  flushPendingChunk,
-  scheduleChunkFlush,
-  clearStreamFlushTimer,
-  getFlushTimer: () => flushTimer,
+  flushPendingChunk(set, get) {
+    streamController.flush({ set, get });
+  },
+  scheduleChunkFlush(set, get) {
+    streamController.scheduleFlush({ set, get });
+  },
+  clearStreamFlushTimer: streamController.clearTimer,
+  getFlushTimer: streamController.getFlushTimer,
 };
 
 export const useChatStore = create((set, get) => ({
@@ -125,9 +93,7 @@ export const useChatStore = create((set, get) => ({
   },
 
   startAssistantStream(requestId) {
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
     set({
       isStreaming: true,
       streamingText: "",
@@ -139,9 +105,7 @@ export const useChatStore = create((set, get) => ({
   appendChunk(text, requestId = "") {
     const normalized = String(text || "");
     if (!normalized) return;
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
     set((state) => {
       const activeRequestId = String(requestId || state.streamingRequestId || "");
       const switchedRequest = Boolean(
@@ -156,13 +120,11 @@ export const useChatStore = create((set, get) => ({
   },
 
   commitAssistantMessage(message = null, requestId = "") {
-    flushPendingChunk(set, get);
+    streamController.flush({ set, get });
     const state = get();
     const finalText = message?.content || state.streamingText;
     if (!finalText) {
-      pendingChunkText = "";
-      pendingChunkRequestId = "";
-      clearStreamFlushTimer();
+      streamController.reset();
       set({ streamingText: "", isStreaming: false, streamingRequestId: "" });
       return;
     }
@@ -183,9 +145,7 @@ export const useChatStore = create((set, get) => ({
       isStreaming: false,
       streamingRequestId: "",
     }));
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
   },
 
   addTelemetryEvent(kind, content, meta = {}) {
@@ -203,23 +163,17 @@ export const useChatStore = create((set, get) => ({
   },
 
   setError(msg) {
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
     set({ error: msg, isStreaming: false, streamingText: "", streamingRequestId: "" });
   },
 
   clearMessages() {
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
     set({ messages: [], streamingText: "", error: null, telemetryEvents: [], streamingRequestId: "", isStreaming: false });
   },
 
   newSession() {
-    pendingChunkText = "";
-    pendingChunkRequestId = "";
-    clearStreamFlushTimer();
+    streamController.reset();
     set({
       sessionId: genId(),
       messages: [],
