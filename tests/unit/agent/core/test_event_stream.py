@@ -1197,6 +1197,57 @@ def test_ensure_kafka_listener_handles_missing_optional_dependency(
     assert cleaned["ok"] is True
 
 
+def test_ensure_kafka_listener_short_circuit_and_reuse_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+
+    bus._kafka_available = False
+    asyncio.run(bus._ensure_kafka_listener())
+    assert bus._kafka_listener_task is None
+
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._kafka_available = None
+    running_task = _RunningTask()
+    bus._kafka_listener_task = running_task
+    asyncio.run(bus._ensure_kafka_listener())
+    assert bus._kafka_listener_task is running_task
+
+    class _DummyProducer:
+        async def start(self) -> None:
+            raise AssertionError("producer.start should not be called when producer already exists")
+
+    class _DummyConsumer:
+        async def start(self) -> None:
+            raise AssertionError("consumer.start should not be called when consumer already exists")
+
+    created_tasks: list[str] = []
+
+    async def _loop() -> None:
+        return None
+
+    def _create_task(coro):
+        created_tasks.append("created")
+        coro.close()
+        return object()
+
+    class _AioKafka:
+        AIOKafkaProducer = _DummyProducer
+        AIOKafkaConsumer = _DummyConsumer
+
+    bus._kafka_listener_task = None
+    bus._kafka_producer = _DummyProducer()
+    bus._kafka_consumer = _DummyConsumer()
+    monkeypatch.setattr(bus, "_kafka_listener_loop", _loop)
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _AioKafka)
+    monkeypatch.setattr(event_stream.asyncio, "create_task", _create_task)
+    asyncio.run(bus._ensure_kafka_listener())
+
+    assert created_tasks == ["created"]
+    assert bus._kafka_available is True
+
+
 def test_rabbit_connection_failure_switches_to_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     bus = AgentEventBus()
     bus._backend = "rabbitmq"
@@ -1655,6 +1706,42 @@ def test_cleanup_rabbit_and_kafka_suppress_close_errors() -> None:
     assert bus._kafka_producer is None
 
 
+def test_cleanup_rabbit_and_kafka_cover_non_callable_and_none_paths() -> None:
+    bus = AgentEventBus()
+
+    class _RabbitChannelNonCallableClose:
+        def __init__(self) -> None:
+            self.close = "not-callable"
+
+    class _RabbitChannelSyncClose:
+        def close(self) -> None:
+            return None
+
+    bus._rabbit_channel = _RabbitChannelNonCallableClose()
+    bus._rabbit_connection = None
+    asyncio.run(bus._cleanup_rabbit())
+    assert bus._rabbit_channel is None
+    assert bus._rabbit_connection is None
+
+    bus._rabbit_channel = _RabbitChannelSyncClose()
+    bus._rabbit_connection = None
+    asyncio.run(bus._cleanup_rabbit())
+    assert bus._rabbit_channel is None
+    assert bus._rabbit_connection is None
+
+    bus._kafka_consumer = None
+    bus._kafka_producer = None
+    asyncio.run(bus._cleanup_kafka())
+    assert bus._kafka_consumer is None
+    assert bus._kafka_producer is None
+
+    bus._rabbit_channel = None
+    bus._rabbit_connection = None
+    asyncio.run(bus._cleanup_rabbit())
+    assert bus._rabbit_channel is None
+    assert bus._rabbit_connection is None
+
+
 def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -1676,3 +1763,98 @@ def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
 
     assert len(debug_calls) == 1
     assert "persistent DLQ yazımı başarısız" in debug_calls[0]
+
+
+def test_persist_dead_letter_items_sync_handles_empty_parent_path(tmp_path) -> None:
+    bus = AgentEventBus()
+    path = tmp_path / "events.jsonl"
+    bus._dlq_persist_path = str(path)
+    bus._persist_dead_letter_items_sync([{"reason": "ok"}])
+    assert path.exists() is True
+
+
+def test_persist_dead_letter_items_sync_returns_when_path_missing() -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_path = None
+    bus._persist_dead_letter_items_sync([{"reason": "skip"}])
+
+
+def test_persist_dead_letter_items_sync_writes_when_parent_is_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    bus = AgentEventBus()
+    monkeypatch.chdir(tmp_path)
+    bus._dlq_persist_path = "events.jsonl"
+    bus._persist_dead_letter_items_sync([{"reason": "relative"}])
+    assert (tmp_path / "events.jsonl").exists() is True
+
+
+def test_schedule_dead_letter_flush_returns_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+
+    def _raise_runtime_error():
+        raise RuntimeError("no running loop")
+
+    monkeypatch.setattr(event_stream.asyncio, "get_running_loop", _raise_runtime_error)
+    bus._schedule_dead_letter_flush()
+    assert bus._dlq_persist_flush_task is None
+
+
+@pytest.mark.asyncio
+async def test_delayed_dead_letter_flush_triggers_queue_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    called = {"flush": False}
+
+    async def _sleep(_seconds: float) -> None:
+        return None
+
+    async def _flush() -> None:
+        called["flush"] = True
+
+    monkeypatch.setattr(event_stream.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(bus, "_flush_dead_letter_persist_queue", _flush)
+
+    await bus._delayed_dead_letter_flush()
+    assert called["flush"] is True
+
+
+@pytest.mark.asyncio
+async def test_flush_dead_letter_persist_queue_covers_lock_and_empty_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_path = "events.jsonl"
+    bus._dlq_persist_pending = []
+    await bus._flush_dead_letter_persist_queue()
+
+    bus._dlq_persist_pending = [{"reason": "write"}]
+    bus._dlq_persist_lock = asyncio.Lock()
+
+    calls: list[list[dict[str, object]]] = []
+
+    async def _to_thread(fn, records):
+        calls.append(records)
+        fn(records)
+        return None
+
+    monkeypatch.setattr(event_stream.asyncio, "to_thread", _to_thread)
+    monkeypatch.setattr(bus, "_persist_dead_letter_items_sync", lambda records: None)
+
+    await bus._flush_dead_letter_persist_queue()
+    assert calls and calls[0][0]["reason"] == "write"
+
+
+@pytest.mark.asyncio
+async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_under_lock() -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_path = "events.jsonl"
+    bus._dlq_persist_pending = [{"reason": "race"}]
+
+    class _DrainingLock:
+        async def __aenter__(self):
+            bus._dlq_persist_pending.clear()
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    bus._dlq_persist_lock = _DrainingLock()
+    await bus._flush_dead_letter_persist_queue()
