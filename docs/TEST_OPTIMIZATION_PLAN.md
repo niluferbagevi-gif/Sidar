@@ -70,6 +70,18 @@ Parçalanmayı önleme kuralları (zorunlu):
    - E2E (az sayıda kritik uçtan uca akış)
 6. **Kapsam dışı modül farkındalığı**: `.coveragerc` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`, `web_ui_react/*`, `migrations/*`) için coverage artışı hedefi konmaz; sadece fonksiyonel/regresyon ihtiyacı varsa test yazılır.
 
+### 1.1 Mevcut güçlü mimari yapı (korunacak pratikler)
+
+Bu bölüm, projede hâlihazırda iyi çalışan test/kurulum kararlarını netleştirir:
+
+- **Docker Compose ile izole stateful servisler:** PostgreSQL ve Redis’in host ortamdan ayrıştırılarak compose ile çalıştırılması, yerel geliştirme ile CI davranışını hizalar ve kurulum karmaşıklığını azaltır.
+- **DDoS/rate-limit smoke kapsaması:** `test_boot_health_probes_bypass_ddos_redis_rate_limit` benzeri testler, sistemin açılış/health davranışı ile koruma katmanlarını birlikte doğruladığı için erken regresyon yakalama açısından kritiktir.
+- **Testcontainer tabanlı DB izolasyonu:** `tests/conftest.py` içindeki `PostgresContainer` kullanımı, testler arası veri sızıntısını azaltır ve flaky davranışı düşürür.
+- **FakeAsyncRedis ile deterministik Redis testleri:** `fakeredis.FakeAsyncRedis` ile düşük maliyetli, hızlı ve internetsiz/servissiz test koşumu sağlanır.
+- **`TEST_REDIS_DECODE_RESPONSES` uyumu:** Testteki decode davranışının konfigürasyonla değiştirilebilir olması, üretimde görülebilecek `str/bytes` farklılıklarından doğan hataları daha erken yakalamaya yardımcı olur.
+
+> Operasyonel öneri: Bu pratikler “değiştirilebilir tercih” değil, proje kalite taban çizgisi olarak ele alınmalı ve yeni test altyapısı işlerinde geriye dönük korunmalıdır.
+
 ---
 
 ## 2) Önceliklendirme Matrisi
