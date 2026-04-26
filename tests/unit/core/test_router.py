@@ -354,3 +354,129 @@ def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.Mo
 
     assert calls == []
     assert isinstance(router._budget_tracker, router._DailyBudgetTracker)
+
+
+def test_redis_budget_tracker_falls_back_to_in_memory_on_pipeline_redis_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RedisError(Exception):
+        pass
+
+    class _FailingPipe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def incrbyfloat(self, *_args, **_kwargs):
+            return self
+
+        def expireat(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            raise _RedisError("connection dropped")
+
+    class _FakeRedis:
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+        def pipeline(self, transaction: bool = True):
+            assert transaction is True
+            return _FailingPipe()
+
+        def get(self, _key: str):
+            raise _RedisError("read failed")
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    tracker = router._RedisDailyBudgetTracker("redis://fake:6379/0")
+
+    tracker.add(0.75)
+    assert tracker._fallback.daily_usage() == pytest.approx(0.75)
+    assert tracker.daily_usage() == pytest.approx(0.75)
+
+
+def test_estimate_tokens_returns_zero_for_empty_content() -> None:
+    assert CostAwareRouter._estimate_tokens([]) == 0
+    assert CostAwareRouter._estimate_tokens([{"role": "user", "content": ""}]) == 0
+
+
+def test_read_optional_string_returns_empty_for_none() -> None:
+    cfg = SimpleNamespace(COST_ROUTING_REDIS_BUDGET_URL=None)
+    assert router._read_optional_string(cfg, "COST_ROUTING_REDIS_BUDGET_URL") == ""
+
+
+def test_sqlite_daily_budget_tracker_rejects_empty_path() -> None:
+    with pytest.raises(ValueError, match="db_path cannot be empty"):
+        router._SqliteDailyBudgetTracker("   ")
+
+
+def test_sqlite_daily_budget_tracker_add_twice_uses_update_path(tmp_path) -> None:
+    tracker = router._SqliteDailyBudgetTracker(str(tmp_path / "budget.db"))
+    tracker.add(0.2)
+    tracker.add(0.3)
+    assert tracker.daily_usage() == pytest.approx(0.5)
+
+
+def test_redis_daily_budget_tracker_init_guards(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(router, "SyncRedis", None)
+    with pytest.raises(RuntimeError, match="redis bağımlılığı gerekli"):
+        router._RedisDailyBudgetTracker("redis://fake:6379/0")
+
+    class _FakeRedis:
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    with pytest.raises(ValueError, match="redis_url cannot be empty"):
+        router._RedisDailyBudgetTracker("  ")
+
+
+def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Pipe:
+        def __init__(self) -> None:
+            self.execute_called = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def incrbyfloat(self, *_args, **_kwargs):
+            return self
+
+        def expireat(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            self.execute_called += 1
+            return True
+
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self.pipe = _Pipe()
+
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+        def pipeline(self, transaction: bool = True):
+            assert transaction is True
+            return self.pipe
+
+        def get(self, _key: str):
+            return None
+
+        def expireat(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    tracker = router._RedisDailyBudgetTracker("redis://fake:6379/0")
+
+    tracker.add(0.0)
+    assert tracker._redis.pipe.execute_called == 0
+    assert tracker.daily_usage() == 0.0
