@@ -1539,6 +1539,18 @@ async def test_llmclient_stream_gemini_generator_client_branch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_llmclient_stream_gemini_generator_fallback_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.LLMClient("openai", _make_config())
+
+    async def _fallback(_self, _response_stream):
+        yield "fallback-g"
+
+    monkeypatch.setattr(llm_client.GeminiClient, "_stream_gemini_generator", _fallback)
+
+    assert await _collect(c._stream_gemini_generator(object())) == ["fallback-g"]
+
+
+@pytest.mark.asyncio
 async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
     await _cache_put(fake_redis, manager, "k2", [1.0, 0.0], "r2")

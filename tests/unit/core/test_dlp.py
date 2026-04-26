@@ -240,3 +240,29 @@ def test_get_dlp_engine_initialization_is_thread_safe(monkeypatch):
 
     assert build_calls == 1
     assert all(engine is engines[0] for engine in engines)
+
+
+def test_get_dlp_engine_double_checked_lock_inner_branch_when_engine_prebuilt(monkeypatch):
+    dlp._ENGINE = None
+    expected = DLPEngine(mask_email=True)
+    build_calls = {"count": 0}
+
+    class _RaceLock:
+        def __enter__(self):
+            dlp._ENGINE = expected
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def _fake_build() -> DLPEngine:
+        build_calls["count"] += 1
+        return DLPEngine(mask_email=False)
+
+    monkeypatch.setattr(dlp, "_ENGINE_LOCK", _RaceLock())
+    monkeypatch.setattr(dlp, "_build_engine_from_env", _fake_build)
+
+    engine = get_dlp_engine()
+
+    assert engine is expected
+    assert build_calls["count"] == 0

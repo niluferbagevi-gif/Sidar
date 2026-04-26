@@ -137,6 +137,12 @@ def test_get_config_returns_singleton(monkeypatch):
     assert first is second
 
 
+def test_is_test_env_returns_true_when_sidar_env_is_testing(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "testing")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert config.Config._is_test_env() is True
+
+
 def test_is_wsl2_returns_false_on_read_error(monkeypatch):
     monkeypatch.setattr(Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(OSError("x")))
     assert config._is_wsl2() is False
