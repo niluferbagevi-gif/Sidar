@@ -95,6 +95,29 @@ async def test_init_rejects_unexpected_kwargs() -> None:
         sidar_agent.SidarAgent(invalid_param="123", another_param="456")
 
 
+async def test_init_uses_injected_dependencies_without_recreating() -> None:
+    cfg = sidar_agent.Config()
+    deps = sidar_agent.AgentDependencies(
+        security=Mock(name="security"),
+        code=Mock(name="code"),
+        health=Mock(name="health"),
+        github=Mock(name="github"),
+        memory=Mock(name="memory"),
+        llm=Mock(name="llm"),
+        web=Mock(name="web"),
+        pkg=Mock(name="pkg"),
+        docs=Mock(name="docs"),
+        todo=Mock(name="todo"),
+    )
+
+    agent = sidar_agent.SidarAgent(cfg=cfg, deps=deps)
+
+    assert agent._deps is deps
+    assert agent.llm is deps.llm
+    assert agent.memory is deps.memory
+    assert agent.docs is deps.docs
+
+
 @pytest.mark.parametrize(
     ("raw", "expected_tool", "expected_argument"),
     [

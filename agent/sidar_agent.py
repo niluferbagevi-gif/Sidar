@@ -12,6 +12,7 @@ import threading
 import sys
 import importlib
 from importlib import import_module
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List, Any
 
@@ -162,6 +163,69 @@ class ToolCall(BaseModel):
     argument: str = Field(..., description="Araç için ham argüman metni")
 
 
+@dataclass
+class AgentDependencies:
+    """SidarAgent alt sistem bağımlılıkları (DI)."""
+
+    security: SecurityManager
+    code: CodeManager
+    health: SystemHealthManager
+    github: GitHubManager
+    memory: ConversationMemory
+    llm: LLMClient
+    web: WebSearchManager
+    pkg: PackageInfoManager
+    docs: DocumentStore
+    todo: TodoManager
+
+    @classmethod
+    def from_config(cls, cfg: Config, *, has_explicit_database_url: bool) -> "AgentDependencies":
+        security = SecurityManager(cfg=cfg)
+        code = CodeManager(
+            security,
+            Path(cfg.BASE_DIR),
+            docker_image=getattr(cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
+            docker_exec_timeout=getattr(cfg, "DOCKER_EXEC_TIMEOUT", 10),
+        )
+        health = SystemHealthManager(cfg.USE_GPU, cfg=cfg)
+        github = GitHubManager(cfg.GITHUB_TOKEN, cfg.GITHUB_REPO)
+        memory = ConversationMemory(
+            database_url=getattr(cfg, "DATABASE_URL", "") if has_explicit_database_url else None,
+            base_dir=cfg.BASE_DIR,
+            file_path=cfg.MEMORY_FILE,
+            max_turns=cfg.MAX_MEMORY_TURNS,
+            encryption_key=getattr(cfg, "MEMORY_ENCRYPTION_KEY", ""),
+            keep_last=getattr(cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
+        )
+        llm = LLMClient(cfg.AI_PROVIDER, cfg)
+        web = WebSearchManager(cfg)
+        pkg = PackageInfoManager(cfg)
+        docs = DocumentStore(
+            cfg.RAG_DIR,
+            top_k=cfg.RAG_TOP_K,
+            chunk_size=cfg.RAG_CHUNK_SIZE,
+            chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
+            use_gpu=getattr(cfg, "USE_GPU", False),
+            gpu_device=getattr(cfg, "GPU_DEVICE", 0),
+            mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
+            cfg=cfg,
+            initialize_vector=not bool(getattr(cfg, "CLI_FAST_MODE", False)),
+        )
+        todo = TodoManager(cfg)
+        return cls(
+            security=security,
+            code=code,
+            health=health,
+            github=github,
+            memory=memory,
+            llm=llm,
+            web=web,
+            pkg=pkg,
+            docs=docs,
+            todo=todo,
+        )
+
+
 class SidarAgent:
     """
     Sidar — Yazılım Mimarı ve Baş Mühendis AI Asistanı.
@@ -175,6 +239,7 @@ class SidarAgent:
         cfg: Config = None,
         *,
         config: Optional[Config] = None,
+        deps: Optional[AgentDependencies] = None,
         **kwargs: Any,
     ) -> None:
         """SidarAgent oluşturur.
@@ -196,44 +261,21 @@ class SidarAgent:
         # Lazy init: ilk async çağrıda oluşturulur (respond() içindeki guard).
         self._lock: Optional[asyncio.Lock] = None
 
-        # Alt sistemler — temel (Senkron/Yerel)
-        self.security = SecurityManager(cfg=self.cfg)
-        self.code = CodeManager(
-            self.security,
-            Path(self.cfg.BASE_DIR),
-            docker_image=getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
-            docker_exec_timeout=getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", 10),
-        )
-        self.health = SystemHealthManager(self.cfg.USE_GPU, cfg=self.cfg)
-        self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
-
-        self.memory = ConversationMemory(
-            database_url=getattr(self.cfg, "DATABASE_URL", "") if has_explicit_database_url else None,
-            base_dir=self.cfg.BASE_DIR,
-            file_path=self.cfg.MEMORY_FILE,
-            max_turns=self.cfg.MAX_MEMORY_TURNS,
-            encryption_key=getattr(self.cfg, "MEMORY_ENCRYPTION_KEY", ""),
-            keep_last=getattr(self.cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
+        self._deps = deps or AgentDependencies.from_config(
+            self.cfg, has_explicit_database_url=has_explicit_database_url
         )
 
-        self.llm = LLMClient(self.cfg.AI_PROVIDER, self.cfg)
-
-        # Alt sistemler — yeni (Asenkron)
-        self.web = WebSearchManager(self.cfg)
-        self.pkg = PackageInfoManager(self.cfg)
-        self.docs = DocumentStore(
-            self.cfg.RAG_DIR,
-            top_k=self.cfg.RAG_TOP_K,
-            chunk_size=self.cfg.RAG_CHUNK_SIZE,
-            chunk_overlap=self.cfg.RAG_CHUNK_OVERLAP,
-            use_gpu=getattr(self.cfg, "USE_GPU", False),
-            gpu_device=getattr(self.cfg, "GPU_DEVICE", 0),
-            mixed_precision=getattr(self.cfg, "GPU_MIXED_PRECISION", False),
-            cfg=self.cfg,
-            initialize_vector=not bool(getattr(self.cfg, "CLI_FAST_MODE", False)),
-        )
-
-        self.todo = TodoManager(self.cfg)
+        # Alt sistemler — DI üzerinden atanır (test izolasyonu için).
+        self.security = self._deps.security
+        self.code = self._deps.code
+        self.health = self._deps.health
+        self.github = self._deps.github
+        self.memory = self._deps.memory
+        self.llm = self._deps.llm
+        self.web = self._deps.web
+        self.pkg = self._deps.pkg
+        self.docs = self._deps.docs
+        self.todo = self._deps.todo
         self.tracer = trace.get_tracer(__name__) if trace and getattr(self.cfg, "ENABLE_TRACING", False) else None
         self._instructions_cache: Optional[str] = None
         self._instructions_mtimes: Dict[str, float] = {}
