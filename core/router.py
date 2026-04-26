@@ -148,6 +148,24 @@ def _read_optional_string(config: object, attr_name: str) -> str:
     return str(value).strip()
 
 
+def _configure_budget_tracker(config: object) -> None:
+    """Global tracker'ı config'e göre seçer; gereksiz sıfırlama yapmaz."""
+    global _budget_tracker
+
+    shared_budget_db_path = _read_optional_string(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH")
+    if shared_budget_db_path:
+        _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
+        return
+
+    shared_budget_redis_url = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_URL")
+    if shared_budget_redis_url:
+        _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
+        return
+
+    if not isinstance(_budget_tracker, _DailyBudgetTracker):
+        _budget_tracker = _DailyBudgetTracker()
+
+
 class _SqliteDailyBudgetTracker:
     """Günlük maliyeti SQLite üzerinde processler arası paylaşarak takip eder."""
 
@@ -293,12 +311,8 @@ class CostAwareRouter:
     """
 
     def __init__(self, config) -> None:
-        global _budget_tracker
-
         self.config = config
-        # Her router oluşturumunda global bütçe izleyiciyi temiz başlangıca al.
-        # Böylece geçersiz/boş shared tracker ayarlarında önceki testlerden state sızmaz.
-        _budget_tracker = _DailyBudgetTracker()
+        _configure_budget_tracker(config)
         self._analyzer = QueryComplexityAnalyzer()
         self.enabled: bool = bool(getattr(config, "ENABLE_COST_ROUTING", False))
         self.complexity_threshold: float = float(
@@ -321,12 +335,6 @@ class CostAwareRouter:
         self.token_threshold: int = max(
             0, int(getattr(config, "COST_ROUTING_TOKEN_THRESHOLD", 0) or 0)
         )
-        shared_budget_db_path = _read_optional_string(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH")
-        if shared_budget_db_path:
-            _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
-        shared_budget_redis_url = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_URL")
-        if shared_budget_redis_url:
-            _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
 
     def select(
         self,
