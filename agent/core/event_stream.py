@@ -326,6 +326,7 @@ class AgentEventBus:
             return False
         payload = self._serialize_event_payload(evt)
         try:
+            importlib.import_module("aiokafka")
             await self._kafka_producer.send_and_wait(self._kafka_topic, payload.encode("utf-8"))
             return True
         except Exception as exc:
