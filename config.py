@@ -368,7 +368,6 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
     OLLAMA_TIMEOUT: int = get_int_env("OLLAMA_TIMEOUT", 30)
-    OLLAMA_CONTEXT_MAX_CHARS: int = get_int_env("OLLAMA_CONTEXT_MAX_CHARS", 12000)
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     CODING_MODEL:   str = os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
     TEXT_MODEL:     str = os.getenv("TEXT_MODEL", "gemma2:9b")
@@ -432,14 +431,7 @@ class Config:
     MAX_REACT_STEPS:   int = get_int_env("MAX_REACT_STEPS", 10)
     REACT_TIMEOUT:     int = get_int_env("REACT_TIMEOUT", 60)
     SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
-    LOCAL_INSTRUCTION_MAX_CHARS: int = get_int_env("LOCAL_INSTRUCTION_MAX_CHARS", 2400)
-    LOCAL_AGENT_CONTEXT_MAX_CHARS: int = get_int_env("LOCAL_AGENT_CONTEXT_MAX_CHARS", 4500)
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
-
-    # ─── Memory Archive ──────────────────────────────────────
-    MEMORY_ARCHIVE_TOP_K: int = get_int_env("MEMORY_ARCHIVE_TOP_K", 3)
-    MEMORY_ARCHIVE_MIN_SCORE: float = get_float_env("MEMORY_ARCHIVE_MIN_SCORE", 0.35)
-    MEMORY_ARCHIVE_MAX_CHARS: int = get_int_env("MEMORY_ARCHIVE_MAX_CHARS", 1500)
 
     # ─── API Rate Limiting ───────────────────────────────────
     RATE_LIMIT_WINDOW:    int = get_int_env("RATE_LIMIT_WINDOW", 60)
