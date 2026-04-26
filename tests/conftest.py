@@ -44,6 +44,7 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 from tests.helpers import make_test_config
+from tests.fixtures.factories import build_hitl_request
 
 _fakeredis_spec = importlib.util.find_spec("fakeredis")
 fakeredis = importlib.import_module("fakeredis") if _fakeredis_spec is not None else None
@@ -72,6 +73,11 @@ if str(PROJECT_ROOT) not in sys.path:
 @pytest.fixture
 def mock_config() -> Callable[..., Any]:
     return make_test_config
+
+
+@pytest.fixture
+def hitl_request_factory() -> Callable[..., Any]:
+    return build_hitl_request
 
 
 def _resolve_db_schema_target_version() -> int | None:

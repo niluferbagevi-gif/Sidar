@@ -42,6 +42,8 @@ AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
 RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
+BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
+BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -275,8 +277,13 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
-  python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+  python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-save="${BENCHMARK_BASELINE_NAME}"
   BENCHMARK_EXIT_CODE=$?
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
+    echo "📈 Benchmark regresyon karşılaştırması çalıştırılıyor (--benchmark-compare=${BENCHMARK_COMPARE_NAME})..."
+    python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-compare="${BENCHMARK_COMPARE_NAME}"
+    BENCHMARK_EXIT_CODE=$?
+  fi
 else
   echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then

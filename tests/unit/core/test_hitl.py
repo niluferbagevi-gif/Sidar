@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import core.hitl as hitl
+from tests.fixtures.factories import build_hitl_request
 
 
 @pytest.fixture(autouse=True)
@@ -22,13 +23,8 @@ def run(coro):
 
 
 def _make_request(*, request_id: str, expires_at: float, decision: hitl.HITLDecision = hitl.HITLDecision.PENDING) -> hitl.HITLRequest:
-    return hitl.HITLRequest(
+    return build_hitl_request(
         request_id=request_id,
-        action="file_delete",
-        description="delete a file",
-        payload={"path": "/tmp/x"},
-        requested_by="tester",
-        created_at=10.0,
         expires_at=expires_at,
         decision=decision,
     )

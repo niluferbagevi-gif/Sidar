@@ -165,6 +165,7 @@ dev = [
   "pytest-cov~=5.0.0",
   "pytest-benchmark~=4.0.0",
   "pytest-mock>=3.14.0",
+  "hypothesis>=6.112.0",
   "respx>=0.21.1",
   "fakeredis>=2.20.0",
   "testcontainers>=4.0.0",
