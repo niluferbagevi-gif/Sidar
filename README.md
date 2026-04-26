@@ -578,6 +578,7 @@ python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 2
 cd web_ui_react && npm run test:critical
+bash scripts/ci/flaky_scan.sh
 ```
 
 > Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
@@ -585,6 +586,9 @@ cd web_ui_react && npm run test:critical
 >
 > Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
 > `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
+> Deterministiklik/flakiness taraması için ise gece çalışan `Nightly Flaky Scan`
+> iş akışı aynı kritik test setini 5 tekrar (`pytest -n auto -q --maxfail=1`) koşturup
+> `artifacts/flaky/report.md` raporu üretir.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri

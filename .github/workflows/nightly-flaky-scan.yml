@@ -1,0 +1,53 @@
+name: Nightly Flaky Scan
+
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-flaky-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flaky-scan:
+    name: Flaky Scan (5x deterministic replay)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Cache APT packages (PortAudio)
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: portaudio19-dev
+          version: ci-portaudio-v1
+
+      - name: Install system dependencies (PortAudio via project script)
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run nightly flaky scan (5 repetitions)
+        run: bash scripts/ci/flaky_scan.sh
+
+      - name: Upload flaky scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-flaky-report
+          path: artifacts/flaky/
+          if-no-files-found: warn
+          retention-days: 14
