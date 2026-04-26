@@ -1362,7 +1362,6 @@ class LLMClient:
     def __init__(self, provider: str, config) -> None:
         self.provider = provider.lower()
         self.config = config
-        setattr(self.config, "OLLAMA_CONTEXT_MAX_CHARS", _cfg_int(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000, minimum=1200))
         self._semantic_cache = _SemanticCacheManager(config)
         self._router = CostAwareRouter(config)
 

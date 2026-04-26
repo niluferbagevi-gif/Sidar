@@ -33,6 +33,11 @@ def make_test_config(**overrides: Any) -> MagicMock:
         "COST_ROUTING_DAILY_BUDGET_USD": 1.0,
         "ENTITY_MEMORY_TTL_DAYS": 90,
         "ENTITY_MEMORY_MAX_PER_USER": 100,
+        "LOCAL_INSTRUCTION_MAX_CHARS": 2400,
+        "LOCAL_AGENT_CONTEXT_MAX_CHARS": 4500,
+        "MEMORY_ARCHIVE_TOP_K": 3,
+        "MEMORY_ARCHIVE_MIN_SCORE": 0.35,
+        "MEMORY_ARCHIVE_MAX_CHARS": 1500,
         "REDIS_URL": "redis://localhost:6379/0",
         "REDIS_MAX_CONNECTIONS": 5,
     }
