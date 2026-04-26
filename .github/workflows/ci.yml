@@ -81,7 +81,7 @@ jobs:
 
       - name: Run test suite (single pass + coverage gate)
         env:
-          RUN_BENCHMARKS: "auto"
+          RUN_BENCHMARKS: "required"
           BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
           BENCHMARK_TREND_COMPARE: "1"
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
