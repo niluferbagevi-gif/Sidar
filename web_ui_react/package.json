@@ -10,7 +10,8 @@
     "lint": "eslint src --ext .js,.jsx --report-unused-disable-directives",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx"
   },
   "dependencies": {
     "react": "^18.3.1",

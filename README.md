@@ -576,10 +576,15 @@ uv sync --all-extras
 python -m pytest -c pyproject.toml tests/ -v
 python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
+uv run --with mutmut mutmut run --max-children 2
+cd web_ui_react && npm run test:critical
 ```
 
 > Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
 > kullanıyorsanız komutları doğrudan `python -m pytest ...` ile çalıştırın.
+>
+> Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
+> `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
