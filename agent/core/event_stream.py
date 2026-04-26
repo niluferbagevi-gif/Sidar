@@ -78,6 +78,7 @@ class AgentEventBus:
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
         self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
         self._dlq_buffer: deque[dict[str, object]] = deque(maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000")))
+        self._dlq_persist_path = str(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or "").strip()
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
@@ -548,7 +549,12 @@ class AgentEventBus:
         }
         if error is not None:
             item["error"] = str(error)
+
+        if len(self._dlq_buffer) == self._dlq_buffer.maxlen and self._dlq_buffer:
+            oldest_item = dict(self._dlq_buffer[0])
+            self._persist_dead_letter_item(oldest_item, dropped_from_memory=True)
         self._dlq_buffer.append(item)
+        self._persist_dead_letter_item(item)
 
         if self._backend == "redis" and self._redis_client is not None and self._redis_available is True:
             try:
@@ -560,6 +566,23 @@ class AgentEventBus:
                 )
             except Exception as exc:
                 logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
+
+    def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+        if not self._dlq_persist_path:
+            return
+        try:
+            record = {
+                "ts": time.time(),
+                "dropped_from_memory": dropped_from_memory,
+                "item": item,
+            }
+            parent = os.path.dirname(self._dlq_persist_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(self._dlq_persist_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            logger.debug("AgentEventBus persistent DLQ yazımı başarısız: %s", exc)
 
 
 _BUS = AgentEventBus()

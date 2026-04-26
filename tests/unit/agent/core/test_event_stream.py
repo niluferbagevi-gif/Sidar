@@ -756,6 +756,43 @@ async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavai
     assert bus._redis_client.xadd_calls == []
 
 
+@pytest.mark.asyncio
+async def test_write_dead_letter_persists_to_jsonl_when_path_configured(bus: AgentEventBus, tmp_path) -> None:
+    persist_path = tmp_path / "dlq.jsonl"
+    bus._dlq_persist_path = str(persist_path)
+
+    await bus._write_dead_letter(reason="persisted", payload={"kind": "io"})
+
+    lines = persist_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["dropped_from_memory"] is False
+    assert record["item"]["reason"] == "persisted"
+    assert record["item"]["payload"] == {"kind": "io"}
+
+
+@pytest.mark.asyncio
+async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflows(bus: AgentEventBus, tmp_path) -> None:
+    persist_path = tmp_path / "dlq_overflow.jsonl"
+    bus._dlq_persist_path = str(persist_path)
+    bus._dlq_buffer = deque(maxlen=2)
+
+    await bus._write_dead_letter(reason="first", payload={"n": 1})
+    await bus._write_dead_letter(reason="second", payload={"n": 2})
+    await bus._write_dead_letter(reason="third", payload={"n": 3})
+
+    lines = persist_path.read_text(encoding="utf-8").strip().splitlines()
+    # first + second + dropped(first) marker + third
+    assert len(lines) == 4
+    records = [json.loads(line) for line in lines]
+
+    dropped_records = [r for r in records if r["dropped_from_memory"] is True]
+    assert len(dropped_records) == 1
+    assert dropped_records[0]["item"]["reason"] == "first"
+
+    assert [x["reason"] for x in bus._dlq_buffer] == ["second", "third"]
+
+
 def test_get_agent_event_bus_singleton() -> None:
     assert get_agent_event_bus() is event_stream._BUS
     assert isinstance(get_agent_event_bus(), AgentEventBus)
