@@ -88,6 +88,14 @@ class _HITLStore:
             # Eski sürülen eleman index'ten kaldırılır (deque maxlen aşılınca)
             if len(self._requests) == self._requests.maxlen:
                 oldest = self._requests[0]
+                if oldest.decision == HITLDecision.PENDING:
+                    logger.warning("HITL: Kuyruk dolu, bekleyen istek düşürüldü: %s", oldest.request_id)
+                else:
+                    logger.warning(
+                        "HITL: Kuyruk dolu, kararı verilmiş istek düşürüldü: %s (karar=%s)",
+                        oldest.request_id,
+                        oldest.decision.value,
+                    )
                 self._index.pop(oldest.request_id, None)
             self._requests.append(req)
             self._index[req.request_id] = req

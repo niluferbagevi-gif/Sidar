@@ -46,16 +46,19 @@ def test_hitl_request_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert as_dict["decision"] == "pending"
 
 
-def test_store_add_get_pending_recent_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_store_add_get_pending_recent_and_eviction(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     store = hitl._HITLStore(max_size=2)
 
     req1 = _make_request(request_id="old", expires_at=50.0)
     req2 = _make_request(request_id="live", expires_at=200.0)
     req3 = _make_request(request_id="new", expires_at=300.0)
 
-    run(store.add(req1))
-    run(store.add(req2))
-    run(store.add(req3))
+    with caplog.at_level("WARNING"):
+        run(store.add(req1))
+        run(store.add(req2))
+        run(store.add(req3))
 
     assert run(store.get("old")) is None
     assert run(store.get("missing")) is None
@@ -64,9 +67,22 @@ def test_store_add_get_pending_recent_and_eviction(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(hitl.time, "time", lambda: 100.0)
     pending = run(store.pending())
     assert [r.request_id for r in pending] == ["live", "new"]
+    assert "HITL: Kuyruk dolu, bekleyen istek düşürüldü: old" in caplog.text
 
     recent = run(store.all_recent(limit=1))
     assert [r.request_id for r in recent] == ["new"]
+
+
+def test_store_logs_when_evicted_request_is_already_decided(caplog: pytest.LogCaptureFixture) -> None:
+    store = hitl._HITLStore(max_size=1)
+    decided = _make_request(request_id="done", expires_at=50.0, decision=hitl.HITLDecision.APPROVED)
+    newest = _make_request(request_id="new", expires_at=60.0)
+
+    run(store.add(decided))
+    with caplog.at_level("WARNING"):
+        run(store.add(newest))
+
+    assert "HITL: Kuyruk dolu, kararı verilmiş istek düşürüldü: done (karar=approved)" in caplog.text
 
 
 def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
