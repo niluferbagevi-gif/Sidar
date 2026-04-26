@@ -444,7 +444,7 @@ class Config:
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
     TRUSTED_PROXIES: frozenset = frozenset(
-        ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "").split(",") if ip.strip()
+        ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "127.0.0.1").split(",") if ip.strip()
     )
     TRUSTED_PROXIES_LIST: List[str] = sorted(TRUSTED_PROXIES)
     # RAG yükleme boyut limiti (varsayılan 50 MB)
@@ -669,6 +669,8 @@ class Config:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
+        if not str(self.JWT_SECRET_KEY or "").strip() and not self._is_test_env():
+            raise ValueError("JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
 
 
     @classmethod
@@ -699,6 +701,13 @@ class Config:
     def trusted_proxies_as_list(cls) -> List[str]:
         """Middleware entegrasyonları için güvenilir proxy değerlerini list[str] verir."""
         return list(cls.TRUSTED_PROXIES_LIST)
+
+    @classmethod
+    def _is_test_env(cls) -> bool:
+        sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+        if sidar_env in {"test", "testing"}:
+            return True
+        return bool(os.getenv("PYTEST_CURRENT_TEST"))
 
     @classmethod
     def _apply_gpu_memory_safety_check(cls) -> None:

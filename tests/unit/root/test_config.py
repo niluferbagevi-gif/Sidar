@@ -1143,3 +1143,15 @@ def test_trusted_proxies_as_list_returns_copy(monkeypatch):
     result = config.Config.trusted_proxies_as_list()
     assert result == ["10.0.0.1", "10.0.0.2"]
     assert result is not config.Config.TRUSTED_PROXIES_LIST
+
+
+def test_trusted_proxies_defaults_to_loopback() -> None:
+    assert "127.0.0.1" in config.Config.TRUSTED_PROXIES
+
+
+def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
+        config.Config()

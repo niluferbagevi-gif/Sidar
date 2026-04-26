@@ -42,7 +42,7 @@ _RE_BEARER = re.compile(
 
 # sk- / sk_live- / sk_test- (OpenAI, Stripe vb.)
 _RE_SK_KEY = re.compile(
-    r"\b(sk[-_](?:live[-_]|test[-_])?[A-Za-z0-9]{20,})\b"
+    r"\b(sk[-_](?:ant[-_]|proj[-_]|live[-_]|test[-_])?[A-Za-z0-9]{20,})\b"
 )
 
 # GitHub Personal Access Token  (ghp_ / github_pat_)
