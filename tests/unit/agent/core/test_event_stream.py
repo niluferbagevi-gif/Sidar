@@ -944,6 +944,12 @@ def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus
 
     bus._rabbit_available = False
     assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+
+    bus._rabbit_available = True
+    bus._rabbit_channel = None
+    monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+
     bus._rabbit_available = None
     monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
     assert asyncio.run(bus._publish_via_rabbit(evt)) is False
