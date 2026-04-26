@@ -106,6 +106,132 @@ class NonAwaitableCloseRedis:
         return "closed"
 
 
+class DummyRabbitIncoming:
+    def __init__(self, body: bytes, *, ack_raises: bool = False) -> None:
+        self.body = body
+        self.acked = False
+        self._ack_raises = ack_raises
+
+    async def ack(self) -> None:
+        self.acked = True
+        if self._ack_raises:
+            raise RuntimeError("rabbit ack failed")
+
+
+class DummyRabbitIterator:
+    def __init__(self, items: list[DummyRabbitIncoming]) -> None:
+        self._items = list(items)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
+        return False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> DummyRabbitIncoming:
+        if not self._items:
+            raise StopAsyncIteration
+        return self._items.pop(0)
+
+
+class DummyRabbitQueue:
+    def __init__(self, items: list[DummyRabbitIncoming] | None = None) -> None:
+        self._items = items or []
+
+    def iterator(self) -> DummyRabbitIterator:
+        return DummyRabbitIterator(self._items)
+
+
+class DummyRabbitExchange:
+    def __init__(self) -> None:
+        self.published: list[tuple[object, str]] = []
+        self.raise_on_publish = False
+
+    async def publish(self, message, routing_key: str) -> None:
+        if self.raise_on_publish:
+            raise RuntimeError("rabbit publish failed")
+        self.published.append((message, routing_key))
+
+
+class DummyRabbitChannel:
+    def __init__(self, queue: DummyRabbitQueue | None = None) -> None:
+        self.default_exchange = DummyRabbitExchange()
+        self.queue = queue or DummyRabbitQueue()
+        self.closed = False
+
+    async def declare_queue(self, _name: str, durable: bool = True) -> DummyRabbitQueue:
+        assert durable is True
+        return self.queue
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class DummyRabbitConnection:
+    def __init__(self, channel: DummyRabbitChannel | None = None) -> None:
+        self._channel = channel or DummyRabbitChannel()
+        self.closed = False
+
+    async def channel(self) -> DummyRabbitChannel:
+        return self._channel
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class DummyKafkaMessage:
+    def __init__(self, value: bytes) -> None:
+        self.value = value
+
+
+class DummyKafkaProducer:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.started = False
+        self.stopped = False
+        self.sent: list[tuple[str, bytes]] = []
+        self.raise_on_send = False
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+    async def send_and_wait(self, topic: str, payload: bytes) -> None:
+        if self.raise_on_send:
+            raise RuntimeError("kafka publish failed")
+        self.sent.append((topic, payload))
+
+
+class DummyKafkaConsumer:
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.started = False
+        self.stopped = False
+        self.messages: list[object] = []
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+    async def getone(self):
+        if not self.messages:
+            await asyncio.sleep(0)
+            return DummyKafkaMessage(b"{}")
+        item = self.messages.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
 @pytest.fixture
 def bus() -> AgentEventBus:
     return AgentEventBus()
@@ -582,3 +708,363 @@ def test_test_doubles_cover_default_stub_paths() -> None:
     assert redis.group_created is True
 
     assert asyncio.run(redis.xreadgroup()) == []
+
+
+def test_schedule_remote_bootstrap_routes_by_backend(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    calls = {"redis": 0, "rabbitmq": 0, "kafka": 0}
+    monkeypatch.setattr(bus, "_schedule_redis_bootstrap", lambda: calls.__setitem__("redis", calls["redis"] + 1))
+    monkeypatch.setattr(bus, "_schedule_rabbit_bootstrap", lambda: calls.__setitem__("rabbitmq", calls["rabbitmq"] + 1))
+    monkeypatch.setattr(bus, "_schedule_kafka_bootstrap", lambda: calls.__setitem__("kafka", calls["kafka"] + 1))
+
+    bus._backend = "rabbitmq"
+    bus._schedule_remote_bootstrap()
+    bus._backend = "kafka"
+    bus._schedule_remote_bootstrap()
+    bus._backend = "redis"
+    bus._schedule_remote_bootstrap()
+
+    assert calls == {"redis": 1, "rabbitmq": 1, "kafka": 1}
+
+
+def test_schedule_rabbit_kafka_bootstrap_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    bus._rabbit_available = False
+    bus._schedule_rabbit_bootstrap()
+    assert bus._rabbit_bootstrap_task is None
+
+    bus._kafka_available = False
+    bus._schedule_kafka_bootstrap()
+    assert bus._kafka_bootstrap_task is None
+
+    class _RunningTask:
+        def done(self) -> bool:
+            return False
+
+    bus._rabbit_available = None
+    bus._rabbit_bootstrap_task = _RunningTask()
+    bus._schedule_rabbit_bootstrap()
+    assert isinstance(bus._rabbit_bootstrap_task, _RunningTask)
+
+    bus._kafka_available = None
+    bus._kafka_bootstrap_task = _RunningTask()
+    bus._schedule_kafka_bootstrap()
+    assert isinstance(bus._kafka_bootstrap_task, _RunningTask)
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    bus._rabbit_bootstrap_task = None
+    bus._kafka_bootstrap_task = None
+    bus._schedule_rabbit_bootstrap()
+    bus._schedule_kafka_bootstrap()
+    assert bus._rabbit_bootstrap_task is None
+    assert bus._kafka_bootstrap_task is None
+
+    created = {"rabbit": None, "kafka": None}
+
+    class _Loop:
+        def create_task(self, coro):
+            if "rabbit" in repr(coro):
+                coro.close()
+                created["rabbit"] = object()
+                return created["rabbit"]
+            coro.close()
+            created["kafka"] = object()
+            return created["kafka"]
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _Loop())
+    bus._rabbit_available = None
+    bus._kafka_available = None
+    bus._schedule_rabbit_bootstrap()
+    bus._schedule_kafka_bootstrap()
+    assert bus._rabbit_bootstrap_task is created["rabbit"]
+    assert bus._kafka_bootstrap_task is created["kafka"]
+
+
+def test_ensure_rabbit_listener_success_and_failure(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    connection = DummyRabbitConnection()
+
+    class _AioPika:
+        @staticmethod
+        async def connect_robust(_url: str):
+            return connection
+
+    created = {"task": None}
+
+    def _create_task(coro):
+        coro.close()
+        created["task"] = object()
+        return created["task"]
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _AioPika)
+    monkeypatch.setattr(asyncio, "create_task", _create_task)
+    asyncio.run(bus._ensure_rabbit_listener())
+    assert bus._rabbit_available is True
+    assert bus._rabbit_connection is connection
+    assert bus._rabbit_listener_task is created["task"]
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    async def _broken_connect(_url: str):
+        raise RuntimeError("rabbit connect failed")
+
+    class _BrokenAioPika:
+        connect_robust = staticmethod(_broken_connect)
+
+    bus._rabbit_listener_task = None
+    bus._rabbit_connection = None
+    bus._rabbit_available = None
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _BrokenAioPika)
+    monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup)
+    asyncio.run(bus._ensure_rabbit_listener())
+    assert bus._rabbit_available is False
+    assert cleaned["ok"] is True
+
+
+def test_ensure_kafka_listener_success_and_failure(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    class _AioKafka:
+        AIOKafkaProducer = DummyKafkaProducer
+        AIOKafkaConsumer = DummyKafkaConsumer
+
+    created = {"task": None}
+
+    def _create_task(coro):
+        coro.close()
+        created["task"] = object()
+        return created["task"]
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _AioKafka)
+    monkeypatch.setattr(asyncio, "create_task", _create_task)
+    asyncio.run(bus._ensure_kafka_listener())
+    assert bus._kafka_available is True
+    assert bus._kafka_listener_task is created["task"]
+    assert bus._kafka_producer.started is True
+    assert bus._kafka_consumer.started is True
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    class _BrokenProducer(DummyKafkaProducer):
+        async def start(self) -> None:
+            raise RuntimeError("kafka producer failed")
+
+    class _BrokenAioKafka:
+        AIOKafkaProducer = _BrokenProducer
+        AIOKafkaConsumer = DummyKafkaConsumer
+
+    bus._kafka_listener_task = None
+    bus._kafka_producer = None
+    bus._kafka_consumer = None
+    bus._kafka_available = None
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _BrokenAioKafka)
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+    asyncio.run(bus._ensure_kafka_listener())
+    assert bus._kafka_available is False
+    assert cleaned["ok"] is True
+
+
+def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    evt = AgentEvent(ts=1.0, source="qa", message="event")
+
+    bus._rabbit_available = False
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+    bus._rabbit_available = None
+    monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+
+    queue = DummyRabbitQueue()
+    channel = DummyRabbitChannel(queue)
+    bus._rabbit_channel = channel
+    bus._rabbit_available = None
+
+    class _AioPika:
+        class Message:
+            def __init__(self, body: bytes, content_type: str) -> None:
+                self.body = body
+                self.content_type = content_type
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _AioPika)
+    monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
+    bus._rabbit_available = True
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is True
+    assert channel.default_exchange.published[0][1] == bus._channel
+
+    channel.default_exchange.raise_on_publish = True
+    written: list[dict] = []
+    cleaned = {"rabbit": False, "kafka": False}
+
+    async def _dlq(**kwargs):
+        written.append(kwargs)
+
+    async def _cleanup_rabbit() -> None:
+        cleaned["rabbit"] = True
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup_rabbit)
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+    assert bus._rabbit_available is False
+    assert cleaned["rabbit"] is True
+    assert written[-1]["reason"] == "publish_failed"
+
+    bus._kafka_available = False
+    assert asyncio.run(bus._publish_via_kafka(evt)) is False
+    bus._kafka_available = None
+    monkeypatch.setattr(bus, "_ensure_kafka_listener", lambda: asyncio.sleep(0))
+    assert asyncio.run(bus._publish_via_kafka(evt)) is False
+
+    producer = DummyKafkaProducer()
+    bus._kafka_producer = producer
+    bus._kafka_available = True
+    assert asyncio.run(bus._publish_via_kafka(evt)) is True
+    assert producer.sent[0][0] == bus._kafka_topic
+
+    producer.raise_on_send = True
+
+    async def _cleanup_kafka() -> None:
+        cleaned["kafka"] = True
+
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup_kafka)
+    assert asyncio.run(bus._publish_via_kafka(evt)) is False
+    assert bus._kafka_available is False
+    assert cleaned["kafka"] is True
+    assert written[-1]["reason"] == "publish_failed"
+
+
+def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    evt = AgentEvent(ts=1.0, source="coder", message="route")
+    called = {"redis": 0, "rabbit": 0, "kafka": 0}
+
+    async def _redis(_evt: AgentEvent) -> bool:
+        called["redis"] += 1
+        return True
+
+    async def _rabbit(_evt: AgentEvent) -> bool:
+        called["rabbit"] += 1
+        return True
+
+    async def _kafka(_evt: AgentEvent) -> bool:
+        called["kafka"] += 1
+        return True
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis)
+    monkeypatch.setattr(bus, "_publish_via_rabbit", _rabbit)
+    monkeypatch.setattr(bus, "_publish_via_kafka", _kafka)
+
+    bus._backend = "rabbitmq"
+    assert asyncio.run(bus._publish_via_remote(evt)) is True
+    bus._backend = "kafka"
+    assert asyncio.run(bus._publish_via_remote(evt)) is True
+    bus._backend = "redis"
+    assert asyncio.run(bus._publish_via_remote(evt)) is True
+    assert called == {"redis": 1, "rabbit": 1, "kafka": 1}
+
+
+def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    bus._rabbit_queue = None
+    assert asyncio.run(bus._rabbit_listener_loop()) is None
+
+    valid_other = DummyRabbitIncoming(json.dumps({"sid": "other", "ts": 2, "source": "r", "message": "ok"}).encode("utf-8"))
+    valid_self = DummyRabbitIncoming(
+        json.dumps({"sid": bus._instance_id, "ts": 3, "source": "r", "message": "ignore"}).encode("utf-8")
+    )
+    invalid = DummyRabbitIncoming(b"{bad-json", ack_raises=True)
+    bus._rabbit_queue = DummyRabbitQueue([valid_other, invalid, valid_self])
+
+    fanouts: list[AgentEvent] = []
+    reasons: list[str] = []
+
+    monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt))
+
+    async def _dlq(**kwargs):
+        reasons.append(kwargs["reason"])
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    asyncio.run(bus._rabbit_listener_loop())
+    assert len(fanouts) == 1
+    assert fanouts[0].message == "ok"
+    assert "invalid_payload" in reasons
+    assert valid_other.acked is True
+
+
+def test_kafka_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    bus._kafka_consumer = None
+    assert asyncio.run(bus._kafka_listener_loop()) is None
+
+    consumer = DummyKafkaConsumer()
+    consumer.messages = [RuntimeError("consume failed")]
+    bus._kafka_consumer = consumer
+    bus._kafka_available = True
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+    asyncio.run(bus._kafka_listener_loop())
+    assert bus._kafka_available is False
+    assert cleaned["ok"] is True
+
+    consumer = DummyKafkaConsumer()
+    consumer.messages = [
+        DummyKafkaMessage(json.dumps({"sid": "other", "ts": 4, "source": "k", "message": "ok"}).encode("utf-8")),
+        DummyKafkaMessage(b"{bad-json"),
+        DummyKafkaMessage(json.dumps({"sid": bus._instance_id, "ts": 5, "source": "k", "message": "ignore"}).encode("utf-8")),
+        asyncio.CancelledError(),
+    ]
+    bus._kafka_consumer = consumer
+    bus._kafka_available = True
+    fanouts: list[AgentEvent] = []
+    reasons: list[str] = []
+    monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt))
+
+    async def _dlq(**kwargs):
+        reasons.append(kwargs["reason"])
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(bus._kafka_listener_loop())
+    assert len(fanouts) == 1
+    assert fanouts[0].message == "ok"
+    assert "invalid_payload" in reasons
+
+
+def test_cleanup_rabbit_and_kafka() -> None:
+    bus = AgentEventBus()
+
+    class _AwaitableTask:
+        def done(self) -> bool:
+            return False
+
+        def cancel(self) -> None:
+            return None
+
+        def __await__(self):
+            async def _inner():
+                raise asyncio.CancelledError()
+
+            return _inner().__await__()
+
+    bus._rabbit_listener_task = _AwaitableTask()
+    rabbit_connection = DummyRabbitConnection()
+    rabbit_channel = awaitable_channel = rabbit_connection._channel
+    bus._rabbit_channel = rabbit_channel
+    bus._rabbit_connection = rabbit_connection
+    asyncio.run(bus._cleanup_rabbit())
+    assert bus._rabbit_listener_task is None
+    assert bus._rabbit_channel is None
+    assert bus._rabbit_connection is None
+    assert awaitable_channel.closed is True
+
+    bus._kafka_listener_task = _AwaitableTask()
+    producer = DummyKafkaProducer()
+    consumer = DummyKafkaConsumer()
+    bus._kafka_producer = producer
+    bus._kafka_consumer = consumer
+    asyncio.run(bus._cleanup_kafka())
+    assert bus._kafka_listener_task is None
+    assert bus._kafka_producer is None
+    assert bus._kafka_consumer is None
+    assert producer.stopped is True
+    assert consumer.stopped is True
