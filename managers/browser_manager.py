@@ -750,15 +750,16 @@ class BrowserManager:
         provider = self._provider_for_session(session)
         try:
             provider.goto(self, session, url)
-            session.current_url = url
+            resolved_url = provider.current_url(session) or session.current_url or url
+            session.current_url = resolved_url
 
             self._audit_session_action(
                 session,
                 action="browser_goto_url",
                 status="executed",
-                details={"url": url},
+                details={"url": url, "resolved_url": resolved_url},
             )
-            return True, f"Açıldı: {url}"
+            return True, f"Açıldı: {resolved_url}"
         except Exception as exc:
             self._audit_session_action(
                 session,
