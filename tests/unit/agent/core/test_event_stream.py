@@ -654,6 +654,44 @@ def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: py
     assert bus._redis_available is None
 
 
+def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._backend = "kafka"
+    bus._redis_client = DummyRedis()
+    bus._redis_loop = object()
+    bus._redis_available = True
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup)
+    asyncio.run(bus._ensure_redis_loop_compatibility())
+
+    assert cleaned["ok"] is False
+    assert bus._redis_available is True
+    assert bus._redis_client is not None
+
+
+def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._redis_client = None
+    bus._redis_listener_task = None
+
+    called = {"get_loop": False}
+
+    def _get_loop():
+        called["get_loop"] = True
+        return object()
+
+    monkeypatch.setattr(asyncio, "get_running_loop", _get_loop)
+    asyncio.run(bus._ensure_redis_loop_compatibility())
+
+    assert called["get_loop"] is False
+    assert bus._redis_available is None
+
+
 def test_ensure_redis_loop_compatibility_returns_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     bus = AgentEventBus()
     bus._redis_client = object()
