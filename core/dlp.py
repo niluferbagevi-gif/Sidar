@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -282,6 +283,7 @@ class DLPEngine:
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
 _ENGINE: Optional[DLPEngine] = None
+_ENGINE_LOCK = threading.Lock()
 
 
 def _build_engine_from_env() -> DLPEngine:
@@ -303,7 +305,9 @@ def get_dlp_engine() -> DLPEngine:
     """Süreç-geneli tek DLPEngine örneğini döndürür (lazy init)."""
     global _ENGINE
     if _ENGINE is None:
-        _ENGINE = _build_engine_from_env()
+        with _ENGINE_LOCK:
+            if _ENGINE is None:
+                _ENGINE = _build_engine_from_env()
     return _ENGINE
 
 

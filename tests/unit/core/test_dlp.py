@@ -1,4 +1,6 @@
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -173,3 +175,28 @@ def test_convenience_functions_use_singleton(monkeypatch):
     messages = [{"role": "user", "content": "x@y.com"}]
     masked = mask_messages(messages)
     assert masked[0]["content"] == "[MASKED]"
+
+
+def test_get_dlp_engine_initialization_is_thread_safe(monkeypatch):
+    dlp._ENGINE = None
+    build_calls = 0
+    build_calls_lock = threading.Lock()
+    start_barrier = threading.Barrier(8)
+
+    def _fake_build() -> DLPEngine:
+        nonlocal build_calls
+        with build_calls_lock:
+            build_calls += 1
+        return DLPEngine(mask_email=True)
+
+    def _worker() -> DLPEngine:
+        start_barrier.wait()
+        return get_dlp_engine()
+
+    monkeypatch.setattr(dlp, "_build_engine_from_env", _fake_build)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        engines = list(pool.map(lambda _i: _worker(), range(8)))
+
+    assert build_calls == 1
+    assert all(engine is engines[0] for engine in engines)
