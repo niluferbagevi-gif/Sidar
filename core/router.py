@@ -145,9 +145,8 @@ class CostAwareRouter:
         self.complexity_threshold: float = float(
             getattr(config, "COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55) or 0.55
         )
-        self.local_provider: str = str(
-            getattr(config, "COST_ROUTING_LOCAL_PROVIDER", "ollama") or "ollama"
-        )
+        local_provider = getattr(config, "COST_ROUTING_LOCAL_PROVIDER", "ollama")
+        self.local_provider: str = str(local_provider).strip() if local_provider is not None else ""
         self.cloud_provider: str = str(
             getattr(config, "COST_ROUTING_CLOUD_PROVIDER", "") or ""
         )

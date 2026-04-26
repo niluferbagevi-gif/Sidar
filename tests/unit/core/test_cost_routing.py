@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from core.router import CostAwareRouter
 
 
@@ -84,6 +86,24 @@ def test_cost_routing_disabled_keeps_defaults() -> None:
 
     provider, model = router.select(
         [{"role": "user", "content": "herhangi bir metin"}],
+        default_provider="openai",
+        default_model="gpt-4o-mini",
+    )
+
+    assert (provider, model) == ("openai", "gpt-4o-mini")
+
+
+@pytest.mark.parametrize("local_provider", ["", None])
+def test_cost_routing_simple_query_keeps_defaults_when_local_provider_not_configured(local_provider) -> None:
+    router = CostAwareRouter(
+        _cfg(
+            COST_ROUTING_COMPLEXITY_THRESHOLD=0.95,
+            COST_ROUTING_LOCAL_PROVIDER=local_provider,
+        )
+    )
+
+    provider, model = router.select(
+        [{"role": "user", "content": "kısa cevap ver"}],
         default_provider="openai",
         default_model="gpt-4o-mini",
     )
