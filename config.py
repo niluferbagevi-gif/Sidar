@@ -91,6 +91,25 @@ def get_list_env(key: str, default: Optional[List[str]] = None,
     return [item.strip() for item in value.split(separator) if item.strip()]
 
 
+def get_db_pool_size_default() -> int:
+    """
+    DB havuz boyutu için çekirdek sayısı + PostgreSQL max_connections temelli varsayılan üretir.
+
+    Formül:
+    - taban hedef = CPU * DB_POOL_SIZE_PER_CORE (varsayılan 2)
+    - üst sınır = POSTGRES_MAX_CONNECTIONS - DB_POOL_CONNECTION_RESERVE (varsayılan 10)
+    - global tavan = DB_POOL_SIZE_HARD_CAP (varsayılan 50)
+    """
+    cpu_count = max(1, int(os.cpu_count() or 1))
+    per_core = max(1, get_int_env("DB_POOL_SIZE_PER_CORE", 2))
+    postgres_max_connections = max(1, get_int_env("POSTGRES_MAX_CONNECTIONS", 100))
+    reserve = max(0, get_int_env("DB_POOL_CONNECTION_RESERVE", 10))
+    hard_cap = max(1, get_int_env("DB_POOL_SIZE_HARD_CAP", 50))
+
+    max_by_postgres = max(1, postgres_max_connections - reserve)
+    return max(2, min(cpu_count * per_core, max_by_postgres, hard_cap))
+
+
 # ═══════════════════════════════════════════════════════════════
 # LOGLAMA SİSTEMİ  (dinamik, RotatingFileHandler)
 # ═══════════════════════════════════════════════════════════════
@@ -435,7 +454,7 @@ class Config:
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar")
-    DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", 5)
+    DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
 
@@ -546,6 +565,8 @@ class Config:
     COST_ROUTING_CLOUD_MODEL: str = os.getenv("COST_ROUTING_CLOUD_MODEL", "")
     # Bu günlük bütçe (USD) aşılırsa tüm sorgular lokal modele yönlendirilir
     COST_ROUTING_DAILY_BUDGET_USD: float = get_float_env("COST_ROUTING_DAILY_BUDGET_USD", 1.0)
+    # Tek bir isteğin yaklaşık token eşiği; aşılırsa lokal modele fallback uygulanır.
+    COST_ROUTING_TOKEN_THRESHOLD: int = get_int_env("COST_ROUTING_TOKEN_THRESHOLD", 0)
 
     # ─── Entity/Persona Memory (v5.0) ─────────────────────────
     ENABLE_ENTITY_MEMORY: bool = get_bool_env("ENABLE_ENTITY_MEMORY", True)

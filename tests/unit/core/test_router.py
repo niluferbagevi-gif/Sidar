@@ -15,6 +15,7 @@ def _make_config(**overrides: object) -> SimpleNamespace:
         "COST_ROUTING_LOCAL_PROVIDER": "ollama",
         "COST_ROUTING_CLOUD_PROVIDER": "openai",
         "COST_ROUTING_DAILY_BUDGET_USD": 1.0,
+        "COST_ROUTING_TOKEN_THRESHOLD": 0,
         "COST_ROUTING_LOCAL_MODEL": "llama3",
         "COST_ROUTING_CLOUD_MODEL": "gpt-4o",
     }
@@ -212,3 +213,39 @@ def test_router_complexity_score_exposes_analyzer() -> None:
     score = cost_router.complexity_score([{"role": "user", "content": "analyze this"}])
 
     assert score == cost_router._analyzer.score([{"role": "user", "content": "analyze this"}])
+
+
+def test_router_stress_budget_threshold_always_falls_back_to_local() -> None:
+    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.3, COST_ROUTING_COMPLEXITY_THRESHOLD=0.1)
+    cost_router = CostAwareRouter(cfg)
+
+    for _ in range(20):
+        record_routing_cost(0.02)
+
+    for _ in range(100):
+        provider, model = cost_router.select(
+            [{"role": "user", "content": "analyze and compare algorithm tradeoffs in detail?"}],
+            "default-provider",
+            "default-model",
+        )
+        assert (provider, model) == ("ollama", "llama3")
+
+
+def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
+    cfg = _make_config(COST_ROUTING_TOKEN_THRESHOLD=40, COST_ROUTING_COMPLEXITY_THRESHOLD=0.1)
+    cost_router = CostAwareRouter(cfg)
+
+    high_token_messages = [
+        {
+            "role": "user",
+            "content": " ".join(["analyze complex distributed orchestration and testing fallback behavior"] * 30),
+        }
+    ]
+
+    for _ in range(100):
+        provider, model = cost_router.select(
+            high_token_messages,
+            "default-provider",
+            "default-model",
+        )
+        assert (provider, model) == ("ollama", "llama3")

@@ -34,6 +34,28 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
+    monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "3")
+    monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "60")
+    monkeypatch.setenv("DB_POOL_CONNECTION_RESERVE", "8")
+    monkeypatch.setenv("DB_POOL_SIZE_HARD_CAP", "200")
+    monkeypatch.setattr(config.os, "cpu_count", lambda: 16)
+
+    # min(CPU*per_core=48, pg-reserve=52, hard_cap=200) => 48
+    assert config.get_db_pool_size_default() == 48
+
+
+def test_get_db_pool_size_default_respects_postgres_and_hard_cap(monkeypatch):
+    monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "4")
+    monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "25")
+    monkeypatch.setenv("DB_POOL_CONNECTION_RESERVE", "10")
+    monkeypatch.setenv("DB_POOL_SIZE_HARD_CAP", "12")
+    monkeypatch.setattr(config.os, "cpu_count", lambda: 32)
+
+    # min(CPU*per_core=128, pg-reserve=15, hard_cap=12) => 12
+    assert config.get_db_pool_size_default() == 12
+
+
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
     original = config.Config.AI_PROVIDER
     config.Config.AI_PROVIDER = "ollama"

@@ -160,6 +160,9 @@ class CostAwareRouter:
         self.cloud_model: str = str(
             getattr(config, "COST_ROUTING_CLOUD_MODEL", "") or ""
         )
+        self.token_threshold: int = max(
+            0, int(getattr(config, "COST_ROUTING_TOKEN_THRESHOLD", 0) or 0)
+        )
 
     def select(
         self,
@@ -179,6 +182,15 @@ class CostAwareRouter:
             logger.info(
                 "CostRouter: Günlük bütçe (%.2f USD) aşıldı, lokal modele yönlendiriliyor.",
                 self.daily_budget_usd,
+            )
+            return self._local_result(default_provider, default_model)
+
+        estimated_tokens = self._estimate_tokens(messages)
+        if self.token_threshold > 0 and estimated_tokens >= self.token_threshold:
+            logger.info(
+                "CostRouter: Token eşiği (%d) aşıldı (tahmini=%d), lokal modele yönlendiriliyor.",
+                self.token_threshold,
+                estimated_tokens,
             )
             return self._local_result(default_provider, default_model)
 
@@ -209,3 +221,14 @@ class CostAwareRouter:
     def complexity_score(self, messages: List[Dict[str, str]]) -> float:
         """Test/debug için karmaşıklık skorunu doğrudan döner."""
         return self._analyzer.score(messages)
+
+    @staticmethod
+    def _estimate_tokens(messages: List[Dict[str, str]]) -> int:
+        """
+        Provider bağımsız yaklaşık token hesabı.
+        ~4 karakter ≈ 1 token varsayımıyla güvenli tarafta kaba bir tahmin döner.
+        """
+        combined = " ".join((m.get("content") or "") for m in messages)
+        if not combined:
+            return 0
+        return max(1, (len(combined) + 3) // 4)
