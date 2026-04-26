@@ -240,3 +240,23 @@ def test_get_dlp_engine_initialization_is_thread_safe(monkeypatch):
 
     assert build_calls == 1
     assert all(engine is engines[0] for engine in engines)
+
+
+def test_get_dlp_engine_double_check_skips_build_inside_lock(monkeypatch):
+    dlp._ENGINE = None
+    prebuilt = DLPEngine(mask_email=True)
+
+    class _RaceLock:
+        def __enter__(self):
+            # Kilit alınana kadar başka thread'in engine'i doldurduğu yarış senaryosunu simüle et.
+            dlp._ENGINE = prebuilt
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(dlp, "_ENGINE_LOCK", _RaceLock())
+    monkeypatch.setattr(dlp, "_build_engine_from_env", lambda: (_ for _ in ()).throw(AssertionError("should not build")))
+
+    out = get_dlp_engine()
+    assert out is prebuilt

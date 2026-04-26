@@ -1088,6 +1088,20 @@ def test_main_block_coverage():
         os.environ.pop("DEBUG_MODE", None)
 
 
+def test_main_block_runs_with_debug_disabled():
+    import runpy
+
+    os.environ["DEBUG_MODE"] = "0"
+    config_path = os.path.join(os.path.dirname(__file__), "../../../config.py")
+    if os.path.exists(config_path):
+        result = runpy.run_path(config_path, run_name="__main__")
+    else:
+        result = runpy.run_module("config", run_name="__main__")
+
+    assert "Config" in result
+    os.environ.pop("DEBUG_MODE", None)
+
+
 def test_check_hardware_multi_gpu_and_zero_gpu_device_paths(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setenv("MULTI_GPU", "true")
