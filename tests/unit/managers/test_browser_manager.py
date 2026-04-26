@@ -985,3 +985,214 @@ def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
 
     assert result["multimodal_check"]["triggered"] is False
     assert "multimodal_analysis" not in result
+
+
+def test_compute_visual_drift_with_broken_png_bytes_falls_back_to_hash(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = manager.artifact_dir / "baseline-invalid.png"
+    current = manager.artifact_dir / "current-invalid.png"
+    baseline.write_bytes(b"\x89PNG\r\n\x1a\nnot-a-real-image")
+    current.write_bytes(b"\x89PNG\r\n\x1a\ndifferent-invalid-image")
+
+    class _ImageModule:
+        @staticmethod
+        def open(_path: str):
+            raise ValueError("cannot identify image file")
+
+    class _ImageChopsModule:
+        @staticmethod
+        def difference(_a, _b):
+            raise AssertionError("difference should not run when open fails")
+
+    def _import_module(name: str):
+        if name == "PIL.Image":
+            return _ImageModule
+        if name == "PIL.ImageChops":
+            return _ImageChopsModule
+        raise ImportError(name)
+
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", _import_module)
+    drift = manager._compute_visual_drift(baseline, current)
+
+    assert drift["reason"] == "hash_fallback"
+    assert drift["drift_detected"] is True
+
+
+def test_compute_visual_drift_pixel_diff_path(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    baseline = manager.artifact_dir / "baseline-ok.png"
+    current = manager.artifact_dir / "current-ok.png"
+    baseline.write_bytes(b"a")
+    current.write_bytes(b"b")
+
+    class _FakeImage:
+        def __init__(self, size: tuple[int, int]) -> None:
+            self.size = size
+
+        def convert(self, _mode: str):
+            return self
+
+        def histogram(self):
+            return [1]
+
+    class _ImageModule:
+        @staticmethod
+        def open(_path: str):
+            return _FakeImage((2, 2))
+
+    class _ImageChopsModule:
+        @staticmethod
+        def difference(_a, _b):
+            return _FakeImage((2, 2))
+
+    def _import_module(name: str):
+        if name == "PIL.Image":
+            return _ImageModule
+        if name == "PIL.ImageChops":
+            return _ImageChopsModule
+        raise ImportError(name)
+
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", _import_module)
+    drift = manager._compute_visual_drift(baseline, current)
+    assert drift["reason"] == "pixel_diff"
+    assert drift["drift_detected"] is True
+    assert drift["drift_score"] == pytest.approx(0.75)
+
+
+def test_compute_visual_drift_returns_size_mismatch_payload(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    baseline = manager.artifact_dir / "baseline-size.png"
+    current = manager.artifact_dir / "current-size.png"
+    baseline.write_bytes(b"a")
+    current.write_bytes(b"b")
+
+    class _FakeImage:
+        def __init__(self, size: tuple[int, int]) -> None:
+            self.size = size
+
+        def convert(self, _mode: str):
+            return self
+
+    class _ImageModule:
+        @staticmethod
+        def open(path: str):
+            if "baseline" in path:
+                return _FakeImage((2, 2))
+            return _FakeImage((3, 2))
+
+    class _ImageChopsModule:
+        @staticmethod
+        def difference(_a, _b):
+            raise AssertionError("difference should not run for size mismatch")
+
+    def _import_module(name: str):
+        if name == "PIL.Image":
+            return _ImageModule
+        if name == "PIL.ImageChops":
+            return _ImageChopsModule
+        raise ImportError(name)
+
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", _import_module)
+    drift = manager._compute_visual_drift(baseline, current)
+    assert drift["reason"] == "Görsel boyutları farklı"
+    assert drift["drift_detected"] is True
+
+
+def test_analyze_screenshot_with_multimodal_success(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager._llm = object()
+
+    class _Pipeline:
+        def __init__(self, llm_client, cfg) -> None:
+            self.llm_client = llm_client
+            self.cfg = cfg
+
+        async def analyze_media(self, **kwargs):
+            return {"success": True, "kwargs": kwargs}
+
+    fake_module = SimpleNamespace(MultimodalPipeline=_Pipeline)
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", lambda _name: fake_module)
+
+    result = asyncio.run(manager._analyze_screenshot_with_multimodal("/tmp/a.png", "prompt"))
+    assert result["success"] is True
+    assert result["kwargs"]["mime_type"] == "image/png"
+
+
+def test_analyze_screenshot_with_multimodal_returns_reason_when_llm_missing(manager: BrowserManager) -> None:
+    manager._llm = None
+    result = asyncio.run(manager._analyze_screenshot_with_multimodal("/tmp/a.png", "prompt"))
+    assert result["success"] is False
+    assert "bağlı değil" in result["reason"]
+
+
+def test_analyze_visual_drift_disabled_and_error_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v6"
+    manager._sessions["v6"] = sess
+
+    manager.visual_qa_enabled = False
+    disabled = asyncio.run(manager.analyze_visual_drift("v6"))
+    assert disabled["ok"] is False
+    assert "devre dışı" in disabled["reason"]
+
+    manager.visual_qa_enabled = True
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (False, "capture failed"))
+    capture_failed = asyncio.run(manager.analyze_visual_drift("v6"))
+    assert capture_failed == {"ok": False, "reason": "capture failed"}
+
+    cur = manager.artifact_dir / "cur-only.png"
+    cur.write_bytes(b"x")
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(cur)))
+    baseline_not_found = asyncio.run(manager.analyze_visual_drift("v6", baseline_path=str(manager.artifact_dir / "nope.png")))
+    assert baseline_not_found["ok"] is False
+    assert baseline_not_found["reason"] == "baseline_not_found"
+
+
+def test_provider_for_session_raises_on_unsupported_provider(manager: BrowserManager) -> None:
+    session = _session("unsupported")
+    session.provider = "unsupported"
+    with pytest.raises(ValueError, match="Desteklenmeyen browser provider"):
+        manager._provider_for_session(session)
+
+
+def test_selenium_provider_close_with_none_driver_and_current_url_fallback() -> None:
+    from managers.browser_manager import SeleniumBrowserProvider
+
+    provider = SeleniumBrowserProvider()
+    session = BrowserSession(
+        session_id="s-none",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=None,
+    )
+    provider.close(None, session)
+    assert provider.current_url(session) == ""
+
+
+def test_run_coro_sync_uses_new_event_loop_when_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeLoop:
+        def __init__(self) -> None:
+            self.closed = False
+            self.ran = False
+
+        def run_until_complete(self, coro):
+            self.ran = True
+            coro.close()
+            return {"ok": True}
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_loop = _FakeLoop()
+    monkeypatch.setattr("managers.browser_manager.asyncio.new_event_loop", lambda: fake_loop)
+
+    async def _sample():
+        return {"should_not": "run"}
+
+    async def _runner():
+        return BrowserManager._run_coro_sync(_sample())
+
+    result = asyncio.run(_runner())
+    assert result == {"ok": True}
+    assert fake_loop.ran is True
+    assert fake_loop.closed is True
