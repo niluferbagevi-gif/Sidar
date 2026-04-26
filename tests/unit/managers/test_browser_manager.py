@@ -8,7 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from managers.browser_manager import BrowserManager, BrowserSession
+from managers.browser_manager import (
+    BaseBrowserProvider,
+    BrowserManager,
+    BrowserSession,
+    PlaywrightProvider,
+    SeleniumProvider,
+)
 
 
 class _Cfg:
@@ -649,3 +655,222 @@ def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch
     monkeypatch.setattr(manager, "analyze_visual_drift", _fake_visual)
     signal = manager.collect_session_signals("v3", include_visual_qa=True)
     assert signal["visual_qa"]["ok"] is True
+
+
+# ── Provider strategy unit tests ───────────────────────────────────────────────
+
+def test_playwright_provider_all_operations() -> None:
+    class _Page:
+        def __init__(self) -> None:
+            self.url = "https://pw.local"
+            self.goto_calls: list[tuple] = []
+            self.clicked: list[str] = []
+            self.filled: list[tuple] = []
+            self.typed: list[tuple] = []
+            self.selected: list[tuple] = []
+            self.screens: list[tuple] = []
+
+        def goto(self, url: str, **kw: object) -> None:
+            self.goto_calls.append((url, kw))
+
+        def click(self, sel: str, **kw: object) -> None:
+            self.clicked.append(sel)
+
+        def fill(self, sel: str, val: str, **kw: object) -> None:
+            self.filled.append((sel, val))
+
+        def type(self, sel: str, val: str, **kw: object) -> None:
+            self.typed.append((sel, val))
+
+        def select_option(self, sel: str, *, value: str, **kw: object) -> None:
+            self.selected.append((sel, value))
+
+        def locator(self, sel: str) -> SimpleNamespace:
+            return SimpleNamespace(inner_html=lambda **kw: f"<div>{sel}</div>")
+
+        def screenshot(self, *, path: str, full_page: bool) -> None:
+            self.screens.append((path, full_page))
+
+    class _Context:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _Browser:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _Runtime:
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    page = _Page()
+    ctx = _Context()
+    brow = _Browser()
+    rt = _Runtime()
+    session = BrowserSession(
+        session_id="p1",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=1.0,
+        page=page,
+        context=ctx,
+        browser=brow,
+        runtime=rt,
+    )
+
+    prov = PlaywrightProvider()
+    assert isinstance(prov, BaseBrowserProvider)
+
+    assert prov.get_current_url(session) == "https://pw.local"
+    session.page.url = ""
+    assert prov.get_current_url(session) == ""
+
+    prov.navigate(session, "https://example.com", 5000)
+    assert page.goto_calls[0][0] == "https://example.com"
+
+    prov.click(session, "#btn", 5000)
+    assert "#btn" in page.clicked
+
+    prov.fill(session, "#inp", "hello", clear=True, timeout_ms=5000)
+    assert ("#inp", "hello") in page.filled
+
+    prov.fill(session, "#inp", "world", clear=False, timeout_ms=5000)
+    assert ("#inp", "world") in page.typed
+
+    prov.select_option(session, "#sel", "opt1", 5000)
+    assert ("#sel", "opt1") in page.selected
+
+    dom = prov.capture_dom(session, "body", 5000)
+    assert "body" in dom
+
+    prov.capture_screenshot(session, "/tmp/shot.png", full_page=True)
+    assert ("/tmp/shot.png", True) in page.screens
+
+    prov.close(session)
+    assert ctx.closed is True
+    assert brow.closed is True
+    assert rt.stopped is True
+
+
+def test_playwright_provider_close_skips_none_fields() -> None:
+    session = BrowserSession(
+        session_id="p2",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=1.0,
+    )
+    PlaywrightProvider().close(session)
+
+
+def test_selenium_provider_all_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    reg = _register_fake_selenium(monkeypatch)
+
+    class _Driver:
+        def __init__(self) -> None:
+            self.current_url = "https://se.local"
+            self.source = "<html>se</html>"
+            self.gotten: list[str] = []
+            self.saved: list[str] = []
+            self.quitted = False
+
+            class _Element:
+                def __init__(self) -> None:
+                    self.clicked = False
+                    self.cleared = False
+                    self.sent: list[str] = []
+
+                def click(self) -> None:
+                    self.clicked = True
+
+                def clear(self) -> None:
+                    self.cleared = True
+
+                def send_keys(self, v: str) -> None:
+                    self.sent.append(v)
+
+            self.element = _Element()
+
+        def get(self, url: str) -> None:
+            self.gotten.append(url)
+
+        def find_element(self, _by: object, _sel: str) -> object:
+            return self.element
+
+        @property
+        def page_source(self) -> str:
+            return self.source
+
+        def save_screenshot(self, path: str) -> None:
+            self.saved.append(path)
+
+        def quit(self) -> None:
+            self.quitted = True
+
+    driver = _Driver()
+    session = BrowserSession(
+        session_id="s1",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=1.0,
+        driver=driver,
+    )
+
+    prov = SeleniumProvider()
+    assert isinstance(prov, BaseBrowserProvider)
+
+    assert prov.get_current_url(session) == "https://se.local"
+
+    prov.navigate(session, "https://example.com", 5000)
+    assert "https://example.com" in driver.gotten
+
+    prov.click(session, "#btn", 5000)
+    assert driver.element.clicked is True
+
+    prov.fill(session, "#inp", "hi", clear=True, timeout_ms=5000)
+    assert driver.element.cleared is True
+    assert "hi" in driver.element.sent
+
+    prov.fill(session, "#inp", "bye", clear=False, timeout_ms=5000)
+    assert "bye" in driver.element.sent
+
+    prov.select_option(session, "#sel", "v1", 5000)
+    assert "v1" in reg["selected_values"]
+
+    dom = prov.capture_dom(session, "html", 5000)
+    assert "se" in dom
+
+    prov.capture_screenshot(session, "/tmp/s.png", full_page=False)
+    assert "/tmp/s.png" in driver.saved
+
+    prov.close(session)
+    assert driver.quitted is True
+
+
+def test_selenium_provider_close_skips_none_driver() -> None:
+    session = BrowserSession(
+        session_id="s2",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=1.0,
+    )
+    SeleniumProvider().close(session)
+
+
+def test_browser_manager_uses_provider_impls(manager: BrowserManager) -> None:
+    assert "playwright" in manager._provider_impls
+    assert "selenium" in manager._provider_impls
+    assert isinstance(manager._provider_impls["playwright"], PlaywrightProvider)
+    assert isinstance(manager._provider_impls["selenium"], SeleniumProvider)

@@ -5,6 +5,7 @@ Playwright öncelikli, Selenium fallback'li dinamik web etkileşim katmanı.
 
 from __future__ import annotations
 
+import abc
 import asyncio
 import contextlib
 import hashlib
@@ -39,6 +40,108 @@ class BrowserSession:
     current_url: str = ""
 
 
+class BaseBrowserProvider(abc.ABC):
+    """Strategy interface for browser-automation transport operations.
+
+    Each concrete provider encapsulates all driver-specific calls so that
+    BrowserManager remains unaware of the underlying automation library.
+    Adding a new provider (e.g. Puppeteer) requires only a new subclass —
+    no changes to BrowserManager are needed (Open/Closed Principle).
+    """
+
+    @abc.abstractmethod
+    def get_current_url(self, session: BrowserSession) -> str: ...
+
+    @abc.abstractmethod
+    def navigate(self, session: BrowserSession, url: str, timeout_ms: int) -> None: ...
+
+    @abc.abstractmethod
+    def click(self, session: BrowserSession, selector: str, timeout_ms: int) -> None: ...
+
+    @abc.abstractmethod
+    def fill(self, session: BrowserSession, selector: str, value: str, *, clear: bool, timeout_ms: int) -> None: ...
+
+    @abc.abstractmethod
+    def select_option(self, session: BrowserSession, selector: str, value: str, timeout_ms: int) -> None: ...
+
+    @abc.abstractmethod
+    def capture_dom(self, session: BrowserSession, selector: str, timeout_ms: int) -> str: ...
+
+    @abc.abstractmethod
+    def capture_screenshot(self, session: BrowserSession, path: str, *, full_page: bool) -> None: ...
+
+    @abc.abstractmethod
+    def close(self, session: BrowserSession) -> None: ...
+
+
+class PlaywrightProvider(BaseBrowserProvider):
+    def get_current_url(self, session: BrowserSession) -> str:
+        return str(getattr(session.page, "url", "") or "")
+
+    def navigate(self, session: BrowserSession, url: str, timeout_ms: int) -> None:
+        session.page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+
+    def click(self, session: BrowserSession, selector: str, timeout_ms: int) -> None:
+        session.page.click(selector, timeout=timeout_ms)
+
+    def fill(self, session: BrowserSession, selector: str, value: str, *, clear: bool, timeout_ms: int) -> None:
+        if clear:
+            session.page.fill(selector, value, timeout=timeout_ms)
+        else:
+            session.page.type(selector, value, timeout=timeout_ms)
+
+    def select_option(self, session: BrowserSession, selector: str, value: str, timeout_ms: int) -> None:
+        session.page.select_option(selector, value=value, timeout=timeout_ms)
+
+    def capture_dom(self, session: BrowserSession, selector: str, timeout_ms: int) -> str:
+        return session.page.locator(selector).inner_html(timeout=timeout_ms)
+
+    def capture_screenshot(self, session: BrowserSession, path: str, *, full_page: bool) -> None:
+        session.page.screenshot(path=path, full_page=full_page)
+
+    def close(self, session: BrowserSession) -> None:
+        if session.context is not None:
+            session.context.close()
+        if session.browser is not None:
+            session.browser.close()
+        if session.runtime is not None:
+            session.runtime.stop()
+
+
+class SeleniumProvider(BaseBrowserProvider):
+    def get_current_url(self, session: BrowserSession) -> str:
+        return str(getattr(session.driver, "current_url", "") or "")
+
+    def navigate(self, session: BrowserSession, url: str, timeout_ms: int) -> None:
+        session.driver.get(url)
+
+    def click(self, session: BrowserSession, selector: str, timeout_ms: int) -> None:
+        from selenium.webdriver.common.by import By
+        session.driver.find_element(By.CSS_SELECTOR, selector).click()
+
+    def fill(self, session: BrowserSession, selector: str, value: str, *, clear: bool, timeout_ms: int) -> None:
+        from selenium.webdriver.common.by import By
+        element = session.driver.find_element(By.CSS_SELECTOR, selector)
+        if clear:
+            element.clear()
+        element.send_keys(value)
+
+    def select_option(self, session: BrowserSession, selector: str, value: str, timeout_ms: int) -> None:
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.select import Select
+        Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
+
+    def capture_dom(self, session: BrowserSession, selector: str, timeout_ms: int) -> str:
+        return session.driver.page_source
+
+    def capture_screenshot(self, session: BrowserSession, path: str, *, full_page: bool) -> None:
+        session.driver.save_screenshot(path)
+
+    def close(self, session: BrowserSession) -> None:
+        if session.driver is not None:
+            session.driver.quit()
+
+
 class BrowserManager:
     """Dinamik tarayıcı otomasyon işlemlerini güvenli ve sağlayıcıdan bağımsız yönetir."""
 
@@ -59,6 +162,10 @@ class BrowserManager:
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, BrowserSession] = {}
         self._audit_log: list[dict[str, Any]] = []
+        self._provider_impls: dict[str, BaseBrowserProvider] = {
+            "playwright": PlaywrightProvider(),
+            "selenium": SeleniumProvider(),
+        }
 
     @staticmethod
     def _is_high_risk_click(selector: str) -> bool:
@@ -391,11 +498,10 @@ class BrowserManager:
     def _session_url(self, session: BrowserSession) -> str:
         if session.current_url:
             return session.current_url
-        if session.provider == "playwright" and getattr(session.page, "url", None):
-            return str(session.page.url)
-        if session.provider == "selenium":
-            return str(getattr(session.driver, "current_url", "") or "")
-        return ""
+        impl = self._provider_impls.get(session.provider)
+        if impl is None:
+            return ""
+        return impl.get_current_url(session)
 
     @staticmethod
     def _run_coro_sync(coro: Any) -> Any:
@@ -600,13 +706,8 @@ class BrowserManager:
         self._validate_url(url)
         session = self._require_session(session_id)
         try:
-            if session.provider == "playwright":
-                session.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
-                session.current_url = url
-            else:
-                session.driver.get(url)
-                session.current_url = url
-
+            self._provider_impls[session.provider].navigate(session, url, self.timeout_ms)
+            session.current_url = url
             self._audit_session_action(
                 session,
                 action="browser_goto_url",
@@ -625,13 +726,7 @@ class BrowserManager:
 
     def _click_element_impl(self, session_id: str, selector: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
-        if session.provider == "playwright":
-            session.page.click(selector, timeout=self.timeout_ms)
-            return True, f"Tıklandı: {selector}"
-
-        from selenium.webdriver.common.by import By
-
-        session.driver.find_element(By.CSS_SELECTOR, selector).click()
+        self._provider_impls[session.provider].click(session, selector, self.timeout_ms)
         return True, f"Tıklandı: {selector}"
 
     def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
@@ -722,19 +817,7 @@ class BrowserManager:
 
     def _fill_form_impl(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
         session = self._require_session(session_id)
-        if session.provider == "playwright":
-            if clear:
-                session.page.fill(selector, value, timeout=self.timeout_ms)
-            else:
-                session.page.type(selector, value, timeout=self.timeout_ms)
-            return True, f"Form dolduruldu: {selector}"
-
-        from selenium.webdriver.common.by import By
-
-        element = session.driver.find_element(By.CSS_SELECTOR, selector)
-        if clear:
-            element.clear()
-        element.send_keys(value)
+        self._provider_impls[session.provider].fill(session, selector, value, clear=clear, timeout_ms=self.timeout_ms)
         return True, f"Form dolduruldu: {selector}"
 
     def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
@@ -825,14 +908,7 @@ class BrowserManager:
 
     def _select_option_impl(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
-        if session.provider == "playwright":
-            session.page.select_option(selector, value=value, timeout=self.timeout_ms)
-            return True, f"Seçim yapıldı: {selector}={value}"
-
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.select import Select
-
-        Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
+        self._provider_impls[session.provider].select_option(session, selector, value, self.timeout_ms)
         return True, f"Seçim yapıldı: {selector}={value}"
 
     def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
@@ -922,10 +998,7 @@ class BrowserManager:
     def capture_dom(self, session_id: str, selector: str = "html") -> tuple[bool, str]:
         session = self._require_session(session_id)
         try:
-            if session.provider == "playwright":
-                dom = session.page.locator(selector).inner_html(timeout=self.timeout_ms)
-            else:
-                dom = session.driver.page_source
+            dom = self._provider_impls[session.provider].capture_dom(session, selector, self.timeout_ms)
             self._audit_session_action(
                 session,
                 action="browser_capture_dom",
@@ -953,10 +1026,7 @@ class BrowserManager:
         target_name = file_name or f"{session.session_id}.png"
         target = (self.artifact_dir / target_name).resolve()
 
-        if session.provider == "playwright":
-            session.page.screenshot(path=str(target), full_page=full_page)
-        else:
-            session.driver.save_screenshot(str(target))
+        self._provider_impls[session.provider].capture_screenshot(session, str(target), full_page=full_page)
 
         self._audit_session_action(
             session,
@@ -971,16 +1041,10 @@ class BrowserManager:
         if session is None:
             return False, f"Tarayıcı oturumu bulunamadı: {session_id}"
 
+        impl = self._provider_impls.get(session.provider)
         try:
-            if session.provider == "playwright":
-                if session.context is not None:
-                    session.context.close()
-                if session.browser is not None:
-                    session.browser.close()
-                if session.runtime is not None:
-                    session.runtime.stop()
-            elif session.driver is not None:  # pragma: no cover
-                session.driver.quit()
+            if impl is not None:
+                impl.close(session)
         except Exception as exc:
             logger.warning("Tarayıcı oturumu kapatılırken hata: %s", exc)
             self._audit_session_action(
