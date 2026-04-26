@@ -755,6 +755,31 @@ def test_ensure_redis_loop_compatibility_returns_without_running_loop(monkeypatc
     assert bus._redis_client is not None
 
 
+def test_ensure_redis_loop_compatibility_cleans_when_listener_exists_on_other_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bus = AgentEventBus()
+    bus._redis_client = None
+    bus._redis_loop = object()
+    bus._redis_listener_task = object()
+    bus._redis_available = True
+
+    cleaned = {"count": 0}
+
+    async def _cleanup() -> None:
+        cleaned["count"] += 1
+        bus._redis_listener_task = None
+        bus._redis_loop = None
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup)
+    asyncio.run(bus._ensure_redis_loop_compatibility())
+
+    assert cleaned["count"] == 1
+    assert bus._redis_available is None
+    assert bus._redis_listener_task is None
+    assert bus._redis_loop is None
+
+
 @pytest.mark.asyncio
 async def test_ensure_redis_loop_compatibility_returns_when_same_loop() -> None:
     bus = AgentEventBus()
