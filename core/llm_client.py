@@ -164,7 +164,8 @@ async def _retry_with_backoff(provider: str, operation, *, config, retry_hint: s
                 message = f"{retry_hint}: {exc}"
                 raise LLMAPIError(provider, message, status_code=status_code, retryable=retryable) from exc
 
-            delay = min(max_delay, base_delay * (2 ** attempt)) + random.uniform(0, 0.15)
+            jitter_cap = min(0.5, base_delay)
+            delay = min(max_delay, base_delay * (2 ** attempt)) + random.uniform(0, jitter_cap)
             attempt += 1
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",
@@ -183,6 +184,7 @@ def _ensure_json_text(text: str, provider: str) -> str:
         json.loads(text)
         return text
     except Exception:
+        logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
             {
                 "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
@@ -272,7 +274,7 @@ class _SemanticCacheManager:
     def __init__(self, config) -> None:
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
-        self.threshold = _cfg_float(config, "SEMANTIC_CACHE_THRESHOLD", 0.95, minimum=0.0)
+        self.threshold = _cfg_float(config, "SEMANTIC_CACHE_THRESHOLD", 0.90, minimum=0.0)
         self.ttl = _cfg_int(config, "SEMANTIC_CACHE_TTL", 3600, minimum=1)
         self.max_items = _cfg_int(config, "SEMANTIC_CACHE_MAX_ITEMS", 500, minimum=1)
         self.index_key = "sidar:semantic_cache:index"

@@ -140,6 +140,13 @@ async def test_ensure_json_text_wraps_invalid_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ensure_json_text_logs_warning_for_invalid_payload(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING"):
+        llm_client._ensure_json_text("plain-text", "Gemini")
+    assert any("JSON dışı yanıt alındı" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 12, "completion_tokens": 34}}) == (12, 34)
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 1, "output_tokens": 3}}) == (1, 3)
@@ -255,6 +262,34 @@ async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
 
 
 @pytest.mark.asyncio
+async def test_retry_with_backoff_uses_base_delay_scaled_jitter(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    jitter_args: list[tuple[float, float]] = []
+
+    async def _fake_sleep(_delay: float) -> None:
+        return None
+
+    def _fake_uniform(low: float, high: float) -> float:
+        jitter_args.append((low, high))
+        return 0.0
+
+    monkeypatch.setattr(llm_client.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(llm_client.random, "uniform", _fake_uniform)
+
+    state = {"n": 0}
+
+    async def op():
+        state["n"] += 1
+        if state["n"] == 1:
+            raise httpx.ConnectError("temporary upstream outage")
+        return {"ok": True}
+
+    await llm_client._retry_with_backoff("openai", op, config=mock_config(), retry_hint="retry")
+    assert len(jitter_args) == 1
+    assert jitter_args[0][0] == 0.0
+    assert jitter_args[0][1] == pytest.approx(0.05)
+
+
+@pytest.mark.asyncio
 async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
     async def op():
         raise ValueError("fatal")
@@ -305,6 +340,12 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert manager._cosine_similarity([], [1.0]) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_default_threshold_is_less_strict(mock_config) -> None:
+    manager = llm_client._SemanticCacheManager(mock_config())
+    assert manager.threshold == pytest.approx(0.90)
 
 
 @pytest.mark.asyncio
