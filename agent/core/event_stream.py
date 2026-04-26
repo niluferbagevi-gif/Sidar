@@ -552,9 +552,9 @@ class AgentEventBus:
 
         if len(self._dlq_buffer) == self._dlq_buffer.maxlen and self._dlq_buffer:
             oldest_item = dict(self._dlq_buffer[0])
-            self._persist_dead_letter_item(oldest_item, dropped_from_memory=True)
+            await self._persist_dead_letter_item(oldest_item, dropped_from_memory=True)
         self._dlq_buffer.append(item)
-        self._persist_dead_letter_item(item)
+        await self._persist_dead_letter_item(item)
 
         if self._backend == "redis" and self._redis_client is not None and self._redis_available is True:
             try:
@@ -567,20 +567,26 @@ class AgentEventBus:
             except Exception as exc:
                 logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
-    def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+    async def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
         if not self._dlq_persist_path:
             return
-        try:
-            record = {
-                "ts": time.time(),
-                "dropped_from_memory": dropped_from_memory,
-                "item": item,
-            }
-            parent = os.path.dirname(self._dlq_persist_path)
+        record = {
+            "ts": time.time(),
+            "dropped_from_memory": dropped_from_memory,
+            "item": item,
+        }
+        line = json.dumps(record, ensure_ascii=False) + "\n"
+        path = self._dlq_persist_path
+
+        def _write() -> None:
+            parent = os.path.dirname(path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            with open(self._dlq_persist_path, "a", encoding="utf-8") as fp:
-                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+            with open(path, "a", encoding="utf-8") as fp:
+                fp.write(line)
+
+        try:
+            await asyncio.to_thread(_write)
         except Exception as exc:
             logger.debug("AgentEventBus persistent DLQ yazımı başarısız: %s", exc)
 
