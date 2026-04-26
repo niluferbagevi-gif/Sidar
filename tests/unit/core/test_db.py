@@ -506,19 +506,19 @@ async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database
 
 
 @pytest.mark.asyncio
-async def test_run_sqlite_op_initializes_semaphore_from_config(tmp_path) -> None:
+async def test_run_sqlite_op_initializes_write_lock_and_keeps_reads_unlocked(tmp_path) -> None:
     cfg = DummyCfg(
-        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_semaphore.db'}",
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_lock.db'}",
         BASE_DIR=str(tmp_path),
         SQLITE_MAX_CONCURRENT_OPS=2,
     )
     db = Database(cfg)
     await db.connect()
 
-    assert db._sqlite_write_semaphore is None
+    assert db._sqlite_lock is None
     assert await db._run_sqlite_op(lambda: "ok", write=False) == "ok"
-    assert db._sqlite_write_semaphore is not None
-    assert db._sqlite_write_semaphore._value == 2
+    assert db._sqlite_lock is not None
+    assert isinstance(db._sqlite_lock, asyncio.Lock)
     await db.close()
 
 

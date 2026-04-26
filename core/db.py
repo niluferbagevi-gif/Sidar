@@ -294,11 +294,6 @@ class Database:
         self._sqlite_path: Optional[Path] = None
         self._sqlite_conn: Optional[sqlite3.Connection] = None
         self._sqlite_write_lock: Optional[asyncio.Lock] = None
-        self._sqlite_write_semaphore: Optional[asyncio.Semaphore] = None
-        self._sqlite_max_concurrent_ops = max(
-            1,
-            int(getattr(self.cfg, "SQLITE_MAX_CONCURRENT_OPS", 4) or 4),
-        )
 
         self._pg_pool = None
 
@@ -429,14 +424,10 @@ class Database:
                     "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
                 )
                 self._sqlite_write_lock = asyncio.Lock()
-        if self._sqlite_write_semaphore is None:
-            self._sqlite_write_semaphore = asyncio.Semaphore(self._sqlite_max_concurrent_ops)
-
         if not write:
-            async with self._sqlite_write_semaphore:
-                return await asyncio.to_thread(operation)
+            return await asyncio.to_thread(operation)
 
-        async with self._sqlite_write_semaphore:
+        async with self._sqlite_write_lock:
             for attempt in range(1, 4):
                 try:
                     return await asyncio.to_thread(operation)
@@ -539,7 +530,6 @@ class Database:
             conn = self._sqlite_conn
             self._sqlite_conn = None
             self._sqlite_write_lock = None
-            self._sqlite_write_semaphore = None
             await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
