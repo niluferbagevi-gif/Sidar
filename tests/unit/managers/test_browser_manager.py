@@ -486,6 +486,11 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (True, "ok"))
     assert (asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True)))[0] is True
 
+    monkeypatch.setattr(
+        manager,
+        "_click_element_impl_async",
+        manager.__class__._click_element_impl_async.__get__(manager, manager.__class__),
+    )
     monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ce")))
     with pytest.raises(RuntimeError):
         asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
