@@ -16,7 +16,6 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
-from unittest.mock import Mock
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -63,8 +62,6 @@ SIDAR_TOOL_JSON_INSTRUCTION: str = (
 
 def _cfg_str(config, key: str, default: str) -> str:
     value = getattr(config, key, default)
-    if isinstance(value, Mock):
-        return default
     if isinstance(value, str):
         return value
     return default if value is None else str(value)
@@ -72,9 +69,7 @@ def _cfg_str(config, key: str, default: str) -> str:
 
 def _cfg_int(config, key: str, default: int, minimum: int = 0) -> int:
     value = getattr(config, key, default)
-    if isinstance(value, Mock):
-        parsed = default
-    elif isinstance(value, bool):
+    if isinstance(value, bool):
         parsed = int(value)
     elif isinstance(value, (int, float)):
         parsed = int(value)
@@ -90,9 +85,7 @@ def _cfg_int(config, key: str, default: int, minimum: int = 0) -> int:
 
 def _cfg_float(config, key: str, default: float, minimum: float = 0.0) -> float:
     value = getattr(config, key, default)
-    if isinstance(value, Mock):
-        parsed = default
-    elif isinstance(value, bool):
+    if isinstance(value, bool):
         parsed = float(int(value))
     elif isinstance(value, (int, float)):
         parsed = float(value)
@@ -108,8 +101,6 @@ def _cfg_float(config, key: str, default: float, minimum: float = 0.0) -> float:
 
 def _cfg_bool(config, key: str, default: bool = False) -> bool:
     value = getattr(config, key, default)
-    if isinstance(value, Mock):
-        return default
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):

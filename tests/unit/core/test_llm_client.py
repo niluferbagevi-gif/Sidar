@@ -10,7 +10,7 @@ import pathlib
 import sys
 import types
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -1983,7 +1983,7 @@ def test_cfg_helpers_cover_all_type_fallbacks() -> None:
     assert llm_client._cfg_bool(cfg, "BOOL_INT", False) is True
     assert llm_client._cfg_bool(cfg, "BOOL_STR", False) is True
     assert llm_client._cfg_bool(cfg, "BOOL_OTHER", True) is True
-    assert llm_client._cfg_float(SimpleNamespace(FLOAT_MOCK=Mock()), "FLOAT_MOCK", 3.25) == 3.25
+    assert llm_client._cfg_float(SimpleNamespace(FLOAT_OBJ=object()), "FLOAT_OBJ", 3.25) == 3.25
 
 
 @pytest.mark.asyncio
