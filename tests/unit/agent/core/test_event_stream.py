@@ -98,6 +98,14 @@ class NonCallableCloseRedis:
         self.close = "not-callable"
 
 
+class NonAwaitableCloseRedis:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _DummyConnectionPool:
     def __init__(self) -> None:
         self.disconnected = False
