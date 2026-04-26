@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import abc
 import contextlib
 import importlib
 import inspect
@@ -26,6 +27,45 @@ class AgentEvent:
     ts: float
     source: str
     message: str
+
+
+class BaseEventBusBackend(abc.ABC):
+    """Backend strategy interface for remote transport operations."""
+
+    def __init__(self, bus: "AgentEventBus") -> None:
+        self.bus = bus
+
+    @abc.abstractmethod
+    def schedule_bootstrap(self) -> None:
+        """Schedule backend listener bootstrap if needed."""
+
+    @abc.abstractmethod
+    async def publish(self, evt: AgentEvent) -> bool:
+        """Publish an event via backend transport."""
+
+
+class RedisBackend(BaseEventBusBackend):
+    def schedule_bootstrap(self) -> None:
+        self.bus._schedule_redis_bootstrap()
+
+    async def publish(self, evt: AgentEvent) -> bool:
+        return await self.bus._publish_via_redis(evt)
+
+
+class RabbitMQBackend(BaseEventBusBackend):
+    def schedule_bootstrap(self) -> None:
+        self.bus._schedule_rabbit_bootstrap()
+
+    async def publish(self, evt: AgentEvent) -> bool:
+        return await self.bus._publish_via_rabbit(evt)
+
+
+class KafkaBackend(BaseEventBusBackend):
+    def schedule_bootstrap(self) -> None:
+        self.bus._schedule_kafka_bootstrap()
+
+    async def publish(self, evt: AgentEvent) -> bool:
+        return await self.bus._publish_via_kafka(evt)
 
 
 class AgentEventBus:
@@ -63,6 +103,11 @@ class AgentEventBus:
         self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
         self._kafka_group = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}")
         self._kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        self._backends: dict[str, BaseEventBusBackend] = {
+            "redis": RedisBackend(self),
+            "rabbitmq": RabbitMQBackend(self),
+            "kafka": KafkaBackend(self),
+        }
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
@@ -81,11 +126,8 @@ class AgentEventBus:
         await self._publish_via_remote(evt)
 
     def _schedule_remote_bootstrap(self) -> None:
-        schedule_fn = {
-            "rabbitmq": self._schedule_rabbit_bootstrap,
-            "kafka": self._schedule_kafka_bootstrap,
-        }.get(self._backend, self._schedule_redis_bootstrap)
-        schedule_fn()
+        backend = self._backends.get(self._backend, self._backends["redis"])
+        backend.schedule_bootstrap()
 
     def _schedule_redis_bootstrap(self) -> None:
         if self._redis_available is False:
@@ -204,11 +246,8 @@ class AgentEventBus:
             await self._cleanup_kafka()
 
     async def _publish_via_remote(self, evt: AgentEvent) -> bool:
-        publish_fn = {
-            "rabbitmq": self._publish_via_rabbit,
-            "kafka": self._publish_via_kafka,
-        }.get(self._backend, self._publish_via_redis)
-        return await publish_fn(evt)
+        backend = self._backends.get(self._backend, self._backends["redis"])
+        return await backend.publish(evt)
 
     def _serialize_event_payload(self, evt: AgentEvent) -> str:
         return json.dumps(

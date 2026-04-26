@@ -37,6 +37,9 @@ Sorumlulukları küçük, bağımsız birimlere ayırmak:
 
 - Payload serileştirme/parse mantığını ortak helper'lara taşı.
 - Backend dispatch kararını map tabanlı yapıya çek (if/else dallarını azalt).
+- Backend routing için `BaseEventBusBackend` + concrete strategy sınıfları
+  (`RedisBackend`, `RabbitMQBackend`, `KafkaBackend`) ekleyerek
+  `AgentEventBus` içinde strategy tabanlı delegasyon başlat.
 - Mevcut public/private API'yi koru.
 
 ### Faz 2 (Orta Risk)

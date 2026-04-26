@@ -31,7 +31,7 @@ sys.modules.setdefault("redis.asyncio", redis_asyncio_mod)
 sys.modules.setdefault("redis.exceptions", redis_exceptions_mod)
 
 import agent.core.event_stream as event_stream
-from agent.core.event_stream import AgentEvent, AgentEventBus, get_agent_event_bus
+from agent.core.event_stream import AgentEvent, AgentEventBus, BaseEventBusBackend, get_agent_event_bus
 
 
 class DummyRedis:
@@ -724,6 +724,12 @@ def test_schedule_remote_bootstrap_routes_by_backend(monkeypatch: pytest.MonkeyP
     bus._schedule_remote_bootstrap()
 
     assert calls == {"redis": 1, "rabbitmq": 1, "kafka": 1}
+
+
+def test_event_bus_uses_backend_strategy_instances(bus: AgentEventBus) -> None:
+    assert isinstance(bus._backends["redis"], BaseEventBusBackend)
+    assert isinstance(bus._backends["rabbitmq"], BaseEventBusBackend)
+    assert isinstance(bus._backends["kafka"], BaseEventBusBackend)
 
 
 def test_schedule_rabbit_kafka_bootstrap_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
