@@ -865,6 +865,74 @@ def test_ensure_kafka_listener_success_and_failure(monkeypatch: pytest.MonkeyPat
     assert cleaned["ok"] is True
 
 
+def test_rabbit_connection_failure_switches_to_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._backend = "rabbitmq"
+
+    async def _broken_connect(_url: str):
+        raise RuntimeError("rabbit unavailable")
+
+    class _BrokenAioPika:
+        connect_robust = staticmethod(_broken_connect)
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _BrokenAioPika)
+    monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup)
+    monkeypatch.setattr(bus, "_schedule_remote_bootstrap", lambda: None)
+
+    async def _scenario() -> None:
+        await bus._ensure_rabbit_listener()
+        assert bus._rabbit_available is False
+        sub_id, queue = bus.subscribe()
+        await bus.publish("qa", "rabbit fallback")
+        evt = await asyncio.wait_for(queue.get(), timeout=0.2)
+        assert evt.source == "qa"
+        assert evt.message == "rabbit fallback"
+        bus.unsubscribe(sub_id)
+
+    asyncio.run(_scenario())
+    assert cleaned["ok"] is True
+
+
+def test_kafka_connection_failure_switches_to_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._backend = "kafka"
+
+    class _BrokenProducer(DummyKafkaProducer):
+        async def start(self) -> None:
+            raise RuntimeError("kafka unavailable")
+
+    class _BrokenAioKafka:
+        AIOKafkaProducer = _BrokenProducer
+        AIOKafkaConsumer = DummyKafkaConsumer
+
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _BrokenAioKafka)
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+    monkeypatch.setattr(bus, "_schedule_remote_bootstrap", lambda: None)
+
+    async def _scenario() -> None:
+        await bus._ensure_kafka_listener()
+        assert bus._kafka_available is False
+        sub_id, queue = bus.subscribe()
+        await bus.publish("qa", "kafka fallback")
+        evt = await asyncio.wait_for(queue.get(), timeout=0.2)
+        assert evt.source == "qa"
+        assert evt.message == "kafka fallback"
+        bus.unsubscribe(sub_id)
+
+    asyncio.run(_scenario())
+    assert cleaned["ok"] is True
+
+
 def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
     evt = AgentEvent(ts=1.0, source="qa", message="event")
 
