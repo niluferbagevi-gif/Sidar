@@ -1653,3 +1653,26 @@ def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
 
     assert len(debug_calls) == 1
     assert "persistent DLQ yazımı başarısız" in debug_calls[0]
+
+
+def test_write_dead_letter_swallow_redis_dlq_publish_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._backend = "redis"
+    bus._redis_available = True
+
+    class _BrokenRedis:
+        async def xadd(self, *_args, **_kwargs):
+            raise RuntimeError("dlq publish failed")
+
+    debug_calls: list[str] = []
+
+    def _debug(message: str, exc: Exception) -> None:
+        debug_calls.append(f"{message}:{exc}")
+
+    monkeypatch.setattr(event_stream.logger, "debug", _debug)
+    bus._redis_client = _BrokenRedis()
+
+    asyncio.run(bus._write_dead_letter(reason="redis_fail", payload={"id": "x"}))
+
+    assert debug_calls
+    assert "DLQ yazımı başarısız" in debug_calls[0]

@@ -1544,6 +1544,21 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(monk
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000099"
 
 
+def test_new_entity_id_falls_back_to_uuid4_when_uuid6_uuid7_callable_crashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(uuid, "uuid7", raising=False)
+
+    fake_uuid6 = types.ModuleType("uuid6")
+
+    def _crash() -> uuid.UUID:
+        raise RuntimeError("uuid6 uuid7 failed")
+
+    fake_uuid6.uuid7 = _crash
+    monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000077"))
+
+    assert _new_entity_id() == "00000000-0000-4000-8000-000000000077"
+
+
 def test_expires_in_uses_default_days_when_no_argument() -> None:
     now = datetime.now(timezone.utc)
     expiry = datetime.fromisoformat(_expires_in())

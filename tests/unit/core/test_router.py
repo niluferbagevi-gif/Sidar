@@ -249,3 +249,9 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
             "default-model",
         )
         assert (provider, model) == ("ollama", "llama3")
+
+
+def test_estimate_tokens_handles_empty_and_rounds_up() -> None:
+    assert CostAwareRouter._estimate_tokens([]) == 0
+    assert CostAwareRouter._estimate_tokens([{"role": "user", "content": ""}]) == 0
+    assert CostAwareRouter._estimate_tokens([{"role": "user", "content": "abcde"}]) == 2

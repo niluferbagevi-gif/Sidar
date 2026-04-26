@@ -925,6 +925,30 @@ def test_start_session_returns_safe_failure_when_playwright_runtime_start_fails(
     assert manager._sessions == {}
 
 
+def test_start_session_falls_back_to_selenium_when_playwright_fails(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"playwright": 0, "selenium": 0}
+    expected = _session("selenium")
+
+    def _playwright_start(*_args, **_kwargs):
+        calls["playwright"] += 1
+        raise RuntimeError("playwright failed")
+
+    def _selenium_start(*_args, **_kwargs):
+        calls["selenium"] += 1
+        return expected
+
+    monkeypatch.setattr(manager._browser_providers["playwright"], "start_session", _playwright_start)
+    monkeypatch.setattr(manager._browser_providers["selenium"], "start_session", _selenium_start)
+
+    ok, info = manager.start_session(browser_name="chromium", headless=True)
+
+    assert ok is True
+    assert info["provider"] == "selenium"
+    assert calls == {"playwright": 1, "selenium": 1}
+
+
 def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
