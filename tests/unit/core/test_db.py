@@ -39,6 +39,7 @@ class DummyCfg:
     JWT_SECRET_KEY: str = "test-secret"
     JWT_ALGORITHM: str = "HS256"
     JWT_TTL_DAYS: int = 3
+    SQLITE_MAX_CONCURRENT_OPS: int = 4
 
 
 class _FakeAcquire:
@@ -487,6 +488,38 @@ async def test_run_sqlite_op_raises_runtime_error_when_rollback_also_fails(
 
     with pytest.raises(RuntimeError, match="SQLite işlemi ve rollback başarısız oldu"):
         await sqlite_db._run_sqlite_op(_failing_op)
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database) -> None:
+    attempts = {"count": 0}
+
+    def _flaky_operation() -> int:
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise sqlite3.OperationalError("database is locked")
+        return 42
+
+    result = await sqlite_db._run_sqlite_op(_flaky_operation)
+    assert result == 42
+    assert attempts["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_initializes_semaphore_from_config(tmp_path) -> None:
+    cfg = DummyCfg(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_semaphore.db'}",
+        BASE_DIR=str(tmp_path),
+        SQLITE_MAX_CONCURRENT_OPS=2,
+    )
+    db = Database(cfg)
+    await db.connect()
+
+    assert db._sqlite_write_semaphore is None
+    assert await db._run_sqlite_op(lambda: "ok", write=False) == "ok"
+    assert db._sqlite_write_semaphore is not None
+    assert db._sqlite_write_semaphore._value == 2
+    await db.close()
 
 
 @pytest.mark.asyncio

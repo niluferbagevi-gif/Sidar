@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import logging
+import random
 import re
 import sqlite3
 import uuid
@@ -293,6 +294,11 @@ class Database:
         self._sqlite_path: Optional[Path] = None
         self._sqlite_conn: Optional[sqlite3.Connection] = None
         self._sqlite_write_lock: Optional[asyncio.Lock] = None
+        self._sqlite_write_semaphore: Optional[asyncio.Semaphore] = None
+        self._sqlite_max_concurrent_ops = max(
+            1,
+            int(getattr(self.cfg, "SQLITE_MAX_CONCURRENT_OPS", 4) or 4),
+        )
 
         self._pg_pool = None
 
@@ -423,26 +429,34 @@ class Database:
                     "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
                 )
                 self._sqlite_write_lock = asyncio.Lock()
+        if self._sqlite_write_semaphore is None:
+            self._sqlite_write_semaphore = asyncio.Semaphore(self._sqlite_max_concurrent_ops)
 
         if not write:
-            return await asyncio.to_thread(operation)
-
-        async with self._sqlite_write_lock:
-            try:
+            async with self._sqlite_write_semaphore:
                 return await asyncio.to_thread(operation)
-            except Exception:
-                # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa
-                # hatayı yutmak yerine üst katmana açıkça bildir.
+
+        async with self._sqlite_write_semaphore:
+            for attempt in range(1, 4):
                 try:
-                    await asyncio.to_thread(self._sqlite_conn.rollback)
-                except Exception as rollback_exc:
-                    logger.exception(
-                        "SQLite rollback başarısız oldu; veri bütünlüğü riske girebilir."
-                    )
-                    raise RuntimeError(
-                        "SQLite işlemi ve rollback başarısız oldu."
-                    ) from rollback_exc
-                raise
+                    return await asyncio.to_thread(operation)
+                except sqlite3.OperationalError as exc:
+                    if "database is locked" not in str(exc).lower() or attempt == 3:
+                        raise
+                    await asyncio.sleep(0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01))
+                except Exception:
+                    # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa
+                    # hatayı yutmak yerine üst katmana açıkça bildir.
+                    try:
+                        await asyncio.to_thread(self._sqlite_conn.rollback)
+                    except Exception as rollback_exc:
+                        logger.exception(
+                            "SQLite rollback başarısız oldu; veri bütünlüğü riske girebilir."
+                        )
+                        raise RuntimeError(
+                            "SQLite işlemi ve rollback başarısız oldu."
+                        ) from rollback_exc
+                    raise
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
@@ -525,6 +539,7 @@ class Database:
             conn = self._sqlite_conn
             self._sqlite_conn = None
             self._sqlite_write_lock = None
+            self._sqlite_write_semaphore = None
             await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
