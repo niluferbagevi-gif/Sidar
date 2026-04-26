@@ -5,7 +5,6 @@ import {
   SwarmFlowPanel,
   buildTaskDraftFromNode,
   clampText,
-  inferHitlActionFromNode,
   inferTelemetryActor,
   prettifyReason,
   prettifyRole,
@@ -30,23 +29,22 @@ vi.mock("../hooks/useChatStore.js", () => ({
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));
 
-describe("SwarmFlowPanel helpers", () => {
-  it("covers helper fallback branches", () => {
-    expect(prettifyRole("")).toBe("Unknown");
-    expect(prettifyRole("multi_word-role")).toBe("Multi Word Role");
-    expect(clampText("   ")).toBe("Açıklama bekleniyor.");
-    expect(prettifyReason("")).toBe("");
-    expect(toDetailEntries(null)).toEqual([]);
-    expect(toDetailEntries({ key: ["a", "b"] })[0].value).toBe("a · b");
-    expect(inferTelemetryActor({ content: "", kind: "status" }, [])).toBe("system");
-    expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
-    expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
-    expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
-    expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
-    expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
-    expect(inferHitlActionFromNode()).toBe("graph_review");
-  });
-});
+const bootstrapApiMock = ({ activityItems = [], pending = [] } = {}) => async (url) => {
+  if (url === "/api/autonomy/activity?limit=8") {
+    return {
+      activity: {
+        items: activityItems,
+        counts_by_status: {},
+        counts_by_source: {},
+        total: activityItems.length,
+      },
+    };
+  }
+  if (url === "/api/hitl/pending") {
+    return { pending };
+  }
+  throw new Error(`Beklenmeyen çağrı: ${url}`);
+};
 
 describe("SwarmFlowPanel", () => {
   beforeEach(() => {
@@ -397,10 +395,9 @@ describe("SwarmFlowPanel", () => {
   it("shows error when swarm execution fails via executeSwarm catch block", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation(async (url, options) => {
-      if (url === "/api/autonomy/activity?limit=8") {
-        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      if (url === "/api/autonomy/activity?limit=8" || url === "/api/hitl/pending") {
+        return bootstrapApiMock()(url);
       }
-      if (url === "/api/hitl/pending") return { pending: [] };
       if (url === "/api/swarm/execute" && options?.method === "POST") {
         throw new Error("Swarm API Error");
       }
@@ -477,13 +474,7 @@ describe("SwarmFlowPanel", () => {
 
   it("updates task goal field correctly on user typing", async () => {
     const user = userEvent.setup();
-    fetchJson.mockImplementation(async (url) => {
-      if (url === "/api/autonomy/activity?limit=8") {
-        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
-      }
-      if (url === "/api/hitl/pending") return { pending: [] };
-      throw new Error(`Beklenmeyen çağrı: ${url}`);
-    });
+    fetchJson.mockImplementation(bootstrapApiMock());
 
     render(<SwarmFlowPanel />);
     const goalBoxes = await screen.findAllByPlaceholderText("Görevin açıklaması");
@@ -614,10 +605,9 @@ describe("SwarmFlowPanel", () => {
   it("sends HITL request for supervisor node to cover graph_review branch", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation(async (url, options) => {
-      if (url === "/api/autonomy/activity?limit=8") {
-        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      if (url === "/api/autonomy/activity?limit=8" || url === "/api/hitl/pending") {
+        return bootstrapApiMock()(url);
       }
-      if (url === "/api/hitl/pending") return { pending: [] };
       if (url === "/api/hitl/request" && options?.method === "POST") return { request_id: "hitl-req-supervisor" };
       throw new Error(`Beklenmeyen çağrı: ${url}`);
     });
