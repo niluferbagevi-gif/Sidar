@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from managers.browser_manager import BrowserManager, BrowserSession
+from managers.browser_manager import BaseBrowserProvider, BrowserManager, BrowserSession
 
 
 class _Cfg:
@@ -585,6 +585,54 @@ def test_playwright_impl_and_goto_selenium(manager: BrowserManager, monkeypatch:
     se.session_id = "se2"
     manager._sessions["se2"] = se
     assert manager.goto_url("se2", "https://example.com")[0] is True
+
+
+def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> None:
+    class _CustomProvider(BaseBrowserProvider):
+        provider_name = "custom"
+
+        def start_session(self, manager: BrowserManager, browser_name: str, headless: bool) -> BrowserSession:
+            return BrowserSession(
+                session_id="c1",
+                provider="custom",
+                browser_name=browser_name,
+                headless=headless,
+                started_at=1.0,
+            )
+
+        def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
+            session.current_url = f"custom://{url}"
+
+        def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
+            _ = (manager, session, selector)
+
+        def fill(self, manager: BrowserManager, session: BrowserSession, selector: str, value: str, *, clear: bool) -> None:
+            _ = (manager, session, selector, value, clear)
+
+        def select(self, manager: BrowserManager, session: BrowserSession, selector: str, value: str) -> None:
+            _ = (manager, session, selector, value)
+
+        def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
+            _ = (manager, session, selector)
+            return "<html>custom</html>"
+
+        def capture_screenshot(self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool) -> None:
+            _ = (manager, session, full_page)
+            Path(path).write_bytes(b"x")
+
+        def close(self, manager: BrowserManager, session: BrowserSession) -> None:
+            _ = (manager, session)
+
+        def current_url(self, session: BrowserSession) -> str:
+            return session.current_url
+
+    manager._browser_providers["custom"] = _CustomProvider()
+    manager.provider = "custom"
+    ok, info = manager.start_session(browser_name="chromium", headless=True)
+    assert ok is True
+    assert info["provider"] == "custom"
+    assert manager.goto_url("c1", "https://example.com")[0] is True
+    assert manager._sessions["c1"].current_url.startswith("custom://")
 
 
 def test_start_selenium_non_headless_and_close_partial(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
