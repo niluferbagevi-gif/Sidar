@@ -1,0 +1,55 @@
+name: Nightly GPU Performance
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-gpu-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpu-performance-benchmarks:
+    name: GPU Benchmark Suite (nightly)
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 90
+
+    env:
+      RUN_GPU_STRESS: "1"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run nightly GPU performance benchmarks
+        run: |
+          uv run pytest -c pyproject.toml -v tests/performance \
+            -m "benchmark and gpu" \
+            -n 0 \
+            --no-cov
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-gpu-performance-artifacts
+          path: |
+            .benchmarks/
+            .pytest_cache/
+          if-no-files-found: ignore
+          retention-days: 14
