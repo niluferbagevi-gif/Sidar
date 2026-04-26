@@ -443,9 +443,7 @@ class Config:
     ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
-    TRUSTED_PROXIES: frozenset = frozenset(
-        ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "127.0.0.1").split(",") if ip.strip()
-    )
+    TRUSTED_PROXIES: frozenset = frozenset(get_list_env("TRUSTED_PROXIES", ["127.0.0.1"]))
     TRUSTED_PROXIES_LIST: List[str] = sorted(TRUSTED_PROXIES)
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
