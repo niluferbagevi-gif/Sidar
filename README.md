@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v5.0.0-alpha ürün baseline** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v5.2.0 ürün baseline** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║ Yazılım Mimarı & Baş Mühendis AI v5-alpha ║
+ ║ Yazılım Mimarı & Baş Mühendis AI v5.2.0 ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -18,9 +18,9 @@
 
 ## Proje Hakkında
 
-**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.0.0-alpha geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
+**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.2.0 geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
 
-> **Güncel Ürün Durumu:** Repo artık `v5.0.0-alpha` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
+> **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
 
@@ -139,7 +139,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v5.0.0-alpha ürün baseline)
+### Web Arayüzü (v5.2.0 ürün baseline)
 - **Görsel Swarm Akış Diyagramları + Canlı Operasyon:** `SwarmFlowPanel`, ajan görevleri, P2P handoff'lar, otonom cron tetikleri ve LLM düşünce/karar özetlerini node-graph olarak görselleştirir; seçili node üzerinden follow-up görev, rerun ve HITL karar aksiyonları sunar
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
@@ -553,7 +553,7 @@ Sidar/
 ├── helm/sidar/             # Kubernetes chart; web, ai-worker, redis, PostgreSQL, otel-collector, Jaeger, Zipkin
 ├── docker/                 # Prometheus + Grafana provisioning dosyaları
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
-├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.0.0-alpha`
+├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
 ├── web_server.py           # 62 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
@@ -683,7 +683,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
-| **v5.0.0-alpha** | Faz 6 görünür ürün geçişi: multimodal medya hattı, `/ws/voice`, tarayıcı otomasyonu, proaktif cron/webhook akışları, GraphRAG etki analizi ve launcher stabilizasyonu testlerle doğrulandı; aktif v5.0 coverage borcu kapatıldı |
+| **v5.2.0** | Faz 6 görünür ürün geçişi: multimodal medya hattı, `/ws/voice`, tarayıcı otomasyonu, proaktif cron/webhook akışları, GraphRAG etki analizi ve launcher stabilizasyonu testlerle doğrulandı; aktif v5.2.0 coverage borcu kapatıldı |
 | **v4.3.0** | Sürüm + metrik senkronizasyonu: `config.py`, `pyproject.toml`, `PKG-INFO`, Helm chart ve üst seviye dokümanlar 4.3.0 çizgisine taşındı; takipli dosya ölçümleri 58 üretim Python / 20.582 satır, 151 test dosyası / 39.147 satır ve 62 REST endpoint gerçekliğiyle güncellendi. Aynı baz çizgide v5.0 geçişi için multimodal, browser automation ve proaktif trigger iskeletleri devreye alındı |
 | **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v5.0.md` senkronize edildi |
 | **v3.2.0** | Autonomous LLMOps konsolidasyonu: Active Learning/LoRA, Vision Pipeline, Cost-Aware Routing ve Slack/Jira/Teams orkestrasyonu Faz 4’ün birleşik ürün anlatısı olarak toplandı |
