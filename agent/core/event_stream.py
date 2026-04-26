@@ -552,9 +552,9 @@ class AgentEventBus:
 
         if len(self._dlq_buffer) == self._dlq_buffer.maxlen and self._dlq_buffer:
             oldest_item = dict(self._dlq_buffer[0])
-            self._persist_dead_letter_item(oldest_item, dropped_from_memory=True)
+            await self._persist_dead_letter_item(oldest_item, dropped_from_memory=True)
         self._dlq_buffer.append(item)
-        self._persist_dead_letter_item(item)
+        await self._persist_dead_letter_item(item)
 
         if self._backend == "redis" and self._redis_client is not None and self._redis_available is True:
             try:
@@ -567,7 +567,14 @@ class AgentEventBus:
             except Exception as exc:
                 logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
-    def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+    async def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+        await asyncio.to_thread(
+            self._persist_dead_letter_item_sync,
+            item,
+            dropped_from_memory=dropped_from_memory,
+        )
+
+    def _persist_dead_letter_item_sync(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
         if not self._dlq_persist_path:
             return
         try:

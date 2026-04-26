@@ -772,6 +772,27 @@ async def test_write_dead_letter_persists_to_jsonl_when_path_configured(bus: Age
 
 
 @pytest.mark.asyncio
+async def test_write_dead_letter_persistence_runs_via_to_thread(
+    bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    persist_path = tmp_path / "dlq_to_thread.jsonl"
+    bus._dlq_persist_path = str(persist_path)
+    calls: list[str] = []
+
+    async def _to_thread(func, *args, **kwargs):
+        calls.append(func.__name__)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(event_stream.asyncio, "to_thread", _to_thread)
+
+    await bus._write_dead_letter(reason="threaded", payload={"kind": "offload"})
+
+    assert calls == ["_persist_dead_letter_item_sync"]
+    line = persist_path.read_text(encoding="utf-8").strip()
+    assert json.loads(line)["item"]["reason"] == "threaded"
+
+
+@pytest.mark.asyncio
 async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflows(bus: AgentEventBus, tmp_path) -> None:
     persist_path = tmp_path / "dlq_overflow.jsonl"
     bus._dlq_persist_path = str(persist_path)
