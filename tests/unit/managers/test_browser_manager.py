@@ -390,6 +390,35 @@ def test_is_available_status_and_start_session(manager: BrowserManager, monkeypa
     assert ok is False and info["error"] == "se"
 
 
+def test_start_session_respects_selenium_provider_preference(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    class _SeleniumCfg(_Cfg):
+        BROWSER_PROVIDER = "selenium"
+
+    mgr = BrowserManager(config=_SeleniumCfg())
+    mgr.artifact_dir = tmp_path
+
+    calls = {"playwright": 0, "selenium": 0}
+    expected = _session("selenium")
+    expected.session_id = "se-only"
+
+    def _playwright_start(*_a, **_k):
+        calls["playwright"] += 1
+        raise AssertionError("playwright should not be attempted when provider=selenium")
+
+    def _selenium_start(*_a, **_k):
+        calls["selenium"] += 1
+        return expected
+
+    monkeypatch.setattr(mgr._browser_providers["playwright"], "start_session", _playwright_start)
+    monkeypatch.setattr(mgr._browser_providers["selenium"], "start_session", _selenium_start)
+
+    ok, info = mgr.start_session(browser_name="chrome")
+    assert ok is True
+    assert info["provider"] == "selenium"
+    assert calls["playwright"] == 0
+    assert calls["selenium"] == 1
+
+
 def test_navigation_and_sync_actions(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
@@ -442,8 +471,10 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         return True
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    ok, _ = asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
+    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    ok, message = asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
     assert ok is False
+    assert "reddedildi" in message
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (True, "ok"))
@@ -454,7 +485,10 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    assert (asyncio.run(manager.fill_form_hitl("s1", "#i", "secret")))[0] is False
+    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    deny_fill_ok, deny_fill_message = asyncio.run(manager.fill_form_hitl("s1", "#i", "secret"))
+    assert deny_fill_ok is False
+    assert "reddedildi" in deny_fill_message
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (True, "ok"))
     assert (asyncio.run(manager.fill_form_hitl("s1", "#i", "secret")))[0] is True
@@ -463,7 +497,10 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         asyncio.run(manager.fill_form_hitl("s1", "#i", "secret"))
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    assert (asyncio.run(manager.select_option_hitl("s1", "#s", "v")))[0] is False
+    monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    deny_select_ok, deny_select_message = asyncio.run(manager.select_option_hitl("s1", "#s", "v"))
+    assert deny_select_ok is False
+    assert "reddedildi" in deny_select_message
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (True, "ok"))
     assert (asyncio.run(manager.select_option_hitl("s1", "#s", "v")))[0] is True
@@ -760,6 +797,39 @@ def test_analyze_visual_drift_with_hash_fallback_detects_change(manager: Browser
     assert result["ok"] is True
     assert result["drift_detected"] is True
     assert result["reason"] == "hash_fallback"
+
+
+def test_compute_visual_drift_uses_hash_fallback_when_pil_processing_fails(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = manager.artifact_dir / "baseline-broken.png"
+    current = manager.artifact_dir / "current-broken.png"
+    baseline.write_bytes(b"baseline-content")
+    current.write_bytes(b"current-content")
+
+    class _ImageModule:
+        @staticmethod
+        def open(_path: str):
+            raise OSError("broken image")
+
+    class _ImageChopsModule:
+        @staticmethod
+        def difference(_a, _b):
+            raise AssertionError("difference should not run when image open fails")
+
+    def _import_module(name: str):
+        if name == "PIL.Image":
+            return _ImageModule
+        if name == "PIL.ImageChops":
+            return _ImageChopsModule
+        raise ImportError(name)
+
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", _import_module)
+    drift = manager._compute_visual_drift(baseline, current)
+
+    assert drift["reason"] == "hash_fallback"
+    assert drift["drift_detected"] is True
+    assert drift["baseline_hash"] != drift["current_hash"]
 
 
 def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
