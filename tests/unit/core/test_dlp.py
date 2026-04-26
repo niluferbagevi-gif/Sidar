@@ -59,8 +59,12 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
             "tckn 10000000146",
             "mail test.user@example.com",
             "cc 4111111111111111",
+            "ipv4 192.168.10.42",
+            "ipv6 2001:0db8:85a3:0000:0000:8a2e:0370:7334",
             "jwt eyaaaaaaaaaa.bbbbbbbbbbb.ccccccccccc",
-            "hex deadbeefdeadbeefdeadbeefdeadbeef",
+            "hex "
+            "deadbeefdeadbeefdeadbeefdeadbeef"
+            "deadbeefdeadbeefdeadbeefdeadbeef",
         ]
     )
 
@@ -84,6 +88,8 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
         "tckn",
         "email",
         "credit_card",
+        "ipv4",
+        "ipv6",
         "long_hex",
     }
     assert any("DLP Maskeleme" in rec.message for rec in caplog.records)
@@ -99,6 +105,16 @@ def test_mask_leaves_invalid_tckn_untouched():
     assert detections == []
 
 
+def test_tckn_regex_ignores_currency_adjacent_numbers() -> None:
+    engine = DLPEngine(mask_tckn=True)
+    text = "fiyat=10000000146₺ ve kur=10000000146,50"
+
+    masked, detections = engine.mask(text)
+
+    assert masked == text
+    assert detections == []
+
+
 def test_mask_skips_tckn_block_when_disabled_but_continues_other_patterns():
     engine = DLPEngine(mask_tckn=False, mask_email=True)
     text = "tckn 10000000146 mail user@example.com"
@@ -106,6 +122,19 @@ def test_mask_skips_tckn_block_when_disabled_but_continues_other_patterns():
     assert "10000000146" in masked
     assert "user@example.com" not in masked
     assert any(d.pattern_name == "email" for d in detections)
+
+
+def test_mask_long_hex_ignores_sha1_like_40_chars_but_masks_64_plus() -> None:
+    engine = DLPEngine(mask_long_hex=True)
+    sha1_like = "a" * 40
+    sha256_like = "b" * 64
+    text = f"sha1 {sha1_like} sha256 {sha256_like}"
+
+    masked, detections = engine.mask(text)
+
+    assert sha1_like in masked
+    assert sha256_like not in masked
+    assert any(d.pattern_name == "long_hex" for d in detections)
 
 
 def test_mask_messages_masks_only_string_contents_and_preserves_original_list():

@@ -71,7 +71,9 @@ _RE_PASSWORD = re.compile(
 )
 
 # TC Kimlik No — 11 haneli, ilk hane ≠ 0
-_RE_TCKN = re.compile(r"\b([1-9][0-9]{10})\b")
+# Sayıların para birimi/ondalık bağlamındaki kullanımını azaltmak için
+# nokta/virgül/₺/$ ile komşu değerleri eşleşmeden dışlarız.
+_RE_TCKN = re.compile(r"(?<!\d)(?<!\.)([1-9][0-9]{10})(?!\d)(?![\.,₺$])")
 
 # E-posta
 _RE_EMAIL = re.compile(
@@ -90,8 +92,17 @@ _RE_JWT = re.compile(
     r"\b(ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b"
 )
 
-# Uzun hex dizisi (32+ karakter) — MD5/SHA gibi hash veya ham token
-_RE_LONG_HEX = re.compile(r"\b([0-9a-fA-F]{32,})\b")
+# IPv4
+_RE_IPV4 = re.compile(
+    r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
+    r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
+)
+
+# IPv6 (sık kullanılan tam/sıkıştırılmış biçimler)
+_RE_IPV6 = re.compile(r"\b(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}\b")
+
+# Uzun hex dizisi (64+ karakter) — SHA-1 / kısa commit hash false-positive riskini azaltır
+_RE_LONG_HEX = re.compile(r"\b([0-9a-fA-F]{64,})\b")
 
 
 # ─── TC Kimlik No doğrulama ────────────────────────────────────────────────────
@@ -150,6 +161,8 @@ class DLPEngine:
         mask_tckn: bool = True,
         mask_email: bool = True,
         mask_credit_cards: bool = True,
+        mask_ipv4: bool = True,
+        mask_ipv6: bool = True,
         mask_jwt: bool = True,
         mask_long_hex: bool = False,  # Varsayılan kapalı — çok sayıda false positive üretir
         replacement: str = _DEFAULT_MASK,
@@ -164,6 +177,8 @@ class DLPEngine:
         self.mask_tckn = mask_tckn
         self.mask_email = mask_email
         self.mask_credit_cards = mask_credit_cards
+        self.mask_ipv4 = mask_ipv4
+        self.mask_ipv6 = mask_ipv6
         self.mask_jwt = mask_jwt
         self.mask_long_hex = mask_long_hex
         self.replacement = replacement
@@ -245,6 +260,8 @@ class DLPEngine:
 
         _apply(self.mask_email, _RE_EMAIL, 0, "email")
         _apply(self.mask_credit_cards, _RE_CREDIT_CARD, 0, "credit_card")
+        _apply(self.mask_ipv4, _RE_IPV4, 0, "ipv4")
+        _apply(self.mask_ipv6, _RE_IPV6, 0, "ipv6")
 
         # Uzun hex (varsayılan kapalı)
         _apply(self.mask_long_hex, _RE_LONG_HEX, 1, "long_hex")
@@ -295,6 +312,7 @@ def _build_engine_from_env() -> DLPEngine:
             mask_bearer=False, mask_sk_keys=False, mask_github_tokens=False,
             mask_aws_keys=False, mask_kv_secrets=False, mask_passwords=False,
             mask_tckn=False, mask_email=False, mask_credit_cards=False,
+            mask_ipv4=False, mask_ipv6=False,
             mask_jwt=False, mask_long_hex=False,
             log_detections=False,
         )
