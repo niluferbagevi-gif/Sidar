@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import abc
 import contextlib
 import importlib
 import inspect
@@ -19,6 +18,8 @@ from typing import Dict
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
+from agent.core.event_backends import BaseEventBusBackend
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,45 +28,6 @@ class AgentEvent:
     ts: float
     source: str
     message: str
-
-
-class BaseEventBusBackend(abc.ABC):
-    """Backend strategy interface for remote transport operations."""
-
-    def __init__(self, bus: "AgentEventBus") -> None:
-        self.bus = bus
-
-    @abc.abstractmethod
-    def schedule_bootstrap(self) -> None:
-        """Schedule backend listener bootstrap if needed."""
-
-    @abc.abstractmethod
-    async def publish(self, evt: AgentEvent) -> bool:
-        """Publish an event via backend transport."""
-
-
-class RedisBackend(BaseEventBusBackend):
-    def schedule_bootstrap(self) -> None:
-        self.bus._schedule_redis_bootstrap()
-
-    async def publish(self, evt: AgentEvent) -> bool:
-        return await self.bus._publish_via_redis(evt)
-
-
-class RabbitMQBackend(BaseEventBusBackend):
-    def schedule_bootstrap(self) -> None:
-        self.bus._schedule_rabbit_bootstrap()
-
-    async def publish(self, evt: AgentEvent) -> bool:
-        return await self.bus._publish_via_rabbit(evt)
-
-
-class KafkaBackend(BaseEventBusBackend):
-    def schedule_bootstrap(self) -> None:
-        self.bus._schedule_kafka_bootstrap()
-
-    async def publish(self, evt: AgentEvent) -> bool:
-        return await self.bus._publish_via_kafka(evt)
 
 
 class AgentEventBus:
@@ -113,11 +75,22 @@ class AgentEventBus:
         self._remote_circuit_open_seconds = max(1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", "15") or "15"))
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
-        self._backends: dict[str, BaseEventBusBackend] = {
-            "redis": RedisBackend(self),
-            "rabbitmq": RabbitMQBackend(self),
-            "kafka": KafkaBackend(self),
+        self._backends: dict[str, BaseEventBusBackend] = self._build_backends()
+
+    def _build_backends(self) -> dict[str, BaseEventBusBackend]:
+        # Broker strategy sınıflarını lazy-load plugin modüllerinden yükler.
+        specs = {
+            "redis": "agent.core.event_backends.redis_backend:RedisBackend",
+            "rabbitmq": "agent.core.event_backends.rabbitmq_backend:RabbitMQBackend",
+            "kafka": "agent.core.event_backends.kafka_backend:KafkaBackend",
         }
+        loaded: dict[str, BaseEventBusBackend] = {}
+        for backend_name, target in specs.items():
+            module_name, class_name = target.split(":", 1)
+            module = importlib.import_module(module_name)
+            backend_cls = getattr(module, class_name)
+            loaded[backend_name] = backend_cls(self)
+        return loaded
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
