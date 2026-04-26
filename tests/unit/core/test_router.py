@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -25,9 +26,18 @@ def _make_config(**overrides: object) -> SimpleNamespace:
 
 @pytest.fixture(autouse=True)
 def reset_budget_tracker() -> None:
-    with router._budget_tracker._lock:
-        router._budget_tracker._daily_cost = 0.0
-        router._budget_tracker._day_start = router.time.time()
+    tracker = router._budget_tracker
+    if hasattr(tracker, "_lock"):
+        with tracker._lock:
+            tracker._daily_cost = 0.0
+            tracker._day_start = router.time.time()
+    else:
+        conn = sqlite3.connect(tracker._db_path)
+        try:
+            conn.execute(f"DELETE FROM {tracker._TABLE_NAME}")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def test_query_complexity_score_returns_zero_without_user_messages() -> None:
@@ -249,3 +259,18 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
             "default-model",
         )
         assert (provider, model) == ("ollama", "llama3")
+
+
+def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> None:
+    db_path = str(tmp_path / "shared_budget.db")
+    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_SHARED_BUDGET_DB_PATH=db_path)
+    cost_router = CostAwareRouter(cfg)
+    assert isinstance(router._budget_tracker, router._SqliteDailyBudgetTracker)
+
+    record_routing_cost(0.6)
+    provider, model = cost_router.select(
+        [{"role": "user", "content": "analyze distributed architecture tradeoffs in detail"}],
+        "default-provider",
+        "default-model",
+    )
+    assert (provider, model) == ("ollama", "llama3")
