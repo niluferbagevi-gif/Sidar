@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   TOKEN_KEY,
   getStoredToken,
@@ -7,10 +7,20 @@ import {
   fetchJson,
 } from "./api.js";
 
+const mockFetch = (response) => {
+  const fetchMock = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+};
+
 // localStorage stub — her testten önce temizlenir
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("TOKEN_KEY sabiti", () => {
@@ -128,7 +138,7 @@ describe("buildAuthHeaders", () => {
 
 describe("fetchJson — başarılı JSON yanıtı", () => {
   it("returns parsed JSON for 200 response", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: true,
       headers: { get: () => "application/json" },
       json: async () => ({ result: "tamam" }),
@@ -140,19 +150,19 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
 
   it("includes Authorization header in request", async () => {
     localStorage.setItem(TOKEN_KEY, "test-tok");
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    const fetchMock = mockFetch({
       ok: true,
       headers: { get: () => "application/json" },
       json: async () => ({}),
     });
 
     await fetchJson("/api/secure");
-    const [, options] = globalThis.fetch.mock.calls[0];
+    const [, options] = fetchMock.mock.calls[0];
     expect(options.headers["Authorization"]).toBe("Bearer test-tok");
   });
 
   it("returns text for non-JSON content-type", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: true,
       headers: { get: () => "text/plain" },
       text: async () => "düz metin yanıt",
@@ -165,7 +175,7 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
 
 describe("fetchJson — hata yanıtları", () => {
   it("throws error with detail message for 400+ responses with JSON", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: false,
       status: 400,
       headers: { get: () => "application/json" },
@@ -176,7 +186,7 @@ describe("fetchJson — hata yanıtları", () => {
   });
 
   it("throws error with error field from JSON payload", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: false,
       status: 401,
       headers: { get: () => "application/json" },
@@ -187,7 +197,7 @@ describe("fetchJson — hata yanıtları", () => {
   });
 
   it("throws error with text body when response is not JSON", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: false,
       status: 500,
       headers: { get: () => "text/html" },
@@ -198,7 +208,7 @@ describe("fetchJson — hata yanıtları", () => {
   });
 
   it("throws default message when no detail or error field", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    mockFetch({
       ok: false,
       status: 422,
       headers: { get: () => "application/json" },
@@ -209,14 +219,14 @@ describe("fetchJson — hata yanıtları", () => {
   });
 
   it("passes custom options to fetch", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    const fetchMock = mockFetch({
       ok: true,
       headers: { get: () => "application/json" },
       json: async () => ({}),
     });
 
     await fetchJson("/api/post", { method: "POST", body: JSON.stringify({ key: "val" }) });
-    const [url, options] = globalThis.fetch.mock.calls[0];
+    const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/post");
     expect(options.method).toBe("POST");
     expect(options.body).toBe(JSON.stringify({ key: "val" }));
@@ -234,7 +244,7 @@ describe("fetchJson — hata yanıtları", () => {
       },
     });
 
-    globalThis.fetch = vi.fn().mockResolvedValue(response);
+    mockFetch(response);
     await expect(fetchJson("/api/broken-response")).rejects.toThrow("ok değeri okunamadı");
   });
 });
