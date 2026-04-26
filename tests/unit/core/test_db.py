@@ -1537,19 +1537,8 @@ def test_parse_iso_datetime_assumes_utc_for_naive_input() -> None:
 
 
 def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    import builtins
-
     monkeypatch.delattr(uuid, "uuid7", raising=False)
-    monkeypatch.delitem(sys.modules, "uuid6", raising=False)
-
-    original_import = builtins.__import__
-
-    def _patched_import(name, *args, **kwargs):
-        if name == "uuid6":
-            raise ModuleNotFoundError("uuid6 unavailable")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _patched_import)
+    monkeypatch.setitem(sys.modules, "uuid6", None)
     monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000099"))
 
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000099"
