@@ -10,12 +10,20 @@ Kullanım:
 from __future__ import annotations
 
 import re
+import sqlite3
 import threading
 import time
 import logging
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+try:
+    from redis import Redis as SyncRedis
+except Exception:  # pragma: no cover - opsiyonel bağımlılık
+    SyncRedis = None  # type: ignore[assignment]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -118,6 +126,130 @@ class _DailyBudgetTracker:
 _budget_tracker = _DailyBudgetTracker()
 
 
+class _SqliteDailyBudgetTracker:
+    """Günlük maliyeti SQLite üzerinde processler arası paylaşarak takip eder."""
+
+    _TABLE_NAME = "cost_routing_daily_budget"
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = str(db_path).strip()
+        if not self._db_path:
+            raise ValueError("db_path cannot be empty")
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path, timeout=2.0, isolation_level=None)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    def _initialize(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {self._TABLE_NAME} (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    day_epoch INTEGER NOT NULL,
+                    daily_cost REAL NOT NULL
+                )
+                """
+            )
+
+    @staticmethod
+    def _current_day_epoch(now: float | None = None) -> int:
+        ts = int(now if now is not None else time.time())
+        return ts - (ts % 86400)
+
+    def _upsert_usage(self, delta: float = 0.0) -> None:
+        day_epoch = self._current_day_epoch()
+        increment = max(0.0, float(delta or 0.0))
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"
+            ).fetchone()
+            if row is None or int(row[0]) != day_epoch:
+                conn.execute(
+                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"
+                    " ON CONFLICT(id) DO UPDATE SET day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
+                    (day_epoch, increment),
+                )
+            elif increment > 0.0:
+                conn.execute(
+                    f"UPDATE {self._TABLE_NAME} SET daily_cost = daily_cost + ? WHERE id = 1",
+                    (increment,),
+                )
+            conn.execute("COMMIT")
+
+    def add(self, cost_usd: float) -> None:
+        self._upsert_usage(delta=cost_usd)
+
+    def daily_usage(self) -> float:
+        self._upsert_usage(delta=0.0)
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"
+            ).fetchone()
+            return float(row[0]) if row else 0.0
+
+    def exceeded(self, limit_usd: float) -> bool:
+        return self.daily_usage() >= limit_usd
+
+
+class _RedisDailyBudgetTracker:
+    """Günlük maliyeti Redis üzerinde processler/podlar arası merkezi takip eder."""
+
+    _KEY_PREFIX = "sidar:cost_routing:daily_budget"
+
+    def __init__(self, redis_url: str) -> None:
+        if SyncRedis is None:
+            raise RuntimeError("Redis budget tracker için redis bağımlılığı gerekli.")
+        self._redis_url = str(redis_url).strip()
+        if not self._redis_url:
+            raise ValueError("redis_url cannot be empty")
+        self._redis = SyncRedis.from_url(self._redis_url, decode_responses=True)
+        self._fallback = _DailyBudgetTracker()
+
+    @staticmethod
+    def _day_key(now: datetime | None = None) -> tuple[str, int]:
+        current = now or datetime.now(timezone.utc)
+        day = current.strftime("%Y-%m-%d")
+        midnight = datetime(current.year, current.month, current.day, tzinfo=timezone.utc)
+        next_midnight = midnight + timedelta(days=1)
+        return f"{_RedisDailyBudgetTracker._KEY_PREFIX}:{day}", int(next_midnight.timestamp())
+
+    def add(self, cost_usd: float) -> None:
+        value = max(0.0, float(cost_usd or 0.0))
+        if value <= 0.0:
+            return
+        key, expire_at = self._day_key()
+        try:
+            with self._redis.pipeline(transaction=True) as pipe:
+                pipe.incrbyfloat(key, value)
+                pipe.expireat(key, expire_at)
+                pipe.execute()
+            return
+        except Exception as exc:
+            logger.debug("Redis budget tracker yazımı başarısız, in-memory fallback: %s", exc)
+        self._fallback.add(value)
+
+    def daily_usage(self) -> float:
+        key, expire_at = self._day_key()
+        try:
+            raw = self._redis.get(key)
+            if raw is None:
+                return 0.0
+            value = float(raw)
+            self._redis.expireat(key, expire_at)
+            return max(0.0, value)
+        except Exception as exc:
+            logger.debug("Redis budget tracker okuması başarısız, in-memory fallback: %s", exc)
+            return self._fallback.daily_usage()
+
+    def exceeded(self, limit_usd: float) -> bool:
+        return self.daily_usage() >= limit_usd
+
+
 def record_routing_cost(cost_usd: float) -> None:
     """Dışarıdan maliyet kaydı eklemek için yardımcı fonksiyon."""
     _budget_tracker.add(cost_usd)
@@ -162,6 +294,17 @@ class CostAwareRouter:
         self.token_threshold: int = max(
             0, int(getattr(config, "COST_ROUTING_TOKEN_THRESHOLD", 0) or 0)
         )
+        shared_budget_db_path = str(
+            getattr(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH", "") or ""
+        ).strip()
+        if shared_budget_db_path:
+            global _budget_tracker
+            _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
+        shared_budget_redis_url = str(
+            getattr(config, "COST_ROUTING_REDIS_BUDGET_URL", "") or ""
+        ).strip()
+        if shared_budget_redis_url:
+            _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
 
     def select(
         self,

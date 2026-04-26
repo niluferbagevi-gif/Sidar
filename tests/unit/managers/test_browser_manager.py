@@ -464,8 +464,11 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
     sess = _session("playwright")
     manager._sessions["s1"] = sess
 
-    monkeypatch.setattr(manager, "click_element", lambda *_a, **_k: (True, "sync"))
-    assert asyncio.run(manager.click_element_hitl("s1", "#safe", require_confirmation=False)) == (True, "sync")
+    async def _click_async(*_a, **_k):
+        return True, "async"
+
+    monkeypatch.setattr(manager, "_click_element_impl_async", _click_async)
+    assert asyncio.run(manager.click_element_hitl("s1", "#safe", require_confirmation=False)) == (True, "async")
 
     async def _deny(**_k: object) -> bool:
         return False

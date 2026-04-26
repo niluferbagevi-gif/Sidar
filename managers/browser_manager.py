@@ -515,7 +515,11 @@ class BrowserManager:
         if not self.visual_qa_enabled:
             return {"ok": False, "reason": "BROWSER_VISUAL_QA_ENABLED devre dışı"}
 
-        ok, current_path = self.capture_screenshot(session_id, file_name=file_name or f"{session_id}.visual.png")
+        ok, current_path = await asyncio.to_thread(
+            self.capture_screenshot,
+            session_id,
+            file_name or f"{session_id}.visual.png",
+        )
         if not ok:
             return {"ok": False, "reason": current_path}
         current = Path(current_path)
@@ -778,6 +782,9 @@ class BrowserManager:
         provider.click(self, session, selector)
         return True, f"Tıklandı: {selector}"
 
+    async def _click_element_impl_async(self, session_id: str, selector: str) -> tuple[bool, str]:
+        return await asyncio.to_thread(self._click_element_impl, session_id, selector)
+
     def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_click", selector)
@@ -820,7 +827,7 @@ class BrowserManager:
         session = self._require_session(session_id)
         must_confirm = self._is_high_risk_click(selector) if require_confirmation is None else bool(require_confirmation)
         if not must_confirm:
-            return self.click_element(session_id, selector)
+            return await self._click_element_impl_async(session_id, selector)
 
         payload = {
             "session_id": session_id,
@@ -843,7 +850,7 @@ class BrowserManager:
             return False, f"HITL onayı beklenirken/sonucunda işlem reddedildi: {selector}"
 
         try:
-            ok, message = self._click_element_impl(session_id, selector)
+            ok, message = await self._click_element_impl_async(session_id, selector)
             self._record_audit_event(
                 session_id=session_id,
                 action="browser_click",
@@ -869,6 +876,15 @@ class BrowserManager:
         provider = self._provider_for_session(session)
         provider.fill(self, session, selector, value, clear=clear)
         return True, f"Form dolduruldu: {selector}"
+
+    async def _fill_form_impl_async(
+        self,
+        session_id: str,
+        selector: str,
+        value: str,
+        clear: bool = True,
+    ) -> tuple[bool, str]:
+        return await asyncio.to_thread(self._fill_form_impl, session_id, selector, value, clear)
 
     def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
         session = self._require_session(session_id)
@@ -935,7 +951,7 @@ class BrowserManager:
             return False, f"HITL onayı beklenirken/sonucunda form doldurma reddedildi: {selector}"
 
         try:
-            ok, message = self._fill_form_impl(session_id, selector, value, clear=clear)
+            ok, message = await self._fill_form_impl_async(session_id, selector, value, clear=clear)
             self._record_audit_event(
                 session_id=session_id,
                 action="browser_fill_form",
@@ -961,6 +977,9 @@ class BrowserManager:
         provider = self._provider_for_session(session)
         provider.select(self, session, selector, value)
         return True, f"Seçim yapıldı: {selector}={value}"
+
+    async def _select_option_impl_async(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+        return await asyncio.to_thread(self._select_option_impl, session_id, selector, value)
 
     def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
@@ -1025,7 +1044,7 @@ class BrowserManager:
             return False, f"HITL onayı beklenirken/sonucunda seçim reddedildi: {selector}"
 
         try:
-            ok, message = self._select_option_impl(session_id, selector, value)
+            ok, message = await self._select_option_impl_async(session_id, selector, value)
             self._record_audit_event(
                 session_id=session_id,
                 action="browser_select_option",

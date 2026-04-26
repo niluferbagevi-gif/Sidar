@@ -841,8 +841,10 @@ async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavai
 async def test_write_dead_letter_persists_to_jsonl_when_path_configured(bus: AgentEventBus, tmp_path) -> None:
     persist_path = tmp_path / "dlq.jsonl"
     bus._dlq_persist_path = str(persist_path)
+    bus._dlq_persist_flush_interval = 0.05
 
     await bus._write_dead_letter(reason="persisted", payload={"kind": "io"})
+    await bus._flush_dead_letter_persist_queue()
 
     lines = persist_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
@@ -867,8 +869,9 @@ async def test_write_dead_letter_persistence_runs_via_to_thread(
     monkeypatch.setattr(event_stream.asyncio, "to_thread", _to_thread)
 
     await bus._write_dead_letter(reason="threaded", payload={"kind": "offload"})
+    await bus._flush_dead_letter_persist_queue()
 
-    assert calls == ["_persist_dead_letter_item_sync"]
+    assert calls == ["_persist_dead_letter_items_sync"]
     line = persist_path.read_text(encoding="utf-8").strip()
     assert json.loads(line)["item"]["reason"] == "threaded"
 
@@ -882,6 +885,7 @@ async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflo
     await bus._write_dead_letter(reason="first", payload={"n": 1})
     await bus._write_dead_letter(reason="second", payload={"n": 2})
     await bus._write_dead_letter(reason="third", payload={"n": 3})
+    await bus._flush_dead_letter_persist_queue()
 
     lines = persist_path.read_text(encoding="utf-8").strip().splitlines()
     # first + second + dropped(first) marker + third
@@ -893,6 +897,25 @@ async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflo
     assert dropped_records[0]["item"]["reason"] == "first"
 
     assert [x["reason"] for x in bus._dlq_buffer] == ["second", "third"]
+
+
+@pytest.mark.asyncio
+async def test_write_dead_letter_batches_persist_writes(bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bus._dlq_persist_path = str(tmp_path / "dlq_batch.jsonl")
+    bus._dlq_persist_batch_size = 3
+    calls: list[str] = []
+
+    async def _to_thread(func, *args, **kwargs):
+        calls.append(func.__name__)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(event_stream.asyncio, "to_thread", _to_thread)
+
+    await bus._write_dead_letter(reason="b1", payload={"n": 1})
+    await bus._write_dead_letter(reason="b2", payload={"n": 2})
+    await bus._write_dead_letter(reason="b3", payload={"n": 3})
+
+    assert calls == ["_persist_dead_letter_items_sync"]
 
 
 def test_get_agent_event_bus_singleton() -> None:
