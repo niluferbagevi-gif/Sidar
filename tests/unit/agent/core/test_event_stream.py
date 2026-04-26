@@ -98,13 +98,21 @@ class NonCallableCloseRedis:
         self.close = "not-callable"
 
 
-class NonAwaitableCloseRedis:
+class _DummyConnectionPool:
+    def __init__(self) -> None:
+        self.disconnected = False
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
+
+
+class RedisWithAsyncPoolDisconnect:
     def __init__(self) -> None:
         self.closed = False
+        self.connection_pool = _DummyConnectionPool()
 
-    def close(self) -> str:
+    async def aclose(self) -> None:
         self.closed = True
-        return "closed"
 
 
 class DummyRabbitIncoming:
@@ -632,6 +640,18 @@ def test_cleanup_redis_handles_non_callable_and_non_awaitable_close() -> None:
     bus._redis_client = redis_with_sync_close
     asyncio.run(bus._cleanup_redis())
     assert redis_with_sync_close.closed is True
+    assert bus._redis_client is None
+
+
+def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
+    bus = AgentEventBus()
+    redis_client = RedisWithAsyncPoolDisconnect()
+    bus._redis_client = redis_client
+
+    asyncio.run(bus._cleanup_redis())
+
+    assert redis_client.closed is True
+    assert redis_client.connection_pool.disconnected is True
     assert bus._redis_client is None
 
 
