@@ -282,7 +282,12 @@ class CostAwareRouter:
     """
 
     def __init__(self, config) -> None:
+        global _budget_tracker
+
         self.config = config
+        # Her router oluşturumunda global bütçe izleyiciyi temiz başlangıca al.
+        # Böylece geçersiz/boş shared tracker ayarlarında önceki testlerden state sızmaz.
+        _budget_tracker = _DailyBudgetTracker()
         self._analyzer = QueryComplexityAnalyzer()
         self.enabled: bool = bool(getattr(config, "ENABLE_COST_ROUTING", False))
         self.complexity_threshold: float = float(
@@ -307,7 +312,6 @@ class CostAwareRouter:
         )
         shared_budget_db_path = _read_optional_string(config, "COST_ROUTING_SHARED_BUDGET_DB_PATH")
         if shared_budget_db_path:
-            global _budget_tracker
             _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
         shared_budget_redis_url = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_URL")
         if shared_budget_redis_url:
