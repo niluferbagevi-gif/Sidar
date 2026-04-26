@@ -14,10 +14,7 @@ import sqlite3
 import threading
 import time
 import logging
-<<<<<<< HEAD
-=======
 from datetime import datetime, timedelta, timezone
->>>>>>> 0a3cc783e4124d1b3c1f9ee6da8b9a0f3b93b558
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -199,8 +196,6 @@ class _SqliteDailyBudgetTracker:
         return self.daily_usage() >= limit_usd
 
 
-<<<<<<< HEAD
-=======
 class _RedisDailyBudgetTracker:
     """Günlük maliyeti Redis üzerinde processler/podlar arası merkezi takip eder."""
 
@@ -255,7 +250,6 @@ class _RedisDailyBudgetTracker:
         return self.daily_usage() >= limit_usd
 
 
->>>>>>> 0a3cc783e4124d1b3c1f9ee6da8b9a0f3b93b558
 def record_routing_cost(cost_usd: float) -> None:
     """Dışarıdan maliyet kaydı eklemek için yardımcı fonksiyon."""
     _budget_tracker.add(cost_usd)
@@ -306,14 +300,11 @@ class CostAwareRouter:
         if shared_budget_db_path:
             global _budget_tracker
             _budget_tracker = _SqliteDailyBudgetTracker(shared_budget_db_path)
-<<<<<<< HEAD
-=======
         shared_budget_redis_url = str(
             getattr(config, "COST_ROUTING_REDIS_BUDGET_URL", "") or ""
         ).strip()
         if shared_budget_redis_url:
             _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
->>>>>>> 0a3cc783e4124d1b3c1f9ee6da8b9a0f3b93b558
 
     def select(
         self,
