@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import inspect
 import json
 import logging
@@ -32,6 +33,7 @@ class AgentEventBus:
         self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
         self._buffered_events: Dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
+        self._backend = str(os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
         self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
@@ -46,11 +48,26 @@ class AgentEventBus:
         self._redis_bootstrap_task: asyncio.Task | None = None
         self._redis_available: bool | None = None
         self._redis_loop: asyncio.AbstractEventLoop | None = None
+        self._rabbit_bootstrap_task: asyncio.Task | None = None
+        self._rabbit_listener_task: asyncio.Task | None = None
+        self._rabbit_available: bool | None = None
+        self._rabbit_connection = None
+        self._rabbit_channel = None
+        self._rabbit_queue = None
+        self._rabbit_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+        self._kafka_bootstrap_task: asyncio.Task | None = None
+        self._kafka_listener_task: asyncio.Task | None = None
+        self._kafka_available: bool | None = None
+        self._kafka_producer = None
+        self._kafka_consumer = None
+        self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
+        self._kafka_group = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}")
+        self._kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
         self._subscribers[sub_id] = asyncio.Queue(maxsize=max(10, maxsize))
-        self._schedule_redis_bootstrap()
+        self._schedule_remote_bootstrap()
         return sub_id, self._subscribers[sub_id]
 
     def unsubscribe(self, sub_id: int) -> None:
@@ -60,8 +77,17 @@ class AgentEventBus:
     async def publish(self, source: str, message: str) -> None:
         evt = AgentEvent(ts=time.time(), source=source, message=message)
         self._fanout_local(evt)
+        self._schedule_remote_bootstrap()
+        await self._publish_via_remote(evt)
+
+    def _schedule_remote_bootstrap(self) -> None:
+        if self._backend == "rabbitmq":
+            self._schedule_rabbit_bootstrap()
+            return
+        if self._backend == "kafka":
+            self._schedule_kafka_bootstrap()
+            return
         self._schedule_redis_bootstrap()
-        await self._publish_via_redis(evt)
 
     def _schedule_redis_bootstrap(self) -> None:
         if self._redis_available is False:
@@ -73,6 +99,28 @@ class AgentEventBus:
         except RuntimeError:
             return
         self._redis_bootstrap_task = loop.create_task(self._ensure_redis_listener())
+
+    def _schedule_rabbit_bootstrap(self) -> None:
+        if self._rabbit_available is False:
+            return
+        if self._rabbit_bootstrap_task is not None and not self._rabbit_bootstrap_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._rabbit_bootstrap_task = loop.create_task(self._ensure_rabbit_listener())
+
+    def _schedule_kafka_bootstrap(self) -> None:
+        if self._kafka_available is False:
+            return
+        if self._kafka_bootstrap_task is not None and not self._kafka_bootstrap_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._kafka_bootstrap_task = loop.create_task(self._ensure_kafka_listener())
 
     async def _ensure_redis_listener(self) -> None:
         if self._redis_available is False:
@@ -113,6 +161,57 @@ class AgentEventBus:
             logger.debug("AgentEventBus Redis bootstrap başarısız, local fallback kullanılacak: %s", exc)
             await self._cleanup_redis()
 
+    async def _ensure_rabbit_listener(self) -> None:
+        if self._rabbit_available is False:
+            return
+        if self._rabbit_listener_task is not None and not self._rabbit_listener_task.done():
+            return
+        try:
+            aio_pika = importlib.import_module("aio_pika")
+            if self._rabbit_connection is None:
+                self._rabbit_connection = await aio_pika.connect_robust(self._rabbit_url)
+                self._rabbit_channel = await self._rabbit_connection.channel()
+                self._rabbit_queue = await self._rabbit_channel.declare_queue(self._channel, durable=True)
+            self._rabbit_available = True
+            self._rabbit_listener_task = asyncio.create_task(self._rabbit_listener_loop())
+        except Exception as exc:
+            self._rabbit_available = False
+            logger.debug("AgentEventBus RabbitMQ bootstrap başarısız, local fallback kullanılacak: %s", exc)
+            await self._cleanup_rabbit()
+
+    async def _ensure_kafka_listener(self) -> None:
+        if self._kafka_available is False:
+            return
+        if self._kafka_listener_task is not None and not self._kafka_listener_task.done():
+            return
+        try:
+            aiokafka = importlib.import_module("aiokafka")
+            if self._kafka_producer is None:
+                self._kafka_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=self._kafka_bootstrap_servers)
+                await self._kafka_producer.start()
+            if self._kafka_consumer is None:
+                self._kafka_consumer = aiokafka.AIOKafkaConsumer(
+                    self._kafka_topic,
+                    bootstrap_servers=self._kafka_bootstrap_servers,
+                    group_id=self._kafka_group,
+                    enable_auto_commit=True,
+                    auto_offset_reset="latest",
+                )
+                await self._kafka_consumer.start()
+            self._kafka_available = True
+            self._kafka_listener_task = asyncio.create_task(self._kafka_listener_loop())
+        except Exception as exc:
+            self._kafka_available = False
+            logger.debug("AgentEventBus Kafka bootstrap başarısız, local fallback kullanılacak: %s", exc)
+            await self._cleanup_kafka()
+
+    async def _publish_via_remote(self, evt: AgentEvent) -> bool:
+        if self._backend == "rabbitmq":
+            return await self._publish_via_rabbit(evt)
+        if self._backend == "kafka":
+            return await self._publish_via_kafka(evt)
+        return await self._publish_via_redis(evt)
+
     async def _publish_via_redis(self, evt: AgentEvent) -> bool:
         if self._redis_available is False:
             return False
@@ -143,6 +242,50 @@ class AgentEventBus:
             )
             self._redis_available = False
             await self._cleanup_redis()
+            return False
+
+    async def _publish_via_rabbit(self, evt: AgentEvent) -> bool:
+        if self._rabbit_available is False:
+            return False
+        await self._ensure_rabbit_listener()
+        if self._rabbit_channel is None or self._rabbit_available is not True:
+            return False
+        payload = json.dumps({"sid": self._instance_id, "ts": evt.ts, "source": evt.source, "message": evt.message}, ensure_ascii=False)
+        try:
+            aio_pika = importlib.import_module("aio_pika")
+            message = aio_pika.Message(body=payload.encode("utf-8"), content_type="application/json")
+            await self._rabbit_channel.default_exchange.publish(message, routing_key=self._channel)
+            return True
+        except Exception as exc:
+            logger.debug("AgentEventBus RabbitMQ publish başarısız, local fallback: %s", exc)
+            await self._write_dead_letter(
+                reason="publish_failed",
+                payload={"event": {"ts": evt.ts, "source": evt.source, "message": evt.message}},
+                error=exc,
+            )
+            self._rabbit_available = False
+            await self._cleanup_rabbit()
+            return False
+
+    async def _publish_via_kafka(self, evt: AgentEvent) -> bool:
+        if self._kafka_available is False:
+            return False
+        await self._ensure_kafka_listener()
+        if self._kafka_producer is None or self._kafka_available is not True:
+            return False
+        payload = json.dumps({"sid": self._instance_id, "ts": evt.ts, "source": evt.source, "message": evt.message}, ensure_ascii=False)
+        try:
+            await self._kafka_producer.send_and_wait(self._kafka_topic, payload.encode("utf-8"))
+            return True
+        except Exception as exc:
+            logger.debug("AgentEventBus Kafka publish başarısız, local fallback: %s", exc)
+            await self._write_dead_letter(
+                reason="publish_failed",
+                payload={"event": {"ts": evt.ts, "source": evt.source, "message": evt.message}},
+                error=exc,
+            )
+            self._kafka_available = False
+            await self._cleanup_kafka()
             return False
 
     async def _redis_listener_loop(self) -> None:
@@ -195,6 +338,60 @@ class AgentEventBus:
                                     payload={"msg_id": msg_id, "payload": str(payload_raw)},
                                     error=exc,
                                 )
+
+    async def _rabbit_listener_loop(self) -> None:
+        if self._rabbit_queue is None:
+            return
+        async with self._rabbit_queue.iterator() as queue_iter:
+            async for incoming in queue_iter:
+                try:
+                    payload = json.loads(incoming.body.decode("utf-8"))
+                    if payload.get("sid") != self._instance_id:
+                        evt = AgentEvent(
+                            ts=float(payload.get("ts", time.time())),
+                            source=str(payload.get("source", "agent")),
+                            message=str(payload.get("message", "")),
+                        )
+                        self._fanout_local(evt)
+                except Exception as exc:
+                    await self._write_dead_letter(
+                        reason="invalid_payload",
+                        payload={"payload": str(getattr(incoming, "body", b""))},
+                        error=exc,
+                    )
+                finally:
+                    with contextlib.suppress(Exception):
+                        await incoming.ack()
+
+    async def _kafka_listener_loop(self) -> None:
+        if self._kafka_consumer is None:
+            return
+        while True:
+            try:
+                message = await self._kafka_consumer.getone()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("AgentEventBus Kafka listener hatası: %s", exc)
+                self._kafka_available = False
+                await self._cleanup_kafka()
+                return
+
+            try:
+                payload = json.loads(message.value.decode("utf-8"))
+                if payload.get("sid") != self._instance_id:
+                    evt = AgentEvent(
+                        ts=float(payload.get("ts", time.time())),
+                        source=str(payload.get("source", "agent")),
+                        message=str(payload.get("message", "")),
+                    )
+                    self._fanout_local(evt)
+            except Exception as exc:
+                await self._write_dead_letter(
+                    reason="invalid_payload",
+                    payload={"payload": str(getattr(message, "value", b""))},
+                    error=exc,
+                )
 
     async def _drain_buffered_events_once(self) -> bool:
         any_progress = False
@@ -255,7 +452,48 @@ class AgentEventBus:
         self._redis_client = None
         self._redis_loop = None
 
+    async def _cleanup_rabbit(self) -> None:
+        if self._rabbit_listener_task is not None and not self._rabbit_listener_task.done():
+            self._rabbit_listener_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await self._rabbit_listener_task
+        self._rabbit_listener_task = None
+
+        if self._rabbit_channel is not None:
+            with contextlib.suppress(Exception):
+                close_async = getattr(self._rabbit_channel, "close", None)
+                if callable(close_async):
+                    maybe_awaitable = close_async()
+                    if inspect.isawaitable(maybe_awaitable):
+                        await maybe_awaitable
+        self._rabbit_channel = None
+        self._rabbit_queue = None
+
+        if self._rabbit_connection is not None:
+            with contextlib.suppress(Exception):
+                await self._rabbit_connection.close()
+        self._rabbit_connection = None
+
+    async def _cleanup_kafka(self) -> None:
+        if self._kafka_listener_task is not None and not self._kafka_listener_task.done():
+            self._kafka_listener_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await self._kafka_listener_task
+        self._kafka_listener_task = None
+
+        if self._kafka_consumer is not None:
+            with contextlib.suppress(Exception):
+                await self._kafka_consumer.stop()
+        self._kafka_consumer = None
+
+        if self._kafka_producer is not None:
+            with contextlib.suppress(Exception):
+                await self._kafka_producer.stop()
+        self._kafka_producer = None
+
     async def _ensure_redis_loop_compatibility(self) -> None:
+        if self._backend != "redis":
+            return
         if self._redis_client is None and self._redis_listener_task is None:
             return
         try:
@@ -277,18 +515,16 @@ class AgentEventBus:
             item["error"] = str(error)
         self._dlq_buffer.append(item)
 
-        if self._redis_client is None or self._redis_available is not True:
-            return
-
-        try:
-            await self._redis_client.xadd(
-                self._dlq_channel,
-                {"payload": json.dumps(item, ensure_ascii=False)},
-                maxlen=self._dlq_buffer.maxlen,
-                approximate=True,
-            )
-        except Exception as exc:
-            logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
+        if self._backend == "redis" and self._redis_client is not None and self._redis_available is True:
+            try:
+                await self._redis_client.xadd(
+                    self._dlq_channel,
+                    {"payload": json.dumps(item, ensure_ascii=False)},
+                    maxlen=self._dlq_buffer.maxlen,
+                    approximate=True,
+                )
+            except Exception as exc:
+                logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
 
 _BUS = AgentEventBus()
