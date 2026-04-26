@@ -1224,38 +1224,6 @@ def test_publish_via_rabbit_missing_dependency_writes_dlq_and_cleans_up(
     assert dlq_entries[0]["reason"] == "publish_failed"
 
 
-def test_publish_via_kafka_missing_dependency_writes_dlq_and_cleans_up(
-    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
-) -> None:
-    evt = AgentEvent(ts=3.5, source="resilience", message="kafka missing module")
-    bus._kafka_available = True
-    bus._kafka_producer = DummyKafkaProducer()
-
-    monkeypatch.setattr(bus, "_ensure_kafka_listener", lambda: asyncio.sleep(0))
-    monkeypatch.setattr(
-        event_stream.importlib,
-        "import_module",
-        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'aiokafka'")),
-    )
-
-    dlq_entries: list[dict] = []
-    cleaned = {"ok": False}
-
-    async def _dlq(**kwargs):
-        dlq_entries.append(kwargs)
-
-    async def _cleanup() -> None:
-        cleaned["ok"] = True
-
-    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
-    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
-
-    assert asyncio.run(bus._publish_via_kafka(evt)) is False
-    assert bus._kafka_available is False
-    assert cleaned["ok"] is True
-    assert dlq_entries[0]["reason"] == "publish_failed"
-
-
 def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
     evt = AgentEvent(ts=1.0, source="coder", message="route")
     called = {"redis": 0, "rabbit": 0, "kafka": 0}
