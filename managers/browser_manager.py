@@ -246,9 +246,12 @@ class BrowserManager:
             "update",
             "delete",
             "remove",
+            "drop",
             "confirm",
             "publish",
             "create",
+            "buy",
+            "pay",
             "jira",
         )
         return any(marker in normalized for marker in risk_markers)

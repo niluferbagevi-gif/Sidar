@@ -220,6 +220,9 @@ def _session(provider: str = "playwright") -> BrowserSession:
 
 def test_helpers_and_summary(manager: BrowserManager) -> None:
     assert manager._is_high_risk_click("button.submit") is True
+    assert manager._is_high_risk_click("button.buy-now") is True
+    assert manager._is_high_risk_click("a.pay-invoice") is True
+    assert manager._is_high_risk_click("#drop-database") is True
     assert manager._is_high_risk_click("a.read-more") is False
     assert manager._summarize_value("") == ""
     assert manager._summarize_value("12345678") == "********"
