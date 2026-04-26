@@ -71,6 +71,11 @@ BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-0}"
 BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
+BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
+BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
+BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
+BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
+BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -305,7 +310,12 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
-  benchmark_cmd=(python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-save="${BENCHMARK_BASELINE_NAME}")
+  mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
+  benchmark_cmd=(
+    python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+    --benchmark-save="${BENCHMARK_BASELINE_NAME}"
+    --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
+  )
 
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
     if compgen -G ".benchmarks/*/*_${BENCHMARK_COMPARE_NAME}.json" > /dev/null; then
@@ -326,6 +336,31 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
     "${benchmark_cmd[@]}"
     BENCHMARK_EXIT_CODE=$?
+  fi
+
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
+    echo "✅ Benchmark JSON raporu oluşturuldu: ${BENCHMARK_JSON_OUTPUT}"
+  elif [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
+    echo "⚠️ Benchmark testleri geçti ancak JSON raporu bulunamadı: ${BENCHMARK_JSON_OUTPUT}"
+    BENCHMARK_EXIT_CODE=1
+  fi
+
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_TREND_COMPARE}" = "1" ]; then
+    if [ -f "coverage.xml" ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
+      echo "📉 Benchmark trend + coverage.xml karşılaştırması çalıştırılıyor..."
+      if ! python scripts/ci/check_benchmark_coverage_trend.py \
+        --benchmark-json "${BENCHMARK_JSON_OUTPUT}" \
+        --coverage-xml coverage.xml \
+        --history-json "${BENCHMARK_TREND_HISTORY}" \
+        --window "${BENCHMARK_TREND_WINDOW}" \
+        --max-regression-pct "${BENCHMARK_TREND_MAX_REGRESSION_PCT}"; then
+        echo "❌ Benchmark trend karşılaştırması kalite kapısından kaldı."
+        BENCHMARK_EXIT_CODE=1
+      fi
+    else
+      echo "⚠️ Benchmark trend karşılaştırması atlandı: coverage.xml veya benchmark JSON bulunamadı."
+      BENCHMARK_EXIT_CODE=1
+    fi
   fi
 else
   echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."

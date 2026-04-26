@@ -81,7 +81,12 @@ jobs:
 
       - name: Run test suite (single pass + coverage gate)
         env:
-          RUN_BENCHMARKS: "0"
+          RUN_BENCHMARKS: "auto"
+          BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
+          BENCHMARK_TREND_COMPARE: "1"
+          BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
+          BENCHMARK_TREND_WINDOW: "15"
+          BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: uv run bash run_tests.sh
 
       - name: Upload Backend Coverage Report
@@ -90,6 +95,18 @@ jobs:
         with:
           name: backend-coverage-report
           path: htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Coverage XML + Benchmark JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-quality-trend-artifacts
+          path: |
+            coverage.xml
+            artifacts/benchmark/benchmark.json
+            artifacts/benchmark/history.json
           if-no-files-found: warn
           retention-days: 14
 
