@@ -104,6 +104,10 @@ class AgentEventBus:
         self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
         self._kafka_group = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}")
         self._kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        self._remote_circuit_failure_threshold = max(1, int(os.getenv("SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", "5") or "5"))
+        self._remote_circuit_open_seconds = max(1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", "15") or "15"))
+        self._remote_circuit_consecutive_failures = 0
+        self._remote_circuit_open_until = 0.0
         self._backends: dict[str, BaseEventBusBackend] = {
             "redis": RedisBackend(self),
             "rabbitmq": RabbitMQBackend(self),
@@ -123,7 +127,8 @@ class AgentEventBus:
     async def publish(self, source: str, message: str) -> None:
         evt = AgentEvent(ts=time.time(), source=source, message=message)
         self._fanout_local(evt)
-        self._schedule_remote_bootstrap()
+        if not self._is_remote_circuit_open():
+            self._schedule_remote_bootstrap()
         await self._publish_via_remote(evt)
 
     def _schedule_remote_bootstrap(self) -> None:
@@ -247,8 +252,38 @@ class AgentEventBus:
             await self._cleanup_kafka()
 
     async def _publish_via_remote(self, evt: AgentEvent) -> bool:
+        if self._is_remote_circuit_open():
+            return False
         backend = self._backends.get(self._backend, self._backends["redis"])
-        return await backend.publish(evt)
+        ok = await backend.publish(evt)
+        self._record_remote_publish_result(ok)
+        return ok
+
+    def _is_remote_circuit_backend(self) -> bool:
+        return self._backend in {"redis", "kafka"}
+
+    def _is_remote_circuit_open(self) -> bool:
+        if not self._is_remote_circuit_backend():
+            return False
+        now = time.time()
+        return self._remote_circuit_open_until > now
+
+    def _record_remote_publish_result(self, ok: bool) -> None:
+        if not self._is_remote_circuit_backend():
+            return
+        if ok:
+            self._remote_circuit_consecutive_failures = 0
+            self._remote_circuit_open_until = 0.0
+            return
+        self._remote_circuit_consecutive_failures += 1
+        if self._remote_circuit_consecutive_failures >= self._remote_circuit_failure_threshold:
+            self._remote_circuit_open_until = time.time() + self._remote_circuit_open_seconds
+            logger.debug(
+                "AgentEventBus remote circuit opened for backend=%s failures=%s open_for=%.1fs",
+                self._backend,
+                self._remote_circuit_consecutive_failures,
+                self._remote_circuit_open_seconds,
+            )
 
     def _serialize_event_payload(self, evt: AgentEvent) -> str:
         return json.dumps(

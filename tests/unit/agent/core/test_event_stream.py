@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 from collections import deque
 
@@ -1272,6 +1273,68 @@ def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.Monke
     bus._backend = "redis"
     assert asyncio.run(bus._publish_via_remote(evt)) is True
     assert called == {"redis": 1, "rabbit": 1, "kafka": 1}
+
+
+def test_publish_via_remote_opens_circuit_after_threshold_failures(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    evt = AgentEvent(ts=1.0, source="qa", message="circuit")
+    bus._backend = "redis"
+    bus._remote_circuit_failure_threshold = 2
+    bus._remote_circuit_open_seconds = 30.0
+    called = {"redis": 0}
+
+    async def _redis(_evt: AgentEvent) -> bool:
+        called["redis"] += 1
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis)
+
+    assert asyncio.run(bus._publish_via_remote(evt)) is False
+    assert bus._remote_circuit_consecutive_failures == 1
+    assert bus._remote_circuit_open_until == 0.0
+
+    assert asyncio.run(bus._publish_via_remote(evt)) is False
+    assert bus._remote_circuit_consecutive_failures == 2
+    assert bus._remote_circuit_open_until > time.time()
+
+    assert asyncio.run(bus._publish_via_remote(evt)) is False
+    assert called["redis"] == 2
+
+
+def test_publish_via_remote_resets_circuit_after_success(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    evt = AgentEvent(ts=1.0, source="qa", message="recover")
+    bus._backend = "kafka"
+    bus._remote_circuit_failure_threshold = 2
+    bus._remote_circuit_open_seconds = 60.0
+    bus._remote_circuit_consecutive_failures = 1
+
+    async def _kafka(_evt: AgentEvent) -> bool:
+        return True
+
+    monkeypatch.setattr(bus, "_publish_via_kafka", _kafka)
+
+    assert asyncio.run(bus._publish_via_remote(evt)) is True
+    assert bus._remote_circuit_consecutive_failures == 0
+    assert bus._remote_circuit_open_until == 0.0
+
+
+def test_publish_skips_remote_bootstrap_when_circuit_open(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    bus._backend = "redis"
+    bus._remote_circuit_open_until = time.time() + 60.0
+    calls = {"schedule": 0, "publish_remote": 0}
+
+    monkeypatch.setattr(bus, "_fanout_local", lambda _evt: None)
+    monkeypatch.setattr(bus, "_schedule_remote_bootstrap", lambda: calls.__setitem__("schedule", calls["schedule"] + 1))
+
+    async def _publish_remote(_evt: AgentEvent) -> bool:
+        calls["publish_remote"] += 1
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_remote", _publish_remote)
+
+    asyncio.run(bus.publish(source="qa", message="skip"))
+
+    assert calls["schedule"] == 0
+    assert calls["publish_remote"] == 1
 
 
 def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
