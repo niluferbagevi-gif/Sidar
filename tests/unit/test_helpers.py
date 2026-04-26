@@ -24,6 +24,7 @@ def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest
 
     class FullConfig:
         AI_PROVIDER = "ollama"
+        OLLAMA_URL = "http://localhost:11434"
         LLM_MAX_RETRIES = 1
         LLM_RETRY_BASE_DELAY = 0.1
         LLM_RETRY_MAX_DELAY = 0.2
@@ -31,13 +32,11 @@ def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest
         SEMANTIC_CACHE_THRESHOLD = 0.9
         SEMANTIC_CACHE_TTL = 60
         SEMANTIC_CACHE_MAX_ITEMS = 2
-        COST_ROUTING_ENABLED = True
-        COST_ROUTING_THRESHOLD = 0.05
+        ENABLE_COST_ROUTING = True
+        COST_ROUTING_COMPLEXITY_THRESHOLD = 0.55
         COST_ROUTING_DAILY_BUDGET_USD = 1.0
-        COST_ROUTING_SHARED_BUDGET_DB_PATH = ""
-        COST_ROUTING_REDIS_BUDGET_URL = ""
-        ENTITY_MEMORY_TTL = 3600
-        MAX_MEMORY_ENTITIES = 100
+        ENTITY_MEMORY_TTL_DAYS = 90
+        ENTITY_MEMORY_MAX_PER_USER = 100
         REDIS_URL = "redis://localhost:6379/0"
         REDIS_MAX_CONNECTIONS = 5
 
