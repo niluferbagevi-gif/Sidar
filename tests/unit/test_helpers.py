@@ -33,6 +33,9 @@ def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest
         SEMANTIC_CACHE_MAX_ITEMS = 2
         COST_ROUTING_ENABLED = True
         COST_ROUTING_THRESHOLD = 0.05
+        COST_ROUTING_DAILY_BUDGET_USD = 1.0
+        COST_ROUTING_SHARED_BUDGET_DB_PATH = ""
+        COST_ROUTING_REDIS_BUDGET_URL = ""
         ENTITY_MEMORY_TTL = 3600
         MAX_MEMORY_ENTITIES = 100
         REDIS_URL = "redis://localhost:6379/0"
