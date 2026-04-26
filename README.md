@@ -593,6 +593,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Kimlik doğrulama benchmark varyansı için `Nightly Auth Benchmark` iş akışı parola
 > hash/verify testlerini izole CPU pinleme ile çalıştırır; P95/P99 eşiklerini
 > (`AUTH_BENCH_P95_BUDGET_MS`, `AUTH_BENCH_P99_BUDGET_MS`) aşarsa alarm/fail üretir.
+> SQLite/PostgreSQL karşılaştırmalı workload trendi için release tetiklemeli
+> `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
+> Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
+> ile sabitler.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri

@@ -1,0 +1,72 @@
+name: Release DB Benchmark Trend
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: release-db-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  db-backend-trend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sidar
+          POSTGRES_PASSWORD: sidar_test
+          POSTGRES_DB: sidar_bench
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sidar"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SIDAR_BENCHMARK_POSTGRES_URL: postgresql+asyncpg://sidar:sidar_test@localhost:5432/sidar_bench
+      SIDAR_BENCHMARK_DB_POOL_SIZE: "5"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run SQLite/PostgreSQL comparative benchmark
+        run: |
+          mkdir -p artifacts/db-benchmark
+          uv run pytest -q tests/performance/test_benchmark.py \
+            -k "multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-min-rounds=8 \
+            --benchmark-json=artifacts/db-benchmark/benchmark.json
+
+      - name: Build backend trend report
+        run: |
+          python scripts/ci/generate_db_backend_trend_report.py \
+            artifacts/db-benchmark/benchmark.json \
+            artifacts/db-benchmark
+
+      - name: Upload DB benchmark trend artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-db-benchmark-trend
+          path: artifacts/db-benchmark/
+          if-no-files-found: warn
+          retention-days: 30

@@ -72,10 +72,11 @@ def _postgresql_benchmark_url() -> str | None:
 
 
 def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
+    benchmark_pool_size = int(os.getenv("SIDAR_BENCHMARK_DB_POOL_SIZE", "5") or "5")
     return SimpleNamespace(
         DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
-        DB_POOL_SIZE=5,
+        DB_POOL_SIZE=max(1, benchmark_pool_size),
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret",
