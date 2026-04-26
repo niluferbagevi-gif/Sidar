@@ -44,6 +44,8 @@ RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
+BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-0}"
+BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -277,11 +279,26 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
-  python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-save="${BENCHMARK_BASELINE_NAME}"
-  BENCHMARK_EXIT_CODE=$?
+  benchmark_cmd=(python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-save="${BENCHMARK_BASELINE_NAME}")
+
+  if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
+    if compgen -G ".benchmarks/*/*_${BENCHMARK_COMPARE_NAME}.json" > /dev/null; then
+      echo "📈 Benchmark karşılaştırması etkin (--benchmark-compare=${BENCHMARK_COMPARE_NAME})."
+      benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_NAME}")
+    else
+      echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
+      if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
+        echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
+        BENCHMARK_EXIT_CODE=1
+      fi
+    fi
+  else
+    echo "ℹ️ Benchmark karşılaştırması devre dışı (BENCHMARK_ENABLE_COMPARE=0)."
+  fi
+
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
-    echo "📈 Benchmark regresyon karşılaştırması çalıştırılıyor (--benchmark-compare=${BENCHMARK_COMPARE_NAME})..."
-    python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov --benchmark-compare="${BENCHMARK_COMPARE_NAME}"
+    echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
+    "${benchmark_cmd[@]}"
     BENCHMARK_EXIT_CODE=$?
   fi
 else
