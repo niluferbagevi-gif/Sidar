@@ -17,6 +17,25 @@ pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
 
+def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
+    """Benchmark istatistiklerini extra_info altında normalize eder."""
+    raw_samples = list(benchmark.stats.get("data", []) or [])
+    if raw_samples:
+        ordered = sorted(float(sample) for sample in raw_samples)
+        p95_s = ordered[min(len(ordered) - 1, int((len(ordered) - 1) * 0.95))]
+        p99_s = ordered[min(len(ordered) - 1, int((len(ordered) - 1) * 0.99))]
+        benchmark.extra_info[f"{metric_prefix}_p95_ms"] = round(p95_s * 1000, 3)
+        benchmark.extra_info[f"{metric_prefix}_p99_ms"] = round(p99_s * 1000, 3)
+
+    max_s = float(benchmark.stats.get("max", 0.0) or 0.0)
+    stddev_s = float(benchmark.stats.get("stddev", 0.0) or 0.0)
+    mean_s = float(benchmark.stats.get("mean", 0.0) or 0.0)
+    benchmark.extra_info[f"{metric_prefix}_max_ms"] = round(max_s * 1000, 3)
+    benchmark.extra_info[f"{metric_prefix}_stddev_ms"] = round(stddev_s * 1000, 3)
+    if mean_s > 0:
+        benchmark.extra_info[f"{metric_prefix}_cv_percent"] = round((stddev_s / mean_s) * 100, 3)
+
+
 @pytest.fixture(scope="module")
 def large_dataset_rows() -> list[FileCoverage]:
     return [
@@ -201,6 +220,7 @@ def test_user_registration_password_hash_cpu_cost(
         rounds=5,
         iterations=1,
     )
+    _attach_latency_percentiles(benchmark, "password_hash")
     assert isinstance(user_id, str) and bool(user_id.strip())
 
 
@@ -232,4 +252,5 @@ def test_user_authentication_password_verify_cpu_cost(
         rounds=5,
         iterations=1,
     )
+    _attach_latency_percentiles(benchmark, "password_verify")
     assert authenticated_user_id == created.id

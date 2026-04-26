@@ -579,6 +579,7 @@ bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 2
 cd web_ui_react && npm run test:critical
 bash scripts/ci/flaky_scan.sh
+uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
 > Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
@@ -589,6 +590,9 @@ bash scripts/ci/flaky_scan.sh
 > Deterministiklik/flakiness taraması için ise gece çalışan `Nightly Flaky Scan`
 > iş akışı aynı kritik test setini 5 tekrar (`pytest -n auto -q --maxfail=1`) koşturup
 > `artifacts/flaky/report.md` raporu üretir.
+> Kimlik doğrulama benchmark varyansı için `Nightly Auth Benchmark` iş akışı parola
+> hash/verify testlerini izole CPU pinleme ile çalıştırır; P95/P99 eşiklerini
+> (`AUTH_BENCH_P95_BUDGET_MS`, `AUTH_BENCH_P99_BUDGET_MS`) aşarsa alarm/fail üretir.
 
 **Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri

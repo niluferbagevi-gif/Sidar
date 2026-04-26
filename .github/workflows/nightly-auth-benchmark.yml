@@ -1,0 +1,66 @@
+name: Nightly Auth Benchmark
+
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-auth-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-benchmark:
+    runs-on: ubuntu-latest
+    env:
+      AUTH_BENCH_P95_BUDGET_MS: "950"
+      AUTH_BENCH_P99_BUDGET_MS: "1200"
+      BENCHMARK_CPU_AFFINITY: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Best-effort CPU governor setup (performance)
+        run: |
+          if [[ -w /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]]; then
+            echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+          else
+            echo "CPU governor değiştirilemedi (runner izni yok) - benchmark devam ediyor."
+          fi
+
+      - name: Run auth benchmark suite with isolated CPU pinning
+        run: |
+          mkdir -p artifacts/auth-benchmark
+          CMD='uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=5'
+          if command -v taskset >/dev/null 2>&1; then
+            taskset -c "${BENCHMARK_CPU_AFFINITY}" bash -lc "${CMD}"
+          else
+            echo "taskset bulunamadı, benchmark pinleme olmadan çalıştırılıyor."
+            bash -lc "${CMD}"
+          fi
+
+      - name: Evaluate P95/P99 regression budgets
+        run: python scripts/ci/check_auth_benchmark_thresholds.py artifacts/auth-benchmark/benchmark.json
+
+      - name: Upload auth benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-auth-benchmark
+          path: artifacts/auth-benchmark/
+          if-no-files-found: warn
+          retention-days: 14
