@@ -15,6 +15,7 @@ import threading
 import time
 import logging
 import os
+import importlib
 from unittest.mock import Mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -136,6 +137,7 @@ class _DailyBudgetTracker:
 
 
 _budget_tracker = _DailyBudgetTracker()
+_TIKTOKEN_ENCODER = None
 
 
 def _read_optional_string(config: object, attr_name: str) -> str:
@@ -398,9 +400,17 @@ class CostAwareRouter:
     def _estimate_tokens(messages: List[Dict[str, str]]) -> int:
         """
         Provider bağımsız yaklaşık token hesabı.
-        ~4 karakter ≈ 1 token varsayımıyla güvenli tarafta kaba bir tahmin döner.
+        Öncelik: tiktoken `cl100k_base` encoder.
+        Fallback: Türkçe içerik için daha korumacı ~3 karakter ≈ 1 token yaklaşımı.
         """
         combined = " ".join((m.get("content") or "") for m in messages)
         if not combined:
             return 0
-        return max(1, (len(combined) + 3) // 4)
+        global _TIKTOKEN_ENCODER
+        try:
+            if _TIKTOKEN_ENCODER is None:
+                tiktoken = importlib.import_module("tiktoken")
+                _TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+            return len(_TIKTOKEN_ENCODER.encode(combined))
+        except Exception:
+            return max(1, (len(combined) + 2) // 3)

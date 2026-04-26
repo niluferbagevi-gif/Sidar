@@ -445,6 +445,35 @@ def test_estimate_tokens_returns_zero_for_empty_content() -> None:
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": ""}]) == 0
 
 
+def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeEncoder:
+        @staticmethod
+        def encode(_text: str) -> list[int]:
+            return [1, 2, 3, 4, 5]
+
+    class _FakeTiktokenModule:
+        @staticmethod
+        def get_encoding(name: str):
+            assert name == "cl100k_base"
+            return _FakeEncoder()
+
+    monkeypatch.setattr(router.importlib, "import_module", lambda name: _FakeTiktokenModule() if name == "tiktoken" else None)
+    router._TIKTOKEN_ENCODER = None
+
+    assert CostAwareRouter._estimate_tokens([{"role": "user", "content": "merhaba dünya"}]) == 5
+
+
+def test_estimate_tokens_falls_back_when_tiktoken_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_import_error(_name: str):
+        raise ModuleNotFoundError("tiktoken not installed")
+
+    monkeypatch.setattr(router.importlib, "import_module", _raise_import_error)
+    router._TIKTOKEN_ENCODER = None
+
+    content = "a" * 8
+    assert CostAwareRouter._estimate_tokens([{"role": "user", "content": content}]) == 3
+
+
 def test_read_optional_string_returns_empty_for_none() -> None:
     cfg = SimpleNamespace(COST_ROUTING_REDIS_BUDGET_URL=None)
     assert router._read_optional_string(cfg, "COST_ROUTING_REDIS_BUDGET_URL") == ""
