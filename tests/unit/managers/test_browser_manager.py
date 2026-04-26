@@ -604,3 +604,48 @@ def test_start_selenium_non_headless_and_close_partial(manager: BrowserManager, 
     )
     manager._sessions["blank"] = blank
     assert manager.close_session("blank")[0] is True
+
+
+def test_analyze_visual_drift_reports_missing_baseline(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v1"
+    manager._sessions["v1"] = sess
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(manager.artifact_dir / "cur.png")))
+    (manager.artifact_dir / "cur.png").write_bytes(b"same")
+
+    result = asyncio.run(manager.analyze_visual_drift("v1"))
+    assert result["ok"] is True
+    assert result["reason"] == "baseline_missing"
+    assert result["drift_detected"] is False
+
+
+def test_analyze_visual_drift_with_hash_fallback_detects_change(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v2"
+    manager._sessions["v2"] = sess
+
+    baseline = manager.artifact_dir / "baseline.png"
+    current = manager.artifact_dir / "current.png"
+    baseline.write_bytes(b"baseline-bytes")
+    current.write_bytes(b"current-bytes")
+
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
+    monkeypatch.setattr("managers.browser_manager.importlib.import_module", lambda name: (_ for _ in ()).throw(ImportError(name)))
+
+    result = asyncio.run(manager.analyze_visual_drift("v2", baseline_path=str(baseline), run_multimodal_analysis=False))
+    assert result["ok"] is True
+    assert result["drift_detected"] is True
+    assert result["reason"] == "hash_fallback"
+
+
+def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    sess = _session("playwright")
+    sess.session_id = "v3"
+    manager._sessions["v3"] = sess
+
+    async def _fake_visual(*_a, **_k):
+        return {"ok": True, "drift_detected": False, "drift_score": 0.0}
+
+    monkeypatch.setattr(manager, "analyze_visual_drift", _fake_visual)
+    signal = manager.collect_session_signals("v3", include_visual_qa=True)
+    assert signal["visual_qa"]["ok"] is True

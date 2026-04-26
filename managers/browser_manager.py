@@ -5,6 +5,10 @@ Playwright öncelikli, Selenium fallback'li dinamik web etkileşim katmanı.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import hashlib
+import importlib
 import logging
 import tempfile
 import time
@@ -38,11 +42,14 @@ class BrowserSession:
 class BrowserManager:
     """Dinamik tarayıcı otomasyon işlemlerini güvenli ve sağlayıcıdan bağımsız yönetir."""
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(self, config: Config | None = None, llm_client: Any | None = None) -> None:
         self.cfg = config or Config()
+        self._llm = llm_client
         self.provider = str(getattr(self.cfg, "BROWSER_PROVIDER", "auto") or "auto").strip().lower()
         self.default_headless = bool(getattr(self.cfg, "BROWSER_HEADLESS", True))
         self.timeout_ms = int(getattr(self.cfg, "BROWSER_TIMEOUT_MS", 15_000) or 15_000)
+        self.visual_qa_enabled = bool(getattr(self.cfg, "BROWSER_VISUAL_QA_ENABLED", True))
+        self.visual_qa_drift_threshold = float(getattr(self.cfg, "BROWSER_VISUAL_QA_DRIFT_THRESHOLD", 0.015) or 0.015)
         self.allowed_domains = {
             domain.strip().lower()
             for domain in (getattr(self.cfg, "BROWSER_ALLOWED_DOMAINS", []) or [])
@@ -213,6 +220,8 @@ class BrowserManager:
         *,
         include_dom: bool = False,
         include_screenshot: bool = False,
+        include_visual_qa: bool = False,
+        visual_baseline_path: str = "",
         dom_selector: str = "html",
     ) -> dict[str, Any]:
         """Reviewer ve swarm için oturumdan türetilmiş browser sinyali paketi üret."""
@@ -238,7 +247,146 @@ class BrowserManager:
             ok, path = self.capture_screenshot(session_id, file_name=f"{session_id}.png")
             signal["screenshot"] = {"ok": ok, "path": path}
 
+        if include_visual_qa:
+            visual = self._run_coro_sync(
+                self.analyze_visual_drift(
+                    session_id,
+                    baseline_path=visual_baseline_path,
+                    file_name=f"{session_id}.visual.png",
+                )
+            )
+            signal["visual_qa"] = visual
+
         return signal
+
+    async def _analyze_screenshot_with_multimodal(self, image_path: str, prompt: str) -> dict[str, Any]:
+        if self._llm is None:
+            return {"success": False, "reason": "LLM istemcisi bağlı değil"}
+        multimodal_module = importlib.import_module("core.multimodal")
+        pipeline = multimodal_module.MultimodalPipeline(self._llm, self.cfg)
+        return await pipeline.analyze_media(
+            media_path=image_path,
+            mime_type="image/png",
+            prompt=prompt,
+        )
+
+    @staticmethod
+    def _hash_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+
+    def _compute_visual_drift(self, baseline_path: Path, current_path: Path) -> dict[str, Any]:
+        try:
+            image_module = importlib.import_module("PIL.Image")
+            image_chops = importlib.import_module("PIL.ImageChops")
+            img_a = image_module.open(str(baseline_path)).convert("RGB")
+            img_b = image_module.open(str(current_path)).convert("RGB")
+            if img_a.size != img_b.size:
+                return {
+                    "drift_detected": True,
+                    "drift_score": 1.0,
+                    "changed_ratio": 1.0,
+                    "reason": "Görsel boyutları farklı",
+                    "baseline_size": img_a.size,
+                    "current_size": img_b.size,
+                }
+            diff = image_chops.difference(img_a, img_b).convert("L")
+            histogram = diff.histogram()
+            total_pixels = max(1, img_a.size[0] * img_a.size[1])
+            changed_pixels = total_pixels - int(histogram[0] or 0)
+            changed_ratio = max(0.0, min(1.0, changed_pixels / total_pixels))
+            drift_score = round(changed_ratio, 6)
+            return {
+                "drift_detected": drift_score >= self.visual_qa_drift_threshold,
+                "drift_score": drift_score,
+                "changed_ratio": round(changed_ratio, 6),
+                "baseline_size": img_a.size,
+                "current_size": img_b.size,
+                "reason": "pixel_diff",
+            }
+        except Exception:
+            baseline_hash = self._hash_file(baseline_path)
+            current_hash = self._hash_file(current_path)
+            drift_detected = baseline_hash != current_hash
+            return {
+                "drift_detected": drift_detected,
+                "drift_score": 1.0 if drift_detected else 0.0,
+                "changed_ratio": 1.0 if drift_detected else 0.0,
+                "reason": "hash_fallback",
+                "baseline_hash": baseline_hash,
+                "current_hash": current_hash,
+            }
+
+    async def analyze_visual_drift(
+        self,
+        session_id: str,
+        *,
+        baseline_path: str = "",
+        file_name: str | None = None,
+        run_multimodal_analysis: bool = True,
+    ) -> dict[str, Any]:
+        session = self._require_session(session_id)
+        if not self.visual_qa_enabled:
+            return {"ok": False, "reason": "BROWSER_VISUAL_QA_ENABLED devre dışı"}
+
+        ok, current_path = self.capture_screenshot(session_id, file_name=file_name or f"{session_id}.visual.png")
+        if not ok:
+            return {"ok": False, "reason": current_path}
+        current = Path(current_path)
+        baseline = Path(baseline_path).expanduser().resolve() if baseline_path.strip() else None
+
+        if baseline is None:
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "current_screenshot": str(current),
+                "baseline_screenshot": "",
+                "drift_detected": False,
+                "drift_score": 0.0,
+                "changed_ratio": 0.0,
+                "reason": "baseline_missing",
+                "recommendation": "Visual drift kıyaslaması için baseline_path sağlayın.",
+            }
+        if not baseline.exists():
+            return {
+                "ok": False,
+                "session_id": session_id,
+                "current_screenshot": str(current),
+                "baseline_screenshot": str(baseline),
+                "reason": "baseline_not_found",
+            }
+
+        drift = self._compute_visual_drift(baseline, current)
+        result = {
+            "ok": True,
+            "session_id": session_id,
+            "current_screenshot": str(current),
+            "baseline_screenshot": str(baseline),
+            "threshold": self.visual_qa_drift_threshold,
+            **drift,
+        }
+        if run_multimodal_analysis:
+            prompt = (
+                "Bu ekran görüntüsünü UI regresyon açısından analiz et. "
+                "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift bulgularını listele."
+            )
+            with contextlib.suppress(Exception):
+                mm = await self._analyze_screenshot_with_multimodal(str(current), prompt)
+                result["multimodal_analysis"] = mm
+
+        self._audit_session_action(
+            session,
+            action="browser_visual_qa",
+            status="executed",
+            details={
+                "baseline": str(baseline),
+                "current": str(current),
+                "drift_detected": bool(result.get("drift_detected")),
+                "drift_score": result.get("drift_score", 0.0),
+            },
+        )
+        return result
 
     def _session_url(self, session: BrowserSession) -> str:
         if session.current_url:
@@ -248,6 +396,18 @@ class BrowserManager:
         if session.provider == "selenium":
             return str(getattr(session.driver, "current_url", "") or "")
         return ""
+
+    @staticmethod
+    def _run_coro_sync(coro: Any) -> Any:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
     async def _request_hitl_approval(
         self,
