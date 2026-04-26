@@ -107,6 +107,33 @@ def test_query_complexity_score_respects_upper_bound() -> None:
     assert analyzer.score([{"role": "user", "content": huge_payload}]) == 1.0
 
 
+def test_query_complexity_char_budget_reads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    analyzer = QueryComplexityAnalyzer()
+    payload = "analyze tradeoff " * 40
+
+    monkeypatch.setenv("SIDAR_ROUTER_CHAR_BUDGET", "400")
+    score_small_budget = analyzer.score([{"role": "user", "content": payload}])
+
+    monkeypatch.setenv("SIDAR_ROUTER_CHAR_BUDGET", "2000")
+    score_large_budget = analyzer.score([{"role": "user", "content": payload}])
+
+    assert score_small_budget > score_large_budget
+
+
+def test_query_complexity_char_budget_env_falls_back_on_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    analyzer = QueryComplexityAnalyzer()
+    payload = "analyze tradeoff " * 20
+
+    monkeypatch.delenv("SIDAR_ROUTER_CHAR_BUDGET", raising=False)
+    baseline = analyzer.score([{"role": "user", "content": payload}])
+
+    monkeypatch.setenv("SIDAR_ROUTER_CHAR_BUDGET", "invalid")
+    assert analyzer.score([{"role": "user", "content": payload}]) == pytest.approx(baseline)
+
+    monkeypatch.setenv("SIDAR_ROUTER_CHAR_BUDGET", "0")
+    assert analyzer.score([{"role": "user", "content": payload}]) == pytest.approx(baseline)
+
+
 def test_daily_budget_tracker_add_daily_usage_and_exceeded() -> None:
     tracker = router._DailyBudgetTracker()
 

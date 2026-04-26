@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import time
 import logging
+import os
 from unittest.mock import Mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -56,7 +57,17 @@ class QueryComplexityAnalyzer:
     ])
 
     _MAX_SCORE = 1.0
-    _CHAR_BUDGET = 800   # Bu değerin üzerindeki promptlar uzun kabul edilir
+    _DEFAULT_CHAR_BUDGET = 800
+    _CHAR_BUDGET_ENV = "SIDAR_ROUTER_CHAR_BUDGET"
+
+    @classmethod
+    def _char_budget(cls) -> int:
+        raw = os.getenv(cls._CHAR_BUDGET_ENV, str(cls._DEFAULT_CHAR_BUDGET))
+        try:
+            parsed = int(str(raw).strip())
+        except (TypeError, ValueError):
+            return cls._DEFAULT_CHAR_BUDGET
+        return parsed if parsed > 0 else cls._DEFAULT_CHAR_BUDGET
 
     def score(self, messages: List[Dict[str, str]]) -> float:
         """0.0 (basit) → 1.0 (karmaşık) aralığında skor döner."""
@@ -71,7 +82,7 @@ class QueryComplexityAnalyzer:
 
         # Uzunluk bazlı (0.0–0.35)
         char_count = len(combined)
-        score += min(0.35, (char_count / self._CHAR_BUDGET) * 0.35)
+        score += min(0.35, (char_count / self._char_budget()) * 0.35)
 
         # Kod anahtar kelimeleri (0.0–0.30)
         code_hits = sum(1 for kw in self._CODE_KEYWORDS if kw in combined)
