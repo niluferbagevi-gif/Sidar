@@ -181,22 +181,45 @@ def _parse_iso_datetime(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+_PBKDF2_ALGORITHM = "pbkdf2_sha256"
+_PBKDF2_MIN_ITERATIONS = 600000
+_PBKDF2_LEGACY_ITERATIONS = 120000
+
+
+def _pbkdf2_sha256(password: str, salt: str, iterations: int) -> str:
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    return digest.hex()
+
+
 def _hash_password(password: str, salt: Optional[str] = None) -> str:
     real_salt = salt or secrets.token_hex(16)
     # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), real_salt.encode("utf-8"), 600000)
-    return f"pbkdf2_sha256${real_salt}${digest.hex()}"
+    digest_hex = _pbkdf2_sha256(password, real_salt, _PBKDF2_MIN_ITERATIONS)
+    return f"{_PBKDF2_ALGORITHM}${_PBKDF2_MIN_ITERATIONS}${real_salt}${digest_hex}"
 
 
 def _verify_password(password: str, encoded: str) -> bool:
-    try:
-        algorithm, salt, expected_hex = encoded.split("$", 2)
-    except ValueError:
-        return False
-    if algorithm != "pbkdf2_sha256":
-        return False
-    actual = _hash_password(password, salt=salt)
-    return secrets.compare_digest(actual, encoded)
+    parts = encoded.split("$")
+    if len(parts) == 4:
+        algorithm, iterations_text, salt, expected_hex = parts
+        if algorithm != _PBKDF2_ALGORITHM:
+            return False
+        try:
+            iterations = int(iterations_text)
+        except ValueError:
+            return False
+        actual_hex = _pbkdf2_sha256(password, salt, iterations)
+        return secrets.compare_digest(actual_hex, expected_hex)
+
+    if len(parts) == 3:
+        algorithm, salt, expected_hex = parts
+        if algorithm != _PBKDF2_ALGORITHM:
+            return False
+        current_hex = _pbkdf2_sha256(password, salt, _PBKDF2_MIN_ITERATIONS)
+        legacy_hex = _pbkdf2_sha256(password, salt, _PBKDF2_LEGACY_ITERATIONS)
+        return secrets.compare_digest(current_hex, expected_hex) or secrets.compare_digest(legacy_hex, expected_hex)
+
+    return False
 
 
 def _expires_in(days: int = 7) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import importlib.util
 import sqlite3
@@ -168,6 +169,8 @@ def test_helper_functions_basic_contracts() -> None:
 
     hashed = _hash_password("abc123")
     assert hashed.startswith("pbkdf2_sha256$")
+    _, iteration_text, _, _ = hashed.split("$", 3)
+    assert int(iteration_text) >= 600000
     assert _verify_password("abc123", hashed)
     assert not _verify_password("wrong", hashed)
     assert not _verify_password("abc123", "invalid")
@@ -175,6 +178,14 @@ def test_helper_functions_basic_contracts() -> None:
 
     assert _quote_sql_identifier("schema_versions") == '"schema_versions"'
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+
+
+def test_verify_password_accepts_legacy_120k_hash_format() -> None:
+    salt = "legacysalt"
+    digest = hashlib.pbkdf2_hmac("sha256", b"abc123", salt.encode("utf-8"), 120000).hex()
+    encoded = f"pbkdf2_sha256${salt}${digest}"
+    assert _verify_password("abc123", encoded)
+    assert not _verify_password("wrong", encoded)
 
 
 @pytest.mark.parametrize(
