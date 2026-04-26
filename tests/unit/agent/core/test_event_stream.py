@@ -889,6 +889,26 @@ def test_ensure_rabbit_listener_success_and_failure(monkeypatch: pytest.MonkeyPa
     assert cleaned["ok"] is True
 
 
+def test_ensure_rabbit_listener_handles_missing_optional_dependency(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(
+        event_stream.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'aio_pika'")),
+    )
+    monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup)
+
+    asyncio.run(bus._ensure_rabbit_listener())
+    assert bus._rabbit_available is False
+    assert cleaned["ok"] is True
+
+
 def test_ensure_kafka_listener_success_and_failure(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
     class _AioKafka:
         AIOKafkaProducer = DummyKafkaProducer
@@ -928,6 +948,26 @@ def test_ensure_kafka_listener_success_and_failure(monkeypatch: pytest.MonkeyPat
     bus._kafka_available = None
     monkeypatch.setattr(event_stream.importlib, "import_module", lambda _name: _BrokenAioKafka)
     monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+    asyncio.run(bus._ensure_kafka_listener())
+    assert bus._kafka_available is False
+    assert cleaned["ok"] is True
+
+
+def test_ensure_kafka_listener_handles_missing_optional_dependency(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    cleaned = {"ok": False}
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(
+        event_stream.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'aiokafka'")),
+    )
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+
     asyncio.run(bus._ensure_kafka_listener())
     assert bus._kafka_available is False
     assert cleaned["ok"] is True
@@ -1113,6 +1153,70 @@ def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(monkeypatch: pytest.
     assert dlq_entries[0]["reason"] == "publish_failed"
     assert dlq_entries[0]["payload"]["event"]["source"] == "coverage"
     assert dlq_entries[0]["payload"]["event"]["message"] == "kafka fail-safe"
+
+
+def test_publish_via_rabbit_missing_dependency_writes_dlq_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    evt = AgentEvent(ts=2.5, source="resilience", message="rabbit missing module")
+    bus._rabbit_available = True
+    bus._rabbit_channel = DummyRabbitChannel(DummyRabbitQueue())
+
+    monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(
+        event_stream.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'aio_pika'")),
+    )
+
+    dlq_entries: list[dict] = []
+    cleaned = {"ok": False}
+
+    async def _dlq(**kwargs):
+        dlq_entries.append(kwargs)
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup)
+
+    assert asyncio.run(bus._publish_via_rabbit(evt)) is False
+    assert bus._rabbit_available is False
+    assert cleaned["ok"] is True
+    assert dlq_entries[0]["reason"] == "publish_failed"
+
+
+def test_publish_via_kafka_missing_dependency_writes_dlq_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    evt = AgentEvent(ts=3.5, source="resilience", message="kafka missing module")
+    bus._kafka_available = True
+    bus._kafka_producer = DummyKafkaProducer()
+
+    monkeypatch.setattr(bus, "_ensure_kafka_listener", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(
+        event_stream.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'aiokafka'")),
+    )
+
+    dlq_entries: list[dict] = []
+    cleaned = {"ok": False}
+
+    async def _dlq(**kwargs):
+        dlq_entries.append(kwargs)
+
+    async def _cleanup() -> None:
+        cleaned["ok"] = True
+
+    monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
+    monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
+
+    assert asyncio.run(bus._publish_via_kafka(evt)) is False
+    assert bus._kafka_available is False
+    assert cleaned["ok"] is True
+    assert dlq_entries[0]["reason"] == "publish_failed"
 
 
 def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
