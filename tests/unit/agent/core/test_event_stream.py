@@ -957,7 +957,13 @@ def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus
     monkeypatch.setattr(bus, "_ensure_rabbit_listener", lambda: asyncio.sleep(0))
     bus._rabbit_available = True
     assert asyncio.run(bus._publish_via_rabbit(evt)) is True
-    assert channel.default_exchange.published[0][1] == bus._channel
+    published_message, published_routing_key = channel.default_exchange.published[0]
+    assert published_routing_key == bus._channel
+    parsed_rabbit_payload = json.loads(published_message.body.decode("utf-8"))
+    assert parsed_rabbit_payload["sid"] == bus._instance_id
+    assert parsed_rabbit_payload["source"] == "qa"
+    assert parsed_rabbit_payload["message"] == "event"
+    assert published_message.content_type == "application/json"
 
     channel.default_exchange.raise_on_publish = True
     written: list[dict] = []
@@ -986,7 +992,12 @@ def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus
     bus._kafka_producer = producer
     bus._kafka_available = True
     assert asyncio.run(bus._publish_via_kafka(evt)) is True
-    assert producer.sent[0][0] == bus._kafka_topic
+    kafka_topic, kafka_raw_payload = producer.sent[0]
+    assert kafka_topic == bus._kafka_topic
+    parsed_kafka_payload = json.loads(kafka_raw_payload.decode("utf-8"))
+    assert parsed_kafka_payload["sid"] == bus._instance_id
+    assert parsed_kafka_payload["source"] == "qa"
+    assert parsed_kafka_payload["message"] == "event"
 
     producer.raise_on_send = True
 
@@ -1041,18 +1052,20 @@ def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Age
     bus._rabbit_queue = DummyRabbitQueue([valid_other, invalid, valid_self])
 
     fanouts: list[AgentEvent] = []
-    reasons: list[str] = []
+    dlq_entries: list[dict] = []
 
     monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt))
 
     async def _dlq(**kwargs):
-        reasons.append(kwargs["reason"])
+        dlq_entries.append(kwargs)
 
     monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
     asyncio.run(bus._rabbit_listener_loop())
     assert len(fanouts) == 1
+    assert fanouts[0].source == "r"
     assert fanouts[0].message == "ok"
-    assert "invalid_payload" in reasons
+    assert dlq_entries[0]["reason"] == "invalid_payload"
+    assert "{bad-json" in dlq_entries[0]["payload"]["payload"]
     assert valid_other.acked is True
 
 
@@ -1084,18 +1097,20 @@ def test_kafka_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Agen
     bus._kafka_consumer = consumer
     bus._kafka_available = True
     fanouts: list[AgentEvent] = []
-    reasons: list[str] = []
+    dlq_entries: list[dict] = []
     monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt))
 
     async def _dlq(**kwargs):
-        reasons.append(kwargs["reason"])
+        dlq_entries.append(kwargs)
 
     monkeypatch.setattr(bus, "_write_dead_letter", _dlq)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(bus._kafka_listener_loop())
     assert len(fanouts) == 1
+    assert fanouts[0].source == "k"
     assert fanouts[0].message == "ok"
-    assert "invalid_payload" in reasons
+    assert dlq_entries[0]["reason"] == "invalid_payload"
+    assert "{bad-json" in dlq_entries[0]["payload"]["payload"]
 
 
 def test_cleanup_rabbit_and_kafka() -> None:
