@@ -79,6 +79,11 @@ class AgentEventBus:
         self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
         self._dlq_buffer: deque[dict[str, object]] = deque(maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000")))
         self._dlq_persist_path = str(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or "").strip()
+        self._dlq_persist_batch_size = max(1, int(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", "100") or "100"))
+        self._dlq_persist_flush_interval = max(0.05, float(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", "1.0") or "1.0"))
+        self._dlq_persist_pending: list[dict[str, object]] = []
+        self._dlq_persist_lock: asyncio.Lock | None = None
+        self._dlq_persist_flush_task: asyncio.Task | None = None
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
@@ -611,26 +616,63 @@ class AgentEventBus:
                 logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
     async def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
-        await asyncio.to_thread(
-            self._persist_dead_letter_item_sync,
-            item,
-            dropped_from_memory=dropped_from_memory,
-        )
+        if not self._dlq_persist_path:
+            return
+        record = {
+            "ts": time.time(),
+            "dropped_from_memory": dropped_from_memory,
+            "item": item,
+        }
+        self._dlq_persist_pending.append(record)
+        if len(self._dlq_persist_pending) >= self._dlq_persist_batch_size:
+            await self._flush_dead_letter_persist_queue()
+            return
+        self._schedule_dead_letter_flush()
+
+    def _schedule_dead_letter_flush(self) -> None:
+        if self._dlq_persist_flush_task is not None and not self._dlq_persist_flush_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._dlq_persist_flush_task = loop.create_task(self._delayed_dead_letter_flush())
+
+    async def _delayed_dead_letter_flush(self) -> None:
+        await asyncio.sleep(self._dlq_persist_flush_interval)
+        await self._flush_dead_letter_persist_queue()
+
+    async def _flush_dead_letter_persist_queue(self) -> None:
+        if not self._dlq_persist_path or not self._dlq_persist_pending:
+            return
+        if self._dlq_persist_lock is None:
+            self._dlq_persist_lock = asyncio.Lock()
+
+        async with self._dlq_persist_lock:
+            if not self._dlq_persist_pending:
+                return
+            records = list(self._dlq_persist_pending)
+            self._dlq_persist_pending.clear()
+            await asyncio.to_thread(self._persist_dead_letter_items_sync, records)
 
     def _persist_dead_letter_item_sync(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+        record = {
+            "ts": time.time(),
+            "dropped_from_memory": dropped_from_memory,
+            "item": item,
+        }
+        self._persist_dead_letter_items_sync([record])
+
+    def _persist_dead_letter_items_sync(self, records: list[dict[str, object]]) -> None:
         if not self._dlq_persist_path:
             return
         try:
-            record = {
-                "ts": time.time(),
-                "dropped_from_memory": dropped_from_memory,
-                "item": item,
-            }
             parent = os.path.dirname(self._dlq_persist_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
             with open(self._dlq_persist_path, "a", encoding="utf-8") as fp:
-                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+                for record in records:
+                    fp.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as exc:
             logger.debug("AgentEventBus persistent DLQ yazımı başarısız: %s", exc)
 
