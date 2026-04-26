@@ -1145,8 +1145,10 @@ def test_trusted_proxies_as_list_returns_copy(monkeypatch):
     assert result is not config.Config.TRUSTED_PROXIES_LIST
 
 
-def test_trusted_proxies_defaults_to_loopback() -> None:
-    assert "127.0.0.1" in config.Config.TRUSTED_PROXIES
+def test_trusted_proxies_defaults_to_loopback(monkeypatch) -> None:
+    monkeypatch.delenv("TRUSTED_PROXIES", raising=False)
+    reloaded = importlib.reload(config)
+    assert "127.0.0.1" in reloaded.Config.TRUSTED_PROXIES
 
 
 def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
