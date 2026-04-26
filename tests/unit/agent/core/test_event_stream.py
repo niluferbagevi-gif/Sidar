@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 from collections import deque
 
@@ -31,7 +32,7 @@ sys.modules.setdefault("redis.asyncio", redis_asyncio_mod)
 sys.modules.setdefault("redis.exceptions", redis_exceptions_mod)
 
 import agent.core.event_stream as event_stream
-from agent.core.event_stream import AgentEvent, AgentEventBus, BaseEventBusBackend, get_agent_event_bus
+from agent.core.event_stream import AgentEvent, AgentEventBus, BaseEventBusBackend, CircuitBreaker, CircuitState, get_agent_event_bus
 
 
 class DummyRedis:
@@ -1372,3 +1373,210 @@ def test_cleanup_rabbit_and_kafka() -> None:
     assert bus._kafka_consumer is None
     assert producer.stopped is True
     assert consumer.stopped is True
+
+
+# ── CircuitBreaker unit tests ──────────────────────────────────────────────────
+
+def test_circuit_breaker_initial_state_is_closed() -> None:
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    assert cb.state is CircuitState.CLOSED
+    assert not cb.is_open
+    assert not cb.allow_probe
+
+
+def test_circuit_breaker_opens_after_threshold() -> None:
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    cb.record_failure()
+    cb.record_failure()
+    assert cb.state is CircuitState.CLOSED
+    cb.record_failure()
+    assert cb.state is CircuitState.OPEN
+    assert cb.is_open
+    assert not cb.allow_probe
+
+
+def test_circuit_breaker_success_resets_failure_count() -> None:
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    cb.record_failure()
+    cb.record_failure()
+    cb.record_success()
+    assert cb.state is CircuitState.CLOSED
+    cb.record_failure()
+    cb.record_failure()
+    assert cb.state is CircuitState.CLOSED
+
+
+def test_circuit_breaker_transitions_to_half_open_after_timeout() -> None:
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+    cb.record_failure()
+    assert cb.is_open
+    cb._opened_at = time.time() - 61.0
+    assert not cb.is_open
+    assert cb.allow_probe
+    assert cb.state is CircuitState.HALF_OPEN
+
+
+def test_circuit_breaker_half_open_probe_success_closes_circuit() -> None:
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+    cb.record_failure()
+    cb._opened_at = time.time() - 61.0
+    assert cb.allow_probe
+    cb.record_success()
+    assert cb.state is CircuitState.CLOSED
+    assert cb._opened_at is None
+    assert cb._failure_count == 0
+
+
+def test_circuit_breaker_half_open_probe_failure_reopens_circuit() -> None:
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+    cb.record_failure()
+    cb._opened_at = time.time() - 61.0
+    assert cb.allow_probe
+    cb.record_failure()
+    assert cb.is_open
+    assert cb._failure_count == 0
+
+
+def test_circuit_breaker_open_state_stays_open_before_timeout() -> None:
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+    cb.record_failure()
+    cb._opened_at = time.time() - 5.0
+    assert cb.is_open
+    assert not cb.allow_probe
+
+
+# ── Circuit breaker integration with _publish_via_remote ──────────────────────
+
+def test_publish_via_remote_skips_backend_when_circuit_open(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    called = {"count": 0}
+
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        called["count"] += 1
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    cb = bus._circuit_breakers["redis"]
+    for _ in range(5):
+        cb.record_failure()
+    assert cb.is_open
+
+    evt = AgentEvent(ts=1.0, source="x", message="m")
+    result = asyncio.run(bus._publish_via_remote(evt))
+    assert result is False
+    assert called["count"] == 0
+
+
+def test_publish_via_remote_records_success_and_resets_circuit(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        return True
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    cb = bus._circuit_breakers["redis"]
+    cb.record_failure()
+    cb.record_failure()
+
+    asyncio.run(bus._publish_via_remote(AgentEvent(ts=1.0, source="x", message="m")))
+    assert cb._failure_count == 0
+    assert cb.state is CircuitState.CLOSED
+
+
+def test_publish_via_remote_counts_failures_and_opens_circuit(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    evt = AgentEvent(ts=1.0, source="x", message="m")
+    for _ in range(5):
+        asyncio.run(bus._publish_via_remote(evt))
+
+    assert bus._circuit_breakers["redis"].is_open
+
+
+def test_publish_via_remote_probe_success_closes_circuit(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    bus._redis_available = False
+    cb = bus._circuit_breakers["redis"]
+    for _ in range(5):
+        cb.record_failure()
+    cb._opened_at = time.time() - 31.0
+    assert cb.allow_probe
+
+    probe_called = {"ok": False}
+
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        probe_called["ok"] = True
+        return True
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    asyncio.run(bus._publish_via_remote(AgentEvent(ts=1.0, source="x", message="m")))
+    assert probe_called["ok"] is True
+    assert cb.state is CircuitState.CLOSED
+
+
+def test_publish_via_remote_probe_failure_reopens_circuit(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    cb = bus._circuit_breakers["redis"]
+    for _ in range(5):
+        cb.record_failure()
+    cb._opened_at = time.time() - 31.0
+    assert cb.allow_probe
+
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    asyncio.run(bus._publish_via_remote(AgentEvent(ts=1.0, source="x", message="m")))
+    assert cb.is_open
+
+
+def test_reset_backend_availability(bus: AgentEventBus) -> None:
+    bus._backend = "redis"
+    bus._redis_available = False
+    bus._reset_backend_availability()
+    assert bus._redis_available is None
+
+    bus._reset_backend_availability()
+    assert bus._redis_available is None
+
+    bus._redis_available = True
+    bus._reset_backend_availability()
+    assert bus._redis_available is True
+
+    bus._backend = "rabbitmq"
+    bus._rabbit_available = False
+    bus._reset_backend_availability()
+    assert bus._rabbit_available is None
+
+    bus._backend = "kafka"
+    bus._kafka_available = False
+    bus._reset_backend_availability()
+    assert bus._kafka_available is None
+
+
+def test_publish_via_remote_probe_resets_availability_before_calling_backend(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
+    bus._redis_available = False
+    cb = bus._circuit_breakers["redis"]
+    for _ in range(5):
+        cb.record_failure()
+    cb._opened_at = time.time() - 31.0
+    assert cb.allow_probe
+
+    availability_at_call: list[bool | None] = []
+
+    async def _redis_publish(evt: AgentEvent) -> bool:
+        availability_at_call.append(bus._redis_available)
+        return True
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _redis_publish)
+    asyncio.run(bus._publish_via_remote(AgentEvent(ts=1.0, source="x", message="m")))
+    assert availability_at_call == [None]

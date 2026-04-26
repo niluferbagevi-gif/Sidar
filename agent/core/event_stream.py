@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import abc
 import contextlib
+import enum
 import importlib
 import inspect
 import json
@@ -68,6 +69,62 @@ class KafkaBackend(BaseEventBusBackend):
         return await self.bus._publish_via_kafka(evt)
 
 
+class CircuitState(enum.Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class CircuitBreaker:
+    """Three-state circuit breaker for remote broker publish paths.
+
+    Transitions:
+        CLOSED  → OPEN      after ``failure_threshold`` consecutive failures
+        OPEN    → HALF_OPEN after ``recovery_timeout`` seconds
+        HALF_OPEN → CLOSED  on a successful probe publish
+        HALF_OPEN → OPEN    on a failed probe publish
+    """
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 30.0) -> None:
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._failure_count = 0
+        self._state = CircuitState.CLOSED
+        self._opened_at: float | None = None
+
+    @property
+    def state(self) -> CircuitState:
+        if self._state is CircuitState.OPEN:
+            if self._opened_at is not None and (time.time() - self._opened_at) >= self._recovery_timeout:
+                self._state = CircuitState.HALF_OPEN
+        return self._state
+
+    @property
+    def is_open(self) -> bool:
+        return self.state is CircuitState.OPEN
+
+    @property
+    def allow_probe(self) -> bool:
+        return self.state is CircuitState.HALF_OPEN
+
+    def record_success(self) -> None:
+        self._failure_count = 0
+        self._state = CircuitState.CLOSED
+        self._opened_at = None
+
+    def record_failure(self) -> None:
+        self._failure_count += 1
+        if self._state is CircuitState.HALF_OPEN or self._failure_count >= self._failure_threshold:
+            if self._state is not CircuitState.OPEN:
+                logger.debug(
+                    "AgentEventBus circuit breaker açıldı (ardışık %d başarısız deneme)",
+                    self._failure_count,
+                )
+            self._state = CircuitState.OPEN
+            self._opened_at = time.time()
+            self._failure_count = 0
+
+
 class AgentEventBus:
     def __init__(self) -> None:
         self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
@@ -108,6 +165,13 @@ class AgentEventBus:
             "redis": RedisBackend(self),
             "rabbitmq": RabbitMQBackend(self),
             "kafka": KafkaBackend(self),
+        }
+        _cb_threshold = max(1, int(os.getenv("SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", "5") or "5"))
+        _cb_timeout = max(1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_RECOVERY_TIMEOUT", "30") or "30"))
+        self._circuit_breakers: dict[str, CircuitBreaker] = {
+            "redis": CircuitBreaker(_cb_threshold, _cb_timeout),
+            "rabbitmq": CircuitBreaker(_cb_threshold, _cb_timeout),
+            "kafka": CircuitBreaker(_cb_threshold, _cb_timeout),
         }
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
@@ -248,7 +312,32 @@ class AgentEventBus:
 
     async def _publish_via_remote(self, evt: AgentEvent) -> bool:
         backend = self._backends.get(self._backend, self._backends["redis"])
-        return await backend.publish(evt)
+        cb = self._circuit_breakers.get(self._backend, self._circuit_breakers["redis"])
+
+        if cb.is_open:
+            return False
+
+        if cb.allow_probe:
+            self._reset_backend_availability()
+
+        ok = await backend.publish(evt)
+
+        if ok:
+            cb.record_success()
+        else:
+            cb.record_failure()
+
+        return ok
+
+    def _reset_backend_availability(self) -> None:
+        """Reset a known-down backend's availability flag to None so the next publish attempt
+        triggers a fresh reconnect.  Called only during HALF_OPEN probe transitions."""
+        if self._backend == "redis" and self._redis_available is False:
+            self._redis_available = None
+        elif self._backend == "rabbitmq" and self._rabbit_available is False:
+            self._rabbit_available = None
+        elif self._backend == "kafka" and self._kafka_available is False:
+            self._kafka_available = None
 
     def _serialize_event_payload(self, evt: AgentEvent) -> str:
         return json.dumps(
