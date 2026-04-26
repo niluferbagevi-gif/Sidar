@@ -526,13 +526,6 @@ class AgentEventBus:
                         if inspect.isawaitable(maybe_awaitable):
                             await maybe_awaitable
 
-            with contextlib.suppress(Exception):
-                connection_pool = getattr(self._redis_client, "connection_pool", None)
-                disconnect = getattr(connection_pool, "disconnect", None)
-                if callable(disconnect):
-                    maybe_awaitable = disconnect()
-                    if inspect.isawaitable(maybe_awaitable):
-                        await maybe_awaitable
         self._redis_client = None
         self._redis_loop = None
 

@@ -660,7 +660,7 @@ def test_cleanup_redis_handles_non_callable_and_non_awaitable_close() -> None:
     assert bus._redis_client is None
 
 
-def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
+def test_cleanup_redis_does_not_call_connection_pool_disconnect() -> None:
     bus = AgentEventBus()
     redis_client = RedisWithAsyncPoolDisconnect()
     bus._redis_client = redis_client
@@ -668,11 +668,11 @@ def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
     asyncio.run(bus._cleanup_redis())
 
     assert redis_client.closed is True
-    assert redis_client.connection_pool.disconnected is True
+    assert redis_client.connection_pool.disconnected is False
     assert bus._redis_client is None
 
 
-def test_cleanup_redis_handles_non_awaitable_pool_disconnect() -> None:
+def test_cleanup_redis_ignores_non_awaitable_pool_disconnect() -> None:
     class RedisWithSyncPoolDisconnect:
         def __init__(self) -> None:
             self.connection_pool = _SyncDisconnectConnectionPool()
@@ -686,7 +686,7 @@ def test_cleanup_redis_handles_non_awaitable_pool_disconnect() -> None:
 
     asyncio.run(bus._cleanup_redis())
 
-    assert redis_client.connection_pool.disconnected is True
+    assert redis_client.connection_pool.disconnected is False
     assert bus._redis_client is None
 
 
