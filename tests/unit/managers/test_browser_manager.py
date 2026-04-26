@@ -367,7 +367,7 @@ def test_is_available_status_and_start_session(manager: BrowserManager, monkeypa
 
     test_session = _session("playwright")
     monkeypatch.setattr(manager, "_provider_candidates", lambda: ["playwright"])
-    monkeypatch.setattr(manager, "_start_playwright_session", lambda *_a, **_k: test_session)
+    monkeypatch.setattr(manager._browser_providers["playwright"], "start_session", lambda *_a, **_k: test_session)
     ok, info = manager.start_session()
     assert ok is True and info["session_id"] == "s1"
 
@@ -376,8 +376,16 @@ def test_is_available_status_and_start_session(manager: BrowserManager, monkeypa
     assert ok is False and "Desteklenmeyen" in info["error"]
 
     monkeypatch.setattr(manager, "_provider_candidates", lambda: ["playwright", "selenium"])
-    monkeypatch.setattr(manager, "_start_playwright_session", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("pw")))
-    monkeypatch.setattr(manager, "_start_selenium_session", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("se")))
+    monkeypatch.setattr(
+        manager._browser_providers["playwright"],
+        "start_session",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("pw")),
+    )
+    monkeypatch.setattr(
+        manager._browser_providers["selenium"],
+        "start_session",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("se")),
+    )
     ok, info = manager.start_session()
     assert ok is False and info["error"] == "se"
 
