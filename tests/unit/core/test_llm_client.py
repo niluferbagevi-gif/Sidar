@@ -1506,6 +1506,29 @@ async def test_llmclient_init_branches_and_truncation_and_routing(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_llmclient_routing_failure_falls_back_to_default_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.LLMClient("ollama", _make_config())
+
+    seen: dict[str, Any] = {"truncated": False}
+
+    def _truncate(msgs: list[dict[str, str]]) -> list[dict[str, str]]:
+        seen["truncated"] = True
+        return msgs
+
+    monkeypatch.setattr(c._router, "select", lambda *_a: ("openai", "gpt-4o-mini"))
+    monkeypatch.setattr(llm_client, "LLMClient", lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("route boom")))
+    monkeypatch.setattr(c, "_truncate_messages_for_local_model", _truncate)
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    monkeypatch.setattr(c._semantic_cache, "get", lambda *_a: asyncio.sleep(0, result=None))
+    monkeypatch.setattr(c._semantic_cache, "set", lambda *_a: asyncio.sleep(0))
+    monkeypatch.setattr(c._client, "chat", lambda **_kw: asyncio.sleep(0, result="fallback-ok"))
+
+    out = await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert out == "fallback-ok"
+    assert seen["truncated"] is True
+
+
+@pytest.mark.asyncio
 async def test_llmclient_stream_gemini_generator_client_branch() -> None:
     c = llm_client.LLMClient("gemini", _make_config())
 
