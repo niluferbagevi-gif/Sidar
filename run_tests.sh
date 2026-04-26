@@ -37,10 +37,35 @@ PY
 )"
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
-AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
+IS_CI_ENV=0
+if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
+  IS_CI_ENV=1
+fi
 
-PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
-RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
+TEST_PROFILE="${TEST_PROFILE:-}"
+if [ -z "${TEST_PROFILE}" ]; then
+  if [ "${IS_CI_ENV}" -eq 1 ]; then
+    TEST_PROFILE="ci"
+  else
+    TEST_PROFILE="local"
+  fi
+fi
+
+if [ "${TEST_PROFILE}" != "ci" ] && [ "${TEST_PROFILE}" != "local" ]; then
+  echo "⚠️ Geçersiz TEST_PROFILE='${TEST_PROFILE}'. 'local' profiline düşülüyor."
+  TEST_PROFILE="local"
+fi
+
+if [ "${TEST_PROFILE}" = "ci" ]; then
+  AUTO_OPEN_ARTIFACTS=0
+  PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
+  RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
+else
+  AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
+  PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
+  RUN_BENCHMARKS="${RUN_BENCHMARKS:-0}"
+fi
+
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
@@ -59,6 +84,7 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (pytest --cov-fail-under ile .coveragerc fail_under değerini override eder)"
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS})"
 
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
