@@ -512,6 +512,40 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         asyncio.run(manager.select_option_hitl("s1", "#s", "v"))
 
 
+def test_click_element_hitl_returns_rejected_when_approval_denied(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _session("playwright")
+    manager._sessions["s1"] = session
+
+    async def _deny(**_kwargs: object) -> bool:
+        return False
+
+    monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
+    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+
+    ok, message = asyncio.run(manager.click_element_hitl("s1", "#danger", require_confirmation=True))
+    assert ok is False
+    assert "reddedildi" in message
+
+
+def test_fill_form_hitl_returns_rejected_when_approval_denied(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _session("playwright")
+    manager._sessions["s1"] = session
+
+    async def _deny(**_kwargs: object) -> bool:
+        return False
+
+    monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
+    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+
+    ok, message = asyncio.run(manager.fill_form_hitl("s1", "#secret", "value"))
+    assert ok is False
+    assert "reddedildi" in message
+
+
 def test_capture_and_close(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
@@ -846,6 +880,49 @@ def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch
     monkeypatch.setattr(manager, "analyze_visual_drift", _fake_visual)
     signal = manager.collect_session_signals("v3", include_visual_qa=True)
     assert signal["visual_qa"]["ok"] is True
+
+
+def test_collect_session_signals_visual_qa_runs_when_no_running_loop(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _session("playwright")
+    session.session_id = "v-loop"
+    manager._sessions["v-loop"] = session
+
+    async def _fake_visual(*_args, **_kwargs):
+        return {"ok": True, "drift_detected": False}
+
+    def _no_running_loop():
+        raise RuntimeError("no running loop")
+
+    monkeypatch.setattr(manager, "analyze_visual_drift", _fake_visual)
+    monkeypatch.setattr("managers.browser_manager.asyncio.get_running_loop", _no_running_loop)
+
+    signal = manager.collect_session_signals("v-loop", include_visual_qa=True)
+    assert signal["visual_qa"]["ok"] is True
+
+
+def test_start_session_returns_safe_failure_when_playwright_runtime_start_fails(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager.provider = "playwright"
+
+    pkg = types.ModuleType("playwright")
+    sync_api = types.ModuleType("playwright.sync_api")
+
+    class _BrokenDriver:
+        def start(self):
+            raise RuntimeError("playwright runtime unavailable")
+
+    sync_api.sync_playwright = lambda: _BrokenDriver()
+    monkeypatch.setitem(sys.modules, "playwright", pkg)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+
+    ok, info = manager.start_session(browser_name="chromium", headless=True)
+
+    assert ok is False
+    assert info["error"] == "playwright runtime unavailable"
+    assert manager._sessions == {}
 
 
 def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
