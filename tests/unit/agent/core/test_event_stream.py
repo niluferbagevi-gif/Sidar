@@ -1117,11 +1117,14 @@ def test_cleanup_rabbit_and_kafka() -> None:
     bus = AgentEventBus()
 
     class _AwaitableTask:
+        def __init__(self) -> None:
+            self.cancel_called = False
+
         def done(self) -> bool:
             return False
 
         def cancel(self) -> None:
-            return None
+            self.cancel_called = True
 
         def __await__(self):
             async def _inner():
@@ -1129,23 +1132,28 @@ def test_cleanup_rabbit_and_kafka() -> None:
 
             return _inner().__await__()
 
-    bus._rabbit_listener_task = _AwaitableTask()
+    rabbit_task = _AwaitableTask()
+    bus._rabbit_listener_task = rabbit_task
     rabbit_connection = DummyRabbitConnection()
     rabbit_channel = awaitable_channel = rabbit_connection._channel
     bus._rabbit_channel = rabbit_channel
     bus._rabbit_connection = rabbit_connection
     asyncio.run(bus._cleanup_rabbit())
+    assert rabbit_task.cancel_called is True
     assert bus._rabbit_listener_task is None
     assert bus._rabbit_channel is None
     assert bus._rabbit_connection is None
     assert awaitable_channel.closed is True
+    assert rabbit_connection.closed is True
 
-    bus._kafka_listener_task = _AwaitableTask()
+    kafka_task = _AwaitableTask()
+    bus._kafka_listener_task = kafka_task
     producer = DummyKafkaProducer()
     consumer = DummyKafkaConsumer()
     bus._kafka_producer = producer
     bus._kafka_consumer = consumer
     asyncio.run(bus._cleanup_kafka())
+    assert kafka_task.cancel_called is True
     assert bus._kafka_listener_task is None
     assert bus._kafka_producer is None
     assert bus._kafka_consumer is None
