@@ -40,8 +40,6 @@ from typing import Any
 import jwt
 import anyio
 
-_ANYIO_CLOSED = anyio.ClosedResourceError
-
 import uvicorn
 from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi import Depends, Header, HTTPException
@@ -60,6 +58,23 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from agent.base_agent import BaseAgent
+from agent.core.event_stream import get_agent_event_bus
+from agent.registry import AgentRegistry
+from agent.sidar_agent import SidarAgent
+from agent.swarm import SwarmOrchestrator, SwarmTask
+from config import Config
+from core.ci_remediation import build_ci_failure_context
+from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
+from core.llm_client import LLMAPIError
+from core.llm_metrics import (
+    get_llm_metrics_collector,
+    reset_current_metrics_user_id,
+    set_current_metrics_user_id,
+)
+from managers.system_health import render_llm_metrics_prometheus
+
+_ANYIO_CLOSED = anyio.ClosedResourceError
+
 try:
     from agent.core.contracts import (
         ActionFeedback,
@@ -115,20 +130,6 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
 
     def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:
         return secrets.token_hex(8)
-from agent.core.event_stream import get_agent_event_bus
-from agent.registry import AgentRegistry
-from agent.sidar_agent import SidarAgent
-from agent.swarm import SwarmOrchestrator, SwarmTask
-from config import Config
-from core.ci_remediation import build_ci_failure_context
-from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
-from core.llm_client import LLMAPIError
-from core.llm_metrics import (
-    get_llm_metrics_collector,
-    reset_current_metrics_user_id,
-    set_current_metrics_user_id,
-)
-from managers.system_health import render_llm_metrics_prometheus
 
 logger = logging.getLogger(__name__)
 print = builtins.print
