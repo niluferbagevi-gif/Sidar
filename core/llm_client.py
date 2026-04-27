@@ -204,6 +204,28 @@ async def _track_stream_completion(
         raise
 
 
+async def _track_stream_routing_cost(
+    stream_iter: AsyncIterator[str],
+    *,
+    messages: List[Dict[str, str]],
+    config: Any,
+) -> AsyncIterator[str]:
+    response_parts: list[str] = []
+    try:
+        async for chunk in stream_iter:
+            if chunk:
+                response_parts.append(chunk)
+            yield chunk
+    finally:
+        prompt_chars = sum(len(str(m.get("content") or "")) for m in messages)
+        completion_chars = sum(len(part) for part in response_parts)
+        est_tokens = max(0, (prompt_chars + completion_chars) // 4)
+        if est_tokens <= 0:
+            return
+        cost_per_token = float(getattr(config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6)
+        record_routing_cost(est_tokens * cost_per_token)
+
+
 async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_at: float):
     first_token_at = None
     try:
@@ -277,7 +299,8 @@ class _SemanticCacheManager:
                 decode_responses=True,
                 max_connections=max(1, int(_setting(self.config, "REDIS_MAX_CONNECTIONS", 50))),
             )
-            await self._redis.ping()
+            ping_timeout = max(0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0)))
+            await asyncio.wait_for(self._redis.ping(), timeout=ping_timeout)
             self._mark_redis_success()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
             return self._redis
@@ -421,6 +444,24 @@ class BaseLLMClient(ABC):
                 result[i] = {**msg, "content": f"{existing}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()}
                 return result
         return [{"role": "system", "content": SIDAR_TOOL_JSON_INSTRUCTION}] + result
+
+    @staticmethod
+    async def _iter_openai_compatible_stream_lines(
+        response: httpx.Response,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        async for raw_line in response.aiter_lines():
+            line = raw_line.strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                body = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(body, dict):
+                yield body
 
     @abstractmethod
     async def chat(
@@ -873,6 +914,7 @@ class OpenAIClient(BaseLLMClient):
         try:
             if stream:
                 payload["stream"] = True
+                payload["stream_options"] = {"include_usage": True}
                 stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
                 return _trace_stream_metrics(_track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at), span, started_at)
 
@@ -965,21 +1007,11 @@ class OpenAIClient(BaseLLMClient):
                 config=self.config,
                 retry_hint="OpenAI stream başlatma başarısız",
             )
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    body = json.loads(data)
-                    delta = body.get("choices", [{}])[0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except json.JSONDecodeError:
-                    continue
+            async for body in self._iter_openai_compatible_stream_lines(resp):
+                delta = body.get("choices", [{}])[0].get("delta", {})
+                text = delta.get("content", "")
+                if text:
+                    yield text
         except Exception as exc:
             msg = json.dumps(
                 {
@@ -1069,6 +1101,7 @@ class LiteLLMClient(BaseLLMClient):
             try:
                 if stream:
                     payload["stream"] = True
+                    payload["stream_options"] = {"include_usage": True}
                     stream_iter = self._stream_openai_compatible(endpoint, payload, headers, timeout, json_mode)
                     return _track_stream_completion(stream_iter, provider="litellm", model=model_name, started_at=started_at)
 
@@ -1119,21 +1152,11 @@ class LiteLLMClient(BaseLLMClient):
                 return stream_client, cm, response
 
             client, stream_cm, resp = await _retry_with_backoff("litellm", _open_stream, config=self.config, retry_hint="LiteLLM stream başlatma başarısız")
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    body = json.loads(data)
-                    delta = body.get("choices", [{}])[0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except json.JSONDecodeError:
-                    continue
+            async for body in self._iter_openai_compatible_stream_lines(resp):
+                delta = body.get("choices", [{}])[0].get("delta", {})
+                text = delta.get("content", "")
+                if text:
+                    yield text
         except Exception as exc:
             msg = json.dumps({"tool": "final_answer", "argument": f"\n[HATA] LiteLLM akış hatası: {exc}", "thought": "Hata"})
             yield _ensure_json_text(msg, "LiteLLM") if json_mode else msg
@@ -1473,6 +1496,9 @@ class LLMClient:
             stream=stream,
             json_mode=json_mode,
         )
+
+        if stream and self.provider != "ollama":
+            return _track_stream_routing_cost(response, messages=messages, config=self.config)  # type: ignore[arg-type]
 
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
