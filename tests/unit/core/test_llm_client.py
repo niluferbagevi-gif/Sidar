@@ -2994,6 +2994,30 @@ async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_emp
     assert recorded and recorded[0] > 0
 
 
+def test_resolve_cost_per_token_usd_prefers_model_map_and_known_defaults() -> None:
+    cfg = _make_config(
+        COST_ROUTING_TOKEN_COST_USD=9e-6,
+        COST_ROUTING_MODEL_COSTS_USD={"claude-3-5-sonnet-latest": 4e-6},
+    )
+    assert llm_client._resolve_cost_per_token_usd(cfg, "claude-3-5-sonnet-latest") == pytest.approx(4e-6)
+    assert llm_client._resolve_cost_per_token_usd(cfg, "gpt-4o-mini") == pytest.approx(2e-6)
+    assert llm_client._resolve_cost_per_token_usd(cfg, "unknown-model") == pytest.approx(9e-6)
+
+
+@pytest.mark.asyncio
+async def test_llmclient_truncation_preserves_latest_rag_message() -> None:
+    c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
+    msgs = [
+        {"role": "system", "content": "S" * 500},
+        {"role": "user", "content": "u" * 500},
+        {"role": "context", "content": "[RAG] latest findings " + ("r" * 450)},
+        {"role": "assistant", "content": "a" * 600},
+    ]
+    out = c._truncate_messages_for_local_model(msgs)
+    assert sum(len(m["content"]) for m in out) <= 1200
+    assert any(m["role"] == "context" and "[RAG] latest findings" in m["content"] for m in out)
+
+
 def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:
     manager = SemanticCacheManager(_make_config(ENABLE_SEMANTIC_CACHE=True))
     manager._redis_failures = 3

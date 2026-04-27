@@ -47,6 +47,16 @@ SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
     "additionalProperties": False,
 }
 
+DEFAULT_COST_PER_TOKEN_USD = 2e-6
+MODEL_COSTS_PER_TOKEN_USD: Dict[str, float] = {
+    "gpt-4o": 5e-6,
+    "gpt-4o-mini": 2e-6,
+    "claude-3-5-sonnet": 3e-6,
+    "claude-3-5-sonnet-latest": 3e-6,
+    "gemini-1.5-pro": 3.5e-6,
+    "gemini-1.5-flash": 7.5e-7,
+}
+
 # Sağlayıcıdan bağımsız, tüm istemcilerin system prompt'una enjekte ettiği standart JSON talimatı
 SIDAR_TOOL_JSON_INSTRUCTION: str = (
     "Yalnızca aşağıdaki JSON şemasına uygun tek bir JSON nesnesi döndür. "
@@ -237,6 +247,29 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
     return prompt, completion
 
 
+def _resolve_cost_per_token_usd(config: Any, model: str = "") -> float:
+    raw_map = getattr(config, "COST_ROUTING_MODEL_COSTS_USD", None)
+    if isinstance(raw_map, dict):
+        for key, value in raw_map.items():
+            if str(key).strip().lower() == (model or "").strip().lower():
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    break
+
+    normalized = (model or "").strip().lower()
+    if normalized:
+        for known_model, known_cost in MODEL_COSTS_PER_TOKEN_USD.items():
+            if normalized.startswith(known_model):
+                return known_cost
+
+    configured_default = getattr(config, "COST_ROUTING_TOKEN_COST_USD", DEFAULT_COST_PER_TOKEN_USD)
+    try:
+        return float(configured_default or DEFAULT_COST_PER_TOKEN_USD)
+    except (TypeError, ValueError):
+        return DEFAULT_COST_PER_TOKEN_USD
+
+
 def _record_llm_metric(
     *,
     provider: str,
@@ -294,7 +327,7 @@ async def _track_stream_routing_cost(
         est_tokens = token_counter.estimate_tokens(prompt_text, model=model) + token_counter.estimate_tokens(completion_text, model=model)
         if est_tokens <= 0:
             return
-        cost_per_token = float(getattr(config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6)
+        cost_per_token = _resolve_cost_per_token_usd(config, model=model)
         record_routing_cost(est_tokens * cost_per_token)
 
 
@@ -1316,6 +1349,13 @@ class LLMClient:
         if total <= max_chars:
             return normalized
 
+        def _is_rag_context_message(msg: Dict[str, str]) -> bool:
+            role = str(msg.get("role", "")).lower()
+            if role in {"tool", "context"}:
+                return True
+            content_l = str(msg.get("content", "")).lower()
+            return any(marker in content_l for marker in ("[rag]", "<rag>", "retrieval", "kaynak"))
+
         # Önce en son mesajı tam tutmaya çalış, ardından system mesajını sınırlı tut,
         # sonra geçmişi sondan başa doğru doldur.
         result: List[Dict[str, str]] = []
@@ -1336,10 +1376,25 @@ class LLMClient:
                 result.insert(0, {"role": "system", "content": system_content})
                 used += len(system_content)
 
-        for msg in reversed(normalized[:-1]):
+        rag_idx = next((i for i in range(len(normalized) - 2, -1, -1) if _is_rag_context_message(normalized[i])), None)
+        if rag_idx is not None and used < max_chars:
+            rag_msg = normalized[rag_idx]
+            remaining = max_chars - used
+            rag_content = rag_msg["content"]
+            if len(rag_content) > remaining:
+                rag_content = rag_content[-remaining:]
+            if rag_content:
+                insert_at = 1 if result and result[0]["role"] == "system" else 0
+                result.insert(insert_at, {"role": rag_msg["role"], "content": rag_content})
+                used += len(rag_content)
+
+        for idx in range(len(normalized) - 2, -1, -1):
+            msg = normalized[idx]
             if used >= max_chars:
                 break
             if msg["role"] == "system":
+                continue
+            if rag_idx is not None and idx == rag_idx:
                 continue
             remaining = max_chars - used
             content = msg["content"]
@@ -1425,9 +1480,7 @@ class LLMClient:
             _est_tokens = token_counter.estimate_tokens(_msg_text, model=str(model or "")) + token_counter.estimate_tokens(
                 response, model=str(model or "")
             )
-            _cost_per_token = float(
-                getattr(self.config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6
-            )
+            _cost_per_token = _resolve_cost_per_token_usd(self.config, model=str(model or ""))
             record_routing_cost(_est_tokens * _cost_per_token)
 
         if (not stream) and user_prompt and isinstance(response, str):
