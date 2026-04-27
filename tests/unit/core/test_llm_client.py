@@ -223,6 +223,39 @@ async def test_ensure_json_text_repairs_fenced_json_with_braces_in_string() -> N
     data = json.loads(wrapped)
     assert data["argument"] == "değer {nested} içeriyor"
 
+
+@pytest.mark.parametrize("raw_text", ["", "   \n\t  "])
+def test_repair_json_text_returns_none_for_empty_input(raw_text: str) -> None:
+    assert llm_client._repair_json_text(raw_text) is None
+
+
+def test_repair_json_text_returns_normalized_json_for_direct_parse() -> None:
+    repaired = llm_client._repair_json_text('{"k":"v","n":1}')
+    assert repaired == '{"k": "v", "n": 1}'
+
+
+def test_repair_json_text_decoder_fallback_with_prefix_garbage() -> None:
+    repaired = llm_client._repair_json_text('prefix >>> {"tool":"final_answer","argument":"ok","thought":"t"} trailing')
+    assert repaired == '{"tool": "final_answer", "argument": "ok", "thought": "t"}'
+
+
+def test_repair_json_text_strict_fenced_returns_first_valid_block() -> None:
+    repaired = llm_client._repair_json_text(
+        "```json\nnope\n```\n```json\n{\"tool\":\"final_answer\",\"argument\":\"strict\",\"thought\":\"t\"}\n```"
+    )
+    assert repaired == '{"tool": "final_answer", "argument": "strict", "thought": "t"}'
+
+
+def test_repair_json_text_loose_fenced_without_newline_before_closing_ticks() -> None:
+    repaired = llm_client._repair_json_text("```json {\"tool\":\"final_answer\",\"argument\":\"loose\",\"thought\":\"t\"}```")
+    assert repaired == '{"tool": "final_answer", "argument": "loose", "thought": "t"}'
+
+
+def test_repair_json_text_literal_eval_dict_fallback() -> None:
+    repaired = llm_client._repair_json_text("{'single': 'quotes'}")
+    assert repaired == '{"single": "quotes"}'
+
+
 @pytest.mark.asyncio
 async def test_ensure_json_text_logs_warning_for_invalid_payload(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING"):
