@@ -482,21 +482,9 @@ class GraphRAGSearchPlan:
 
 
 def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = None) -> List[List[float]]:
-    """Semantic cache için metinleri normalize edilmiş embedding vektörlerine dönüştürür."""
-    if not texts:
-        return []
+    from core.embeddings import embed_texts_for_semantic_cache as _embed
 
-    cfg = cfg or Config()
-    model_name = str(getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2")
-    try:
-        from sentence_transformers import SentenceTransformer
-
-        model = SentenceTransformer(model_name)
-        vectors = model.encode(texts, normalize_embeddings=True)
-        return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
-    except Exception as exc:
-        logger.debug("Semantic cache embedding üretilemedi: %s", exc)
-        return []
+    return _embed(texts, cfg=cfg)
 
 
 def _build_embedding_function(use_gpu: bool = False,

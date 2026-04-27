@@ -1477,8 +1477,21 @@ async def test_semantic_cache_cosine_similarity_zero_norm() -> None:
 async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
     fake_mod = types.SimpleNamespace(embed_texts_for_semantic_cache=lambda _texts, cfg=None: [[1, 2, 3]])
-    _patch_imports(monkeypatch, {"core.rag": fake_mod})
+    _patch_imports(monkeypatch, {"core.embeddings": fake_mod})
     assert manager._embed_prompt("hello") == [1.0, 2.0, 3.0]
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_embed_prompt_uses_injected_embedding_fn() -> None:
+    calls: list[list[str]] = []
+
+    def _embedding_fn(texts, *, cfg=None):
+        calls.append(texts)
+        return [[0.4, 0.6]]
+
+    manager = llm_client._SemanticCacheManager(_make_config(), embedding_fn=_embedding_fn)
+    assert manager._embed_prompt("hello") == [0.4, 0.6]
+    assert calls == [["hello"]]
 
 
 @pytest.mark.asyncio
@@ -2106,7 +2119,7 @@ async def test_llmclient_truncation_remaining_branches() -> None:
 @pytest.mark.asyncio
 async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
-    _patch_imports(monkeypatch, {"core.rag": types.SimpleNamespace(embed_texts_for_semantic_cache=lambda *_a, **_kw: [])})
+    _patch_imports(monkeypatch, {"core.embeddings": types.SimpleNamespace(embed_texts_for_semantic_cache=lambda *_a, **_kw: [])})
     assert manager._embed_prompt("hello") == []
 
 

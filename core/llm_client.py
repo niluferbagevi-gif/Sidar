@@ -18,7 +18,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import httpx
 try:
@@ -41,6 +41,12 @@ from core.cache_metrics import (
 from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+
+
+def _default_semantic_embedding_fn(texts: List[str], *, cfg: Any = None) -> List[List[float]]:
+    from core.embeddings import embed_texts_for_semantic_cache
+
+    return embed_texts_for_semantic_cache(texts, cfg=cfg)
 
 
 SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
@@ -368,7 +374,11 @@ async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_a
 class _SemanticCacheManager:
     """Redis tabanlı semantik LLM yanıt önbelleği."""
 
-    def __init__(self, config) -> None:
+    def __init__(
+        self,
+        config,
+        embedding_fn: Optional[Callable[..., List[List[float]]]] = None,
+    ) -> None:
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
         self.threshold = max(0.0, float(_setting(config, "SEMANTIC_CACHE_THRESHOLD", 0.90)))
@@ -377,6 +387,7 @@ class _SemanticCacheManager:
         self.redis_cb_fail_threshold = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3)))
         self.redis_cb_cooldown_seconds = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS", 30)))
         self.index_key = "sidar:semantic_cache:index"
+        self._embedding_fn = embedding_fn or _default_semantic_embedding_fn
         self._redis: Redis | None = None
         self._redis_failures = 0
         self._redis_circuit_open_until = 0.0
@@ -445,9 +456,7 @@ class _SemanticCacheManager:
 
     def _embed_prompt(self, prompt: str) -> List[float]:
         try:
-            from core.rag import embed_texts_for_semantic_cache
-
-            vectors = embed_texts_for_semantic_cache([prompt], cfg=self.config)
+            vectors = self._embedding_fn([prompt], cfg=self.config)
             if vectors:
                 return [float(v) for v in vectors[0]]
         except Exception as exc:
