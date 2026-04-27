@@ -3830,7 +3830,7 @@ def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list
     names = [
         node.name
         for node in module.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         and node.name.startswith("test_")
     ]
     seen = set()

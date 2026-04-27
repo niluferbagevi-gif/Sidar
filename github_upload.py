@@ -54,8 +54,7 @@ def run_command(args, show_output=True):
             args,
             shell=False,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
         )
         if show_output and result.stdout.strip():

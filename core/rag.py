@@ -202,7 +202,7 @@ class GraphIndex:
                 )
                 continue
 
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 for decorator in node.decorator_list:
                     if not isinstance(decorator, ast.Call) or not isinstance(
                         decorator.func, ast.Attribute

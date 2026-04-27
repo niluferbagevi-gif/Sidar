@@ -413,7 +413,7 @@ class WebRTCAudioIngress:
     @staticmethod
     def _decode_audio_bytes(payload: dict[str, Any]) -> bytes:
         direct = payload.get("audio_bytes")
-        if isinstance(direct, (bytes, bytearray)):
+        if isinstance(direct, bytes | bytearray):
             return bytes(direct)
 
         encoded = payload.get("audio_chunk") or payload.get("audio_b64") or payload.get("data")

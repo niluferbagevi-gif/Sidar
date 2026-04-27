@@ -8311,7 +8311,7 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
     repos_payload = _decode_json_response(repos_resp)
     assert repos_payload["repos"][0]["full_name"] == "org/repo-a"
 
-    prs_resp = await web_server.github_prs()
+    await web_server.github_prs()
 
 
 @pytest.mark.asyncio

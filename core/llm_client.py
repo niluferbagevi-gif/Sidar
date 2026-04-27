@@ -123,7 +123,7 @@ def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
     if status_code == 429 or (status_code is not None and 500 <= int(status_code) < 600):
         return True, int(status_code)
     if isinstance(
-        exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError, asyncio.TimeoutError)
+        exc, httpx.TimeoutException | httpx.ConnectError | httpx.ReadError | asyncio.TimeoutError
     ):
         return True, status_code
     return False, status_code

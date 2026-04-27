@@ -81,7 +81,7 @@ def ask_choice(prompt: str, options: dict[str, tuple[str, str]], default_key: st
     """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
     print(f"{YELLOW}{BOLD}{prompt}{RESET}")
 
-    for key, (desc, value) in options.items():
+    for key, (desc, _value) in options.items():
         is_default = f" {GREEN}(Varsayılan){RESET}" if key == default_key else ""
         print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
 
@@ -160,10 +160,6 @@ def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
 
-    if sys.version_info < (3, 10):
-        message = f"Python 3.10+ önerilir. (Mevcut: {sys.version.split()[0]})"
-        logger.warning(message)
-        print(f"{YELLOW}⚠ {message}{RESET}")
 
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
