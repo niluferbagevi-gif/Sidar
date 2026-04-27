@@ -6,6 +6,19 @@ cd "${SCRIPT_DIR}"
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
+run_precommit_autofix() {
+  if ! command -v ruff >/dev/null 2>&1; then
+    echo "⚠️ 'ruff' bulunamadı; pre-commit autofix adımı atlanıyor."
+    return 0
+  fi
+
+  echo "🧹 Pre-commit autofix: ruff check --fix ."
+  if ! ruff check --fix .; then
+    echo "❌ Ruff autofix sonrası lint kontrolleri başarısız. Testler durduruldu."
+    return 1
+  fi
+}
+
 check_python_version() {
   if ! python - <<'PY'
 import sys
@@ -25,6 +38,8 @@ PY
 }
 
 check_python_version
+
+run_precommit_autofix || exit 1
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
 from configparser import ConfigParser
