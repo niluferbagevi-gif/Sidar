@@ -281,6 +281,15 @@ async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
     assert llm_client._extract_usage_tokens("invalid") == (0, 0)
 
 
+def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
+    usage_obj = SimpleNamespace(prompt_token_count=7, candidates_token_count=11)
+    assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_obj)) == (7, 11)
+
+    usage_dict = {"input_token_count": 5, "output_token_count": 9}
+    assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_dict)) == (5, 9)
+    assert llm_client._extract_gemini_usage_tokens(SimpleNamespace()) == (0, 0)
+
+
 @pytest.mark.asyncio
 async def test_is_retryable_exception_for_timeout_and_status() -> None:
     retryable, status = llm_client._is_retryable_exception(httpx.TimeoutException("x"))
@@ -1046,6 +1055,35 @@ async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch
     assert await c2.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False) == "hello"
     stream = await c2.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
     assert await _collect(stream) == ["A"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_non_stream_records_usage_metrics(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    events: list[dict[str, object]] = []
+
+    class _Models(DummyGeminiModels):
+        async def generate_content(self, **_kw):
+            usage = SimpleNamespace(prompt_token_count=13, candidates_token_count=21)
+            return SimpleNamespace(text="hello", usage_metadata=usage)
+
+    class _Client(DummyGeminiClient):
+        def __init__(self, api_key):
+            super().__init__(api_key, text="hello", stream_texts=("A",))
+            self.aio = SimpleNamespace(models=_Models(text="hello", stream_texts=("A",)))
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    _mock_google_genai(monkeypatch, _Client, fake_types)
+    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+
+    cfg = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
+    c = llm_client.GeminiClient(cfg)
+    out = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+    assert out == "hello"
+    assert events
+    assert events[-1]["provider"] == "gemini"
+    assert events[-1]["prompt_tokens"] == 13
+    assert events[-1]["completion_tokens"] == 21
+    assert events[-1]["success"] is True
 
 
 @pytest.mark.asyncio

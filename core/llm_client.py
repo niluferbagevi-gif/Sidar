@@ -174,6 +174,36 @@ def _extract_usage_tokens(data: dict) -> tuple[int, int]:
     return prompt, completion
 
 
+def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
+    usage = getattr(response, "usage_metadata", None) or getattr(response, "usage", None)
+    if usage is None:
+        return 0, 0
+
+    if isinstance(usage, dict):
+        prompt = int(
+            usage.get("prompt_token_count", usage.get("input_token_count", usage.get("prompt_tokens", 0))) or 0
+        )
+        completion = int(
+            usage.get(
+                "candidates_token_count",
+                usage.get("output_token_count", usage.get("completion_tokens", usage.get("output_tokens", 0))),
+            )
+            or 0
+        )
+        return prompt, completion
+
+    prompt = int(getattr(usage, "prompt_token_count", getattr(usage, "input_token_count", 0)) or 0)
+    completion = int(
+        getattr(
+            usage,
+            "candidates_token_count",
+            getattr(usage, "output_token_count", getattr(usage, "completion_tokens", 0)),
+        )
+        or 0
+    )
+    return prompt, completion
+
+
 def _repair_json_text(text: str) -> Optional[str]:
     """Modelin bozduğu JSON benzeri çıktıyı mümkünse JSON nesnesine onarır."""
     candidate = (text or "").strip()
@@ -869,6 +899,7 @@ class GeminiClient(BaseLLMClient):
             span.set_attribute("sidar.llm.provider", "gemini")
             span.set_attribute("sidar.llm.model", model or str(_setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash")))
             span.set_attribute("sidar.llm.stream", stream)
+        model_name = str(model or _setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
 
         try:
             config_kwargs = {"temperature": 0.2 if json_mode else temperature}
@@ -877,7 +908,6 @@ class GeminiClient(BaseLLMClient):
             if system_text:
                 config_kwargs["system_instruction"] = system_text
             generate_config = genai_types.GenerateContentConfig(**config_kwargs)
-            model_name = str(model or _setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
             contents = history or [{"role": "user", "parts": ["Merhaba"]}]
             if stream:
                 async def _start_stream():
@@ -913,11 +943,21 @@ class GeminiClient(BaseLLMClient):
             )
 
             text = getattr(response, "text", "") or ""
+            prompt_tokens, completion_tokens = _extract_gemini_usage_tokens(response)
+            _record_llm_metric(
+                provider="gemini",
+                model=model_name,
+                started_at=started_at,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                success=True,
+            )
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
             return _ensure_json_text(text, "Gemini") if json_mode else text
 
         except Exception as exc:
+            _record_llm_metric(provider="gemini", model=model_name, started_at=started_at, success=False, error=str(exc))
             logger.error("Gemini hata: %s", exc)
             msg = json.dumps(
                 {
