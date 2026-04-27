@@ -216,6 +216,10 @@ def _repair_json_text(text: str) -> Optional[str]:
     if not candidate:
         return None
 
+    if not _is_safe_literal_eval_candidate(candidate):
+        logger.debug("literal_eval fallback atlandı: aday metin güvenli sınırları aşıyor.")
+        return None
+
     def _json_dumps_if_valid(raw: str) -> Optional[str]:
         normalized = (raw or "").strip()
         if not normalized:
@@ -257,10 +261,6 @@ def _repair_json_text(text: str) -> Optional[str]:
         parsed = _json_dumps_if_valid(fenced.group(1))
         if parsed is not None:
             return parsed
-
-    if not _is_safe_literal_eval_candidate(candidate):
-        logger.debug("literal_eval fallback atlandı: aday metin güvenli sınırları aşıyor.")
-        return None
 
     try:
         import ast
