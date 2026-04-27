@@ -4541,7 +4541,7 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -4616,7 +4616,7 @@ async def test_websocket_chat_streams_tool_thought_and_done_packets(monkeypatch)
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -4700,7 +4700,7 @@ async def test_websocket_chat_status_pump_stops_cleanly_when_flag_set(monkeypatc
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -4769,7 +4769,7 @@ async def test_websocket_chat_generate_response_finally_skips_unset_sub_and_ctx(
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -4844,7 +4844,7 @@ async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -4915,7 +4915,7 @@ async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monk
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, _payload):
             return None
@@ -5003,7 +5003,7 @@ async def test_websocket_chat_room_status_pump_stops_cleanly_when_flag_set(monke
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -5081,7 +5081,7 @@ async def test_websocket_chat_suppresses_send_error_when_agent_response_crashes(
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.02)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             if "[Sistem Hatası]" in payload.get("chunk", ""):
@@ -5150,7 +5150,7 @@ async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypat
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.02)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             if "[LLM Hatası]" in payload.get("chunk", ""):
@@ -5222,7 +5222,7 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.02)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, _payload):
             return None
@@ -5305,7 +5305,7 @@ async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.01)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -5381,7 +5381,7 @@ async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(mon
                 message = next(self.messages)
                 return message
             except StopIteration:
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -8876,7 +8876,7 @@ async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_e
             try:
                 return next(self.messages)
             except StopIteration:
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.sent.append(payload)
@@ -8971,7 +8971,7 @@ async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_clo
             try:
                 return next(self.messages)
             except StopIteration:
-                raise _AnyIoClosed("closed")
+                raise _AnyIoClosed("closed") from None
 
         async def send_json(self, payload):
             self.sent.append(payload)
@@ -9077,7 +9077,7 @@ async def test_websocket_chat_llm_error_send_failure_and_cleanup(monkeypatch):
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(2.0)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             if "chunk" in payload and "LLM Hatası" in str(payload.get("chunk")):
@@ -9258,7 +9258,7 @@ async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeyp
                 return next(self._packets)
             except StopIteration:
                 await asyncio.sleep(1.0)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
     async def _resolve_agent():
         return _Agent()
@@ -9328,7 +9328,7 @@ async def test_websocket_voice_cancel_action_emits_voice_interruption(monkeypatc
             try:
                 return next(self._packets)
             except StopIteration:
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
     async def _resolve_agent():
         return _Agent()
@@ -9544,7 +9544,7 @@ async def test_websocket_chat_status_pump_timeout_path_runs_and_unsubscribes(mon
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(1.5)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.payloads.append(payload)
@@ -9619,7 +9619,7 @@ async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypa
                 return next(self.messages)
             except StopIteration:
                 await asyncio.sleep(0.05)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, _payload):
             return None
@@ -9889,7 +9889,7 @@ async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
             try:
                 return next(self._packets)
             except StopIteration:
-                raise _AnyioClosed("closed")
+                raise _AnyioClosed("closed") from None
 
     async def _resolve_agent():
         return _Agent()
@@ -9981,7 +9981,7 @@ async def test_websocket_chat_auth_message_success_and_cancel_response_branch(mo
             try:
                 msg = next(self._messages)
             except StopIteration:
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
             if '"action": "cancel"' in msg:
                 await asyncio.sleep(0.1)
             return msg
@@ -10105,7 +10105,7 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
             try:
                 msg = next(self._messages)
             except StopIteration:
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
             return msg
 
         async def send_json(self, payload):
@@ -10194,7 +10194,7 @@ async def test_websocket_chat_message_status_stream_emits_and_cleans_context(mon
                 return next(self._messages)
             except StopIteration:
                 await asyncio.sleep(1.2)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             if "status" in payload:
@@ -10274,7 +10274,7 @@ async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkey
                 return next(self._messages)
             except StopIteration:
                 await asyncio.sleep(1.5)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, _payload):
             return None
@@ -10373,7 +10373,7 @@ async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset
                 return next(self._messages)
             except StopIteration:
                 await asyncio.sleep(0.1)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, payload):
             self.sent.append(payload)
@@ -10465,7 +10465,7 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
                 return next(self._messages)
             except StopIteration:
                 await asyncio.sleep(0.1)
-                raise web_server.WebSocketDisconnect()
+                raise web_server.WebSocketDisconnect() from None
 
         async def send_json(self, _payload):
             return None
