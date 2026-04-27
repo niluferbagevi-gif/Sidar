@@ -6,6 +6,31 @@ cd "${SCRIPT_DIR}"
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
+FIX_TYPES=0
+POSITIONAL_ARGS=()
+while (($#)); do
+  case "$1" in
+    --fix-types)
+      FIX_TYPES=1
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Kullanım: bash run_tests.sh [--fix-types]
+
+Opsiyonlar:
+  --fix-types   Test öncesinde otonom tip onarım modülünü çalıştırır.
+EOF
+      exit 0
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
+
 run_precommit_autofix() {
   if ! command -v ruff >/dev/null 2>&1; then
     echo "⚠️ 'ruff' bulunamadı; pre-commit autofix adımı atlanıyor."
@@ -15,6 +40,18 @@ run_precommit_autofix() {
   echo "🧹 Pre-commit autofix: ruff check --fix ."
   if ! ruff check --fix .; then
     echo "❌ Ruff autofix sonrası lint kontrolleri başarısız. Testler durduruldu."
+    return 1
+  fi
+}
+
+run_autonomous_type_fix() {
+  if [ "${FIX_TYPES}" != "1" ]; then
+    return 0
+  fi
+
+  echo "🤖 Otonom tip onarım modülü çalıştırılıyor (--fix-types)..."
+  if ! python scripts/autonomous_type_fix.py --runtime-trace; then
+    echo "❌ Otonom tip onarımı başarısız."
     return 1
   fi
 }
@@ -38,6 +75,8 @@ PY
 }
 
 check_python_version
+
+run_autonomous_type_fix || exit 1
 
 run_precommit_autofix || exit 1
 
