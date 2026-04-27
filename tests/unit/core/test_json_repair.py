@@ -63,6 +63,14 @@ def test_repair_json_text_skips_first_invalid_brace_then_parses_later_json_objec
     assert repaired == '{"anahtar": "deger"}'
 
 
+def test_repair_json_text_continues_after_malformed_brace_prefix_then_parses_valid_json() -> None:
+    payload = 'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '{"thought": "test", "tool": "x", "argument": "y"}'
+
+
 def test_repair_json_text_skips_unicode_error_fence_then_parses_next_fence() -> None:
     payload = '```json\n"\\ud800"\n```\n```json\n{"ok": true}\n```'
 
@@ -145,6 +153,15 @@ async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_late
     repaired = await repair_json_text_async(payload)
 
     assert repaired == '{"anahtar": "deger"}'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_continues_after_malformed_brace_prefix_then_parses_valid_json() -> None:
+    payload = 'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '{"thought": "test", "tool": "x", "argument": "y"}'
 
 
 @pytest.mark.asyncio
