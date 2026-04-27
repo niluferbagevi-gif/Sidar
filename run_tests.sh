@@ -98,6 +98,10 @@ rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
 
 open_artifact() {
   local target="$1"
+  if [ "${IS_CI_ENV}" -eq 1 ]; then
+    return 0
+  fi
+
   if [ ! -e "$target" ] || [ "${AUTO_OPEN_ARTIFACTS}" != "1" ]; then
     return 0
   fi
@@ -156,7 +160,7 @@ sync_ollama_models() {
   ollama_base_url="$(resolve_ollama_base_url)"
 
   if command -v curl >/dev/null 2>&1; then
-    if ! curl -fsS --max-time 2 "${ollama_base_url}/api/tags" >/dev/null 2>&1; then
+    if ! curl -fsS --max-time 5 "${ollama_base_url}/api/tags" >/dev/null 2>&1; then
       echo "⚠️ Ollama API erişilemedi (${ollama_base_url}/api/tags); model health check atlanıyor."
       return 0
     fi
