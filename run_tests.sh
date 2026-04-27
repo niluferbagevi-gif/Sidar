@@ -244,7 +244,9 @@ run_static_analysis_gates() {
     echo "ℹ️ Statik analiz adımı atlandı (RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})."
     return 0
   fi
-  echo "🔍 Linter ve Type Checker çalıştırılıyor..."
+  echo "🔧 Linter hataları otomatik düzeltiliyor..."
+  uv run ruff check --fix --unsafe-fixes .
+  echo "🔍 Kalan Linter hataları ve Type Checker kontrol ediliyor..."
   if ! uv run ruff check .; then
     BACKEND_EXIT_CODE=1
     return 1
