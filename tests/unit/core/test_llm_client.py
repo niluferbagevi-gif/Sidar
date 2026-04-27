@@ -782,7 +782,6 @@ async def test_track_stream_routing_cost_records_on_stream_error(monkeypatch: py
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
     monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
-    monkeypatch.setattr(llm_client, "estimate_tokens", token_counter.estimate_tokens)
 
     async def _broken_stream():
         yield "abc"
@@ -2771,7 +2770,6 @@ async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_emp
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
     monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
-    monkeypatch.setattr(llm_client, "estimate_tokens", token_counter.estimate_tokens)
 
     async def _stream():
         yield ""

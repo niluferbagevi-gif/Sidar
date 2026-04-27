@@ -25,7 +25,7 @@ from core.cache.semantic_cache import SemanticCacheManager
 from core.utils.json_repair import is_safe_literal_eval_candidate
 from core.utils.json_repair import repair_json_text
 from core.utils.json_repair import repair_json_text_async
-from core.utils.token_counter import estimate_tokens
+import core.utils.token_counter as token_counter
 from core.cache_metrics import record_cache_skip
 
 from opentelemetry import trace
@@ -291,7 +291,7 @@ async def _track_stream_routing_cost(
     finally:
         prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
         completion_text = "".join(response_parts)
-        est_tokens = estimate_tokens(prompt_text, model=model) + estimate_tokens(completion_text, model=model)
+        est_tokens = token_counter.estimate_tokens(prompt_text, model=model) + token_counter.estimate_tokens(completion_text, model=model)
         if est_tokens <= 0:
             return
         cost_per_token = float(getattr(config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6)
@@ -1409,7 +1409,7 @@ class LLMClient:
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
             _msg_text = "\n".join(m.get("content") or "" for m in messages)
-            _est_tokens = estimate_tokens(_msg_text, model=str(model or "")) + estimate_tokens(
+            _est_tokens = token_counter.estimate_tokens(_msg_text, model=str(model or "")) + token_counter.estimate_tokens(
                 response, model=str(model or "")
             )
             _cost_per_token = float(
