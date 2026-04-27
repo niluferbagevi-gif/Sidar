@@ -1415,7 +1415,7 @@ def _get_jwt_secret() -> str:
     return key
 
 
-async def _resolve_user_from_token(_agent: SidarAgent, token: str) -> Any:
+async def _resolve_user_from_token(_agent: SidarAgent | None, token: str) -> Any:
     secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
@@ -1445,7 +1445,7 @@ async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(days=ttl_days)).timestamp()),
     }
-    return jwt.encode(payload, secret_key, algorithm=algorithm)
+    return str(jwt.encode(payload, secret_key, algorithm=algorithm))
 
 
 app = FastAPI(
@@ -1466,7 +1466,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
         return
 
     @application.exception_handler(HTTPException)
-    async def _http_exception_handler(_request: Request, exc: HTTPException):
+    async def _http_exception_handler(_request: Request, exc: HTTPException) -> Any:
         detail = getattr(exc, "detail", "İstek işlenemedi.")
         if isinstance(detail, dict):
             content = {"success": False, **detail}
@@ -1476,7 +1476,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
         return JSONResponse(content, status_code=getattr(exc, "status_code", 500))
 
     @application.exception_handler(Exception)
-    async def _unhandled_exception_handler(request: Request, exc: Exception):
+    async def _unhandled_exception_handler(request: Request, exc: Exception) -> Any:
         logger.exception(
             "İşlenmeyen web hatası: path=%s error=%s",
             getattr(request.url, "path", "?"),
@@ -2131,7 +2131,7 @@ def _register_plugin_agent(
 
 
 @app.post("/auth/register")
-async def register_user(payload: _RegisterRequest):
+async def register_user(payload: _RegisterRequest) -> Any:
     username = payload.username.strip()
     password = payload.password
     tenant_id = payload.tenant_id.strip() or "default"
@@ -2156,7 +2156,7 @@ async def register_user(payload: _RegisterRequest):
 
 
 @app.post("/auth/login")
-async def login_user(payload: _LoginRequest):
+async def login_user(payload: _LoginRequest) -> Any:
     username = payload.username.strip()
     password = payload.password
     agent = await _resolve_agent_instance()
@@ -2179,26 +2179,26 @@ async def login_user(payload: _LoginRequest):
 
 
 @app.get("/auth/me")
-async def auth_me(request: Request, user=Depends(_get_request_user)):
+async def auth_me(request: Request, user=Depends(_get_request_user)) -> Any:
     return JSONResponse({"id": user.id, "username": user.username, "role": user.role})
 
 
 @app.get("/admin/stats")
-async def admin_stats(_user=Depends(_require_admin_user)):
+async def admin_stats(_user=Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     stats = await agent.memory.db.get_admin_stats()
     return JSONResponse(stats)
 
 
 @app.get("/admin/prompts")
-async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)):
+async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
     return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
 
 
 @app.get("/admin/prompts/active")
-async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)):
+async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     active = await agent.memory.db.get_active_prompt(role_name)
     if not active:
@@ -2207,7 +2207,7 @@ async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_
 
 
 @app.post("/admin/prompts")
-async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_require_admin_user)):
+async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_require_admin_user)) -> Any:
     role_name = (payload.role_name or "").strip().lower()
     prompt_text = (payload.prompt_text or "").strip()
     if not role_name or not prompt_text:
@@ -2247,7 +2247,7 @@ async def admin_list_policies(
 
 
 @app.post("/admin/policies")
-async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)):
+async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     await agent.memory.db.upsert_access_policy(
         user_id=payload.user_id.strip(),
@@ -2315,7 +2315,7 @@ async def register_agent_plugin_file(
 
 
 @app.get("/api/plugin-marketplace/catalog")
-async def plugin_marketplace_catalog(_user=Depends(_require_admin_user)):
+async def plugin_marketplace_catalog(_user=Depends(_require_admin_user)) -> Any:
     state = _read_plugin_marketplace_state()
     items = [
         _serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {}))
@@ -2341,12 +2341,12 @@ async def reload_plugin_marketplace_item(
 
 
 @app.delete("/api/plugin-marketplace/install/{plugin_id}")
-async def uninstall_plugin_marketplace_item(plugin_id: str, _user=Depends(_require_admin_user)):
+async def uninstall_plugin_marketplace_item(plugin_id: str, _user=Depends(_require_admin_user)) -> Any:
     return JSONResponse(_uninstall_marketplace_plugin(plugin_id))
 
 
 @app.post("/api/swarm/execute")
-async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request_user)):
+async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request_user)) -> Any:
     agent = await _resolve_agent_instance()
     orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
     session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
@@ -2395,7 +2395,7 @@ class _HITLRespondRequest(BaseModel):
 
 
 @app.get("/api/hitl/pending")
-async def hitl_pending(user=Depends(_get_request_user)):
+async def hitl_pending(user=Depends(_get_request_user)) -> Any:
     """Bekleyen HITL onay isteklerini listeler."""
     store = get_hitl_store()
     pending = await store.pending()
@@ -2403,7 +2403,7 @@ async def hitl_pending(user=Depends(_get_request_user)):
 
 
 @app.post("/api/hitl/request")
-async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(_get_request_user)):
+async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(_get_request_user)) -> Any:
     """Yeni bir HITL onay isteği oluşturur (iç API / test amaçlı)."""
     gate = get_hitl_gate()
     action = str(payload.get("action", "manual")).strip()
@@ -2716,7 +2716,7 @@ REACT_DIST_DIR = Path(__file__).parent / "web_ui_react" / "dist"
 WEB_DIR = REACT_DIST_DIR
 
 
-def _make_static_files(directory: Path):
+def _make_static_files(directory: Path) -> Any:
     """FastAPI StaticFiles nesnesini dist dizini eksik olsa bile güvenli üret."""
     try:
         return StaticFiles(directory=directory, check_dir=False)
@@ -2742,13 +2742,13 @@ _mount_frontend_static_routes(app, WEB_DIR)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
+async def favicon() -> Any:
     """Tarayıcının favicon isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
     return Response(status_code=204)
 
 
 @app.get("/vendor/{file_path:path}", include_in_schema=False)
-async def serve_vendor(file_path: str):
+async def serve_vendor(file_path: str) -> Any:
     """React dist altındaki vendor kütüphanelerini servis eder."""
     vendor_dir = (WEB_DIR / "vendor").resolve()
     safe_path = (vendor_dir / file_path).resolve()
@@ -2760,7 +2760,7 @@ async def serve_vendor(file_path: str):
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index() -> Any:
     """Ana sayfa — React SPA build çıktısı."""
     html_file = WEB_DIR / "index.html"
     if not html_file.exists():
@@ -2853,7 +2853,7 @@ async def _ws_stream_agent_text_response(
 
 
 @app.websocket("/ws/chat")
-async def websocket_chat(websocket: WebSocket):
+async def websocket_chat(websocket: WebSocket) -> Any:
     """
     Çift yönlü WebSocket chat arayüzü.
     Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
@@ -3264,7 +3264,7 @@ async def websocket_chat(websocket: WebSocket):
 
 
 @app.websocket("/ws/voice")
-async def websocket_voice(websocket: WebSocket):
+async def websocket_voice(websocket: WebSocket) -> Any:
     """
     Gerçek zamanlı ses oturumu için websocket.
 
@@ -3626,7 +3626,7 @@ async def websocket_voice(websocket: WebSocket):
     description="Ajanın donanım, LLM bağlantı, bellek ve sağlayıcı durumlarını JSON olarak döndürür.",
     responses={200: {"description": "Başarılı durum yanıtı"}},
 )
-async def status():
+async def status() -> Any:
     """Ajan durum bilgisini JSON olarak döndür."""
     a = await _resolve_agent_instance()
     gpu_info = a.health.get_gpu_info()
@@ -3721,7 +3721,7 @@ async def _health_response(*, require_dependencies: bool = False) -> JSONRespons
     },
 )
 @app.get("/healthz", include_in_schema=False)
-async def health_check():
+async def health_check() -> Any:
     """
     Kubernetes/Docker liveness probe'ları için yapısal (JSON) sağlık kontrolü.
     """
@@ -3729,7 +3729,7 @@ async def health_check():
 
 
 @app.get("/readyz", include_in_schema=False)
-async def readiness_check():
+async def readiness_check() -> Any:
     """
     Readiness probe: Redis/PostgreSQL gibi bağımlılıklar erişilemezse 503 döndürür.
     """
@@ -3737,7 +3737,10 @@ async def readiness_check():
 
 
 @app.get("/metrics")
-async def metrics(request: Request, _user=Depends(_require_metrics_access)):
+async def metrics(
+    request: Request,
+    _user: dict[str, Any] = Depends(_require_metrics_access),
+) -> Response:
     """
     Temel operasyonel metrikler (admin veya METRICS_TOKEN gerektirir).
     - Varsayılan: JSON formatı (her istemci için çalışır).
@@ -3801,7 +3804,9 @@ async def metrics(request: Request, _user=Depends(_require_metrics_access)):
 
 
 @app.get("/metrics/llm/prometheus")
-async def llm_prometheus_metrics(_user=Depends(_require_metrics_access)):
+async def llm_prometheus_metrics(
+    _user: dict[str, Any] = Depends(_require_metrics_access),
+) -> Response:
     """LLM + ajan delegasyon metriklerini Prometheus text/plain formatında döndürür."""
     snapshot = get_llm_metrics_collector().snapshot()
     llm_part = render_llm_metrics_prometheus(snapshot)
@@ -3819,7 +3824,9 @@ async def llm_prometheus_metrics(_user=Depends(_require_metrics_access)):
 
 @app.get("/metrics/llm")
 @app.get("/api/budget")
-async def llm_budget_metrics(_user=Depends(_require_metrics_access)):
+async def llm_budget_metrics(
+    _user: dict[str, Any] = Depends(_require_metrics_access),
+) -> Response:
     """LLM token/latency/rate-limit metriklerini JSON olarak döndürür (admin veya METRICS_TOKEN gerektirir)."""
     collector = get_llm_metrics_collector()
     return JSONResponse(collector.snapshot())
@@ -3836,7 +3843,7 @@ async def llm_budget_metrics(_user=Depends(_require_metrics_access)):
     description="Kayıtlı sohbet oturumları listesini ve aktif oturum kimliğini döndürür.",
     responses={200: {"description": "Oturum listesi başarıyla alındı"}},
 )
-async def get_sessions(request: Request, user=Depends(_get_request_user)):
+async def get_sessions(request: Request, user=Depends(_get_request_user)) -> Any:
     """Yalnızca oturum sahibine ait sohbetleri döndürür."""
     agent = await _resolve_agent_instance()
     sessions = await agent.memory.db.list_sessions(user.id)
@@ -3857,7 +3864,7 @@ async def get_sessions(request: Request, user=Depends(_get_request_user)):
 
 
 @app.get("/sessions/{session_id}")
-async def load_session(session_id: str, request: Request, user=Depends(_get_request_user)):
+async def load_session(session_id: str, request: Request, user=Depends(_get_request_user)) -> Any:
     """Belirli bir oturumu kullanıcı kimliğiyle doğrulayarak yükler."""
     agent = await _resolve_agent_instance()
     session = await agent.memory.db.load_session(session_id, user.id)
@@ -3877,7 +3884,7 @@ async def load_session(session_id: str, request: Request, user=Depends(_get_requ
 
 
 @app.post("/sessions/new")
-async def new_session(request: Request, user=Depends(_get_request_user)):
+async def new_session(request: Request, user=Depends(_get_request_user)) -> Any:
     """Aktif kullanıcı için yeni bir oturum oluşturur."""
     agent = await _resolve_agent_instance()
     session = await agent.memory.db.create_session(user.id, "Yeni Sohbet")
@@ -3885,7 +3892,7 @@ async def new_session(request: Request, user=Depends(_get_request_user)):
 
 
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, request: Request, user=Depends(_get_request_user)):
+async def delete_session(session_id: str, request: Request, user=Depends(_get_request_user)) -> Any:
     """Kullanıcıya ait belirli bir oturumu siler."""
     agent = await _resolve_agent_instance()
     deleted = await agent.memory.db.delete_session(session_id, user.id)
@@ -3895,7 +3902,7 @@ async def delete_session(session_id: str, request: Request, user=Depends(_get_re
 
 
 @app.get("/files")
-async def list_project_files(path: str = ""):
+async def list_project_files(path: str = "") -> Any:
     """
     Proje dizinindeki dosya ve klasörleri listeler.
     path parametresi boşsa proje kök dizinini listeler.
@@ -3933,7 +3940,7 @@ async def list_project_files(path: str = ""):
 
 
 @app.get("/file-content")
-async def file_content(path: str):
+async def file_content(path: str) -> Any:
     """
     Proje içindeki bir dosyanın içeriğini döndürür.
     Güvenli metin tabanlı uzantılarla sınırlandırılmıştır.
@@ -4004,7 +4011,7 @@ def _git_run(cmd: list, cwd: str, stderr=subprocess.DEVNULL) -> str:
 
 
 @app.get("/git-info")
-async def git_info():
+async def git_info() -> Any:
     """Git deposu bilgilerini (dal adı, repo adı) döndürür."""
     _root = str(Path(__file__).parent)
 
@@ -4045,7 +4052,7 @@ async def git_info():
 
 
 @app.get("/git-branches")
-async def git_branches():
+async def git_branches() -> Any:
     """Yerel git dallarını listeler."""
     _root = str(Path(__file__).parent)
 
@@ -4065,7 +4072,7 @@ _BRANCH_RE = re.compile(r"^[a-zA-Z0-9/_.-]+$")
 
 
 @app.post("/set-branch")
-async def set_branch(request: Request):
+async def set_branch(request: Request) -> Any:
     """Aktif git dalını değiştirir (git checkout)."""
     body = await request.json()
     branch_name = body.get("branch", "").strip()
@@ -4095,7 +4102,7 @@ async def set_branch(request: Request):
 
 
 @app.get("/github-repos")
-async def github_repos(owner: str = "", q: str = ""):
+async def github_repos(owner: str = "", q: str = "") -> Any:
     """GitHub erişimi olan depo listesini döndürür (opsiyonel owner + arama filtresi)."""
     agent = await _resolve_agent_instance()
 
@@ -4132,7 +4139,7 @@ async def github_repos(owner: str = "", q: str = ""):
     description="Yapılandırılmış repodan açık pull request listesini döndürür.",
     responses={200: {"description": "PR listesi başarıyla alındı"}},
 )
-async def github_prs(state: str = "open", limit: int = 10):
+async def github_prs(state: str = "open", limit: int = 10) -> Any:
     """
     Aktif GitHub deposundaki PR listesini döndürür.
     state: open / closed / all
@@ -4150,7 +4157,7 @@ async def github_prs(state: str = "open", limit: int = 10):
 
 
 @app.get("/github-prs/{number}")
-async def github_pr_detail(number: int):
+async def github_pr_detail(number: int) -> Any:
     """Belirli bir PR'ın detaylarını döndürür."""
     agent = await _resolve_agent_instance()
     if not agent.github.is_available():
@@ -4164,7 +4171,7 @@ async def github_pr_detail(number: int):
 
 
 @app.post("/set-repo")
-async def set_repo(request: Request):
+async def set_repo(request: Request) -> Any:
     """GitHub deposunu çalışma zamanında değiştirir."""
     body = await request.json()
     repo_name = body.get("repo", "").strip()
@@ -4184,7 +4191,7 @@ async def set_repo(request: Request):
 
 
 @app.get("/rag/docs")
-async def rag_list_docs():
+async def rag_list_docs() -> Any:
     """RAG deposundaki aktif oturuma ait belgeleri listeler."""
     agent = await _resolve_agent_instance()
     session_id = agent.memory.active_session_id or "global"
@@ -4202,7 +4209,7 @@ async def rag_list_docs():
         403: {"description": "Güvenlik: Proje dizini dışına çıkma girişimi"},
     },
 )
-async def rag_add_file(request: Request):
+async def rag_add_file(request: Request) -> Any:
     """
     Proje dizinindeki yerel bir dosyayı RAG deposuna ekler.
     Body: {"path": "relative/path/to/file.py", "title": "Opsiyonel başlık"}
@@ -4231,7 +4238,7 @@ async def rag_add_file(request: Request):
 
 
 @app.post("/rag/add-url")
-async def rag_add_url(request: Request):
+async def rag_add_url(request: Request) -> Any:
     """URL'den içerik çekerek RAG deposuna ekler."""
     body = await request.json()
     url = body.get("url", "").strip()
@@ -4246,7 +4253,7 @@ async def rag_add_url(request: Request):
 
 
 @app.delete("/rag/docs/{doc_id}")
-async def rag_delete_doc(doc_id: str):
+async def rag_delete_doc(doc_id: str) -> Any:
     """RAG deposundan belge siler (oturum izolasyonuna uygun)."""
     agent = await _resolve_agent_instance()
     session_id = agent.memory.active_session_id or "global"
@@ -4256,7 +4263,7 @@ async def rag_delete_doc(doc_id: str):
 
 
 @app.post("/api/rag/upload")
-async def upload_rag_file(file: UploadFile = File(...)):
+async def upload_rag_file(file: UploadFile = File(...)) -> Any:
     """Web arayüzünden Sürükle-Bırak ile gelen dosyaları RAG deposuna ekler."""
     agent = await _await_if_needed(_resolve_agent_instance())
     session_id = agent.memory.active_session_id or "global"
@@ -4323,7 +4330,7 @@ async def upload_rag_file(file: UploadFile = File(...)):
         400: {"description": "Sorgu parametresi eksik veya hatalı"},
     },
 )
-async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
+async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3) -> Any:
     """RAG deposunda aktif oturuma ait belgelerde arama yapar."""
     if not q.strip():
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
@@ -4345,7 +4352,7 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     description="Aktif görev listesini ve özet sayaç bilgilerini döndürür.",
     responses={200: {"description": "Görev listesi başarıyla alındı"}},
 )
-async def get_todo():
+async def get_todo() -> Any:
     """
     Aktif görev listesini JSON olarak döndürür.
     UI'daki Todo paneli bu endpoint'i periyodik olarak sorgular.
@@ -4362,7 +4369,7 @@ async def get_todo():
     description="Mevcut aktif konuşma belleğini tamamen temizler.",
     responses={200: {"description": "Bellek başarıyla temizlendi"}},
 )
-async def clear():
+async def clear() -> Any:
     """Aktif konuşma belleğini temizle."""
     agent = await _resolve_agent_instance()
     await _await_if_needed(agent.memory.clear())
@@ -4378,7 +4385,7 @@ async def clear():
     ),
     responses={200: {"description": "Seviye başarıyla değiştirildi"}},
 )
-async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user)):
+async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user)) -> Any:
     """Güvenlik seviyesini çalışma zamanında değiştirir (yalnızca admin)."""
     body = await request.json()
     new_level = body.get("level", "").strip()
@@ -4422,7 +4429,7 @@ class _VisionMockupRequest(BaseModel):
 
 
 @app.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])
-async def api_vision_analyze(req: _VisionAnalyzeRequest):
+async def api_vision_analyze(req: _VisionAnalyzeRequest) -> Any:
     """VisionPipeline ile görüntüyü analiz eder."""
     agent = await _resolve_agent_instance()
     VisionPipeline, build_analyze_prompt = _resolve_vision_components()
@@ -4451,7 +4458,7 @@ async def api_vision_analyze(req: _VisionAnalyzeRequest):
 
 
 @app.post("/api/vision/mockup", summary="Mockup → Kod Dönüşümü", tags=["Vision"])
-async def api_vision_mockup(req: _VisionMockupRequest):
+async def api_vision_mockup(req: _VisionMockupRequest) -> Any:
     """VisionPipeline ile mockup görüntüsünden kod üretir."""
     agent = await _resolve_agent_instance()
     VisionPipeline, _build_analyze_prompt = _resolve_vision_components()
@@ -4493,7 +4500,7 @@ class _EntityUpsertRequest(BaseModel):
 _entity_memory_instance = None
 
 
-async def _get_entity_memory():
+async def _get_entity_memory() -> Any:
     global _entity_memory_instance
     if _entity_memory_instance is None:
         try:
@@ -4509,7 +4516,7 @@ async def _get_entity_memory():
 
 
 @app.post("/api/memory/entity/upsert", summary="Varlık Belleği Yaz", tags=["EntityMemory"])
-async def api_entity_upsert(req: _EntityUpsertRequest):
+async def api_entity_upsert(req: _EntityUpsertRequest) -> Any:
     """Kullanıcıya ait bir bellek kaydını ekler veya günceller."""
     mem = await _get_entity_memory()
     await mem.upsert(user_id=req.user_id, key=req.key, value=req.value, ttl_days=req.ttl_days)
@@ -4517,7 +4524,7 @@ async def api_entity_upsert(req: _EntityUpsertRequest):
 
 
 @app.get("/api/memory/entity/{user_id}", summary="Varlık Belleği Profili", tags=["EntityMemory"])
-async def api_entity_get_profile(user_id: str):
+async def api_entity_get_profile(user_id: str) -> Any:
     """Bir kullanıcının tüm bellek profilini döner."""
     mem = await _get_entity_memory()
     profile = await mem.get_profile(user_id=user_id)
@@ -4529,7 +4536,7 @@ async def api_entity_get_profile(user_id: str):
     summary="Varlık Belleği Sil",
     tags=["EntityMemory"],
 )
-async def api_entity_delete(user_id: str, key: str):
+async def api_entity_delete(user_id: str, key: str) -> Any:
     """Kullanıcıya ait bir bellek kaydını siler."""
     mem = await _get_entity_memory()
     deleted = await mem.delete(user_id=user_id, key=key)
@@ -4550,7 +4557,7 @@ class _FeedbackRecordRequest(BaseModel):
 _feedback_store_instance = None
 
 
-async def _get_feedback_store():
+async def _get_feedback_store() -> Any:
     global _feedback_store_instance
     if _feedback_store_instance is None:
         try:
@@ -4566,7 +4573,7 @@ async def _get_feedback_store():
 
 
 @app.post("/api/feedback/record", summary="Geri Bildirim Kaydet", tags=["ActiveLearning"])
-async def api_feedback_record(req: _FeedbackRecordRequest):
+async def api_feedback_record(req: _FeedbackRecordRequest) -> Any:
     """Kullanıcı geri bildirimini FeedbackStore'a kaydeder."""
     store = await _get_feedback_store()
     await store.record(
@@ -4580,7 +4587,7 @@ async def api_feedback_record(req: _FeedbackRecordRequest):
 
 
 @app.get("/api/feedback/stats", summary="Geri Bildirim İstatistikleri", tags=["ActiveLearning"])
-async def api_feedback_stats():
+async def api_feedback_stats() -> Any:
     """FeedbackStore istatistiklerini döner."""
     store = await _get_feedback_store()
     stats = await store.stats()
@@ -4599,7 +4606,7 @@ class _SlackSendRequest(BaseModel):
 _slack_mgr_instance = None
 
 
-async def _get_slack_manager():
+async def _get_slack_manager() -> Any:
     global _slack_mgr_instance
     if _slack_mgr_instance is None:
         from managers.slack_manager import SlackManager
@@ -4614,7 +4621,7 @@ async def _get_slack_manager():
 
 
 @app.post("/api/integrations/slack/send", summary="Slack Mesajı Gönder", tags=["Slack"])
-async def api_slack_send(req: _SlackSendRequest):
+async def api_slack_send(req: _SlackSendRequest) -> Any:
     """Slack kanalına mesaj gönderir."""
     maybe_mgr = _get_slack_manager()
     mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
@@ -4627,7 +4634,7 @@ async def api_slack_send(req: _SlackSendRequest):
 
 
 @app.get("/api/integrations/slack/channels", summary="Slack Kanal Listesi", tags=["Slack"])
-async def api_slack_channels():
+async def api_slack_channels() -> Any:
     """Workspace'deki Slack kanallarını listeler (SDK gerektirir)."""
     maybe_mgr = _get_slack_manager()
     mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
@@ -4653,7 +4660,7 @@ class _JiraCreateRequest(BaseModel):
 _jira_mgr_instance = None
 
 
-def _get_jira_manager():
+def _get_jira_manager() -> Any:
     global _jira_mgr_instance
     if _jira_mgr_instance is None:
         from managers.jira_manager import JiraManager
@@ -4668,7 +4675,7 @@ def _get_jira_manager():
 
 
 @app.post("/api/integrations/jira/issue", summary="Jira Issue Oluştur", tags=["Jira"])
-async def api_jira_create_issue(req: _JiraCreateRequest):
+async def api_jira_create_issue(req: _JiraCreateRequest) -> Any:
     """Jira'da yeni bir issue oluşturur."""
     mgr = _get_jira_manager()
     if not mgr.is_available():
@@ -4686,7 +4693,7 @@ async def api_jira_create_issue(req: _JiraCreateRequest):
 
 
 @app.get("/api/integrations/jira/issues", summary="Jira Issue Arama", tags=["Jira"])
-async def api_jira_search_issues(jql: str = "", max_results: int = 20):
+async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
     """JQL sorgusuna göre Jira issue'larını listeler."""
     mgr = _get_jira_manager()
     if not mgr.is_available():
@@ -4733,7 +4740,7 @@ class _CampaignCreateRequest(BaseModel):
 _teams_mgr_instance = None
 
 
-def _get_teams_manager():
+def _get_teams_manager() -> Any:
     global _teams_mgr_instance
     if _teams_mgr_instance is None:
         from managers.teams_manager import TeamsManager
@@ -4745,7 +4752,7 @@ def _get_teams_manager():
 
 
 @app.post("/api/integrations/teams/send", summary="Teams Mesajı Gönder", tags=["Teams"])
-async def api_teams_send(req: _TeamsSendRequest):
+async def api_teams_send(req: _TeamsSendRequest) -> Any:
     """Microsoft Teams kanalına mesaj gönderir."""
     mgr = _get_teams_manager()
     if not mgr.is_available():
@@ -5041,7 +5048,7 @@ async def autonomy_webhook(
     summary="Manuel Otonomi Uyanışı",
     description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
 )
-async def autonomy_wake(req: _AutonomyWakeRequest):
+async def autonomy_wake(req: _AutonomyWakeRequest) -> Any:
     """Webhook dışı manuel/proaktif tetik giriş noktası."""
     payload = dict(req.payload or {})
     payload["prompt"] = req.prompt.strip()
@@ -5061,7 +5068,7 @@ async def autonomy_wake(req: _AutonomyWakeRequest):
     summary="Otonomi Aktivite Akışı",
     description="Webhook/cron/manual kaynaklı son proaktif tetik geçmişini döndürür.",
 )
-async def autonomy_activity(limit: int = 20):
+async def autonomy_activity(limit: int = 20) -> Any:
     """Son proaktif tetik kayıtlarını UI ve operasyon panelleri için sunar."""
     agent = await _resolve_agent_instance()
     return JSONResponse({"success": True, "activity": agent.get_autonomy_activity(limit=limit)})
@@ -5328,7 +5335,7 @@ async def github_webhook(
 
 
 @app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
-async def spa_fallback(full_path: str):
+async def spa_fallback(full_path: str) -> Any:
     normalized = (full_path or "").strip()
     if not normalized:
         maybe_response = await index()
