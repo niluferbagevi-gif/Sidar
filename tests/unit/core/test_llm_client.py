@@ -51,6 +51,52 @@ def _patch_imports(monkeypatch: pytest.MonkeyPatch, module_map: dict[str, object
         monkeypatch.setitem(sys.modules, name, module)
 
 
+class _DummyStreamResp:
+    def __init__(self, chunks: tuple[bytes, ...] = (b"",)) -> None:
+        self._chunks = chunks
+
+    def raise_for_status(self):
+        return None
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _DummyStreamCM:
+    def __init__(self, response: _DummyStreamResp) -> None:
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _DummyStreamClient:
+    def __init__(self, response: _DummyStreamResp) -> None:
+        self._response = response
+
+    def stream(self, *_args, **_kwargs):
+        return _DummyStreamCM(self._response)
+
+    async def aclose(self):
+        return None
+
+
+def _mock_httpx_stream_client(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    chunks: tuple[bytes, ...] = (b"",),
+) -> None:
+    monkeypatch.setattr(
+        llm_client.httpx,
+        "AsyncClient",
+        lambda timeout: _DummyStreamClient(_DummyStreamResp(chunks)),  # noqa: ARG005
+    )
+
+
 class DummyGeminiResponse:
     def __init__(self, text: str = "ok") -> None:
         self.text = text
@@ -193,6 +239,49 @@ async def test_is_retryable_exception_for_non_retryable_status() -> None:
     retryable, status = llm_client._is_retryable_exception(exc)
     assert retryable is False
     assert status == 400
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_wraps_litellm_api_connection_error(mock_config) -> None:
+    class APIConnectionError(Exception):
+        pass
+
+    async def _operation():
+        raise APIConnectionError("litellm upstream bağlantı koptu")
+
+    with pytest.raises(llm_client.LLMAPIError, match="litellm upstream bağlantı koptu") as exc:
+        await llm_client._retry_with_backoff(
+            "litellm",
+            _operation,
+            config=mock_config(LLM_MAX_RETRIES=0),
+            retry_hint="LiteLLM isteği başarısız",
+        )
+
+    assert exc.value.provider == "litellm"
+    assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_wraps_anthropic_api_connection_error_with_status(mock_config) -> None:
+    class APIConnectionError(Exception):
+        def __init__(self, message: str, status_code: int | None = None) -> None:
+            super().__init__(message)
+            self.status_code = status_code
+
+    async def _operation():
+        raise APIConnectionError("anthropic network tunnel closed", status_code=503)
+
+    with pytest.raises(llm_client.LLMAPIError, match="anthropic network tunnel closed") as exc:
+        await llm_client._retry_with_backoff(
+            "anthropic",
+            _operation,
+            config=mock_config(LLM_MAX_RETRIES=0),
+            retry_hint="Anthropic isteği başarısız",
+        )
+
+    assert exc.value.provider == "anthropic"
+    assert exc.value.status_code == 503
+    assert exc.value.retryable is True
 
 
 class _DummyClient(llm_client.BaseLLMClient):
@@ -685,32 +774,11 @@ async def test_ollama_missing_model_error_suggests_pull_command(respx_mock_route
 async def test_ollama_stream_missing_model_emits_runtime_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
     client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b"))
 
-    class _DummyResp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b'{"error":"model \\"qwen2.5-coder:7b\\" not found"}\n'
-
-    class _DummyCM:
-        async def __aenter__(self):
-            return _DummyResp()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class _DummyClient:
-        def stream(self, *_args, **_kwargs):
-            return _DummyCM()
-
-        async def aclose(self):
-            return None
-
     async def _fake_retry(_provider, operation, *, config, retry_hint):  # noqa: ARG001
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())  # noqa: ARG005
+    _mock_httpx_stream_client(monkeypatch, chunks=(b'{"error":"model \\"qwen2.5-coder:7b\\" not found"}\n',))
 
     chunks = await _collect(
         client._stream_response(
@@ -905,12 +973,17 @@ async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_chat(**_kw):
         return "resp"
 
-    monkeypatch.setattr(client._router, "select", lambda *_a: ("ollama", None))
-    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    router_select = MagicMock(return_value=("ollama", None))
+    dlp_mask = MagicMock(side_effect=lambda m: m)
+    monkeypatch.setattr(client._router, "select", router_select)
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", dlp_mask)
     monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value=None))
     monkeypatch.setattr(client._semantic_cache, "set", AsyncMock(return_value=None))
     monkeypatch.setattr(client._client, "chat", fake_chat)
-    assert await client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False) == "resp"
+    input_messages = [{"role": "user", "content": "hello"}]
+    assert await client.chat(input_messages, stream=False, json_mode=False) == "resp"
+    router_select.assert_called_once_with(input_messages, "ollama", None)
+    dlp_mask.assert_called_once()
 
     monkeypatch.setattr(client._semantic_cache, "get", AsyncMock(return_value="cached"))
     assert await client.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False) == "cached"
@@ -1127,16 +1200,21 @@ async def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPa
     c = llm_client.LLMClient("openai", cfg)
 
     # route başka provider'a gider ve hata verirse fallback provider'da devam eder
-    monkeypatch.setattr(c._router, "select", lambda *_a: ("invalid-provider", "m"))
+    router_select = MagicMock(return_value=("invalid-provider", "m"))
+    monkeypatch.setattr(c._router, "select", router_select)
     async def _fallback(**_kw):
         return "ok"
 
-    monkeypatch.setattr(llm_client, "_dlp_mask_messages", lambda m: m)
+    dlp_mask = MagicMock(side_effect=lambda m: m)
+    monkeypatch.setattr(llm_client, "_dlp_mask_messages", dlp_mask)
     monkeypatch.setattr(c._semantic_cache, "get", lambda *_a: asyncio.sleep(0, result=None))
     monkeypatch.setattr(c._semantic_cache, "set", lambda *_a: asyncio.sleep(0))
     monkeypatch.setattr(c._client, "chat", _fallback)
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda *_a, **_kw: None)
-    assert await c.chat([{"role": "user", "content": "hello"}], stream=False, json_mode=False) == "ok"
+    input_messages = [{"role": "user", "content": "hello"}]
+    assert await c.chat(input_messages, stream=False, json_mode=False) == "ok"
+    router_select.assert_called_once_with(input_messages, "openai", None)
+    dlp_mask.assert_called_once()
 
     # stream mode'da cache skip path
     called = {"n": 0}
@@ -2287,32 +2365,11 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(monkeypatch: p
         llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
     )
 
-    class _DummyResp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b""
-
-    class _DummyCM:
-        async def __aenter__(self):
-            return _DummyResp()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class _DummyClient:
-        def stream(self, *_args, **_kwargs):
-            return _DummyCM()
-
-        async def aclose(self):
-            return None
-
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())
+    _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
     chunks = await _collect(
@@ -2336,32 +2393,11 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(monkeypatch: p
         llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
     )
 
-    class _DummyResp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b""
-
-    class _DummyCM:
-        async def __aenter__(self):
-            return _DummyResp()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class _DummyClient:
-        def stream(self, *_args, **_kwargs):
-            return _DummyCM()
-
-        async def aclose(self):
-            return None
-
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())
+    _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
     chunks = await _collect(
@@ -2385,32 +2421,11 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(monkeypat
         llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
     )
 
-    class _DummyResp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b""
-
-    class _DummyCM:
-        async def __aenter__(self):
-            return _DummyResp()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class _DummyClient:
-        def stream(self, *_args, **_kwargs):
-            return _DummyCM()
-
-        async def aclose(self):
-            return None
-
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())
+    _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
     chunks = await _collect(
@@ -2433,32 +2448,11 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(monkeypat
         llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
     )
 
-    class _DummyResp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b""
-
-    class _DummyCM:
-        async def __aenter__(self):
-            return _DummyResp()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class _DummyClient:
-        def stream(self, *_args, **_kwargs):
-            return _DummyCM()
-
-        async def aclose(self):
-            return None
-
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
     monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
-    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _DummyClient())
+    _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
     chunks = await _collect(
