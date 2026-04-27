@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
@@ -14,10 +15,16 @@ from core.rag import DocumentStore
 from managers.social_media_manager import SocialMediaManager
 from managers.web_search import WebSearchManager
 
+if TYPE_CHECKING:
+    from core.db import Database
+
+MultimodalPipelineRuntime: type[Any] | None
 try:
-    from core.multimodal import MultimodalPipeline
+    from core.multimodal import MultimodalPipeline as _MultimodalPipeline
+
+    MultimodalPipelineRuntime = cast(type[Any], _MultimodalPipeline)
 except Exception:  # pragma: no cover - test/stub ortamlarda opsiyonel olabilir
-    MultimodalPipeline = None  # type: ignore[assignment]
+    MultimodalPipelineRuntime = None
 
 try:
     from agent.tooling import parse_tool_argument
@@ -27,10 +34,10 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
         def __init__(self, payload: dict[str, object]) -> None:
             self.__dict__.update(payload)
 
-        def __getattr__(self, _name: str):
+        def __getattr__(self, _name: str) -> str:
             return ""
 
-    def parse_tool_argument(_tool_name: str, raw_arg: str):
+    def parse_tool_argument(_tool_name: str, raw_arg: str) -> _FallbackPayload:
         return _FallbackPayload(json.loads(raw_arg))
 
 
@@ -73,7 +80,7 @@ class PoyrazAgent(BaseAgent):
             mixed_precision=self.cfg.GPU_MIXED_PRECISION,
             cfg=self.cfg,
         )
-        self._db = None
+        self._db: Database | None = None
         self._db_lock: asyncio.Lock | None = None
 
         self.register_tool("web_search", self._tool_web_search)
@@ -91,7 +98,7 @@ class PoyrazAgent(BaseAgent):
         self.register_tool("create_operation_checklist", self._tool_create_operation_checklist)
         self.register_tool("plan_service_operations", self._tool_plan_service_operations)
 
-    async def _ensure_db(self):
+    async def _ensure_db(self) -> Database:
         if self._db is not None:
             return self._db
         if self._db_lock is None:
@@ -108,18 +115,20 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_web_search(self, arg: str) -> str:
         _ok, result = await self.web.search(arg)
-        return result
+        return str(result)
 
     async def _tool_fetch_url(self, arg: str) -> str:
         _ok, result = await self.web.fetch_url(arg)
-        return result
+        return str(result)
 
     async def _tool_search_docs(self, arg: str) -> str:
         result_obj = self.docs.search(arg, None, "auto", "marketing")
         if hasattr(result_obj, "__await__"):
-            result_obj = await result_obj
-        _ok, result = result_obj
-        return result
+            resolved_result = await result_obj
+        else:
+            resolved_result = result_obj
+        _ok, result = resolved_result
+        return str(result)
 
     async def _tool_publish_social(self, arg: str) -> str:
         raw = (arg or "").strip()
@@ -306,7 +315,7 @@ class PoyrazAgent(BaseAgent):
         return output
 
     async def _tool_ingest_video_insights(self, arg: str) -> str:
-        runtime_pipeline_cls = MultimodalPipeline
+        runtime_pipeline_cls = MultimodalPipelineRuntime
         if runtime_pipeline_cls is None:
             try:
                 runtime_pipeline_cls = importlib.import_module("core.multimodal").MultimodalPipeline
@@ -485,10 +494,12 @@ class PoyrazAgent(BaseAgent):
             "Varsa ölçülebilir KPI, kanal önerisi ve bir sonraki adımı ekle.\n\n"
             f"[GOREV]\n{task_prompt.strip()}"
         )
-        return await self.call_llm(
+        return str(
+            await self.call_llm(
             [{"role": "user", "content": user_prompt}],
             system_prompt=self.SYSTEM_PROMPT,
             temperature=0.4,
+            )
         )
 
     async def run_task(self, task_prompt: str) -> str:
@@ -498,35 +509,39 @@ class PoyrazAgent(BaseAgent):
 
         lower = prompt.lower()
         if lower.startswith("web_search|"):
-            return await self.call_tool("web_search", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("web_search", prompt.split("|", 1)[1].strip()))
         if lower.startswith("fetch_url|"):
-            return await self.call_tool("fetch_url", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("fetch_url", prompt.split("|", 1)[1].strip()))
         if lower.startswith("search_docs|"):
-            return await self.call_tool("search_docs", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("search_docs", prompt.split("|", 1)[1].strip()))
         if lower.startswith("build_landing_page|") or lower.startswith("landing_page|"):
-            return await self.call_tool("build_landing_page", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("build_landing_page", prompt.split("|", 1)[1].strip()))
         if lower.startswith("generate_campaign_copy|"):
-            return await self.call_tool("generate_campaign_copy", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("generate_campaign_copy", prompt.split("|", 1)[1].strip()))
         if lower.startswith("publish_instagram_post|"):
-            return await self.call_tool("publish_instagram_post", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("publish_instagram_post", prompt.split("|", 1)[1].strip()))
         if lower.startswith("publish_facebook_post|"):
-            return await self.call_tool("publish_facebook_post", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("publish_facebook_post", prompt.split("|", 1)[1].strip()))
         if lower.startswith("send_whatsapp_message|"):
-            return await self.call_tool("send_whatsapp_message", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("send_whatsapp_message", prompt.split("|", 1)[1].strip()))
         if lower.startswith("ingest_video_insights|") or lower.startswith("analyze_video|"):
-            return await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip()))
         if lower.startswith("create_marketing_campaign|"):
-            return await self.call_tool(
+            return str(
+                await self.call_tool(
                 "create_marketing_campaign", prompt.split("|", 1)[1].strip()
+                )
             )
         if lower.startswith("store_content_asset|"):
-            return await self.call_tool("store_content_asset", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("store_content_asset", prompt.split("|", 1)[1].strip()))
         if lower.startswith("create_operation_checklist|"):
-            return await self.call_tool(
+            return str(
+                await self.call_tool(
                 "create_operation_checklist", prompt.split("|", 1)[1].strip()
+                )
             )
         if lower.startswith("plan_service_operations|"):
-            return await self.call_tool("plan_service_operations", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("plan_service_operations", prompt.split("|", 1)[1].strip()))
         if lower.startswith("seo_audit|"):
             return await self._generate_marketing_output(
                 prompt.split("|", 1)[1].strip(), "seo_audit"
@@ -544,13 +559,14 @@ class PoyrazAgent(BaseAgent):
                 prompt.split("|", 1)[1].strip(), "research_to_marketing"
             )
         if lower.startswith("publish_social|"):
-            return await self.call_tool("publish_social", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("publish_social", prompt.split("|", 1)[1].strip()))
 
         if any(
             keyword in lower
             for keyword in ("landing page", "landing_page", "açılış sayfası", "landing")
         ):
-            return await self.call_tool(
+            return str(
+                await self.call_tool(
                 "build_landing_page",
                 json.dumps(
                     {
@@ -562,6 +578,7 @@ class PoyrazAgent(BaseAgent):
                     },
                     ensure_ascii=False,
                 ),
+                )
             )
 
         if any(

@@ -58,18 +58,18 @@ class ResearcherAgent(BaseAgent):
 
     async def _tool_web_search(self, arg: str) -> str:
         _ok, result = await WebSearchManager.search(self.web, arg)
-        return result
+        return str(result)
 
     async def _tool_fetch_url(self, arg: str) -> str:
         _ok, result = await WebSearchManager.fetch_url(self.web, arg)
-        return result
+        return str(result)
 
     async def _tool_search_docs(self, arg: str) -> str:
         parts = arg.split(" ", 1)
         lib = parts[0].strip() if parts else ""
         topic = parts[1].strip() if len(parts) > 1 else ""
         _ok, result = await WebSearchManager.search_docs(self.web, lib, topic)
-        return result
+        return str(result)
 
     async def _tool_docs_search(self, arg: str) -> str:
         session_id = "global"
@@ -80,9 +80,11 @@ class ResearcherAgent(BaseAgent):
         except Exception as exc:
             return f"Doküman araması şu anda kullanılamıyor: {exc}"
         if inspect.isawaitable(result_obj):
-            result_obj = await result_obj
-        _ok, result = result_obj
-        return result
+            resolved_result = await result_obj
+        else:
+            resolved_result = result_obj
+        _ok, result = resolved_result
+        return str(result)
 
     async def run_task(self, task_prompt: str) -> str:
         prompt = (task_prompt or "").strip()
@@ -91,11 +93,11 @@ class ResearcherAgent(BaseAgent):
 
         lower = prompt.lower()
         if lower.startswith("fetch_url|"):
-            return await self.call_tool("fetch_url", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("fetch_url", prompt.split("|", 1)[1].strip()))
         if lower.startswith("search_docs|"):
-            return await self.call_tool("search_docs", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("search_docs", prompt.split("|", 1)[1].strip()))
         if lower.startswith("docs_search|"):
-            return await self.call_tool("docs_search", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("docs_search", prompt.split("|", 1)[1].strip()))
 
         for _ in range(4):
             try:
@@ -117,6 +119,6 @@ class ResearcherAgent(BaseAgent):
                 return final_answer or str(decision)
             if tool not in self.tools:
                 break
-            prompt = await self.call_tool(tool, argument)
+            prompt = str(await self.call_tool(tool, argument))
 
-        return await self.call_tool("web_search", prompt)
+        return str(await self.call_tool("web_search", prompt))
