@@ -32,23 +32,28 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import jwt
 import anyio
-
+import jwt
 import uvicorn
-from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
-from fastapi import Depends, Header, HTTPException
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
-
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -56,6 +61,8 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from pydantic import BaseModel, Field
+from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus
@@ -77,11 +84,11 @@ _ANYIO_CLOSED = anyio.ClosedResourceError
 
 try:
     from agent.core.contracts import (
+        LEGACY_FEDERATION_PROTOCOL_V1,
         ActionFeedback,
         ExternalTrigger,
         FederationTaskEnvelope,
         FederationTaskResult,
-        LEGACY_FEDERATION_PROTOCOL_V1,
         derive_correlation_id,
         normalize_federation_protocol,
     )
@@ -221,7 +228,7 @@ _COLLAB_WRITE_ROLES = {"admin", "maintainer", "developer", "editor"}
 
 
 def _collaboration_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _normalize_room_id(room_id: str) -> str:
@@ -367,7 +374,7 @@ async def _join_collaboration_room(
         write_scopes=write_scopes,
         joined_at=_collaboration_now_iso(),
     )
-    setattr(websocket, "_sidar_room_id", normalized)
+    websocket._sidar_room_id = normalized
     await websocket.send_json({"type": "room_state", **_serialize_collaboration_room(room)})
     await _broadcast_room_payload(
         room,
@@ -385,7 +392,7 @@ async def _leave_collaboration_room(websocket: WebSocket) -> None:
     if not room_id:
         return
     room = _collaboration_rooms.get(room_id)
-    setattr(websocket, "_sidar_room_id", "")
+    websocket._sidar_room_id = ""
     if room is None:
         return
     room.participants.pop(_socket_key(websocket), None)
@@ -1265,7 +1272,7 @@ async def _issue_auth_token(agent: SidarAgent, user) -> str:
     secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     ttl_days = max(1, int(getattr(cfg, "JWT_TTL_DAYS", 7) or 7))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user.id),
         "username": str(user.username),
@@ -1846,7 +1853,7 @@ def _install_marketplace_plugin(plugin_id: str, *, persist: bool = True) -> dict
     )
     if persist:
         state = _read_plugin_marketplace_state()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         previous = dict(state.get(plugin_id, {}) or {})
         previous.update({
             "installed_at": previous.get("installed_at") or now,
@@ -3001,13 +3008,13 @@ async def websocket_voice(websocket: WebSocket):
     session_prompt = ""
     voice_sequence = 0
     active_response_task: asyncio.Task | None = None
-    setattr(websocket, "_sidar_voice_pipeline", voice_pipeline)
+    websocket._sidar_voice_pipeline = voice_pipeline
     duplex_state = (
         voice_pipeline.create_duplex_state()
         if voice_pipeline is not None and hasattr(voice_pipeline, "create_duplex_state")
         else None
     )
-    setattr(websocket, "_sidar_voice_duplex_state", duplex_state)
+    websocket._sidar_voice_duplex_state = duplex_state
 
     async def _emit_voice_state(event: str) -> None:
         nonlocal voice_sequence
