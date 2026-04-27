@@ -21,13 +21,19 @@ from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collec
 from core.dlp import mask_messages as _dlp_mask_messages
 from core.router import CostAwareRouter, record_routing_cost
 from core.cache.semantic_cache import SemanticCacheManager
+from core.utils.json_repair import is_safe_literal_eval_candidate
 from core.utils.json_repair import repair_json_text
+from core.utils.json_repair import repair_json_text_async
 from core.utils.token_counter import estimate_tokens
 from core.cache_metrics import record_cache_skip
 
 from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+
+# Geriye dönük test/yardımcı erişimleri
+_repair_json_text = repair_json_text
+_is_safe_literal_eval_candidate = is_safe_literal_eval_candidate
 
 SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -127,7 +133,29 @@ def _ensure_json_text(text: str, provider: str) -> str:
         json.loads(raw)
         return raw
     except Exception:
-        repaired = repair_json_text(raw)
+        repaired = _repair_json_text(raw)
+        if repaired is not None:
+            logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
+            return repaired
+        logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
+        return json.dumps(
+            {
+                "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
+                "tool": "final_answer",
+                "argument": raw or "[UYARI] Sağlayıcı boş içerik döndürdü.",
+            },
+            ensure_ascii=False,
+        )
+
+
+async def _ensure_json_text_async(text: str, provider: str) -> str:
+    """json_mode çağrılarında düz metin sızıntısını güvenli JSON'a çevir (async onarım)."""
+    raw = text or ""
+    try:
+        json.loads(raw)
+        return raw
+    except Exception:
+        repaired = await repair_json_text_async(raw)
         if repaired is not None:
             logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
             return repaired
@@ -472,7 +500,7 @@ class OllamaClient(BaseLLMClient):
             content = data.get("message", {}).get("content", "")
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            return _ensure_json_text(content, "Ollama") if json_mode else content
+            return await _ensure_json_text_async(content, "Ollama") if json_mode else content
 
         except LLMAPIError as exc:
             guidance = None
@@ -687,7 +715,7 @@ class GeminiClient(BaseLLMClient):
             )
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            return _ensure_json_text(text, "Gemini") if json_mode else text
+            return await _ensure_json_text_async(text, "Gemini") if json_mode else text
 
         except Exception as exc:
             _record_llm_metric(provider="gemini", model=model_name, started_at=started_at, success=False, error=str(exc))
@@ -827,7 +855,7 @@ class OpenAIClient(BaseLLMClient):
             )
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            result = _ensure_json_text(content, "OpenAI") if json_mode else content
+            result = await _ensure_json_text_async(content, "OpenAI") if json_mode else content
             if span_cm:
                 span_cm.__exit__(None, None, None)
             return result
@@ -885,7 +913,7 @@ class OpenAIClient(BaseLLMClient):
                     "thought": "Hata",
                 }
             )
-            yield _ensure_json_text(msg, "OpenAI") if json_mode else msg
+            yield await _ensure_json_text_async(msg, "OpenAI") if json_mode else msg
 
         finally:
             if stream_cm is not None:
@@ -983,7 +1011,7 @@ class LiteLLMClient(BaseLLMClient):
                 if span is not None:
                     span.set_attribute("sidar.llm.model", model_name)
                     span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                result = _ensure_json_text(content, "LiteLLM") if json_mode else content
+                result = await _ensure_json_text_async(content, "LiteLLM") if json_mode else content
                 if span_cm:
                     span_cm.__exit__(None, None, None)
                 return result
@@ -1024,7 +1052,7 @@ class LiteLLMClient(BaseLLMClient):
                     yield text
         except Exception as exc:
             msg = json.dumps({"tool": "final_answer", "argument": f"\n[HATA] LiteLLM akış hatası: {exc}", "thought": "Hata"})
-            yield _ensure_json_text(msg, "LiteLLM") if json_mode else msg
+            yield await _ensure_json_text_async(msg, "LiteLLM") if json_mode else msg
         finally:
             if stream_cm is not None:
                 await stream_cm.__aexit__(*sys.exc_info())
@@ -1150,7 +1178,7 @@ class AnthropicClient(BaseLLMClient):
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
                 span.end()
-            return _ensure_json_text(text, "Anthropic") if json_mode else text
+            return await _ensure_json_text_async(text, "Anthropic") if json_mode else text
         except LLMAPIError as exc:
             _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
             if span is not None:
@@ -1210,7 +1238,7 @@ class AnthropicClient(BaseLLMClient):
                 },
                 ensure_ascii=False,
             )
-            yield _ensure_json_text(msg, "Anthropic") if json_mode else msg
+            yield await _ensure_json_text_async(msg, "Anthropic") if json_mode else msg
         finally:
             if stream_cm is not None:
                 await stream_cm.__aexit__(*sys.exc_info())

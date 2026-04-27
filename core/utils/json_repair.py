@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import asyncio
 import json
 import logging
 import re
@@ -97,12 +99,65 @@ def repair_json_text(text: str) -> Optional[str]:
         if parsed is not None:
             return parsed
 
-    try:
-        import ast
+    return _literal_eval_dict_fallback(candidate)
 
+
+def _literal_eval_dict_fallback(candidate: str) -> Optional[str]:
+    try:
         obj = ast.literal_eval(candidate)
         if isinstance(obj, dict):
             return json.dumps(obj, ensure_ascii=False)
     except Exception:
         return None
     return None
+
+
+async def repair_json_text_async(text: str) -> Optional[str]:
+    """Asenkron akışlarda literal_eval fallback'ini worker thread'e taşıyan sürüm."""
+    candidate = (text or "").strip()
+    if not candidate:
+        return None
+    if not is_safe_literal_eval_candidate(candidate):
+        logger.debug("JSON onarımı atlandı: aday metin güvenli sınırları aşıyor.")
+        return None
+
+    def _json_dumps_if_valid(raw: str) -> Optional[str]:
+        normalized = (raw or "").strip()
+        if not normalized:
+            return None
+        try:
+            obj = json.loads(normalized)
+            return json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+
+        decoder = json.JSONDecoder()
+        for i, ch in enumerate(normalized):
+            if ch not in "{[":
+                continue
+            try:
+                obj, _ = decoder.raw_decode(normalized[i:])
+                return json.dumps(obj, ensure_ascii=False)
+            except Exception:
+                continue
+        return None
+
+    parsed = _json_dumps_if_valid(candidate)
+    if parsed is not None:
+        return parsed
+
+    for fenced in re.finditer(
+        r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```",
+        candidate,
+        flags=re.IGNORECASE,
+    ):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
+    for fenced in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
+    return await asyncio.to_thread(_literal_eval_dict_fallback, candidate)
