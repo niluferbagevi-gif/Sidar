@@ -259,7 +259,11 @@ def _resolve_cost_per_token_usd(config: Any, model: str = "") -> float:
 
     normalized = (model or "").strip().lower()
     if normalized:
-        for known_model, known_cost in MODEL_COSTS_PER_TOKEN_USD.items():
+        for known_model, known_cost in sorted(
+            MODEL_COSTS_PER_TOKEN_USD.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
             if normalized.startswith(known_model):
                 return known_cost
 
