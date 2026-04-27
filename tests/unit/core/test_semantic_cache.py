@@ -219,3 +219,22 @@ async def test_get_redis_returns_existing_client_initialized_inside_lock(monkeyp
     redis = await manager._get_redis()
 
     assert redis is redis_client
+
+
+@pytest.mark.asyncio
+async def test_get_redis_handles_connection_refused_with_invalid_redis_url() -> None:
+    if semantic_cache_module.Redis is None:
+        pytest.skip("redis.asyncio mevcut değil")
+
+    cfg = _cfg(
+        REDIS_URL="redis://127.0.0.1:1/0",
+        SEMANTIC_CACHE_REDIS_PING_TIMEOUT=0.2,
+        SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1,
+    )
+    manager = SemanticCacheManager(cfg)
+
+    redis = await manager._get_redis()
+
+    assert redis is None
+    assert manager._redis_failures == 1
+    assert manager._redis_circuit_open_until > 0.0
