@@ -1386,7 +1386,9 @@ class LLMClient:
             remaining = max_chars - used
             rag_content = rag_msg["content"]
             if len(rag_content) > remaining:
-                rag_content = rag_content[-remaining:]
+                # RAG mesajlarının başındaki başlık/yönergeleri korumak için
+                # sondan değil baştan kırp.
+                rag_content = rag_content[:remaining]
             if rag_content:
                 insert_at = 1 if result and result[0]["role"] == "system" else 0
                 result.insert(insert_at, {"role": rag_msg["role"], "content": rag_content})
