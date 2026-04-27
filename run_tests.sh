@@ -60,10 +60,12 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   AUTO_OPEN_ARTIFACTS=0
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
+  RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
 else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-0}"
+  RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-0}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -89,7 +91,7 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (pytest --cov-fail-under ile .coveragerc fail_under değerini override eder)"
-echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS})"
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
 
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
@@ -127,6 +129,32 @@ resolve_docker_compose_cmd() {
     return 0
   fi
   return 1
+}
+
+ensure_uv_available() {
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "❌ Bu script uv standardını zorunlu kılar ancak 'uv' bulunamadı."
+    echo "ℹ️ Önce uv kurun: https://docs.astral.sh/uv/"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+  return 0
+}
+
+run_static_analysis_gates() {
+  if [ "${RUN_STATIC_ANALYSIS}" != "1" ]; then
+    echo "ℹ️ Statik analiz adımı atlandı (RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})."
+    return 0
+  fi
+  echo "🔍 Linter ve Type Checker çalıştırılıyor..."
+  if ! uv run ruff check .; then
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+  if ! uv run mypy .; then
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
 }
 
 ensure_test_services() {
@@ -215,14 +243,8 @@ import pytest_asyncio  # noqa: F401
 PY
   then
     echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. all+dev opsiyonel bağımlılıkları otomatik kuruluyor..."
-
-    if command -v uv >/dev/null 2>&1; then
-      echo "ℹ️ 'uv' tespit edildi, all+dev bağımlılıkları senkronize ediliyor..."
-      uv sync --extra all --extra dev
-    else
-      echo "ℹ️ 'uv' bulunamadı, 'pip' ile all+dev bağımlılıkları kuruluyor..."
-      pip install -e ".[all,dev]"
-    fi
+    echo "ℹ️ all+dev bağımlılıkları uv ile senkronize ediliyor..."
+    uv sync --extra all --extra dev
 
     if ! python -c "import pytest_asyncio" >/dev/null 2>&1; then
       echo "❌ Geliştirici bağımlılıklarının otomatik kurulumu başarısız oldu."
@@ -235,7 +257,7 @@ PY
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
   # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
-  local pytest_cmd=(pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_cmd=(uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
   local pytest_targets=("tests")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
@@ -298,10 +320,10 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_test_services; then
+if ensure_uv_available && run_static_analysis_gates && ensure_test_services; then
   run_pytest_coverage_report
 else
-  echo "❌ Backend testleri atlandı: bağımlı docker servisleri ayağa kaldırılamadı."
+  echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
   BACKEND_EXIT_CODE=1
 fi
 
@@ -312,7 +334,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
   benchmark_cmd=(
-    python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+    uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
     --benchmark-save="${BENCHMARK_BASELINE_NAME}"
     --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
   )
