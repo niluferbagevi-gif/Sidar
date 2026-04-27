@@ -309,6 +309,26 @@ async def test_extract_usage_tokens_handles_unparseable_string_values() -> None:
     assert llm_client._extract_usage_tokens(payload) == (0, 0)
 
 
+@pytest.mark.asyncio
+async def test_extract_usage_tokens_handles_unexpected_usage_type_int() -> None:
+    assert llm_client._extract_usage_tokens({"usage": 7}) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_ensure_json_text_async_wraps_invalid_payload_when_repair_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _no_repair(_text: str) -> None:
+        return None
+
+    monkeypatch.setattr(llm_client, "repair_json_text_async", _no_repair)
+    wrapped = await llm_client._ensure_json_text_async("bozuk-yanit", "Gemini")
+    data = json.loads(wrapped)
+    assert data["tool"] == "final_answer"
+    assert data["argument"] == "bozuk-yanit"
+    assert "JSON dışı içerik" in data["thought"]
+
+
 def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
     usage_obj = SimpleNamespace(prompt_token_count=7, candidates_token_count=11)
     assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_obj)) == (7, 11)
@@ -1829,6 +1849,59 @@ async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+async def test_ollama_stream_errors_end_span_for_both_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OllamaClient(_make_config(CODING_MODEL="m", ENABLE_TRACING=True))
+    span = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span))
+
+    def _raise_llmapi(*_args, **_kwargs):
+        raise llm_client.LLMAPIError("ollama", "x")
+
+    monkeypatch.setattr(c, "_stream_response", _raise_llmapi)
+    with pytest.raises(llm_client.LLMAPIError, match="x"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span.ended >= 1
+
+    span2 = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2))
+
+    def _raise_other(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(c, "_stream_response", _raise_other)
+    with pytest.raises(llm_client.LLMAPIError, match="boom"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span2.ended >= 1
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_errors_end_span_for_both_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
+
+    span = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span))
+
+    def _raise_llmapi(*_args, **_kwargs):
+        raise llm_client.LLMAPIError("openai", "x")
+
+    monkeypatch.setattr(c, "_stream_openai", _raise_llmapi)
+    with pytest.raises(llm_client.LLMAPIError, match="x"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span.ended >= 1
+
+    span2 = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2))
+
+    def _raise_other(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(c, "_stream_openai", _raise_other)
+    with pytest.raises(llm_client.LLMAPIError, match="boom"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span2.ended >= 1
+
+
+@pytest.mark.asyncio
 async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Models:
         async def generate_content_stream(self, **_kw):
@@ -1865,11 +1938,62 @@ async def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch, res
 
 
 @pytest.mark.asyncio
+async def test_litellm_chat_breaks_on_last_failed_model_and_raises_wrapped_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    c = llm_client.LiteLLMClient(
+        _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=[], ENABLE_TRACING=False)
+    )
+
+    async def _always_fail(*_args, **_kwargs):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _always_fail)
+
+    with pytest.raises(llm_client.LLMAPIError, match="gateway down") as exc:
+        await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert exc.value.provider == "litellm"
+
+
+@pytest.mark.asyncio
 async def test_anthropic_error_branches_and_split_system() -> None:
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True))
     system, convo = c._split_system_and_messages([{"role": "system", "content": ""}, {"role": "user", "content": "u"}])
     assert system == ""
     assert convo == [{"role": "user", "content": "u"}]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_nonstream_records_usage_metrics_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Usage:
+        input_tokens = 4
+        output_tokens = 6
+
+    class _Response:
+        usage = _Usage()
+        content = [SimpleNamespace(text="ok")]
+
+    class _Messages:
+        async def create(self, **_kwargs):
+            return _Response()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = _Messages()
+
+    events: list[dict] = []
+    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=False))
+    result = await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+
+    assert result == "ok"
+    assert events
+    assert events[-1]["provider"] == "anthropic"
+    assert events[-1]["prompt_tokens"] == 4
+    assert events[-1]["completion_tokens"] == 6
+    assert events[-1]["success"] is True
 
 
 @pytest.mark.parametrize(
