@@ -55,6 +55,14 @@ def test_repair_json_text_uses_loose_fence_after_decoder_cannot_parse() -> None:
     assert repaired == '"loose-fence"'
 
 
+def test_repair_json_text_skips_first_invalid_brace_then_parses_later_json_object() -> None:
+    payload = 'Burada rastgele bir süslü parantez var { ama asıl JSON burada: {"anahtar": "deger"}'
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '{"anahtar": "deger"}'
+
+
 @pytest.mark.asyncio
 async def test_repair_json_text_async_returns_none_for_empty_text() -> None:
     assert await repair_json_text_async("   ") is None
@@ -120,6 +128,15 @@ async def test_repair_json_text_async_uses_loose_fence_after_decoder_cannot_pars
     repaired = await repair_json_text_async(payload)
 
     assert repaired == '"loose-fence"'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_later_json_object() -> None:
+    payload = 'Burada rastgele bir süslü parantez var { ama asıl JSON burada: {"anahtar": "deger"}'
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '{"anahtar": "deger"}'
 
 
 @pytest.mark.asyncio
