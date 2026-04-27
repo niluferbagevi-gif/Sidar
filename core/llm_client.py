@@ -17,6 +17,7 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -237,16 +238,22 @@ def _estimate_tokens(text: str, *, model: str = "") -> int:
     if not normalized:
         return 0
     try:
-        import tiktoken  # type: ignore
-
-        try:
-            encoding = tiktoken.encoding_for_model(model) if model else tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            encoding = tiktoken.get_encoding("cl100k_base")
+        encoding = _get_tiktoken_encoding(model)
         return max(0, len(encoding.encode(normalized)))
     except Exception:
         # Heuristik fallback: Unicode/kod yoğun içeriklerde 4 yerine 3.5 ortalaması daha güvenli.
         return max(0, int(math.ceil(len(normalized) / 3.5)))
+
+
+@lru_cache(maxsize=64)
+def _get_tiktoken_encoding(model: str = ""):
+    import tiktoken  # type: ignore
+
+    model_name = (model or "").strip()
+    try:
+        return tiktoken.encoding_for_model(model_name) if model_name else tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        return tiktoken.get_encoding("cl100k_base")
 
 
 def _record_llm_metric(

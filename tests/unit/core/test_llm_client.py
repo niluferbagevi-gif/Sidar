@@ -504,6 +504,7 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
 
 @pytest.mark.asyncio
 async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm_client._get_tiktoken_encoding.cache_clear()
     real_import = builtins.__import__
 
     def _guarded_import(name, *args, **kwargs):
@@ -516,6 +517,7 @@ async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch:
 
 
 def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm_client._get_tiktoken_encoding.cache_clear()
     tiktoken_stub = types.ModuleType("tiktoken")
     calls: list[str] = []
 
@@ -536,6 +538,28 @@ def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(monkeypatch: py
 
     assert llm_client._estimate_tokens("abcd", model="my-custom-model-xyz") == 4
     assert calls == ["cl100k_base"]
+
+
+def test_estimate_tokens_reuses_cached_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm_client._get_tiktoken_encoding.cache_clear()
+    tiktoken_stub = types.ModuleType("tiktoken")
+    calls = {"encoding_for_model": 0}
+
+    class _Encoding:
+        def encode(self, text: str):
+            return list(text)
+
+    def _encoding_for_model(_model: str):
+        calls["encoding_for_model"] += 1
+        return _Encoding()
+
+    tiktoken_stub.encoding_for_model = _encoding_for_model  # type: ignore[attr-defined]
+    tiktoken_stub.get_encoding = lambda _name: _Encoding()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tiktoken", tiktoken_stub)
+
+    assert llm_client._estimate_tokens("abcd", model="gpt-4o-mini") == 4
+    assert llm_client._estimate_tokens("efgh", model="gpt-4o-mini") == 4
+    assert calls["encoding_for_model"] == 1
 
 
 @pytest.mark.asyncio
