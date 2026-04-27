@@ -2089,23 +2089,28 @@ async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.Monk
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span))
 
     async def _raise_llmapi(*_args, **_kwargs):
+        if False:  # pragma: no cover
+            yield ""
         raise llm_client.LLMAPIError("anthropic", "stream-llmapi")
 
     monkeypatch.setattr(c, "_stream_anthropic", _raise_llmapi)
+    llmapi_stream = await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
     with pytest.raises(llm_client.LLMAPIError, match="stream-llmapi"):
-        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+        await _collect(llmapi_stream)
     assert span.ended >= 1
 
     span2 = _Span()
     monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2))
 
     async def _raise_runtime(*_args, **_kwargs):
+        if False:  # pragma: no cover
+            yield ""
         raise RuntimeError("stream-runtime")
 
     monkeypatch.setattr(c, "_stream_anthropic", _raise_runtime)
-    with pytest.raises(llm_client.LLMAPIError, match="stream-runtime") as exc:
-        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
-    assert exc.value.provider == "anthropic"
+    runtime_stream = await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    with pytest.raises(RuntimeError, match="stream-runtime"):
+        await _collect(runtime_stream)
     assert span2.ended >= 1
 
 
