@@ -211,6 +211,18 @@ async def test_ensure_json_text_prefers_first_json_fence_when_multiple_fences_pr
     data = json.loads(wrapped)
     assert data["argument"] == "ilk"
 
+
+@pytest.mark.asyncio
+async def test_ensure_json_text_repairs_fenced_json_with_braces_in_string() -> None:
+    wrapped = llm_client._ensure_json_text(
+        """```json
+{"tool":"final_answer","argument":"değer {nested} içeriyor","thought":"t"}
+```""",
+        "Gemini",
+    )
+    data = json.loads(wrapped)
+    assert data["argument"] == "değer {nested} içeriyor"
+
 @pytest.mark.asyncio
 async def test_ensure_json_text_logs_warning_for_invalid_payload(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING"):

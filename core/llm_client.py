@@ -178,24 +178,49 @@ def _repair_json_text(text: str) -> Optional[str]:
     candidate = (text or "").strip()
     if not candidate:
         return None
-    # Non-greedy capture prevents overmatching when providers return multiple fenced blocks.
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
-    if fenced:
-        candidate = fenced.group(1).strip()
-    try:
-        obj = json.loads(candidate)
-        return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        pass
-    if "{" in candidate and "}" in candidate:
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        block = candidate[start : end + 1]
+
+    def _json_dumps_if_valid(raw: str) -> Optional[str]:
+        normalized = (raw or "").strip()
+        if not normalized:
+            return None
         try:
-            obj = json.loads(block)
+            obj = json.loads(normalized)
             return json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
+
+        # En baştaki geçerli JSON nesnesini yakalamak için decoder tabanlı onarım.
+        decoder = json.JSONDecoder()
+        for i, ch in enumerate(normalized):
+            if ch not in "{[":
+                continue
+            try:
+                obj, _ = decoder.raw_decode(normalized[i:])
+                return json.dumps(obj, ensure_ascii=False)
+            except Exception:
+                continue
+        return None
+
+    parsed = _json_dumps_if_valid(candidate)
+    if parsed is not None:
+        return parsed
+
+    # Çoklu fenced markdown çıktılarında her bloğu sırayla dene.
+    for fenced in re.finditer(
+        r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```",
+        candidate,
+        flags=re.IGNORECASE,
+    ):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
+    # Satır sonu olmadan gelen fenced varyantları için gevşek fallback.
+    for fenced in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
     try:
         import ast
 
