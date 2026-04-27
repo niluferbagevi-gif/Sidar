@@ -433,6 +433,32 @@ class BaseLLMClient(ABC):
     ) -> Union[str, AsyncIterator[str]]:
         """Sağlayıcıya özel chat çağrısı."""
 
+    async def _iter_openai_compatible_sse_text(self, response: httpx.Response) -> AsyncGenerator[str, None]:
+        """OpenAI-uyumlu SSE satırlarından içerik parçalarını üretir."""
+        async for raw_line in response.aiter_lines():
+            line = (raw_line or "").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                body = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(body, dict):
+                continue
+            choices = body.get("choices", [{}])
+            first_choice = choices[0] if isinstance(choices, list) and choices else {}
+            if not isinstance(first_choice, dict):
+                continue
+            delta = first_choice.get("delta", {})
+            if not isinstance(delta, dict):
+                continue
+            text = delta.get("content", "")
+            if text:
+                yield text
+
 
 class OllamaClient(BaseLLMClient):
     """Ollama sağlayıcısı istemcisi."""
@@ -965,21 +991,8 @@ class OpenAIClient(BaseLLMClient):
                 config=self.config,
                 retry_hint="OpenAI stream başlatma başarısız",
             )
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    body = json.loads(data)
-                    delta = body.get("choices", [{}])[0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except json.JSONDecodeError:
-                    continue
+            async for text in self._iter_openai_compatible_sse_text(resp):
+                yield text
         except Exception as exc:
             msg = json.dumps(
                 {
@@ -1119,21 +1132,8 @@ class LiteLLMClient(BaseLLMClient):
                 return stream_client, cm, response
 
             client, stream_cm, resp = await _retry_with_backoff("litellm", _open_stream, config=self.config, retry_hint="LiteLLM stream başlatma başarısız")
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    body = json.loads(data)
-                    delta = body.get("choices", [{}])[0].get("delta", {})
-                    text = delta.get("content", "")
-                    if text:
-                        yield text
-                except json.JSONDecodeError:
-                    continue
+            async for text in self._iter_openai_compatible_sse_text(resp):
+                yield text
         except Exception as exc:
             msg = json.dumps({"tool": "final_answer", "argument": f"\n[HATA] LiteLLM akış hatası: {exc}", "thought": "Hata"})
             yield _ensure_json_text(msg, "LiteLLM") if json_mode else msg

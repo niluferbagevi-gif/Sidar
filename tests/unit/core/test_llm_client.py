@@ -1990,6 +1990,30 @@ async def test_litellm_stream_no_lines_branch(monkeypatch: pytest.MonkeyPatch, r
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_stream_parser_skips_unexpected_shapes(respx_mock_router) -> None:
+    oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
+    llm = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1"))
+    stream_body = "\n".join(
+        [
+            'data: {"choices":[{"delta":"invalid-delta"}]}',
+            'data: {"choices":["invalid-choice"]}',
+            'data: {"choices":[{"delta":{"content":"OK"}}]}',
+            "data: [DONE]",
+        ]
+    )
+    respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
+    respx_mock_router.post("http://gw/chat/completions").mock(return_value=httpx.Response(200, text=stream_body))
+
+    openai_chunks = await _collect(oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
+    litellm_chunks = await _collect(
+        llm._stream_openai_compatible("http://gw/chat/completions", {}, {}, llm_client.httpx.Timeout(10, connect=1), False)
+    )
+
+    assert openai_chunks == ["OK"]
+    assert litellm_chunks == ["OK"]
+
+
+@pytest.mark.asyncio
 async def test_truncation_no_system_and_empty_message_branch() -> None:
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
