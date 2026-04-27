@@ -18,6 +18,7 @@ npm run build       # web_ui_react/dist/ dizinine derler
 npm run test        # Vitest watch modu
 npm run test:run    # CI için tek seferlik test koşumu
 npm run test:coverage # Coverage raporu üretir
+npm run test:e2e    # Playwright ile WebSocket uçtan uca senaryoları
 ```
 
 `web_server.py` otomatik olarak `web_ui_react/dist/` varsa onu, yoksa legacy `web_ui/` dizinini sunar.
@@ -53,4 +54,5 @@ src/
 
 - `Vitest` + `@testing-library/react`: React SPA bileşenleri için native birim testleri.
 - `jsdom`: Tarayıcı DOM API'lerini emüle ederek `App`, `ChatPanel` ve `AgentManagerPanel` gibi bileşenlerin davranışını doğrular.
+- `Playwright`: `e2e/chat-websocket.spec.js` içinde token kaydetme, gerçek WebSocket handshake, presence güncellemesi ve stream yanıtını browser seviyesinde doğrular.
 - Legacy `web_ui/` tarafındaki sesli durum yardımcıları `voice_live_utils.js` içine ayrıştırılmıştır; böylece fallback arayüzü için de saf JS birim testleri yazılabilir.
