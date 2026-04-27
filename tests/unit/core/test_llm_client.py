@@ -759,8 +759,8 @@ async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_con
 async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
     cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
-    msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
-    assert "Gemini istemcisi kurulu" in msg or "GEMINI_API_KEY" in msg
+    with pytest.raises(ValueError, match="API key must be set when using the Google AI API"):
+        await c.chat([{"role": "user", "content": "x"}], stream=False)
 
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
