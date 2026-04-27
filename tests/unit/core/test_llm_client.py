@@ -515,6 +515,29 @@ async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch:
     assert llm_client._estimate_tokens("1234567") == 2
 
 
+def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    tiktoken_stub = types.ModuleType("tiktoken")
+    calls: list[str] = []
+
+    def _encoding_for_model(_model: str):
+        raise KeyError("unknown model")
+
+    class _Encoding:
+        def encode(self, text: str):
+            return list(text)
+
+    def _get_encoding(name: str):
+        calls.append(name)
+        return _Encoding()
+
+    tiktoken_stub.encoding_for_model = _encoding_for_model  # type: ignore[attr-defined]
+    tiktoken_stub.get_encoding = _get_encoding  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tiktoken", tiktoken_stub)
+
+    assert llm_client._estimate_tokens("abcd", model="my-custom-model-xyz") == 4
+    assert calls == ["cl100k_base"]
+
+
 @pytest.mark.asyncio
 async def test_semantic_cache_default_threshold_is_less_strict(mock_config) -> None:
     manager = llm_client._SemanticCacheManager(mock_config())
@@ -723,6 +746,21 @@ async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(mock_config
     payload = json.loads(route.calls.last.request.content.decode("utf-8"))
     assert "options" in payload
     assert payload["options"].get("num_gpu") == -1
+
+
+@pytest.mark.asyncio
+async def test_ollama_client_chat_does_not_send_num_gpu_when_use_gpu_disabled(mock_config, respx_mock_router) -> None:
+    cfg = mock_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", USE_GPU=False, OLLAMA_TIMEOUT=30, ENABLE_TRACING=False)
+    client = llm_client.OllamaClient(cfg)
+    route = respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    _ = await client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False)
+
+    payload = json.loads(route.calls.last.request.content.decode("utf-8"))
+    assert "options" in payload
+    assert "num_gpu" not in payload["options"]
 
 
 @pytest.mark.asyncio
@@ -2573,6 +2611,18 @@ async def test_iter_openai_compatible_stream_lines_stops_on_done() -> None:
     out = [item async for item in _DummyClient._iter_openai_compatible_stream_lines(_Resp())]
     assert len(out) == 1
     assert out[0]["choices"][0]["delta"]["content"] == "one"
+
+
+@pytest.mark.asyncio
+async def test_iter_openai_compatible_stream_lines_skips_non_dict_json_bodies() -> None:
+    class _Resp:
+        async def aiter_lines(self):
+            yield "data: [1,2,3]"
+            yield "data: \"primitive\""
+            yield "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"
+
+    out = [item async for item in _DummyClient._iter_openai_compatible_stream_lines(_Resp())]
+    assert out == [{"choices": [{"delta": {"content": "ok"}}]}]
 
 
 @pytest.mark.asyncio
