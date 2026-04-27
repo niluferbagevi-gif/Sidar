@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # SQLAlchemy async import (opsiyonel; yoksa noop stub kullanılır)
 try:
     from sqlalchemy import text as sql_text
-    from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     _SA_AVAILABLE = True
 except ImportError:  # pragma: no cover

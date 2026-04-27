@@ -57,7 +57,7 @@ def _ensure_delegation_request_shape():
     return _CompatDelegationRequest
 
 
-DelegationRequest = _ensure_delegation_request_shape()
+_ensure_delegation_request_shape()
 
 try:
     from opentelemetry import trace as otel_trace

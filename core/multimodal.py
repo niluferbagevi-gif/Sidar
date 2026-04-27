@@ -171,7 +171,7 @@ async def fetch_youtube_transcript(
     video_url_or_id: str,
     *,
     languages: tuple[str, ...] | None = None,
-    timeout: float = _DEFAULT_YOUTUBE_TRANSCRIPT_TIMEOUT,
+    req_timeout: float = _DEFAULT_YOUTUBE_TRANSCRIPT_TIMEOUT,
     http_client_factory: Any = None,
 ) -> dict[str, Any]:
     video_id = extract_youtube_video_id(video_url_or_id)
@@ -180,7 +180,7 @@ async def fetch_youtube_transcript(
 
     client_factory = http_client_factory or httpx.AsyncClient
     langs = tuple(languages or ("tr", "en"))
-    async with client_factory(timeout=timeout, follow_redirects=True) as client:
+    async with client_factory(timeout=req_timeout, follow_redirects=True) as client:
         for language in langs:
             response = await client.get(
                 f"https://www.youtube.com/api/timedtext?v={video_id}&lang={language}&fmt=json3"
@@ -216,7 +216,7 @@ async def download_remote_media(
     *,
     output_dir: str | Path,
     http_client_factory: Any = None,
-    timeout: float = _DEFAULT_REMOTE_DOWNLOAD_TIMEOUT,
+    req_timeout: float = _DEFAULT_REMOTE_DOWNLOAD_TIMEOUT,
 ) -> DownloadedMedia:
     if not is_remote_media_source(source_url):
         raise ValueError("Yalnızca http/https medya kaynakları destekleniyor.")
@@ -243,7 +243,7 @@ async def download_remote_media(
         )
 
     client_factory = http_client_factory or httpx.AsyncClient
-    async with client_factory(timeout=timeout, follow_redirects=True) as client:
+    async with client_factory(timeout=req_timeout, follow_redirects=True) as client:
         response = await client.get(source_url)
         response.raise_for_status()
         mime_type = str(response.headers.get("content-type", "")).split(";", 1)[0].strip().lower()
@@ -875,13 +875,13 @@ class MultimodalPipeline:
                         download = await download_remote_media(
                             media_source,
                             output_dir=tmpdir,
-                            timeout=self.remote_download_timeout,
+                            req_timeout=self.remote_download_timeout,
                         )
                 else:
                     download = await download_remote_media(
                         media_source,
                         output_dir=tmpdir,
-                        timeout=self.remote_download_timeout,
+                        req_timeout=self.remote_download_timeout,
                     )
                 transcript_override = None
                 if download.platform == "youtube":
@@ -889,7 +889,7 @@ class MultimodalPipeline:
                     transcript_override = await fetch_youtube_transcript(
                         media_source,
                         languages=languages,
-                        timeout=self.youtube_transcript_timeout,
+                        req_timeout=self.youtube_transcript_timeout,
                     )
                 result = await self._analyze_local_media(
                     media_path=download.path,
