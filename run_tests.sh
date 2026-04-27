@@ -65,7 +65,7 @@ else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-0}"
-  RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-0}"
+  RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -284,7 +284,8 @@ ensure_test_services() {
 
   if [ "${redis_running}" -eq 1 ] && [ "${postgres_running}" -eq 1 ]; then
     echo "ℹ️ Redis ve PostgreSQL zaten çalışıyor; mevcut servisler kullanılacak."
-    return 0
+    wait_for_test_services_ready
+    return $?
   fi
 
   echo "🐳 Test öncesi bağımlı servisler başlatılıyor: redis, postgres"
@@ -296,7 +297,43 @@ ensure_test_services() {
     return 1
   fi
 
+  wait_for_test_services_ready
   DOCKER_TEST_SERVICES_STARTED=1
+}
+
+wait_for_test_services_ready() {
+  local max_attempts="${TEST_SERVICES_READY_MAX_ATTEMPTS:-30}"
+  local sleep_seconds="${TEST_SERVICES_READY_SLEEP_SECONDS:-2}"
+  local attempt=1
+
+  echo "⏳ Redis/PostgreSQL hazır olana kadar bekleniyor (max deneme: ${max_attempts})..."
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    local redis_ready=0
+    local postgres_ready=0
+
+    if "${DOCKER_COMPOSE_CMD[@]}" exec -T redis redis-cli ping >/dev/null 2>&1; then
+      redis_ready=1
+    fi
+
+    if "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-sidar}" -d "${POSTGRES_DB:-sidar}" >/dev/null 2>&1; then
+      postgres_ready=1
+    fi
+
+    if [ "${redis_ready}" -eq 1 ] && [ "${postgres_ready}" -eq 1 ]; then
+      echo "✅ Redis ve PostgreSQL hazır."
+      return 0
+    fi
+
+    echo "ℹ️ Servisler henüz hazır değil (deneme ${attempt}/${max_attempts}); ${sleep_seconds}s bekleniyor..."
+    sleep "${sleep_seconds}"
+    attempt=$((attempt + 1))
+  done
+
+  echo "❌ Redis/PostgreSQL beklenen sürede hazır olamadı."
+  export SMOKE_SKIP_EXTERNAL_INFRA=1
+  echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
+  BACKEND_EXIT_CODE=1
+  return 1
 }
 
 cleanup_test_services() {
