@@ -2072,30 +2072,22 @@ async def test_llmclient_openai_surfaces_rate_limit_error_with_fake_fixture(
         await client.chat(messages=[{"role": "user", "content": "fiyatlandırma nedir?"}], stream=False)
 
 
-def test_cfg_helpers_cover_all_type_fallbacks() -> None:
+def test_setting_helper_returns_config_value_or_default() -> None:
     cfg = SimpleNamespace(
         STR_NONE=None,
         INT_BOOL=True,
-        INT_BAD="oops",
-        INT_OTHER=object(),
-        FLOAT_BOOL=False,
-        FLOAT_BAD="oops",
-        FLOAT_OTHER=object(),
-        BOOL_INT=2,
-        BOOL_STR="on",
-        BOOL_OTHER=object(),
+        FLOAT_ZERO=0.0,
+        BOOL_FALSE=False,
+        TEXT_VALUE="sidar",
+        OBJ_VALUE=object(),
     )
-    assert llm_client._cfg_str(cfg, "STR_NONE", "d") == "d"
-    assert llm_client._cfg_int(cfg, "INT_BOOL", 0) == 1
-    assert llm_client._cfg_int(cfg, "INT_BAD", 7) == 7
-    assert llm_client._cfg_int(cfg, "INT_OTHER", 5) == 5
-    assert llm_client._cfg_float(cfg, "FLOAT_BOOL", 0.5) == 0.0
-    assert llm_client._cfg_float(cfg, "FLOAT_BAD", 1.5) == 1.5
-    assert llm_client._cfg_float(cfg, "FLOAT_OTHER", 2.5) == 2.5
-    assert llm_client._cfg_bool(cfg, "BOOL_INT", False) is True
-    assert llm_client._cfg_bool(cfg, "BOOL_STR", False) is True
-    assert llm_client._cfg_bool(cfg, "BOOL_OTHER", True) is True
-    assert llm_client._cfg_float(SimpleNamespace(FLOAT_OBJ=object()), "FLOAT_OBJ", 3.25) == 3.25
+    assert llm_client._setting(cfg, "TEXT_VALUE", "default") == "sidar"
+    assert llm_client._setting(cfg, "STR_NONE", "default") is None
+    assert llm_client._setting(cfg, "INT_BOOL", 0) is True
+    assert llm_client._setting(cfg, "FLOAT_ZERO", 1.5) == 0.0
+    assert llm_client._setting(cfg, "BOOL_FALSE", True) is False
+    assert llm_client._setting(cfg, "OBJ_VALUE", None) is cfg.OBJ_VALUE
+    assert llm_client._setting(cfg, "MISSING_KEY", "default") == "default"
 
 
 @pytest.mark.asyncio
