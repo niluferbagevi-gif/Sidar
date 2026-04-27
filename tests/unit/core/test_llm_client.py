@@ -1616,6 +1616,8 @@ class _SpanCM:
 
     def __exit__(self, *_exc):
         self.exit_calls += 1
+        if hasattr(self.span, "end"):
+            self.span.end()
         return False
 
 
