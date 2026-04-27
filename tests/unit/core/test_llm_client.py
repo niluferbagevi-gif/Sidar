@@ -329,6 +329,18 @@ async def test_ensure_json_text_async_wraps_invalid_payload_when_repair_fails(
     assert "JSON dışı içerik" in data["thought"]
 
 
+@pytest.mark.asyncio
+async def test_ensure_json_text_async_returns_repaired_payload_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _repair(_text: str) -> str:
+        return '{"tool":"final_answer","argument":"ok"}'
+
+    monkeypatch.setattr(llm_client, "repair_json_text_async", _repair)
+    repaired = await llm_client._ensure_json_text_async("bozuk-yanit", "Gemini")
+    assert json.loads(repaired)["argument"] == "ok"
+
+
 def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
     usage_obj = SimpleNamespace(prompt_token_count=7, candidates_token_count=11)
     assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_obj)) == (7, 11)
@@ -1938,6 +1950,21 @@ async def test_litellm_failure_with_tracing(monkeypatch: pytest.MonkeyPatch, res
 
 
 @pytest.mark.asyncio
+async def test_litellm_stream_failure_ends_span_and_reraises(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True))
+    span = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span))
+
+    def _raise_stream_open(*_args, **_kwargs):
+        raise httpx.ReadError("stream disconnected")
+
+    monkeypatch.setattr(c, "_stream_openai_compatible", _raise_stream_open)
+    with pytest.raises(httpx.ReadError, match="stream disconnected"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span.ended >= 1
+
+
+@pytest.mark.asyncio
 async def test_litellm_chat_breaks_on_last_failed_model_and_raises_wrapped_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2042,6 +2069,43 @@ async def test_anthropic_nonstream_error_paths(
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=json_mode)
     assert exc.value.provider == "anthropic"
     assert "boom" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Messages:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(usage=None, content=[])
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = _Messages()
+
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True))
+
+    span = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span))
+
+    async def _raise_llmapi(*_args, **_kwargs):
+        raise llm_client.LLMAPIError("anthropic", "stream-llmapi")
+
+    monkeypatch.setattr(c, "_stream_anthropic", _raise_llmapi)
+    with pytest.raises(llm_client.LLMAPIError, match="stream-llmapi"):
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert span.ended >= 1
+
+    span2 = _Span()
+    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2))
+
+    async def _raise_runtime(*_args, **_kwargs):
+        raise RuntimeError("stream-runtime")
+
+    monkeypatch.setattr(c, "_stream_anthropic", _raise_runtime)
+    with pytest.raises(llm_client.LLMAPIError, match="stream-runtime") as exc:
+        await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert exc.value.provider == "anthropic"
+    assert span2.ended >= 1
 
 
 @pytest.mark.asyncio
