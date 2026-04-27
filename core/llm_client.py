@@ -178,7 +178,8 @@ def _repair_json_text(text: str) -> Optional[str]:
     candidate = (text or "").strip()
     if not candidate:
         return None
-    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
+    # Non-greedy capture prevents overmatching when providers return multiple fenced blocks.
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
     if fenced:
         candidate = fenced.group(1).strip()
     try:
