@@ -43,7 +43,7 @@ def _ensure_delegation_request_shape() -> type[DelegationRequest]:
             meta_raw = kwargs.get("meta", {})
             self.meta = dict(meta_raw) if isinstance(meta_raw, dict) else {}
 
-        def bumped(self) -> "_CompatDelegationRequest":
+        def bumped(self) -> _CompatDelegationRequest:
             return type(self)(
                 task_id=self.task_id,
                 reply_to=self.reply_to,
@@ -56,7 +56,7 @@ def _ensure_delegation_request_shape() -> type[DelegationRequest]:
                 meta=dict(self.meta),
             )
 
-    setattr(contracts_mod, "DelegationRequest", _CompatDelegationRequest)
+    contracts_mod.DelegationRequest = _CompatDelegationRequest
     return cast(type[DelegationRequest], _CompatDelegationRequest)
 
 
@@ -78,7 +78,7 @@ except Exception:  # pragma: no cover
 class _NullSpan:
     """OTel bağımlılığı yokken `with _tracer.start_as_current_span(...)` yerine kullanılır."""
 
-    def __enter__(self) -> "_NullSpan":
+    def __enter__(self) -> _NullSpan:
         return self
 
     def __exit__(self, *_args: object) -> Literal[False]:
