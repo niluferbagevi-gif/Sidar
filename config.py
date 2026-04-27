@@ -482,6 +482,7 @@ class Config:
     # ─── Uygulama ────────────────────────────────────────────
     MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)
     MEMORY_SUMMARY_KEEP_LAST: int = get_int_env("MEMORY_SUMMARY_KEEP_LAST", 4)
+    CLI_FAST_MODE: bool = get_bool_env("CLI_FAST_MODE", False)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     RESPONSE_LANGUAGE: str = os.getenv("RESPONSE_LANGUAGE", "tr")
 
