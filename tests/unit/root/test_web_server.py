@@ -1172,7 +1172,7 @@ async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
                 raise TimeoutError()
             return True
 
-    async def _wait_for(awaitable, timeout):
+    async def _wait_for(awaitable, _timeout):
         return await awaitable
 
     calls = {"dispatch": 0, "warn": []}
@@ -1221,7 +1221,7 @@ async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
                 raise TimeoutError()
             return True
 
-    async def _wait_for(awaitable, timeout):
+    async def _wait_for(awaitable, _timeout):
         return await awaitable
 
     warns: list[str] = []
@@ -7128,7 +7128,7 @@ async def test_autonomous_cron_loop_logs_success(monkeypatch):
                 raise TimeoutError()
             return True
 
-    async def _wait_for(awaitable, timeout):
+    async def _wait_for(awaitable, _timeout):
         return await awaitable
 
     async def _dispatch(**_kwargs):
@@ -7163,7 +7163,7 @@ async def test_nightly_memory_loop_logs_success(monkeypatch):
                 raise TimeoutError()
             return True
 
-    async def _wait_for(awaitable, timeout):
+    async def _wait_for(awaitable, _timeout):
         return await awaitable
 
     class _Agent:

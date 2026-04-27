@@ -547,7 +547,7 @@ class OllamaClient(BaseLLMClient):
                 span.set_attribute("sidar.llm.stream", stream)
             try:
                 if stream:
-                    stream_iter = self._stream_response(url, payload, timeout=timeout)
+                    stream_iter = self._stream_response(url, payload, http_timeout=timeout)
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
                 async def _do_request():
@@ -610,7 +610,7 @@ class OllamaClient(BaseLLMClient):
         self,
         url: str,
         payload: dict,
-        timeout: httpx.Timeout,
+        http_timeout: httpx.Timeout,
     ) -> AsyncGenerator[str, None]:
         """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
         client = None
@@ -619,7 +619,7 @@ class OllamaClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=http_timeout)
                 cm = stream_client.stream("POST", url, json=payload)
                 response = await cm.__aenter__()
                 response.raise_for_status()
@@ -988,7 +988,7 @@ class OpenAIClient(BaseLLMClient):
         self,
         payload: dict,
         headers: dict,
-        timeout: httpx.Timeout,
+        http_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
         client = None
@@ -997,7 +997,7 @@ class OpenAIClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=http_timeout)
                 cm = stream_client.stream(
                     "POST",
                     "https://api.openai.com/v1/chat/completions",
@@ -1189,7 +1189,7 @@ class LiteLLMClient(BaseLLMClient):
         endpoint: str,
         payload: dict,
         headers: dict,
-        timeout: httpx.Timeout,
+        http_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
         client = None
@@ -1197,7 +1197,7 @@ class LiteLLMClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=http_timeout)
                 cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
                 response = await cm.__aenter__()
                 response.raise_for_status()

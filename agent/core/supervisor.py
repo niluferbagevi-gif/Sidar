@@ -9,7 +9,7 @@ import time
 import uuid
 
 from agent.base_agent import BaseAgent
-from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
+from agent.core.contracts import TaskEnvelope, TaskResult, is_delegation_request
 from agent.core.event_stream import get_agent_event_bus
 from agent.core.memory_hub import MemoryHub
 from agent.core.registry import ActiveAgentRegistry

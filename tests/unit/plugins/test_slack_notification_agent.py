@@ -76,10 +76,10 @@ def test_run_task_requires_webhook_config() -> None:
 def test_run_task_posts_payload_and_uses_default_channel(monkeypatch) -> None:
     agent = _agent()
 
-    async def _fake_to_thread(func, req, timeout=0):
+    async def _fake_to_thread(func, req, req_timeout=0):
         assert req.full_url == "https://hooks.slack.test"
         assert req.method == "POST"
-        assert timeout == 10
+        assert req_timeout == 10
         assert req.data == b'{"text": "hello world"}'
         return _FakeResponse(b"ok")
 
@@ -93,7 +93,7 @@ def test_run_task_posts_payload_and_uses_default_channel(monkeypatch) -> None:
 def test_run_task_uses_explicit_channel_and_handles_failure(monkeypatch) -> None:
     agent = _agent()
 
-    async def _fake_to_thread(_func, _req, timeout=0):
+    async def _fake_to_thread(_func, _req, _timeout=0):
         raise RuntimeError("timeout")
 
     monkeypatch.setattr("plugins.slack_notification_agent.asyncio.to_thread", _fake_to_thread)

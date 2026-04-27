@@ -289,7 +289,7 @@ def test_transition_issue_fails_when_transition_not_found(monkeypatch):
     assert ok is False
     assert "Geçiş bulunamadı" in err
     assert "To Do" in err
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match="Unexpected"):
         _run(_fake_request("POST", "issue/PROJ-1/transitions"))
 
 
