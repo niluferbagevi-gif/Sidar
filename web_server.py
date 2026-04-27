@@ -3873,8 +3873,8 @@ async def upload_rag_file(file: UploadFile = File(...)):
             safe_filename = "uploaded_file.txt"
         tmp_path = temp_dir / safe_filename
 
-        with open(tmp_path, "wb") as buffer:
-            buffer.write(data)
+        async with await anyio.open_file(tmp_path, "wb") as buffer:
+            await buffer.write(data)
 
         # RAG deposuna ekle (İzolasyon korumalı)
         ok, msg = await asyncio.to_thread(
