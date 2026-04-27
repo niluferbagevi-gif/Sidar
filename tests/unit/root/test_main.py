@@ -3,12 +3,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+import importlib
+import types
+from types import SimpleNamespace
+
 import pytest
 
 import main
-from types import SimpleNamespace
-import importlib
-import types
 
 
 class _LauncherCfg:
