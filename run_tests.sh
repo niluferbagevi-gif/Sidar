@@ -93,6 +93,9 @@ BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
+MYPY_ERROR_LOG="${MYPY_ERROR_LOG:-artifacts/remediation/mypy_errors.log}"
+MYPY_RECHECK_LOG="${MYPY_RECHECK_LOG:-artifacts/remediation/mypy_recheck.log}"
+AUTONOMOUS_REMEDIATION_CMD="${AUTONOMOUS_REMEDIATION_CMD:-}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -264,9 +267,27 @@ run_static_analysis_gates() {
     BACKEND_EXIT_CODE=1
     return 1
   fi
-  if ! uv run mypy .; then
-    BACKEND_EXIT_CODE=1
-    return 1
+
+  mkdir -p "$(dirname "${MYPY_ERROR_LOG}")"
+
+  if ! uv run mypy . 2>&1 | tee "${MYPY_ERROR_LOG}"; then
+    echo "⚠️ mypy hataları kaydedildi: ${MYPY_ERROR_LOG}"
+
+    if [ -n "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
+      echo "🛠️ Otonom remediation ajanı tetikleniyor..."
+      if ! REMEDIATION_TRIGGER="mypy" REMEDIATION_INPUT_LOG="${MYPY_ERROR_LOG}" bash -lc "${AUTONOMOUS_REMEDIATION_CMD}"; then
+        echo "⚠️ Otonom remediation komutu hata döndürdü: ${AUTONOMOUS_REMEDIATION_CMD}"
+      fi
+    else
+      echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
+    fi
+
+    echo "🔁 Otonom remediation sonrası mypy yeniden doğrulanıyor..."
+    if ! uv run mypy . 2>&1 | tee "${MYPY_RECHECK_LOG}"; then
+      echo "❌ mypy ikinci kontrolde de başarısız: ${MYPY_RECHECK_LOG}"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
   fi
 }
 
