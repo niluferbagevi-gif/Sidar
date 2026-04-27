@@ -3,7 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from core.config import Config
+from config import Config
+
+try:
+    from config import get_config as _config_get_config
+except ImportError:  # pragma: no cover - test doubles may only expose Config
+    _config_get_config = None
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +18,7 @@ def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = Non
     if not texts:
         return []
 
-    cfg = cfg or Config()
+    cfg = cfg or (_config_get_config() if callable(_config_get_config) else Config())
     model_name = str(getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2")
     try:
         from sentence_transformers import SentenceTransformer
