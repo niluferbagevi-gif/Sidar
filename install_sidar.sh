@@ -45,10 +45,14 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+INSTALL_HELPERS_TEMP_DIR=""
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
     warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
 
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
     mkdir -p "$INSTALL_MODULE_DIR"
     REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
     REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
@@ -57,21 +61,24 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
             rm -f "$TMP_HELPERS_PATH"
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
             fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
             rm -f "$TMP_HELPERS_PATH"
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
             fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
         fi
     else
         rm -f "$TMP_HELPERS_PATH"
+        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
     install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
     rm -f "$TMP_HELPERS_PATH"
-    ok "Modül indirildi ve kaydedildi: $INSTALL_HELPERS_MODULE"
+    ok "Modül indirildi ve geçici dizine kaydedildi: $INSTALL_HELPERS_MODULE"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
@@ -154,6 +161,13 @@ on_install_error() {
 
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
+cleanup_temp_install_modules_if_needed() {
+    if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+        info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
+    fi
+}
+
 relocate_log_file_if_needed() {
     [[ -n "${TARGET_DIR:-}" ]] || return 0
     local target_log_dir="${TARGET_DIR}/logs"
@@ -172,7 +186,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true' EXIT
+trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
