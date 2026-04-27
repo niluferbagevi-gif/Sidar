@@ -7,47 +7,27 @@ from __future__ import annotations
 
 import codecs
 import inspect
-import hashlib
 import asyncio
 import json
-import math
-import re
 import sys
 import logging
 import random
 import time
 from abc import ABC, abstractmethod
-from functools import lru_cache
-from typing import Any, AsyncGenerator, AsyncIterator, Callable, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
-try:
-    from redis.asyncio import Redis
-except ImportError:
-    Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 from core.dlp import mask_messages as _dlp_mask_messages
 from core.router import CostAwareRouter, record_routing_cost
-from core.cache_metrics import (
-    observe_cache_redis_latency,
-    record_cache_eviction,
-    record_cache_hit,
-    record_cache_miss,
-    record_cache_redis_error,
-    record_cache_skip,
-    set_cache_items,
-)
+from core.cache.semantic_cache import SemanticCacheManager
+from core.utils.json_repair import repair_json_text
+from core.utils.token_counter import estimate_tokens
+from core.cache_metrics import record_cache_skip
 
 from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
-
-
-def _default_semantic_embedding_fn(texts: List[str], *, cfg: Any = None) -> List[List[float]]:
-    from core.embeddings import embed_texts_for_semantic_cache
-
-    return embed_texts_for_semantic_cache(texts, cfg=cfg)
-
 
 SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -147,7 +127,7 @@ def _ensure_json_text(text: str, provider: str) -> str:
         json.loads(raw)
         return raw
     except Exception:
-        repaired = _repair_json_text(raw)
+        repaired = repair_json_text(raw)
         if repaired is not None:
             logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
             return repaired
@@ -219,129 +199,6 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
     return prompt, completion
 
 
-def _repair_json_text(text: str) -> Optional[str]:
-    """Modelin bozduğu JSON benzeri çıktıyı mümkünse JSON nesnesine onarır."""
-    candidate = (text or "").strip()
-    if not candidate:
-        return None
-    # Aşırı iç içe/uzun payload'larda parse denemelerini erken durdur.
-    if not _is_safe_literal_eval_candidate(candidate):
-        logger.debug("JSON onarımı atlandı: aday metin güvenli sınırları aşıyor.")
-        return None
-
-    def _json_dumps_if_valid(raw: str) -> Optional[str]:
-        normalized = (raw or "").strip()
-        if not normalized:
-            return None
-        try:
-            obj = json.loads(normalized)
-            return json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-
-        # En baştaki geçerli JSON nesnesini yakalamak için decoder tabanlı onarım.
-        decoder = json.JSONDecoder()
-        for i, ch in enumerate(normalized):
-            if ch not in "{[":
-                continue
-            try:
-                obj, _ = decoder.raw_decode(normalized[i:])
-                return json.dumps(obj, ensure_ascii=False)
-            except Exception:
-                continue
-        return None
-
-    parsed = _json_dumps_if_valid(candidate)
-    if parsed is not None:
-        return parsed
-
-    # Çoklu fenced markdown çıktılarında her bloğu sırayla dene.
-    for fenced in re.finditer(
-        r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```",
-        candidate,
-        flags=re.IGNORECASE,
-    ):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
-
-    # Satır sonu olmadan gelen fenced varyantları için gevşek fallback.
-    for fenced in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
-
-    try:
-        import ast
-
-        obj = ast.literal_eval(candidate)
-        if isinstance(obj, dict):
-            return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        return None
-    return None
-
-
-def _is_safe_literal_eval_candidate(text: str, *, max_len: int = 20000, max_depth: int = 80) -> bool:
-    candidate = (text or "").strip()
-    if not candidate or len(candidate) > max_len:
-        return False
-
-    depth = 0
-    in_string = False
-    string_quote = ""
-    escaped = False
-
-    for ch in candidate:
-        if in_string:
-            if escaped:
-                escaped = False
-                continue
-            if ch == "\\":
-                escaped = True
-                continue
-            if ch == string_quote:
-                in_string = False
-            continue
-
-        if ch in {"'", '"'}:
-            in_string = True
-            string_quote = ch
-            continue
-
-        if ch in "{[(":
-            depth += 1
-            if depth > max_depth:
-                return False
-        elif ch in "}])":
-            depth = max(0, depth - 1)
-
-    return True
-
-
-def _estimate_tokens(text: str, *, model: str = "") -> int:
-    normalized = text or ""
-    if not normalized:
-        return 0
-    try:
-        encoding = _get_tiktoken_encoding(model)
-        return max(0, len(encoding.encode(normalized)))
-    except Exception:
-        # Heuristik fallback: Unicode/kod yoğun içeriklerde 4 yerine 3.5 ortalaması daha güvenli.
-        return max(0, int(math.ceil(len(normalized) / 3.5)))
-
-
-@lru_cache(maxsize=64)
-def _get_tiktoken_encoding(model: str = ""):
-    import tiktoken  # type: ignore
-
-    model_name = (model or "").strip()
-    try:
-        return tiktoken.encoding_for_model(model_name) if model_name else tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        return tiktoken.get_encoding("cl100k_base")
-
-
 def _record_llm_metric(
     *,
     provider: str,
@@ -396,7 +253,7 @@ async def _track_stream_routing_cost(
     finally:
         prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
         completion_text = "".join(response_parts)
-        est_tokens = _estimate_tokens(prompt_text, model=model) + _estimate_tokens(completion_text, model=model)
+        est_tokens = estimate_tokens(prompt_text, model=model) + estimate_tokens(completion_text, model=model)
         if est_tokens <= 0:
             return
         cost_per_token = float(getattr(config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6)
@@ -419,189 +276,6 @@ async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_a
             span.end()
 
 
-
-
-class _SemanticCacheManager:
-    """Redis tabanlı semantik LLM yanıt önbelleği."""
-
-    def __init__(
-        self,
-        config,
-        embedding_fn: Optional[Callable[..., List[List[float]]]] = None,
-    ) -> None:
-        self.config = config
-        self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
-        self.threshold = max(0.0, float(_setting(config, "SEMANTIC_CACHE_THRESHOLD", 0.90)))
-        self.ttl = max(1, int(_setting(config, "SEMANTIC_CACHE_TTL", 3600)))
-        self.max_items = max(1, int(_setting(config, "SEMANTIC_CACHE_MAX_ITEMS", 500)))
-        self.redis_cb_fail_threshold = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3)))
-        self.redis_cb_cooldown_seconds = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS", 30)))
-        self.index_key = "sidar:semantic_cache:index"
-        self._embedding_fn = embedding_fn or _default_semantic_embedding_fn
-        self._redis: Redis | None = None
-        self._redis_failures = 0
-        self._redis_circuit_open_until = 0.0
-
-    def _redis_circuit_open(self) -> bool:
-        if self._redis_circuit_open_until <= 0.0:
-            return False
-        if time.monotonic() >= self._redis_circuit_open_until:
-            self._redis_circuit_open_until = 0.0
-            self._redis_failures = 0
-            return False
-        return True
-
-    def _mark_redis_failure(self) -> None:
-        self._redis_failures += 1
-        if self._redis_failures >= self.redis_cb_fail_threshold:
-            self._redis_circuit_open_until = time.monotonic() + float(self.redis_cb_cooldown_seconds)
-            logger.warning(
-                "Semantic cache circuit breaker açıldı (failures=%d, cooldown=%ss).",
-                self._redis_failures,
-                self.redis_cb_cooldown_seconds,
-            )
-
-    def _mark_redis_success(self) -> None:
-        self._redis_failures = 0
-        self._redis_circuit_open_until = 0.0
-
-    async def _get_redis(self) -> Redis | None:
-        if not self.enabled or Redis is None:
-            return None
-        if self._redis_circuit_open():
-            record_cache_skip()
-            return None
-        if self._redis is not None:
-            return self._redis
-        started = time.perf_counter()
-        try:
-            self._redis = Redis.from_url(
-                getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
-                encoding="utf-8",
-                decode_responses=True,
-                max_connections=max(1, int(_setting(self.config, "REDIS_MAX_CONNECTIONS", 50))),
-            )
-            ping_timeout = max(0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0)))
-            await asyncio.wait_for(self._redis.ping(), timeout=ping_timeout)
-            self._mark_redis_success()
-            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-            return self._redis
-        except Exception as exc:
-            logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
-            record_cache_redis_error()
-            self._mark_redis_failure()
-            self._redis = None
-            return None
-
-    @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
-        if not a or not b or len(a) != len(b):
-            return 0.0
-        dot = sum(x * y for x, y in zip(a, b))
-        an = math.sqrt(sum(x * x for x in a))
-        bn = math.sqrt(sum(y * y for y in b))
-        if an == 0 or bn == 0:
-            return 0.0
-        return dot / (an * bn)
-
-    def _embed_prompt(self, prompt: str) -> List[float]:
-        try:
-            vectors = self._embedding_fn([prompt], cfg=self.config)
-            if vectors:
-                return [float(v) for v in vectors[0]]
-        except Exception as exc:
-            logger.debug("Semantic cache embedding hatası: %s", exc)
-        return []
-
-    async def get(self, prompt: str) -> Optional[str]:
-        redis = await self._get_redis()
-        if redis is None or not prompt:
-            return None
-
-        query_vector = self._embed_prompt(prompt)
-        if not query_vector:
-            return None
-
-        started = time.perf_counter()
-        try:
-            keys = await redis.lrange(self.index_key, 0, -1)
-            if not keys:
-                set_cache_items(0)
-                observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-                return None
-            set_cache_items(len(keys))
-
-            best_sim = -1.0
-            best_response: Optional[str] = None
-            for key in keys:
-                raw = await redis.hgetall(key)
-                if not raw:
-                    continue
-                try:
-                    emb = json.loads(raw.get("embedding", "[]"))
-                except Exception:
-                    continue
-                sim = self._cosine_similarity(query_vector, emb)
-                if sim > best_sim:
-                    best_sim = sim
-                    best_response = raw.get("response")
-
-            if best_response is not None and best_sim >= self.threshold:
-                logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
-                record_cache_hit()
-                self._mark_redis_success()
-                observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-                return best_response
-            logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
-            record_cache_miss()
-            self._mark_redis_success()
-            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-            return None
-        except Exception as exc:
-            logger.debug("Semantic cache okuma hatası: %s", exc)
-            record_cache_redis_error()
-            self._mark_redis_failure()
-            self._redis = None
-            return None
-
-    async def set(self, prompt: str, response: str) -> None:
-        redis = await self._get_redis()
-        if redis is None or not prompt or not response:
-            return
-
-        vector = self._embed_prompt(prompt)
-        if not vector:
-            return
-
-        item_key = f"sidar:semantic_cache:item:{hashlib.sha256(prompt.encode('utf-8')).hexdigest()}"
-        payload = {
-            "prompt": prompt,
-            "response": response,
-            "embedding": json.dumps(vector),
-            "created_at": str(time.time()),
-        }
-        started = time.perf_counter()
-        try:
-            keys_before = await redis.lrange(self.index_key, 0, self.max_items - 1)
-            had_existing = item_key in keys_before
-            async with redis.pipeline(transaction=True) as pipe:
-                pipe.hset(item_key, mapping=payload)
-                pipe.expire(item_key, self.ttl)
-                pipe.lrem(self.index_key, 0, item_key)
-                pipe.lpush(self.index_key, item_key)
-                pipe.ltrim(self.index_key, 0, self.max_items - 1)
-                await pipe.execute()
-            current_items = await redis.llen(self.index_key)
-            set_cache_items(current_items)
-            if not had_existing and len(keys_before) >= self.max_items:
-                record_cache_eviction()
-            self._mark_redis_success()
-            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-        except Exception as exc:
-            logger.debug("Semantic cache yazma hatası: %s", exc)
-            record_cache_redis_error()
-            self._mark_redis_failure()
-            self._redis = None
 
 
 class BaseLLMClient(ABC):
@@ -1556,7 +1230,7 @@ class LLMClient:
     def __init__(self, provider: str, config) -> None:
         self.provider = provider.lower()
         self.config = config
-        self._semantic_cache = _SemanticCacheManager(config)
+        self._semantic_cache = SemanticCacheManager(config)
         self._router = CostAwareRouter(config)
         client_cls = self.PROVIDER_REGISTRY.get(self.provider)
         if client_cls is None:
@@ -1699,7 +1373,7 @@ class LLMClient:
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
             _msg_text = "\n".join(m.get("content") or "" for m in messages)
-            _est_tokens = _estimate_tokens(_msg_text, model=str(model or "")) + _estimate_tokens(
+            _est_tokens = estimate_tokens(_msg_text, model=str(model or "")) + estimate_tokens(
                 response, model=str(model or "")
             )
             _cost_per_token = float(
