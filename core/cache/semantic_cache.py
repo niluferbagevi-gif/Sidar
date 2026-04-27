@@ -18,6 +18,7 @@ from core.cache_metrics import (
     record_cache_eviction,
     record_cache_hit,
     record_cache_miss,
+    record_cache_circuit_open_bypass,
     record_cache_redis_error,
     record_cache_skip,
     set_cache_items,
@@ -85,12 +86,14 @@ class SemanticCacheManager:
         if not self.enabled or Redis is None:
             return None
         if self._redis_circuit_open():
+            record_cache_circuit_open_bypass()
             record_cache_skip()
             return None
         if self._redis is not None:
             return self._redis
         async with self._redis_init_lock:
             if self._redis_circuit_open():
+                record_cache_circuit_open_bypass()
                 record_cache_skip()
                 return None
             if self._redis is not None:

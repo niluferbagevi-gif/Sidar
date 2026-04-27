@@ -22,6 +22,8 @@ def test_cache_metrics_snapshot_and_normalization() -> None:
     metrics.record_eviction(count=-5)
     metrics.record_redis_error(count=2)
     metrics.record_redis_error(count=None)  # type: ignore[arg-type]
+    metrics.record_circuit_open_bypass(count=4)
+    metrics.record_circuit_open_bypass(count=-3)
     metrics.set_items(count=7)
     metrics.set_items(count=-2)
     metrics.observe_redis_latency(latency_ms=12.34567)
@@ -36,6 +38,7 @@ def test_cache_metrics_snapshot_and_normalization() -> None:
         "hit_rate": 0.5,
         "evictions": 3,
         "redis_errors": 2,
+        "circuit_open_bypasses": 4,
         "items": 0,
         "redis_latency_ms": 12.3457,
     }
@@ -193,6 +196,7 @@ def test_public_cache_record_functions_update_internal_metrics_and_prometheus(
     cache_metrics.record_cache_skip()
     cache_metrics.record_cache_eviction(count=5)
     cache_metrics.record_cache_redis_error(count=2)
+    cache_metrics.record_cache_circuit_open_bypass(count=3)
     cache_metrics.set_cache_items(count=-10)
     cache_metrics.observe_cache_redis_latency(latency_ms=-9.6)
 
@@ -205,6 +209,11 @@ def test_public_cache_record_functions_update_internal_metrics_and_prometheus(
             "sidar_semantic_cache_redis_errors_total",
             "Semantic cache Redis error count",
             2,
+        ),
+        (
+            "sidar_semantic_cache_circuit_open_total",
+            "Semantic cache circuit-open bypass count",
+            3,
         ),
     ]
     assert gauge_calls == [
@@ -224,6 +233,7 @@ def test_public_cache_record_functions_update_internal_metrics_and_prometheus(
         "hit_rate": 0.5,
         "evictions": 5,
         "redis_errors": 2,
+        "circuit_open_bypasses": 3,
         "items": 0,
         "redis_latency_ms": 0.0,
     }

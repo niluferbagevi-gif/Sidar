@@ -20,6 +20,7 @@ class _CacheMetrics:
         self.skips: int = 0  # cache devre dışı / stream
         self.evictions: int = 0
         self.redis_errors: int = 0
+        self.circuit_open_bypasses: int = 0
         self.items: int = 0
         self.redis_latency_ms: float = 0.0
 
@@ -43,6 +44,10 @@ class _CacheMetrics:
         with self._lock:
             self.redis_errors += max(0, int(count or 0))
 
+    def record_circuit_open_bypass(self, count: int = 1) -> None:
+        with self._lock:
+            self.circuit_open_bypasses += max(0, int(count or 0))
+
     def set_items(self, count: int) -> None:
         with self._lock:
             self.items = max(0, int(count or 0))
@@ -62,6 +67,7 @@ class _CacheMetrics:
                 "hit_rate": round(self.hits / total, 4) if total else 0.0,
                 "evictions": self.evictions,
                 "redis_errors": self.redis_errors,
+                "circuit_open_bypasses": self.circuit_open_bypasses,
                 "items": self.items,
                 "redis_latency_ms": self.redis_latency_ms,
             }
@@ -160,6 +166,15 @@ def record_cache_redis_error(count: int = 1) -> None:
     _inc_prometheus_counter(
         "sidar_semantic_cache_redis_errors_total",
         "Semantic cache Redis error count",
+        count=count,
+    )
+
+def record_cache_circuit_open_bypass(count: int = 1) -> None:
+    """Semantic cache circuit-open bypass sayacını artırır."""
+    _cache_metrics.record_circuit_open_bypass(count=count)
+    _inc_prometheus_counter(
+        "sidar_semantic_cache_circuit_open_total",
+        "Semantic cache circuit-open bypass count",
         count=count,
     )
 

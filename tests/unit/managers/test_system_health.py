@@ -22,6 +22,7 @@ def test_render_llm_metrics_prometheus_with_snapshot_values():
             "skips": 2,
             "evictions": 1,
             "redis_errors": 4,
+            "circuit_open_bypasses": 6,
             "hit_rate": 0.75,
             "items": 7,
             "redis_latency_ms": 11.2,
@@ -36,6 +37,7 @@ def test_render_llm_metrics_prometheus_with_snapshot_values():
 
     assert "sidar_llm_calls_total 4" in text
     assert "sidar_semantic_cache_hits_total 9" in text
+    assert "sidar_semantic_cache_circuit_open_total 6" in text
     assert 'sidar_llm_calls_total{provider="open\\"ai"} 2' in text
     assert 'sidar_llm_user_calls_total{user_id="user\\"1"} 1' in text
     assert text.endswith("\n")

@@ -174,6 +174,7 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
             raise AssertionError("Redis.from_url should not be called when circuit opens inside lock")
 
     skips = {"count": 0}
+    circuit_bypasses = {"count": 0}
     monkeypatch.setattr(manager, "_redis_init_lock", _FlipCircuitLock())
     monkeypatch.setattr(semantic_cache_module, "Redis", _ShouldNotInitRedis)
     monkeypatch.setattr(
@@ -181,8 +182,14 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
         "record_cache_skip",
         lambda: skips.__setitem__("count", skips["count"] + 1),
     )
+    monkeypatch.setattr(
+        semantic_cache_module,
+        "record_cache_circuit_open_bypass",
+        lambda: circuit_bypasses.__setitem__("count", circuit_bypasses["count"] + 1),
+    )
 
     redis = await manager._get_redis()
 
     assert redis is None
     assert skips["count"] == 1
+    assert circuit_bypasses["count"] == 1

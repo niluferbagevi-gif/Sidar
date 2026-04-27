@@ -49,6 +49,8 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
         '# TYPE sidar_semantic_cache_evictions_total counter',
         '# HELP sidar_semantic_cache_redis_errors_total Semantic cache Redis hata sayısı',
         '# TYPE sidar_semantic_cache_redis_errors_total counter',
+        '# HELP sidar_semantic_cache_circuit_open_total Semantic cache circuit-open bypass sayısı',
+        '# TYPE sidar_semantic_cache_circuit_open_total counter',
         '# HELP sidar_semantic_cache_hit_rate Semantic cache isabet oranı (0.0–1.0)',
         '# TYPE sidar_semantic_cache_hit_rate gauge',
         '# HELP sidar_semantic_cache_items Semantic cache içindeki aktif kayıt sayısı',
@@ -65,6 +67,8 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
         '# TYPE sidar_cache_evictions_total counter',
         '# HELP sidar_cache_redis_errors_total Legacy alias for semantic cache Redis hata sayısı',
         '# TYPE sidar_cache_redis_errors_total counter',
+        '# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass sayısı',
+        '# TYPE sidar_cache_circuit_open_total counter',
         '# HELP sidar_cache_hit_rate Legacy alias for semantic cache isabet oranı (0.0–1.0)',
         '# TYPE sidar_cache_hit_rate gauge',
         '# HELP sidar_cache_items Legacy alias for semantic cache içindeki aktif kayıt sayısı',
@@ -86,6 +90,7 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     skips = int(cache.get('skips', 0) or 0)
     evictions = int(cache.get('evictions', 0) or 0)
     redis_errors = int(cache.get('redis_errors', 0) or 0)
+    circuit_open_bypasses = int(cache.get('circuit_open_bypasses', 0) or 0)
     hit_rate = float(cache.get('hit_rate', 0.0) or 0.0)
     items = int(cache.get('items', 0) or 0)
     redis_latency_ms = float(cache.get('redis_latency_ms', 0.0) or 0.0)
@@ -95,6 +100,7 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     lines.append(f"sidar_semantic_cache_skips_total {skips}")
     lines.append(f"sidar_semantic_cache_evictions_total {evictions}")
     lines.append(f"sidar_semantic_cache_redis_errors_total {redis_errors}")
+    lines.append(f"sidar_semantic_cache_circuit_open_total {circuit_open_bypasses}")
     lines.append(f"sidar_semantic_cache_hit_rate {hit_rate}")
     lines.append(f"sidar_semantic_cache_items {items}")
     lines.append(f"sidar_semantic_cache_redis_latency_ms {redis_latency_ms}")
@@ -105,6 +111,7 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     lines.append(f"sidar_cache_skips_total {skips}")
     lines.append(f"sidar_cache_evictions_total {evictions}")
     lines.append(f"sidar_cache_redis_errors_total {redis_errors}")
+    lines.append(f"sidar_cache_circuit_open_total {circuit_open_bypasses}")
     lines.append(f"sidar_cache_hit_rate {hit_rate}")
     lines.append(f"sidar_cache_items {items}")
     lines.append(f"sidar_cache_redis_latency_ms {redis_latency_ms}")
