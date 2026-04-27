@@ -1129,7 +1129,11 @@ class LiteLLMClient(BaseLLMClient):
                                 started_at=started_at,
                             )
 
-                        async def _do_request():
+                        async def _do_request(
+                            *,
+                            endpoint: str = endpoint,
+                            payload: dict[str, Any] = payload,
+                        ):
                             async with httpx.AsyncClient(timeout=timeout) as client:
                                 resp = await client.post(endpoint, json=payload, headers=headers)
                                 resp.raise_for_status()
