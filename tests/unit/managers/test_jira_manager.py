@@ -280,7 +280,7 @@ def test_transition_issue_fails_when_transition_not_found(monkeypatch):
     async def _fake_request(method, endpoint, **kwargs):
         if endpoint.endswith("/transitions") and method == "GET":
             return True, {"transitions": [{"id": "10", "name": "To Do"}]}, ""
-        return pytest.fail("Unexpected second request")
+        raise ValueError("Unexpected second request")
 
     monkeypatch.setattr(mgr, "_request", _fake_request)
 
@@ -289,7 +289,7 @@ def test_transition_issue_fails_when_transition_not_found(monkeypatch):
     assert ok is False
     assert "Geçiş bulunamadı" in err
     assert "To Do" in err
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _run(_fake_request("POST", "issue/PROJ-1/transitions"))
 
 
