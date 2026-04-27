@@ -29,12 +29,24 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from agent.registry import AgentCatalog, AgentSpec
 
 
-def _is_contracts_module_healthy(module: object) -> bool:
+if TYPE_CHECKING:
+    from agent.core.contracts import (
+        BrokerTaskEnvelope,
+        BrokerTaskResult,
+        DelegationRequest,
+        TaskEnvelope,
+        TaskResult,
+        is_delegation_request,
+    )
+
+
+def _is_contracts_module_healthy(module: ModuleType) -> bool:
     required = (
         "TaskEnvelope",
         "TaskResult",
@@ -50,9 +62,17 @@ def _is_contracts_module_healthy(module: object) -> bool:
         if getattr(module, "DelegationRequest", object) is object:
             return False
 
-        module.TaskEnvelope(task_id="t", sender="s", receiver="r", goal="g")
-        module.TaskResult(task_id="t", status="success", summary="ok", evidence=[])
-        module.DelegationRequest(task_id="t", reply_to="s", target_agent="r", payload="p")
+        task_envelope_cls = getattr(module, "TaskEnvelope", None)
+        task_result_cls = getattr(module, "TaskResult", None)
+        delegation_request_cls = getattr(module, "DelegationRequest", None)
+        if not all(callable(cls) for cls in (task_envelope_cls, task_result_cls, delegation_request_cls)):
+            return False
+
+        cast(Any, task_envelope_cls)(task_id="t", sender="s", receiver="r", goal="g")
+        cast(Any, task_result_cls)(task_id="t", status="success", summary="ok", evidence=[])
+        cast(Any, delegation_request_cls)(
+            task_id="t", reply_to="s", target_agent="r", payload="p"
+        )
     except Exception:
         return False
 
@@ -60,7 +80,7 @@ def _is_contracts_module_healthy(module: object) -> bool:
     return callable(checker)
 
 
-def _contracts_module():
+def _contracts_module() -> ModuleType:
     module = importlib.import_module("agent.core.contracts")
     if _is_contracts_module_healthy(module):
         return module
@@ -75,13 +95,23 @@ def _contracts_module():
     return repaired
 
 
-_contracts = _contracts_module()
-BrokerTaskEnvelope = _contracts.BrokerTaskEnvelope
-BrokerTaskResult = _contracts.BrokerTaskResult
-DelegationRequest = _contracts.DelegationRequest
-TaskEnvelope = _contracts.TaskEnvelope
-TaskResult = _contracts.TaskResult
-is_delegation_request = _contracts.is_delegation_request
+if TYPE_CHECKING:
+    from agent.core.contracts import (
+        BrokerTaskEnvelope,
+        BrokerTaskResult,
+        DelegationRequest,
+        TaskEnvelope,
+        TaskResult,
+        is_delegation_request,
+    )
+else:
+    _contracts = _contracts_module()
+    BrokerTaskEnvelope = _contracts.BrokerTaskEnvelope
+    BrokerTaskResult = _contracts.BrokerTaskResult
+    DelegationRequest = _contracts.DelegationRequest
+    TaskEnvelope = _contracts.TaskEnvelope
+    TaskResult = _contracts.TaskResult
+    is_delegation_request = _contracts.is_delegation_request
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +232,7 @@ class TaskRouter:
     """
 
     @staticmethod
-    def _catalog():
+    def _catalog() -> Any:
         """Geçerli AgentCatalog referansını döndürür.
 
         Testlerde `agent.swarm.AgentCatalog` monkeypatch edildiğinde bu referansı
@@ -240,12 +270,12 @@ class TaskRouter:
         catalog = self._catalog()
         getter = getattr(catalog, "get", None)
         if callable(getter):
-            return getter(role_name)
+            return cast(AgentSpec | None, getter(role_name))
         lister = getattr(catalog, "list_all", None)
         if callable(lister):
             for spec in lister() or []:
                 if getattr(spec, "role_name", "") == role_name:
-                    return spec
+                    return cast(AgentSpec, spec)
         return None
 
 
@@ -269,7 +299,7 @@ class SwarmOrchestrator:
     ve sonuçları birleştirir.
     """
 
-    def __init__(self, cfg=None) -> None:
+    def __init__(self, cfg: Any = None) -> None:
         self.cfg = cfg
         self.router = TaskRouter()
         self._active_agents: dict[str, object] = {}  # task_id → agent instance
@@ -796,8 +826,8 @@ class SwarmOrchestrator:
             if result is None and last_exc is not None:
                 raise last_exc
 
-            if _looks_like_delegation_request(result.summary):
-                delegation = result.summary
+            if result is not None and _looks_like_delegation_request(result.summary):
+                delegation = cast(DelegationRequest, result.summary)
                 if not getattr(delegation, "reply_to", ""):
                     delegation.reply_to = spec.role_name
                 bumped = delegation.bumped() if hasattr(delegation, "bumped") else delegation
@@ -816,10 +846,10 @@ class SwarmOrchestrator:
                 task.task_id,
                 spec.role_name,
                 elapsed,
-                result.status,
+                result.status if result is not None else "unknown",
             )
-            if result.status == "success":
-                feedback_job = self._schedule_autonomous_feedback(
+            if result is not None and result.status == "success":
+                self._schedule_autonomous_feedback(
                     prompt=task.goal,
                     response=str(result.summary),
                     context={
@@ -833,8 +863,8 @@ class SwarmOrchestrator:
                     agent_role=spec.role_name,
                     task_id=task.task_id,
                 )
-                if asyncio.iscoroutine(feedback_job):
-                    await feedback_job
+            if result is None:
+                raise RuntimeError("Ajan geçerli TaskResult döndürmedi.")
             return SwarmResult(
                 task_id=task.task_id,
                 agent_role=spec.role_name,

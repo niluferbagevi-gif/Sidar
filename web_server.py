@@ -85,10 +85,10 @@ _ANYIO_CLOSED = anyio.ClosedResourceError
 try:
     from agent.core.contracts import (
         LEGACY_FEDERATION_PROTOCOL_V1,
-        ActionFeedback,
-        ExternalTrigger,
-        FederationTaskEnvelope,
-        FederationTaskResult,
+        ActionFeedback as _ActionFeedback,
+        ExternalTrigger as _ExternalTrigger,
+        FederationTaskEnvelope as _FederationTaskEnvelope,
+        FederationTaskResult as _FederationTaskResult,
         derive_correlation_id,
         normalize_federation_protocol,
     )
@@ -96,47 +96,91 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
     LEGACY_FEDERATION_PROTOCOL_V1 = "v1"
 
     @dataclass
-    class ActionFeedback:
-        trigger_id: str
-        action: str
+    class _FallbackActionFeedback:
+        feedback_id: str
+        source_system: str
+        source_agent: str
+        action_name: str
         status: str
-        result_summary: str
+        summary: str
+        related_task_id: str = ""
+        related_trigger_id: str = ""
+        details: dict[str, Any] = None  # type: ignore[assignment]
+        meta: dict[str, str] = None  # type: ignore[assignment]
         correlation_id: str | None = None
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
 
+        def to_prompt(self) -> str:
+            return str(self.summary or "")
+
     @dataclass
-    class ExternalTrigger:
+    class _FallbackExternalTrigger:
         trigger_id: str
-        event_type: str
         source: str
+        event_name: str
         payload: dict[str, Any]
-        correlation_id: str | None = None
+        meta: dict[str, str] = None  # type: ignore[assignment]
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
+        correlation_id: str | None = None
+
+        def to_prompt(self) -> str:
+            return json.dumps(self.payload, ensure_ascii=False)
 
     @dataclass
-    class FederationTaskEnvelope:
+    class _FallbackFederationTaskEnvelope:
         task_id: str
-        source_role: str
-        target_role: str
-        prompt: str
-        correlation_id: str | None = None
+        source_system: str
+        source_agent: str
+        target_system: str
+        target_agent: str
+        goal: str
+        intent: str = "mixed"
+        parent_task_id: str | None = None
+        context: dict[str, str] = None  # type: ignore[assignment]
+        inputs: list[str] = None  # type: ignore[assignment]
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
+        meta: dict[str, str] = None  # type: ignore[assignment]
+        correlation_id: str | None = None
 
     @dataclass
-    class FederationTaskResult:
+    class _FallbackFederationTaskResult:
         task_id: str
-        source_role: str
-        target_role: str
-        output: str
-        status: str = "completed"
-        correlation_id: str | None = None
+        source_system: str
+        source_agent: str
+        target_system: str
+        target_agent: str
+        status: str
+        summary: str
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
+        evidence: list[str] = None  # type: ignore[assignment]
+        next_actions: list[str] = None  # type: ignore[assignment]
+        meta: dict[str, str] = None  # type: ignore[assignment]
+        correlation_id: str | None = None
+
+        def to_task_result(self) -> Any:
+            return SimpleNamespace(
+                task_id=self.task_id,
+                status=self.status,
+                summary=self.summary,
+                evidence=list(self.evidence or []),
+                next_actions=list(self.next_actions or []),
+            )
 
     def normalize_federation_protocol(protocol: str | None) -> str:
         return (protocol or LEGACY_FEDERATION_PROTOCOL_V1).strip() or LEGACY_FEDERATION_PROTOCOL_V1
 
     def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:
         return secrets.token_hex(8)
+
+    _ActionFeedback = _FallbackActionFeedback
+    _ExternalTrigger = _FallbackExternalTrigger
+    _FederationTaskEnvelope = _FallbackFederationTaskEnvelope
+    _FederationTaskResult = _FallbackFederationTaskResult
+
+ActionFeedback = _ActionFeedback
+ExternalTrigger = _ExternalTrigger
+FederationTaskEnvelope = _FederationTaskEnvelope
+FederationTaskResult = _FederationTaskResult
 
 
 logger = logging.getLogger(__name__)
@@ -160,7 +204,7 @@ def _resolve_psutil_module():
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
 # ─────────────────────────────────────────────
-_hitl_ws_clients: set = set()
+_hitl_ws_clients: set[Any] = set()
 _COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
@@ -210,7 +254,7 @@ class _CollaborationRoom:
         participants: dict[int, _CollaborationParticipant] | None = None,
         messages: list[dict[str, Any]] | None = None,
         telemetry: list[dict[str, Any]] | None = None,
-        active_task: asyncio.Task | None = None,
+        active_task: asyncio.Task[Any] | None = None,
     ) -> None:
         self.room_id = room_id
         self.participants = participants if participants is not None else {}
@@ -244,7 +288,7 @@ def _socket_key(websocket: WebSocket) -> int:
     return id(websocket)
 
 
-def _serialize_collaboration_participant(participant: _CollaborationParticipant) -> dict[str, str]:
+def _serialize_collaboration_participant(participant: _CollaborationParticipant) -> dict[str, Any]:
     return {
         "user_id": participant.user_id,
         "username": participant.username,
@@ -472,7 +516,7 @@ def _iter_stream_chunks(text: str, *, size: int = 180) -> list[str]:
     return [clean[index : index + size] for index in range(0, len(clean), size)]
 
 
-async def _hitl_broadcast(payload: dict) -> None:
+async def _hitl_broadcast(payload: dict[str, Any]) -> None:
     """HITL olaylarını bağlı tüm admin WebSocket bağlantılarına gönder."""
     dead = set()
     for ws in list(_hitl_ws_clients):
@@ -495,10 +539,10 @@ _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
-_rag_prewarm_task: asyncio.Task | None = None
-_autonomy_cron_task: asyncio.Task | None = None
+_rag_prewarm_task: asyncio.Task[Any] | None = None
+_autonomy_cron_task: asyncio.Task[Any] | None = None
 _autonomy_cron_stop: asyncio.Event | None = None
-_nightly_memory_task: asyncio.Task | None = None
+_nightly_memory_task: asyncio.Task[Any] | None = None
 _nightly_memory_stop: asyncio.Event | None = None
 _shutdown_cleanup_done = False
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
@@ -689,9 +733,11 @@ async def _prewarm_rag_embeddings() -> None:
 async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
     _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
-    global _agent
+    global _agent, _agent_lock
     if _agent is not None:
         return _agent
+    if _agent_lock is None:
+        _agent_lock = asyncio.Lock()
     async with _agent_lock:
         if _agent is None:
             _agent = SidarAgent(cfg)
@@ -3620,7 +3666,7 @@ async def status():
     )
 
 
-async def _await_if_needed(value):
+async def _await_if_needed(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
