@@ -245,7 +245,7 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
         if isinstance(payload, dict):
             return schema.model_validate(payload)
         raise ValueError("Argüman JSON object olmalıdır")
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as err:
         raise ValueError(
             f"'{tool_name}' için legacy '|||' formatı kaldırıldı. " "JSON object argümanı gönderin."
-        )
+        ) from err
