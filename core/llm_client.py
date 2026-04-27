@@ -580,9 +580,6 @@ class OllamaClient(BaseLLMClient):
             if not decoded:
                 continue
             buffer += decoded
-            if len(buffer) > max_buffer_chars:
-                # Bellek taşmasını önlemek için güvenli pencereleme.
-                buffer = buffer[-max_buffer_chars:]
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 line = line.strip()
@@ -594,6 +591,10 @@ class OllamaClient(BaseLLMClient):
                     continue
                 if isinstance(body, dict):
                     yield body
+            if len(buffer) > max_buffer_chars:
+                # Tamamlanmamış satırın bellek taşmasını önle; newline içeren
+                # tamamen gelen satırlar yukarıda zaten işlendi.
+                buffer = buffer[-max_buffer_chars:]
 
         trailing = utf8_decoder.decode(b"", final=True)
         if trailing:
