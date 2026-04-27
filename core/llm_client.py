@@ -737,7 +737,8 @@ class GeminiClient(BaseLLMClient):
                         "tool": "final_answer",
                         "argument": f"[HATA] Gemini: {exc}",
                         "thought": "Hata",
-                    }
+                    },
+                    ensure_ascii=False,
                 )
                 return _fallback_stream(msg) if stream else msg
 
@@ -753,7 +754,8 @@ class GeminiClient(BaseLLMClient):
                     "tool": "final_answer",
                     "argument": f"\n[HATA] Gemini akış hatası: {exc}",
                     "thought": "Hata",
-                }
+                },
+                ensure_ascii=False,
             )
 
 
@@ -918,7 +920,8 @@ class OpenAIClient(BaseLLMClient):
                         "tool": "final_answer",
                         "argument": f"\n[HATA] OpenAI akış hatası: {exc}",
                         "thought": "Hata",
-                    }
+                    },
+                    ensure_ascii=False,
                 )
                 yield await _ensure_json_text_async(msg, "OpenAI")
             else:
@@ -965,11 +968,14 @@ class LiteLLMClient(BaseLLMClient):
         base_url = str(_setting(self.config, "LITELLM_GATEWAY_URL", "")).strip().rstrip("/")
         api_key = str(_setting(self.config, "LITELLM_API_KEY", "")).strip()
         if not base_url:
-            msg = json.dumps({
-                "tool": "final_answer",
-                "argument": "[HATA] LITELLM_GATEWAY_URL ayarlanmamış.",
-                "thought": "Gateway URL eksik",
-            })
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] LITELLM_GATEWAY_URL ayarlanmamış.",
+                    "thought": "Gateway URL eksik",
+                },
+                ensure_ascii=False,
+            )
             return _fallback_stream(msg) if stream else msg
 
         if json_mode:
@@ -1060,7 +1066,14 @@ class LiteLLMClient(BaseLLMClient):
                 if text:
                     yield text
         except Exception as exc:
-            msg = json.dumps({"tool": "final_answer", "argument": f"\n[HATA] LiteLLM akış hatası: {exc}", "thought": "Hata"})
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"\n[HATA] LiteLLM akış hatası: {exc}",
+                    "thought": "Hata",
+                },
+                ensure_ascii=False,
+            )
             yield await _ensure_json_text_async(msg, "LiteLLM") if json_mode else msg
         finally:
             if stream_cm is not None:
