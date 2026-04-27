@@ -18,7 +18,7 @@ import pytest
 from redis import exceptions as redis_exceptions
 
 import core.llm_client as llm_client
-import core.cache.semantic_cache as semantic_cache_module
+import core.cache.semantic_cache
 import core.utils.token_counter as token_counter
 from core.cache.semantic_cache import SemanticCacheManager
 from tests.helpers import collect_async_chunks as _collect
@@ -640,7 +640,7 @@ async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, 
 
     monkeypatch.setattr(manager, "_get_redis", _get_redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.0, 1.0])
-    monkeypatch.setattr(semantic_cache_module, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
     assert await manager.get("hello") is None
     assert misses["n"] == 1
 
@@ -661,7 +661,7 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
     expire_spy = MagicMock(wraps=pipeline.expire)
     monkeypatch.setattr(manager, "_get_redis", _get_redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.1, 0.2])
-    monkeypatch.setattr(semantic_cache_module, "record_cache_eviction", lambda: counters.__setitem__("eviction", counters["eviction"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_eviction", lambda: counters.__setitem__("eviction", counters["eviction"] + 1))
     monkeypatch.setattr(pipeline, "expire", expire_spy)
     monkeypatch.setattr(fake_redis, "pipeline", lambda transaction=True: pipeline)
 
@@ -1282,7 +1282,7 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
                     return True
             return _Inst()
 
-    monkeypatch.setattr(semantic_cache_module, "Redis", _R)
+    monkeypatch.setattr(core.cache.semantic_cache, "Redis", _R)
     assert await manager2._get_redis() is not None
     # ikinci çağrı cache'ten dönmeli
     assert await manager2._get_redis() is manager2._redis
@@ -1296,7 +1296,7 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
             return _Inst()
 
     manager3 = SemanticCacheManager(cfg2)
-    monkeypatch.setattr(semantic_cache_module, "Redis", _RBoom)
+    monkeypatch.setattr(core.cache.semantic_cache, "Redis", _RBoom)
     assert await manager3._get_redis() is None
 
     # embed import hatasında [] dönmeli
@@ -1327,8 +1327,8 @@ async def test_semantic_cache_circuit_breaker_opens_after_threshold(monkeypatch:
 
             return _Inst()
 
-    monkeypatch.setattr(semantic_cache_module, "Redis", _RBoom)
-    monkeypatch.setattr(semantic_cache_module, "record_cache_skip", lambda: skipped.__setitem__("n", skipped["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "Redis", _RBoom)
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_skip", lambda: skipped.__setitem__("n", skipped["n"] + 1))
 
     assert await manager._get_redis() is None
     assert await manager._get_redis() is None
@@ -1479,7 +1479,7 @@ async def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPa
 
     # stream mode'da cache skip path
     called = {"n": 0}
-    monkeypatch.setattr(semantic_cache_module, "record_cache_skip", lambda: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_skip", lambda: called.__setitem__("n", called["n"] + 1))
 
     async def _stream(**_kw):
         async def g():
@@ -1549,7 +1549,7 @@ async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(manager, "_get_redis", _redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.0, 1.0])
-    monkeypatch.setattr(semantic_cache_module, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
     assert await manager.get("hello") is None
     assert misses["n"] == 1
 
@@ -1565,7 +1565,7 @@ async def test_semantic_cache_get_handles_redis_exception(monkeypatch: pytest.Mo
     monkeypatch.setattr(manager, "_get_redis", _redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
     monkeypatch.setattr(fake_redis, "lrange", AsyncMock(side_effect=redis_exceptions.ConnectionError("read failed")))
-    monkeypatch.setattr(semantic_cache_module, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
 
     assert await manager.get("hello") is None
     assert errors["n"] == 1
@@ -1581,7 +1581,7 @@ async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(manager, "_get_redis", _redis)
     monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
-    monkeypatch.setattr(semantic_cache_module, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
     pipeline = fake_redis.pipeline(transaction=True)
     monkeypatch.setattr(
         pipeline,
@@ -2008,7 +2008,7 @@ async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatc
     evictions = {"n": 0}
     monkeypatch.setattr(manager2, "_get_redis", _redis2)
     monkeypatch.setattr(manager2, "_embed_prompt", lambda _p: [1.0, 0.0])
-    monkeypatch.setattr(semantic_cache_module, "record_cache_eviction", lambda: evictions.__setitem__("n", evictions["n"] + 1))
+    monkeypatch.setattr(core.cache.semantic_cache, "record_cache_eviction", lambda: evictions.__setitem__("n", evictions["n"] + 1))
     await manager2.set("p", "r")
     assert evictions["n"] == 0
 
