@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from agent.registry import AgentCatalog, AgentSpec
 
-
 if TYPE_CHECKING:
     from agent.core.contracts import (
         BrokerTaskEnvelope,

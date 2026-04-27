@@ -30,12 +30,13 @@ import signal
 import subprocess
 import tempfile
 import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, AsyncGenerator, Awaitable, Callable
+from typing import Any
 
 import anyio
 import jwt
