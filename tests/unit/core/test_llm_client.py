@@ -1018,6 +1018,25 @@ async def test_openai_stream_parser(respx_mock_router) -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_stream_error_formats_output_by_json_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
+
+    async def _raise_retry(*_a, **_kw):
+        raise RuntimeError("bağlantı koptu")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_retry)
+
+    text_chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False))
+    assert text_chunks == ["\n[SİSTEM HATASI]: Akış kesildi (bağlantı koptu)"]
+
+    json_chunks = await _collect(c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=True))
+    assert len(json_chunks) == 1
+    payload = json.loads(json_chunks[0])
+    assert payload["tool"] == "final_answer"
+    assert "OpenAI akış hatası: bağlantı koptu" in payload["argument"]
+
+
+@pytest.mark.asyncio
 async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> None:
     cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)

@@ -906,14 +906,17 @@ class OpenAIClient(BaseLLMClient):
                 if text:
                     yield text
         except Exception as exc:
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"\n[HATA] OpenAI akış hatası: {exc}",
-                    "thought": "Hata",
-                }
-            )
-            yield await _ensure_json_text_async(msg, "OpenAI") if json_mode else msg
+            if json_mode:
+                msg = json.dumps(
+                    {
+                        "tool": "final_answer",
+                        "argument": f"\n[HATA] OpenAI akış hatası: {exc}",
+                        "thought": "Hata",
+                    }
+                )
+                yield await _ensure_json_text_async(msg, "OpenAI")
+            else:
+                yield f"\n[SİSTEM HATASI]: Akış kesildi ({exc})"
 
         finally:
             if stream_cm is not None:
