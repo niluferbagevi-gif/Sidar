@@ -267,6 +267,17 @@ def test_repair_json_text_returns_none_when_all_parse_paths_fail() -> None:
     assert llm_client._repair_json_text("plain-text-without-json") is None
 
 
+def test_repair_json_text_skips_literal_eval_for_excessive_nesting() -> None:
+    deeply_nested_list = "[" * 120 + "0" + "]" * 120
+    assert llm_client._repair_json_text(deeply_nested_list) is None
+
+
+def test_is_safe_literal_eval_candidate_limits_depth_and_size() -> None:
+    assert llm_client._is_safe_literal_eval_candidate("{'k': 'v'}") is True
+    assert llm_client._is_safe_literal_eval_candidate("[" * 81 + "0" + "]" * 81, max_depth=80) is False
+    assert llm_client._is_safe_literal_eval_candidate("x" * 20001, max_len=20000) is False
+
+
 @pytest.mark.asyncio
 async def test_ensure_json_text_logs_warning_for_invalid_payload(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING"):

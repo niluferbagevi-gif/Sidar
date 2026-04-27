@@ -258,6 +258,10 @@ def _repair_json_text(text: str) -> Optional[str]:
         if parsed is not None:
             return parsed
 
+    if not _is_safe_literal_eval_candidate(candidate):
+        logger.debug("literal_eval fallback atlandı: aday metin güvenli sınırları aşıyor.")
+        return None
+
     try:
         import ast
 
@@ -267,6 +271,43 @@ def _repair_json_text(text: str) -> Optional[str]:
     except Exception:
         return None
     return None
+
+
+def _is_safe_literal_eval_candidate(text: str, *, max_len: int = 20000, max_depth: int = 80) -> bool:
+    candidate = (text or "").strip()
+    if not candidate or len(candidate) > max_len:
+        return False
+
+    depth = 0
+    in_string = False
+    string_quote = ""
+    escaped = False
+
+    for ch in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == string_quote:
+                in_string = False
+            continue
+
+        if ch in {"'", '"'}:
+            in_string = True
+            string_quote = ch
+            continue
+
+        if ch in "{[(":
+            depth += 1
+            if depth > max_depth:
+                return False
+        elif ch in "}])":
+            depth = max(0, depth - 1)
+
+    return True
 
 
 def _estimate_tokens(text: str, *, model: str = "") -> int:
