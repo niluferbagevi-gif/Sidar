@@ -11,6 +11,7 @@ import hashlib
 import asyncio
 import json
 import math
+import re
 import sys
 import logging
 import random
@@ -134,17 +135,23 @@ async def _retry_with_backoff(provider: str, operation, *, config, retry_hint: s
 
 def _ensure_json_text(text: str, provider: str) -> str:
     """json_mode çağrılarında düz metin sızıntısını güvenli JSON'a çevir."""
+    raw = text or ""
     try:
-        json.loads(text)
-        return text
+        json.loads(raw)
+        return raw
     except Exception:
+        repaired = _repair_json_text(raw)
+        if repaired is not None:
+            logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
+            return repaired
         logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
             {
                 "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
                 "tool": "final_answer",
-                "argument": text or "[UYARI] Sağlayıcı boş içerik döndürdü.",
-            }
+                "argument": raw or "[UYARI] Sağlayıcı boş içerik döndürdü.",
+            },
+            ensure_ascii=False,
         )
 
 
@@ -164,6 +171,56 @@ def _extract_usage_tokens(data: dict) -> tuple[int, int]:
     prompt = int(usage.get("prompt_tokens", 0) or 0)
     completion = int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0)
     return prompt, completion
+
+
+def _repair_json_text(text: str) -> Optional[str]:
+    """Modelin bozduğu JSON benzeri çıktıyı mümkünse JSON nesnesine onarır."""
+    candidate = (text or "").strip()
+    if not candidate:
+        return None
+    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        candidate = fenced.group(1).strip()
+    try:
+        obj = json.loads(candidate)
+        return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        pass
+    if "{" in candidate and "}" in candidate:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        block = candidate[start : end + 1]
+        try:
+            obj = json.loads(block)
+            return json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+    try:
+        import ast
+
+        obj = ast.literal_eval(candidate)
+        if isinstance(obj, dict):
+            return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        return None
+    return None
+
+
+def _estimate_tokens(text: str, *, model: str = "") -> int:
+    normalized = text or ""
+    if not normalized:
+        return 0
+    try:
+        import tiktoken  # type: ignore
+
+        try:
+            encoding = tiktoken.encoding_for_model(model) if model else tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            encoding = tiktoken.get_encoding("cl100k_base")
+        return max(0, len(encoding.encode(normalized)))
+    except Exception:
+        # Heuristik fallback: Unicode/kod yoğun içeriklerde 4 yerine 3.5 ortalaması daha güvenli.
+        return max(0, int(math.ceil(len(normalized) / 3.5)))
 
 
 def _record_llm_metric(
@@ -209,6 +266,7 @@ async def _track_stream_routing_cost(
     *,
     messages: List[Dict[str, str]],
     config: Any,
+    model: str = "",
 ) -> AsyncIterator[str]:
     response_parts: list[str] = []
     try:
@@ -217,9 +275,9 @@ async def _track_stream_routing_cost(
                 response_parts.append(chunk)
             yield chunk
     finally:
-        prompt_chars = sum(len(str(m.get("content") or "")) for m in messages)
-        completion_chars = sum(len(part) for part in response_parts)
-        est_tokens = max(0, (prompt_chars + completion_chars) // 4)
+        prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
+        completion_text = "".join(response_parts)
+        est_tokens = _estimate_tokens(prompt_text, model=model) + _estimate_tokens(completion_text, model=model)
         if est_tokens <= 0:
             return
         cost_per_token = float(getattr(config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6)
@@ -1498,12 +1556,19 @@ class LLMClient:
         )
 
         if stream and self.provider != "ollama":
-            return _track_stream_routing_cost(response, messages=messages, config=self.config)  # type: ignore[arg-type]
+            return _track_stream_routing_cost(  # type: ignore[arg-type]
+                response,
+                messages=messages,
+                config=self.config,
+                model=str(model or ""),
+            )
 
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
-            _msg_chars = sum(len(m.get("content") or "") for m in messages)
-            _est_tokens = (_msg_chars + len(response)) // 4
+            _msg_text = "\n".join(m.get("content") or "" for m in messages)
+            _est_tokens = _estimate_tokens(_msg_text, model=str(model or "")) + _estimate_tokens(
+                response, model=str(model or "")
+            )
             _cost_per_token = float(
                 getattr(self.config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6
             )

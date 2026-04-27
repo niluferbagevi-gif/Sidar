@@ -141,6 +141,14 @@ async def test_ensure_json_text_wraps_invalid_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ensure_json_text_repairs_fenced_json_payload() -> None:
+    wrapped = llm_client._ensure_json_text('```json\n{"tool":"final_answer","argument":"ok","thought":"t"}\n```', "Gemini")
+    data = json.loads(wrapped)
+    assert data["tool"] == "final_answer"
+    assert data["argument"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_ensure_json_text_logs_warning_for_invalid_payload(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING"):
         llm_client._ensure_json_text("plain-text", "Gemini")
@@ -341,6 +349,19 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert manager._cosine_similarity([], [1.0]) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import = builtins.__import__
+
+    def _guarded_import(name, *args, **kwargs):
+        if name == "tiktoken":
+            raise ImportError("no tiktoken")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _guarded_import)
+    assert llm_client._estimate_tokens("1234567") == 2
 
 
 @pytest.mark.asyncio
@@ -2464,6 +2485,7 @@ async def test_track_stream_routing_cost_skips_record_when_no_tokens(monkeypatch
 async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+    monkeypatch.setattr(llm_client, "_estimate_tokens", lambda text, model="": len(text))
 
     async def _stream():
         yield ""
