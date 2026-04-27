@@ -118,6 +118,32 @@ async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(monkeyp
     assert manager._redis_circuit_open_until > 0.0
 
 
+@pytest.mark.asyncio
+async def test_get_redis_records_error_and_opens_circuit_on_from_url_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
+    manager = SemanticCacheManager(cfg)
+
+    class _FailingRedisFactory:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            raise ConnectionError("redis unavailable")
+
+    errors = {"count": 0}
+    monkeypatch.setattr(semantic_cache_module, "Redis", _FailingRedisFactory)
+    monkeypatch.setattr(
+        semantic_cache_module,
+        "record_cache_redis_error",
+        lambda: errors.__setitem__("count", errors["count"] + 1),
+    )
+
+    redis = await manager._get_redis()
+
+    assert redis is None
+    assert errors["count"] == 1
+    assert manager._redis_failures == 1
+    assert manager._redis_circuit_open_until > 0.0
+
+
 def test_embed_prompt_returns_empty_vector_when_embedding_fn_raises() -> None:
     def _failing_embedding(*_args, **_kwargs):
         raise ValueError("Embedding model down")
