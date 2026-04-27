@@ -25,9 +25,9 @@ from tests.helpers import collect_async_chunks as _collect
 from tests.helpers import make_test_config as _make_config
 
 
-def test_llm_client_sets_redis_none_when_redis_asyncio_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    module_path = pathlib.Path(llm_client.__file__)
-    module_name = "core.llm_client_no_redis"
+def test_semantic_cache_sets_redis_none_when_redis_asyncio_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_path = pathlib.Path(semantic_cache_module.__file__)
+    module_name = "core.cache.semantic_cache_no_redis"
     original_import = builtins.__import__
 
     def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
