@@ -985,6 +985,24 @@ async def test_semantic_cache_circuit_breaker_opens_after_threshold(monkeypatch:
 
 
 @pytest.mark.asyncio
+async def test_semantic_cache_circuit_breaker_resets_after_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = llm_client._SemanticCacheManager(
+        _make_config(
+            ENABLE_SEMANTIC_CACHE=True,
+            SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1,
+            SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS=5,
+        )
+    )
+    manager._mark_redis_failure()
+    assert manager._redis_circuit_open() is True
+
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: manager._redis_circuit_open_until + 1.0)
+    assert manager._redis_circuit_open() is False
+    assert manager._redis_failures == 0
+    assert manager._redis_circuit_open_until == 0.0
+
+
+@pytest.mark.asyncio
 async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
     manager = llm_client._SemanticCacheManager(_make_config())
 
@@ -1977,6 +1995,20 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_ollama_iter_json_lines_trims_buffer_and_skips_non_dict_json() -> None:
+    c = llm_client.OllamaClient(_make_config())
+
+    class _Resp:
+        async def aiter_bytes(self):
+            yield b"xxxxx\n"
+            yield b"[1,2,3]\n"
+            yield b'{"message":{"content":"ok"}}\n'
+
+    out = [item async for item in c._iter_ollama_json_lines(_Resp(), max_buffer_chars=3)]
+    assert out == [{"message": {"content": "ok"}}]
+
+
+@pytest.mark.asyncio
 async def test_litellm_stream_no_lines_branch(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
 
@@ -2024,6 +2056,59 @@ async def test_semantic_cache_get_set_return_none_when_redis_unavailable(monkeyp
     monkeypatch.setattr(manager, "_get_redis", no_redis)
     assert await manager.get("prompt") is None
     assert await manager.set("prompt", "response") is None
+
+
+@pytest.mark.asyncio
+async def test_ollama_chat_sets_gpu_option_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _make_config(OLLAMA_URL="http://ollama", CODING_MODEL="m", USE_GPU=True)
+    c = llm_client.OllamaClient(cfg)
+
+    captured = {"payload": None}
+
+    async def _stream_stub(url, payload, timeout):
+        captured["payload"] = payload
+        if False:
+            yield ""
+
+    monkeypatch.setattr(c, "_stream_response", _stream_stub)
+    stream = await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert await _collect(stream) == []
+    assert captured["payload"]["options"]["num_gpu"] == -1
+
+
+@pytest.mark.asyncio
+async def test_gemini_import_error_returns_fallback_in_nonstream_and_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "google" and fromlist and ("genai" in fromlist):
+            raise ImportError("google-genai unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _failing_import)
+    c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="g"))
+
+    nonstream = await c.chat([{"role": "user", "content": "u"}], stream=False)
+    assert "google-genai" in nonstream
+
+    stream = await c.chat([{"role": "user", "content": "u"}], stream=True)
+    chunks = await _collect(stream)
+    assert chunks and "google-genai" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_litellm_chat_without_api_key_omits_authorization_header(respx_mock_router) -> None:
+    cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m", LITELLM_API_KEY="")
+    c = llm_client.LiteLLMClient(cfg)
+
+    route = respx_mock_router.post("http://gw/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
+    )
+    result = await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
+    assert result == "ok"
+    assert route.calls
+    sent_headers = route.calls[0].request.headers
+    assert "authorization" not in {k.lower() for k in sent_headers.keys()}
 
 
 @pytest.mark.asyncio
