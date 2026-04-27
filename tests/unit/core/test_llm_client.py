@@ -1479,7 +1479,7 @@ async def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPa
 
     # stream mode'da cache skip path
     called = {"n": 0}
-    monkeypatch.setattr(semantic_cache_module, "record_cache_skip", lambda: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr(llm_client, "record_cache_skip", lambda: called.__setitem__("n", called["n"] + 1))
 
     async def _stream(**_kw):
         async def g():
