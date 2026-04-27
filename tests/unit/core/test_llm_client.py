@@ -1959,8 +1959,9 @@ async def test_litellm_stream_failure_ends_span_and_reraises(monkeypatch: pytest
         raise httpx.ReadError("stream disconnected")
 
     monkeypatch.setattr(c, "_stream_openai_compatible", _raise_stream_open)
-    with pytest.raises(httpx.ReadError, match="stream disconnected"):
+    with pytest.raises(llm_client.LLMAPIError, match="stream disconnected") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=True, json_mode=False)
+    assert exc.value.provider == "litellm"
     assert span.ended >= 1
 
 
