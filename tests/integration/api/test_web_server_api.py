@@ -11,6 +11,7 @@ import pytest_asyncio
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.websockets import WebSocketDisconnect
 
 from core.db import Database
 
@@ -262,7 +263,7 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
 
     with TestClient(app) as client:
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/chat") as websocket:
                 websocket.send_json({"action": "auth", "token": "invalid-token"})
                 websocket.receive_json()
@@ -352,12 +353,12 @@ def test_chat_websocket_auth_required_and_missing_token_paths(
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _never_rate_limited)
 
     with TestClient(app) as client:
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/chat") as websocket:
                 websocket.send_json({"message": "auth yok"})
                 websocket.receive_json()
 
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/chat") as websocket:
                 websocket.send_json({"action": "auth", "token": ""})
                 websocket.receive_json()
