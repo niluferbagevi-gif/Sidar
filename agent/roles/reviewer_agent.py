@@ -8,6 +8,7 @@ import json
 import re
 import uuid
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus
@@ -51,7 +52,8 @@ class ReviewerAgent(BaseAgent):
         self.config = self.cfg
         github_token = getattr(self.config, "GITHUB_TOKEN", None)
         github_repo = getattr(self.config, "GITHUB_REPO", None)
-        self.github = GitHubManager(github_token, github_repo)
+        assert github_repo is not None, "github_repo cannot be None"
+        self.github = GitHubManager(github_token, str(github_repo))
         self.events = get_agent_event_bus()
         self.security = SecurityManager(cfg=self.config)
         self.code = CodeManager(
@@ -138,7 +140,7 @@ class ReviewerAgent(BaseAgent):
 
         relative_path = dynamic_path.relative_to(self.config.BASE_DIR).as_posix()
         try:
-            return await self.call_tool("run_tests", f"pytest -q {relative_path}")
+            return str(await self.call_tool("run_tests", f"pytest -q {relative_path}"))
         finally:
             try:
                 dynamic_path.unlink(missing_ok=True)
@@ -202,9 +204,9 @@ class ReviewerAgent(BaseAgent):
         return merged
 
     @staticmethod
-    def _collect_graph_followup_paths(graph_payload: dict[str, object]) -> list[str]:
+    def _collect_graph_followup_paths(graph_payload: Mapping[str, object]) -> list[str]:
         """GraphRAG raporundan reviewer'ın genişletmesi gereken kod hedeflerini toplar."""
-        reports = graph_payload.get("reports", []) if isinstance(graph_payload, dict) else []
+        reports = graph_payload.get("reports", [])
         if not isinstance(reports, list):
             return []
 
@@ -233,22 +235,46 @@ class ReviewerAgent(BaseAgent):
         return collected
 
     @staticmethod
-    def _summarize_graph_payload(graph_payload: dict[str, object]) -> dict[str, object]:
+    def _to_int(value: object, default: int = 0) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            with contextlib.suppress(ValueError):
+                return int(value)
+        return default
+
+    @staticmethod
+    def _as_str_list(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
+    def _as_mapping(value: object) -> Mapping[str, object]:
+        return value if isinstance(value, Mapping) else {}
+
+    @staticmethod
+    def _summarize_graph_payload(graph_payload: Mapping[str, object]) -> dict[str, object]:
         """GraphRAG yapılandırılmış çıktısını reviewer kalite kapısı özeti hâline getirir."""
-        reports = graph_payload.get("reports", []) if isinstance(graph_payload, dict) else []
+        reports_obj = graph_payload.get("reports", [])
+        reports = reports_obj if isinstance(reports_obj, list) else []
         ok_reports = [item for item in reports if isinstance(item, dict) and item.get("ok")]
         if not ok_reports:
             return {
-                "status": str((graph_payload or {}).get("status", "no-signal")),
+                "status": str(graph_payload.get("status", "no-signal")),
                 "risk": "düşük",
                 "high_risk_targets": [],
                 "followup_paths": [],
                 "summary": str(
-                    (graph_payload or {}).get("summary", "GraphRAG etki analizi üretilemedi.")
+                    graph_payload.get("summary", "GraphRAG etki analizi üretilemedi.")
                 ),
             }
 
-        followup_paths = ReviewerAgent._collect_graph_followup_paths(graph_payload)
+        followup_paths = ReviewerAgent._collect_graph_followup_paths(dict(graph_payload))
         high_risk_targets: list[str] = []
         impacted_endpoints = 0
         for item in ok_reports:
@@ -375,18 +401,20 @@ class ReviewerAgent(BaseAgent):
 
     @staticmethod
     def _build_combined_impact_report(
-        semantic_report: dict[str, object],
-        graph_summary: dict[str, object],
+        semantic_report: Mapping[str, object],
+        graph_summary: Mapping[str, object],
         direct_scope_paths: list[str],
         lsp_scope_paths: list[str],
     ) -> dict[str, object]:
         """GraphRAG ve LSP sinyallerini birleşik etki analizi olarak toplar."""
+        followup_paths = ReviewerAgent._as_str_list(graph_summary.get("followup_paths", []))
         graph_followups = [
             str(path or "").strip().lstrip("./")
-            for path in list(graph_summary.get("followup_paths", []) or [])
+            for path in followup_paths
             if str(path or "").strip()
         ]
-        issues = semantic_report.get("issues", []) or []
+        issues_obj = semantic_report.get("issues", [])
+        issues: Sequence[object] = issues_obj if isinstance(issues_obj, Sequence) else []
         normalized_issue_paths: list[str] = []
         for item in issues:
             if not isinstance(item, dict):
@@ -406,12 +434,13 @@ class ReviewerAgent(BaseAgent):
             if path in normalized_issue_paths and path not in direct_paths
         ]
         highest_severity = 0
-        for key, count in dict(semantic_report.get("counts", {}) or {}).items():
+        counts_map = ReviewerAgent._as_mapping(semantic_report.get("counts", {}))
+        for key, count in counts_map.items():
             try:
                 severity = int(key)
             except (TypeError, ValueError):
                 continue
-            if int(count or 0) > 0:
+            if ReviewerAgent._to_int(count, 0) > 0:
                 highest_severity = min(severity, highest_severity) if highest_severity else severity
 
         if indirect_paths and highest_severity == 1:
@@ -429,7 +458,9 @@ class ReviewerAgent(BaseAgent):
             "graph_followup_paths": graph_followups,
             "issue_paths": normalized_issue_paths,
             "indirect_breakage_paths": indirect_paths,
-            "high_risk_targets": list(graph_summary.get("high_risk_targets", []) or []),
+            "high_risk_targets": ReviewerAgent._as_str_list(
+                graph_summary.get("high_risk_targets", [])
+            ),
             "summary": (
                 f"Birleşik etki analizi: doğrudan hedef={len(direct_paths)}, "
                 f"GraphRAG genişleme={len(graph_followups)}, "
@@ -440,13 +471,14 @@ class ReviewerAgent(BaseAgent):
 
     @staticmethod
     def _build_fix_recommendations(
-        semantic_report: dict[str, object],
-        graph_payload: dict[str, object],
-        combined_impact: dict[str, object],
+        semantic_report: Mapping[str, object],
+        graph_payload: Mapping[str, object],
+        combined_impact: Mapping[str, object],
     ) -> list[dict[str, object]]:
         """Reviewer için otomatik düzeltme önerisi adaylarını üretir."""
         recommendations: list[dict[str, object]] = []
-        issues = semantic_report.get("issues", []) or []
+        issues_obj = semantic_report.get("issues", [])
+        issues: Sequence[object] = issues_obj if isinstance(issues_obj, Sequence) else []
         grouped_by_path: dict[str, list[dict[str, object]]] = {}
         for item in issues:
             if not isinstance(item, dict):
@@ -457,28 +489,31 @@ class ReviewerAgent(BaseAgent):
             grouped_by_path.setdefault(normalized, []).append(item)
 
         graph_details_by_target: dict[str, dict[str, object]] = {}
-        for report in list(graph_payload.get("reports", []) or []):
+        reports_obj = graph_payload.get("reports", [])
+        reports: Sequence[object] = reports_obj if isinstance(reports_obj, Sequence) else []
+        for report in reports:
             if not isinstance(report, dict) or not report.get("ok"):
                 continue
             details = report.get("details") or {}
             if isinstance(details, dict):
                 graph_details_by_target[str(report.get("target", "")).strip()] = details
 
-        for path in list(combined_impact.get("indirect_breakage_paths", []) or []):
+        for path in ReviewerAgent._as_str_list(combined_impact.get("indirect_breakage_paths", [])):
             issue_group = grouped_by_path.get(path, [])
             messages = [
                 str(item.get("message", "")).strip()
                 for item in issue_group[:3]
                 if str(item.get("message", "")).strip()
             ]
-            related_graph_detail = next(
+            related_graph_detail: Mapping[str, object] = next(
                 (
                     details
                     for details in graph_details_by_target.values()
-                    if path in list(details.get("review_targets", []) or [])
-                    or path in list(details.get("impacted_endpoint_handlers", []) or [])
-                    or path in list(details.get("caller_files", []) or [])
-                    or path in list(details.get("direct_dependents", []) or [])
+                    if path in ReviewerAgent._as_str_list(details.get("review_targets", []))
+                    or path
+                    in ReviewerAgent._as_str_list(details.get("impacted_endpoint_handlers", []))
+                    or path in ReviewerAgent._as_str_list(details.get("caller_files", []))
+                    or path in ReviewerAgent._as_str_list(details.get("direct_dependents", []))
                 ),
                 {},
             )
@@ -491,15 +526,15 @@ class ReviewerAgent(BaseAgent):
                         "import/type sözleşmelerini ve etkilenen çağrı zincirini düzelt."
                     ),
                     "lsp_messages": messages,
-                    "related_endpoints": list(
-                        related_graph_detail.get("impacted_endpoints", []) or []
+                    "related_endpoints": ReviewerAgent._as_str_list(
+                        related_graph_detail.get("impacted_endpoints", [])
                     ),
                 }
             )
 
         if not recommendations:
             graph_followups: list[dict[str, object]] = []
-            for report in list(graph_payload.get("reports", []) or []):
+            for report in reports:
                 if not isinstance(report, dict) or not report.get("ok"):
                     continue
                 target = str(report.get("target", "")).strip()
@@ -530,8 +565,8 @@ class ReviewerAgent(BaseAgent):
                                     "uyumunu ve etkilenen çağrı zincirini doğrula."
                                 ),
                                 "lsp_messages": [],
-                                "related_endpoints": list(
-                                    details.get("impacted_endpoints", []) or []
+                                "related_endpoints": ReviewerAgent._as_str_list(
+                                    details.get("impacted_endpoints", [])
                                 ),
                             }
                         )
@@ -604,24 +639,26 @@ class ReviewerAgent(BaseAgent):
         }
 
     @staticmethod
-    def _summarize_browser_signals(browser_payload: dict[str, object] | None) -> dict[str, object]:
+    def _summarize_browser_signals(
+        browser_payload: Mapping[str, object] | None,
+    ) -> dict[str, object]:
         payload = dict(browser_payload or {})
         summary = str(payload.get("summary", "") or "").strip()
         risk = str(payload.get("risk", "düşük") or "düşük")
         status = str(payload.get("status", "no-signal") or "no-signal")
         failed_actions = [
             str(item).strip()
-            for item in list(payload.get("failed_actions", []) or [])
+            for item in ReviewerAgent._as_str_list(payload.get("failed_actions", []))
             if str(item).strip()
         ]
         pending_actions = [
             str(item).strip()
-            for item in list(payload.get("pending_actions", []) or [])
+            for item in ReviewerAgent._as_str_list(payload.get("pending_actions", []))
             if str(item).strip()
         ]
         high_risk_actions = [
             str(item).strip()
-            for item in list(payload.get("high_risk_actions", []) or [])
+            for item in ReviewerAgent._as_str_list(payload.get("high_risk_actions", []))
             if str(item).strip()
         ]
         return {
@@ -636,11 +673,13 @@ class ReviewerAgent(BaseAgent):
 
     @staticmethod
     def _build_browser_fix_recommendations(
-        browser_summary: dict[str, object],
+        browser_summary: Mapping[str, object],
     ) -> list[dict[str, object]]:
-        failed_actions = list(browser_summary.get("failed_actions", []) or [])
-        pending_actions = list(browser_summary.get("pending_actions", []) or [])
-        high_risk_actions = list(browser_summary.get("high_risk_actions", []) or [])
+        failed_actions = ReviewerAgent._as_str_list(browser_summary.get("failed_actions", []))
+        pending_actions = ReviewerAgent._as_str_list(browser_summary.get("pending_actions", []))
+        high_risk_actions = ReviewerAgent._as_str_list(
+            browser_summary.get("high_risk_actions", [])
+        )
         if not any((failed_actions, pending_actions, high_risk_actions)):
             return []
         return [
@@ -659,17 +698,17 @@ class ReviewerAgent(BaseAgent):
 
     @staticmethod
     def _build_remediation_loop(
-        semantic_report: dict[str, object],
-        graph_summary: dict[str, object],
-        combined_impact: dict[str, object],
+        semantic_report: Mapping[str, object],
+        graph_summary: Mapping[str, object],
+        combined_impact: Mapping[str, object],
         fix_recommendations: list[dict[str, object]],
         regression_commands: list[str],
     ) -> dict[str, object]:
         """Reviewer kalite kapısını kontrollü self-healing döngüsüne dönüştürür."""
         scoped_paths = ReviewerAgent._merge_candidate_paths(
-            list(combined_impact.get("direct_scope_paths", []) or []),
-            list(combined_impact.get("graph_followup_paths", []) or []),
-            list(combined_impact.get("issue_paths", []) or []),
+            ReviewerAgent._as_str_list(combined_impact.get("direct_scope_paths", [])),
+            ReviewerAgent._as_str_list(combined_impact.get("graph_followup_paths", [])),
+            ReviewerAgent._as_str_list(combined_impact.get("issue_paths", [])),
             [
                 str(item.get("path", "")).strip()
                 for item in fix_recommendations
@@ -677,7 +716,8 @@ class ReviewerAgent(BaseAgent):
             ],
         )
         issue_count = sum(
-            int(v or 0) for v in dict(semantic_report.get("counts", {}) or {}).values()
+            ReviewerAgent._to_int(v, 0)
+            for v in ReviewerAgent._as_mapping(semantic_report.get("counts", {})).values()
         )
         impact_level = str(combined_impact.get("impact_level", "low") or "low")
         graph_risk = str(graph_summary.get("risk", "düşük") or "düşük")
@@ -854,7 +894,7 @@ class ReviewerAgent(BaseAgent):
     async def _tool_browser_signals(self, arg: str) -> str:
         request = self._parse_review_payload(arg)
         session_id = str(request.get("browser_session_id", "") or "").strip()
-        inline_payload = dict(request.get("browser_signals", {}) or {})
+        inline_payload = dict(ReviewerAgent._as_mapping(request.get("browser_signals", {})))
         if inline_payload:
             return json.dumps(inline_payload, ensure_ascii=False)
         if not session_id:
@@ -874,7 +914,7 @@ class ReviewerAgent(BaseAgent):
         )
         return json.dumps(signal, ensure_ascii=False)
 
-    async def run_task(self, task_prompt: str):
+    async def run_task(self, task_prompt: str) -> str:
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
@@ -882,28 +922,28 @@ class ReviewerAgent(BaseAgent):
 
         lower = prompt.lower()
         if lower.startswith("repo_info"):
-            return await self.call_tool("repo_info", "")
+            return str(await self.call_tool("repo_info", ""))
         if lower.startswith("list_prs"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
-            return await self.call_tool("list_prs", arg)
+            return str(await self.call_tool("list_prs", arg))
         if lower.startswith("pr_diff|"):
-            return await self.call_tool("pr_diff", prompt.split("|", 1)[1].strip())
+            return str(await self.call_tool("pr_diff", prompt.split("|", 1)[1].strip()))
         if lower.startswith("list_issues"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
-            return await self.call_tool("list_issues", arg)
+            return str(await self.call_tool("list_issues", arg))
         if lower.startswith("run_tests"):
             arg = (
                 prompt.split("|", 1)[1].strip()
                 if "|" in prompt
                 else getattr(self.config, "REVIEWER_TEST_COMMAND", "python -m pytest")
             )
-            return await self.call_tool("run_tests", arg)
+            return str(await self.call_tool("run_tests", arg))
         if lower.startswith("lsp_diagnostics"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""
-            return await self.call_tool("lsp_diagnostics", arg)
+            return str(await self.call_tool("lsp_diagnostics", arg))
         if lower.startswith("graph_impact"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""
-            return await self.call_tool("graph_impact", arg)
+            return str(await self.call_tool("graph_impact", arg))
 
         if lower.startswith("review_code|"):
             payload = self._parse_review_payload(prompt.split("|", 1)[1].strip())
@@ -922,30 +962,35 @@ class ReviewerAgent(BaseAgent):
 
             await self.events.publish("reviewer", "GraphRAG etki analizi hazırlanıyor...")
             graph_output = await self.call_tool("graph_impact", context)
-            graph_payload = {
+            graph_payload: dict[str, object] = {
                 "status": "tool-error",
                 "summary": "GraphRAG çıktısı çözümlenemedi.",
                 "reports": [],
             }
             with contextlib.suppress(json.JSONDecodeError):
-                graph_payload = json.loads(graph_output)
+                parsed_graph = json.loads(graph_output)
+                if isinstance(parsed_graph, dict):
+                    graph_payload = parsed_graph
             graph_summary = self._summarize_graph_payload(graph_payload)
 
             browser_output = await self.call_tool(
                 "browser_signals", json.dumps(payload, ensure_ascii=False)
             )
-            browser_payload = {
+            browser_payload: dict[str, object] = {
                 "status": "no-signal",
                 "risk": "düşük",
                 "summary": "Browser sinyali alınamadı.",
             }
             with contextlib.suppress(json.JSONDecodeError):
-                browser_payload = json.loads(browser_output)
+                parsed_browser = json.loads(browser_output)
+                if isinstance(parsed_browser, dict):
+                    browser_payload = parsed_browser
             browser_summary = self._summarize_browser_signals(browser_payload)
 
+            followup_paths = ReviewerAgent._as_str_list(graph_summary.get("followup_paths", []))
             lsp_scope_paths = self._merge_candidate_paths(
                 self._build_lsp_candidate_paths(context),
-                list(graph_summary.get("followup_paths", []) or []),
+                followup_paths,
             )
             await self.events.publish(
                 "reviewer",
@@ -1026,11 +1071,13 @@ class ReviewerAgent(BaseAgent):
                 },
                 ensure_ascii=False,
             )
-            return self.delegate_to(
+            return str(
+                self.delegate_to(
                 "coder", f"qa_feedback|{feedback_payload}", reason="review_decision"
+                )
             )
 
         if any(k in lower for k in ("review", "incele", "regresyon", "test")):
             return await self.run_task("review_code|Doğal dil inceleme isteği")
 
-        return await self.call_tool("list_prs", "open")
+        return str(await self.call_tool("list_prs", "open"))
