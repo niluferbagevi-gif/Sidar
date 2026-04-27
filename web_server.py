@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, AsyncGenerator, Awaitable, Callable
 
 import anyio
 import jwt
@@ -85,10 +85,10 @@ _ANYIO_CLOSED = anyio.ClosedResourceError
 try:
     from agent.core.contracts import (
         LEGACY_FEDERATION_PROTOCOL_V1,
-        ActionFeedback as _ActionFeedback,
-        ExternalTrigger as _ExternalTrigger,
-        FederationTaskEnvelope as _FederationTaskEnvelope,
-        FederationTaskResult as _FederationTaskResult,
+        ActionFeedback,
+        ExternalTrigger,
+        FederationTaskEnvelope,
+        FederationTaskResult,
         derive_correlation_id,
         normalize_federation_protocol,
     )
@@ -96,7 +96,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
     LEGACY_FEDERATION_PROTOCOL_V1 = "v1"
 
     @dataclass
-    class _FallbackActionFeedback:
+    class ActionFeedback:  # type: ignore[no-redef]
         feedback_id: str
         source_system: str
         source_agent: str
@@ -114,7 +114,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
             return str(self.summary or "")
 
     @dataclass
-    class _FallbackExternalTrigger:
+    class ExternalTrigger:  # type: ignore[no-redef]
         trigger_id: str
         source: str
         event_name: str
@@ -127,7 +127,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
             return json.dumps(self.payload, ensure_ascii=False)
 
     @dataclass
-    class _FallbackFederationTaskEnvelope:
+    class FederationTaskEnvelope:  # type: ignore[no-redef]
         task_id: str
         source_system: str
         source_agent: str
@@ -143,7 +143,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
         correlation_id: str | None = None
 
     @dataclass
-    class _FallbackFederationTaskResult:
+    class FederationTaskResult:  # type: ignore[no-redef]
         task_id: str
         source_system: str
         source_agent: str
@@ -166,28 +166,18 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
                 next_actions=list(self.next_actions or []),
             )
 
-    def normalize_federation_protocol(protocol: str | None) -> str:
+    def normalize_federation_protocol(protocol: str | None) -> str:  # type: ignore[misc, unused-ignore]
         return (protocol or LEGACY_FEDERATION_PROTOCOL_V1).strip() or LEGACY_FEDERATION_PROTOCOL_V1
 
-    def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:
+    def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:  # type: ignore[misc, unused-ignore]
         return secrets.token_hex(8)
-
-    _ActionFeedback = _FallbackActionFeedback
-    _ExternalTrigger = _FallbackExternalTrigger
-    _FederationTaskEnvelope = _FallbackFederationTaskEnvelope
-    _FederationTaskResult = _FallbackFederationTaskResult
-
-ActionFeedback = _ActionFeedback
-ExternalTrigger = _ExternalTrigger
-FederationTaskEnvelope = _FederationTaskEnvelope
-FederationTaskResult = _FederationTaskResult
 
 
 logger = logging.getLogger(__name__)
 print = builtins.print
 
 
-def _resolve_vision_components():
+def _resolve_vision_components() -> tuple[Any, Any]:
     vision_module = importlib.import_module("core.vision")
     build_analyze_prompt = getattr(
         vision_module,
@@ -197,14 +187,14 @@ def _resolve_vision_components():
     return vision_module.VisionPipeline, build_analyze_prompt
 
 
-def _resolve_psutil_module():
+def _resolve_psutil_module() -> Any:
     return importlib.import_module("psutil")
 
 
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
 # ─────────────────────────────────────────────
-_hitl_ws_clients: set[Any] = set()
+_hitl_ws_clients: set[WebSocket] = set()
 _COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
@@ -428,7 +418,7 @@ async def _join_collaboration_room(
         write_scopes=write_scopes,
         joined_at=_collaboration_now_iso(),
     )
-    websocket._sidar_room_id = normalized
+    websocket._sidar_room_id = normalized  # type: ignore[attr-defined, unused-ignore]
     await websocket.send_json({"type": "room_state", **_serialize_collaboration_room(room)})
     await _broadcast_room_payload(
         room,
@@ -446,7 +436,7 @@ async def _leave_collaboration_room(websocket: WebSocket) -> None:
     if not room_id:
         return
     room = _collaboration_rooms.get(room_id)
-    websocket._sidar_room_id = ""
+    websocket._sidar_room_id = ""  # type: ignore[attr-defined, unused-ignore]
     if room is None:
         return
     room.participants.pop(_socket_key(websocket), None)
@@ -680,7 +670,7 @@ def _bind_llm_usage_sink(agent: SidarAgent) -> None:
     if getattr(collector, "_sidar_usage_sink_bound", False):
         return
 
-    def _sink(event) -> None:
+    def _sink(event: Any) -> None:
         user_id = getattr(event, "user_id", "")
         if not user_id:
             return
@@ -704,7 +694,7 @@ def _bind_llm_usage_sink(agent: SidarAgent) -> None:
 
     if hasattr(collector, "set_usage_sink"):
         collector.set_usage_sink(_sink)
-    collector._sidar_usage_sink_bound = True
+    collector._sidar_usage_sink_bound = True  # type: ignore[attr-defined, unused-ignore]
 
 
 async def _prewarm_rag_embeddings() -> None:
@@ -738,11 +728,12 @@ async def get_agent() -> SidarAgent:
         return _agent
     if _agent_lock is None:
         _agent_lock = asyncio.Lock()
-    async with _agent_lock:
-        if _agent is None:
-            _agent = SidarAgent(cfg)
-            await _agent.initialize()
-            _bind_llm_usage_sink(_agent)
+    if _agent_lock is not None:
+        async with _agent_lock:
+            if _agent is None:
+                _agent = SidarAgent(cfg)
+                await _agent.initialize()
+                _bind_llm_usage_sink(_agent)
     return _agent
 
 
@@ -1358,7 +1349,7 @@ async def _nightly_memory_loop(stop_event: asyncio.Event) -> None:
 
 
 @asynccontextmanager
-async def _app_lifespan(_app: FastAPI):
+async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock
     global _autonomy_cron_task, _autonomy_cron_stop, _nightly_memory_task, _nightly_memory_stop
     # Kilitleri event loop ayaktayken kesin olarak başlat (lazy başlatma race-condition'ı önler)
@@ -1400,7 +1391,7 @@ async def _app_lifespan(_app: FastAPI):
         await _async_force_shutdown_local_llm_processes()
 
 
-def _build_user_from_jwt_payload(payload: dict):
+def _build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
     user_id = str(payload.get("sub", "") or "").strip()
     username = str(payload.get("username", "") or "").strip()
     role = str(payload.get("role", "user") or "user").strip() or "user"
@@ -1423,7 +1414,7 @@ def _get_jwt_secret() -> str:
     return key
 
 
-async def _resolve_user_from_token(_agent: SidarAgent, token: str):
+async def _resolve_user_from_token(_agent: SidarAgent, token: str) -> Any:
     secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
@@ -1439,7 +1430,7 @@ async def _resolve_user_from_token(_agent: SidarAgent, token: str):
     return None
 
 
-async def _issue_auth_token(agent: SidarAgent, user) -> str:
+async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
     del agent  # Stateless JWT üretiminde DB bağımlılığı yok.
     secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
@@ -1500,7 +1491,9 @@ _register_exception_handlers(app)
 
 
 @app.middleware("http")
-async def basic_auth_middleware(request: Request, call_next):
+async def basic_auth_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Bearer token ile stateless JWT kullanıcı doğrulaması uygular."""
     open_paths = {
         "/",
@@ -1586,26 +1579,26 @@ def _setup_tracing() -> None:
 _setup_tracing()
 
 
-def _get_request_user(request: Request):
+def _get_request_user(request: Request) -> Any:
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Yetkisiz erişim")
     return user
 
 
-def _is_admin_user(user) -> bool:
+def _is_admin_user(user: Any) -> bool:
     role = str(getattr(user, "role", "") or "").strip().lower()
     username = str(getattr(user, "username", "") or "").strip()
     return role == "admin" or username == "default_admin"
 
 
-def _require_admin_user(user=Depends(_get_request_user)):
+def _require_admin_user(user: Any = Depends(_get_request_user)) -> Any:
     if not _is_admin_user(user):
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
     return user
 
 
-def _require_metrics_access(request: Request, user=Depends(_get_request_user)):
+def _require_metrics_access(request: Request, user: Any = Depends(_get_request_user)) -> Any:
     """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
     metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
     if metrics_token:
@@ -1619,11 +1612,11 @@ def _require_metrics_access(request: Request, user=Depends(_get_request_user)):
     )
 
 
-def _get_user_tenant(user) -> str:
+def _get_user_tenant(user: Any) -> str:
     return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
 
 
-def _serialize_policy(record) -> dict:
+def _serialize_policy(record: Any) -> dict[str, Any]:
     return {
         "id": int(getattr(record, "id", 0) or 0),
         "user_id": str(getattr(record, "user_id", "") or ""),
@@ -1759,7 +1752,7 @@ class _SwarmExecuteRequest(BaseModel):
     max_concurrency: int = Field(default=4, ge=1, le=16)
 
 
-def _serialize_prompt(record) -> dict:
+def _serialize_prompt(record: Any) -> dict[str, Any]:
     prompt_id = getattr(record, "id", 0)
     try:
         serialized_id = int(prompt_id)
@@ -1777,7 +1770,7 @@ def _serialize_prompt(record) -> dict:
     }
 
 
-def _serialize_swarm_result(record) -> dict:
+def _serialize_swarm_result(record: Any) -> dict[str, Any]:
     return {
         "task_id": str(getattr(record, "task_id", "") or ""),
         "agent_role": str(getattr(record, "agent_role", "") or ""),
@@ -2109,7 +2102,7 @@ def _register_plugin_agent(
     capabilities: list[str] | None,
     description: str,
     version: str,
-) -> dict:
+) -> dict[str, Any]:
     normalized_role = _validate_plugin_role_name(role_name)
     module_label = f"sidar_plugin_{normalized_role}_{secrets.token_hex(4)}"
     plugin_cls = _load_plugin_agent_class(source_code, class_name, module_label)
@@ -2409,7 +2402,7 @@ async def hitl_pending(user=Depends(_get_request_user)):
 
 
 @app.post("/api/hitl/request")
-async def hitl_create_request(payload: dict, user=Depends(_get_request_user)):
+async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(_get_request_user)):
     """Yeni bir HITL onay isteği oluşturur (iç API / test amaçlı)."""
     gate = get_hitl_gate()
     action = str(payload.get("action", "manual")).strip()
@@ -2457,7 +2450,9 @@ async def hitl_respond(
 
 
 @app.middleware("http")
-async def access_policy_middleware(request: Request, call_next):
+async def access_policy_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     if request.method == "OPTIONS":
         return await call_next(request)
     user = getattr(request.state, "user", None)
@@ -2605,7 +2600,7 @@ async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_se
         count = await redis.incr(redis_key)
         if count == 1:
             await redis.expire(redis_key, window_sec + 2)
-        return count > limit
+        return bool(count > limit)
     except Exception as exc:
         logger.warning("Redis rate limit komutu başarısız (%s). Local fallback kullanılacak.", exc)
         return await _local_is_rate_limited(redis_key, limit, window_sec)
@@ -2632,7 +2627,9 @@ def _get_client_ip(request: Request) -> str:
 
 
 @app.middleware("http")
-async def ddos_rate_limit_middleware(request: Request, call_next):
+async def ddos_rate_limit_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     if (
         request.url.path.startswith("/ui/")
         or request.url.path.startswith("/static/")
@@ -2655,7 +2652,9 @@ async def ddos_rate_limit_middleware(request: Request, call_next):
 
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+async def rate_limit_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     client_ip = _get_client_ip(request)
 
     if request.url.path == "/ws/chat":
@@ -3291,7 +3290,7 @@ async def websocket_voice(websocket: WebSocket):
     try:
         from core.voice import VoicePipeline
     except ImportError:
-        VoicePipeline = None  # type: ignore[assignment]
+        VoicePipeline = None  # type: ignore[misc, assignment]
 
     agent = await _resolve_agent_instance()
     pipeline = MultimodalPipeline(agent.llm, cfg)
@@ -3314,13 +3313,13 @@ async def websocket_voice(websocket: WebSocket):
     session_prompt = ""
     voice_sequence = 0
     active_response_task: asyncio.Task | None = None
-    websocket._sidar_voice_pipeline = voice_pipeline
+    websocket._sidar_voice_pipeline = voice_pipeline  # type: ignore[attr-defined, unused-ignore]
     duplex_state = (
         voice_pipeline.create_duplex_state()
         if voice_pipeline is not None and hasattr(voice_pipeline, "create_duplex_state")
         else None
     )
-    websocket._sidar_voice_duplex_state = duplex_state
+    websocket._sidar_voice_duplex_state = duplex_state  # type: ignore[attr-defined, unused-ignore]
 
     async def _emit_voice_state(event: str) -> None:
         nonlocal voice_sequence
@@ -5331,17 +5330,15 @@ async def github_webhook(
 async def spa_fallback(full_path: str):
     normalized = (full_path or "").strip()
     if not normalized:
-        maybe_response = index()
-        if inspect.isawaitable(maybe_response):
-            return await maybe_response
+        maybe_response = await index()
         return maybe_response
     first_segment = normalized.split("/", 1)[0].lower()
     if first_segment in {"api", "vendor", "static", "assets", "ws", "webhook"}:
         return Response(status_code=404)
     if "." in Path(normalized).name:
         return Response(status_code=404)
-    maybe_response = index()
-    response = await maybe_response if inspect.isawaitable(maybe_response) else maybe_response
+    maybe_response = await index()
+    response = maybe_response
     if getattr(response, "status_code", None) == 500:
         return HTMLResponse(
             "<h1>SİDAR arayüzü için SPA fallback etkin.</h1>",
