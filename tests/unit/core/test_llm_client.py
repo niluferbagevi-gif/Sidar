@@ -302,6 +302,13 @@ async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": "x", "completion_tokens": object()}}) == (0, 0)
 
 
+@pytest.mark.asyncio
+async def test_extract_usage_tokens_handles_unparseable_string_values() -> None:
+    payload = {"usage": {"prompt_tokens": "broken_string", "completion_tokens": "nan?"}}
+
+    assert llm_client._extract_usage_tokens(payload) == (0, 0)
+
+
 def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
     usage_obj = SimpleNamespace(prompt_token_count=7, candidates_token_count=11)
     assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_obj)) == (7, 11)
@@ -1429,6 +1436,16 @@ async def test_anthropic_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm_client, "anthropic", ImportError("anthropic not installed"), raising=False)
     _patch_imports(monkeypatch, {"anthropic": ImportError("anthropic not installed")})
     msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert "anthropic paketi" in msg
+
+
+@pytest.mark.asyncio
+async def test_anthropic_import_error_when_sys_modules_entry_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+
+    msg = await c.chat([{"role": "user", "content": "x"}], stream=False)
+
     assert "anthropic paketi" in msg
 
 
@@ -2848,6 +2865,36 @@ async def test_gemini_chat_returns_missing_package_error_when_import_fails(monke
     text = await client.chat([{"role": "user", "content": "x"}], stream=False)
     data = json.loads(text)
     assert "google-genai" in data["argument"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_returns_missing_package_error_when_google_genai_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "google.genai", None)
+
+    client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+    text = await client.chat([{"role": "user", "content": "x"}], stream=False)
+
+    data = json.loads(text)
+    assert "google-genai" in data["argument"]
+
+
+@pytest.mark.asyncio
+async def test_stream_gemini_generator_yields_fallback_when_iterator_raises_runtime_error() -> None:
+    client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+
+    class _BrokenStream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("Network kesildi")
+
+    chunks = await _collect(client._stream_gemini_generator(_BrokenStream()))
+    assert len(chunks) == 1
+    assert "Gemini akış hatası" in chunks[0]
+    assert "Network kesildi" in chunks[0]
 
 
 @pytest.mark.asyncio
