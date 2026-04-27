@@ -31,6 +31,30 @@ def test_repair_json_text_uses_loose_fence_fallback_for_non_json_fence() -> None
     assert repaired == '{"value": 1, "nested": {"k": "v"}}'
 
 
+def test_repair_json_text_skips_empty_strict_fence_then_parses_next_strict_fence() -> None:
+    payload = "```json\n\n```\n```json\n\"ok\"\n```"
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '"ok"'
+
+
+def test_repair_json_text_uses_strict_fence_after_decoder_cannot_parse() -> None:
+    payload = "```json\n\"strict-fence\"\n```"
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '"strict-fence"'
+
+
+def test_repair_json_text_uses_loose_fence_after_decoder_cannot_parse() -> None:
+    payload = "prefix ```json \"loose-fence\"``` suffix"
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '"loose-fence"'
+
+
 @pytest.mark.asyncio
 async def test_repair_json_text_async_returns_none_for_empty_text() -> None:
     assert await repair_json_text_async("   ") is None
@@ -69,6 +93,33 @@ async def test_repair_json_text_async_repairs_loose_fence_without_newline() -> N
     repaired = await repair_json_text_async('```json {"x":1,"y":2} ```')
 
     assert repaired == '{"x": 1, "y": 2}'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_skips_empty_strict_fence_then_parses_next_strict_fence() -> None:
+    payload = "```json\n\n```\n```json\n\"ok\"\n```"
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '"ok"'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_uses_strict_fence_after_decoder_cannot_parse() -> None:
+    payload = "```json\n\"strict-fence\"\n```"
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '"strict-fence"'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_uses_loose_fence_after_decoder_cannot_parse() -> None:
+    payload = "prefix ```json \"loose-fence\"``` suffix"
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '"loose-fence"'
 
 
 @pytest.mark.asyncio
