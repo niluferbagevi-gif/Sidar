@@ -84,8 +84,20 @@ async def test_fallback_action_feedback_uses_related_ids_for_correlation(sidar_a
 async def test_init_accepts_config_alias_and_prefers_config() -> None:
     cfg = Mock(name="cfg")
     cfg_alias = Mock(name="config_alias")
+    deps = sidar_agent.AgentDependencies(
+        security=Mock(name="security"),
+        code=Mock(name="code"),
+        health=Mock(name="health"),
+        github=Mock(name="github"),
+        memory=Mock(name="memory"),
+        llm=Mock(name="llm"),
+        web=Mock(name="web"),
+        pkg=Mock(name="pkg"),
+        docs=Mock(name="docs"),
+        todo=Mock(name="todo"),
+    )
 
-    agent = sidar_agent.SidarAgent(cfg=cfg, config=cfg_alias)
+    agent = sidar_agent.SidarAgent(cfg=cfg, config=cfg_alias, deps=deps)
 
     assert agent.cfg is cfg_alias
 
