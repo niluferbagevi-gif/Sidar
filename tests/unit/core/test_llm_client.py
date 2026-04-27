@@ -28,7 +28,7 @@ def test_llm_client_sets_redis_none_when_redis_asyncio_import_fails(monkeypatch:
 
     def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name == "redis.asyncio":
-            raise RuntimeError("redis unavailable")
+            raise ImportError("redis unavailable")
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", _failing_import)
@@ -946,6 +946,42 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
     # embed import hatasında [] dönmeli
     _patch_imports(monkeypatch, {"core.rag": ImportError("x")})
     assert manager3._embed_prompt("p") == []
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_circuit_breaker_opens_after_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _make_config(
+        ENABLE_SEMANTIC_CACHE=True,
+        SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=2,
+        SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS=30,
+    )
+    manager = llm_client._SemanticCacheManager(cfg)
+
+    attempts = {"n": 0}
+    skipped = {"n": 0}
+
+    class _RBoom:
+        @staticmethod
+        def from_url(*_a, **_kw):
+            attempts["n"] += 1
+
+            class _Inst:
+                async def ping(self):
+                    raise RuntimeError("redis down")
+
+            return _Inst()
+
+    monkeypatch.setattr(llm_client, "Redis", _RBoom)
+    monkeypatch.setattr(llm_client, "record_cache_skip", lambda: skipped.__setitem__("n", skipped["n"] + 1))
+
+    assert await manager._get_redis() is None
+    assert await manager._get_redis() is None
+    assert attempts["n"] == 2
+
+    # Devre kesici açıkken yeni bağlantı denemesi yapılmamalı.
+    assert await manager._get_redis() is None
+    assert attempts["n"] == 2
+    assert skipped["n"] >= 1
 
 
 @pytest.mark.asyncio

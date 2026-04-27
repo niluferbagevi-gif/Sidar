@@ -21,7 +21,7 @@ from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Uni
 import httpx
 try:
     from redis.asyncio import Redis
-except Exception:
+except ImportError:
     Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 from core.dlp import mask_messages as _dlp_mask_messages
@@ -277,11 +277,41 @@ class _SemanticCacheManager:
         self.threshold = _cfg_float(config, "SEMANTIC_CACHE_THRESHOLD", 0.90, minimum=0.0)
         self.ttl = _cfg_int(config, "SEMANTIC_CACHE_TTL", 3600, minimum=1)
         self.max_items = _cfg_int(config, "SEMANTIC_CACHE_MAX_ITEMS", 500, minimum=1)
+        self.redis_cb_fail_threshold = _cfg_int(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3, minimum=1)
+        self.redis_cb_cooldown_seconds = _cfg_int(config, "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS", 30, minimum=1)
         self.index_key = "sidar:semantic_cache:index"
         self._redis: Redis | None = None
+        self._redis_failures = 0
+        self._redis_circuit_open_until = 0.0
+
+    def _redis_circuit_open(self) -> bool:
+        if self._redis_circuit_open_until <= 0.0:
+            return False
+        if time.monotonic() >= self._redis_circuit_open_until:
+            self._redis_circuit_open_until = 0.0
+            self._redis_failures = 0
+            return False
+        return True
+
+    def _mark_redis_failure(self) -> None:
+        self._redis_failures += 1
+        if self._redis_failures >= self.redis_cb_fail_threshold:
+            self._redis_circuit_open_until = time.monotonic() + float(self.redis_cb_cooldown_seconds)
+            logger.warning(
+                "Semantic cache circuit breaker açıldı (failures=%d, cooldown=%ss).",
+                self._redis_failures,
+                self.redis_cb_cooldown_seconds,
+            )
+
+    def _mark_redis_success(self) -> None:
+        self._redis_failures = 0
+        self._redis_circuit_open_until = 0.0
 
     async def _get_redis(self) -> Redis | None:
         if not self.enabled or Redis is None:
+            return None
+        if self._redis_circuit_open():
+            record_cache_skip()
             return None
         if self._redis is not None:
             return self._redis
@@ -294,11 +324,13 @@ class _SemanticCacheManager:
                 max_connections=_cfg_int(self.config, "REDIS_MAX_CONNECTIONS", 50, minimum=1),
             )
             await self._redis.ping()
+            self._mark_redis_success()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
             return self._redis
         except Exception as exc:
             logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
             record_cache_redis_error()
+            self._mark_redis_failure()
             self._redis = None
             return None
 
@@ -360,15 +392,19 @@ class _SemanticCacheManager:
             if best_response is not None and best_sim >= self.threshold:
                 logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
                 record_cache_hit()
+                self._mark_redis_success()
                 observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
                 return best_response
             logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
             record_cache_miss()
+            self._mark_redis_success()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
             return None
         except Exception as exc:
             logger.debug("Semantic cache okuma hatası: %s", exc)
             record_cache_redis_error()
+            self._mark_redis_failure()
+            self._redis = None
             return None
 
     async def set(self, prompt: str, response: str) -> None:
@@ -402,10 +438,13 @@ class _SemanticCacheManager:
             set_cache_items(current_items)
             if not had_existing and len(keys_before) >= self.max_items:
                 record_cache_eviction()
+            self._mark_redis_success()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
         except Exception as exc:
             logger.debug("Semantic cache yazma hatası: %s", exc)
             record_cache_redis_error()
+            self._mark_redis_failure()
+            self._redis = None
 
 
 class BaseLLMClient(ABC):
@@ -464,6 +503,59 @@ class OllamaClient(BaseLLMClient):
                 f"Lütfen terminalde `ollama pull {target_model}` komutunu çalıştırın."
             )
         return None
+
+    @staticmethod
+    def _error_chunk(message: str) -> str:
+        return json.dumps(
+            {
+                "tool": "final_answer",
+                "argument": message,
+                "thought": "Hata",
+            }
+        )
+
+    async def _iter_ollama_json_lines(
+        self,
+        response: httpx.Response,
+        *,
+        max_buffer_chars: int,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        buffer = ""
+        utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        async for raw_bytes in response.aiter_bytes():
+            decoded = utf8_decoder.decode(raw_bytes, final=False)
+            if not decoded:
+                continue
+            buffer += decoded
+            if len(buffer) > max_buffer_chars:
+                # Bellek taşmasını önlemek için güvenli pencereleme.
+                buffer = buffer[-max_buffer_chars:]
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    body = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(body, dict):
+                    yield body
+
+        trailing = utf8_decoder.decode(b"", final=True)
+        if trailing:
+            buffer += trailing
+
+        for raw_line in buffer.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                body = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(body, dict):
+                yield body
 
     async def chat(
         self,
@@ -580,93 +672,19 @@ class OllamaClient(BaseLLMClient):
                 config=self.config,
                 retry_hint="Ollama stream başlatma başarısız",
             )
-
-            buffer = ""
-            utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            async for raw_bytes in resp.aiter_bytes():
-                decoded = utf8_decoder.decode(raw_bytes, final=False)
-                buffer += decoded
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        body = json.loads(line)
-                        err = str(body.get("error", "") or "")
-                        if err:
-                            guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
-                            if guidance:
-                                yield json.dumps(
-                                    {
-                                        "tool": "final_answer",
-                                        "argument": f"\n[HATA] {guidance}",
-                                        "thought": "Hata",
-                                    }
-                                )
-                                return
-                        chunk = body.get("message", {}).get("content", "")
-                        if chunk:
-                            yield chunk
-                    except json.JSONDecodeError:
-                        continue
-
-            trailing = utf8_decoder.decode(b"", final=True)
-            if trailing:
-                buffer += trailing
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        body = json.loads(line)
-                        err = str(body.get("error", "") or "")
-                        if err:
-                            guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
-                            if guidance:
-                                yield json.dumps(
-                                    {
-                                        "tool": "final_answer",
-                                        "argument": f"\n[HATA] {guidance}",
-                                        "thought": "Hata",
-                                    }
-                                )
-                                return
-                        chunk = body.get("message", {}).get("content", "")
-                        if chunk:
-                            yield chunk
-                    except json.JSONDecodeError:
-                        continue
-
-            if buffer.strip():
-                try:
-                    body = json.loads(buffer)
-                    err = str(body.get("error", "") or "")
-                    if err:
-                        guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
-                        if guidance:
-                            yield json.dumps(
-                                {
-                                    "tool": "final_answer",
-                                    "argument": f"\n[HATA] {guidance}",
-                                    "thought": "Hata",
-                                }
-                            )
-                            return
-                    chunk = body.get("message", {}).get("content", "")
-                    if chunk:
-                        yield chunk
-                except json.JSONDecodeError:
-                    pass
+            max_buffer_chars = _cfg_int(self.config, "OLLAMA_STREAM_MAX_BUFFER_CHARS", 1_000_000, minimum=1024)
+            async for body in self._iter_ollama_json_lines(resp, max_buffer_chars=max_buffer_chars):
+                err = str(body.get("error", "") or "")
+                if err:
+                    guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
+                    if guidance:
+                        yield self._error_chunk(f"\n[HATA] {guidance}")
+                        return
+                chunk = body.get("message", {}).get("content", "")
+                if chunk:
+                    yield chunk
         except Exception as exc:
-            yield json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"\n[HATA] Akış kesildi: {exc}",
-                    "thought": "Hata",
-                }
-            )
+            yield self._error_chunk(f"\n[HATA] Akış kesildi: {exc}")
         finally:
             if stream_cm is not None:
                 await stream_cm.__aexit__(*sys.exc_info())
@@ -715,7 +733,7 @@ class GeminiClient(BaseLLMClient):
             from google.genai import types as google_genai_types  # type: ignore[import-not-found]
             genai_client = google_genai.Client(api_key=_cfg_str(self.config, "GEMINI_API_KEY", ""))
             genai_types = google_genai_types
-        except Exception:
+        except ImportError:
             genai_client = None
             genai_types = None
 
@@ -1217,7 +1235,7 @@ class AnthropicClient(BaseLLMClient):
 
         try:
             from anthropic import AsyncAnthropic
-        except Exception as exc:
+        except ImportError as exc:
             msg = json.dumps(
                 {
                     "tool": "final_answer",
@@ -1359,24 +1377,23 @@ class AnthropicClient(BaseLLMClient):
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
+    PROVIDER_REGISTRY: Dict[str, type[BaseLLMClient]] = {
+        "ollama": OllamaClient,
+        "gemini": GeminiClient,
+        "openai": OpenAIClient,
+        "anthropic": AnthropicClient,
+        "litellm": LiteLLMClient,
+    }
+
     def __init__(self, provider: str, config) -> None:
         self.provider = provider.lower()
         self.config = config
         self._semantic_cache = _SemanticCacheManager(config)
         self._router = CostAwareRouter(config)
-
-        if self.provider == "ollama":
-            self._client: BaseLLMClient = OllamaClient(config)
-        elif self.provider == "gemini":
-            self._client = GeminiClient(config)
-        elif self.provider == "openai":
-            self._client = OpenAIClient(config)
-        elif self.provider == "anthropic":
-            self._client = AnthropicClient(config)
-        elif self.provider == "litellm":
-            self._client = LiteLLMClient(config)
-        else:
+        client_cls = self.PROVIDER_REGISTRY.get(self.provider)
+        if client_cls is None:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
+        self._client = client_cls(config)
 
     @property
     def _ollama_base_url(self) -> str:
