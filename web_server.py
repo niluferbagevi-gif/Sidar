@@ -1138,7 +1138,7 @@ async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
             break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             try:
                 result = await _dispatch_autonomy_trigger(
                     trigger_source="cron",
@@ -1162,7 +1162,7 @@ async def _nightly_memory_loop(stop_event: asyncio.Event) -> None:
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
             break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             try:
                 agent = await _resolve_agent_instance()
                 report = await agent.run_nightly_memory_maintenance(reason="nightly_loop")
@@ -2635,7 +2635,7 @@ async def websocket_chat(websocket: WebSocket):
                 while not stop_status.is_set():
                     try:
                         evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
                     await websocket.send_json({'status': f"{evt.source}: {evt.message}"})
 
@@ -2696,7 +2696,7 @@ async def websocket_chat(websocket: WebSocket):
                 while not stop_status.is_set():
                     try:
                         evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
                     payload = {
                         "id": secrets.token_hex(8),
@@ -4085,7 +4085,7 @@ async def _get_entity_memory():
             _entity_memory_instance = get_entity_memory(cfg)
             await _entity_memory_instance.initialize()
         except Exception as exc:
-            raise HTTPException(status_code=501, detail=f"EntityMemory başlatılamadı: {exc}")
+            raise HTTPException(status_code=501, detail=f"EntityMemory başlatılamadı: {exc}") from exc
     return _entity_memory_instance
 
 
@@ -4138,7 +4138,7 @@ async def _get_feedback_store():
             _feedback_store_instance = get_feedback_store(cfg)
             await _feedback_store_instance.initialize()
         except Exception as exc:
-            raise HTTPException(status_code=501, detail=f"FeedbackStore başlatılamadı: {exc}")
+            raise HTTPException(status_code=501, detail=f"FeedbackStore başlatılamadı: {exc}") from exc
     return _feedback_store_instance
 
 
