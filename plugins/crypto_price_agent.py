@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import re
-import urllib.request
+
+import httpx
 
 from agent.base_agent import BaseAgent
 
@@ -31,12 +31,14 @@ class CryptoPriceAgent(BaseAgent):
         url = "https://api.coingecko.com/api/v3/simple/price" f"?ids={coin_id}&vs_currencies=usd"
 
         try:
-            with urllib.request.urlopen(url, timeout=8) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-                usd = payload.get(coin_id, {}).get("usd")
-                if usd is None:
-                    return f"{symbol.upper()} için fiyat verisi alınamadı."
-                return f"{symbol.upper()} güncel fiyatı: ${usd}"
+            async with httpx.AsyncClient(timeout=8) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                payload = response.json()
+            usd = payload.get(coin_id, {}).get("usd")
+            if usd is None:
+                return f"{symbol.upper()} için fiyat verisi alınamadı."
+            return f"{symbol.upper()} güncel fiyatı: ${usd}"
         except Exception as exc:
             return f"{symbol.upper()} fiyatı alınamadı: {exc}"
 
