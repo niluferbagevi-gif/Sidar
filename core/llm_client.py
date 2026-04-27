@@ -547,7 +547,7 @@ class OllamaClient(BaseLLMClient):
                 span.set_attribute("sidar.llm.stream", stream)
             try:
                 if stream:
-                    stream_iter = self._stream_response(url, payload, timeout=timeout)
+                    stream_iter = self._stream_response(url, payload, req_timeout=timeout)
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
                 async def _do_request():
@@ -610,7 +610,7 @@ class OllamaClient(BaseLLMClient):
         self,
         url: str,
         payload: dict,
-        timeout: httpx.Timeout,
+        req_timeout: httpx.Timeout,
     ) -> AsyncGenerator[str, None]:
         """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
         client = None
@@ -619,7 +619,7 @@ class OllamaClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", url, json=payload)
                 response = await cm.__aenter__()
                 response.raise_for_status()
@@ -908,7 +908,7 @@ class OpenAIClient(BaseLLMClient):
                 if stream:
                     payload["stream"] = True
                     payload["stream_options"] = {"include_usage": True}
-                    stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
+                    stream_iter = self._stream_openai(payload, headers, req_timeout=timeout, json_mode=json_mode)
                     return _trace_stream_metrics(
                         _track_stream_completion(
                             stream_iter, provider="openai", model=model_name, started_at=started_at
@@ -988,7 +988,7 @@ class OpenAIClient(BaseLLMClient):
         self,
         payload: dict,
         headers: dict,
-        timeout: httpx.Timeout,
+        req_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
         client = None
@@ -997,7 +997,7 @@ class OpenAIClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream(
                     "POST",
                     "https://api.openai.com/v1/chat/completions",
@@ -1120,7 +1120,7 @@ class LiteLLMClient(BaseLLMClient):
                             payload["stream"] = True
                             payload["stream_options"] = {"include_usage": True}
                             stream_iter = self._stream_openai_compatible(
-                                endpoint, payload, headers, timeout, json_mode
+                                endpoint, payload, headers, req_timeout=timeout, json_mode=json_mode
                             )
                             return _track_stream_completion(
                                 stream_iter,
@@ -1189,7 +1189,7 @@ class LiteLLMClient(BaseLLMClient):
         endpoint: str,
         payload: dict,
         headers: dict,
-        timeout: httpx.Timeout,
+        req_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
         client = None
@@ -1197,7 +1197,7 @@ class LiteLLMClient(BaseLLMClient):
         try:
 
             async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
+                stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
                 response = await cm.__aenter__()
                 response.raise_for_status()
