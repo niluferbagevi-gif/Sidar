@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ═══════════════════════════════════════════════════════════════
 # UYARI FİLTRELERİ
@@ -54,6 +55,46 @@ elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
 ENV_PATH = base_env_path
+
+
+class LLMClientSettings(BaseSettings):
+    """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
+
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_PATH) if ENV_PATH.exists() else None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    AI_PROVIDER: str = "ollama"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_TIMEOUT: int = 60
+    LLM_MAX_RETRIES: int = 2
+    LLM_RETRY_BASE_DELAY: float = 0.4
+    LLM_RETRY_MAX_DELAY: float = 4.0
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
+    ANTHROPIC_TIMEOUT: int = 60
+    LITELLM_GATEWAY_URL: str = ""
+    LITELLM_API_KEY: str = ""
+    LITELLM_MODEL: str = ""
+    LITELLM_TIMEOUT: int = 60
+    OLLAMA_URL: str = "http://localhost:11434/api"
+    OLLAMA_TIMEOUT: int = 30
+    OLLAMA_CONTEXT_MAX_CHARS: int = 12000
+    OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
+    CODING_MODEL: str = "qwen2.5-coder:7b"
+    REDIS_MAX_CONNECTIONS: int = 50
+    SEMANTIC_CACHE_TTL: int = 3600
+    SEMANTIC_CACHE_MAX_ITEMS: int = 500
+    SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD: int = 3
+    SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS: int = 30
+
+
+LLM_SETTINGS = LLMClientSettings()
 
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
@@ -345,31 +386,31 @@ class Config:
     REQUIRED_DIRS: List[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
 
     # ─── AI Sağlayıcı ────────────────────────────────────────
-    AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini" | "openai" | "anthropic" | "litellm"
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL:   str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL:   str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    OPENAI_TIMEOUT: int = get_int_env("OPENAI_TIMEOUT", 60)
-    LLM_MAX_RETRIES: int = get_int_env("LLM_MAX_RETRIES", 2)
-    LLM_RETRY_BASE_DELAY: float = get_float_env("LLM_RETRY_BASE_DELAY", 0.4)
-    LLM_RETRY_MAX_DELAY: float = get_float_env("LLM_RETRY_MAX_DELAY", 4.0)
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-    ANTHROPIC_MODEL:   str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
-    ANTHROPIC_TIMEOUT: int = get_int_env("ANTHROPIC_TIMEOUT", 60)
+    AI_PROVIDER:    str = LLM_SETTINGS.AI_PROVIDER   # "ollama" | "gemini" | "openai" | "anthropic" | "litellm"
+    GEMINI_API_KEY: str = LLM_SETTINGS.GEMINI_API_KEY
+    GEMINI_MODEL:   str = LLM_SETTINGS.GEMINI_MODEL
+    OPENAI_API_KEY: str = LLM_SETTINGS.OPENAI_API_KEY
+    OPENAI_MODEL:   str = LLM_SETTINGS.OPENAI_MODEL
+    OPENAI_TIMEOUT: int = LLM_SETTINGS.OPENAI_TIMEOUT
+    LLM_MAX_RETRIES: int = LLM_SETTINGS.LLM_MAX_RETRIES
+    LLM_RETRY_BASE_DELAY: float = LLM_SETTINGS.LLM_RETRY_BASE_DELAY
+    LLM_RETRY_MAX_DELAY: float = LLM_SETTINGS.LLM_RETRY_MAX_DELAY
+    ANTHROPIC_API_KEY: str = LLM_SETTINGS.ANTHROPIC_API_KEY
+    ANTHROPIC_MODEL:   str = LLM_SETTINGS.ANTHROPIC_MODEL
+    ANTHROPIC_TIMEOUT: int = LLM_SETTINGS.ANTHROPIC_TIMEOUT
 
     # ─── LiteLLM Gateway ─────────────────────────────────────
-    LITELLM_GATEWAY_URL: str = os.getenv("LITELLM_GATEWAY_URL", "")
-    LITELLM_API_KEY: str = os.getenv("LITELLM_API_KEY", "")
-    LITELLM_MODEL: str = os.getenv("LITELLM_MODEL", "")
+    LITELLM_GATEWAY_URL: str = LLM_SETTINGS.LITELLM_GATEWAY_URL
+    LITELLM_API_KEY: str = LLM_SETTINGS.LITELLM_API_KEY
+    LITELLM_MODEL: str = LLM_SETTINGS.LITELLM_MODEL
     LITELLM_FALLBACK_MODELS: List[str] = get_list_env("LITELLM_FALLBACK_MODELS", [])
-    LITELLM_TIMEOUT: int = get_int_env("LITELLM_TIMEOUT", 60)
+    LITELLM_TIMEOUT: int = LLM_SETTINGS.LITELLM_TIMEOUT
 
     # ─── Ollama ──────────────────────────────────────────────
-    OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
-    OLLAMA_TIMEOUT: int = get_int_env("OLLAMA_TIMEOUT", 30)
+    OLLAMA_URL:     str = LLM_SETTINGS.OLLAMA_URL
+    OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
-    CODING_MODEL:   str = os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
+    CODING_MODEL:   str = LLM_SETTINGS.CODING_MODEL
     TEXT_MODEL:     str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
@@ -439,7 +480,7 @@ class Config:
     RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
     RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
     REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_MAX_CONNECTIONS: int = get_int_env("REDIS_MAX_CONNECTIONS", 50)
+    REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
     ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
@@ -466,8 +507,8 @@ class Config:
     # ─── Semantic Cache (v4.0) ───────────────────────────────
     ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
-    SEMANTIC_CACHE_TTL: int = get_int_env("SEMANTIC_CACHE_TTL", 3600)
-    SEMANTIC_CACHE_MAX_ITEMS: int = get_int_env("SEMANTIC_CACHE_MAX_ITEMS", 500)
+    SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
+    SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
     SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq")
     SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
 
