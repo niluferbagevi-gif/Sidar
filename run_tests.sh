@@ -131,6 +131,100 @@ resolve_docker_compose_cmd() {
   return 1
 }
 
+
+
+resolve_ollama_base_url() {
+  local raw_url="${OLLAMA_URL:-http://localhost:11434}"
+  raw_url="${raw_url%/}"
+  raw_url="${raw_url%/api}"
+  printf '%s' "${raw_url}"
+}
+
+sync_ollama_models() {
+  local sync_mode="${OLLAMA_MODEL_SYNC:-auto}"
+  if [ "${sync_mode}" = "0" ] || [ "${sync_mode}" = "false" ]; then
+    echo "ℹ️ OLLAMA_MODEL_SYNC=${sync_mode}; Ollama model senkronizasyonu atlanıyor."
+    return 0
+  fi
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "ℹ️ 'ollama' CLI bulunamadı; model health check adımı atlanıyor."
+    return 0
+  fi
+
+  local ollama_base_url
+  ollama_base_url="$(resolve_ollama_base_url)"
+
+  if command -v curl >/dev/null 2>&1; then
+    if ! curl -fsS --max-time 2 "${ollama_base_url}/api/tags" >/dev/null 2>&1; then
+      echo "⚠️ Ollama API erişilemedi (${ollama_base_url}/api/tags); model health check atlanıyor."
+      return 0
+    fi
+  elif ! ollama list >/dev/null 2>&1; then
+    echo "⚠️ Ollama listesi alınamadı; model health check atlanıyor."
+    return 0
+  fi
+
+  local required_models_raw="${OLLAMA_REQUIRED_MODELS:-${CODING_MODEL:-qwen2.5-coder:7b}}"
+  local -a required_models=()
+  local -A seen_models=()
+  local model
+
+  IFS=',' read -r -a _parsed_models <<< "${required_models_raw}"
+  for model in "${_parsed_models[@]}"; do
+    model="${model## }"
+    model="${model%% }"
+    if [ -z "${model}" ]; then
+      continue
+    fi
+    if [ -z "${seen_models[${model}]+x}" ]; then
+      required_models+=("${model}")
+      seen_models["${model}"]=1
+    fi
+  done
+
+  if [ "${#required_models[@]}" -eq 0 ]; then
+    echo "ℹ️ Kontrol edilecek Ollama modeli tanımlı değil (OLLAMA_REQUIRED_MODELS boş)."
+    return 0
+  fi
+
+  echo "🩺 Ollama model health check: ${required_models[*]}"
+
+  local model_list
+  model_list="$(ollama list 2>/dev/null || true)"
+  if [ -z "${model_list}" ]; then
+    echo "⚠️ Ollama model listesi boş/alınamadı; eksik model kontrolü atlanıyor."
+    return 0
+  fi
+
+  local auto_pull_missing="${OLLAMA_AUTO_PULL_MISSING:-1}"
+  local missing_count=0
+
+  for model in "${required_models[@]}"; do
+    if printf '%s\n' "${model_list}" | awk 'NR>1 {print $1}' | grep -Fxq "${model}"; then
+      echo "✅ Ollama modeli hazır: ${model}"
+      continue
+    fi
+
+    missing_count=$((missing_count + 1))
+    echo "⚠️ Eksik Ollama modeli: ${model}"
+
+    if [ "${auto_pull_missing}" = "1" ] || [ "${auto_pull_missing}" = "true" ]; then
+      echo "⬇️ Model indiriliyor: ollama pull ${model}"
+      if ollama pull "${model}"; then
+        echo "✅ Model indirildi: ${model}"
+      else
+        echo "⚠️ Model indirilemedi: ${model} (manuel: ollama pull ${model})"
+      fi
+    else
+      echo "ℹ️ Otomatik indirme kapalı (OLLAMA_AUTO_PULL_MISSING=${auto_pull_missing}). Manuel: ollama pull ${model}"
+    fi
+  done
+
+  if [ "${missing_count}" -eq 0 ]; then
+    echo "✅ Ollama model senkronizasyonu tamamlandı; tüm gerekli etiketler mevcut."
+  fi
+}
 ensure_uv_available() {
   if ! command -v uv >/dev/null 2>&1; then
     echo "❌ Bu script uv standardını zorunlu kılar ancak 'uv' bulunamadı."
@@ -321,6 +415,7 @@ PY
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
 if ensure_uv_available && run_static_analysis_gates && ensure_test_services; then
+  sync_ollama_models
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
