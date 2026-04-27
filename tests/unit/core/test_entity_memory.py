@@ -6,11 +6,12 @@ from typing import Any
 import pytest
 
 from core import entity_memory as em_module
-from core.entity_memory import EntityMemory, WELL_KNOWN_KEYS, get_entity_memory
+from core.entity_memory import WELL_KNOWN_KEYS, EntityMemory, get_entity_memory
 
 requires_sqlalchemy = pytest.mark.skipif(
     not em_module._SA_AVAILABLE, reason="sqlalchemy async extras not available in runtime"
 )
+
 
 @pytest.fixture
 def sqlite_db_url(tmp_path: Path) -> str:
@@ -58,7 +59,9 @@ def test_initialize_and_crud_happy_path(sqlite_db_url: str):
 
 def test_validation_and_disabled_behavior(sqlite_db_url: str):
     async def scenario():
-        disabled = EntityMemory(database_url=sqlite_db_url, config=types.SimpleNamespace(ENABLE_ENTITY_MEMORY=False))
+        disabled = EntityMemory(
+            database_url=sqlite_db_url, config=types.SimpleNamespace(ENABLE_ENTITY_MEMORY=False)
+        )
 
         # disabled instance should no-op
         await disabled.initialize()
@@ -112,7 +115,9 @@ def test_purge_expired_and_ttl_zero(sqlite_db_url: str):
         # force one row to be old
         async with em._engine.begin() as conn:
             await conn.execute(
-                em_module.sql_text("UPDATE entity_memory SET updated_at = updated_at - 3 * 86400 WHERE key = 'k1'")
+                em_module.sql_text(
+                    "UPDATE entity_memory SET updated_at = updated_at - 3 * 86400 WHERE key = 'k1'"
+                )
             )
 
         removed = await em.purge_expired()
@@ -147,7 +152,9 @@ def test_well_known_keys_and_singleton_creation(monkeypatch):
     assert first._db_url == fake_cfg.DATABASE_URL
 
 
-def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(monkeypatch, sqlite_db_url: str):
+def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(
+    monkeypatch, sqlite_db_url: str
+):
     async def scenario():
         monkeypatch.setattr(em_module, "_SA_AVAILABLE", False)
         em = EntityMemory(database_url=sqlite_db_url)

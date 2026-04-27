@@ -13,7 +13,6 @@ import pytest
 from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
 
-
 # Fresh kurulumda installer'ın .env üzerinden hazırladığı model ile hizalı olsun.
 # İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
 MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:3b"
@@ -177,9 +176,8 @@ async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
     prompt_repeat = _env_int("GPU_STRESS_PROMPT_REPEAT", 256, min_value=64, max_value=4096)
     latency_budget_seconds = _env_int("GPU_STRESS_LATENCY_BUDGET", 60, min_value=10, max_value=240)
 
-    prompt = (
-        "Aşağıdaki metni kısaca özetle ve sadece iki cümle döndür:\n"
-        + ("GPU stres testi metni. " * prompt_repeat)
+    prompt = "Aşağıdaki metni kısaca özetle ve sadece iki cümle döndür:\n" + (
+        "GPU stres testi metni. " * prompt_repeat
     )
 
     max_gpu_memory_mib = _read_gpu_memory_used_mib()

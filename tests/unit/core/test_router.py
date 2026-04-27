@@ -120,7 +120,9 @@ def test_query_complexity_char_budget_reads_from_env(monkeypatch: pytest.MonkeyP
     assert score_small_budget > score_large_budget
 
 
-def test_query_complexity_char_budget_env_falls_back_on_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_query_complexity_char_budget_env_falls_back_on_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     analyzer = QueryComplexityAnalyzer()
     payload = "analyze tradeoff " * 20
 
@@ -295,7 +297,9 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
     high_token_messages = [
         {
             "role": "user",
-            "content": " ".join(["analyze complex distributed orchestration and testing fallback behavior"] * 30),
+            "content": " ".join(
+                ["analyze complex distributed orchestration and testing fallback behavior"] * 30
+            ),
         }
     ]
 
@@ -310,7 +314,9 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
 
 def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> None:
     db_path = str(tmp_path / "shared_budget.db")
-    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_SHARED_BUDGET_DB_PATH=db_path)
+    cfg = _make_config(
+        COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_SHARED_BUDGET_DB_PATH=db_path
+    )
     cost_router = CostAwareRouter(cfg)
     assert isinstance(router._budget_tracker, router._SqliteDailyBudgetTracker)
 
@@ -323,7 +329,9 @@ def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> N
     assert (provider, model) == ("ollama", "llama3")
 
 
-def test_router_uses_redis_shared_budget_tracker_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_router_uses_redis_shared_budget_tracker_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _FakePipe:
         def __init__(self, redis_obj):
             self.redis_obj = redis_obj
@@ -366,7 +374,9 @@ def test_router_uses_redis_shared_budget_tracker_when_configured(monkeypatch: py
             return True
 
     monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
-    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_REDIS_BUDGET_URL="redis://fake:6379/0")
+    cfg = _make_config(
+        COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_REDIS_BUDGET_URL="redis://fake:6379/0"
+    )
     cost_router = CostAwareRouter(cfg)
     assert isinstance(router._budget_tracker, router._RedisDailyBudgetTracker)
 
@@ -457,13 +467,19 @@ def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.Monkey
             assert name == "cl100k_base"
             return _FakeEncoder()
 
-    monkeypatch.setattr(router.importlib, "import_module", lambda name: _FakeTiktokenModule() if name == "tiktoken" else None)
+    monkeypatch.setattr(
+        router.importlib,
+        "import_module",
+        lambda name: _FakeTiktokenModule() if name == "tiktoken" else None,
+    )
     router._TIKTOKEN_ENCODER = None
 
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": "merhaba dünya"}]) == 5
 
 
-def test_estimate_tokens_falls_back_when_tiktoken_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def _raise_import_error(_name: str):
         raise ModuleNotFoundError("tiktoken not installed")
 
@@ -506,7 +522,9 @@ def test_redis_daily_budget_tracker_init_guards(monkeypatch: pytest.MonkeyPatch)
         router._RedisDailyBudgetTracker("  ")
 
 
-def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Pipe:
         def __init__(self) -> None:
             self.execute_called = 0

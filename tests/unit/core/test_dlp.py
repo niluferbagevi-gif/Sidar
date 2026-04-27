@@ -5,7 +5,14 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from core import dlp
-from core.dlp import DLPDetection, DLPEngine, _is_valid_tckn, get_dlp_engine, mask_messages, mask_pii
+from core.dlp import (
+    DLPDetection,
+    DLPEngine,
+    _is_valid_tckn,
+    get_dlp_engine,
+    mask_messages,
+    mask_pii,
+)
 
 
 def test_is_valid_tckn_for_valid_and_invalid_inputs():
@@ -62,9 +69,7 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
             "ipv4 192.168.10.42",
             "ipv6 2001:0db8:85a3:0000:0000:8a2e:0370:7334",
             "jwt eyaaaaaaaaaa.bbbbbbbbbbb.ccccccccccc",
-            "hex "
-            "deadbeefdeadbeefdeadbeefdeadbeef"
-            "deadbeefdeadbeefdeadbeefdeadbeef",
+            "hex " "deadbeefdeadbeefdeadbeefdeadbeef" "deadbeefdeadbeefdeadbeefdeadbeef",
         ]
     )
 

@@ -54,7 +54,9 @@ def test_cost_routing_threshold_prefers_cloud_for_complex_query() -> None:
 
 
 def test_cost_routing_fail_closed_when_cloud_provider_missing() -> None:
-    router = CostAwareRouter(_cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.10, COST_ROUTING_CLOUD_PROVIDER=""))
+    router = CostAwareRouter(
+        _cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.10, COST_ROUTING_CLOUD_PROVIDER="")
+    )
 
     provider, model = router.select(
         [{"role": "user", "content": "analyze algorithm tradeoff in detail?"}],
@@ -69,7 +71,9 @@ def test_cost_routing_fail_closed_when_cloud_provider_missing() -> None:
 def test_cost_routing_budget_exceeded_forces_local(monkeypatch) -> None:
     from core import router as router_module
 
-    router = CostAwareRouter(_cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.0, COST_ROUTING_DAILY_BUDGET_USD=0.01))
+    router = CostAwareRouter(
+        _cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.0, COST_ROUTING_DAILY_BUDGET_USD=0.01)
+    )
     monkeypatch.setattr(router_module._budget_tracker, "exceeded", lambda _limit: True)
 
     provider, model = router.select(
@@ -94,7 +98,9 @@ def test_cost_routing_disabled_keeps_defaults() -> None:
 
 
 @pytest.mark.parametrize("local_provider", ["", None])
-def test_cost_routing_simple_query_keeps_defaults_when_local_provider_not_configured(local_provider) -> None:
+def test_cost_routing_simple_query_keeps_defaults_when_local_provider_not_configured(
+    local_provider,
+) -> None:
     router = CostAwareRouter(
         _cfg(
             COST_ROUTING_COMPLEXITY_THRESHOLD=0.95,

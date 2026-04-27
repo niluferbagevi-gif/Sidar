@@ -22,7 +22,9 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def _make_request(*, request_id: str, expires_at: float, decision: hitl.HITLDecision = hitl.HITLDecision.PENDING) -> hitl.HITLRequest:
+def _make_request(
+    *, request_id: str, expires_at: float, decision: hitl.HITLDecision = hitl.HITLDecision.PENDING
+) -> hitl.HITLRequest:
     return build_hitl_request(
         request_id=request_id,
         expires_at=expires_at,
@@ -69,7 +71,9 @@ def test_store_add_get_pending_recent_and_eviction(
     assert [r.request_id for r in recent] == ["new"]
 
 
-def test_store_logs_when_evicted_request_is_already_decided(caplog: pytest.LogCaptureFixture) -> None:
+def test_store_logs_when_evicted_request_is_already_decided(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     store = hitl._HITLStore(max_size=1)
     decided = _make_request(request_id="done", expires_at=50.0, decision=hitl.HITLDecision.APPROVED)
     newest = _make_request(request_id="new", expires_at=60.0)
@@ -78,7 +82,9 @@ def test_store_logs_when_evicted_request_is_already_decided(caplog: pytest.LogCa
     with caplog.at_level("WARNING"):
         run(store.add(newest))
 
-    assert "HITL: Kuyruk dolu, kararı verilmiş istek düşürüldü: done (karar=approved)" in caplog.text
+    assert (
+        "HITL: Kuyruk dolu, kararı verilmiş istek düşürüldü: done (karar=approved)" in caplog.text
+    )
 
 
 def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,12 +97,18 @@ def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch)
     assert expired.decision == hitl.HITLDecision.TIMEOUT
 
 
-def test_store_pending_and_all_recent_initialize_lock_and_skip_non_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_store_pending_and_all_recent_initialize_lock_and_skip_non_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     store = hitl._HITLStore()
     store._requests.extend(
         [
-            _make_request(request_id="r-approved", expires_at=200.0, decision=hitl.HITLDecision.APPROVED),
-            _make_request(request_id="r-pending", expires_at=200.0, decision=hitl.HITLDecision.PENDING),
+            _make_request(
+                request_id="r-approved", expires_at=200.0, decision=hitl.HITLDecision.APPROVED
+            ),
+            _make_request(
+                request_id="r-pending", expires_at=200.0, decision=hitl.HITLDecision.PENDING
+            ),
         ]
     )
     store._index = {req.request_id: req for req in store._requests}
@@ -209,7 +221,9 @@ def test_request_approval_rejected_path(monkeypatch: pytest.MonkeyPatch) -> None
     assert approved is False
 
 
-def test_request_approval_returns_false_when_request_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_approval_returns_false_when_request_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "30")
     gate = hitl.HITLGate()
@@ -252,7 +266,9 @@ def test_request_approval_timeout_updates_request(monkeypatch: pytest.MonkeyPatc
     assert requests[0].decided_at == 11.0
 
 
-def test_request_approval_timeout_branch_skips_timeout_update_when_decision_changed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_approval_timeout_branch_skips_timeout_update_when_decision_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -279,7 +295,9 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_chan
     assert requests[0].decided_at is None
 
 
-def test_request_approval_timeout_branch_skips_timeout_update_when_decision_becomes_approved(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_approval_timeout_branch_skips_timeout_update_when_decision_becomes_approved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -307,7 +325,9 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_beco
     assert requests[0].decided_at is None
 
 
-def test_request_approval_timeout_branch_skips_timeout_update_when_request_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_approval_timeout_branch_skips_timeout_update_when_request_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -352,7 +372,9 @@ def test_respond_none_already_decided_and_rejected_fields(monkeypatch: pytest.Mo
     run(store.add(pending))
 
     monkeypatch.setattr(hitl.time, "time", lambda: 123.0)
-    rejected = run(gate.respond("pending", approved=False, decided_by="eve", rejection_reason="policy"))
+    rejected = run(
+        gate.respond("pending", approved=False, decided_by="eve", rejection_reason="policy")
+    )
     assert rejected.decision == hitl.HITLDecision.REJECTED
     assert rejected.decided_at == 123.0
     assert rejected.decided_by == "eve"
@@ -360,6 +382,8 @@ def test_respond_none_already_decided_and_rejected_fields(monkeypatch: pytest.Mo
 
     pending2 = _make_request(request_id="pending2", expires_at=50.0)
     run(store.add(pending2))
-    approved = run(gate.respond("pending2", approved=True, decided_by="eve", rejection_reason="ignored"))
+    approved = run(
+        gate.respond("pending2", approved=True, decided_by="eve", rejection_reason="ignored")
+    )
     assert approved.decision == hitl.HITLDecision.APPROVED
     assert approved.rejection_reason == ""

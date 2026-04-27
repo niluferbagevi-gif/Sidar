@@ -1,20 +1,20 @@
-
 """
 Sidar Project — Merkezi Yapılandırma Modülü
 Sürüm: v5.2.0 (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
+import contextlib
+import logging
 import os
 import sys
-import logging
 import warnings
-import contextlib
+from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
+
 from dotenv import load_dotenv
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ═══════════════════════════════════════════════════════════════
@@ -46,11 +46,11 @@ if sidar_env:
     else:
         optional_env_aliases = {"development", "dev", "local"}
         if sidar_env in optional_env_aliases and base_env_path.exists():
-            print(
-                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env ayarları kullanılacak."
-            )
+            print(f"ℹ️  .env.{sidar_env} bulunamadı; temel .env ayarları kullanılacak.")
         else:
-            print(f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak.")
+            print(
+                f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak."
+            )
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
@@ -100,6 +100,7 @@ LLM_SETTINGS = LLMClientSettings()
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
 
+
 def get_bool_env(key: str, default: bool = False) -> bool:
     raw_val = os.getenv(key)
     if raw_val is None or not raw_val.strip():
@@ -122,8 +123,7 @@ def get_float_env(key: str, default: float = 0.0) -> float:
         return default
 
 
-def get_list_env(key: str, default: Optional[List[str]] = None,
-                 separator: str = ",") -> List[str]:
+def get_list_env(key: str, default: list[str] | None = None, separator: str = ",") -> list[str]:
     if default is None:
         default = []
     value = os.getenv(key, "")
@@ -157,12 +157,13 @@ def get_db_pool_size_default() -> int:
 _LOG_DIR = BASE_DIR / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-_LOG_LEVEL_STR  = os.getenv("LOG_LEVEL", "INFO").upper()
-_LOG_FILE_PATH  = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
-_LOG_MAX_BYTES  = get_int_env("LOG_MAX_BYTES", 10_485_760)   # 10 MB
+_LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
+_LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
+_LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
 _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 
 def _repair_log_file_permissions(log_file: Path) -> None:
     """Yazılamayan log dosyasını mümkünse mevcut kullanıcıya göre onarır."""
@@ -182,6 +183,7 @@ def _repair_log_file_permissions(log_file: Path) -> None:
     current_mode = log_file.stat().st_mode & 0o777
     with contextlib.suppress(PermissionError, OSError):
         log_file.chmod(current_mode | 0o200)
+
 
 _repair_log_file_permissions(_LOG_FILE_PATH)
 
@@ -209,9 +211,11 @@ try:
         backupCount=_LOG_BACKUP_CNT,
         encoding="utf-8",
     )
-    _file_handler.setFormatter(logging.Formatter(
-        "%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s"
-    ))
+    _file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s"
+        )
+    )
     _root_logger.addHandler(_file_handler)
 except (PermissionError, OSError) as exc:
     _root_logger.warning(
@@ -241,9 +245,11 @@ SANDBOX_LIMITS = {
 # DONANIM TESPİTİ
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class HardwareInfo:
     """Başlangıçta tespit edilen donanım bilgilerini tutar."""
+
     has_cuda: bool
     gpu_name: str
     gpu_count: int = 0
@@ -266,6 +272,7 @@ def check_hardware() -> HardwareInfo:
 
     try:
         import multiprocessing
+
         info.cpu_count = multiprocessing.cpu_count()
     except Exception:
         info.cpu_count = 1
@@ -281,20 +288,28 @@ def check_hardware() -> HardwareInfo:
 
     try:
         import torch
+
         if torch.cuda.is_available():
-            info.has_cuda     = True
-            info.gpu_count    = torch.cuda.device_count()
-            info.gpu_name     = torch.cuda.get_device_name(0)
+            info.has_cuda = True
+            info.gpu_count = torch.cuda.device_count()
+            info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
             logger.info(
                 "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
-                info.gpu_name, info.gpu_count, info.cuda_version,
+                info.gpu_name,
+                info.gpu_count,
+                info.cuda_version,
             )
             # VRAM fraksiyonu: geriye dönük GPU_MEMORY_FRACTION + opsiyonel LLM/RAG ayrımı
             legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
             llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
-            rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
-            if os.getenv("LLM_GPU_MEMORY_FRACTION") is not None or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None:
+            rag_frac = get_float_env(
+                "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35))
+            )
+            if (
+                os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
+                or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
+            ):
                 frac = llm_frac + rag_frac
             else:
                 frac = legacy_frac
@@ -348,6 +363,7 @@ def check_hardware() -> HardwareInfo:
     # sürücü sürümü — nvidia-ml-py varsa al
     try:
         import pynvml
+
         pynvml.nvmlInit()
         info.driver_version = pynvml.nvmlSystemGetDriverVersion()
         pynvml.nvmlShutdown()
@@ -357,10 +373,10 @@ def check_hardware() -> HardwareInfo:
     return info
 
 
-
 # ═══════════════════════════════════════════════════════════════
 # ANA YAPILANDIRMA SINIFI
 # ═══════════════════════════════════════════════════════════════
+
 
 class Config:
     """
@@ -370,48 +386,52 @@ class Config:
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "5.2.0"
-    DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
-    ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
+    VERSION: str = "5.2.0"
+    DEBUG_MODE: bool = get_bool_env("DEBUG_MODE", False)
+    ENABLE_MULTI_AGENT: bool = (
+        True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
+    )
     ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)
     SELF_HEAL_MAX_PATCHES: int = get_int_env("SELF_HEAL_MAX_PATCHES", 3)
 
     # ─── Dizinler ────────────────────────────────────────────
-    BASE_DIR:    Path = BASE_DIR
-    TEMP_DIR:    Path = BASE_DIR / "temp"
-    LOGS_DIR:    Path = BASE_DIR / "logs"
-    DATA_DIR:    Path = BASE_DIR / "data"
+    BASE_DIR: Path = BASE_DIR
+    TEMP_DIR: Path = BASE_DIR / "temp"
+    LOGS_DIR: Path = BASE_DIR / "logs"
+    DATA_DIR: Path = BASE_DIR / "data"
     MEMORY_FILE: Path = DATA_DIR / "memory.json"
 
-    REQUIRED_DIRS: List[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
+    REQUIRED_DIRS: list[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
 
     # ─── AI Sağlayıcı ────────────────────────────────────────
-    AI_PROVIDER:    str = LLM_SETTINGS.AI_PROVIDER   # "ollama" | "gemini" | "openai" | "anthropic" | "litellm"
+    AI_PROVIDER: str = (
+        LLM_SETTINGS.AI_PROVIDER
+    )  # "ollama" | "gemini" | "openai" | "anthropic" | "litellm"
     GEMINI_API_KEY: str = LLM_SETTINGS.GEMINI_API_KEY
-    GEMINI_MODEL:   str = LLM_SETTINGS.GEMINI_MODEL
+    GEMINI_MODEL: str = LLM_SETTINGS.GEMINI_MODEL
     OPENAI_API_KEY: str = LLM_SETTINGS.OPENAI_API_KEY
-    OPENAI_MODEL:   str = LLM_SETTINGS.OPENAI_MODEL
+    OPENAI_MODEL: str = LLM_SETTINGS.OPENAI_MODEL
     OPENAI_TIMEOUT: int = LLM_SETTINGS.OPENAI_TIMEOUT
     LLM_MAX_RETRIES: int = LLM_SETTINGS.LLM_MAX_RETRIES
     LLM_RETRY_BASE_DELAY: float = LLM_SETTINGS.LLM_RETRY_BASE_DELAY
     LLM_RETRY_MAX_DELAY: float = LLM_SETTINGS.LLM_RETRY_MAX_DELAY
     ANTHROPIC_API_KEY: str = LLM_SETTINGS.ANTHROPIC_API_KEY
-    ANTHROPIC_MODEL:   str = LLM_SETTINGS.ANTHROPIC_MODEL
+    ANTHROPIC_MODEL: str = LLM_SETTINGS.ANTHROPIC_MODEL
     ANTHROPIC_TIMEOUT: int = LLM_SETTINGS.ANTHROPIC_TIMEOUT
 
     # ─── LiteLLM Gateway ─────────────────────────────────────
     LITELLM_GATEWAY_URL: str = LLM_SETTINGS.LITELLM_GATEWAY_URL
     LITELLM_API_KEY: str = LLM_SETTINGS.LITELLM_API_KEY
     LITELLM_MODEL: str = LLM_SETTINGS.LITELLM_MODEL
-    LITELLM_FALLBACK_MODELS: List[str] = get_list_env("LITELLM_FALLBACK_MODELS", [])
+    LITELLM_FALLBACK_MODELS: list[str] = get_list_env("LITELLM_FALLBACK_MODELS", [])
     LITELLM_TIMEOUT: int = LLM_SETTINGS.LITELLM_TIMEOUT
 
     # ─── Ollama ──────────────────────────────────────────────
-    OLLAMA_URL:     str = LLM_SETTINGS.OLLAMA_URL
+    OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
-    CODING_MODEL:   str = LLM_SETTINGS.CODING_MODEL
-    TEXT_MODEL:     str = os.getenv("TEXT_MODEL", "gemma2:9b")
+    CODING_MODEL: str = LLM_SETTINGS.CODING_MODEL
+    TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "full")
@@ -424,21 +444,21 @@ class Config:
 
     # ─── GitHub ──────────────────────────────────────────────
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
-    GITHUB_REPO:  str = os.getenv("GITHUB_REPO", "")
+    GITHUB_REPO: str = os.getenv("GITHUB_REPO", "")
     GITHUB_WEBHOOK_SECRET: str = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
     # ─── HuggingFace ─────────────────────────────────────────
-    HF_TOKEN:       str = os.getenv("HF_TOKEN", "")
+    HF_TOKEN: str = os.getenv("HF_TOKEN", "")
     HF_HUB_OFFLINE: bool = get_bool_env("HF_HUB_OFFLINE", False)
 
     # ─── Donanım & GPU ───────────────────────────────────────
-    USE_GPU:       bool  = get_bool_env("USE_GPU", True)
-    REQUIRE_GPU:   bool  = get_bool_env("REQUIRE_GPU", True)
-    GPU_INFO:      str   = "Devre Dışı / CPU Modu"
-    GPU_COUNT:     int   = 0
-    CPU_COUNT:     int   = os.cpu_count() or 1
-    CUDA_VERSION:  str   = "N/A"
-    DRIVER_VERSION: str  = "N/A"
+    USE_GPU: bool = get_bool_env("USE_GPU", True)
+    REQUIRE_GPU: bool = get_bool_env("REQUIRE_GPU", True)
+    GPU_INFO: str = "Devre Dışı / CPU Modu"
+    GPU_COUNT: int = 0
+    CPU_COUNT: int = os.cpu_count() or 1
+    CUDA_VERSION: str = "N/A"
+    DRIVER_VERSION: str = "N/A"
 
     _hardware_loaded: bool = False
 
@@ -452,53 +472,57 @@ class Config:
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
     # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
     LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
-    RAG_GPU_MEMORY_FRACTION: float = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35)))
+    RAG_GPU_MEMORY_FRACTION: float = get_float_env(
+        "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35))
+    )
 
     # FP16 / mixed precision  →  embedding modellerinde bellek tasarrufu
     GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", False)
 
     # ─── Uygulama ────────────────────────────────────────────
-    MAX_MEMORY_TURNS:  int = get_int_env("MAX_MEMORY_TURNS", 20)
+    MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)
     MEMORY_SUMMARY_KEEP_LAST: int = get_int_env("MEMORY_SUMMARY_KEEP_LAST", 4)
-    LOG_LEVEL:         str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     RESPONSE_LANGUAGE: str = os.getenv("RESPONSE_LANGUAGE", "tr")
 
     # ─── Loglama ─────────────────────────────────────────────
-    LOG_FILE:         Path = _LOG_FILE_PATH
-    LOG_MAX_BYTES:     int = _LOG_MAX_BYTES
-    LOG_BACKUP_COUNT:  int = _LOG_BACKUP_CNT
+    LOG_FILE: Path = _LOG_FILE_PATH
+    LOG_MAX_BYTES: int = _LOG_MAX_BYTES
+    LOG_BACKUP_COUNT: int = _LOG_BACKUP_CNT
 
     # ─── ReAct Döngüsü ───────────────────────────────────────
-    MAX_REACT_STEPS:   int = get_int_env("MAX_REACT_STEPS", 10)
-    REACT_TIMEOUT:     int = get_int_env("REACT_TIMEOUT", 60)
+    MAX_REACT_STEPS: int = get_int_env("MAX_REACT_STEPS", 10)
+    REACT_TIMEOUT: int = get_int_env("REACT_TIMEOUT", 60)
     SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 
     # ─── API Rate Limiting ───────────────────────────────────
-    RATE_LIMIT_WINDOW:    int = get_int_env("RATE_LIMIT_WINDOW", 60)
-    RATE_LIMIT_CHAT:      int = get_int_env("RATE_LIMIT_CHAT", 20)
+    RATE_LIMIT_WINDOW: int = get_int_env("RATE_LIMIT_WINDOW", 60)
+    RATE_LIMIT_CHAT: int = get_int_env("RATE_LIMIT_CHAT", 20)
     RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
-    RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
-    REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    RATE_LIMIT_GET_IO: int = get_int_env("RATE_LIMIT_GET_IO", 30)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
     ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
     TRUSTED_PROXIES: frozenset = frozenset(get_list_env("TRUSTED_PROXIES", ["127.0.0.1"]))
-    TRUSTED_PROXIES_LIST: List[str] = sorted(TRUSTED_PROXIES)
+    TRUSTED_PROXIES_LIST: list[str] = sorted(TRUSTED_PROXIES)
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
     # Metrics endpoint'leri için statik Bearer token (boşsa yalnızca admin kullanıcılar erişebilir)
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+    )
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
-    ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
+    ENABLE_TRACING: bool = get_bool_env("ENABLE_TRACING", False)
     OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
     OTEL_SERVICE_NAME: str = os.getenv("OTEL_SERVICE_NAME", "sidar")
     OTEL_INSTRUMENT_FASTAPI: bool = get_bool_env("OTEL_INSTRUMENT_FASTAPI", True)
@@ -509,29 +533,31 @@ class Config:
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
-    SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq")
+    SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv(
+        "SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq"
+    )
     SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
 
     # ─── Web Arama ───────────────────────────────────────────
-    SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")
-    TAVILY_API_KEY:       str = os.getenv("TAVILY_API_KEY", "")
+    SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     GOOGLE_SEARCH_API_KEY: str = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    GOOGLE_SEARCH_CX:     str = os.getenv("GOOGLE_SEARCH_CX", "")
+    GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
-    WEB_FETCH_TIMEOUT:     int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS:   int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
+    WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
+    WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS:  int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
     PACKAGE_INFO_CACHE_TTL: int = get_int_env("PACKAGE_INFO_CACHE_TTL", 1800)
 
     # ─── RAG — Belge Deposu ──────────────────────────────────
-    RAG_DIR:            Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
-    RAG_TOP_K:           int = get_int_env("RAG_TOP_K", 3)
-    RAG_CHUNK_SIZE:      int = get_int_env("RAG_CHUNK_SIZE", 1000)
-    RAG_CHUNK_OVERLAP:   int = get_int_env("RAG_CHUNK_OVERLAP", 200)
+    RAG_DIR: Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
+    RAG_TOP_K: int = get_int_env("RAG_TOP_K", 3)
+    RAG_CHUNK_SIZE: int = get_int_env("RAG_CHUNK_SIZE", 1000)
+    RAG_CHUNK_OVERLAP: int = get_int_env("RAG_CHUNK_OVERLAP", 200)
     # Büyük dosya eşiği: bu karakter sayısını geçen dosyalar okunduğunda
     # RAG deposuna ekleme önerilir (varsayılan ≈ 400 satır / ~20 KB).
     RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
@@ -541,10 +567,12 @@ class Config:
     PGVECTOR_EMBEDDING_MODEL: str = os.getenv("PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
-    SANDBOX_LIMITS: Dict[str, Any] = dict(SANDBOX_LIMITS)
+    SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
     DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
-    DOCKER_ALLOWED_RUNTIMES: List[str] = get_list_env("DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
+    DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
+        "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
+    )
     DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
     DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
     DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
@@ -567,9 +595,9 @@ class Config:
 
     # ─── JWT Kimlik Doğrulama ────────────────────────────────
     # JWT_SECRET_KEY boş bırakılırsa sunucu başlangıcında CRITICAL uyarısı verilir.
-    JWT_SECRET_KEY:  str = os.getenv("JWT_SECRET_KEY", "")
-    JWT_ALGORITHM:   str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_TTL_DAYS:    int = get_int_env("JWT_TTL_DAYS", 7)
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
 
     # ─── Observability Bağlantı Noktaları ───────────────────
     # GRAFANA_URL ayarlanmazsa varsayılan olarak yerel kurulum portu kullanılır.
@@ -595,7 +623,9 @@ class Config:
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
     ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
     # 0.0–1.0: Bu eşiğin altındaki sorgular lokal modele yönlendirilir
-    COST_ROUTING_COMPLEXITY_THRESHOLD: float = get_float_env("COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55)
+    COST_ROUTING_COMPLEXITY_THRESHOLD: float = get_float_env(
+        "COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55
+    )
     # Lokal sağlayıcı (basit sorgular için)
     COST_ROUTING_LOCAL_PROVIDER: str = os.getenv("COST_ROUTING_LOCAL_PROVIDER", "ollama")
     COST_ROUTING_LOCAL_MODEL: str = os.getenv("COST_ROUTING_LOCAL_MODEL", "")
@@ -631,11 +661,21 @@ class Config:
     LORA_OUTPUT_DIR: str = os.getenv("LORA_OUTPUT_DIR", "data/lora_adapters")
     # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
     ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
-    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env("CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20)
-    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = get_int_env("CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10)
-    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = get_int_env("CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000)
-    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = get_int_env("CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600)
-    CONTINUOUS_LEARNING_OUTPUT_DIR: str = os.getenv("CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning")
+    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env(
+        "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20
+    )
+    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = get_int_env(
+        "CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10
+    )
+    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = get_int_env(
+        "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000
+    )
+    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = get_int_env(
+        "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600
+    )
+    CONTINUOUS_LEARNING_OUTPUT_DIR: str = os.getenv(
+        "CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning"
+    )
     CONTINUOUS_LEARNING_SFT_FORMAT: str = os.getenv("CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca")
 
     # ─── Multimodal Vision (v6.0) ───────────────────────────────
@@ -674,7 +714,9 @@ class Config:
     NIGHTLY_MEMORY_INTERVAL_SECONDS: int = get_int_env("NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400)
     NIGHTLY_MEMORY_IDLE_SECONDS: int = get_int_env("NIGHTLY_MEMORY_IDLE_SECONDS", 1800)
     NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS: int = get_int_env("NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2)
-    NIGHTLY_MEMORY_SESSION_MIN_MESSAGES: int = get_int_env("NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12)
+    NIGHTLY_MEMORY_SESSION_MIN_MESSAGES: int = get_int_env(
+        "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12
+    )
     NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS: int = get_int_env("NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2)
     ENABLE_EVENT_WEBHOOKS: bool = get_bool_env("ENABLE_EVENT_WEBHOOKS", True)
     AUTONOMY_WEBHOOK_SECRET: str = os.getenv("AUTONOMY_WEBHOOK_SECRET", "")
@@ -711,7 +753,6 @@ class Config:
         if not str(self.JWT_SECRET_KEY or "").strip() and not self._is_test_env():
             raise ValueError("JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
 
-
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
         """Donanım bilgisini lazy-load ederek import yan etkisini azalt."""
@@ -737,7 +778,7 @@ class Config:
         cls._hardware_loaded = True
 
     @classmethod
-    def trusted_proxies_as_list(cls) -> List[str]:
+    def trusted_proxies_as_list(cls) -> list[str]:
         """Middleware entegrasyonları için güvenilir proxy değerlerini list[str] verir."""
         return list(cls.TRUSTED_PROXIES_LIST)
 
@@ -805,8 +846,10 @@ class Config:
     def set_provider_mode(cls, mode: str) -> None:
         """AI sağlayıcı modunu çalışma zamanında değiştirir."""
         mode_map = {
-            "online": "gemini", "gemini": "gemini",
-            "local":  "ollama", "ollama": "ollama",
+            "online": "gemini",
+            "gemini": "gemini",
+            "local": "ollama",
+            "ollama": "ollama",
             "anthropic": "anthropic",
             "litellm": "litellm",
         }
@@ -817,7 +860,8 @@ class Config:
         else:
             logger.error(
                 "❌ Geçersiz sağlayıcı modu: %s  Geçerliler: %s",
-                mode, list(mode_map.keys()),
+                mode,
+                list(mode_map.keys()),
             )
 
     @classmethod
@@ -847,6 +891,7 @@ class Config:
         if memory_encryption_key:
             try:
                 from cryptography.fernet import Fernet  # noqa: F401
+
                 # Anahtarı ön doğrulama — geçersiz formatta erken hata ver
                 try:
                     Fernet(memory_encryption_key.encode())
@@ -854,8 +899,8 @@ class Config:
                     logger.error(
                         "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
                         "   Geçerli anahtar üretmek için:\n"
-                        "   python -c \"from cryptography.fernet import Fernet; "
-                        "print(Fernet.generate_key().decode())\"",
+                        '   python -c "from cryptography.fernet import Fernet; '
+                        'print(Fernet.generate_key().decode())"',
                         key_exc,
                     )
                     is_valid = False
@@ -871,8 +916,8 @@ class Config:
                 "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory encryption. "
                 "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet "
                 "anahtarı eklemelisiniz.\n"
-                "   Yeni anahtar üretmek için: python -c \"from cryptography.fernet import "
-                "Fernet; print(Fernet.generate_key().decode())\""
+                '   Yeni anahtar üretmek için: python -c "from cryptography.fernet import '
+                'Fernet; print(Fernet.generate_key().decode())"'
             )
             if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
                 logger.critical(
@@ -904,6 +949,7 @@ class Config:
         if cls.AI_PROVIDER == "ollama":
             try:
                 import httpx
+
                 base = cls.OLLAMA_URL.rstrip("/")
                 if base.endswith("/api"):
                     tags_url = base + "/tags"
@@ -925,36 +971,36 @@ class Config:
         return is_valid
 
     @classmethod
-    def get_system_info(cls) -> Dict[str, Any]:
+    def get_system_info(cls) -> dict[str, Any]:
         """Özet sistem bilgisini sözlük olarak döndürür."""
         cls._ensure_hardware_info_loaded()
         return {
-            "project":            cls.PROJECT_NAME,
-            "version":            cls.VERSION,
-            "provider":           cls.AI_PROVIDER,
-            "access_level":       cls.ACCESS_LEVEL,
-            "gpu_enabled":        cls.USE_GPU,
-            "gpu_info":           cls.GPU_INFO,
-            "gpu_count":          cls.GPU_COUNT,
-            "gpu_device":         cls.GPU_DEVICE,
-            "cuda_version":       cls.CUDA_VERSION,
-            "driver_version":     cls.DRIVER_VERSION,
-            "multi_gpu":          cls.MULTI_GPU,
+            "project": cls.PROJECT_NAME,
+            "version": cls.VERSION,
+            "provider": cls.AI_PROVIDER,
+            "access_level": cls.ACCESS_LEVEL,
+            "gpu_enabled": cls.USE_GPU,
+            "gpu_info": cls.GPU_INFO,
+            "gpu_count": cls.GPU_COUNT,
+            "gpu_device": cls.GPU_DEVICE,
+            "cuda_version": cls.CUDA_VERSION,
+            "driver_version": cls.DRIVER_VERSION,
+            "multi_gpu": cls.MULTI_GPU,
             "gpu_mixed_precision": cls.GPU_MIXED_PRECISION,
             "gpu_memory_fraction": cls.GPU_MEMORY_FRACTION,
             "llm_gpu_memory_fraction": cls.LLM_GPU_MEMORY_FRACTION,
             "rag_gpu_memory_fraction": cls.RAG_GPU_MEMORY_FRACTION,
-            "cpu_count":          cls.CPU_COUNT,
-            "debug_mode":         cls.DEBUG_MODE,
-            "web_port":           cls.WEB_PORT,
-            "web_gpu_port":       cls.WEB_GPU_PORT,
-            "hf_hub_offline":     cls.HF_HUB_OFFLINE,
-            "rate_limit_window":  cls.RATE_LIMIT_WINDOW,
-            "rate_limit_chat":    cls.RATE_LIMIT_CHAT,
+            "cpu_count": cls.CPU_COUNT,
+            "debug_mode": cls.DEBUG_MODE,
+            "web_port": cls.WEB_PORT,
+            "web_gpu_port": cls.WEB_GPU_PORT,
+            "hf_hub_offline": cls.HF_HUB_OFFLINE,
+            "rate_limit_window": cls.RATE_LIMIT_WINDOW,
+            "rate_limit_chat": cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
-            "rate_limit_get_io":  cls.RATE_LIMIT_GET_IO,
+            "rate_limit_get_io": cls.RATE_LIMIT_GET_IO,
             # REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
-            "enable_tracing":     cls.ENABLE_TRACING,
+            "enable_tracing": cls.ENABLE_TRACING,
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
             "enable_semantic_cache": cls.ENABLE_SEMANTIC_CACHE,
             "semantic_cache_threshold": cls.SEMANTIC_CACHE_THRESHOLD,
@@ -966,9 +1012,9 @@ class Config:
     def init_telemetry(
         cls,
         *,
-        service_name: Optional[str] = None,
+        service_name: str | None = None,
         fastapi_app=None,
-        logger_obj: Optional[logging.Logger] = None,
+        logger_obj: logging.Logger | None = None,
         trace_module=_DEPENDENCY_AUTO,
         otlp_exporter_cls=_DEPENDENCY_AUTO,
         tracer_provider_cls=_DEPENDENCY_AUTO,
@@ -996,13 +1042,17 @@ class Config:
             if trace_module is _DEPENDENCY_AUTO:
                 from opentelemetry import trace as trace_module
             if otlp_exporter_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as otlp_exporter_cls
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                    OTLPSpanExporter as otlp_exporter_cls,
+                )
             if tracer_provider_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.trace import TracerProvider as tracer_provider_cls
             if resource_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.resources import Resource as resource_cls
             if batch_span_processor_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace.export import BatchSpanProcessor as batch_span_processor_cls
+                from opentelemetry.sdk.trace.export import (
+                    BatchSpanProcessor as batch_span_processor_cls,
+                )
         except Exception:
             log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
             return False
@@ -1017,13 +1067,17 @@ class Config:
 
             if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
                 if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
-                    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor as fastapi_instrumentor_cls
+                    from opentelemetry.instrumentation.fastapi import (
+                        FastAPIInstrumentor as fastapi_instrumentor_cls,
+                    )
                 fastapi_instrumentor_cls.instrument_app(fastapi_app)
 
             if cls.OTEL_INSTRUMENT_HTTPX:
                 if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
                     try:
-                        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor as httpx_instrumentor_cls
+                        from opentelemetry.instrumentation.httpx import (
+                            HTTPXClientInstrumentor as httpx_instrumentor_cls,
+                        )
                     except Exception:
                         httpx_instrumentor_cls = None
                 if httpx_instrumentor_cls is not None:

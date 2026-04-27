@@ -107,10 +107,15 @@ class VoicePipeline:
         self.segment_chars = max(20, int(getattr(config, "VOICE_TTS_SEGMENT_CHARS", 48) or 48))
         self.buffer_chars = max(
             self.segment_chars,
-            int(getattr(config, "VOICE_TTS_BUFFER_CHARS", self.segment_chars * 2) or (self.segment_chars * 2)),
+            int(
+                getattr(config, "VOICE_TTS_BUFFER_CHARS", self.segment_chars * 2)
+                or (self.segment_chars * 2)
+            ),
         )
         self.vad_enabled = bool(getattr(config, "VOICE_VAD_ENABLED", True))
-        self.vad_min_speech_bytes = max(256, int(getattr(config, "VOICE_VAD_MIN_SPEECH_BYTES", 1024) or 1024))
+        self.vad_min_speech_bytes = max(
+            256, int(getattr(config, "VOICE_VAD_MIN_SPEECH_BYTES", 1024) or 1024)
+        )
         self.duplex_enabled = bool(getattr(config, "VOICE_DUPLEX_ENABLED", True))
         self.vad_interrupt_min_bytes = max(
             128,
@@ -163,10 +168,10 @@ class VoicePipeline:
         interrupted_turns: list[int] = field(default_factory=list)
         last_interrupt_reason: str = ""
 
-    def create_duplex_state(self) -> "VoicePipeline.DuplexState":
+    def create_duplex_state(self) -> VoicePipeline.DuplexState:
         return self.DuplexState()
 
-    def begin_assistant_turn(self, state: "VoicePipeline.DuplexState | None") -> int:
+    def begin_assistant_turn(self, state: VoicePipeline.DuplexState | None) -> int:
         if state is None:
             return 0
         state.assistant_turn_id += 1
@@ -177,7 +182,7 @@ class VoicePipeline:
 
     def buffer_assistant_text(
         self,
-        state: "VoicePipeline.DuplexState | None",
+        state: VoicePipeline.DuplexState | None,
         text: str,
         *,
         flush: bool = False,
@@ -195,11 +200,15 @@ class VoicePipeline:
 
         emit_flush = flush
         if not emit_flush and len(state.output_text_buffer.strip()) < self.buffer_chars:
-            probe_segments, _probe_remainder = self.extract_ready_segments(state.output_text_buffer, flush=False)
+            probe_segments, _probe_remainder = self.extract_ready_segments(
+                state.output_text_buffer, flush=False
+            )
             if not probe_segments:
                 return state.assistant_turn_id, []
 
-        ready_segments, remainder = self.extract_ready_segments(state.output_text_buffer, flush=emit_flush)
+        ready_segments, remainder = self.extract_ready_segments(
+            state.output_text_buffer, flush=emit_flush
+        )
         state.output_text_buffer = remainder
         packets: list[dict[str, Any]] = []
         for segment in ready_segments:
@@ -215,7 +224,7 @@ class VoicePipeline:
 
     def interrupt_assistant_turn(
         self,
-        state: "VoicePipeline.DuplexState | None",
+        state: VoicePipeline.DuplexState | None,
         *,
         reason: str,
     ) -> dict[str, Any]:
@@ -266,7 +275,7 @@ class VoicePipeline:
         event: str,
         buffered_bytes: int,
         sequence: int,
-        duplex_state: "VoicePipeline.DuplexState | None" = None,
+        duplex_state: VoicePipeline.DuplexState | None = None,
     ) -> dict[str, Any]:
         normalized = str(event or "").strip().lower() or "unknown"
         output_buffer_chars = len(getattr(duplex_state, "output_text_buffer", "") or "")
@@ -352,10 +361,19 @@ class WebRTCAudioIngress:
     def __init__(self, config: Any = None) -> None:
         self.max_chunk_bytes = max(
             2048,
-            int(getattr(config, "VOICE_WEBRTC_MAX_CHUNK_BYTES", 2 * 1024 * 1024) or (2 * 1024 * 1024)),
+            int(
+                getattr(config, "VOICE_WEBRTC_MAX_CHUNK_BYTES", 2 * 1024 * 1024)
+                or (2 * 1024 * 1024)
+            ),
         )
-        self.default_mime_type = str(getattr(config, "VOICE_WEBRTC_DEFAULT_MIME", "audio/webm") or "audio/webm").strip().lower()
-        self.default_sample_rate_hz = max(8000, int(getattr(config, "VOICE_WEBRTC_SAMPLE_RATE_HZ", 48000) or 48000))
+        self.default_mime_type = (
+            str(getattr(config, "VOICE_WEBRTC_DEFAULT_MIME", "audio/webm") or "audio/webm")
+            .strip()
+            .lower()
+        )
+        self.default_sample_rate_hz = max(
+            8000, int(getattr(config, "VOICE_WEBRTC_SAMPLE_RATE_HZ", 48000) or 48000)
+        )
         self.default_channels = max(1, int(getattr(config, "VOICE_WEBRTC_CHANNELS", 1) or 1))
 
     def decode_packet(self, payload: dict[str, Any]) -> BrowserAudioPacket:
@@ -363,7 +381,9 @@ class WebRTCAudioIngress:
         if not raw_bytes:
             raise ValueError("WebRTC paketi boş ses verisi içeriyor.")
         if len(raw_bytes) > self.max_chunk_bytes:
-            raise ValueError(f"WebRTC ses paketi limiti aşıldı: {len(raw_bytes)} > {self.max_chunk_bytes}")
+            raise ValueError(
+                f"WebRTC ses paketi limiti aşıldı: {len(raw_bytes)} > {self.max_chunk_bytes}"
+            )
 
         mime_type = str(payload.get("mime_type") or self.default_mime_type).strip().lower()
         if mime_type not in self.SUPPORTED_MIME_TYPES:
@@ -373,8 +393,16 @@ class WebRTCAudioIngress:
             audio_bytes=raw_bytes,
             mime_type=mime_type,
             sequence=max(0, int(payload.get("sequence", 0) or 0)),
-            sample_rate_hz=max(8000, int(payload.get("sample_rate_hz", self.default_sample_rate_hz) or self.default_sample_rate_hz)),
-            channels=max(1, int(payload.get("channels", self.default_channels) or self.default_channels)),
+            sample_rate_hz=max(
+                8000,
+                int(
+                    payload.get("sample_rate_hz", self.default_sample_rate_hz)
+                    or self.default_sample_rate_hz
+                ),
+            ),
+            channels=max(
+                1, int(payload.get("channels", self.default_channels) or self.default_channels)
+            ),
             duration_ms=max(0, int(payload.get("duration_ms", 0) or 0)),
             event=str(payload.get("event") or "media_chunk").strip().lower() or "media_chunk",
             transport=str(payload.get("transport") or "webrtc").strip().lower() or "webrtc",

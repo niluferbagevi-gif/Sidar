@@ -104,7 +104,9 @@ def test_copy_table_writes_rows_inside_transaction(tmp_path: Path):
         conn.close()
 
     fake_conn = _FakeConn()
-    count = asyncio.run(migrate_sqlite_to_pg._copy_table(fake_conn, db_path, "users", dry_run=False))
+    count = asyncio.run(
+        migrate_sqlite_to_pg._copy_table(fake_conn, db_path, "users", dry_run=False)
+    )
 
     assert count == 2
     assert len(fake_conn.executed) == 3
@@ -124,7 +126,9 @@ def test_copy_table_returns_zero_when_table_has_no_columns(monkeypatch, tmp_path
 
     monkeypatch.setattr(migrate_sqlite_to_pg, "_load_rows", lambda *_: ([], []))
 
-    count = asyncio.run(migrate_sqlite_to_pg._copy_table(fake_conn, tmp_path / "sample.db", "users", dry_run=False))
+    count = asyncio.run(
+        migrate_sqlite_to_pg._copy_table(fake_conn, tmp_path / "sample.db", "users", dry_run=False)
+    )
 
     assert count == 0
     assert fake_conn.executed == []

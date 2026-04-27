@@ -71,6 +71,7 @@ class TaskResult:
     evidence: list[str] = field(default_factory=list)
     next_actions: list[str] = field(default_factory=list)
 
+
 @dataclass
 class P2PMessage:
     """Ajanlar arası doğrudan handoff mesajı için ortak protokol."""
@@ -294,7 +295,9 @@ class BrokerTaskEnvelope:
             self.task_id,
         )
         if not self.routing_key:
-            self.routing_key = derive_broker_routing_key(receiver=self.receiver, intent=self.intent, namespace=self.exchange)
+            self.routing_key = derive_broker_routing_key(
+                receiver=self.receiver, intent=self.intent, namespace=self.exchange
+            )
 
     @classmethod
     def from_task_envelope(
@@ -379,7 +382,9 @@ class BrokerTaskResult:
             self.task_id,
         )
         if not self.routing_key:
-            self.routing_key = derive_broker_routing_key(receiver=self.receiver, intent=self.status, namespace=self.exchange)
+            self.routing_key = derive_broker_routing_key(
+                receiver=self.receiver, intent=self.status, namespace=self.exchange
+            )
 
     @classmethod
     def from_task_result(
@@ -527,7 +532,9 @@ def is_external_trigger(value: object) -> bool:
     if isinstance(value, ExternalTrigger):
         return True
     required = ("trigger_id", "source", "event_name", "payload")
-    return type(value).__name__ == "ExternalTrigger" and all(hasattr(value, attr) for attr in required)
+    return type(value).__name__ == "ExternalTrigger" and all(
+        hasattr(value, attr) for attr in required
+    )
 
 
 def is_federation_task_envelope(value: object) -> bool:
@@ -544,7 +551,15 @@ def is_federation_task_result(value: object) -> bool:
     """FederationTaskResult benzeri nesneleri duck-typing ile tanımlar."""
     if isinstance(value, FederationTaskResult):
         return True
-    required = ("task_id", "source_system", "source_agent", "target_system", "target_agent", "status", "summary")
+    required = (
+        "task_id",
+        "source_system",
+        "source_agent",
+        "target_system",
+        "target_agent",
+        "status",
+        "summary",
+    )
     return type(value).__name__ == "FederationTaskResult" and all(
         hasattr(value, attr) for attr in required
     )
@@ -555,7 +570,9 @@ def is_action_feedback(value: object) -> bool:
     if isinstance(value, ActionFeedback):
         return True
     required = ("feedback_id", "source_system", "source_agent", "action_name", "status", "summary")
-    return type(value).__name__ == "ActionFeedback" and all(hasattr(value, attr) for attr in required)
+    return type(value).__name__ == "ActionFeedback" and all(
+        hasattr(value, attr) for attr in required
+    )
 
 
 def is_broker_task_envelope(value: object) -> bool:
@@ -563,7 +580,9 @@ def is_broker_task_envelope(value: object) -> bool:
     if isinstance(value, BrokerTaskEnvelope):
         return True
     required = ("task_id", "sender", "receiver", "goal", "broker", "exchange", "routing_key")
-    return type(value).__name__ == "BrokerTaskEnvelope" and all(hasattr(value, attr) for attr in required)
+    return type(value).__name__ == "BrokerTaskEnvelope" and all(
+        hasattr(value, attr) for attr in required
+    )
 
 
 def is_broker_task_result(value: object) -> bool:
@@ -571,4 +590,6 @@ def is_broker_task_result(value: object) -> bool:
     if isinstance(value, BrokerTaskResult):
         return True
     required = ("task_id", "sender", "receiver", "status", "summary", "broker", "exchange")
-    return type(value).__name__ == "BrokerTaskResult" and all(hasattr(value, attr) for attr in required)
+    return type(value).__name__ == "BrokerTaskResult" and all(
+        hasattr(value, attr) for attr in required
+    )

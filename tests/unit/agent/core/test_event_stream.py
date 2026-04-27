@@ -33,7 +33,12 @@ sys.modules.setdefault("redis.asyncio", redis_asyncio_mod)
 sys.modules.setdefault("redis.exceptions", redis_exceptions_mod)
 
 import agent.core.event_stream as event_stream
-from agent.core.event_stream import AgentEvent, AgentEventBus, BaseEventBusBackend, get_agent_event_bus
+from agent.core.event_stream import (
+    AgentEvent,
+    AgentEventBus,
+    BaseEventBusBackend,
+    get_agent_event_bus,
+)
 
 
 class DummyRedis:
@@ -283,7 +288,9 @@ def test_subscribe_and_unsubscribe(bus: AgentEventBus, monkeypatch: pytest.Monke
     assert sid not in bus._buffered_events
 
 
-def test_schedule_bootstrap_without_loop(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_schedule_bootstrap_without_loop(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bus._redis_available = False
     bus._schedule_redis_bootstrap()
     assert bus._redis_bootstrap_task is None
@@ -308,7 +315,9 @@ def test_schedule_bootstrap_skips_when_task_already_running(bus: AgentEventBus) 
     assert isinstance(bus._redis_bootstrap_task, _RunningTask)
 
 
-def test_schedule_bootstrap_creates_task(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_schedule_bootstrap_creates_task(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     created = {"task": None}
 
     class _Loop:
@@ -349,7 +358,9 @@ def test_publish_fanout_and_redis_call(monkeypatch: pytest.MonkeyPatch, bus: Age
     assert len(fanout_events) == 1
 
 
-def test_ensure_listener_success_and_busygroup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_ensure_listener_success_and_busygroup(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     redis = DummyRedis()
 
     class _RedisFactory:
@@ -423,7 +434,9 @@ async def test_ensure_listener_returns_when_listener_task_running(bus: AgentEven
     assert isinstance(bus._redis_listener_task, _RunningTask)
 
 
-def test_ensure_listener_failure_triggers_cleanup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_ensure_listener_failure_triggers_cleanup(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     class _BadRedis(DummyRedis):
         async def ping(self) -> None:
             raise RuntimeError("cannot connect")
@@ -497,15 +510,19 @@ def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEven
     assert written[0]["reason"] == "publish_failed"
 
 
-def test_redis_listener_loop_handles_payload_ack_and_errors(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_redis_listener_loop_handles_payload_ack_and_errors(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     redis = DummyRedis()
     bus._redis_client = redis
     bus._redis_available = True
 
-    valid_other = {
-        "payload": json.dumps({"sid": "other", "ts": 2, "source": "r", "message": "ok"})
+    valid_other = {"payload": json.dumps({"sid": "other", "ts": 2, "source": "r", "message": "ok"})}
+    valid_self = {
+        "payload": json.dumps(
+            {"sid": bus._instance_id, "ts": 3, "source": "r", "message": "ignore"}
+        )
     }
-    valid_self = {"payload": json.dumps({"sid": bus._instance_id, "ts": 3, "source": "r", "message": "ignore"})}
     invalid = {"payload": "{not-json"}
     redis.raise_on_ack = {"2-0"}
     redis.responses = [
@@ -547,7 +564,9 @@ def test_redis_listener_loop_empty_response_continue(bus: AgentEventBus) -> None
         asyncio.run(bus._redis_listener_loop())
 
 
-def test_redis_listener_loop_read_error_cleanup(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_redis_listener_loop_read_error_cleanup(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     class _BrokenRedis(DummyRedis):
         async def xreadgroup(self, **_kwargs):
             raise RuntimeError("read failed")
@@ -690,7 +709,9 @@ def test_cleanup_redis_ignores_non_awaitable_pool_disconnect() -> None:
     assert bus._redis_client is None
 
 
-def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_redis_loop_compatibility_resets_cross_loop_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._redis_client = DummyRedis()
     bus._redis_loop = object()
@@ -710,7 +731,9 @@ def test_ensure_redis_loop_compatibility_resets_cross_loop_state(monkeypatch: py
     assert bus._redis_available is None
 
 
-def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._backend = "kafka"
     bus._redis_client = DummyRedis()
@@ -730,7 +753,9 @@ def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(monkeypat
     assert bus._redis_client is not None
 
 
-def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._redis_client = None
     bus._redis_listener_task = None
@@ -748,10 +773,14 @@ def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(mon
     assert bus._redis_available is None
 
 
-def test_ensure_redis_loop_compatibility_returns_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_redis_loop_compatibility_returns_without_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._redis_client = object()
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop"))
+    )
     asyncio.run(bus._ensure_redis_loop_compatibility())
     assert bus._redis_client is not None
 
@@ -825,7 +854,9 @@ async def test_write_dead_letter_without_error_keeps_item_minimal(bus: AgentEven
 
 
 @pytest.mark.asyncio
-async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavailable(bus: AgentEventBus) -> None:
+async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavailable(
+    bus: AgentEventBus,
+) -> None:
     bus._backend = "redis"
     bus._redis_available = False
     bus._redis_client = DummyRedis()
@@ -838,7 +869,9 @@ async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavai
 
 
 @pytest.mark.asyncio
-async def test_write_dead_letter_persists_to_jsonl_when_path_configured(bus: AgentEventBus, tmp_path) -> None:
+async def test_write_dead_letter_persists_to_jsonl_when_path_configured(
+    bus: AgentEventBus, tmp_path
+) -> None:
     persist_path = tmp_path / "dlq.jsonl"
     bus._dlq_persist_path = str(persist_path)
     bus._dlq_persist_flush_interval = 0.05
@@ -877,7 +910,9 @@ async def test_write_dead_letter_persistence_runs_via_to_thread(
 
 
 @pytest.mark.asyncio
-async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflows(bus: AgentEventBus, tmp_path) -> None:
+async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflows(
+    bus: AgentEventBus, tmp_path
+) -> None:
     persist_path = tmp_path / "dlq_overflow.jsonl"
     bus._dlq_persist_path = str(persist_path)
     bus._dlq_buffer = deque(maxlen=2)
@@ -900,7 +935,9 @@ async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflo
 
 
 @pytest.mark.asyncio
-async def test_write_dead_letter_batches_persist_writes(bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_dead_letter_batches_persist_writes(
+    bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bus._dlq_persist_path = str(tmp_path / "dlq_batch.jsonl")
     bus._dlq_persist_batch_size = 3
     calls: list[str] = []
@@ -934,11 +971,21 @@ def test_test_doubles_cover_default_stub_paths() -> None:
     assert asyncio.run(redis.xreadgroup()) == []
 
 
-def test_schedule_remote_bootstrap_routes_by_backend(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_schedule_remote_bootstrap_routes_by_backend(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     calls = {"redis": 0, "rabbitmq": 0, "kafka": 0}
-    monkeypatch.setattr(bus, "_schedule_redis_bootstrap", lambda: calls.__setitem__("redis", calls["redis"] + 1))
-    monkeypatch.setattr(bus, "_schedule_rabbit_bootstrap", lambda: calls.__setitem__("rabbitmq", calls["rabbitmq"] + 1))
-    monkeypatch.setattr(bus, "_schedule_kafka_bootstrap", lambda: calls.__setitem__("kafka", calls["kafka"] + 1))
+    monkeypatch.setattr(
+        bus, "_schedule_redis_bootstrap", lambda: calls.__setitem__("redis", calls["redis"] + 1)
+    )
+    monkeypatch.setattr(
+        bus,
+        "_schedule_rabbit_bootstrap",
+        lambda: calls.__setitem__("rabbitmq", calls["rabbitmq"] + 1),
+    )
+    monkeypatch.setattr(
+        bus, "_schedule_kafka_bootstrap", lambda: calls.__setitem__("kafka", calls["kafka"] + 1)
+    )
 
     bus._backend = "rabbitmq"
     bus._schedule_remote_bootstrap()
@@ -956,7 +1003,9 @@ def test_event_bus_uses_backend_strategy_instances(bus: AgentEventBus) -> None:
     assert isinstance(bus._backends["kafka"], BaseEventBusBackend)
 
 
-def test_schedule_rabbit_kafka_bootstrap_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_schedule_rabbit_kafka_bootstrap_variants(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     bus._rabbit_available = False
     bus._schedule_rabbit_bootstrap()
     assert bus._rabbit_bootstrap_task is None
@@ -979,7 +1028,9 @@ def test_schedule_rabbit_kafka_bootstrap_variants(monkeypatch: pytest.MonkeyPatc
     bus._schedule_kafka_bootstrap()
     assert isinstance(bus._kafka_bootstrap_task, _RunningTask)
 
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop"))
+    )
     bus._rabbit_bootstrap_task = None
     bus._kafka_bootstrap_task = None
     bus._schedule_rabbit_bootstrap()
@@ -1008,7 +1059,9 @@ def test_schedule_rabbit_kafka_bootstrap_variants(monkeypatch: pytest.MonkeyPatc
     assert bus._kafka_bootstrap_task is created["kafka"]
 
 
-def test_ensure_rabbit_listener_success_and_failure(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_ensure_rabbit_listener_success_and_failure(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     connection = DummyRabbitConnection()
 
     class _AioPika:
@@ -1075,7 +1128,9 @@ def test_ensure_rabbit_listener_returns_when_unavailable_or_running(
     assert called["imported"] is False
 
 
-def test_ensure_rabbit_listener_reuses_existing_connection(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_ensure_rabbit_listener_reuses_existing_connection(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     channel = DummyRabbitChannel()
     queue = DummyRabbitQueue()
     channel.queue = queue
@@ -1133,7 +1188,9 @@ def test_ensure_rabbit_listener_handles_missing_optional_dependency(
     assert cleaned["ok"] is True
 
 
-def test_ensure_kafka_listener_success_and_failure(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_ensure_kafka_listener_success_and_failure(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     class _AioKafka:
         AIOKafkaProducer = DummyKafkaProducer
         AIOKafkaConsumer = DummyKafkaConsumer
@@ -1197,7 +1254,9 @@ def test_ensure_kafka_listener_handles_missing_optional_dependency(
     assert cleaned["ok"] is True
 
 
-def test_ensure_kafka_listener_short_circuit_and_reuse_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_kafka_listener_short_circuit_and_reuse_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
 
     bus._kafka_available = False
@@ -1248,7 +1307,9 @@ def test_ensure_kafka_listener_short_circuit_and_reuse_paths(monkeypatch: pytest
     assert bus._kafka_available is True
 
 
-def test_rabbit_connection_failure_switches_to_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rabbit_connection_failure_switches_to_local_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._backend = "rabbitmq"
 
@@ -1281,7 +1342,9 @@ def test_rabbit_connection_failure_switches_to_local_fallback(monkeypatch: pytes
     assert cleaned["ok"] is True
 
 
-def test_kafka_connection_failure_switches_to_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kafka_connection_failure_switches_to_local_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._backend = "kafka"
 
@@ -1316,7 +1379,9 @@ def test_kafka_connection_failure_switches_to_local_fallback(monkeypatch: pytest
     assert cleaned["ok"] is True
 
 
-def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_publish_via_rabbit_and_kafka_paths(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     evt = AgentEvent(ts=1.0, source="qa", message="event")
 
     bus._rabbit_available = False
@@ -1400,7 +1465,9 @@ def test_publish_via_rabbit_and_kafka_paths(monkeypatch: pytest.MonkeyPatch, bus
     assert written[-1]["reason"] == "publish_failed"
 
 
-def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+) -> None:
     evt = AgentEvent(ts=7.5, source="coverage", message="kafka fail-safe")
     producer = DummyKafkaProducer()
     producer.raise_on_send = True
@@ -1491,7 +1558,9 @@ def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.Monke
     assert called == {"redis": 1, "rabbit": 1, "kafka": 1}
 
 
-def test_publish_via_remote_opens_circuit_after_threshold_failures(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_via_remote_opens_circuit_after_threshold_failures(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     evt = AgentEvent(ts=1.0, source="qa", message="circuit")
     bus._backend = "redis"
     bus._remote_circuit_failure_threshold = 2
@@ -1516,7 +1585,9 @@ def test_publish_via_remote_opens_circuit_after_threshold_failures(bus: AgentEve
     assert called["redis"] == 2
 
 
-def test_publish_via_remote_resets_circuit_after_success(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_via_remote_resets_circuit_after_success(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     evt = AgentEvent(ts=1.0, source="qa", message="recover")
     bus._backend = "kafka"
     bus._remote_circuit_failure_threshold = 2
@@ -1533,13 +1604,19 @@ def test_publish_via_remote_resets_circuit_after_success(bus: AgentEventBus, mon
     assert bus._remote_circuit_open_until == 0.0
 
 
-def test_publish_skips_remote_bootstrap_when_circuit_open(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_skips_remote_bootstrap_when_circuit_open(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bus._backend = "redis"
     bus._remote_circuit_open_until = time.time() + 60.0
     calls = {"schedule": 0, "publish_remote": 0}
 
     monkeypatch.setattr(bus, "_fanout_local", lambda _evt: None)
-    monkeypatch.setattr(bus, "_schedule_remote_bootstrap", lambda: calls.__setitem__("schedule", calls["schedule"] + 1))
+    monkeypatch.setattr(
+        bus,
+        "_schedule_remote_bootstrap",
+        lambda: calls.__setitem__("schedule", calls["schedule"] + 1),
+    )
 
     async def _publish_remote(_evt: AgentEvent) -> bool:
         calls["publish_remote"] += 1
@@ -1557,9 +1634,13 @@ def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Age
     bus._rabbit_queue = None
     assert asyncio.run(bus._rabbit_listener_loop()) is None
 
-    valid_other = DummyRabbitIncoming(json.dumps({"sid": "other", "ts": 2, "source": "r", "message": "ok"}).encode("utf-8"))
+    valid_other = DummyRabbitIncoming(
+        json.dumps({"sid": "other", "ts": 2, "source": "r", "message": "ok"}).encode("utf-8")
+    )
     valid_self = DummyRabbitIncoming(
-        json.dumps({"sid": bus._instance_id, "ts": 3, "source": "r", "message": "ignore"}).encode("utf-8")
+        json.dumps({"sid": bus._instance_id, "ts": 3, "source": "r", "message": "ignore"}).encode(
+            "utf-8"
+        )
     )
     invalid = DummyRabbitIncoming(b"{bad-json", ack_raises=True)
     bus._rabbit_queue = DummyRabbitQueue([valid_other, invalid, valid_self])
@@ -1602,9 +1683,15 @@ def test_kafka_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Agen
 
     consumer = DummyKafkaConsumer()
     consumer.messages = [
-        DummyKafkaMessage(json.dumps({"sid": "other", "ts": 4, "source": "k", "message": "ok"}).encode("utf-8")),
+        DummyKafkaMessage(
+            json.dumps({"sid": "other", "ts": 4, "source": "k", "message": "ok"}).encode("utf-8")
+        ),
         DummyKafkaMessage(b"{bad-json"),
-        DummyKafkaMessage(json.dumps({"sid": bus._instance_id, "ts": 5, "source": "k", "message": "ignore"}).encode("utf-8")),
+        DummyKafkaMessage(
+            json.dumps(
+                {"sid": bus._instance_id, "ts": 5, "source": "k", "message": "ignore"}
+            ).encode("utf-8")
+        ),
         asyncio.CancelledError(),
     ]
     bus._kafka_consumer = consumer
@@ -1789,7 +1876,9 @@ def test_persist_dead_letter_items_sync_writes_when_parent_is_empty(
     assert (tmp_path / "events.jsonl").exists() is True
 
 
-def test_schedule_dead_letter_flush_returns_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_schedule_dead_letter_flush_returns_without_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
 
     def _raise_runtime_error():
@@ -1801,7 +1890,9 @@ def test_schedule_dead_letter_flush_returns_without_running_loop(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_delayed_dead_letter_flush_triggers_queue_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_delayed_dead_letter_flush_triggers_queue_flush(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     called = {"flush": False}
 
@@ -1819,7 +1910,9 @@ async def test_delayed_dead_letter_flush_triggers_queue_flush(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_flush_dead_letter_persist_queue_covers_lock_and_empty_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_flush_dead_letter_persist_queue_covers_lock_and_empty_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = AgentEventBus()
     bus._dlq_persist_path = "events.jsonl"
     bus._dlq_persist_pending = []

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
-import sys
 
 import pytest
 import pytest_asyncio
@@ -15,12 +15,14 @@ from httpx import ASGITransport, AsyncClient
 from core.db import Database
 
 if "opentelemetry.instrumentation.httpx" not in sys.modules:
-    fake_httpx_mod = SimpleNamespace(HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None))
+    fake_httpx_mod = SimpleNamespace(
+        HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None)
+    )
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 import web_server
-from web_server import app
 from core.llm_client import LLMAPIError
+from web_server import app
 
 
 class _DbBackedMemory:
@@ -53,16 +55,20 @@ async def web_api_client(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database):
 
     async def _fake_resolve(_agent, token):
         if token == "token-for-admin":
-            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+            return SimpleNamespace(
+                id="admin_id", username="admin", role="admin", tenant_id="default"
+            )
         if token == "token-for-user":
-            return SimpleNamespace(id="user-1", username="normal_user", role="user", tenant_id="default")
+            return SimpleNamespace(
+                id="user-1", username="normal_user", role="user", tenant_id="default"
+            )
         return None
 
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_issue_auth_token", _fake_issue_auth_token)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
-    app.dependency_overrides[web_server._require_admin_user] = (
-        lambda: SimpleNamespace(id="admin-1", username="default_admin", role="admin", tenant_id="default")
+    app.dependency_overrides[web_server._require_admin_user] = lambda: SimpleNamespace(
+        id="admin-1", username="default_admin", role="admin", tenant_id="default"
     )
 
     transport = ASGITransport(app=app)
@@ -87,11 +93,15 @@ async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> No
     assert register_payload["user"]["username"] == "alice"
     assert register_payload["access_token"] == "token-for-alice"
 
-    login_response = await client.post("/auth/login", json={"username": "alice", "password": "secret123"})
+    login_response = await client.post(
+        "/auth/login", json={"username": "alice", "password": "secret123"}
+    )
     assert login_response.status_code == 200
     assert login_response.json()["access_token"] == "token-for-alice"
 
-    bad_login = await client.post("/auth/login", json={"username": "alice", "password": "wrong-pass"})
+    bad_login = await client.post(
+        "/auth/login", json={"username": "alice", "password": "wrong-pass"}
+    )
     assert bad_login.status_code == 401
 
     assert await sqlite_db.authenticate_user("alice", "secret123") is not None
@@ -102,7 +112,9 @@ async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> No
 async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
     client, _sqlite_db, _fake_agent = web_api_client
     admin_headers = {"Authorization": "Bearer token-for-admin"}
-    baseline_list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
+    baseline_list_response = await client.get(
+        "/admin/prompts", params={"role_name": "system"}, headers=admin_headers
+    )
     assert baseline_list_response.status_code == 200
     baseline_items = baseline_list_response.json()["items"]
 
@@ -116,7 +128,9 @@ async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -
     assert created_prompt["role_name"] == "system"
     assert created_prompt["is_active"] is True
 
-    list_response = await client.get("/admin/prompts", params={"role_name": "system"}, headers=admin_headers)
+    list_response = await client.get(
+        "/admin/prompts", params={"role_name": "system"}, headers=admin_headers
+    )
     assert list_response.status_code == 200
     items = list_response.json()["items"]
     assert len(items) == len(baseline_items) + 1
@@ -158,10 +172,14 @@ async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callable(web_api_client) -> None:
+async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callable(
+    web_api_client,
+) -> None:
     client, _sqlite_db, fake_agent = web_api_client
 
-    unauthorized_response = await client.get("/auth/me", headers={"Authorization": "Bearer invalid-token"})
+    unauthorized_response = await client.get(
+        "/auth/me", headers={"Authorization": "Bearer invalid-token"}
+    )
     assert unauthorized_response.status_code == 401
     assert unauthorized_response.json()["error"] == "Oturum geçersiz veya süresi dolmuş"
 
@@ -178,7 +196,9 @@ def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) ->
 
     async def _fake_resolve(_agent, token):
         if token == "token-for-admin":
-            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+            return SimpleNamespace(
+                id="admin_id", username="admin", role="admin", tenant_id="default"
+            )
         return None
 
     async def mock_respond(prompt, **kwargs):
@@ -224,7 +244,9 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
 
     async def _fake_resolve(_agent, token):
         if token == "token-for-admin":
-            return SimpleNamespace(id="admin_id", username="admin", role="admin", tenant_id="default")
+            return SimpleNamespace(
+                id="admin_id", username="admin", role="admin", tenant_id="default"
+            )
         return None
 
     async def _never_rate_limited(*_args, **_kwargs):
@@ -247,7 +269,9 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.integration
-def test_chat_websocket_header_token_auth_and_room_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_websocket_header_token_auth_and_room_error_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Memory:
         active_session_id = None
 
@@ -284,6 +308,7 @@ def test_chat_websocket_header_token_auth_and_room_error_paths(monkeypatch: pyte
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws/chat", subprotocols=["header-token"]) as websocket:
+
             def _recv_until(expected_type: str, max_attempts: int = 6) -> dict:
                 for _ in range(max_attempts):
                     event = websocket.receive_json()
@@ -292,7 +317,9 @@ def test_chat_websocket_header_token_auth_and_room_error_paths(monkeypatch: pyte
                 raise AssertionError(f"{expected_type} eventi alınamadı")
 
             assert websocket.receive_json() == {"auth_ok": True}
-            websocket.send_json({"action": "join_room", "room_id": "team:room-1", "display_name": "Ada"})
+            websocket.send_json(
+                {"action": "join_room", "room_id": "team:room-1", "display_name": "Ada"}
+            )
             room_state = _recv_until("room_state")
             assert room_state["type"] == "room_state"
 
@@ -305,7 +332,9 @@ def test_chat_websocket_header_token_auth_and_room_error_paths(monkeypatch: pyte
 
 
 @pytest.mark.integration
-def test_chat_websocket_auth_required_and_missing_token_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_websocket_auth_required_and_missing_token_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
 import subprocess
-import asyncio
-from typing import Iterable
+from collections.abc import Iterable
 
 from agent.base_agent import BaseAgent
 
@@ -20,7 +20,15 @@ class AWSManagementAgent(BaseAgent):
     _COMMAND_MAP = {
         "ec2": ["aws", "ec2", "describe-instances", "--output", "json", "--max-items", "10"],
         "s3": ["aws", "s3api", "list-buckets", "--output", "json"],
-        "cloudwatch": ["aws", "cloudwatch", "describe-alarms", "--output", "json", "--max-records", "10"],
+        "cloudwatch": [
+            "aws",
+            "cloudwatch",
+            "describe-alarms",
+            "--output",
+            "json",
+            "--max-records",
+            "10",
+        ],
     }
 
     async def run_task(self, task_prompt: str) -> str:

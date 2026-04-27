@@ -42,6 +42,10 @@ def get_tiktoken_encoding(model: str = ""):
 
     model_name = (model or "").strip()
     try:
-        return tiktoken.encoding_for_model(model_name) if model_name else tiktoken.get_encoding("cl100k_base")
+        return (
+            tiktoken.encoding_for_model(model_name)
+            if model_name
+            else tiktoken.get_encoding("cl100k_base")
+        )
     except Exception:
         return tiktoken.get_encoding("cl100k_base")

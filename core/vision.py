@@ -9,6 +9,7 @@ Kullanım:
     result = await pipeline.mockup_to_code(image_path="ui.png", framework="React")
     print(result["code"])
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,14 +17,19 @@ import base64
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Desteklenen görsel formatları
-SUPPORTED_MIME_TYPES = frozenset([
-    "image/jpeg", "image/png", "image/webp", "image/gif",
-])
+SUPPORTED_MIME_TYPES = frozenset(
+    [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+    ]
+)
 
 # Görsel boyut limiti (byte) — varsayılan 10 MB
 _DEFAULT_MAX_BYTES = 10 * 1024 * 1024
@@ -32,7 +38,8 @@ _DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 # Görsel Ön İşleme
 # ──────────────────────────────────────────────────────────────────────────────
 
-async def load_image_as_base64(path: Union[str, Path]) -> tuple[str, str]:
+
+async def load_image_as_base64(path: str | Path) -> tuple[str, str]:
     """
     Görseli okuyup (base64_data, mime_type) döner.
     Hatalı format veya boyut aşımında ValueError fırlatır.
@@ -43,12 +50,16 @@ async def load_image_as_base64(path: Union[str, Path]) -> tuple[str, str]:
 
     mime_type = mimetypes.guess_type(str(p))[0] or "image/jpeg"
     if mime_type not in SUPPORTED_MIME_TYPES:
-        raise ValueError(f"Desteklenmeyen görsel formatı: {mime_type}. Desteklenenler: {SUPPORTED_MIME_TYPES}")
+        raise ValueError(
+            f"Desteklenmeyen görsel formatı: {mime_type}. Desteklenenler: {SUPPORTED_MIME_TYPES}"
+        )
 
     raw = await asyncio.to_thread(p.read_bytes)
     if len(raw) > _DEFAULT_MAX_BYTES:
         mb = len(raw) / (1024 * 1024)
-        raise ValueError(f"Görsel çok büyük: {mb:.1f} MB (limit: {_DEFAULT_MAX_BYTES / 1024 / 1024:.0f} MB)")
+        raise ValueError(
+            f"Görsel çok büyük: {mb:.1f} MB (limit: {_DEFAULT_MAX_BYTES / 1024 / 1024:.0f} MB)"
+        )
 
     return base64.b64encode(raw).decode("utf-8"), mime_type
 
@@ -66,12 +77,13 @@ def load_image_from_bytes(data: bytes, mime_type: str = "image/png") -> tuple[st
 # Provider-specific mesaj formatları
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def build_vision_messages(
     provider: str,
     text_prompt: str,
     base64_image: str,
     mime_type: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Sağlayıcıya özgü çok-parçalı (vision) mesaj listesi üretir.
 
@@ -145,6 +157,7 @@ def build_vision_messages(
 # Prompt Şablonları
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def build_mockup_prompt(
     framework: str = "React",
     css_framework: str = "Tailwind CSS",
@@ -195,6 +208,7 @@ def build_analyze_prompt(analysis_type: str = "general") -> str:
 # VisionPipeline
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class VisionPipeline:
     """
     Görsel → LLM pipeline'ı.
@@ -213,14 +227,14 @@ class VisionPipeline:
 
     async def mockup_to_code(
         self,
-        image_path: Optional[str] = None,
-        image_bytes: Optional[bytes] = None,
+        image_path: str | None = None,
+        image_bytes: bytes | None = None,
         mime_type: str = "image/png",
         framework: str = "React",
         css_framework: str = "Tailwind CSS",
         language: str = "TypeScript",
         extra_instructions: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         UI mockup → frontend kodu üretir.
         image_path veya image_bytes parametrelerinden biri zorunludur.
@@ -260,11 +274,11 @@ class VisionPipeline:
 
     async def analyze(
         self,
-        image_path: Optional[str] = None,
-        image_bytes: Optional[bytes] = None,
+        image_path: str | None = None,
+        image_bytes: bytes | None = None,
         mime_type: str = "image/png",
         analysis_type: str = "general",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Genel görsel analizi yapar."""
         if not self.enabled:
             return {"success": False, "reason": "ENABLE_VISION devre dışı"}

@@ -8,7 +8,6 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from config import Config
 
@@ -33,13 +32,12 @@ class MemoryAuthError(PermissionError):
 class ConversationMemory:
     """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
 
-
     def __init__(
         self,
-        database_url: Optional[str] = None,
-        base_dir: Optional[Path] = None,
+        database_url: str | None = None,
+        base_dir: Path | None = None,
         *,
-        file_path: Optional[Path] = None,
+        file_path: Path | None = None,
         max_turns: int = 20,
         encryption_key: str = "",
         keep_last: int = 4,
@@ -81,23 +79,25 @@ class ConversationMemory:
             or (database_url is None and normalized_database_url.startswith("postgresql"))
         )
         if should_use_memory_default:
-            resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
+            resolved_database_url = (
+                f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
+            )
 
         self.cfg.DATABASE_URL = resolved_database_url
         self.cfg.BASE_DIR = resolved_base_dir
 
         self.db = Database(cfg=self.cfg)
 
-        self.active_session_id: Optional[str] = None
+        self.active_session_id: str | None = None
         self.active_title: str = "Yeni Sohbet"
-        self.active_user_id: Optional[str] = None
-        self.active_username: Optional[str] = None
-        self._turns: List[Dict] = []
-        self._last_file: Optional[str] = None
+        self.active_user_id: str | None = None
+        self.active_username: str | None = None
+        self._turns: list[dict] = []
+        self._last_file: str | None = None
 
         self._dirty = False
         self._initialized = False
-        self._init_lock: Optional[asyncio.Lock] = None
+        self._init_lock: asyncio.Lock | None = None
 
     def _require_active_user(self) -> str:
         if not self.active_user_id:
@@ -124,7 +124,7 @@ class ConversationMemory:
             if not self._initialized:
                 await self.initialize()
 
-    async def get_all_sessions(self) -> List[Dict]:
+    async def get_all_sessions(self) -> list[dict]:
         await self._ensure_initialized()
         user_id = self._require_active_user()
         rows = await self.db.list_sessions(user_id)
@@ -207,17 +207,17 @@ class ConversationMemory:
         with self._lock:
             self._turns.append({"role": role, "content": content, "timestamp": now})
             if len(self._turns) > self.max_turns * 2:
-                self._turns = self._turns[-(self.max_turns * 2):]
+                self._turns = self._turns[-(self.max_turns * 2) :]
         await self.db.add_message(self.active_session_id, role, content, tokens_used=0)
         self._dirty = False
 
-    async def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+    async def get_history(self, n_last: int | None = None) -> list[dict]:
         await self._ensure_initialized()
         with self._lock:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
 
-    async def set_active_user(self, user_id: str, username: Optional[str] = None) -> None:
+    async def set_active_user(self, user_id: str, username: str | None = None) -> None:
         await self._ensure_initialized()
         ensure_user_with_id = getattr(self.db, "ensure_user_id", None)
         if callable(ensure_user_with_id):
@@ -234,7 +234,7 @@ class ConversationMemory:
     #  MEVCUT API (değişmeden)
     # ─────────────────────────────────────────────
 
-    def get_messages_for_llm(self) -> List[Dict[str, str]]:
+    def get_messages_for_llm(self) -> list[dict[str, str]]:
         with self._lock:
             return [{"role": t["role"], "content": t["content"]} for t in self._turns]
 
@@ -243,7 +243,7 @@ class ConversationMemory:
             self._last_file = path
             self._dirty = True
 
-    def get_last_file(self) -> Optional[str]:
+    def get_last_file(self) -> str | None:
         with self._lock:
             return self._last_file
 
@@ -251,6 +251,7 @@ class ConversationMemory:
         total_text = "".join(t.get("content", "") for t in self._turns)
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(total_text))
         except Exception:
@@ -265,10 +266,18 @@ class ConversationMemory:
     async def apply_summary(self, summary_text: str) -> None:
         await self._ensure_initialized()
         with self._lock:
-            kept_turns = self._turns[-self.keep_last:] if self.keep_last > 0 else []
+            kept_turns = self._turns[-self.keep_last :] if self.keep_last > 0 else []
             summary_turns = [
-                {"role": "user", "content": "[Önceki konuşmaların özeti istendi]", "timestamp": time.time() - 2},
-                {"role": "assistant", "content": f"[KONUŞMA ÖZETİ]\n{summary_text}", "timestamp": time.time() - 1},
+                {
+                    "role": "user",
+                    "content": "[Önceki konuşmaların özeti istendi]",
+                    "timestamp": time.time() - 2,
+                },
+                {
+                    "role": "assistant",
+                    "content": f"[KONUŞMA ÖZETİ]\n{summary_text}",
+                    "timestamp": time.time() - 1,
+                },
             ]
             compact_turns = summary_turns + kept_turns
             self._turns = compact_turns
@@ -302,9 +311,9 @@ class ConversationMemory:
             return 0.0
 
     @staticmethod
-    def _build_compaction_summary(title: str, messages: List[object]) -> str:
-        user_points: List[str] = []
-        assistant_points: List[str] = []
+    def _build_compaction_summary(title: str, messages: list[object]) -> str:
+        user_points: list[str] = []
+        assistant_points: list[str] = []
         code_refs = 0
         for item in messages:
             role = str(getattr(item, "role", "") or "")
@@ -337,9 +346,9 @@ class ConversationMemory:
         *,
         user_id: str,
         session_id: str,
-        keep_last: Optional[int] = None,
+        keep_last: int | None = None,
         min_messages: int = 12,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """Belirli bir oturumu özetleyip son birkaç mesajı koruyarak sıkıştırır."""
         await self._ensure_initialized()
         session = await self.db.load_session(session_id, user_id)
@@ -361,10 +370,7 @@ class ConversationMemory:
         compact_turns = [
             {"role": "user", "content": "[GECE DÖNGÜSÜ] Önceki konuşmalar sıkıştırıldı."},
             {"role": "assistant", "content": f"[GECE KONSOLİDASYON ÖZETİ]\n{summary_text}"},
-            *[
-                {"role": str(item.role), "content": str(item.content)}
-                for item in kept_messages
-            ],
+            *[{"role": str(item.role), "content": str(item.content)} for item in kept_messages],
         ]
         written = await self.db.replace_session_messages(session_id, compact_turns)
 
@@ -388,19 +394,23 @@ class ConversationMemory:
         *,
         keep_recent_sessions: int = 2,
         min_messages: int = 12,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """Tüm kullanıcı oturumlarında eski konuşmaları özetleyip sıkıştırır."""
         await self._ensure_initialized()
         try:
             users = await self.db.list_users_with_quotas()
-            user_ids = [str(item.get("id", "") or "").strip() for item in users if str(item.get("id", "") or "").strip()]
+            user_ids = [
+                str(item.get("id", "") or "").strip()
+                for item in users
+                if str(item.get("id", "") or "").strip()
+            ]
         except Exception:
             user_ids = []
         if self.active_user_id and self.active_user_id not in user_ids:
             user_ids.append(self.active_user_id)
 
-        reports: List[Dict[str, object]] = []
-        compacted_session_ids: List[str] = []
+        reports: list[dict[str, object]] = []
+        compacted_session_ids: list[str] = []
         normalized_keep = max(0, int(keep_recent_sessions or 0))
         for user_id in user_ids:
             sessions = await self.db.list_sessions(user_id)
@@ -442,6 +452,7 @@ class ConversationMemory:
     def _safe_ts(iso_text: str) -> float:
         try:
             from datetime import datetime
+
             return datetime.fromisoformat(str(iso_text).replace("Z", "+00:00")).timestamp()
         except Exception:
             return time.time()

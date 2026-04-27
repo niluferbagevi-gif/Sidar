@@ -3,18 +3,19 @@ Sidar Project - Ana Ajan
 Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI asistanı (Asenkron).
 """
 
-import logging
-import contextlib
 import asyncio
-import json
-import time
-import threading
-import sys
+import contextlib
 import importlib
-from importlib import import_module
+import json
+import logging
+import sys
+import threading
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
-from typing import Optional, AsyncIterator, Dict, List, Any
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -32,16 +33,17 @@ from core.ci_remediation import (
     normalize_self_heal_plan,
 )
 from core.entity_memory import get_entity_memory
-from core.memory import ConversationMemory
 from core.llm_client import LLMClient
+from core.memory import ConversationMemory
 from core.rag import DocumentStore
 from managers.code_manager import CodeManager
-from managers.system_health import SystemHealthManager
 from managers.github_manager import GitHubManager
-from managers.security import SecurityManager
-from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
+from managers.security import SecurityManager
+from managers.system_health import SystemHealthManager
 from managers.todo_manager import TodoManager
+from managers.web_search import WebSearchManager
+
 agent_contracts = sys.modules.get("agent.core.contracts") or import_module("agent.core.contracts")
 agent_definitions = sys.modules.get("agent.definitions") or import_module("agent.definitions")
 
@@ -63,7 +65,9 @@ def _default_derive_correlation_id(*values: object) -> str:
     return ""
 
 
-derive_correlation_id = getattr(agent_contracts, "derive_correlation_id", _default_derive_correlation_id)
+derive_correlation_id = getattr(
+    agent_contracts, "derive_correlation_id", _default_derive_correlation_id
+)
 
 
 class _FallbackFederationTaskEnvelope:
@@ -138,7 +142,9 @@ class _FallbackActionFeedback:
         )
 
 
-FederationTaskEnvelope = getattr(agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope)
+FederationTaskEnvelope = getattr(
+    agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope
+)
 ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedback)
 
 logger = logging.getLogger(__name__)
@@ -238,8 +244,8 @@ class SidarAgent:
         self,
         cfg: Config = None,
         *,
-        config: Optional[Config] = None,
-        deps: Optional[AgentDependencies] = None,
+        config: Config | None = None,
+        deps: AgentDependencies | None = None,
         **kwargs: Any,
     ) -> None:
         """SidarAgent oluşturur.
@@ -253,13 +259,19 @@ class SidarAgent:
 
         selected_cfg = config if config is not None else cfg
         self.cfg = selected_cfg or Config()
-        raw_database_url = getattr(selected_cfg, "DATABASE_URL", "") if selected_cfg is not None else getattr(self.cfg, "DATABASE_URL", "")
-        has_explicit_database_url = isinstance(raw_database_url, str) and bool(raw_database_url.strip())
+        raw_database_url = (
+            getattr(selected_cfg, "DATABASE_URL", "")
+            if selected_cfg is not None
+            else getattr(self.cfg, "DATABASE_URL", "")
+        )
+        has_explicit_database_url = isinstance(raw_database_url, str) and bool(
+            raw_database_url.strip()
+        )
         self._normalize_config_defaults()
         # Bulgu D: asyncio.Lock() __init__ içinde (senkron bağlam) oluşturulmamalı.
         # Python <3.10'da event loop bağlanma hatalarına yol açar.
         # Lazy init: ilk async çağrıda oluşturulur (respond() içindeki guard).
-        self._lock: Optional[asyncio.Lock] = None
+        self._lock: asyncio.Lock | None = None
 
         self._deps = deps or AgentDependencies.from_config(
             self.cfg, has_explicit_database_url=has_explicit_database_url
@@ -276,23 +288,26 @@ class SidarAgent:
         self.pkg = self._deps.pkg
         self.docs = self._deps.docs
         self.todo = self._deps.todo
-        self.tracer = trace.get_tracer(__name__) if trace and getattr(self.cfg, "ENABLE_TRACING", False) else None
-        self._instructions_cache: Optional[str] = None
-        self._instructions_mtimes: Dict[str, float] = {}
+        self.tracer = (
+            trace.get_tracer(__name__)
+            if trace and getattr(self.cfg, "ENABLE_TRACING", False)
+            else None
+        )
+        self._instructions_cache: str | None = None
+        self._instructions_mtimes: dict[str, float] = {}
         self._instructions_lock = threading.Lock()
         self.system_prompt: str = SIDAR_SYSTEM_PROMPT
-        self._autonomy_history: List[Dict[str, Any]] = []
-        self._autonomy_lock: Optional[asyncio.Lock] = None
+        self._autonomy_history: list[dict[str, Any]] = []
+        self._autonomy_lock: asyncio.Lock | None = None
         self._last_activity_ts: float = time.time()
-        self._nightly_maintenance_lock: Optional[asyncio.Lock] = None
+        self._nightly_maintenance_lock: asyncio.Lock | None = None
         self._last_nightly_maintenance_ts: float = 0.0
-
 
         # Tek omurga: supervisor tabanlı multi-agent
         self._supervisor = None
         self._initialized = False
         # Bulgu D: asyncio.Lock() lazy init — async bağlamda oluşturulur.
-        self._init_lock: Optional[asyncio.Lock] = None
+        self._init_lock: asyncio.Lock | None = None
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -301,7 +316,6 @@ class SidarAgent:
             self.cfg.CODING_MODEL,
             self.cfg.ACCESS_LEVEL,
         )
-
 
     def _normalize_config_defaults(self) -> None:
         """Eksik/uygunsuz config alanlarını varsayılan Config değerleriyle tamamlar."""
@@ -327,8 +341,7 @@ class SidarAgent:
                 if not isinstance(current, expected):
                     setattr(self.cfg, key, default_value)
 
-
-    def _parse_tool_call(self, raw: str) -> Optional[Dict[str, Any]]:
+    def _parse_tool_call(self, raw: str) -> dict[str, Any] | None:
         """Ham LLM çıktısını araç çağrısı sözlüğüne dönüştürür.
 
         Markdown JSON bloklarını (```json ... ```) soyar, JSON parse eder.
@@ -336,6 +349,7 @@ class SidarAgent:
         ``tool`` anahtarı eksikse varsayılan olarak ``final_answer`` atanır.
         """
         import re as _re
+
         text = raw.strip() if isinstance(raw, str) else ""
         # Markdown ```json ... ``` veya ``` ... ``` bloğunu soy
         md_match = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
@@ -415,7 +429,7 @@ class SidarAgent:
         if not hasattr(self, "_autonomy_lock"):
             self._autonomy_lock = None
 
-    async def _append_autonomy_history(self, record: Dict[str, Any]) -> None:
+    async def _append_autonomy_history(self, record: dict[str, Any]) -> None:
         self._ensure_autonomy_runtime_state()
         if self._autonomy_lock is None:
             self._autonomy_lock = asyncio.Lock()
@@ -425,7 +439,9 @@ class SidarAgent:
             self._autonomy_history = history
 
     @staticmethod
-    def _update_remediation_step(remediation_loop: Dict[str, Any], step_name: str, *, status: str, detail: str) -> None:
+    def _update_remediation_step(
+        remediation_loop: dict[str, Any], step_name: str, *, status: str, detail: str
+    ) -> None:
         steps = list(remediation_loop.get("steps") or [])
         for step in steps:
             if str(step.get("name", "")).strip() != step_name:
@@ -434,8 +450,8 @@ class SidarAgent:
             step["detail"] = detail
             break
 
-    async def _collect_self_heal_snapshots(self, scope_paths: List[str]) -> List[Dict[str, str]]:
-        snapshots: List[Dict[str, str]] = []
+    async def _collect_self_heal_snapshots(self, scope_paths: list[str]) -> list[dict[str, str]]:
+        snapshots: list[dict[str, str]] = []
         for path in scope_paths[:6]:
             normalized = str(path or "").strip().lstrip("./")
             if not normalized:
@@ -449,11 +465,15 @@ class SidarAgent:
     async def _build_self_heal_plan(
         self,
         *,
-        ci_context: Dict[str, Any],
+        ci_context: dict[str, Any],
         diagnosis: str,
-        remediation_loop: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        scope_paths = [str(item).strip() for item in list(remediation_loop.get("scope_paths") or []) if str(item).strip()]
+        remediation_loop: dict[str, Any],
+    ) -> dict[str, Any]:
+        scope_paths = [
+            str(item).strip()
+            for item in list(remediation_loop.get("scope_paths") or [])
+            if str(item).strip()
+        ]
         if not scope_paths:
             return {
                 "summary": "Self-heal kapsamı boş olduğu için plan oluşturulmadı.",
@@ -478,19 +498,21 @@ class SidarAgent:
             max_operations=max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3)),
         )
 
-    async def _restore_self_heal_backups(self, backups: Dict[str, str]) -> None:
+    async def _restore_self_heal_backups(self, backups: dict[str, str]) -> None:
         for path, content in backups.items():
             await asyncio.to_thread(self.code.write_file, path, content, False)
 
     async def _execute_self_heal_plan(
         self,
         *,
-        remediation_loop: Dict[str, Any],
-        plan: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        remediation_loop: dict[str, Any],
+        plan: dict[str, Any],
+    ) -> dict[str, Any]:
         operations = list(plan.get("operations") or [])
-        validation_commands = list(plan.get("validation_commands") or remediation_loop.get("validation_commands") or [])
-        result: Dict[str, Any] = {
+        validation_commands = list(
+            plan.get("validation_commands") or remediation_loop.get("validation_commands") or []
+        )
+        result: dict[str, Any] = {
             "status": "skipped",
             "summary": str(plan.get("summary") or "").strip() or "Self-heal planı uygulanmadı.",
             "operations_applied": [],
@@ -503,11 +525,13 @@ class SidarAgent:
             return result
         if not validation_commands:
             result["status"] = "blocked"
-            result["summary"] = "Self-heal planı güvenli doğrulama komutu içermediği için engellendi."
+            result["summary"] = (
+                "Self-heal planı güvenli doğrulama komutu içermediği için engellendi."
+            )
             return result
 
-        backups: Dict[str, str] = {}
-        applied: List[str] = []
+        backups: dict[str, str] = {}
+        applied: list[str] = []
         try:
             for item in operations:
                 path = str(item.get("path") or "").strip()
@@ -518,7 +542,9 @@ class SidarAgent:
                     if not ok:
                         raise RuntimeError(f"Self-heal yedekleme başarısız: {original}")
                     backups[path] = str(original)
-                ok, message = await asyncio.to_thread(self.code.patch_file, path, target, replacement)
+                ok, message = await asyncio.to_thread(
+                    self.code.patch_file, path, target, replacement
+                )
                 if not ok:
                     raise RuntimeError(f"{path} patch edilemedi: {message}")
                 applied.append(path)
@@ -529,7 +555,9 @@ class SidarAgent:
                     command,
                     str(self.cfg.BASE_DIR),
                 )
-                result["validation_results"].append({"command": command, "ok": ok, "output": output})
+                result["validation_results"].append(
+                    {"command": command, "ok": ok, "output": output}
+                )
                 if not ok:
                     raise RuntimeError(f"Sandbox doğrulaması başarısız: {command}")
 
@@ -551,10 +579,10 @@ class SidarAgent:
     async def _attempt_autonomous_self_heal(
         self,
         *,
-        ci_context: Dict[str, Any],
+        ci_context: dict[str, Any],
         diagnosis: str,
-        remediation: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        remediation: dict[str, Any],
+    ) -> dict[str, Any]:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
             execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
@@ -571,12 +599,18 @@ class SidarAgent:
                 status="awaiting_hitl",
                 detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
             )
-            execution = {"status": "awaiting_hitl", "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı."}
+            execution = {
+                "status": "awaiting_hitl",
+                "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
+            }
             remediation["remediation_loop"] = remediation_loop
             remediation["self_heal_execution"] = execution
             return execution
         if not hasattr(self, "code") or not hasattr(self, "llm"):
-            execution = {"status": "blocked", "summary": "Self-heal için code/llm bağımlılıkları hazır değil."}
+            execution = {
+                "status": "blocked",
+                "summary": "Self-heal için code/llm bağımlılıkları hazır değil.",
+            }
             remediation["self_heal_execution"] = execution
             return execution
 
@@ -645,7 +679,9 @@ class SidarAgent:
         return execution
 
     @staticmethod
-    def _build_trigger_prompt(trigger: ExternalTrigger, payload_dict: Dict[str, Any], ci_context: Dict[str, Any] | None) -> str:
+    def _build_trigger_prompt(
+        trigger: ExternalTrigger, payload_dict: dict[str, Any], ci_context: dict[str, Any] | None
+    ) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
 
@@ -665,7 +701,9 @@ class SidarAgent:
                 context=dict(federation_payload.get("context") or {}),
                 inputs=list(federation_payload.get("inputs") or []),
                 meta=dict(federation_payload.get("meta") or {}),
-                correlation_id=str(federation_payload.get("correlation_id") or trigger.correlation_id),
+                correlation_id=str(
+                    federation_payload.get("correlation_id") or trigger.correlation_id
+                ),
             ).to_prompt()
 
         if payload_dict.get("kind") == "action_feedback" or trigger.event_name == "action_feedback":
@@ -675,7 +713,9 @@ class SidarAgent:
                 source_agent=str(payload_dict.get("source_agent") or "external"),
                 action_name=str(payload_dict.get("action_name") or trigger.event_name),
                 status=str(payload_dict.get("status") or "received"),
-                summary=str(payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."),
+                summary=str(
+                    payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."
+                ),
                 related_task_id=str(payload_dict.get("related_task_id") or ""),
                 related_trigger_id=str(payload_dict.get("related_trigger_id") or ""),
                 details=dict(payload_dict.get("details") or {}),
@@ -688,8 +728,8 @@ class SidarAgent:
     def _build_trigger_correlation(
         self,
         trigger: ExternalTrigger,
-        payload_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        payload_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         self._ensure_autonomy_runtime_state()
         correlation_id = derive_correlation_id(
             getattr(trigger, "correlation_id", ""),
@@ -700,15 +740,21 @@ class SidarAgent:
             trigger.trigger_id,
         )
         related_trigger_id = str(payload_dict.get("related_trigger_id") or "").strip()
-        related_task_id = str(payload_dict.get("related_task_id") or payload_dict.get("task_id") or "").strip()
+        related_task_id = str(
+            payload_dict.get("related_task_id") or payload_dict.get("task_id") or ""
+        ).strip()
 
-        matches: List[Dict[str, Any]] = []
+        matches: list[dict[str, Any]] = []
         for item in reversed(list(getattr(self, "_autonomy_history", []) or [])):
             item_trigger_id = str(item.get("trigger_id", "") or "")
             item_payload = dict(item.get("payload") or {})
             item_corr = derive_correlation_id(
-                item.get("correlation", {}).get("correlation_id", "") if isinstance(item.get("correlation"), dict) else "",
-                item.get("meta", {}).get("correlation_id", "") if isinstance(item.get("meta"), dict) else "",
+                item.get("correlation", {}).get("correlation_id", "")
+                if isinstance(item.get("correlation"), dict)
+                else "",
+                item.get("meta", {}).get("correlation_id", "")
+                if isinstance(item.get("meta"), dict)
+                else "",
                 item_payload.get("correlation_id", ""),
                 item_payload.get("related_task_id", ""),
                 item_payload.get("task_id", ""),
@@ -721,7 +767,7 @@ class SidarAgent:
             elif related_task_id and str(item_payload.get("task_id", "") or "") == related_task_id:
                 matches.append(item)
 
-        unique_matches: List[Dict[str, Any]] = []
+        unique_matches: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for item in matches:
             item_id = str(item.get("trigger_id", "") or "")
@@ -731,7 +777,13 @@ class SidarAgent:
             unique_matches.append(item)
 
         related_trigger_ids = [str(item.get("trigger_id", "") or "") for item in unique_matches[:8]]
-        related_sources = list(dict.fromkeys(str(item.get("source", "") or "") for item in unique_matches[:8] if str(item.get("source", "") or "")))
+        related_sources = list(
+            dict.fromkeys(
+                str(item.get("source", "") or "")
+                for item in unique_matches[:8]
+                if str(item.get("source", "") or "")
+            )
+        )
         return {
             "correlation_id": correlation_id,
             "related_trigger_id": related_trigger_id,
@@ -739,10 +791,14 @@ class SidarAgent:
             "matched_records": len(unique_matches),
             "related_trigger_ids": related_trigger_ids,
             "related_sources": related_sources,
-            "latest_related_status": str(unique_matches[0].get("status", "") or "") if unique_matches else "",
+            "latest_related_status": str(unique_matches[0].get("status", "") or "")
+            if unique_matches
+            else "",
         }
 
-    async def handle_external_trigger(self, trigger: ExternalTrigger | Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_external_trigger(
+        self, trigger: ExternalTrigger | dict[str, Any]
+    ) -> dict[str, Any]:
         """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
         await self.initialize()
         self._ensure_autonomy_runtime_state()
@@ -760,7 +816,8 @@ class SidarAgent:
         payload_dict = dict(trigger.payload or {})
         ci_context = (
             payload_dict
-            if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"} and payload_dict.get("workflow_name")
+            if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"}
+            and payload_dict.get("workflow_name")
             else build_ci_failure_context(trigger.event_name, payload_dict)
         )
         correlation = self._build_trigger_correlation(trigger, payload_dict)
@@ -768,7 +825,7 @@ class SidarAgent:
         started_at = time.time()
         status = "success"
         summary = ""
-        remediation: Dict[str, Any] | None = None
+        remediation: dict[str, Any] | None = None
         try:
             summary = await self._try_multi_agent(prompt)
             if not isinstance(summary, str) or not summary.strip():
@@ -817,7 +874,7 @@ class SidarAgent:
         *,
         force: bool = False,
         reason: str = "nightly_idle",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Uzun süreli kullanım için sohbet/RAG belleğini sıkıştırır ve temizler."""
         await self.initialize()
         if not bool(getattr(self.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
@@ -843,7 +900,7 @@ class SidarAgent:
             }
 
         async with self._nightly_maintenance_lock:
-            entity_report: Dict[str, Any] = {"purged": 0, "status": "disabled"}
+            entity_report: dict[str, Any] = {"purged": 0, "status": "disabled"}
             try:
                 entity_memory = get_entity_memory(self.cfg)
                 await entity_memory.initialize()
@@ -855,12 +912,18 @@ class SidarAgent:
                 entity_report = {"status": "failed", "error": str(exc), "purged": 0}
 
             memory_report = await self.memory.run_nightly_consolidation(
-                keep_recent_sessions=max(0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)),
-                min_messages=max(2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)),
+                keep_recent_sessions=max(
+                    0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
+                ),
+                min_messages=max(
+                    2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
+                ),
             )
 
-            rag_reports: List[Dict[str, Any]] = []
-            keep_recent_docs = max(1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2))
+            rag_reports: list[dict[str, Any]] = []
+            keep_recent_docs = max(
+                1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
+            )
             for session_id in list(memory_report.get("session_ids", []) or []):
                 report = await asyncio.to_thread(
                     self.docs.consolidate_session_documents,
@@ -907,13 +970,13 @@ class SidarAgent:
             )
             return result
 
-    def get_autonomy_activity(self, limit: int = 20) -> Dict[str, Any]:
+    def get_autonomy_activity(self, limit: int = 20) -> dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
         self._ensure_autonomy_runtime_state()
         normalized_limit = max(1, int(limit or 20))
         items = [dict(item) for item in self._autonomy_history[-normalized_limit:]]
-        counts_by_status: Dict[str, int] = {}
-        counts_by_source: Dict[str, int] = {}
+        counts_by_status: dict[str, int] = {}
+        counts_by_source: dict[str, int] = {}
         for item in items:
             status = str(item.get("status", "unknown") or "unknown")
             source = str(item.get("source", "unknown") or "unknown")
@@ -928,7 +991,6 @@ class SidarAgent:
             "counts_by_source": counts_by_source,
             "latest_trigger_id": items[-1]["trigger_id"] if items else "",
         }
-
 
     async def _try_multi_agent(self, user_input: str) -> str:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
@@ -947,12 +1009,14 @@ class SidarAgent:
                 "CoverageAgent",
             )
             needs_reload = any(
-                not str(getattr(getattr(supervisor_mod, symbol, None), "__module__", "")).startswith("agent.roles.")
+                not str(
+                    getattr(getattr(supervisor_mod, symbol, None), "__module__", "")
+                ).startswith("agent.roles.")
                 for symbol in role_symbols
             )
             if needs_reload:
                 supervisor_mod = importlib.reload(supervisor_mod)
-            SupervisorAgent = getattr(supervisor_mod, "SupervisorAgent")
+            SupervisorAgent = supervisor_mod.SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)
             self._supervisor.llm = self.llm
 
@@ -1014,11 +1078,11 @@ class SidarAgent:
             logger.warning("Arşiv belleği sorgusu başarısız: %s", exc)
             return ""
 
-        docs: List[str] = results.get("documents", [[]])[0] if results else []
-        metas: List[Dict] = results.get("metadatas", [[]])[0] if results else []
+        docs: list[str] = results.get("documents", [[]])[0] if results else []
+        metas: list[dict] = results.get("metadatas", [[]])[0] if results else []
         distances = results.get("distances", [[]])[0] if results else []
 
-        selected: List[str] = []
+        selected: list[str] = []
         used_chars = 0
         for idx, doc_text in enumerate(docs):
             meta = metas[idx] if idx < len(metas) and metas[idx] else {}
@@ -1075,7 +1139,7 @@ class SidarAgent:
         lines.append(f"  Proje        : {self.cfg.PROJECT_NAME} v{self.cfg.VERSION}")
         # BASE_DIR tam yolu yerine yalnızca klasör adı gösterilir
         if include_verbose_runtime:
-            lines.append(f"  Dizin        : [proje dizini]")
+            lines.append("  Dizin        : [proje dizini]")
         provider_name = (self.cfg.AI_PROVIDER or "").lower()
         lines.append(f"  AI Sağlayıcı : {self.cfg.AI_PROVIDER.upper()}")
         if provider_name == "ollama":
@@ -1084,7 +1148,11 @@ class SidarAgent:
         else:
             lines.append(f"  {CONTEXT_GEMINI_MODEL_LABEL}: {self.cfg.GEMINI_MODEL}")
         lines.append(f"  Erişim Seviye: {self.cfg.ACCESS_LEVEL.upper()}")
-        gpu_str = f"{self.cfg.GPU_INFO} (CUDA {self.cfg.CUDA_VERSION})" if self.cfg.USE_GPU else f"Yok ({self.cfg.GPU_INFO})"
+        gpu_str = (
+            f"{self.cfg.GPU_INFO} (CUDA {self.cfg.CUDA_VERSION})"
+            if self.cfg.USE_GPU
+            else f"Yok ({self.cfg.GPU_INFO})"
+        )
         if include_verbose_runtime:
             lines.append(f"  GPU          : {gpu_str}")
 
@@ -1095,7 +1163,11 @@ class SidarAgent:
         # GITHUB_REPO tam URL yerine yalnızca owner/repo formatında gösterilir
         if self.github.is_available():
             _repo_raw = str(self.cfg.GITHUB_REPO or "")
-            _repo_display = _repo_raw.split("/")[-2] + "/" + _repo_raw.split("/")[-1] if "/" in _repo_raw else _repo_raw
+            _repo_display = (
+                _repo_raw.split("/")[-2] + "/" + _repo_raw.split("/")[-1]
+                if "/" in _repo_raw
+                else _repo_raw
+            )
             gh_status = f"{CONTEXT_GITHUB_CONNECTED_PREFIX}{_repo_display}"
         else:
             gh_status = "Bağlı değil"
@@ -1135,15 +1207,23 @@ class SidarAgent:
         instruction_block = await asyncio.to_thread(self._load_instruction_files)
         if instruction_block:
             lines.append("")
-            max_instruction_chars = max(600, int(getattr(self.cfg, "LOCAL_INSTRUCTION_MAX_CHARS", 2400)))
+            max_instruction_chars = max(
+                600, int(getattr(self.cfg, "LOCAL_INSTRUCTION_MAX_CHARS", 2400))
+            )
             if is_local_provider and len(instruction_block) > max_instruction_chars:
-                instruction_block = instruction_block[:max_instruction_chars].rstrip() + "\n\n[Not] Talimatlar yerel model bağlam sınırı için kırpıldı."
+                instruction_block = (
+                    instruction_block[:max_instruction_chars].rstrip()
+                    + "\n\n[Not] Talimatlar yerel model bağlam sınırı için kırpıldı."
+                )
             lines.append(instruction_block)
 
         context_text = "\n".join(lines)
         max_context_chars = max(1000, int(getattr(self.cfg, "LOCAL_AGENT_CONTEXT_MAX_CHARS", 4500)))
         if is_local_provider and len(context_text) > max_context_chars:
-            return context_text[:max_context_chars].rstrip() + "\n\n[Not] Bağlam yerel model için kırpıldı."
+            return (
+                context_text[:max_context_chars].rstrip()
+                + "\n\n[Not] Bağlam yerel model için kırpıldı."
+            )
         return context_text
 
     def _load_instruction_files(self) -> str:
@@ -1179,7 +1259,7 @@ class SidarAgent:
         unique_files = sorted(set(normalized_files), key=lambda p: str(p))
 
         # Mevcut mtime'ları topla
-        current_mtimes: Dict[str, float] = {}
+        current_mtimes: dict[str, float] = {}
         for path in unique_files:
             try:
                 current_mtimes[str(path)] = path.stat().st_mtime
@@ -1188,7 +1268,8 @@ class SidarAgent:
 
         lock_cm = (
             self._instructions_lock
-            if hasattr(self._instructions_lock, "__enter__") and hasattr(self._instructions_lock, "__exit__")
+            if hasattr(self._instructions_lock, "__enter__")
+            and hasattr(self._instructions_lock, "__exit__")
             else contextlib.nullcontext()
         )
         with lock_cm:
@@ -1217,7 +1298,6 @@ class SidarAgent:
 
             self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
             return self._instructions_cache
-
 
     async def _tool_docs_search(self, arg: str) -> str:
         query = (arg or "").strip()
@@ -1306,6 +1386,7 @@ class SidarAgent:
                     action = ToolCall.model_validate_json(raw)
                 except ValidationError:
                     import json as _json
+
                     action = _json.loads(raw)
                     action = ToolCall.model_validate(action)
 
@@ -1337,7 +1418,9 @@ class SidarAgent:
             except Exception as exc:
                 if _metrics is not None:
                     failed_step = "tool_execution" if tool else "llm_decision"
-                    failed_target = tool or str(getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL) or "unknown")
+                    failed_target = tool or str(
+                        getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL) or "unknown"
+                    )
                     started_at = tool_started_at or llm_started_at or time.monotonic()
                     _metrics.record_step(
                         "sidar_agent",
@@ -1379,7 +1462,10 @@ class SidarAgent:
         diff_text = str(diff_out or "") if ok_diff else ""
         max_diff_chars = 10000
         if len(diff_text) > max_diff_chars:
-            diff_text = diff_text[:max_diff_chars] + "\n\n[Not] Diff çok büyük olduğu için geri kalanı kırpıldı."
+            diff_text = (
+                diff_text[:max_diff_chars]
+                + "\n\n[Not] Diff çok büyük olduğu için geri kalanı kırpıldı."
+            )
 
         _ok_log, commits = self.code.run_shell(f"git log --oneline {base}..HEAD")
         body = (
@@ -1398,7 +1484,6 @@ class SidarAgent:
             reason = str(pr_out or "bilinmeyen hata")
             return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {reason}"
         return f"{GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} {pr_out}"
-
 
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
@@ -1433,14 +1518,10 @@ class SidarAgent:
 
         # 2. KISA SÜRELİ BELLEK ÖZETLEMESİ
         # LLM token tasarrufu için sadece ilk 400 karakterlik kısımları gönderiyoruz
-        turns_text_short = "\n".join(
-            f"{t['role'].upper()}: {t['content'][:400]}"
-            for t in history
-        )
+        turns_text_short = "\n".join(f"{t['role'].upper()}: {t['content'][:400]}" for t in history)
         summarize_prompt = (
             "Aşağıdaki konuşmayı kısa ve bilgilendirici şekilde özetle. "
-            "Teknik detayları, dosya adlarını ve kod kararlarını koru:\n\n"
-            + turns_text_short
+            "Teknik detayları, dosya adlarını ve kod kararlarını koru:\n\n" + turns_text_short
         )
         try:
             summary = await self.llm.chat(

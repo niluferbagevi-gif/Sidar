@@ -28,9 +28,8 @@ import sys
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import Config
 from agent.sidar_agent import SidarAgent
-
+from config import Config
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
@@ -61,7 +60,7 @@ def _make_banner(version: str) -> str:
     if len(ver_field) <= _VER_AREA:
         ver_str = ver_field.ljust(_VER_AREA)
     else:
-        ver_str = ver_field[:_VER_AREA - 1] + "…"
+        ver_str = ver_field[: _VER_AREA - 1] + "…"
     subtitle_line = f" ║  {_PREFIX}{ver_str}║"
     lines = [
         "",
@@ -143,10 +142,12 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     else:
         print(f"  GPU             : ✗ CPU Modu  ({agent.cfg.GPU_INFO})")
     print(f"  GitHub          : {'Bağlı' if agent.github.is_available() else 'Bağlı değil'}")
-    print(f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}")
+    print(
+        f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
+    )
     print(f"  Paket Bilgi     : {agent.pkg.status()}")
     print(f"  Belge Deposu    : {agent.docs.status()}")
-    print(f"\n  '.help' yazarak komut listesini görebilirsiniz.\n")
+    print("\n  '.help' yazarak komut listesini görebilirsiniz.\n")
 
     while True:
         try:
@@ -299,7 +300,7 @@ def main() -> None:
         command_timeout = max(5, int(getattr(cfg, "CLI_COMMAND_TIMEOUT", 25) or 25))
         try:
             asyncio.run(asyncio.wait_for(_run_command_with_setup(), timeout=command_timeout))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print(f"\nSidar > ⚠ Komut zaman aşımına uğradı ({command_timeout}s).")
         return
 

@@ -64,7 +64,9 @@ def test_init_client_uses_sdk_when_token_present(monkeypatch: pytest.MonkeyPatch
     assert manager._webhook_only is False
 
 
-def test_init_client_sdk_import_error_falls_back_to_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_init_client_sdk_import_error_falls_back_to_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     original_import = __import__
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -100,7 +102,9 @@ def test_httpx_stub_async_client_context_manager_methods(monkeypatch: pytest.Mon
     assert exited is False
 
 
-def test_init_client_sdk_other_exception_falls_back_to_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_init_client_sdk_other_exception_falls_back_to_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class BrokenWebClient:
         def __init__(self, token: str) -> None:
             raise RuntimeError("boom")

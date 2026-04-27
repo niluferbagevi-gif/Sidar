@@ -32,7 +32,7 @@ def test_repair_json_text_uses_loose_fence_fallback_for_non_json_fence() -> None
 
 
 def test_repair_json_text_skips_empty_strict_fence_then_parses_next_strict_fence() -> None:
-    payload = "```json\n\n```\n```json\n\"ok\"\n```"
+    payload = '```json\n\n```\n```json\n"ok"\n```'
 
     repaired = repair_json_text(payload)
 
@@ -40,7 +40,7 @@ def test_repair_json_text_skips_empty_strict_fence_then_parses_next_strict_fence
 
 
 def test_repair_json_text_uses_strict_fence_after_decoder_cannot_parse() -> None:
-    payload = "```json\n\"strict-fence\"\n```"
+    payload = '```json\n"strict-fence"\n```'
 
     repaired = repair_json_text(payload)
 
@@ -48,7 +48,7 @@ def test_repair_json_text_uses_strict_fence_after_decoder_cannot_parse() -> None
 
 
 def test_repair_json_text_uses_loose_fence_after_decoder_cannot_parse() -> None:
-    payload = "prefix ```json \"loose-fence\"``` suffix"
+    payload = 'prefix ```json "loose-fence"``` suffix'
 
     repaired = repair_json_text(payload)
 
@@ -64,7 +64,9 @@ def test_repair_json_text_skips_first_invalid_brace_then_parses_later_json_objec
 
 
 def test_repair_json_text_continues_after_malformed_brace_prefix_then_parses_valid_json() -> None:
-    payload = 'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+    payload = (
+        'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+    )
 
     repaired = repair_json_text(payload)
 
@@ -120,8 +122,10 @@ async def test_repair_json_text_async_repairs_loose_fence_without_newline() -> N
 
 
 @pytest.mark.asyncio
-async def test_repair_json_text_async_skips_empty_strict_fence_then_parses_next_strict_fence() -> None:
-    payload = "```json\n\n```\n```json\n\"ok\"\n```"
+async def test_repair_json_text_async_skips_empty_strict_fence_then_parses_next_strict_fence() -> (
+    None
+):
+    payload = '```json\n\n```\n```json\n"ok"\n```'
 
     repaired = await repair_json_text_async(payload)
 
@@ -130,7 +134,7 @@ async def test_repair_json_text_async_skips_empty_strict_fence_then_parses_next_
 
 @pytest.mark.asyncio
 async def test_repair_json_text_async_uses_strict_fence_after_decoder_cannot_parse() -> None:
-    payload = "```json\n\"strict-fence\"\n```"
+    payload = '```json\n"strict-fence"\n```'
 
     repaired = await repair_json_text_async(payload)
 
@@ -139,7 +143,7 @@ async def test_repair_json_text_async_uses_strict_fence_after_decoder_cannot_par
 
 @pytest.mark.asyncio
 async def test_repair_json_text_async_uses_loose_fence_after_decoder_cannot_parse() -> None:
-    payload = "prefix ```json \"loose-fence\"``` suffix"
+    payload = 'prefix ```json "loose-fence"``` suffix'
 
     repaired = await repair_json_text_async(payload)
 
@@ -147,7 +151,9 @@ async def test_repair_json_text_async_uses_loose_fence_after_decoder_cannot_pars
 
 
 @pytest.mark.asyncio
-async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_later_json_object() -> None:
+async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_later_json_object() -> (
+    None
+):
     payload = 'Burada rastgele bir süslü parantez var { ama asıl JSON burada: {"anahtar": "deger"}'
 
     repaired = await repair_json_text_async(payload)
@@ -156,8 +162,12 @@ async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_late
 
 
 @pytest.mark.asyncio
-async def test_repair_json_text_async_continues_after_malformed_brace_prefix_then_parses_valid_json() -> None:
-    payload = 'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+async def test_repair_json_text_async_continues_after_malformed_brace_prefix_then_parses_valid_json() -> (
+    None
+):
+    payload = (
+        'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
+    )
 
     repaired = await repair_json_text_async(payload)
 

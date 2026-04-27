@@ -166,10 +166,16 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         created_users = await asyncio.gather(
             # Benchmark odak noktası oturum+mesaj akışı olduğu için burada
             # pahalı PBKDF2 parola hash maliyetini devre dışı bırakıyoruz.
-            *[db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}") for idx in range(users)]
+            *[
+                db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}")
+                for idx in range(users)
+            ]
         )
         sessions = await asyncio.gather(
-            *[db.create_session(user.id, f"session-{run_id}-{i}") for i, user in enumerate(created_users)]
+            *[
+                db.create_session(user.id, f"session-{run_id}-{i}")
+                for i, user in enumerate(created_users)
+            ]
         )
 
         inserted = await db.add_messages_bulk(
@@ -189,7 +195,10 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
         per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
         assert all(len(items) == messages_per_session for items in per_session_messages)
-        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
+        assert all(
+            [m.tokens_used for m in items] == list(range(messages_per_session))
+            for items in per_session_messages
+        )
         return sum(len(items) for items in per_session_messages)
 
     def _run_once() -> int:

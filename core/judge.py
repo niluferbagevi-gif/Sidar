@@ -15,6 +15,7 @@ Yapılandırma (.env):
   JUDGE_PROVIDER=ollama          # değerlendirme sağlayıcısı
   JUDGE_SAMPLE_RATE=0.2          # her 5 yanıttan 1'ini değerlendir
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,6 @@ import random
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ def _inc_prometheus(metric_name: str, value: float) -> None:
         gauge = _prometheus_gauges.get(metric_name)
         if gauge is None:
             from prometheus_client import Gauge
+
             gauge = Gauge(metric_name, metric_name.replace("_", " "))
             _prometheus_gauges[metric_name] = gauge
         gauge.set(value)
@@ -79,11 +80,13 @@ def _inc_prometheus(metric_name: str, value: float) -> None:
 
 # ─── JudgeResult ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class JudgeResult:
     """Bir değerlendirme döngüsünün sonucu."""
-    relevance_score: float       # 0.0 – 1.0 (1.0 = tam alakalı)
-    hallucination_risk: float    # 0.0 – 1.0 (0.0 = güvenilir)
+
+    relevance_score: float  # 0.0 – 1.0 (1.0 = tam alakalı)
+    hallucination_risk: float  # 0.0 – 1.0 (0.0 = güvenilir)
     evaluated_at: float
     model: str
     provider: str
@@ -124,6 +127,7 @@ class ResponseEvaluation:
 
 # ─── LLMJudge ────────────────────────────────────────────────────────────────
 
+
 class LLMJudge:
     """
     LLM tabanlı kalite değerlendirici.
@@ -140,7 +144,11 @@ class LLMJudge:
         self.provider = os.getenv("JUDGE_PROVIDER", "ollama").strip().lower()
         self.sample_rate = max(0.0, min(1.0, float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or 0.2)))
         self.config = Config()
-        self.auto_feedback_enabled = os.getenv("JUDGE_AUTO_FEEDBACK_ENABLED", "true").lower() in ("1", "true", "yes")
+        self.auto_feedback_enabled = os.getenv("JUDGE_AUTO_FEEDBACK_ENABLED", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         self.auto_feedback_threshold = max(
             0.0,
             min(10.0, float(os.getenv("JUDGE_AUTO_FEEDBACK_THRESHOLD", "8.0") or 8.0)),
@@ -170,11 +178,16 @@ class LLMJudge:
             or "judge-default"
         )
 
-    async def _call_llm(self, system: str, user_message: str) -> Optional[float]:
+    async def _call_llm(self, system: str, user_message: str) -> float | None:
         """Judge modelini çağır, 0.0–1.0 arası float döndür."""
         try:
             from core.llm_client import LLMClient
-            model = self.model or getattr(self.config, "TEXT_MODEL", None) or getattr(self.config, "CODING_MODEL", None)
+
+            model = (
+                self.model
+                or getattr(self.config, "TEXT_MODEL", None)
+                or getattr(self.config, "CODING_MODEL", None)
+            )
             client = LLMClient(provider=self.provider, config=self.config)
             response = await client.chat(
                 messages=[{"role": "user", "content": user_message}],
@@ -199,7 +212,9 @@ class LLMJudge:
             logger.debug("Judge LLM çağrısı başarısız: %s", exc)
             return None
 
-    async def _call_llm_json(self, system: str, user_message: str, *, model: Optional[str] = None) -> Optional[Dict[str, object]]:
+    async def _call_llm_json(
+        self, system: str, user_message: str, *, model: str | None = None
+    ) -> dict[str, object] | None:
         """Judge modelini JSON mode'da çağırır."""
         try:
             from core.llm_client import LLMClient
@@ -229,7 +244,7 @@ class LLMJudge:
         prompt: str,
         response: str,
         context,
-    ) -> Optional[ResponseEvaluation]:
+    ) -> ResponseEvaluation | None:
         """Bağımsız yanıtı 1–10 ölçeğinde puanlar ve gerekçe döndürür."""
         if not self.enabled or not prompt or not response:
             return None
@@ -278,9 +293,9 @@ class LLMJudge:
     async def evaluate_rag(
         self,
         query: str,
-        documents: List[str],
-        answer: Optional[str] = None,
-    ) -> Optional[JudgeResult]:
+        documents: list[str],
+        answer: str | None = None,
+    ) -> JudgeResult | None:
         """
         RAG sorgusunu ve belgelerini değerlendir.
 
@@ -302,10 +317,7 @@ class LLMJudge:
         model_used = self.model or "default"
 
         # Alaka puanı
-        relevance_prompt = (
-            f"Sorgu: {query}\n\n"
-            f"Belge:\n{context_text[:2000]}"
-        )
+        relevance_prompt = f"Sorgu: {query}\n\n" f"Belge:\n{context_text[:2000]}"
         relevance = await self._call_llm(_RELEVANCE_SYSTEM, relevance_prompt)
         if relevance is None:
             relevance = 0.5  # bilinmiyor → nötr
@@ -314,9 +326,7 @@ class LLMJudge:
         hallucination = 0.0
         if answer:
             hall_prompt = (
-                f"Soru: {query}\n\n"
-                f"Bağlam:\n{context_text[:1500]}\n\n"
-                f"Yanıt:\n{answer[:500]}"
+                f"Soru: {query}\n\n" f"Bağlam:\n{context_text[:1500]}\n\n" f"Yanıt:\n{answer[:500]}"
             )
             hall_val = await self._call_llm(_HALLUCINATION_SYSTEM, hall_prompt)
             if hall_val is not None:
@@ -336,11 +346,14 @@ class LLMJudge:
 
         # LLMMetrics'e kaydet
         _record_judge_metrics(result)
-        await self._maybe_record_feedback(query=query, documents=documents, answer=answer, result=result)
+        await self._maybe_record_feedback(
+            query=query, documents=documents, answer=answer, result=result
+        )
 
         logger.debug(
             "Judge değerlendirmesi — relevance=%.3f, hallucination_risk=%.3f",
-            result.relevance_score, result.hallucination_risk,
+            result.relevance_score,
+            result.hallucination_risk,
         )
         return result
 
@@ -348,8 +361,8 @@ class LLMJudge:
         self,
         *,
         query: str,
-        documents: List[str],
-        answer: Optional[str],
+        documents: list[str],
+        answer: str | None,
         result: JudgeResult,
     ) -> bool:
         """Zayıf kalite sinyalini Active Learning FeedbackStore'a yazar."""
@@ -407,8 +420,8 @@ class LLMJudge:
     def schedule_background_evaluation(
         self,
         query: str,
-        documents: List[str],
-        answer: Optional[str] = None,
+        documents: list[str],
+        answer: str | None = None,
     ) -> None:
         """
         Değerlendirmeyi asyncio arka plan görevi olarak zamanla.
@@ -437,14 +450,17 @@ class LLMJudge:
 
 # ─── Metrics entegrasyonu ─────────────────────────────────────────────────────
 
+
 def _record_judge_metrics(result: JudgeResult) -> None:
     """JudgeResult'ı LLMMetricEvent'e ek alan olarak logla."""
     try:
         from core.llm_metrics import get_llm_metrics_collector
+
         collector = get_llm_metrics_collector()
         # judge_score ve hallucination_risk kullanım izleme sinkine ilet
         if collector._usage_sink is not None:
             import inspect
+
             payload = {
                 "type": "judge",
                 "judge_score": result.relevance_score,
@@ -467,7 +483,7 @@ def _record_judge_metrics(result: JudgeResult) -> None:
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
-_JUDGE: Optional[LLMJudge] = None
+_JUDGE: LLMJudge | None = None
 
 
 def get_llm_judge() -> LLMJudge:

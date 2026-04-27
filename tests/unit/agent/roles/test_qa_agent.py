@@ -46,12 +46,17 @@ def test_load_qa_agent_injects_httpx_when_missing(monkeypatch):
     fake_spec = SimpleNamespace(loader=_Loader())
     monkeypatch.delitem(sys.modules, "qa_agent_under_test", raising=False)
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
-    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec)
-    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: ModuleType("qa_agent_under_test"))
+    monkeypatch.setattr(
+        importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec
+    )
+    monkeypatch.setattr(
+        importlib.util, "module_from_spec", lambda _spec: ModuleType("qa_agent_under_test")
+    )
 
     loaded = _load_qa_agent()
     assert loaded is sentinel
     assert "httpx" in sys.modules
+
 
 class DummyCode:
     def __init__(self):
@@ -210,7 +215,9 @@ def test_generate_and_build_plan(qa, monkeypatch):
     code = asyncio.run(qa._generate_test_code("src/a.py", "ctx"))
     assert "def test_x" in code
 
-    plan = asyncio.run(qa._build_coverage_plan('{"diagnosis":"plan","suspected_targets":["a.py","pkg/b.py"]}'))
+    plan = asyncio.run(
+        qa._build_coverage_plan('{"diagnosis":"plan","suspected_targets":["a.py","pkg/b.py"]}')
+    )
     plan_data = json.loads(plan)
     assert plan_data["coverage"]["path"].endswith(".coveragerc")
     assert isinstance(plan_data["suggested_tests"], list)

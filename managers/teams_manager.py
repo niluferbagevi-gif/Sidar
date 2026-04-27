@@ -8,11 +8,12 @@ Kullanım:
     ok, err = await mgr.send_message("Deployment başarılı! 🚀")
     ok, err = await mgr.send_adaptive_card(card_payload)
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -58,10 +59,10 @@ class TeamsManager:
         text: str,
         title: str = "",
         subtitle: str = "",
-        facts: Optional[List[Dict[str, str]]] = None,
-        actions: Optional[List[Dict]] = None,
+        facts: list[dict[str, str]] | None = None,
+        actions: list[dict] | None = None,
         theme_color: str = "0078D4",
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         MessageCard formatında mesaj gönderir.
         Döner: (success, error_message)
@@ -69,7 +70,7 @@ class TeamsManager:
         if not self._available:
             return False, "TEAMS_WEBHOOK_URL ayarlanmamış"
 
-        card: Dict[str, Any] = {
+        card: dict[str, Any] = {
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "themeColor": theme_color,
@@ -81,15 +82,13 @@ class TeamsManager:
         if subtitle:
             card["text"] = f"**{subtitle}**\n\n{text}"
         if facts:
-            card["sections"] = [
-                {"facts": [{"name": f["key"], "value": f["value"]} for f in facts]}
-            ]
+            card["sections"] = [{"facts": [{"name": f["key"], "value": f["value"]} for f in facts]}]
         if actions:
             card["potentialAction"] = actions
 
         return await self._post(card)
 
-    async def send_adaptive_card(self, card_body: Dict) -> Tuple[bool, str]:
+    async def send_adaptive_card(self, card_body: dict) -> tuple[bool, str]:
         """
         Adaptive Card v1.4 gönderir.
         card_body: Adaptive Card JSON (type, body, actions vb. içerir)
@@ -114,26 +113,28 @@ class TeamsManager:
         title: str,
         body: str,
         status: str = "info",
-        details: Optional[List[Dict[str, str]]] = None,
+        details: list[dict[str, str]] | None = None,
         link_url: str = "",
         link_label: str = "Detaylar",
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Hazır bildirim kartı gönderir."""
         colors = {
-            "info": "0078D4",      # Mavi
-            "success": "107C10",   # Yeşil
-            "warning": "FF8C00",   # Turuncu
-            "error": "D83B01",     # Kırmızı
+            "info": "0078D4",  # Mavi
+            "success": "107C10",  # Yeşil
+            "warning": "FF8C00",  # Turuncu
+            "error": "D83B01",  # Kırmızı
         }
         theme_color = colors.get(status, "0078D4")
 
         actions = []
         if link_url:
-            actions.append({
-                "@type": "OpenUri",
-                "name": link_label,
-                "targets": [{"os": "default", "uri": link_url}],
-            })
+            actions.append(
+                {
+                    "@type": "OpenUri",
+                    "name": link_label,
+                    "targets": [{"os": "default", "uri": link_url}],
+                }
+            )
 
         return await self.send_message(
             text=body,
@@ -155,31 +156,37 @@ class TeamsManager:
         requester: str = "",
         approve_url: str = "",
         reject_url: str = "",
-    ) -> Dict:
+    ) -> dict:
         """HITL onay akışı için Adaptive Card şablonu."""
-        body: List[Dict] = [
+        body: list[dict] = [
             {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
             {"type": "TextBlock", "text": description, "wrap": True},
         ]
         if requester:
-            body.append({
-                "type": "FactSet",
-                "facts": [{"title": "İsteyen", "value": requester}],
-            })
+            body.append(
+                {
+                    "type": "FactSet",
+                    "facts": [{"title": "İsteyen", "value": requester}],
+                }
+            )
 
         actions = []
         if approve_url:
-            actions.append({
-                "type": "Action.OpenUrl",
-                "title": "✅ Onayla",
-                "url": f"{approve_url}?request_id={request_id}&approved=true",
-            })
+            actions.append(
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "✅ Onayla",
+                    "url": f"{approve_url}?request_id={request_id}&approved=true",
+                }
+            )
         if reject_url:
-            actions.append({
-                "type": "Action.OpenUrl",
-                "title": "❌ Reddet",
-                "url": f"{reject_url}?request_id={request_id}&approved=false",
-            })
+            actions.append(
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "❌ Reddet",
+                    "url": f"{reject_url}?request_id={request_id}&approved=false",
+                }
+            )
 
         return {
             "type": "AdaptiveCard",
@@ -192,17 +199,22 @@ class TeamsManager:
     @staticmethod
     def build_summary_card(
         title: str,
-        metrics: List[Dict[str, str]],
+        metrics: list[dict[str, str]],
         description: str = "",
-    ) -> Dict:
+    ) -> dict:
         """Metrik özeti için Adaptive Card şablonu."""
-        body: List[Dict] = [
+        body: list[dict] = [
             {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
         ]
         if description:
             body.append({"type": "TextBlock", "text": description, "wrap": True})
         if metrics:
-            body.append({"type": "FactSet", "facts": [{"title": m["key"], "value": m["value"]} for m in metrics]})
+            body.append(
+                {
+                    "type": "FactSet",
+                    "facts": [{"title": m["key"], "value": m["value"]} for m in metrics],
+                }
+            )
         return {
             "type": "AdaptiveCard",
             "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -214,7 +226,7 @@ class TeamsManager:
     #  ÖZEL HTTP POST
     # ─────────────────────────────────────────────
 
-    async def _post(self, payload: Dict) -> Tuple[bool, str]:
+    async def _post(self, payload: dict) -> tuple[bool, str]:
         """Webhook URL'ye JSON POST atar."""
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

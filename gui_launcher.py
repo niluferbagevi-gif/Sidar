@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from main import build_command, execute_command, preflight
 
@@ -11,7 +11,7 @@ DEFAULT_LOG_LEVEL = "info"
 DEFAULT_WEB_ARGS = {"host": "0.0.0.0", "port": "7860"}
 
 
-def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -> Dict[str, str]:
+def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -> dict[str, str]:
     """Arayüzden gelen seçimleri normalize eder ve doğrular."""
     clean = {
         "mode": (mode or "").strip().lower(),
@@ -37,12 +37,14 @@ def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -
     return clean
 
 
-def _extra_args_for_mode(mode: str) -> Dict[str, str]:
+def _extra_args_for_mode(mode: str) -> dict[str, str]:
     """Moda göre varsayılan ek parametreleri döndürür."""
     return dict(DEFAULT_WEB_ARGS) if mode == "web" else {}
 
 
-def launch_from_gui(mode: str, provider: str, level: str, log_level: str = DEFAULT_LOG_LEVEL) -> Dict[str, Any]:
+def launch_from_gui(
+    mode: str, provider: str, level: str, log_level: str = DEFAULT_LOG_LEVEL
+) -> dict[str, Any]:
     """GUI seçimleriyle mevcut main.py launcher akışını çalıştırır."""
     try:
         selection = _normalize_selection(mode, provider, level, log_level)
@@ -69,7 +71,9 @@ def launch_from_gui(mode: str, provider: str, level: str, log_level: str = DEFAU
         return {"status": "error", "message": str(exc), "return_code": 1}
 
 
-def start_sidar(mode: str, provider: str, level: str, log_level: str = DEFAULT_LOG_LEVEL) -> Dict[str, Any]:
+def start_sidar(
+    mode: str, provider: str, level: str, log_level: str = DEFAULT_LOG_LEVEL
+) -> dict[str, Any]:
     """Eel'in doğrudan expose edeceği sabit fonksiyon adı."""
     return launch_from_gui(mode, provider, level, log_level)
 
@@ -79,9 +83,7 @@ def start_gui() -> None:
     try:
         import eel
     except ImportError as exc:
-        raise RuntimeError(
-            "Eel kurulu değil. Kurmak için: pip install eel"
-        ) from exc
+        raise RuntimeError("Eel kurulu değil. Kurmak için: pip install eel") from exc
 
     gui_dir = Path(__file__).resolve().parent / "launcher_gui"
     eel.init(str(gui_dir))

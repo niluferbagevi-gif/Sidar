@@ -250,7 +250,9 @@ def test_scan_project_todos_handles_walk_exception(manager: TodoManager, monkeyp
     assert "hata oluştu" in msg
 
 
-def test_scan_project_todos_ignores_file_read_errors(manager: TodoManager, tmp_path: Path, monkeypatch):
+def test_scan_project_todos_ignores_file_read_errors(
+    manager: TodoManager, tmp_path: Path, monkeypatch
+):
     p = tmp_path / "bad.py"
     p.write_text("# TODO: x", encoding="utf-8")
 

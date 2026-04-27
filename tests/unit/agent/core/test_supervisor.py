@@ -75,10 +75,9 @@ def get_agent_event_bus():
 event_stream_mod.get_agent_event_bus = get_agent_event_bus
 sys.modules["agent.core.event_stream"] = event_stream_mod
 
-from agent.core.contracts import DelegationRequest, TaskResult
 import agent.core.supervisor as supervisor_mod
+from agent.core.contracts import DelegationRequest, TaskResult
 from agent.core.supervisor import SupervisorAgent
-
 
 # Stub'lar sadece supervisor import'u için gerekli.
 # Import tamamlandıktan sonra global sys.modules kirlenmesini hemen geri al.
@@ -101,7 +100,7 @@ def test_register_stub_module_creates_runnable_role() -> None:
     module_name = "agent.roles._temporary_stub_role"
     _register_stub_module(module_name, "TempAgent")
     stub_module = sys.modules[module_name]
-    role_cls = getattr(stub_module, "TempAgent")
+    role_cls = stub_module.TempAgent
     role = role_cls(cfg={"mode": "test"})
 
     assert role.cfg == {"mode": "test"}
@@ -196,12 +195,23 @@ def test_is_reject_feedback_payload(payload: str, expected: bool) -> None:
 @pytest.mark.parametrize(
     ("delegation_request", "expected_missing"),
     [
-        (DelegationRequest(task_id="t", reply_to="", target_agent="coder", payload="x"), "reply_to"),
-        (DelegationRequest(task_id="t", reply_to="qa", target_agent="", payload="x"), "target_agent"),
-        (DelegationRequest(task_id="t", reply_to="qa", target_agent="coder", payload=""), "payload"),
+        (
+            DelegationRequest(task_id="t", reply_to="", target_agent="coder", payload="x"),
+            "reply_to",
+        ),
+        (
+            DelegationRequest(task_id="t", reply_to="qa", target_agent="", payload="x"),
+            "target_agent",
+        ),
+        (
+            DelegationRequest(task_id="t", reply_to="qa", target_agent="coder", payload=""),
+            "payload",
+        ),
     ],
 )
-def test_validate_p2p_request_reports_missing_fields(delegation_request: DelegationRequest, expected_missing: str) -> None:
+def test_validate_p2p_request_reports_missing_fields(
+    delegation_request: DelegationRequest, expected_missing: str
+) -> None:
     missing = SupervisorAgent._validate_p2p_request(delegation_request)
     assert missing is not None
     assert expected_missing in missing
@@ -224,6 +234,7 @@ def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
     )
 
     import asyncio
+
     result = asyncio.run(sup._route_p2p(req, max_hops=3))
 
     assert result.status == "failed"
@@ -254,6 +265,7 @@ def test_route_p2p_fails_when_max_hops_exceeded() -> None:
     )
 
     import asyncio
+
     result = asyncio.run(sup._route_p2p(req, max_hops=2))
 
     assert result.status == "failed"
@@ -284,6 +296,7 @@ def test_run_task_routes_non_code_intents(prompt: str, expected_receiver: str) -
     sup._route_p2p = _route_p2p
 
     import asyncio
+
     result = asyncio.run(sup.run_task(prompt))
 
     assert calls[0][0] == expected_receiver
@@ -301,6 +314,7 @@ def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> Non
     sup._route_p2p = lambda *_args, **_kwargs: None
 
     import asyncio
+
     result = asyncio.run(sup.run_task("eksik test yaz"))
 
     assert result.startswith("qa:coverage:")
@@ -328,6 +342,7 @@ def test_run_task_code_flow_retries_and_returns_final_review_summary() -> None:
     sup._route_p2p = _route_p2p
 
     import asyncio
+
     result = asyncio.run(sup.run_task("bir modül geliştir"))
 
     assert "düzeltilmiş kod" in result
@@ -357,6 +372,7 @@ def test_run_task_code_flow_stops_after_retry_limit() -> None:
     sup._route_p2p = _route_p2p
 
     import asyncio
+
     result = asyncio.run(sup.run_task("bir modül geliştir"))
 
     assert "[P2P:STOP] Maksimum QA retry limiti aşıldı (1)." in result
@@ -386,19 +402,25 @@ def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
     assert calls == [("coder", "code")]
 
 
-def test_ensure_delegation_request_shape_uses_existing_class(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_delegation_request_shape_uses_existing_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
     monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
 
     assert supervisor_mod._ensure_delegation_request_shape() is DelegationRequest
 
 
-def test_ensure_delegation_request_shape_builds_compat_class(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_delegation_request_shape_builds_compat_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     contracts_mod = types.SimpleNamespace(DelegationRequest=object)
     monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
 
     compat_cls = supervisor_mod._ensure_delegation_request_shape()
-    req = compat_cls(task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"})
+    req = compat_cls(
+        task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"}
+    )
     bumped = req.bumped()
 
     assert req.handoff_depth == 2
@@ -673,7 +695,9 @@ def test_init_registers_specialist_agents() -> None:
     assert sup.coverage is not None
 
 
-def test_init_falls_back_to_qa_when_coverage_registration_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_init_falls_back_to_qa_when_coverage_registration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _BrokenCoverage:
         def __init__(self, _cfg=None) -> None:
             raise RuntimeError("broken")

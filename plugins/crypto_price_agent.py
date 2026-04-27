@@ -28,10 +28,7 @@ class CryptoPriceAgent(BaseAgent):
             supported = ", ".join(sorted({"btc", "eth", "sol"}))
             return f"Desteklenmeyen sembol: {symbol}. Desteklenenler: {supported}."
 
-        url = (
-            "https://api.coingecko.com/api/v3/simple/price"
-            f"?ids={coin_id}&vs_currencies=usd"
-        )
+        url = "https://api.coingecko.com/api/v3/simple/price" f"?ids={coin_id}&vs_currencies=usd"
 
         try:
             with urllib.request.urlopen(url, timeout=8) as response:

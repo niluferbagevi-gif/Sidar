@@ -6,7 +6,6 @@ Sürüm: 2.7.0
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
@@ -33,7 +32,10 @@ def _is_retryable_github_error(exc: Exception) -> bool:
         return True
     if status == 403 and "rate limit" in message:
         return True
-    return any(token in message for token in ("rate limit", "temporarily unavailable", "timeout", "connection reset"))
+    return any(
+        token in message
+        for token in ("rate limit", "temporarily unavailable", "timeout", "connection reset")
+    )
 
 
 class GitHubManager:
@@ -44,17 +46,48 @@ class GitHubManager:
 
     # Okunmasına izin verilen, metin tabanlı (text-based) güvenli dosya uzantıları
     SAFE_TEXT_EXTENSIONS = {
-        ".py", ".txt", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg", ".toml",
-        ".csv", ".xml", ".html", ".css", ".js", ".ts", ".sh", ".bash", ".bat",
-        ".sql", ".gitignore", ".dockerignore"
+        ".py",
+        ".txt",
+        ".md",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".cfg",
+        ".toml",
+        ".csv",
+        ".xml",
+        ".html",
+        ".css",
+        ".js",
+        ".ts",
+        ".sh",
+        ".bash",
+        ".bat",
+        ".sql",
+        ".gitignore",
+        ".dockerignore",
     }
 
     # Uzantısız güvenli dosya isimleri (küçük harfle karşılaştırılır)
     SAFE_EXTENSIONLESS = {
-        "makefile", "dockerfile", "procfile", "vagrantfile",
-        "rakefile", "jenkinsfile", "gemfile", "brewfile",
-        "cmakelists", "gradlew", "mvnw", "license", "changelog",
-        "readme", "authors", "contributors", "notice",
+        "makefile",
+        "dockerfile",
+        "procfile",
+        "vagrantfile",
+        "rakefile",
+        "jenkinsfile",
+        "gemfile",
+        "brewfile",
+        "cmakelists",
+        "gradlew",
+        "mvnw",
+        "license",
+        "changelog",
+        "readme",
+        "authors",
+        "contributors",
+        "notice",
     }
 
     @staticmethod
@@ -129,7 +162,7 @@ class GitHubManager:
     #  DEPO İŞLEMLERİ
     # ─────────────────────────────────────────────
 
-    def set_repo(self, repo_name: str) -> Tuple[bool, str]:
+    def set_repo(self, repo_name: str) -> tuple[bool, str]:
         """Aktif depoyu değiştir."""
         if not self._available:
             return False, "GitHub bağlantısı yok."
@@ -138,7 +171,7 @@ class GitHubManager:
             return True, f"Depo değiştirildi: {repo_name}"
         return False, f"Depo bulunamadı veya erişim reddedildi: {repo_name}"
 
-    def list_repos(self, owner: str = "", limit: int = 100) -> Tuple[bool, List[Dict[str, str]]]:
+    def list_repos(self, owner: str = "", limit: int = 100) -> tuple[bool, list[dict[str, str]]]:
         """
         Erişilebilen depoları listeler.
         owner verilirse ilgili kullanıcı/organizasyon hesabının depolarını döner.
@@ -146,7 +179,7 @@ class GitHubManager:
         if not self._gh:
             return False, []
         try:
-            repos: List[Dict[str, str]] = []
+            repos: list[dict[str, str]] = []
             if owner:
                 account = self._call_with_retry(self._gh.get_user, owner)
                 account_type = str(getattr(account, "type", "")).lower()
@@ -158,17 +191,19 @@ class GitHubManager:
             for i, repo in enumerate(source):
                 if i >= limit:
                     break
-                repos.append({
-                    "full_name": repo.full_name,
-                    "default_branch": repo.default_branch,
-                    "private": str(bool(getattr(repo, "private", False))).lower(),
-                })
+                repos.append(
+                    {
+                        "full_name": repo.full_name,
+                        "default_branch": repo.default_branch,
+                        "private": str(bool(getattr(repo, "private", False))).lower(),
+                    }
+                )
             return True, repos
         except Exception as exc:
             logger.error("Repo listesi alınamadı (%s): %s", owner or "self", exc)
             return False, []
 
-    def get_repo_info(self) -> Tuple[bool, str]:
+    def get_repo_info(self) -> tuple[bool, str]:
         """Depo bilgilerini döndür."""
         if not self._repo:
             return False, "Aktif depo yok. Önce bir depo belirtin."
@@ -187,7 +222,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Depo bilgisi alınamadı: {exc}"
 
-    def list_commits(self, limit: int = 30, branch: Optional[str] = None) -> Tuple[bool, str]:
+    def list_commits(self, limit: int = 30, branch: str | None = None) -> tuple[bool, str]:
         """Son commit'leri limitli şekilde listele."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -217,8 +252,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Commit listesi alınamadı: {exc}"
 
-
-    def read_remote_file(self, file_path: str, ref: Optional[str] = None) -> Tuple[bool, str]:
+    def read_remote_file(self, file_path: str, ref: str | None = None) -> tuple[bool, str]:
         """Uzak depodaki bir dosyayı okur (Binary korumalı)."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -226,9 +260,9 @@ class GitHubManager:
             kwargs = {}
             if ref:
                 kwargs["ref"] = ref
-            
+
             content_file = self._call_with_retry(self._repo.get_contents, file_path, **kwargs)
-            
+
             # Eğer dönen veri bir liste ise, bu bir dizindir
             if isinstance(content_file, list):
                 lines = [f"[Dizin: {file_path}]"]
@@ -236,10 +270,10 @@ class GitHubManager:
                     icon = "📂" if item.type == "dir" else "📄"
                     lines.append(f"  {icon} {item.name}")
                 return True, "\n".join(lines)
-            
+
             # Eğer bu bir dosyaysa, içeriği UTF-8 mi yoksa Binary mi diye kontrol et
             file_name = content_file.name.lower()
-            
+
             # Uzantısız dosyalar (Makefile, Dockerfile vb.) için uzantıyı boş varsayıyoruz
             extension = ""
             if "." in file_name:
@@ -263,7 +297,7 @@ class GitHubManager:
             # Güvenli olduğuna ikna olduysak, decode et
             decoded = content_file.decoded_content.decode("utf-8", errors="replace")
             return True, decoded
-            
+
         except UnicodeDecodeError:
             # Uzantısı .txt ama içi binary/bozuk olan dosyalar için fallback
             return False, (
@@ -273,7 +307,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Uzak dosya okunamadı ({file_path}): {exc}"
 
-    def list_branches(self, limit: int = 30) -> Tuple[bool, str]:
+    def list_branches(self, limit: int = 30) -> tuple[bool, str]:
         """Depo dallarını limitli şekilde listele."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -288,7 +322,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Branch listesi alınamadı: {exc}"
 
-    def list_files(self, path: str = "", branch: Optional[str] = None) -> Tuple[bool, str]:
+    def list_files(self, path: str = "", branch: str | None = None) -> tuple[bool, str]:
         """Depodaki bir dizinin içeriğini listele."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -312,8 +346,8 @@ class GitHubManager:
         file_path: str,
         content: str,
         message: str,
-        branch: Optional[str] = None,
-    ) -> Tuple[bool, str]:
+        branch: str | None = None,
+    ) -> tuple[bool, str]:
         """GitHub deposuna dosya oluştur veya güncelle."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -350,7 +384,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"GitHub dosya yazma hatası: {exc}"
 
-    def create_branch(self, branch_name: str, from_branch: Optional[str] = None) -> Tuple[bool, str]:
+    def create_branch(self, branch_name: str, from_branch: str | None = None) -> tuple[bool, str]:
         """
         Yeni git dalı oluştur.
 
@@ -385,8 +419,8 @@ class GitHubManager:
         title: str,
         body: str,
         head: str,
-        base: Optional[str] = None,
-    ) -> Tuple[bool, str]:
+        base: str | None = None,
+    ) -> tuple[bool, str]:
         """Pull request oluştur."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -411,7 +445,7 @@ class GitHubManager:
         self,
         state: str = "open",
         limit: int = 30,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Pull Request listesi döndür. state: open / closed / all"""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -425,14 +459,12 @@ class GitHubManager:
             lines = [f"[PR Listesi ({state.upper()}) — {self._repo.full_name}]"]
             for pr in pulls:
                 date = pr.updated_at.strftime("%Y-%m-%d")
-                lines.append(
-                    f"  #{pr.number:4d}  {date}  {pr.user.login:<16}  {pr.title[:60]}"
-                )
+                lines.append(f"  #{pr.number:4d}  {date}  {pr.user.login:<16}  {pr.title[:60]}")
             return True, "\n".join(lines)
         except Exception as exc:
             return False, f"PR listesi alınamadı: {exc}"
 
-    def get_pull_request(self, number: int) -> Tuple[bool, str]:
+    def get_pull_request(self, number: int) -> tuple[bool, str]:
         """Belirli bir PR'ın detaylarını döndür."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -461,21 +493,18 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR detayı alınamadı: {exc}"
 
-    def add_pr_comment(self, number: int, comment: str) -> Tuple[bool, str]:
+    def add_pr_comment(self, number: int, comment: str) -> tuple[bool, str]:
         """Bir PR'a yorum ekle."""
         if not self._repo:
             return False, "Aktif depo yok."
         try:
             issue = self._repo.get_issue(number)
             created = issue.create_comment(comment)
-            return True, (
-                f"✓ Yorum eklendi (PR #{number}):\n"
-                f"  URL: {created.html_url}"
-            )
+            return True, (f"✓ Yorum eklendi (PR #{number}):\n" f"  URL: {created.html_url}")
         except Exception as exc:
             return False, f"PR yorumu eklenemedi: {exc}"
 
-    def close_pull_request(self, number: int) -> Tuple[bool, str]:
+    def close_pull_request(self, number: int) -> tuple[bool, str]:
         """Bir PR'ı kapat (merged olmadan)."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -486,8 +515,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR kapatma hatası: {exc}"
 
-
-    def list_issues(self, state: str = "open", limit: int = 10) -> Tuple[bool, list]:
+    def list_issues(self, state: str = "open", limit: int = 10) -> tuple[bool, list]:
         """Depodaki Issue'ları listeler (PR'ları filtreler)."""
         if not self._repo:
             return False, ["Aktif depo yok."]
@@ -501,19 +529,21 @@ class GitHubManager:
                 # GitHub API'sinde PR'lar da birer Issue'dur, onları filtrele
                 if issue.pull_request is not None:
                     continue
-                result.append({
-                    "number": issue.number,
-                    "title": issue.title,
-                    "state": issue.state,
-                    "user": issue.user.login,
-                    "created_at": issue.created_at.isoformat(),
-                })
+                result.append(
+                    {
+                        "number": issue.number,
+                        "title": issue.title,
+                        "state": issue.state,
+                        "user": issue.user.login,
+                        "created_at": issue.created_at.isoformat(),
+                    }
+                )
             return True, result
         except Exception as exc:
             logger.error("Issue listeleme hatası: %s", exc)
             return False, [f"Hata: {exc}"]
 
-    def create_issue(self, title: str, body: str) -> Tuple[bool, str]:
+    def create_issue(self, title: str, body: str) -> tuple[bool, str]:
         """Yeni bir Issue oluşturur."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -523,7 +553,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"✗ Issue oluşturulamadı: {exc}"
 
-    def comment_issue(self, number: int, body: str) -> Tuple[bool, str]:
+    def comment_issue(self, number: int, body: str) -> tuple[bool, str]:
         """Var olan bir Issue'ya yorum ekler."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -534,7 +564,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"✗ Yorum eklenemedi: {exc}"
 
-    def close_issue(self, number: int) -> Tuple[bool, str]:
+    def close_issue(self, number: int) -> tuple[bool, str]:
         """Bir Issue'yu kapatır."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -545,8 +575,7 @@ class GitHubManager:
         except Exception as exc:
             return False, f"✗ Issue kapatılamadı: {exc}"
 
-
-    def get_pull_request_diff(self, number: int) -> Tuple[bool, str]:
+    def get_pull_request_diff(self, number: int) -> tuple[bool, str]:
         """Bir PR'ın birleştirilmiş diff (patch) içeriğini döndürür."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -560,7 +589,9 @@ class GitHubManager:
                 if file.patch:
                     diff_parts.append(file.patch)
                 else:
-                    diff_parts.append("(Bu dosya için Diff/Patch metni yok - ikili/binary dosya olabilir)")
+                    diff_parts.append(
+                        "(Bu dosya için Diff/Patch metni yok - ikili/binary dosya olabilir)"
+                    )
 
             if len(diff_parts) == 1:
                 return True, "Bu PR'da değiştirilmiş kod dosyası bulunmuyor."
@@ -570,7 +601,7 @@ class GitHubManager:
             logger.error("PR Diff alınamadı: %s", exc)
             return False, f"Diff alınamadı: {exc}"
 
-    def get_pr_files(self, number: int) -> Tuple[bool, str]:
+    def get_pr_files(self, number: int) -> tuple[bool, str]:
         """PR'da değişen dosyaların listesini döndür."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -579,14 +610,12 @@ class GitHubManager:
             files = list(pr.get_files())
             lines = [f"[PR #{number} Değişen Dosyalar — {self._repo.full_name}]"]
             for f in files:
-                lines.append(
-                    f"  {f.status:8}  +{f.additions:<4} -{f.deletions:<4}  {f.filename}"
-                )
+                lines.append(f"  {f.status:8}  +{f.additions:<4} -{f.deletions:<4}  {f.filename}")
             return True, "\n".join(lines)
         except Exception as exc:
             return False, f"PR dosya listesi alınamadı: {exc}"
 
-    def search_code(self, query: str) -> Tuple[bool, str]:
+    def search_code(self, query: str) -> tuple[bool, str]:
         """Depoda kod araması yap."""
         if not self._gh or not self._repo:
             return False, "GitHub bağlantısı veya aktif depo yok."
@@ -636,7 +665,7 @@ class GitHubManager:
         self,
         state: str = "open",
         limit: int = 50,
-    ) -> Tuple[bool, List[Dict], str]:
+    ) -> tuple[bool, list[dict], str]:
         """
         PR listesini yapısal dict listesi olarak döndürür.
 
@@ -647,28 +676,27 @@ class GitHubManager:
         try:
             prs = []
             for pr in self._repo.get_pulls(state=state, sort="updated")[:limit]:
-                prs.append({
-                    "number":       pr.number,
-                    "title":        pr.title,
-                    "state":        pr.state,
-                    "author":       pr.user.login,
-                    "head":         pr.head.ref,
-                    "base":         pr.base.ref,
-                    "url":          pr.html_url,
-                    "created_at":   pr.created_at.strftime("%Y-%m-%d %H:%M"),
-                    "updated_at":   pr.updated_at.strftime("%Y-%m-%d %H:%M"),
-                    "additions":    pr.additions,
-                    "deletions":    pr.deletions,
-                    "changed_files": pr.changed_files,
-                    "comments":     pr.comments,
-                })
+                prs.append(
+                    {
+                        "number": pr.number,
+                        "title": pr.title,
+                        "state": pr.state,
+                        "author": pr.user.login,
+                        "head": pr.head.ref,
+                        "base": pr.base.ref,
+                        "url": pr.html_url,
+                        "created_at": pr.created_at.strftime("%Y-%m-%d %H:%M"),
+                        "updated_at": pr.updated_at.strftime("%Y-%m-%d %H:%M"),
+                        "additions": pr.additions,
+                        "deletions": pr.deletions,
+                        "changed_files": pr.changed_files,
+                        "comments": pr.comments,
+                    }
+                )
             return True, prs, ""
         except Exception as exc:
             logger.error("get_pull_requests_detailed hatası: %s", exc)
             return False, [], str(exc)
 
     def __repr__(self) -> str:
-        return (
-            f"<GitHubManager available={self._available} "
-            f"repo={self.repo_name or 'None'}>"
-        )  
+        return f"<GitHubManager available={self._available} " f"repo={self.repo_name or 'None'}>"

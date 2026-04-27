@@ -8,18 +8,19 @@ import inspect
 import logging
 import random
 import re
+import secrets
 import sqlite3
 import uuid
-import secrets
-import jwt
-from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import jwt
 
 from config import Config
-
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
@@ -167,19 +168,19 @@ class CoverageFindingRecord:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _utc_now_pair() -> tuple[datetime, str]:
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     return now_dt, now_dt.isoformat()
 
 
 def _parse_iso_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 _PBKDF2_ALGORITHM = "pbkdf2_sha256"
@@ -188,11 +189,13 @@ _PBKDF2_LEGACY_ITERATIONS = 120000
 
 
 def _pbkdf2_sha256(password: str, salt: str, iterations: int) -> str:
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
+    )
     return digest.hex()
 
 
-def _hash_password(password: str, salt: Optional[str] = None) -> str:
+def _hash_password(password: str, salt: str | None = None) -> str:
     real_salt = salt or secrets.token_hex(16)
     # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
     digest_hex = _pbkdf2_sha256(password, real_salt, _PBKDF2_MIN_ITERATIONS)
@@ -218,13 +221,15 @@ def _verify_password(password: str, encoded: str) -> bool:
             return False
         current_hex = _pbkdf2_sha256(password, salt, _PBKDF2_MIN_ITERATIONS)
         legacy_hex = _pbkdf2_sha256(password, salt, _PBKDF2_LEGACY_ITERATIONS)
-        return secrets.compare_digest(current_hex, expected_hex) or secrets.compare_digest(legacy_hex, expected_hex)
+        return secrets.compare_digest(current_hex, expected_hex) or secrets.compare_digest(
+            legacy_hex, expected_hex
+        )
 
     return False
 
 
 def _expires_in(days: int = 7) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 def _quote_sql_identifier(identifier: str) -> str:
@@ -279,33 +284,34 @@ class Database:
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
     """
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
+    def __init__(self, cfg: Config | None = None) -> None:
         self.cfg = cfg or Config()
         self.database_url = (
-            (getattr(self.cfg, "DATABASE_URL", "") or "").strip()
-            or "postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
-        )
+            getattr(self.cfg, "DATABASE_URL", "") or ""
+        ).strip() or "postgresql+asyncpg://postgres:postgres@localhost:5432/sidar"
         self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
-        self.schema_version_table = str(getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions")
+        self.schema_version_table = str(
+            getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions"
+        )
         self._schema_version_table_quoted = _quote_sql_identifier(self.schema_version_table)
         self.target_schema_version = int(getattr(self.cfg, "DB_SCHEMA_TARGET_VERSION", 1) or 1)
 
         self._backend = "sqlite"
-        self._sqlite_path: Optional[Path] = None
-        self._sqlite_conn: Optional[sqlite3.Connection] = None
-        self._sqlite_write_lock: Optional[asyncio.Lock] = None
+        self._sqlite_path: Path | None = None
+        self._sqlite_conn: sqlite3.Connection | None = None
+        self._sqlite_write_lock: asyncio.Lock | None = None
 
         self._pg_pool = None
 
         self._configure_backend()
 
     @property
-    def _sqlite_lock(self) -> Optional[asyncio.Lock]:
+    def _sqlite_lock(self) -> asyncio.Lock | None:
         """Geriye dönük uyumluluk için eski kilit adı."""
         return self._sqlite_write_lock
 
     @_sqlite_lock.setter
-    def _sqlite_lock(self, value: Optional[asyncio.Lock]) -> None:
+    def _sqlite_lock(self, value: asyncio.Lock | None) -> None:
         self._sqlite_write_lock = value
 
     def _configure_backend(self) -> None:
@@ -318,9 +324,9 @@ class Database:
         prefix = "sqlite+aiosqlite:///"
         raw_path = self.database_url
         if lowered.startswith(prefix):
-            raw_path = self.database_url[len(prefix):]
+            raw_path = self.database_url[len(prefix) :]
         elif lowered.startswith("sqlite:///"):
-            raw_path = self.database_url[len("sqlite:///"):]
+            raw_path = self.database_url[len("sqlite:///") :]
 
         path = Path(raw_path)
         if not path.is_absolute():
@@ -345,7 +351,9 @@ class Database:
         )
 
     async def _fetch_message_rows_by_session_ids(self, session_ids: list[str]) -> list[Any]:
-        normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
+        normalized_ids = [
+            str(session_id).strip() for session_id in session_ids if str(session_id).strip()
+        ]
         if not normalized_ids:
             return []
 
@@ -551,15 +559,17 @@ class Database:
         await self._ensure_schema_version_sqlite()
         await self.ensure_default_prompt_registry()
 
-
     async def _ensure_access_control_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
+
         def _run() -> None:
             assert self._sqlite_conn is not None
             cols = self._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
             col_names = {str(c[1]) for c in cols}
             if "tenant_id" not in col_names:
-                self._sqlite_conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+                self._sqlite_conn.execute(
+                    "ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
+                )
             self._sqlite_conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS access_policies (
@@ -581,12 +591,15 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
             )
             self._sqlite_conn.commit()
+
         await self._run_sqlite_op(_run)
 
     async def _ensure_access_control_schema_postgresql(self) -> None:
         assert self._pg_pool is not None
         async with self._pg_pool.acquire() as conn:
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'"
+            )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS access_policies (
@@ -603,7 +616,9 @@ class Database:
                 )
                 """
             )
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)")
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+            )
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -938,7 +953,6 @@ class Database:
             """,
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);",
-
             """
             CREATE TABLE IF NOT EXISTS prompt_registry (
                 id BIGSERIAL PRIMARY KEY,
@@ -1031,7 +1045,6 @@ class Database:
             for q in queries:
                 await conn.execute(q)
 
-
     async def ensure_default_prompt_registry(self) -> None:
         import importlib.util as _importlib_util
         import logging as _log
@@ -1052,7 +1065,7 @@ class Database:
         except Exception as exc:  # noqa: BLE001
             _log.getLogger(__name__).warning("Varsayılan prompt kaydı oluşturulamadı: %s", exc)
 
-    async def list_prompts(self, role_name: Optional[str] = None) -> list[PromptRecord]:
+    async def list_prompts(self, role_name: str | None = None) -> list[PromptRecord]:
         role = (role_name or "").strip() or None
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -1118,7 +1131,7 @@ class Database:
             for r in rows
         ]
 
-    async def get_active_prompt(self, role_name: str) -> Optional[PromptRecord]:
+    async def get_active_prompt(self, role_name: str) -> PromptRecord | None:
         role = (role_name or "").strip().lower()
         if not role:
             return None
@@ -1149,7 +1162,7 @@ class Database:
 
         assert self._sqlite_conn is not None
 
-        def _run() -> Optional[sqlite3.Row]:
+        def _run() -> sqlite3.Row | None:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
                 """
@@ -1176,7 +1189,9 @@ class Database:
             updated_at=str(row["updated_at"]),
         )
 
-    async def upsert_prompt(self, role_name: str, prompt_text: str, *, activate: bool = True) -> PromptRecord:
+    async def upsert_prompt(
+        self, role_name: str, prompt_text: str, *, activate: bool = True
+    ) -> PromptRecord:
         role = (role_name or "").strip().lower()
         text = (prompt_text or "").strip()
         if not role or not text:
@@ -1192,7 +1207,11 @@ class Database:
                 )
                 new_version = int(current_version or 0) + 1
                 if activate:
-                    await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now_dt)
+                    await conn.execute(
+                        "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+                        role,
+                        now_dt,
+                    )
                 row = await conn.fetchrow(
                     """
                     INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
@@ -1261,7 +1280,7 @@ class Database:
             updated_at=str(inserted["updated_at"]),
         )
 
-    async def activate_prompt(self, prompt_id: int) -> Optional[PromptRecord]:
+    async def activate_prompt(self, prompt_id: int) -> PromptRecord | None:
         target_id = int(prompt_id)
         if target_id <= 0:
             return None
@@ -1277,13 +1296,21 @@ class Database:
                 if not row:
                     return None
                 role = str(row["role_name"])
-                await conn.execute("UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1", role, now_dt)
-                await conn.execute("UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1", target_id, now_dt)
+                await conn.execute(
+                    "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+                    role,
+                    now_dt,
+                )
+                await conn.execute(
+                    "UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1",
+                    target_id,
+                    now_dt,
+                )
             return await self.get_active_prompt(role)
 
         assert self._sqlite_conn is not None
 
-        def _run() -> Optional[str]:
+        def _run() -> str | None:
             assert self._sqlite_conn is not None
             row = self._sqlite_conn.execute(
                 "SELECT role_name FROM prompt_registry WHERE id=?",
@@ -1346,10 +1373,9 @@ class Database:
                 await conn.execute(
                     f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",
                     v,
-                    datetime.now(timezone.utc),
+                    datetime.now(UTC),
                     f"baseline migration v{v}",
                 )
-
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
         if self._backend == "postgresql":
@@ -1365,13 +1391,17 @@ class Database:
                         username=str(row["username"]),
                         role=str(row["role"]),
                         created_at=str(row["created_at"]),
-                        tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]),
+                        tenant_id=str(
+                            row.get("tenant_id", "default")
+                            if hasattr(row, "get")
+                            else row["tenant_id"]
+                        ),
                     )
             return await self.create_user(username=username, role=role)
 
         assert self._sqlite_conn is not None
 
-        def _fetch() -> Optional[sqlite3.Row]:
+        def _fetch() -> sqlite3.Row | None:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
                 "SELECT id, username, role, created_at, tenant_id FROM users WHERE username=?",
@@ -1435,7 +1465,9 @@ class Database:
             for r in rows
         ]
 
-    async def load_session(self, session_id: str, user_id: Optional[str] = None) -> Optional[SessionRecord]:
+    async def load_session(
+        self, session_id: str, user_id: str | None = None
+    ) -> SessionRecord | None:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -1462,7 +1494,7 @@ class Database:
 
         assert self._sqlite_conn is not None
 
-        def _run() -> Optional[sqlite3.Row]:
+        def _run() -> sqlite3.Row | None:
             assert self._sqlite_conn is not None
             if user_id:
                 cur = self._sqlite_conn.execute(
@@ -1488,7 +1520,7 @@ class Database:
         )
 
     async def update_session_title(self, session_id: str, title: str) -> bool:
-        now_dt = datetime.now(timezone.utc)
+        now_dt = datetime.now(UTC)
         now = now_dt.isoformat()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -1514,12 +1546,14 @@ class Database:
 
         return await self._run_sqlite_op(_run)
 
-    async def delete_session(self, session_id: str, user_id: Optional[str] = None) -> bool:
+    async def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 if user_id:
-                    result = await conn.execute("DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id)
+                    result = await conn.execute(
+                        "DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id
+                    )
                 else:
                     result = await conn.execute("DELETE FROM sessions WHERE id=$1", session_id)
             return _parse_asyncpg_affected_rows(result) > 0
@@ -1529,14 +1563,23 @@ class Database:
         def _run() -> bool:
             assert self._sqlite_conn is not None
             if user_id:
-                cur = self._sqlite_conn.execute("DELETE FROM sessions WHERE id=? AND user_id=?", (session_id, user_id))
+                cur = self._sqlite_conn.execute(
+                    "DELETE FROM sessions WHERE id=? AND user_id=?", (session_id, user_id)
+                )
             else:
                 cur = self._sqlite_conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
             self._sqlite_conn.commit()
             return cur.rowcount > 0
 
         return await self._run_sqlite_op(_run)
-    async def create_user(self, username: str, role: str = "user", password: Optional[str] = None, tenant_id: str = "default") -> UserRecord:
+
+    async def create_user(
+        self,
+        username: str,
+        role: str = "user",
+        password: str | None = None,
+        tenant_id: str = "default",
+    ) -> UserRecord:
         user_id = _new_entity_id()
         created_at_dt, created_at = _utc_now_pair()
         password_hash = _hash_password(password) if password else None
@@ -1553,7 +1596,9 @@ class Database:
                     tenant_id,
                     created_at_dt,
                 )
-            return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
+            return UserRecord(
+                id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id
+            )
 
         assert self._sqlite_conn is not None
 
@@ -1566,12 +1611,18 @@ class Database:
             self._sqlite_conn.commit()
 
         await self._run_sqlite_op(_run)
-        return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
+        return UserRecord(
+            id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id
+        )
 
-    async def register_user(self, username: str, password: str, role: str = "user", tenant_id: str = "default") -> UserRecord:
-        return await self.create_user(username=username, role=role, password=password, tenant_id=tenant_id)
+    async def register_user(
+        self, username: str, password: str, role: str = "user", tenant_id: str = "default"
+    ) -> UserRecord:
+        return await self.create_user(
+            username=username, role=role, password=password, tenant_id=tenant_id
+        )
 
-    async def authenticate_user(self, username: str, password: str) -> Optional[UserRecord]:
+    async def authenticate_user(self, username: str, password: str) -> UserRecord | None:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -1583,11 +1634,19 @@ class Database:
                 return None
             if not _verify_password(password, str(row["password_hash"])):
                 return None
-            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
+            return UserRecord(
+                id=str(row["id"]),
+                username=str(row["username"]),
+                role=str(row["role"]),
+                created_at=str(row["created_at"]),
+                tenant_id=str(
+                    row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]
+                ),
+            )
 
         assert self._sqlite_conn is not None
 
-        def _run() -> Optional[sqlite3.Row]:
+        def _run() -> sqlite3.Row | None:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
                 "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=?",
@@ -1600,9 +1659,17 @@ class Database:
             return None
         if not _verify_password(password, str(row["password_hash"])):
             return None
-        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
+        return UserRecord(
+            id=str(row["id"]),
+            username=str(row["username"]),
+            role=str(row["role"]),
+            created_at=str(row["created_at"]),
+            tenant_id=str(
+                row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]
+            ),
+        )
 
-    async def _get_user_by_id(self, user_id: str) -> Optional[UserRecord]:
+    async def _get_user_by_id(self, user_id: str) -> UserRecord | None:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -1612,11 +1679,19 @@ class Database:
                 )
             if not row:
                 return None
-            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
+            return UserRecord(
+                id=str(row["id"]),
+                username=str(row["username"]),
+                role=str(row["role"]),
+                created_at=str(row["created_at"]),
+                tenant_id=str(
+                    row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]
+                ),
+            )
 
         assert self._sqlite_conn is not None
 
-        def _run() -> Optional[sqlite3.Row]:
+        def _run() -> sqlite3.Row | None:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
                 "SELECT id, username, role, created_at, tenant_id FROM users WHERE id=?",
@@ -1627,12 +1702,20 @@ class Database:
         row = await self._run_sqlite_op(_run)
         if not row:
             return None
-        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
+        return UserRecord(
+            id=str(row["id"]),
+            username=str(row["username"]),
+            role=str(row["role"]),
+            created_at=str(row["created_at"]),
+            tenant_id=str(
+                row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]
+            ),
+        )
 
     async def ensure_user_id(
         self,
         user_id: str,
-        username: Optional[str] = None,
+        username: str | None = None,
         role: str = "user",
         tenant_id: str = "default",
     ) -> UserRecord:
@@ -1641,7 +1724,7 @@ class Database:
         if existing:
             return existing
 
-        created_at_dt = datetime.now(timezone.utc)
+        created_at_dt = datetime.now(UTC)
         created_at = created_at_dt.isoformat()
         normalized_username = str(username or user_id).strip() or str(user_id)
         normalized_role = str(role or "user").strip() or "user"
@@ -1673,7 +1756,14 @@ class Database:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
                 "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, normalized_username, None, normalized_role, normalized_tenant_id, created_at),
+                (
+                    user_id,
+                    normalized_username,
+                    None,
+                    normalized_role,
+                    normalized_tenant_id,
+                    created_at,
+                ),
             )
             self._sqlite_conn.commit()
 
@@ -1689,13 +1779,15 @@ class Database:
     async def create_auth_token(
         self,
         user_id: str,
-        ttl_days: Optional[int] = None,
-        role: Optional[str] = None,
-        username: Optional[str] = None,
-        tenant_id: Optional[str] = None,
+        ttl_days: int | None = None,
+        role: str | None = None,
+        username: str | None = None,
+        tenant_id: str | None = None,
     ) -> AuthTokenRecord:
         created_at = _utc_now_iso()
-        effective_ttl_days = ttl_days if ttl_days is not None else int(getattr(self.cfg, "JWT_TTL_DAYS", 7) or 7)
+        effective_ttl_days = (
+            ttl_days if ttl_days is not None else int(getattr(self.cfg, "JWT_TTL_DAYS", 7) or 7)
+        )
         ttl = max(1, int(effective_ttl_days or 1))
         expires_at = _expires_in(ttl)
 
@@ -1708,15 +1800,17 @@ class Database:
             "role": resolved_role,
             "username": resolved_username,
             "tenant_id": resolved_tenant_id,
-            "iat": int(datetime.now(timezone.utc).timestamp()),
-            "exp": int((datetime.now(timezone.utc) + timedelta(days=ttl)).timestamp()),
+            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int((datetime.now(UTC) + timedelta(days=ttl)).timestamp()),
         }
         secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
         algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
         token = jwt.encode(payload, secret_key, algorithm=algorithm)
-        return AuthTokenRecord(token=token, user_id=user_id, expires_at=expires_at, created_at=created_at)
+        return AuthTokenRecord(
+            token=token, user_id=user_id, expires_at=expires_at, created_at=created_at
+        )
 
-    def verify_auth_token(self, token: str) -> Optional[UserRecord]:
+    def verify_auth_token(self, token: str) -> UserRecord | None:
         try:
             secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
             algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
@@ -1739,7 +1833,7 @@ class Database:
             tenant_id=tenant_id,
         )
 
-    async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
+    async def get_user_by_token(self, token: str) -> UserRecord | None:
         """Geriye dönük uyumluluk: JWT doğrular, mümkünse kullanıcı kaydını da yükler."""
         jwt_user = self.verify_auth_token(token)
         if not jwt_user:
@@ -1748,8 +1842,9 @@ class Database:
         db_user = await self._get_user_by_id(jwt_user.id)
         return db_user or jwt_user
 
-
-    async def list_access_policies(self, user_id: str, tenant_id: Optional[str] = None) -> list[AccessPolicyRecord]:
+    async def list_access_policies(
+        self, user_id: str, tenant_id: str | None = None
+    ) -> list[AccessPolicyRecord]:
         effective_tenant = (tenant_id or "").strip()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -1780,6 +1875,7 @@ class Database:
             ]
 
         assert self._sqlite_conn is not None
+
         def _run() -> list[sqlite3.Row]:
             assert self._sqlite_conn is not None
             if effective_tenant:
@@ -1803,6 +1899,7 @@ class Database:
                     (user_id,),
                 )
             return cur.fetchall()
+
         rows = await self._run_sqlite_op(_run, write=False)
         return [
             AccessPolicyRecord(
@@ -1861,6 +1958,7 @@ class Database:
             return
 
         assert self._sqlite_conn is not None
+
         def _run() -> None:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
@@ -1873,6 +1971,7 @@ class Database:
                 (user_id, tenant, r_type, r_id, act, eff, now, now),
             )
             self._sqlite_conn.commit()
+
         await self._run_sqlite_op(_run)
 
     async def check_access_policy(
@@ -1896,7 +1995,11 @@ class Database:
             policies = await self.list_access_policies(user_id=user_id, tenant_id="default")
 
         def _match(spec: AccessPolicyRecord) -> bool:
-            return spec.resource_type == r_type and spec.action == act and (spec.resource_id == "*" or spec.resource_id == r_id)
+            return (
+                spec.resource_type == r_type
+                and spec.action == act
+                and (spec.resource_id == "*" or spec.resource_id == r_id)
+            )
 
         matched = [p for p in policies if _match(p)]
         matched.sort(key=lambda p: 0 if p.resource_id == r_id else 1)
@@ -1915,7 +2018,7 @@ class Database:
         resource: str,
         ip_address: str,
         allowed: bool,
-        timestamp: Optional[str] = None,
+        timestamp: str | None = None,
     ) -> None:
         event_time = (timestamp or _utc_now_iso()).strip() or _utc_now_iso()
         event_time_dt = _parse_iso_datetime(event_time)
@@ -1963,7 +2066,7 @@ class Database:
     async def list_audit_logs(
         self,
         *,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 100,
     ) -> list[AuditLogRecord]:
         max_items = max(1, min(int(limit or 100), 1000))
@@ -2049,8 +2152,8 @@ class Database:
         status: str = "draft",
         owner_user_id: str = "",
         budget: float = 0.0,
-        metadata: Optional[dict[str, Any]] = None,
-        campaign_id: Optional[int] = None,
+        metadata: dict[str, Any] | None = None,
+        campaign_id: int | None = None,
     ) -> MarketingCampaignRecord:
         tenant = (tenant_id or "default").strip() or "default"
         campaign_name = (name or "").strip()
@@ -2197,7 +2300,7 @@ class Database:
         self,
         *,
         tenant_id: str,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 100,
     ) -> list[MarketingCampaignRecord]:
         tenant = (tenant_id or "default").strip() or "default"
@@ -2273,7 +2376,7 @@ class Database:
         title: str,
         content: str,
         channel: str = "",
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ContentAssetRecord:
         now_dt, now = _utc_now_pair()
         tenant = (tenant_id or "default").strip() or "default"
@@ -2364,7 +2467,7 @@ class Database:
         self,
         *,
         tenant_id: str,
-        campaign_id: Optional[int] = None,
+        campaign_id: int | None = None,
         limit: int = 100,
     ) -> list[ContentAssetRecord]:
         tenant = (tenant_id or "default").strip() or "default"
@@ -2437,7 +2540,7 @@ class Database:
         items: list[Any],
         status: str = "pending",
         owner_user_id: str = "",
-        campaign_id: Optional[int] = None,
+        campaign_id: int | None = None,
     ) -> OperationChecklistRecord:
         tenant = (tenant_id or "default").strip() or "default"
         checklist_title = (title or "").strip()
@@ -2447,9 +2550,7 @@ class Database:
         for item in list(items or []):
             if isinstance(item, dict):
                 normalized_dict = {
-                    str(key).strip(): value
-                    for key, value in item.items()
-                    if str(key).strip()
+                    str(key).strip(): value for key, value in item.items() if str(key).strip()
                 }
                 if normalized_dict:
                     normalized_items.append(normalized_dict)
@@ -2536,7 +2637,7 @@ class Database:
         self,
         *,
         tenant_id: str,
-        campaign_id: Optional[int] = None,
+        campaign_id: int | None = None,
         limit: int = 100,
     ) -> list[OperationChecklistRecord]:
         tenant = (tenant_id or "default").strip() or "default"
@@ -2713,7 +2814,7 @@ class Database:
         target_path: str,
         summary: str,
         severity: str = "medium",
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ) -> CoverageFindingRecord:
         now_dt, now = _utc_now_pair()
         if not str(finding_type or "").strip() or not str(summary or "").strip():
@@ -2793,7 +2894,7 @@ class Database:
         self,
         *,
         tenant_id: str = "default",
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 100,
     ) -> list[CoverageTaskRecord]:
         tenant = (tenant_id or "default").strip() or "default"
@@ -2863,7 +2964,9 @@ class Database:
             for row in rows
         ]
 
-    async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:
+    async def upsert_user_quota(
+        self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
+    ) -> None:
         tokens = max(0, int(daily_token_limit or 0))
         requests = max(0, int(daily_request_limit or 0))
         if self._backend == "postgresql":
@@ -2884,6 +2987,7 @@ class Database:
             return
 
         assert self._sqlite_conn is not None
+
         def _run() -> None:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
@@ -2897,11 +3001,14 @@ class Database:
                 (user_id, tokens, requests),
             )
             self._sqlite_conn.commit()
+
         await self._run_sqlite_op(_run)
 
-    async def record_provider_usage_daily(self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1) -> None:
+    async def record_provider_usage_daily(
+        self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
+    ) -> None:
         provider_name = (provider or "unknown").lower().strip() or "unknown"
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         req = max(0, int(requests_inc or 0))
         toks = max(0, int(tokens_used or 0))
 
@@ -2925,6 +3032,7 @@ class Database:
             return
 
         assert self._sqlite_conn is not None
+
         def _run() -> None:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
@@ -2938,11 +3046,12 @@ class Database:
                 (user_id, provider_name, today, req, toks),
             )
             self._sqlite_conn.commit()
+
         await self._run_sqlite_op(_run)
 
     async def get_user_quota_status(self, user_id: str, provider: str) -> dict[str, int | bool]:
         provider_name = (provider or "unknown").lower().strip() or "unknown"
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -2967,7 +3076,8 @@ class Database:
             u_reqs = int((usage["requests_used"] if usage else 0) or 0)
         else:
             assert self._sqlite_conn is not None
-            def _run() -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
+
+            def _run() -> tuple[sqlite3.Row | None, sqlite3.Row | None]:
                 assert self._sqlite_conn is not None
                 q = self._sqlite_conn.execute(
                     "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
@@ -2978,6 +3088,7 @@ class Database:
                     (user_id, provider_name, today),
                 ).fetchone()
                 return q, u
+
             quota, usage = await self._run_sqlite_op(_run)
             q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
             q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
@@ -3089,7 +3200,7 @@ class Database:
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
         session_id = _new_entity_id()
-        now_dt = datetime.now(timezone.utc)
+        now_dt = datetime.now(UTC)
         now = now_dt.isoformat()
 
         if self._backend == "postgresql":
@@ -3103,7 +3214,9 @@ class Database:
                     now_dt,
                     now_dt,
                 )
-            return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
+            return SessionRecord(
+                id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now
+            )
 
         assert self._sqlite_conn is not None
 
@@ -3116,10 +3229,14 @@ class Database:
             self._sqlite_conn.commit()
 
         await self._run_sqlite_op(_run)
-        return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
+        return SessionRecord(
+            id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now
+        )
 
-    async def add_message(self, session_id: str, role: str, content: str, tokens_used: int = 0) -> MessageRecord:
-        now_dt = datetime.now(timezone.utc)
+    async def add_message(
+        self, session_id: str, role: str, content: str, tokens_used: int = 0
+    ) -> MessageRecord:
+        now_dt = datetime.now(UTC)
         now = now_dt.isoformat()
         tokens = max(0, int(tokens_used or 0))
 
@@ -3139,7 +3256,14 @@ class Database:
                     now_dt,
                 )
                 msg_id = int(row["id"])
-            return MessageRecord(id=msg_id, session_id=session_id, role=role, content=content, tokens_used=tokens, created_at=now)
+            return MessageRecord(
+                id=msg_id,
+                session_id=session_id,
+                role=role,
+                content=content,
+                tokens_used=tokens,
+                created_at=now,
+            )
 
         assert self._sqlite_conn is not None
 
@@ -3153,7 +3277,14 @@ class Database:
             return int(cur.lastrowid)
 
         msg_id = await self._run_sqlite_op(_run)
-        return MessageRecord(id=msg_id, session_id=session_id, role=role, content=content, tokens_used=tokens, created_at=now)
+        return MessageRecord(
+            id=msg_id,
+            session_id=session_id,
+            role=role,
+            content=content,
+            tokens_used=tokens,
+            created_at=now,
+        )
 
     async def add_messages_bulk(self, items: list[dict[str, object]]) -> int:
         """Birden çok mesajı tek transaction içinde yazar ve eklenen satır sayısını döndürür."""
@@ -3165,7 +3296,7 @@ class Database:
             tokens = max(0, int(item.get("tokens_used", 0) or 0))
             if not session_id:
                 continue
-            now_dt = datetime.now(timezone.utc)
+            now_dt = datetime.now(UTC)
             prepared.append((session_id, role, content, tokens, now_dt, now_dt.isoformat()))
 
         if not prepared:
@@ -3192,11 +3323,18 @@ class Database:
             return await asyncio.to_thread(_run)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
-        return [self._to_message_record(r) for r in await self._fetch_message_rows_by_session_ids([session_id])]
+        return [
+            self._to_message_record(r)
+            for r in await self._fetch_message_rows_by_session_ids([session_id])
+        ]
 
-    async def get_messages_for_sessions(self, session_ids: list[str]) -> dict[str, list[MessageRecord]]:
+    async def get_messages_for_sessions(
+        self, session_ids: list[str]
+    ) -> dict[str, list[MessageRecord]]:
         """Birden çok oturumun mesajlarını tek sorguda getirir."""
-        normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
+        normalized_ids = [
+            str(session_id).strip() for session_id in session_ids if str(session_id).strip()
+        ]
         if not normalized_ids:
             return {}
         rows = await self._fetch_message_rows_by_session_ids(normalized_ids)
@@ -3207,7 +3345,9 @@ class Database:
             grouped.setdefault(record.session_id, []).append(record)
         return grouped
 
-    async def replace_session_messages(self, session_id: str, messages: list[dict[str, object]]) -> int:
+    async def replace_session_messages(
+        self, session_id: str, messages: list[dict[str, object]]
+    ) -> int:
         """Bir oturumun mesajlarını atomik olarak yenileriyle değiştirir."""
         normalized_messages = [
             {
@@ -3217,7 +3357,7 @@ class Database:
             for item in list(messages or [])
             if str(item.get("content", "") or "").strip()
         ]
-        now_dt = datetime.now(timezone.utc)
+        now_dt = datetime.now(UTC)
         now = now_dt.isoformat()
 
         if self._backend == "postgresql":

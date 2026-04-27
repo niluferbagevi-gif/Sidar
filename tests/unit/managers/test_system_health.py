@@ -1,6 +1,6 @@
-from types import SimpleNamespace
-import types
 import sys
+import types
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,7 +28,13 @@ def test_render_llm_metrics_prometheus_with_snapshot_values():
             "redis_latency_ms": 11.2,
         },
         "by_provider": {
-            'open"ai': {"calls": 2, "cost_usd": 1.2, "total_tokens": 200, "failures": 1, "latency_ms_avg": 123.4}
+            'open"ai': {
+                "calls": 2,
+                "cost_usd": 1.2,
+                "total_tokens": 200,
+                "failures": 1,
+                "latency_ms_avg": 123.4,
+            }
         },
         "by_user": {'user"1': {"calls": 1, "cost_usd": 0.3, "total_tokens": 50}},
     }
@@ -93,17 +99,23 @@ def test_check_redis_disabled_and_tcp(monkeypatch):
 def test_check_database_sqlite_and_tcp(monkeypatch, tmp_path):
     existing = tmp_path / "app.db"
     existing.write_text("db")
-    sqlite_manager = _build_manager(monkeypatch, cfg=SimpleNamespace(DATABASE_URL=f"sqlite:///{existing}"))
+    sqlite_manager = _build_manager(
+        monkeypatch, cfg=SimpleNamespace(DATABASE_URL=f"sqlite:///{existing}")
+    )
     sqlite_status = sqlite_manager.check_database()
     assert sqlite_status["healthy"] is True
     assert sqlite_status["mode"] == "sqlite"
 
-    missing_manager = _build_manager(monkeypatch, cfg=SimpleNamespace(DATABASE_URL=f"sqlite:///{tmp_path / 'missing.db'}"))
+    missing_manager = _build_manager(
+        monkeypatch, cfg=SimpleNamespace(DATABASE_URL=f"sqlite:///{tmp_path / 'missing.db'}")
+    )
     missing_status = missing_manager.check_database()
     assert missing_status["healthy"] is False
     assert "error" in missing_status
 
-    tcp_manager = _build_manager(monkeypatch, cfg=SimpleNamespace(DATABASE_URL="postgres://db.internal:6543/sidar"))
+    tcp_manager = _build_manager(
+        monkeypatch, cfg=SimpleNamespace(DATABASE_URL="postgres://db.internal:6543/sidar")
+    )
     monkeypatch.setattr(
         tcp_manager,
         "_tcp_dependency_health",
@@ -116,7 +128,9 @@ def test_check_database_sqlite_and_tcp(monkeypatch, tmp_path):
 
 def test_update_prometheus_metrics_handles_missing_prometheus_client(monkeypatch):
     manager = _build_manager(monkeypatch)
-    monkeypatch.setattr(manager, "_check_import", lambda name: False if name == "prometheus_client" else True)
+    monkeypatch.setattr(
+        manager, "_check_import", lambda name: False if name == "prometheus_client" else True
+    )
 
     manager.update_prometheus_metrics({"cpu_percent": 22})
 
@@ -187,7 +201,9 @@ def test_full_report_includes_gpu_reason_and_updates_metrics(monkeypatch):
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: None)
     monkeypatch.setattr(manager, "get_memory_info", lambda: {})
     monkeypatch.setattr(manager, "check_ollama", lambda: False)
-    monkeypatch.setattr(manager, "get_gpu_info", lambda: {"available": False, "reason": "devre dışı"})
+    monkeypatch.setattr(
+        manager, "get_gpu_info", lambda: {"available": False, "reason": "devre dışı"}
+    )
     monkeypatch.setattr(manager, "update_prometheus_metrics", lambda data: captured.update(data))
 
     report = manager.full_report()
@@ -212,7 +228,9 @@ def test_optimize_gpu_memory_runs_gc_even_without_gpu(monkeypatch):
 
 def test_get_driver_version_falls_back_to_na_on_missing_command(monkeypatch):
     manager = _build_manager(monkeypatch)
-    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError()))
+    monkeypatch.setattr(
+        "subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError())
+    )
 
     assert manager._get_driver_version() == "N/A"
 
@@ -258,7 +276,9 @@ def test_init_nvml_sets_state_and_handles_fallback(monkeypatch):
             raise RuntimeError("nvml blocked")
 
     monkeypatch.setitem(sys.modules, "pynvml", FailingNvml())
-    monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no file")))
+    monkeypatch.setattr(
+        "builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no file"))
+    )
     manager2._init_nvml()
     assert manager2._nvml_initialized is False
 
@@ -311,7 +331,9 @@ def test_get_gpu_info_and_driver_version_variants(monkeypatch):
 
             @staticmethod
             def get_device_properties(_idx):
-                return types.SimpleNamespace(name="RTX", major=8, minor=6, total_memory=10_000_000_000)
+                return types.SimpleNamespace(
+                    name="RTX", major=8, minor=6, total_memory=10_000_000_000
+                )
 
             @staticmethod
             def memory_allocated(_idx):
@@ -420,7 +442,9 @@ def test_update_summary_report_close_repr_and_del(monkeypatch):
     cfg = SimpleNamespace(ENABLE_DEPENDENCY_HEALTHCHECKS=False)
     manager2 = _build_manager(monkeypatch, cfg=cfg)
     monkeypatch.setattr(manager2, "get_cpu_usage", lambda interval=None: 10.0)
-    monkeypatch.setattr(manager2, "get_memory_info", lambda: {"percent": 20.0, "used_gb": 1.0, "total_gb": 2.0})
+    monkeypatch.setattr(
+        manager2, "get_memory_info", lambda: {"percent": 20.0, "used_gb": 1.0, "total_gb": 2.0}
+    )
     monkeypatch.setattr(manager2, "check_ollama", lambda: True)
     monkeypatch.setattr(
         manager2,
@@ -535,7 +559,9 @@ def test_psutil_unavailable_and_gpu_info_error_paths(monkeypatch):
 
 def test_driver_version_generic_error_and_ollama_exception(monkeypatch):
     manager = _build_manager(monkeypatch)
-    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("oops")))
+    monkeypatch.setattr(
+        "subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("oops"))
+    )
     assert manager._get_driver_version() == "N/A"
 
     class BrokenRequests:
@@ -553,7 +579,9 @@ def test_update_prometheus_metrics_init_exception_and_empty_short_circuit(monkey
     monkeypatch.setitem(
         sys.modules,
         "prometheus_client",
-        types.SimpleNamespace(Gauge=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("gauge fail"))),
+        types.SimpleNamespace(
+            Gauge=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("gauge fail"))
+        ),
     )
     manager.update_prometheus_metrics({"cpu_percent": 1})
     assert manager._prometheus_gauges == {}
@@ -573,7 +601,9 @@ def test_get_dependency_health_and_database_disabled(monkeypatch):
 def test_full_report_gpu_line_optional_fields(monkeypatch):
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 20.0)
-    monkeypatch.setattr(manager, "get_memory_info", lambda: {"percent": 10.0, "used_gb": 1.0, "total_gb": 4.0})
+    monkeypatch.setattr(
+        manager, "get_memory_info", lambda: {"percent": 10.0, "used_gb": 1.0, "total_gb": 4.0}
+    )
     monkeypatch.setattr(manager, "check_ollama", lambda: True)
     metrics = {}
     monkeypatch.setattr(manager, "update_prometheus_metrics", lambda data: metrics.update(data))
@@ -586,7 +616,17 @@ def test_full_report_gpu_line_optional_fields(monkeypatch):
             "available": True,
             "cuda_version": "12.0",
             "driver_version": "550",
-            "devices": [{"id": 0, "name": "RTX", "compute_capability": "8.0", "allocated_gb": 1.0, "total_vram_gb": 8.0, "free_gb": 7.0, "temperature_c": 61}],
+            "devices": [
+                {
+                    "id": 0,
+                    "name": "RTX",
+                    "compute_capability": "8.0",
+                    "allocated_gb": 1.0,
+                    "total_vram_gb": 8.0,
+                    "free_gb": 7.0,
+                    "temperature_c": 61,
+                }
+            ],
         },
     )
     report = manager.full_report()
@@ -601,7 +641,17 @@ def test_full_report_gpu_line_optional_fields(monkeypatch):
             "available": True,
             "cuda_version": "12.0",
             "driver_version": "550",
-            "devices": [{"id": 0, "name": "RTX", "compute_capability": "8.0", "allocated_gb": 1.0, "total_vram_gb": 8.0, "free_gb": 7.0, "utilization_pct": 77}],
+            "devices": [
+                {
+                    "id": 0,
+                    "name": "RTX",
+                    "compute_capability": "8.0",
+                    "allocated_gb": 1.0,
+                    "total_vram_gb": 8.0,
+                    "free_gb": 7.0,
+                    "utilization_pct": 77,
+                }
+            ],
         },
     )
     report2 = manager.full_report()
@@ -627,7 +677,9 @@ def test_system_health_manager_isolated(monkeypatch):
 
 
 def test_check_ollama_non_200_and_timeout(monkeypatch, mock_requests):
-    manager = _build_manager(monkeypatch, cfg=SimpleNamespace(OLLAMA_URL="http://ollama.local/api", OLLAMA_TIMEOUT=1))
+    manager = _build_manager(
+        monkeypatch, cfg=SimpleNamespace(OLLAMA_URL="http://ollama.local/api", OLLAMA_TIMEOUT=1)
+    )
 
     class _Resp:
         status_code = 503

@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 STRICT_FENCE_PATTERN = r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```"
@@ -49,7 +48,7 @@ def is_safe_literal_eval_candidate(text: str, *, max_len: int = 20000, max_depth
     return True
 
 
-def _json_dumps_if_valid(raw: str) -> Optional[str]:
+def _json_dumps_if_valid(raw: str) -> str | None:
     normalized = (raw or "").strip()
     if not normalized:
         return None
@@ -72,7 +71,7 @@ def _json_dumps_if_valid(raw: str) -> Optional[str]:
     return None
 
 
-def _repair_json_candidate(candidate: str) -> Optional[str]:
+def _repair_json_candidate(candidate: str) -> str | None:
     parsed = _json_dumps_if_valid(candidate)
     if parsed is not None:
         return parsed
@@ -96,7 +95,7 @@ def _repair_json_candidate(candidate: str) -> Optional[str]:
     return None
 
 
-def repair_json_text(text: str) -> Optional[str]:
+def repair_json_text(text: str) -> str | None:
     """Modelin bozduğu JSON benzeri çıktıyı mümkünse JSON nesnesine onarır."""
     candidate = (text or "").strip()
     if not candidate:
@@ -113,7 +112,7 @@ def repair_json_text(text: str) -> Optional[str]:
     return _literal_eval_dict_fallback(candidate)
 
 
-def _literal_eval_dict_fallback(candidate: str) -> Optional[str]:
+def _literal_eval_dict_fallback(candidate: str) -> str | None:
     try:
         obj = ast.literal_eval(candidate)
         if isinstance(obj, dict):
@@ -123,7 +122,7 @@ def _literal_eval_dict_fallback(candidate: str) -> Optional[str]:
     return None
 
 
-async def repair_json_text_async(text: str) -> Optional[str]:
+async def repair_json_text_async(text: str) -> str | None:
     """Asenkron akışlarda literal_eval fallback'ini worker thread'e taşıyan sürüm."""
     candidate = (text or "").strip()
     if not candidate:

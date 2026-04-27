@@ -19,7 +19,9 @@ async def test_collect_async_chunks_collects_all_items() -> None:
     assert await collect_async_chunks(_agen()) == ["a", "b", "c"]
 
 
-def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_make_test_config_uses_spec_set_with_full_app_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_config = ModuleType("config")
 
     class FullConfig:
@@ -63,7 +65,9 @@ def test_make_test_config_uses_spec_set_with_full_app_config(monkeypatch: pytest
         cfg.NON_EXISTENT = 1
 
 
-def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_config = ModuleType("config")
 
     class MinimalConfig:
@@ -87,7 +91,9 @@ def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(monk
     assert cfg.ANOTHER_DYNAMIC == "ok"
 
 
-def test_make_test_config_falls_back_when_config_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_make_test_config_falls_back_when_config_import_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     real_import = builtins.__import__
 
     def raising_import(name, *args, **kwargs):
@@ -104,7 +110,9 @@ def test_make_test_config_falls_back_when_config_import_fails(monkeypatch: pytes
     assert cfg.DYNAMIC_FIELD == 123
 
 
-def test_make_test_config_falls_back_when_required_methods_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_make_test_config_falls_back_when_required_methods_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_config = ModuleType("config")
 
     class MissingMethodsConfig:

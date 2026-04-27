@@ -6,7 +6,9 @@ from core.rag import GraphIndex
 
 
 @pytest.mark.integration
-def test_graph_index_links_frontend_calls_to_backend_endpoint_and_dependency_chain(tmp_path: Path) -> None:
+def test_graph_index_links_frontend_calls_to_backend_endpoint_and_dependency_chain(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "helper.py").write_text("def build_message():\n    return 'ok'\n", encoding="utf-8")
 
     (tmp_path / "backend.py").write_text(
@@ -20,9 +22,7 @@ def test_graph_index_links_frontend_calls_to_backend_endpoint_and_dependency_cha
     )
 
     (tmp_path / "frontend.js").write_text(
-        "async function run(){\n"
-        "  await fetch('/api/hello', { method: 'POST' });\n"
-        "}\n",
+        "async function run(){\n" "  await fetch('/api/hello', { method: 'POST' });\n" "}\n",
         encoding="utf-8",
     )
 

@@ -1,10 +1,10 @@
 import types
+from unittest.mock import AsyncMock
 
 import pytest
 
 from managers.web_search import WebSearchManager
 from tests.helpers import collect_async_chunks as _collect_stream
-from unittest.mock import AsyncMock
 
 
 @pytest.mark.asyncio
@@ -32,7 +32,10 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
 
     assert len(out) > 0
     history = await agent.memory.get_history()
-    assert any(msg.get("role") == "user" and "docs için araştırma yap" in msg.get("content", "") for msg in history)
+    assert any(
+        msg.get("role") == "user" and "docs için araştırma yap" in msg.get("content", "")
+        for msg in history
+    )
     assert any(msg.get("role") == "assistant" for msg in history)
 
 
@@ -54,7 +57,9 @@ async def test_sidar_agent_workflow_handles_search_failure(
 
     await agent.memory.set_active_user("integration-user", "Integration User")
 
-    search_mock = fake_web_search_result(False, "Arama sırasında hata oluştu: docs için araştırma yap")
+    search_mock = fake_web_search_result(
+        False, "Arama sırasında hata oluştu: docs için araştırma yap"
+    )
     monkeypatch.setattr(WebSearchManager, "search", search_mock)
 
     out = await _collect_stream(agent.respond("docs için araştırma yap"))
@@ -62,7 +67,10 @@ async def test_sidar_agent_workflow_handles_search_failure(
     assert len(out) > 0
     assert any("hata" in msg.lower() or "yapılamadı" in msg.lower() for msg in out)
     history = await agent.memory.get_history()
-    assert any(msg.get("role") == "user" and "docs için araştırma yap" in msg.get("content", "") for msg in history)
+    assert any(
+        msg.get("role") == "user" and "docs için araştırma yap" in msg.get("content", "")
+        for msg in history
+    )
     assert any(msg.get("role") == "assistant" for msg in history)
     assert agent._supervisor is not None
 
@@ -99,7 +107,10 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     search_mock.assert_awaited_once_with(agent.web, "pytest integration")
     assert any("Araştırma tamamlandı." in msg for msg in out)
     history = await agent.memory.get_history()
-    assert any(msg.get("role") == "user" and "Pytest entegrasyonunu araştır" in msg.get("content", "") for msg in history)
+    assert any(
+        msg.get("role") == "user" and "Pytest entegrasyonunu araştır" in msg.get("content", "")
+        for msg in history
+    )
     assert any(
         msg.get("role") == "assistant" and "Araştırma tamamlandı." in msg.get("content", "")
         for msg in history
@@ -139,5 +150,8 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
     assert fake_vector_store.search.called
 
     history = await agent.memory.get_history()
-    assert any(msg.get("role") == "user" and "Depodaki dokümanları ara" in msg.get("content", "") for msg in history)
+    assert any(
+        msg.get("role") == "user" and "Depodaki dokümanları ara" in msg.get("content", "")
+        for msg in history
+    )
     assert any(msg.get("role") == "assistant" for msg in history)

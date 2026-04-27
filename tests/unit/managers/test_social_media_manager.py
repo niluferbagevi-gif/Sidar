@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import Any
-
 import sys
 import types
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -64,7 +63,9 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, *, responses: list[_FakeResponse] | None = None, error: Exception | None = None):
+    def __init__(
+        self, *, responses: list[_FakeResponse] | None = None, error: Exception | None = None
+    ):
         self._responses = responses or []
         self._error = error
         self.calls: list[dict[str, Any]] = []
@@ -119,7 +120,9 @@ def test_is_available_by_platform_and_ids() -> None:
     assert mgr.is_available("instagram") is True
     assert mgr.is_available("facebook") is False
 
-    mgr = SocialMediaManager(graph_api_token="tkn", facebook_page_id="fb", whatsapp_phone_number_id="wa")
+    mgr = SocialMediaManager(
+        graph_api_token="tkn", facebook_page_id="fb", whatsapp_phone_number_id="wa"
+    )
     assert mgr.is_available("facebook") is True
     assert mgr.is_available("whatsapp") is True
 
@@ -200,13 +203,17 @@ def test_post_error_includes_meta_error_code_details() -> None:
 
 def test_post_timeout_and_request_errors() -> None:
     timeout_client = _FakeAsyncClient(error=httpx.TimeoutException("late"))
-    mgr_timeout = SocialMediaManager(graph_api_token="tkn", http_client_factory=_ClientFactory(timeout_client))
+    mgr_timeout = SocialMediaManager(
+        graph_api_token="tkn", http_client_factory=_ClientFactory(timeout_client)
+    )
     ok, err = _run(mgr_timeout._post("abc", {}))
     assert ok is False
     assert "zaman aşımı" in err
 
     req_error_client = _FakeAsyncClient(error=httpx.RequestError("net"))
-    mgr_request = SocialMediaManager(graph_api_token="tkn", http_client_factory=_ClientFactory(req_error_client))
+    mgr_request = SocialMediaManager(
+        graph_api_token="tkn", http_client_factory=_ClientFactory(req_error_client)
+    )
     ok, err = _run(mgr_request._post("abc", {}))
     assert ok is False
     assert "HTTP isteği başarısız" in err
@@ -337,9 +344,16 @@ def test_publish_content_router(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mgr, "publish_facebook_post", fb)
     monkeypatch.setattr(mgr, "send_whatsapp_message", wa)
 
-    assert _run(mgr.publish_content(platform=" instagram ", text="t", media_url="m"))[1].startswith("ig:t:m")
-    assert _run(mgr.publish_content(platform="facebook", text="t", link_url="l"))[1].startswith("fb:t:l")
-    assert _run(mgr.publish_content(platform="whatsapp", text="t", destination="d", link_url="x"))[1] == "wa:d:True"
+    assert _run(mgr.publish_content(platform=" instagram ", text="t", media_url="m"))[1].startswith(
+        "ig:t:m"
+    )
+    assert _run(mgr.publish_content(platform="facebook", text="t", link_url="l"))[1].startswith(
+        "fb:t:l"
+    )
+    assert (
+        _run(mgr.publish_content(platform="whatsapp", text="t", destination="d", link_url="x"))[1]
+        == "wa:d:True"
+    )
 
     ok, err = _run(mgr.publish_content(platform="x", text="t"))
     assert ok is False
@@ -362,12 +376,8 @@ def test_publish_content_meta_token_expired_errors_by_platform() -> None:
     ok_ig, err_ig = _run(
         mgr.publish_content(platform="instagram", text="caption", media_url="https://img")
     )
-    ok_fb, err_fb = _run(
-        mgr.publish_content(platform="facebook", text="message")
-    )
-    ok_wa, err_wa = _run(
-        mgr.publish_content(platform="whatsapp", text="text", destination="905")
-    )
+    ok_fb, err_fb = _run(mgr.publish_content(platform="facebook", text="message"))
+    ok_wa, err_wa = _run(mgr.publish_content(platform="whatsapp", text="text", destination="905"))
 
     assert ok_ig is False and "code=190" in err_ig
     assert ok_fb is False and "code=190" in err_fb

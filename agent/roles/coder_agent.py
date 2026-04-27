@@ -5,20 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Optional
 
+from agent.base_agent import BaseAgent
+from agent.core.event_stream import get_agent_event_bus
+from agent.registry import AgentCatalog
 from config import Config
 from managers.code_manager import CodeManager
 from managers.package_info import PackageInfoManager
 from managers.security import SecurityManager
 from managers.todo_manager import TodoManager
 
-from agent.base_agent import BaseAgent
-from agent.registry import AgentCatalog
-from agent.core.event_stream import get_agent_event_bus
 
-
-@AgentCatalog.register(capabilities=['code_generation', 'file_io', 'shell_execution', 'code_review'], is_builtin=True)
+@AgentCatalog.register(
+    capabilities=["code_generation", "file_io", "shell_execution", "code_review"], is_builtin=True
+)
 class CoderAgent(BaseAgent):
     """Yalnızca kodlama ve proje denetim araçlarını kullanan uzman ajan."""
 
@@ -31,9 +31,9 @@ class CoderAgent(BaseAgent):
 
     def __init__(
         self,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         *,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="coder")
@@ -74,7 +74,9 @@ class CoderAgent(BaseAgent):
         if len(parts) < 3:
             return "⚠ Kullanım: patch_file|<path>|<target_block>|<replacement_block>"
         path, target_block, replacement_block = parts[0].strip(), parts[1], parts[2]
-        _ok, out = await asyncio.to_thread(self.code.patch_file, path, target_block, replacement_block)
+        _ok, out = await asyncio.to_thread(
+            self.code.patch_file, path, target_block, replacement_block
+        )
         return out
 
     async def _tool_execute_code(self, arg: str) -> str:
@@ -87,7 +89,9 @@ class CoderAgent(BaseAgent):
 
     async def _tool_glob_search(self, arg: str) -> str:
         pattern, base = (arg.split("|||", 1) + ["."])[:2]
-        _ok, out = await asyncio.to_thread(self.code.glob_search, pattern.strip(), base.strip() or ".")
+        _ok, out = await asyncio.to_thread(
+            self.code.glob_search, pattern.strip(), base.strip() or "."
+        )
         return out
 
     async def _tool_grep_search(self, arg: str) -> str:
@@ -95,8 +99,12 @@ class CoderAgent(BaseAgent):
         pattern = parts[0].strip() if parts else ""
         path = parts[1].strip() if len(parts) > 1 else "."
         file_glob = parts[2].strip() if len(parts) > 2 else "*"
-        context_lines = int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
-        _ok, out = await asyncio.to_thread(self.code.grep_files, pattern, path, file_glob, context_lines)
+        context_lines = (
+            int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
+        )
+        _ok, out = await asyncio.to_thread(
+            self.code.grep_files, pattern, path, file_glob, context_lines
+        )
         return out
 
     async def _tool_audit_project(self, arg: str) -> str:
@@ -146,7 +154,6 @@ class CoderAgent(BaseAgent):
         if lower.startswith("execute_code|"):
             return await self.call_tool("execute_code", prompt.split("|", 1)[1])
 
-
         if lower.startswith("qa_feedback|"):
             feedback = prompt.split("|", 1)[1].strip()
             parsed_feedback = self._parse_qa_feedback(feedback)
@@ -154,14 +161,22 @@ class CoderAgent(BaseAgent):
             summary = str(parsed_feedback.get("summary", feedback)).strip()
             dynamic_output = str(parsed_feedback.get("dynamic_test_output", "")).strip()
             regression_output = str(parsed_feedback.get("regression_test_output", "")).strip()
-            remediation_loop = parsed_feedback.get("remediation_loop") if isinstance(parsed_feedback, dict) else None
+            remediation_loop = (
+                parsed_feedback.get("remediation_loop")
+                if isinstance(parsed_feedback, dict)
+                else None
+            )
             remediation_summary = ""
             if isinstance(remediation_loop, dict):
                 remediation_summary = str(remediation_loop.get("summary", "")).strip()
-            failing_excerpt = "\n\n".join(part for part in (dynamic_output, regression_output) if part)[:1500]
+            failing_excerpt = "\n\n".join(
+                part for part in (dynamic_output, regression_output) if part
+            )[:1500]
 
             if decision == "reject":
-                remediation_block = f"\n[REMEDIATION_LOOP] {remediation_summary}" if remediation_summary else ""
+                remediation_block = (
+                    f"\n[REMEDIATION_LOOP] {remediation_summary}" if remediation_summary else ""
+                )
                 return (
                     "[CODER:REWORK_REQUIRED] Reviewer geri bildirimi alındı. "
                     f"Özet: {summary}{remediation_block}\n"
@@ -172,10 +187,16 @@ class CoderAgent(BaseAgent):
 
         if lower.startswith("request_review|"):
             payload = prompt.split("|", 1)[1].strip()
-            return self.delegate_to("reviewer", f"review_code|{payload}", reason="coder_request_review")
+            return self.delegate_to(
+                "reviewer", f"review_code|{payload}", reason="coder_request_review"
+            )
 
         # Basit doğal dil eşleme: "X isimli bir dosyaya 'Y' yaz"
-        m = re.search(r"([\w./-]+\.\w+)\s+isimli\s+bir\s+dosyaya\s+['\"](.+?)['\"]\s+yaz", prompt, re.IGNORECASE)
+        m = re.search(
+            r"([\w./-]+\.\w+)\s+isimli\s+bir\s+dosyaya\s+['\"](.+?)['\"]\s+yaz",
+            prompt,
+            re.IGNORECASE,
+        )
         if m:
             path = m.group(1)
             content = m.group(2)

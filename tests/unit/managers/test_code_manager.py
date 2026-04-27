@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import importlib
 import builtins
+import importlib
 import json
-import os
 import stat
 import subprocess
 import sys
@@ -63,9 +62,17 @@ def manager(tmp_path, monkeypatch):
         LSP_MAX_REFERENCES=3,
         PYTHON_LSP_SERVER="pyright-langserver",
         TYPESCRIPT_LSP_SERVER="typescript-language-server",
-        SANDBOX_LIMITS={"memory": "128m", "cpus": "0.25", "pids_limit": 32, "network": "none", "timeout": 2},
+        SANDBOX_LIMITS={
+            "memory": "128m",
+            "cpus": "0.25",
+            "pids_limit": 32,
+            "network": "none",
+            "timeout": 2,
+        },
     )
-    m = cm.CodeManager(sec, tmp_path, docker_image="python:3.11-alpine", docker_exec_timeout=1, cfg=cfg)
+    m = cm.CodeManager(
+        sec, tmp_path, docker_image="python:3.11-alpine", docker_exec_timeout=1, cfg=cfg
+    )
     m.docker_available = False
     m.docker_client = None
     return m
@@ -110,7 +117,13 @@ def test_runtime_and_limits_resolution(manager):
 
 
 def test_build_and_execute_docker_cli_command(manager, monkeypatch):
-    limits = {"memory": "128m", "cpus": "0.5", "pids_limit": 10, "network_mode": "none", "timeout": 1}
+    limits = {
+        "memory": "128m",
+        "cpus": "0.5",
+        "pids_limit": 10,
+        "network_mode": "none",
+        "timeout": 1,
+    }
     cmd = manager._build_docker_cli_command("print(1)", limits)
     assert cmd[:3] == ["docker", "run", "--rm"]
 
@@ -152,9 +165,13 @@ def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
     assert ok
 
     test_file = tmp_path / "test_sample.py"
-    ok, _ = manager.write_generated_test(str(test_file), "```python\n\ndef test_a():\n    assert 1\n```", append=False)
+    ok, _ = manager.write_generated_test(
+        str(test_file), "```python\n\ndef test_a():\n    assert 1\n```", append=False
+    )
     assert ok and "def test_a" in test_file.read_text(encoding="utf-8")
-    ok, msg = manager.write_generated_test(str(test_file), "def test_a():\n    assert 1", append=True)
+    ok, msg = manager.write_generated_test(
+        str(test_file), "def test_a():\n    assert 1", append=True
+    )
     assert ok and "zaten mevcut" in msg
 
 
@@ -334,7 +351,15 @@ def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
     payload = manager._build_lsp_initialize_payload(tmp_path)
     assert payload["method"] == "initialize"
 
-    msgs = [{"id": 2, "result": [{"uri": cm._path_to_file_uri(py), "range": {"start": {"line": 0, "character": 1}}}]}, {"method": "x"}]
+    msgs = [
+        {
+            "id": 2,
+            "result": [
+                {"uri": cm._path_to_file_uri(py), "range": {"start": {"line": 0, "character": 1}}}
+            ],
+        },
+        {"method": "x"},
+    ]
     result, notes = manager._extract_lsp_result(msgs)
     assert isinstance(result, list) and len(notes) == 1
 
@@ -344,14 +369,20 @@ def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
     pos = manager._position_params(py, 1, 2)
     assert pos["position"]["line"] == 1
 
-    summary = manager._summarize_lsp_diagnostic_entries([
-        {"severity": 1},
-        {"severity": 2},
-        {"severity": 3},
-    ])
+    summary = manager._summarize_lsp_diagnostic_entries(
+        [
+            {"severity": 1},
+            {"severity": 2},
+            {"severity": 3},
+        ]
+    )
     assert summary["decision"] == "REJECT"
 
-    monkeypatch.setattr(manager, "lsp_semantic_audit", lambda _paths=None: (True, {"issues": [], "summary": "clean"}))
+    monkeypatch.setattr(
+        manager,
+        "lsp_semantic_audit",
+        lambda _paths=None: (True, {"issues": [], "summary": "clean"}),
+    )
     ok, text = manager.lsp_workspace_diagnostics()
     assert ok and "clean" in text
 
@@ -477,7 +508,12 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
         "stat",
         lambda p, *_args, **_kwargs: _Stat(stat.S_IFREG if "var/run" in str(p) else stat.S_IFSOCK),
     )
-    assert FakeDocker.DockerClient("unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock").ping() is None
+    assert (
+        FakeDocker.DockerClient(
+            "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock"
+        ).ping()
+        is None
+    )
     with pytest.raises(RuntimeError, match="bad"):
         FakeDocker.DockerClient("unix:///tmp/other.sock").ping()
     assert manager._try_wsl_socket_fallback(FakeDocker) is True
@@ -558,7 +594,11 @@ def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
     monkeypatch.setitem(builtins_dict, "__import__", _raise_import_error_for_docker)
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is cached_docker)
     cli_calls = {"count": 0}
-    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: cli_calls.__setitem__("count", cli_calls["count"] + 1) or False)
+    monkeypatch.setattr(
+        manager,
+        "_try_docker_cli_fallback",
+        lambda: cli_calls.__setitem__("count", cli_calls["count"] + 1) or False,
+    )
     manager._init_docker()
     assert cli_calls["count"] == 0
 
@@ -571,6 +611,7 @@ def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
 
     # no cached module + CLI fallback fail -> warning path (326)
     monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+
     def _raise_on_warning(*_args, **_kwargs):
         raise RuntimeError("warning-hit")
 
@@ -610,7 +651,11 @@ def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch
     monkeypatch.setitem(sys.modules, "docker", err_docker)
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is err_docker)
     warning_calls = {"count": 0}
-    monkeypatch.setattr(cm.logger, "warning", lambda *args, **kwargs: warning_calls.__setitem__("count", warning_calls["count"] + 1))
+    monkeypatch.setattr(
+        cm.logger,
+        "warning",
+        lambda *args, **kwargs: warning_calls.__setitem__("count", warning_calls["count"] + 1),
+    )
 
     manager._init_docker()
 
@@ -632,16 +677,26 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
     fake_docker = FakeDocker("docker")
     fake_docker.errors = SimpleNamespace(ImageNotFound=_ImageNotFound)
     monkeypatch.setitem(sys.modules, "docker", fake_docker)
-    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: (_ for _ in ()).throw(RuntimeError("x"))))
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: (_ for _ in ()).throw(RuntimeError("x")))
+    )
     ok, msg = manager.execute_code("print(1)")
     assert not ok and "güvenlik politikası" in msg
 
     manager.security.level = FULL
-    monkeypatch.setattr(manager, "_execute_code_with_docker_cli", lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=1)))
+    monkeypatch.setattr(
+        manager,
+        "_execute_code_with_docker_cli",
+        lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=1)),
+    )
     ok, msg = manager.execute_code("print(1)")
     assert not ok and "Zaman aşımı" in msg
 
-    monkeypatch.setattr(manager, "_execute_code_with_docker_cli", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")))
+    monkeypatch.setattr(
+        manager,
+        "_execute_code_with_docker_cli",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")),
+    )
     monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
     ok, msg = manager.execute_code("print(1)")
     assert ok and msg == "local-fallback"
@@ -706,12 +761,18 @@ def test_execute_code_local_and_shell_additional_errors(manager, monkeypatch):
     ok, msg = manager.run_shell("", cwd=str(manager.base_dir))
     assert not ok and "komut belirtilmedi" in msg.lower()
 
-    monkeypatch.setattr(cm.shlex, "split", lambda _c: (_ for _ in ()).throw(ValueError("bad split")))
+    monkeypatch.setattr(
+        cm.shlex, "split", lambda _c: (_ for _ in ()).throw(ValueError("bad split"))
+    )
     ok, msg = manager.run_shell("echo x")
     assert not ok and "ayrıştırılamadı" in msg
 
     monkeypatch.setattr(cm.shlex, "split", lambda c: [c])
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=60)))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=60)),
+    )
     ok, msg = manager.run_shell("echo x")
     assert not ok and "Zaman aşımı" in msg
 
@@ -743,7 +804,18 @@ def test_lsp_sequence_and_public_lsp_wrappers(manager, tmp_path, monkeypatch):
     ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "renamed", apply=True)
     assert not ok and "boş döndü" in msg
 
-    monkeypatch.setattr(manager, "lsp_semantic_audit", lambda _paths=None: (True, {"issues": [{"path": "a.py", "line": 1, "character": 1, "severity": 2, "message": "w"}]}))
+    monkeypatch.setattr(
+        manager,
+        "lsp_semantic_audit",
+        lambda _paths=None: (
+            True,
+            {
+                "issues": [
+                    {"path": "a.py", "line": 1, "character": 1, "severity": 2, "message": "w"}
+                ]
+            },
+        ),
+    )
     ok, msg = manager.lsp_workspace_diagnostics([str(py)])
     assert ok and "severity=2" in msg
 
@@ -778,7 +850,9 @@ def test_docker_cli_and_sandbox_error_paths(manager, monkeypatch, tmp_path):
     with pytest.raises(subprocess.TimeoutExpired):
         manager._execute_code_with_docker_cli("print(1)", limits)
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=7, stdout="", stderr="err"))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=7, stdout="", stderr="err")
+    )
     ok, msg = manager._execute_code_with_docker_cli("print(1)", limits)
     assert not ok and "Docker CLI Sandbox" in msg
 
@@ -792,7 +866,9 @@ def test_docker_cli_and_sandbox_error_paths(manager, monkeypatch, tmp_path):
     assert not ok
 
     monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("docker")))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("docker"))
+    )
     ok, msg = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
     assert not ok and "bulunamadı" in msg
 
@@ -802,7 +878,11 @@ def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
     manager.security.shell_ok = True
 
     # allow_shell_features True branch
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="1234567890", stderr=""))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="1234567890", stderr=""),
+    )
     ok, msg = manager.run_shell("echo a | cat", allow_shell_features=True)
     assert ok and "KIRPILDI" in msg
 
@@ -810,7 +890,9 @@ def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
     ok, msg = manager.run_shell("rm -rf /tmp", allow_shell_features=True)
     assert not ok and "Engellendi" in msg
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("kaboom")))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("kaboom"))
+    )
     ok, msg = manager.run_shell("echo x", allow_shell_features=True)
     assert not ok and "Kabuk hatası" in msg
 
@@ -858,14 +940,18 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
     with pytest.raises(ValueError):
         manager._run_lsp_sequence(primary_path=tmp_path / "a.txt", request_method=None)
 
-    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("x")))
+    monkeypatch.setattr(
+        subprocess, "Popen", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("x"))
+    )
     with pytest.raises(FileNotFoundError):
         manager._run_lsp_sequence(primary_path=fp, request_method=None)
 
     class P:
         returncode = 1
+
         def communicate(self, *_a, **_k):
             return b"", b"boom"
+
         def kill(self):
             return None
 
@@ -878,13 +964,21 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         manager._extract_lsp_result([{"id": 2, "error": {"message": "x"}}])
 
-    loc_text = manager._format_lsp_locations([
-        {"targetUri": cm._path_to_file_uri(fp), "targetRange": {"start": {"line": 0, "character": 0}}},
-        {"uri": cm._path_to_file_uri(fp), "range": {"start": {"line": 1, "character": 1}}},
-    ], limit=1)
+    loc_text = manager._format_lsp_locations(
+        [
+            {
+                "targetUri": cm._path_to_file_uri(fp),
+                "targetRange": {"start": {"line": 0, "character": 0}},
+            },
+            {"uri": cm._path_to_file_uri(fp), "range": {"start": {"line": 1, "character": 1}}},
+        ],
+        limit=1,
+    )
     assert "ek sonuç" in loc_text
 
-    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("lsp")))
+    monkeypatch.setattr(
+        manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("lsp"))
+    )
     ok, _ = manager.lsp_go_to_definition(str(fp), 0, 0)
     assert not ok
     ok, _ = manager.lsp_find_references(str(fp), 0, 0)
@@ -895,7 +989,19 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
 
     # write permission denied
     manager.security.write_ok = False
-    edit = {"changes": {cm._path_to_file_uri(fp): [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "b"}]}}
+    edit = {
+        "changes": {
+            cm._path_to_file_uri(fp): [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1},
+                    },
+                    "newText": "b",
+                }
+            ]
+        }
+    }
     ok, _ = manager._apply_workspace_edit(edit)
     assert not ok
     manager.security.write_ok = True
@@ -951,7 +1057,9 @@ def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tm
 
     p = tmp_path / "perm.py"
     p.write_text("x=1\n", encoding="utf-8")
-    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x")))
+    monkeypatch.setattr(
+        builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x"))
+    )
     ok, msg = manager.read_file(str(p))
     assert not ok and "Erişim reddedildi" in msg
 
@@ -960,7 +1068,9 @@ def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tm
     assert not ok and "Güvenli alternatif" in msg
     manager.security.write_ok = True
 
-    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x")))
+    monkeypatch.setattr(
+        builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("x"))
+    )
     ok, msg = manager.write_file(str(p), "x=2\n", validate=False)
     assert not ok and "Yazma erişimi reddedildi" in msg
     monkeypatch.setattr(builtins, "open", real_open)
@@ -969,7 +1079,9 @@ def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tm
     ok, msg = manager.patch_file(str(p), "dup", "x")
     assert not ok and "belirsiz" in msg
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=2, stdout="", stderr="err"))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=2, stdout="", stderr="err")
+    )
     ok, msg = manager.run_shell("python -c 'import sys;sys.exit(2)'", allow_shell_features=True)
     assert not ok and "çıkış kodu: 2" in msg
 
@@ -993,7 +1105,9 @@ def test_execute_code_more_paths(manager, monkeypatch):
     fake_docker = ModuleType("docker")
     fake_docker.errors = SimpleNamespace(ImageNotFound=RuntimeError)
     monkeypatch.setitem(sys.modules, "docker", fake_docker)
-    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: TimeoutContainer()))
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: TimeoutContainer())
+    )
 
     ticks = {"n": 0}
 
@@ -1021,7 +1135,9 @@ def test_execute_code_more_paths(manager, monkeypatch):
         def remove(self, force=False):
             return None
 
-    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: ExitContainer()))
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: ExitContainer())
+    )
     ok, msg = manager.execute_code("print(1)")
     assert not ok and "Docker Sandbox" in msg
 
@@ -1045,7 +1161,9 @@ def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: P())
     with pytest.raises(RuntimeError):
         manager._run_lsp_sequence(
-            primary_path=py, request_method="textDocument/definition", extra_open_files=[extra, Path("ghost.py")]
+            primary_path=py,
+            request_method="textDocument/definition",
+            extra_open_files=[extra, Path("ghost.py")],
         )
 
     edit = {
@@ -1054,7 +1172,10 @@ def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
                 "textDocument": {"uri": cm._path_to_file_uri(py)},
                 "edits": [
                     {
-                        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 1},
+                        },
                         "newText": "z",
                     }
                 ],
@@ -1064,11 +1185,15 @@ def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
     ok, msg = manager._apply_workspace_edit(edit)
     assert ok and "Değişen dosya sayısı: 1" in msg
 
-    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: [{"id": 2, "result": {"changes": {}}}])
+    monkeypatch.setattr(
+        manager, "_run_lsp_sequence", lambda **_k: [{"id": 2, "result": {"changes": {}}}]
+    )
     ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "new", apply=False)
     assert ok and "Etkilenen dosya sayısı: 0" in msg
 
-    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("oops")))
+    monkeypatch.setattr(
+        manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("oops"))
+    )
     ok, report = manager.lsp_semantic_audit([str(py)])
     assert not ok and report["status"] == "tool-error"
 
@@ -1091,7 +1216,9 @@ def test_grep_glob_list_audit_more_branches(manager, monkeypatch, tmp_path):
     assert ok and "Maksimum eşleşme sayısına ulaşıldı" in msg
 
     # audit_project read exception branch
-    monkeypatch.setattr(cm.Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        cm.Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     report = manager.audit_project(root=str(tmp_path))
     assert "Okunamadı" in report
 
@@ -1108,23 +1235,31 @@ def test_codec_and_wsl_and_file_error_edge_branches(manager, monkeypatch, tmp_pa
     # read_file / write_file generic exception yolları.
     p = tmp_path / "x.py"
     p.write_text("x=1\n", encoding="utf-8")
-    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-r")))
+    monkeypatch.setattr(
+        builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-r"))
+    )
     ok, msg = manager.read_file(str(p))
     assert not ok and "Okuma hatası" in msg
 
-    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-w")))
+    monkeypatch.setattr(
+        builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-w"))
+    )
     ok, msg = manager.write_file(str(p), "x=2\n", validate=False)
     assert not ok and "Yazma hatası" in msg
 
 
 def test_generated_test_empty_and_read_error_branches(manager, monkeypatch, tmp_path):
-    ok, msg = manager.write_generated_test(str(tmp_path / "test_x.py"), "```python\n```", append=False)
+    ok, msg = manager.write_generated_test(
+        str(tmp_path / "test_x.py"), "```python\n```", append=False
+    )
     assert not ok and "boş" in msg
 
     target = tmp_path / "test_dup.py"
     target.write_text("def test_a():\n    assert 1\n", encoding="utf-8")
     monkeypatch.setattr(manager, "read_file", lambda *_a, **_k: (False, "read failed"))
-    ok, msg = manager.write_generated_test(str(target), "def test_b():\n    assert 1\n", append=True)
+    ok, msg = manager.write_generated_test(
+        str(target), "def test_b():\n    assert 1\n", append=True
+    )
     assert not ok and msg == "read failed"
 
 
@@ -1186,12 +1321,16 @@ pkg/mod.py:7: in test_parse
     assert parsed["failure_targets"][0]["target_path"] == "pkg/mod.py"
 
     # glob/list exception branch
-    monkeypatch.setattr(cm.Path, "stat", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("stat")))
+    monkeypatch.setattr(
+        cm.Path, "stat", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("stat"))
+    )
     ok, msg = manager.glob_search("*.py", base_path=str(tmp_path))
     assert not ok and "Glob arama hatası" in msg
 
     # list_directory exception branch
-    monkeypatch.setattr(cm.Path, "iterdir", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("iter")))
+    monkeypatch.setattr(
+        cm.Path, "iterdir", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("iter"))
+    )
     ok, msg = manager.list_directory(str(tmp_path))
     assert not ok and "Dizin listeleme hatası" in msg
 
@@ -1253,7 +1392,9 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
         lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("docker")),
     )
     assert manager._try_docker_cli_fallback() is False
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1, stdout="", stderr="x"))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1, stdout="", stderr="x")
+    )
     assert manager._try_docker_cli_fallback() is False
 
     # _try_wsl_socket_fallback ping exception continue branch
@@ -1300,7 +1441,9 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
         "write_file",
         lambda _p, content, validate=True: (captured.__setitem__("content", content) or True, "ok"),
     )
-    ok, _ = manager.write_generated_test(str(target), "def test_new():\n    assert 1\n", append=True)
+    ok, _ = manager.write_generated_test(
+        str(target), "def test_new():\n    assert 1\n", append=True
+    )
     assert ok and "test_new" in captured["content"]
 
     # patch_file read failure branch
@@ -1370,11 +1513,15 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
         def remove(self, force=False):
             return None
 
-    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: _Container()))
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: _Container())
+    )
     monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
     sys.modules["docker"].errors = SimpleNamespace(ImageNotFound=RuntimeError)
     sleeps = {"n": 0}
-    monkeypatch.setattr(cm.time, "sleep", lambda *_a, **_k: sleeps.__setitem__("n", sleeps["n"] + 1))
+    monkeypatch.setattr(
+        cm.time, "sleep", lambda *_a, **_k: sleeps.__setitem__("n", sleeps["n"] + 1)
+    )
     ok, msg = manager.execute_code("print(1)")
     assert ok and "çıktı üretmedi" in msg and sleeps["n"] >= 1
 
@@ -1392,7 +1539,9 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
             return None
 
     manager.max_output_chars = 5
-    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: _ContainerNoWait()))
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: _ContainerNoWait())
+    )
     ok, msg = manager.execute_code("print(1)")
     assert ok and "KIRPILDI" in msg
 
@@ -1405,7 +1554,9 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     )
     ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
     assert not ok
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
     assert not ok
 
@@ -1427,7 +1578,9 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "read_text",
-        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("nope")) if self == py_bad else original_read_text(self, *a, **k),
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("nope"))
+        if self == py_bad
+        else original_read_text(self, *a, **k),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="**/*.py")
     assert ok and "ok.py" in msg
@@ -1438,14 +1591,18 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "relative_to",
-        lambda self, *_a, **_k: (_ for _ in ()).throw(ValueError("forced")) if self == py_ok else original_relative_to(self, *_a, **_k),
+        lambda self, *_a, **_k: (_ for _ in ()).throw(ValueError("forced"))
+        if self == py_ok
+        else original_relative_to(self, *_a, **_k),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.py")
     assert ok and "ok.py" in msg
 
     # grep outer exception branch
     original_resolve = cm.Path.resolve
-    monkeypatch.setattr(cm.Path, "resolve", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("resolve")))
+    monkeypatch.setattr(
+        cm.Path, "resolve", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("resolve"))
+    )
     assert manager.grep_files("x", path=str(tmp_path))[0] is False
 
     # list_directory branch that emits a folder entry
@@ -1485,15 +1642,41 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
     monkeypatch.setattr(manager, "write_file", lambda *_a, **_k: (False, "write-failed"))
     edit = {
         "documentChanges": [
-            {"textDocument": {}, "edits": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "x"}]},
-            {"textDocument": {"uri": cm._path_to_file_uri(py)}, "edits": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "x"}]},
+            {
+                "textDocument": {},
+                "edits": [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 1},
+                        },
+                        "newText": "x",
+                    }
+                ],
+            },
+            {
+                "textDocument": {"uri": cm._path_to_file_uri(py)},
+                "edits": [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 1},
+                        },
+                        "newText": "x",
+                    }
+                ],
+            },
         ]
     }
     ok, msg = manager._apply_workspace_edit(edit)
     assert not ok and msg == "write-failed"
 
     # lsp_rename_symbol exception wrapper branch
-    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("rename-fail")))
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("rename-fail")),
+    )
     ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "new_name", apply=False)
     assert not ok and "LSP rename hatası" in msg
 

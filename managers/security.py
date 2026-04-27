@@ -1,5 +1,3 @@
-
-
 """
 Sidar Project - Güvenlik Yöneticisi
 OpenClaw erişim kontrol sistemi.
@@ -10,16 +8,16 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from config import Config
 
 logger = logging.getLogger(__name__)
 
 # Erişim seviyesi sabitleri
-RESTRICTED = 0   # Yalnızca okuma, denetim ve analiz
-SANDBOX = 1      # Okuma + yalnızca /temp dizinine yazma
-FULL = 2         # Tam erişim (terminal dahil)
+RESTRICTED = 0  # Yalnızca okuma, denetim ve analiz
+SANDBOX = 1  # Okuma + yalnızca /temp dizinine yazma
+FULL = 2  # Tam erişim (terminal dahil)
 
 LEVEL_NAMES = {
     "restricted": RESTRICTED,
@@ -28,7 +26,9 @@ LEVEL_NAMES = {
 }
 
 # Tehlikeli yol kalıpları — path traversal saldırılarına karşı ek koruma
-_DANGEROUS_PATH_RE = re.compile(r"\.\.[/\\]|^/etc/|^/proc/|^/sys/|^[a-zA-Z]:[/\\](windows|program files)", re.IGNORECASE)
+_DANGEROUS_PATH_RE = re.compile(
+    r"\.\.[/\\]|^/etc/|^/proc/|^/sys/|^[a-zA-Z]:[/\\](windows|program files)", re.IGNORECASE
+)
 
 _BLOCKED_PATTERNS = [
     re.compile(r"(^|[/\\])\.env$", re.IGNORECASE),
@@ -39,7 +39,9 @@ _BLOCKED_PATTERNS = [
 
 _PROMPT_INJECTION_PATTERNS = [
     re.compile(r"ignore (all|any|previous|prior) (instructions|rules|prompts)", re.IGNORECASE),
-    re.compile(r"(reveal|show|print).*(system prompt|developer message|hidden prompt)", re.IGNORECASE),
+    re.compile(
+        r"(reveal|show|print).*(system prompt|developer message|hidden prompt)", re.IGNORECASE
+    ),
     re.compile(r"(jailbreak|bypass|override).*(policy|safety|guardrail|security)", re.IGNORECASE),
     re.compile(r"(do not follow|stop following).*(policy|rules|instructions)", re.IGNORECASE),
     re.compile(r"(act as|pretend to be).*(system|developer|admin)", re.IGNORECASE),
@@ -73,13 +75,19 @@ class SecurityManager:
 
     def __init__(
         self,
-        access_level: Optional[str] = None,
-        base_dir: Optional[Path] = None,
-        cfg: Optional[Config] = None,
+        access_level: str | None = None,
+        base_dir: Path | None = None,
+        cfg: Config | None = None,
     ) -> None:
         self.cfg = cfg or Config()
-        raw_level = access_level if access_level is not None else getattr(self.cfg, "ACCESS_LEVEL", "sandbox")
-        raw_base_dir = base_dir if base_dir is not None else getattr(self.cfg, "BASE_DIR", Path("."))
+        raw_level = (
+            access_level
+            if access_level is not None
+            else getattr(self.cfg, "ACCESS_LEVEL", "sandbox")
+        )
+        raw_base_dir = (
+            base_dir if base_dir is not None else getattr(self.cfg, "BASE_DIR", Path("."))
+        )
 
         normalized_level = self._normalize_level_name(raw_level)
         self.level: int = LEVEL_NAMES[normalized_level]
@@ -129,7 +137,7 @@ class SecurityManager:
         """
         return bool(_DANGEROUS_PATH_RE.search(path_str))
 
-    def _resolve_safe(self, path_str: str) -> Optional[Path]:
+    def _resolve_safe(self, path_str: str) -> Path | None:
         """
         Yolu güvenle çözümler. Hata durumunda None döndürür.
 
@@ -226,7 +234,9 @@ class SecurityManager:
         risk_score = min(100, len(unique_reasons) * 20)
         has_secret_like_leak = bool(output_leak_reasons)
         allowed = (risk_score < 40) and (not has_secret_like_leak)
-        return ValidationResult(allowed=allowed, risk_score=risk_score, reasons=unique_reasons, source=source)
+        return ValidationResult(
+            allowed=allowed, risk_score=risk_score, reasons=unique_reasons, source=source
+        )
 
     def validate_user_input(self, text: str) -> ValidationResult:
         return self.validate_prompt_text(text, source="user")
@@ -252,7 +262,7 @@ class SecurityManager:
     #  OKUMA YETKİSİ
     # ─────────────────────────────────────────────
 
-    def can_read(self, path: Optional[str] = None) -> bool:
+    def can_read(self, path: str | None = None) -> bool:
         """Dosyanın okunup okunamayacağını kontrol eder."""
         if not path:
             return True
@@ -378,11 +388,9 @@ class SecurityManager:
         perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
         perms.append(f"Shell   : {'✓ (git, npm, pip vb.)' if self.level == FULL else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")
-        return (
-            f"[OpenClaw] Erişim Seviyesi: {self.level_name.upper()}\n"
-            + "\n".join(f"  {p}" for p in perms)
+        return f"[OpenClaw] Erişim Seviyesi: {self.level_name.upper()}\n" + "\n".join(
+            f"  {p}" for p in perms
         )
 
     def __repr__(self) -> str:
         return f"<SecurityManager level={self.level_name}>"
-  

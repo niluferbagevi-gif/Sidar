@@ -1,8 +1,9 @@
 """core/voice.py için unit testler."""
+
 from __future__ import annotations
 
-import types
 import base64
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,16 +13,15 @@ from core.voice import (
     BrowserAudioPacket,
     VoicePipeline,
     WebRTCAudioIngress,
-    _BaseTTSAdapter,
+    _build_tts_adapter,
     _MockTTSAdapter,
     _Pyttsx3Adapter,
-    _build_tts_adapter,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # _MockTTSAdapter
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_mock_adapter_synthesize_success():
@@ -56,6 +56,7 @@ def test_mock_adapter_available():
 # ──────────────────────────────────────────────────────────────────────────────
 # _Pyttsx3Adapter
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_pyttsx3_adapter_available():
     adapter = _Pyttsx3Adapter()
@@ -229,6 +230,7 @@ async def test_pyttsx3_adapter_synthesize_available_path_uses_to_thread(monkeypa
 # _build_tts_adapter
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_build_tts_adapter_mock():
     adapter = _build_tts_adapter("mock")
     assert isinstance(adapter, _MockTTSAdapter)
@@ -258,6 +260,7 @@ def test_build_tts_adapter_empty_string_treated_as_auto():
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline — başlatma
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_pipeline(**cfg_attrs):
     cfg = MagicMock()
@@ -300,6 +303,7 @@ def test_pipeline_init_respects_voice_enabled_flag():
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.extract_ready_segments
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_extract_ready_segments_empty():
     p = _make_pipeline()
@@ -354,6 +358,7 @@ def test_extract_ready_segments_whitespace_only():
 # VoicePipeline.DuplexState ve turn yönetimi
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_create_duplex_state():
     p = _make_pipeline()
     state = p.create_duplex_state()
@@ -392,6 +397,7 @@ def test_begin_assistant_turn_clears_buffer():
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.buffer_assistant_text
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_buffer_assistant_text_no_state():
     p = _make_pipeline(segment_chars=5)
@@ -434,6 +440,7 @@ def test_buffer_assistant_text_empty_delta_keeps_buffer_and_emits_when_probe_rea
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.interrupt_assistant_turn
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_interrupt_assistant_turn_with_state():
     p = _make_pipeline()
@@ -482,6 +489,7 @@ def test_should_interrupt_response_voice_event_below_threshold():
 # VoicePipeline.should_commit_audio
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_should_commit_audio_true():
     p = _make_pipeline(vad_enabled=True, vad_min_speech_bytes=512)
     assert p.should_commit_audio(1024, event="speech_end") is True
@@ -513,6 +521,7 @@ def test_should_commit_audio_all_commit_events():
 # VoicePipeline.should_interrupt_response
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_should_interrupt_response_true():
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True, vad_interrupt_min_bytes=256)
     assert p.should_interrupt_response(512, event="speech_start") is True
@@ -538,10 +547,13 @@ def test_should_interrupt_response_all_interrupt_events():
 # VoicePipeline.build_voice_state_payload
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_build_voice_state_payload_with_state():
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True)
     state = p.create_duplex_state()
-    payload = p.build_voice_state_payload(event="speech_end", buffered_bytes=2048, sequence=3, duplex_state=state)
+    payload = p.build_voice_state_payload(
+        event="speech_end", buffered_bytes=2048, sequence=3, duplex_state=state
+    )
     assert payload["voice_state"] == "speech_end"
     assert payload["buffered_bytes"] == 2048
     assert payload["sequence"] == 3
@@ -576,6 +588,7 @@ def test_build_voice_state_payload_negative_values():
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.synthesize_text
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_synthesize_text_success():
@@ -647,7 +660,10 @@ def test_webrtc_audio_ingress_decode_packet_rejects_invalid_base64():
 
 def test_webrtc_audio_ingress_decode_packet_rejects_unsupported_mime():
     ingress = WebRTCAudioIngress()
-    payload = {"audio_chunk": base64.b64encode(b"raw").decode("ascii"), "mime_type": "application/octet-stream"}
+    payload = {
+        "audio_chunk": base64.b64encode(b"raw").decode("ascii"),
+        "mime_type": "application/octet-stream",
+    }
     with pytest.raises(ValueError, match="Desteklenmeyen"):
         ingress.decode_packet(payload)
 
@@ -655,6 +671,7 @@ def test_webrtc_audio_ingress_decode_packet_rejects_unsupported_mime():
 # ──────────────────────────────────────────────────────────────────────────────
 # Eksik Kapsam (Coverage) Testleri: WebRTCAudioIngress Edge Caseleri
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_webrtc_audio_ingress_decode_packet_empty_audio_data():
     """Satır 356 ve 385'i kapsar: Ses verisi boş veya anlamsız gönderildiğinde."""
@@ -682,7 +699,11 @@ def test_webrtc_audio_ingress_decode_packet_exceeds_max_bytes():
 def test_webrtc_audio_ingress_decode_packet_direct_bytes():
     """Satır 381'i kapsar: 'audio_bytes' doğrudan byte/bytearray formatında gelirse."""
     ingress = WebRTCAudioIngress()
-    payload = {"audio_bytes": bytearray(b"direct_byte_data"), "mime_type": "audio/webm", "sequence": 1}
+    payload = {
+        "audio_bytes": bytearray(b"direct_byte_data"),
+        "mime_type": "audio/webm",
+        "sequence": 1,
+    }
 
     packet = ingress.decode_packet(payload)
     assert packet.audio_bytes == b"direct_byte_data"
@@ -693,10 +714,16 @@ def test_webrtc_audio_ingress_decode_packet_alternate_keys():
     """_decode_audio_bytes içindeki 'audio_b64' ve 'data' alternatif anahtarlarını kapsar."""
     ingress = WebRTCAudioIngress()
 
-    payload_b64 = {"audio_b64": base64.b64encode(b"b64data").decode("ascii"), "mime_type": "audio/wav"}
+    payload_b64 = {
+        "audio_b64": base64.b64encode(b"b64data").decode("ascii"),
+        "mime_type": "audio/wav",
+    }
     packet1 = ingress.decode_packet(payload_b64)
     assert packet1.audio_bytes == b"b64data"
 
-    payload_data = {"data": base64.b64encode(b"datavalue").decode("ascii"), "mime_type": "audio/mp3"}
+    payload_data = {
+        "data": base64.b64encode(b"datavalue").decode("ascii"),
+        "mime_type": "audio/mp3",
+    }
     packet2 = ingress.decode_packet(payload_data)
     assert packet2.audio_bytes == b"datavalue"

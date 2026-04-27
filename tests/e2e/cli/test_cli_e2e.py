@@ -1,6 +1,6 @@
-import json
 import http.client
 import importlib.util
+import json
 import os
 import socketserver
 import subprocess
@@ -65,7 +65,9 @@ def mock_ollama_server():
     thread.join(timeout=2)
 
 
-def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path: Path, mock_ollama_server) -> None:
+def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
+    tmp_path: Path, mock_ollama_server
+) -> None:
     if importlib.util.find_spec("pydantic") is None:
         pytest.skip("pydantic kurulu değil; gerçek ajan CLI e2e testi atlanıyor.")
 
@@ -114,11 +116,15 @@ def test_ollama_response_payload_wraps_argument() -> None:
     assert content["argument"] == "echo-value"
 
 
-def test_cli_command_skips_when_pydantic_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server) -> None:
+def test_cli_command_skips_when_pydantic_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server
+) -> None:
     monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
 
     with pytest.raises(pytest.skip.Exception):
-        test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(tmp_path, mock_ollama_server)
+        test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
+            tmp_path, mock_ollama_server
+        )
 
 
 def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) -> None:

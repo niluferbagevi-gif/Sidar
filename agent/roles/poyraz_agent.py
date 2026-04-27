@@ -6,15 +6,13 @@ import asyncio
 import importlib
 import json
 from pathlib import Path
-from typing import Optional
 
+from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 from config import Config
 from core.rag import DocumentStore
 from managers.social_media_manager import SocialMediaManager
 from managers.web_search import WebSearchManager
-
-from agent.base_agent import BaseAgent
-from agent.registry import AgentCatalog
 
 try:
     from core.multimodal import MultimodalPipeline
@@ -24,6 +22,7 @@ except Exception:  # pragma: no cover - test/stub ortamlarda opsiyonel olabilir
 try:
     from agent.tooling import parse_tool_argument
 except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabilir
+
     class _FallbackPayload:
         def __init__(self, payload: dict[str, object]) -> None:
             self.__dict__.update(payload)
@@ -35,7 +34,10 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
         return _FallbackPayload(json.loads(raw_arg))
 
 
-@AgentCatalog.register(capabilities=['marketing_strategy', 'seo_analysis', 'campaign_copy', 'audience_ops'], is_builtin=True)
+@AgentCatalog.register(
+    capabilities=["marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"],
+    is_builtin=True,
+)
 class PoyrazAgent(BaseAgent):
     """SEO, kampanya içeriği ve hedef kitle operasyonları için uzman ajan."""
 
@@ -47,9 +49,9 @@ class PoyrazAgent(BaseAgent):
 
     def __init__(
         self,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         *,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="poyraz")
@@ -228,7 +230,9 @@ class PoyrazAgent(BaseAgent):
         payload = None
         if raw.startswith("{"):
             payload = parse_tool_argument("build_landing_page", raw)
-            sections = ", ".join(payload.sections or []) or "hero, problem, çözüm, sosyal kanıt, CTA"
+            sections = (
+                ", ".join(payload.sections or []) or "hero, problem, çözüm, sosyal kanıt, CTA"
+            )
             brief = (
                 f"Marka: {payload.brand_name}\n"
                 f"Teklif: {payload.offer}\n"
@@ -429,7 +433,11 @@ class PoyrazAgent(BaseAgent):
                     {
                         "type": "menu_plan",
                         "group": group_name,
-                        "options": [str(option).strip() for option in list(options or []) if str(option).strip()],
+                        "options": [
+                            str(option).strip()
+                            for option in list(options or [])
+                            if str(option).strip()
+                        ],
                     }
                 )
         for role_name, assignee in dict(payload.vendor_assignments or {}).items():
@@ -508,28 +516,66 @@ class PoyrazAgent(BaseAgent):
         if lower.startswith("ingest_video_insights|") or lower.startswith("analyze_video|"):
             return await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip())
         if lower.startswith("create_marketing_campaign|"):
-            return await self.call_tool("create_marketing_campaign", prompt.split("|", 1)[1].strip())
+            return await self.call_tool(
+                "create_marketing_campaign", prompt.split("|", 1)[1].strip()
+            )
         if lower.startswith("store_content_asset|"):
             return await self.call_tool("store_content_asset", prompt.split("|", 1)[1].strip())
         if lower.startswith("create_operation_checklist|"):
-            return await self.call_tool("create_operation_checklist", prompt.split("|", 1)[1].strip())
+            return await self.call_tool(
+                "create_operation_checklist", prompt.split("|", 1)[1].strip()
+            )
         if lower.startswith("plan_service_operations|"):
             return await self.call_tool("plan_service_operations", prompt.split("|", 1)[1].strip())
         if lower.startswith("seo_audit|"):
-            return await self._generate_marketing_output(prompt.split("|", 1)[1].strip(), "seo_audit")
+            return await self._generate_marketing_output(
+                prompt.split("|", 1)[1].strip(), "seo_audit"
+            )
         if lower.startswith("campaign_copy|"):
-            return await self._generate_marketing_output(prompt.split("|", 1)[1].strip(), "campaign_copy")
+            return await self._generate_marketing_output(
+                prompt.split("|", 1)[1].strip(), "campaign_copy"
+            )
         if lower.startswith("audience_ops|"):
-            return await self._generate_marketing_output(prompt.split("|", 1)[1].strip(), "audience_ops")
+            return await self._generate_marketing_output(
+                prompt.split("|", 1)[1].strip(), "audience_ops"
+            )
         if lower.startswith("research_to_marketing|"):
-            return await self._generate_marketing_output(prompt.split("|", 1)[1].strip(), "research_to_marketing")
+            return await self._generate_marketing_output(
+                prompt.split("|", 1)[1].strip(), "research_to_marketing"
+            )
         if lower.startswith("publish_social|"):
             return await self.call_tool("publish_social", prompt.split("|", 1)[1].strip())
 
-        if any(keyword in lower for keyword in ("landing page", "landing_page", "açılış sayfası", "landing")):
-            return await self.call_tool("build_landing_page", json.dumps({"brand_name": "SİDAR", "offer": prompt, "audience": "genel", "call_to_action": "İletişime geç", "tone": "professional"}, ensure_ascii=False))
+        if any(
+            keyword in lower
+            for keyword in ("landing page", "landing_page", "açılış sayfası", "landing")
+        ):
+            return await self.call_tool(
+                "build_landing_page",
+                json.dumps(
+                    {
+                        "brand_name": "SİDAR",
+                        "offer": prompt,
+                        "audience": "genel",
+                        "call_to_action": "İletişime geç",
+                        "tone": "professional",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
 
-        if any(keyword in lower for keyword in ("seo", "kampanya", "hedef kitle", "pazarlama", "growth", "funnel", "operasyon")):
+        if any(
+            keyword in lower
+            for keyword in (
+                "seo",
+                "kampanya",
+                "hedef kitle",
+                "pazarlama",
+                "growth",
+                "funnel",
+                "operasyon",
+            )
+        ):
             return await self._generate_marketing_output(prompt, "marketing_strategy")
 
         return await self._generate_marketing_output(prompt, "marketing_general")

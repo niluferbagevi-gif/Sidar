@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class BaseEventBusBackend(abc.ABC):
     """Remote transport backend strategy interface."""
 
-    def __init__(self, bus: "AgentEventBus") -> None:
+    def __init__(self, bus: AgentEventBus) -> None:
         self.bus = bus
 
     @abc.abstractmethod
@@ -18,5 +18,5 @@ class BaseEventBusBackend(abc.ABC):
         """Schedule backend listener bootstrap if needed."""
 
     @abc.abstractmethod
-    async def publish(self, evt: "AgentEvent") -> bool:
+    async def publish(self, evt: AgentEvent) -> bool:
         """Publish an event via backend transport."""

@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-from datetime import datetime, timezone
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-import xml.etree.ElementTree as ET
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -49,7 +49,9 @@ def _pct_delta(current: float, baseline: float) -> float:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Benchmark JSON ve coverage.xml için trend kalite kapısı")
+    parser = argparse.ArgumentParser(
+        description="Benchmark JSON ve coverage.xml için trend kalite kapısı"
+    )
     parser.add_argument("--benchmark-json", required=True)
     parser.add_argument("--coverage-xml", required=True)
     parser.add_argument("--history-json", required=True)
@@ -111,7 +113,7 @@ def main() -> int:
 
     runs.append(
         {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "benchmark_mean_seconds": benchmark_mean_s,
             "benchmark_count": benchmark_count,
             "coverage_line_rate": coverage_ratio,

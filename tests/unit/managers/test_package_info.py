@@ -101,12 +101,20 @@ def test_cache_get_set_and_expire():
 def test_get_json_cache_and_all_error_paths(monkeypatch):
     manager = PackageInfoManager()
     manager._cache_set("cached-key", {"ok": True})
-    assert run(manager._get_json("https://unused", cache_key="cached-key")) == (True, {"ok": True}, "")
+    assert run(manager._get_json("https://unused", cache_key="cached-key")) == (
+        True,
+        {"ok": True},
+        "",
+    )
 
     capture = {}
     ok_client = DummyAsyncClient(response=DummyResponse(payload={"a": 1}), capture=capture)
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: ok_client)
-    assert run(manager._get_json("https://example.com/a", cache_key="fresh")) == (True, {"a": 1}, "")
+    assert run(manager._get_json("https://example.com/a", cache_key="fresh")) == (
+        True,
+        {"a": 1},
+        "",
+    )
     assert capture["url"] == "https://example.com/a"
     assert manager._cache_get("fresh")[0] is True
 
@@ -118,7 +126,9 @@ def test_get_json_cache_and_all_error_paths(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: timeout_client)
     assert run(manager._get_json("https://example.com/timeout")) == (False, {}, "timeout")
 
-    req_err_client = DummyAsyncClient(exc=httpx.RequestError("net-fail", request=httpx.Request("GET", "https://x")))
+    req_err_client = DummyAsyncClient(
+        exc=httpx.RequestError("net-fail", request=httpx.Request("GET", "https://x"))
+    )
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: req_err_client)
     ok, data, err = run(manager._get_json("https://example.com/request"))
     assert (ok, data) == (False, {})
@@ -147,6 +157,7 @@ def test_fetch_pypi_json_error_mapping(monkeypatch):
         ("request:boom", "bağlantı hatası"),
         ("other", "[HATA] PyPI: other"),
     ]:
+
         async def fake_err(_url, cache_key="", error=err):
             return False, {}, error
 
@@ -271,16 +282,20 @@ def test_npm_info_success_and_error_paths(monkeypatch):
 
     async def get_ok(_url, cache_key=""):
         assert cache_key == "npm:react"
-        return True, {
-            "version": "19.0.0",
-            "author": {"name": "Meta"},
-            "license": "MIT",
-            "description": "UI lib",
-            "main": "index.js",
-            "dependencies": {"a": "1", "b": "2"},
-            "peerDependencies": {"c": "3"},
-            "engines": {"node": ">=18"},
-        }, ""
+        return (
+            True,
+            {
+                "version": "19.0.0",
+                "author": {"name": "Meta"},
+                "license": "MIT",
+                "description": "UI lib",
+                "main": "index.js",
+                "dependencies": {"a": "1", "b": "2"},
+                "peerDependencies": {"c": "3"},
+                "engines": {"node": ">=18"},
+            },
+            "",
+        )
 
     monkeypatch.setattr(manager, "_get_json", get_ok)
     ok, text = run(manager.npm_info("react"))
@@ -303,6 +318,7 @@ def test_npm_info_success_and_error_paths(monkeypatch):
         ("request:oops", "bağlantı hatası"),
         ("weird", "[HATA] npm: weird"),
     ]:
+
         async def get_err(_url, cache_key="", error=err):
             return False, {}, error
 
@@ -316,20 +332,24 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
     manager = PackageInfoManager()
 
     async def get_releases(_url, cache_key=""):
-        return True, [
-            {
-                "tag_name": "v2.0.0",
-                "name": "Major",
-                "published_at": "2026-01-10T12:00:00Z",
-                "prerelease": True,
-                "body": "line1\nline2",
-            },
-            {
-                "tag_name": "v1.0.0",
-                "published_at": "2025-05-01T12:00:00Z",
-                "body": "",
-            },
-        ], ""
+        return (
+            True,
+            [
+                {
+                    "tag_name": "v2.0.0",
+                    "name": "Major",
+                    "published_at": "2026-01-10T12:00:00Z",
+                    "prerelease": True,
+                    "body": "line1\nline2",
+                },
+                {
+                    "tag_name": "v1.0.0",
+                    "published_at": "2025-05-01T12:00:00Z",
+                    "body": "",
+                },
+            ],
+            "",
+        )
 
     monkeypatch.setattr(manager, "_get_json", get_releases)
     ok, text = run(manager.github_releases("owner/repo", limit=2))
@@ -339,7 +359,11 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
     assert "v1.0.0" in text
 
     async def get_release_without_body(_url, cache_key=""):
-        return True, [{"tag_name": "v0.1.0", "published_at": "2024-01-01T00:00:00Z", "body": ""}], ""
+        return (
+            True,
+            [{"tag_name": "v0.1.0", "published_at": "2024-01-01T00:00:00Z", "body": ""}],
+            "",
+        )
 
     monkeypatch.setattr(manager, "_get_json", get_release_without_body)
     ok, text = run(manager.github_releases("owner/repo", limit=1))
@@ -351,13 +375,17 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
         return True, {"unexpected": True}, ""
 
     monkeypatch.setattr(manager, "_get_json", get_non_list)
-    assert run(manager.github_releases("owner/repo")) == (True, "[GitHub Releases: owner/repo]\n  Henüz release yok.")
+    assert run(manager.github_releases("owner/repo")) == (
+        True,
+        "[GitHub Releases: owner/repo]\n  Henüz release yok.",
+    )
 
     for err, expected in [
         ("not_found", "deposu bulunamadı"),
         ("timeout", "zaman aşımı"),
         ("other", "[HATA] GitHub Releases: other"),
     ]:
+
         async def get_err(_url, cache_key="", error=err):
             return False, {}, error
 
@@ -370,7 +398,10 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
         return True, {"tag_name": "v3.1.4", "published_at": "2026-03-01T00:00:00Z"}, ""
 
     monkeypatch.setattr(manager, "_get_json", get_latest)
-    assert run(manager.github_latest_release("x/y")) == (True, "x/y — En güncel: v3.1.4 [2026-03-01]")
+    assert run(manager.github_latest_release("x/y")) == (
+        True,
+        "x/y — En güncel: v3.1.4 [2026-03-01]",
+    )
 
     async def get_latest_min(_url, cache_key=""):
         return True, {}, ""
@@ -383,6 +414,7 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
         ("timeout", "zaman aşımı"),
         ("other", "[HATA] GitHub: other"),
     ]:
+
         async def get_latest_err(_url, cache_key="", error=err):
             return False, {}, error
 

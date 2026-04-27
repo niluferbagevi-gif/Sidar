@@ -100,6 +100,7 @@ async def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
 @pytest.mark.asyncio
 async def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
+
     class FakeRows:
         def fetchall(self):
             return [
@@ -187,7 +188,20 @@ async def test_feedback_store_full_db_paths_and_close(monkeypatch):
             executed.append((self.mode, str(stmt), params or {}))
             text = str(stmt)
             if "SELECT id, prompt" in text:
-                rows = [types.SimpleNamespace(_mapping={"id": 11, "prompt": "p", "response": "r", "correction": "", "rating": 1, "user_id": "u", "provider": "x", "model": "m"})]
+                rows = [
+                    types.SimpleNamespace(
+                        _mapping={
+                            "id": 11,
+                            "prompt": "p",
+                            "response": "r",
+                            "correction": "",
+                            "rating": 1,
+                            "user_id": "u",
+                            "provider": "x",
+                            "model": "m",
+                        }
+                    )
+                ]
                 return FakeResult(rows=rows)
             if "COUNT(*)" in text:
                 return FakeResult(scalar_value=next(self.scalar_values))
@@ -213,13 +227,20 @@ async def test_feedback_store_full_db_paths_and_close(monkeypatch):
         async def dispose(self):
             executed.append(("dispose", "dispose", {}))
 
-    monkeypatch.setattr(al, "create_async_engine", lambda *args, **kwargs: FakeEngine(), raising=False)
+    monkeypatch.setattr(
+        al, "create_async_engine", lambda *args, **kwargs: FakeEngine(), raising=False
+    )
 
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     await store.initialize()
     assert store._engine is not None
 
-    assert await store.record(prompt="p", response="r", rating=2, correction="c", user_id="u", tags=["t"]) is True
+    assert (
+        await store.record(
+            prompt="p", response="r", rating=2, correction="c", user_id="u", tags=["t"]
+        )
+        is True
+    )
     pending = await store.get_pending_export()
     assert pending[0]["id"] == 11
 
@@ -298,7 +319,9 @@ async def test_dataset_exporter_rejects_unknown_format(tmp_path):
 
 @pytest.mark.asyncio
 async def test_export_file_error(monkeypatch):
-    store = InMemoryStore([{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}])
+    store = InMemoryStore(
+        [{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}]
+    )
     exporter = al.DatasetExporter(store)
 
     # asyncio.to_thread'den doğrudan PermissionError fırlatarak test et.
@@ -328,7 +351,14 @@ def test_pipeline_helpers_and_example_builders():
         {"id": 2, "prompt": " ", "response": "r", "correction": "", "rating": 1, "tags": []},
         {"id": 3, "prompt": "p", "response": "", "correction": "", "rating": 1, "tags": []},
         {"id": 4, "prompt": "p", "response": "r", "correction": "c", "rating": -1, "tags": []},
-        {"id": 5, "prompt": "p", "response": "r", "correction": "c", "rating": 1, "tags": ["judge_reasoning", "weak_response"]},
+        {
+            "id": 5,
+            "prompt": "p",
+            "response": "r",
+            "correction": "c",
+            "rating": 1,
+            "tags": ["judge_reasoning", "weak_response"],
+        },
     ]
     sft = pipe._build_sft_examples(rows)
     assert [x["feedback_id"] for x in sft] == [1]
@@ -340,7 +370,14 @@ def test_pipeline_helpers_and_example_builders():
 def test_pipeline_build_preference_examples_skips_equal_and_neutral_rows():
     pipe = al.ContinuousLearningPipeline(InMemoryStore(), config=DummyConfig())
     rows = [
-        {"id": 10, "prompt": "p", "response": "same", "correction": "same", "rating": 1, "tags": []},
+        {
+            "id": 10,
+            "prompt": "p",
+            "response": "same",
+            "correction": "same",
+            "rating": 1,
+            "tags": [],
+        },
         {"id": 11, "prompt": "p", "response": "r", "correction": "c", "rating": 0, "tags": []},
     ]
     assert pipe._build_preference_examples(rows) == []
@@ -371,7 +408,14 @@ async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1, "tags": []},
         {"id": 2, "prompt": "p2", "response": "r2", "correction": "c2", "rating": -1, "tags": []},
-        {"id": 3, "prompt": "p3", "response": "r3", "correction": "c3", "rating": 1, "tags": ["judge_reasoning", "weak_response"]},
+        {
+            "id": 3,
+            "prompt": "p3",
+            "response": "r3",
+            "correction": "c3",
+            "rating": 1,
+            "tags": ["judge_reasoning", "weak_response"],
+        },
     ]
     store = InMemoryStore(rows)
     cfg = DummyConfig()
@@ -382,7 +426,9 @@ async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     assert manifest["counts"]["signals"] == 3
     assert manifest["counts"]["sft_examples"] == 1
     assert manifest["counts"]["preference_examples"] == 1
-    assert Path(manifest["manifest_path"] if "manifest_path" in manifest else manifest["bundle_dir"]).exists()
+    assert Path(
+        manifest["manifest_path"] if "manifest_path" in manifest else manifest["bundle_dir"]
+    ).exists()
     assert Path(manifest["sft_path"]).exists()
     assert Path(manifest["preference_path"]).exists()
 
@@ -410,25 +456,35 @@ async def test_pipeline_run_cycle_paths(monkeypatch):
     pipe.cooldown_seconds = 0
 
     async def manifest_ready():
-        return {"counts": {"sft_examples": 2, "preference_examples": 0}, "sft_path": "dataset.jsonl"}
+        return {
+            "counts": {"sft_examples": 2, "preference_examples": 0},
+            "sft_path": "dataset.jsonl",
+        }
 
     monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_ready)
     out3 = await pipe.run_cycle(reason="cron")
     assert out3["success"] is True
     assert out3["training_result"]["success"] is True
 
-    pipe_disabled = al.ContinuousLearningPipeline(store, trainer=trainer, config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False))
+    pipe_disabled = al.ContinuousLearningPipeline(
+        store, trainer=trainer, config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False)
+    )
     assert (await pipe_disabled.run_cycle())["reason"] == "continuous_learning_disabled"
 
 
 @pytest.mark.asyncio
-async def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(monkeypatch):
+async def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(
+    monkeypatch,
+):
     cfg = DummyConfig()
     trainer = types.SimpleNamespace(enabled=False, train=lambda p: {"success": True, "path": p})
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), trainer=trainer, config=cfg)
 
     async def manifest_ready():
-        return {"counts": {"sft_examples": 3, "preference_examples": 0}, "sft_path": "dataset.jsonl"}
+        return {
+            "counts": {"sft_examples": 3, "preference_examples": 0},
+            "sft_path": "dataset.jsonl",
+        }
 
     monkeypatch.setattr(pipe, "build_dataset_bundle", manifest_ready)
     out = await pipe.run_cycle(reason="manual")
@@ -460,7 +516,9 @@ async def test_pipeline_schedule_cycle(monkeypatch):
     await asyncio.sleep(0)
     assert loop.created and loop.created[0][1] == "sidar_continuous_learning"
 
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop"))
+    )
     assert pipe.schedule_cycle() is False
 
 
@@ -673,7 +731,9 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
     fake_transformers.AutoModelForCausalLM = FakeModel
     fake_transformers.AutoTokenizer = FakeTokenizer
     fake_transformers.TrainingArguments = lambda **kwargs: kwargs
-    fake_transformers.Trainer = lambda **kwargs: types.SimpleNamespace(train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1))
+    fake_transformers.Trainer = lambda **kwargs: types.SimpleNamespace(
+        train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1)
+    )
     fake_transformers.DataCollatorForSeq2Seq = lambda *args, **kwargs: None
 
     fake_peft = types.ModuleType("peft")
@@ -739,7 +799,9 @@ def test_lora_run_training_4bit_quant_and_conversation_branches(monkeypatch, tmp
     fake_transformers.AutoModelForCausalLM = FakeModel
     fake_transformers.AutoTokenizer = FakeTokenizer
     fake_transformers.TrainingArguments = lambda **kwargs: kwargs
-    fake_transformers.Trainer = lambda **kwargs: types.SimpleNamespace(train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1))
+    fake_transformers.Trainer = lambda **kwargs: types.SimpleNamespace(
+        train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1)
+    )
     fake_transformers.DataCollatorForSeq2Seq = lambda *args, **kwargs: None
     fake_transformers.BitsAndBytesConfig = lambda **kwargs: kwargs
 

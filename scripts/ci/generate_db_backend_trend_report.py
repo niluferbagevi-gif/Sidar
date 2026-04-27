@@ -44,7 +44,9 @@ def _detect_backend(item: dict[str, Any]) -> str | None:
 
 def main() -> int:
     if len(sys.argv) != 3:
-        print("Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> <out_dir>")
+        print(
+            "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> <out_dir>"
+        )
         return 2
 
     bench_path = Path(sys.argv[1])
@@ -77,8 +79,13 @@ def main() -> int:
         print("SQLite/PostgreSQL benchmark satırı bulunamadı.")
         return 1
 
-    summary = {row.backend: {"mean_ms": row.mean_ms, "stddev_ms": row.stddev_ms, "max_ms": row.max_ms} for row in rows}
-    (out_dir / "db_backend_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    summary = {
+        row.backend: {"mean_ms": row.mean_ms, "stddev_ms": row.stddev_ms, "max_ms": row.max_ms}
+        for row in rows
+    }
+    (out_dir / "db_backend_summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     def _bar(value: float, scale: float = 10.0) -> str:
         size = max(1, int(round(value / scale)))
@@ -94,15 +101,21 @@ def main() -> int:
         "|---|---:|---:|---:|",
     ]
     for row in sorted(rows, key=lambda x: x.backend):
-        lines.append(f"| {row.backend} | {row.mean_ms:.3f} | {row.stddev_ms:.3f} | {row.max_ms:.3f} |")
+        lines.append(
+            f"| {row.backend} | {row.mean_ms:.3f} | {row.stddev_ms:.3f} | {row.max_ms:.3f} |"
+        )
 
     lines.extend(
         [
             "",
             "## Visual trend (bar, mean latency)",
             "",
-            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} ({sqlite['mean_ms']:.3f} ms)" if sqlite else "- sqlite: n/a",
-            f"- postgresql:  {_bar(pg['mean_ms']) if pg else 'n/a'} ({pg['mean_ms']:.3f} ms)" if pg else "- postgresql: n/a",
+            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} ({sqlite['mean_ms']:.3f} ms)"
+            if sqlite
+            else "- sqlite: n/a",
+            f"- postgresql:  {_bar(pg['mean_ms']) if pg else 'n/a'} ({pg['mean_ms']:.3f} ms)"
+            if pg
+            else "- postgresql: n/a",
             "",
             "> Not: Bu rapor release artifact olarak saklanır ve release'ler arası trend karşılaştırması için kullanılır.",
         ]

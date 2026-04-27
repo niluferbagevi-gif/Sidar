@@ -3,11 +3,11 @@
 Bu modül kasıtlı olarak hafif tutulmuştur; llm_client'dan bağımsız
 import edilebilir ve test edilebilir.
 """
+
 from __future__ import annotations
 
 import importlib
 import threading
-from typing import Dict
 
 
 class _CacheMetrics:
@@ -56,7 +56,7 @@ class _CacheMetrics:
         with self._lock:
             self.redis_latency_ms = max(0.0, round(float(latency_ms or 0.0), 4))
 
-    def snapshot(self) -> Dict[str, object]:
+    def snapshot(self) -> dict[str, object]:
         with self._lock:
             total = self.hits + self.misses
             return {
@@ -75,7 +75,7 @@ class _CacheMetrics:
 
 _cache_metrics = _CacheMetrics()
 _prometheus_metric_lock = threading.Lock()
-_prometheus_metric_cache: Dict[str, object] = {}
+_prometheus_metric_cache: dict[str, object] = {}
 
 
 def _get_prometheus_metric(metric_name: str, description: str, metric_type: str) -> object | None:
@@ -94,7 +94,9 @@ def _get_prometheus_metric(metric_name: str, description: str, metric_type: str)
             return None
 
         registry = getattr(prometheus_client, "REGISTRY", None)
-        existing = getattr(registry, "_names_to_collectors", {}).get(metric_name) if registry else None
+        existing = (
+            getattr(registry, "_names_to_collectors", {}).get(metric_name) if registry else None
+        )
         if existing is not None:
             _prometheus_metric_cache[metric_name] = existing
             return existing
@@ -169,6 +171,7 @@ def record_cache_redis_error(count: int = 1) -> None:
         count=count,
     )
 
+
 def record_cache_circuit_open_bypass(count: int = 1) -> None:
     """Semantic cache circuit-open bypass sayacını artırır."""
     _cache_metrics.record_circuit_open_bypass(count=count)
@@ -199,6 +202,6 @@ def observe_cache_redis_latency(latency_ms: float) -> None:
     )
 
 
-def get_cache_metrics() -> Dict[str, object]:
+def get_cache_metrics() -> dict[str, object]:
     """Semantic cache hit/miss istatistiklerini döner."""
     return _cache_metrics.snapshot()

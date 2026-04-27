@@ -29,7 +29,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol
+from typing import Protocol
 
 from agent.registry import AgentCatalog, AgentSpec
 
@@ -88,7 +88,13 @@ logger = logging.getLogger(__name__)
 
 def _ensure_contract_aliases() -> None:
     """Global kontrat aliaslarını sağlıklı modüle yeniden bağlar."""
-    global BrokerTaskEnvelope, BrokerTaskResult, DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
+    global \
+        BrokerTaskEnvelope, \
+        BrokerTaskResult, \
+        DelegationRequest, \
+        TaskEnvelope, \
+        TaskResult, \
+        is_delegation_request
     module = _contracts_module()
     BrokerTaskEnvelope = module.BrokerTaskEnvelope
     BrokerTaskResult = module.BrokerTaskResult
@@ -100,39 +106,39 @@ def _ensure_contract_aliases() -> None:
 
 # ── Görev intent → yetenek eşlemesi ──────────────────────────────────────
 
-_INTENT_CAPABILITY_MAP: Dict[str, str] = {
-    "code_generation":  "code_generation",
-    "code_review":      "code_review",
-    "file_io":          "file_io",
-    "shell_execution":  "shell_execution",
-    "web_search":       "web_search",
-    "rag_search":       "rag_search",
-    "summarization":    "summarization",
-    "security_audit":   "security_audit",
-    "quality_check":    "quality_check",
-    "aws_management":   "aws_management",
-    "cloud_ops":        "aws_management",
+_INTENT_CAPABILITY_MAP: dict[str, str] = {
+    "code_generation": "code_generation",
+    "code_review": "code_review",
+    "file_io": "file_io",
+    "shell_execution": "shell_execution",
+    "web_search": "web_search",
+    "rag_search": "rag_search",
+    "summarization": "summarization",
+    "security_audit": "security_audit",
+    "quality_check": "quality_check",
+    "aws_management": "aws_management",
+    "cloud_ops": "aws_management",
     "slack_notification": "slack_notification",
-    "notifications":    "slack_notification",
+    "notifications": "slack_notification",
     "marketing_strategy": "marketing_strategy",
-    "seo_analysis":    "seo_analysis",
-    "campaign_copy":   "campaign_copy",
-    "audience_ops":    "audience_ops",
+    "seo_analysis": "seo_analysis",
+    "campaign_copy": "campaign_copy",
+    "audience_ops": "audience_ops",
     "coverage_analysis": "coverage_analysis",
-    "test_generation":  "test_generation",
-    "ci_remediation":   "ci_remediation",
+    "test_generation": "test_generation",
+    "ci_remediation": "ci_remediation",
     # Üst düzey intent'ler → spesifik yetenek
-    "code":             "code_generation",
-    "research":         "web_search",
-    "review":           "code_review",
-    "security":         "security_audit",
-    "marketing":        "marketing_strategy",
-    "seo":              "seo_analysis",
-    "campaign":         "campaign_copy",
-    "coverage":         "coverage_analysis",
-    "qa":               "coverage_analysis",
-    "tests":            "test_generation",
-    "mixed":            "code_generation",  # varsayılan
+    "code": "code_generation",
+    "research": "web_search",
+    "review": "code_review",
+    "security": "security_audit",
+    "marketing": "marketing_strategy",
+    "seo": "seo_analysis",
+    "campaign": "campaign_copy",
+    "coverage": "coverage_analysis",
+    "qa": "coverage_analysis",
+    "tests": "test_generation",
+    "mixed": "code_generation",  # varsayılan
 }
 
 
@@ -142,9 +148,9 @@ class SwarmTask:
 
     goal: str
     intent: str = "mixed"
-    context: Dict[str, str] = field(default_factory=dict)
+    context: dict[str, str] = field(default_factory=dict)
     task_id: str = field(default_factory=lambda: f"swarm-{uuid.uuid4().hex[:8]}")
-    preferred_agent: Optional[str] = None  # None → otomatik seçim
+    preferred_agent: str | None = None  # None → otomatik seçim
 
 
 @dataclass
@@ -153,12 +159,12 @@ class SwarmResult:
 
     task_id: str
     agent_role: str
-    status: str          # "success" | "failed" | "skipped"
+    status: str  # "success" | "failed" | "skipped"
     summary: str
     elapsed_ms: int
-    evidence: List[str] = field(default_factory=list)
-    handoffs: List[Dict[str, str]] = field(default_factory=list)
-    graph: Dict[str, str] = field(default_factory=dict)
+    evidence: list[str] = field(default_factory=list)
+    handoffs: list[dict[str, str]] = field(default_factory=list)
+    graph: dict[str, str] = field(default_factory=dict)
 
 
 class AsyncDelegationBackend(Protocol):
@@ -204,14 +210,18 @@ class TaskRouter:
         """
         registry_mod = importlib.import_module("agent.registry")
         live_catalog = getattr(registry_mod, "AgentCatalog", None)
-        if live_catalog is not None and hasattr(live_catalog, "find_by_capability") and hasattr(live_catalog, "list_all"):
+        if (
+            live_catalog is not None
+            and hasattr(live_catalog, "find_by_capability")
+            and hasattr(live_catalog, "list_all")
+        ):
             return live_catalog
         local_catalog = AgentCatalog
         if hasattr(local_catalog, "find_by_capability") and hasattr(local_catalog, "list_all"):
             return local_catalog
         return live_catalog
 
-    def route(self, intent: str) -> Optional[AgentSpec]:
+    def route(self, intent: str) -> AgentSpec | None:
         """
         Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
@@ -225,7 +235,7 @@ class TaskRouter:
             return all_agents[0] if all_agents else None
         return candidates[0]
 
-    def route_by_role(self, role_name: str) -> Optional[AgentSpec]:
+    def route_by_role(self, role_name: str) -> AgentSpec | None:
         """Doğrudan rol adıyla ajan seç."""
         catalog = self._catalog()
         getter = getattr(catalog, "get", None)
@@ -262,7 +272,7 @@ class SwarmOrchestrator:
     def __init__(self, cfg=None) -> None:
         self.cfg = cfg
         self.router = TaskRouter()
-        self._active_agents: Dict[str, object] = {}  # task_id → agent instance
+        self._active_agents: dict[str, object] = {}  # task_id → agent instance
         self.delegation_backend: AsyncDelegationBackend | None = None
 
     def configure_delegation_backend(self, backend: AsyncDelegationBackend | None) -> None:
@@ -285,8 +295,14 @@ class SwarmOrchestrator:
         if self.delegation_backend is None:
             raise RuntimeError("Dağıtık delegasyon backend'i yapılandırılmadı.")
 
-        spec = self.router.route_by_role(receiver) if receiver else (
-            self.router.route_by_role(task.preferred_agent) if task.preferred_agent else self.router.route(task.intent)
+        spec = (
+            self.router.route_by_role(receiver)
+            if receiver
+            else (
+                self.router.route_by_role(task.preferred_agent)
+                if task.preferred_agent
+                else self.router.route(task.intent)
+            )
         )
         if spec is None:
             raise RuntimeError("Dağıtık delegasyon için uygun ajan bulunamadı.")
@@ -317,10 +333,12 @@ class SwarmOrchestrator:
         """Yerel modellerde daha sıkı, uzak modellerde daha esnek tekrar limiti."""
         provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower()
         default_limit = 2 if provider == "ollama" else 3
-        return max(1, int(getattr(self.cfg, "SWARM_LOOP_GUARD_MAX_REPEAT", default_limit) or default_limit))
+        return max(
+            1, int(getattr(self.cfg, "SWARM_LOOP_GUARD_MAX_REPEAT", default_limit) or default_limit)
+        )
 
     @staticmethod
-    def _browser_context_snapshot(context: Dict[str, str]) -> Dict[str, str]:
+    def _browser_context_snapshot(context: dict[str, str]) -> dict[str, str]:
         session_id = str(context.get("browser_session_id", "") or "").strip()
         summary = str(context.get("browser_signal_summary", "") or "").strip()
         status = str(context.get("browser_signal_status", "") or "").strip()
@@ -333,7 +351,7 @@ class SwarmOrchestrator:
         }
 
     @classmethod
-    def _compose_goal_with_context(cls, goal: str, context: Dict[str, str]) -> str:
+    def _compose_goal_with_context(cls, goal: str, context: dict[str, str]) -> str:
         text = (goal or "").strip()
         browser_context = cls._browser_context_snapshot(context)
         if browser_context["browser_signal_summary"]:
@@ -376,8 +394,8 @@ class SwarmOrchestrator:
         *,
         session_id: str,
         started_at: float,
-        route_trace: List[str],
-        handoff_chain: List[Dict[str, str]],
+        route_trace: list[str],
+        handoff_chain: list[dict[str, str]],
         failed_role: str,
         reason: str,
     ) -> SwarmResult:
@@ -424,7 +442,7 @@ class SwarmOrchestrator:
         *,
         prompt: str,
         response: str,
-        context: Dict[str, str],
+        context: dict[str, str],
         session_id: str,
         agent_role: str,
         task_id: str,
@@ -432,14 +450,16 @@ class SwarmOrchestrator:
         if not prompt or not response:
             return
         try:
-            from core.judge import get_llm_judge
             from core.active_learning import flag_weak_response
+            from core.judge import get_llm_judge
 
             judge = get_llm_judge()
             if not judge.enabled:
                 return
 
-            evaluation = await judge.evaluate_response(prompt=prompt, response=response, context=context)
+            evaluation = await judge.evaluate_response(
+                prompt=prompt, response=response, context=context
+            )
             if evaluation is None or evaluation.score >= 8:
                 return
 
@@ -466,7 +486,7 @@ class SwarmOrchestrator:
         *,
         prompt: str,
         response: str,
-        context: Dict[str, str],
+        context: dict[str, str],
         session_id: str,
         agent_role: str,
         task_id: str,
@@ -496,13 +516,13 @@ class SwarmOrchestrator:
 
     @staticmethod
     def _p2p_context(
-        base_context: Dict[str, str],
+        base_context: dict[str, str],
         message: DelegationRequest,
         *,
         session_id: str,
         hop: int,
-        route_trace: List[str],
-    ) -> Dict[str, str]:
+        route_trace: list[str],
+    ) -> dict[str, str]:
         return {
             **base_context,
             "session_id": session_id,
@@ -523,8 +543,8 @@ class SwarmOrchestrator:
         *,
         session_id: str,
         hop: int,
-        route_trace: List[str],
-        handoff_chain: List[Dict[str, str]],
+        route_trace: list[str],
+        handoff_chain: list[dict[str, str]],
     ) -> SwarmResult:
         _ensure_contract_aliases()
         target_role = (delegation.target_agent or "").strip()
@@ -584,11 +604,11 @@ class SwarmOrchestrator:
 
     async def run_parallel(
         self,
-        tasks: List[SwarmTask],
+        tasks: list[SwarmTask],
         *,
         session_id: str = "",
         max_concurrency: int = 4,
-    ) -> List[SwarmResult]:
+    ) -> list[SwarmResult]:
         """
         Görev listesini eş zamanlı olarak çalıştır.
         max_concurrency limiti aşıldığında semafore ile kısıtlanır.
@@ -605,16 +625,16 @@ class SwarmOrchestrator:
 
     async def run_pipeline(
         self,
-        tasks: List[SwarmTask],
+        tasks: list[SwarmTask],
         *,
         session_id: str = "",
-    ) -> List[SwarmResult]:
+    ) -> list[SwarmResult]:
         """
         Görevleri sırayla yürüt; her görevin özeti bir sonrakinin context'ine eklenir.
         Kod üretimi → inceleme → güvenlik denetimi gibi akışlar için kullanışlıdır.
         """
-        results: List[SwarmResult] = []
-        accumulated_context: Dict[str, str] = {}
+        results: list[SwarmResult] = []
+        accumulated_context: dict[str, str] = {}
 
         for task in tasks:
             task.context.update(accumulated_context)
@@ -634,10 +654,10 @@ class SwarmOrchestrator:
         *,
         session_id: str = "",
         _hop: int = 0,
-        _route_trace: Optional[List[str]] = None,
+        _route_trace: list[str] | None = None,
         _sender: str = "swarm_orchestrator",
-        _parent_task_id: Optional[str] = None,
-        _handoff_chain: Optional[List[Dict[str, str]]] = None,
+        _parent_task_id: str | None = None,
+        _handoff_chain: list[dict[str, str]] | None = None,
     ) -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
         _ensure_contract_aliases()
@@ -736,8 +756,8 @@ class SwarmOrchestrator:
         # Görevi çalıştır
         self._active_agents[task.task_id] = agent
         try:
-            result: Optional[TaskResult] = None
-            last_exc: Optional[Exception] = None
+            result: TaskResult | None = None
+            last_exc: Exception | None = None
 
             for attempt in range(max_retries + 1):
                 try:
@@ -793,7 +813,10 @@ class SwarmOrchestrator:
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.info(
                 "SwarmOrchestrator: [%s] → %s tamamlandı (%dms, status=%s)",
-                task.task_id, spec.role_name, elapsed, result.status,
+                task.task_id,
+                spec.role_name,
+                elapsed,
+                result.status,
             )
             if result.status == "success":
                 feedback_job = self._schedule_autonomous_feedback(
@@ -832,9 +855,13 @@ class SwarmOrchestrator:
                     "p2p_reason": str(task.context.get("p2p_reason", "") or ""),
                     "p2p_handoff_depth": str(task.context.get("p2p_handoff_depth", "") or ""),
                     "browser_session_id": str(task.context.get("browser_session_id", "") or ""),
-                    "browser_signal_status": str(task.context.get("browser_signal_status", "") or ""),
+                    "browser_signal_status": str(
+                        task.context.get("browser_signal_status", "") or ""
+                    ),
                     "browser_signal_risk": str(task.context.get("browser_signal_risk", "") or ""),
-                    "browser_signal_summary": str(task.context.get("browser_signal_summary", "") or "")[:300],
+                    "browser_signal_summary": str(
+                        task.context.get("browser_signal_summary", "") or ""
+                    )[:300],
                 },
             )
         except Exception as exc:
@@ -894,6 +921,6 @@ class SwarmOrchestrator:
         """Şu an çalışan görev sayısı."""
         return len(self._active_agents)
 
-    def available_agents(self) -> List[str]:
+    def available_agents(self) -> list[str]:
         """Kayıtlı tüm ajan rollerini listeler."""
         return [spec.role_name for spec in AgentCatalog.list_all()]

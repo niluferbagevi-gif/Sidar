@@ -8,7 +8,6 @@ Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -35,11 +34,13 @@ class PackageInfoManager:
 
         if config is not None:
             self.TIMEOUT = getattr(config, "PACKAGE_INFO_TIMEOUT", self.TIMEOUT)
-            self.CACHE_TTL_SECONDS = getattr(config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS)
+            self.CACHE_TTL_SECONDS = getattr(
+                config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS
+            )
 
         cache_ttl_seconds = self.CACHE_TTL_SECONDS
         self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))
-        self._cache: Dict[str, Tuple[Dict, datetime]] = {}
+        self._cache: dict[str, tuple[dict, datetime]] = {}
 
         self.TIMEOUT = float(self.TIMEOUT)
         timeout_seconds = self.TIMEOUT
@@ -63,7 +64,7 @@ class PackageInfoManager:
     #  YARDIMCILAR (CACHE + HTTP)
     # ─────────────────────────────────────────────
 
-    def _cache_get(self, key: str) -> Tuple[bool, Dict]:
+    def _cache_get(self, key: str) -> tuple[bool, dict]:
         cached = self._cache.get(key)
         if not cached:
             return False, {}
@@ -73,10 +74,10 @@ class PackageInfoManager:
         self._cache.pop(key, None)
         return False, {}
 
-    def _cache_set(self, key: str, value: Dict) -> None:
+    def _cache_set(self, key: str, value: dict) -> None:
         self._cache[key] = (value, datetime.now())
 
-    async def _get_json(self, url: str, cache_key: str = "") -> Tuple[bool, Dict, str]:
+    async def _get_json(self, url: str, cache_key: str = "") -> tuple[bool, dict, str]:
         if cache_key:
             hit, data = self._cache_get(cache_key)
             if hit:
@@ -108,7 +109,7 @@ class PackageInfoManager:
     #  PyPI (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def _fetch_pypi_json(self, package: str) -> Tuple[bool, Dict, str]:
+    async def _fetch_pypi_json(self, package: str) -> tuple[bool, dict, str]:
         """PyPI JSON verisini ham olarak döndürür."""
         url = f"https://pypi.org/pypi/{package}/json"
         ok, data, err = await self._get_json(url, cache_key=f"pypi:{package.lower()}")
@@ -122,7 +123,7 @@ class PackageInfoManager:
             return False, {}, f"[HATA] PyPI bağlantı hatası: {err.split(':', 1)[1]}"
         return False, {}, f"[HATA] PyPI: {err}"
 
-    async def pypi_info(self, package: str) -> Tuple[bool, str]:
+    async def pypi_info(self, package: str) -> tuple[bool, str]:
         """
         PyPI JSON API'den paket bilgisi çek (Asenkron).
 
@@ -173,7 +174,7 @@ class PackageInfoManager:
 
         return True, "\n".join(lines)
 
-    async def pypi_latest_version(self, package: str) -> Tuple[bool, str]:
+    async def pypi_latest_version(self, package: str) -> tuple[bool, str]:
         """Sadece güncel sürüm numarasını döndür (Asenkron)."""
         ok, data, err = await self._fetch_pypi_json(package)
         if not ok:
@@ -182,7 +183,7 @@ class PackageInfoManager:
         version = version or "?"
         return True, f"{package}=={version}"
 
-    async def pypi_compare(self, package: str, current_version: str) -> Tuple[bool, str]:
+    async def pypi_compare(self, package: str, current_version: str) -> tuple[bool, str]:
         """
         Kurulu sürümü PyPI'deki güncel sürümle karşılaştır (Asenkron).
         """
@@ -212,7 +213,7 @@ class PackageInfoManager:
     #  npm (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def npm_info(self, package: str) -> Tuple[bool, str]:
+    async def npm_info(self, package: str) -> tuple[bool, str]:
         """
         npm Registry'den paket bilgisi çek (Asenkron).
         """
@@ -228,11 +229,7 @@ class PackageInfoManager:
             return False, f"[HATA] npm: {err}"
 
         author = data.get("author", {})
-        author_str = (
-            author.get("name", str(author))
-            if isinstance(author, dict)
-            else str(author)
-        )
+        author_str = author.get("name", str(author)) if isinstance(author, dict) else str(author)
 
         lines = [
             f"[npm: {package}]",
@@ -263,7 +260,7 @@ class PackageInfoManager:
     #  GITHUB RELEASES (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def github_releases(self, repo: str, limit: int = 5) -> Tuple[bool, str]:
+    async def github_releases(self, repo: str, limit: int = 5) -> tuple[bool, str]:
         """
         GitHub Releases API ile sürümleri listele (Asenkron).
         """
@@ -295,7 +292,7 @@ class PackageInfoManager:
 
         return True, "\n".join(lines)
 
-    async def github_latest_release(self, repo: str) -> Tuple[bool, str]:
+    async def github_latest_release(self, repo: str) -> tuple[bool, str]:
         """Sadece en güncel release tag'ini döndür (Asenkron)."""
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         ok, data, err = await self._get_json(url, cache_key=f"ghlatest:{repo.lower()}")

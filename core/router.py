@@ -7,19 +7,19 @@ Kullanım:
     router = CostAwareRouter(config)
     provider, model = router.select(messages, default_provider, default_model)
 """
+
 from __future__ import annotations
 
+import importlib
+import logging
+import os
 import re
 import sqlite3
 import threading
 import time
-import logging
-import os
-import importlib
-from unittest.mock import Mock
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
 
@@ -33,29 +33,70 @@ except Exception:  # pragma: no cover - opsiyonel bağımlılık
 # Karmaşıklık Analizörü
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class QueryComplexityAnalyzer:
     """LLM çağrısından önceki karmaşıklık skoru (0.0–1.0) hesaplar."""
 
     # Kod üretimi / teknik gerektiren anahtar kelimeler
-    _CODE_KEYWORDS = frozenset([
-        "def ", "class ", "import ", "async ", "await ", "lambda ",
-        "function ", "return ", "yield ", "raise ", "try:", "except ",
-        "```", "```python", "```javascript", "```typescript",
-    ])
+    _CODE_KEYWORDS = frozenset(
+        [
+            "def ",
+            "class ",
+            "import ",
+            "async ",
+            "await ",
+            "lambda ",
+            "function ",
+            "return ",
+            "yield ",
+            "raise ",
+            "try:",
+            "except ",
+            "```",
+            "```python",
+            "```javascript",
+            "```typescript",
+        ]
+    )
 
     # Derin akıl yürütme / analiz gerektiren ifadeler
-    _REASONING_KEYWORDS = frozenset([
-        "explain", "analyze", "compare", "evaluate", "describe in detail",
-        "açıkla", "karşılaştır", "analiz et", "değerlendir", "detaylı anlat",
-        "refactor", "optimize", "architect", "design pattern",
-        "algorithm", "complexity", "tradeoff", "best practice",
-    ])
+    _REASONING_KEYWORDS = frozenset(
+        [
+            "explain",
+            "analyze",
+            "compare",
+            "evaluate",
+            "describe in detail",
+            "açıkla",
+            "karşılaştır",
+            "analiz et",
+            "değerlendir",
+            "detaylı anlat",
+            "refactor",
+            "optimize",
+            "architect",
+            "design pattern",
+            "algorithm",
+            "complexity",
+            "tradeoff",
+            "best practice",
+        ]
+    )
 
     # Basit / kısa cevap gerektiren ifadeler
-    _SIMPLE_KEYWORDS = frozenset([
-        "what is", "ne demek", "kısaca", "briefly", "in one sentence",
-        "yes or no", "true or false", "define ", "tanımla",
-    ])
+    _SIMPLE_KEYWORDS = frozenset(
+        [
+            "what is",
+            "ne demek",
+            "kısaca",
+            "briefly",
+            "in one sentence",
+            "yes or no",
+            "true or false",
+            "define ",
+            "tanımla",
+        ]
+    )
 
     _MAX_SCORE = 1.0
     _DEFAULT_CHAR_BUDGET = 800
@@ -70,7 +111,7 @@ class QueryComplexityAnalyzer:
             return cls._DEFAULT_CHAR_BUDGET
         return parsed if parsed > 0 else cls._DEFAULT_CHAR_BUDGET
 
-    def score(self, messages: List[Dict[str, str]]) -> float:
+    def score(self, messages: list[dict[str, str]]) -> float:
         """0.0 (basit) → 1.0 (karmaşık) aralığında skor döner."""
         combined = " ".join(
             (m.get("content") or "") for m in messages if m.get("role") == "user"
@@ -107,6 +148,7 @@ class QueryComplexityAnalyzer:
 # ──────────────────────────────────────────────────────────────────────────────
 # Bütçe İzleyici
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class _DailyBudgetTracker:
     """Günlük bulut maliyeti takibini process-içi tutar (yeniden başlatmada sıfırlanır)."""
@@ -229,9 +271,7 @@ class _SqliteDailyBudgetTracker:
     def daily_usage(self) -> float:
         self._upsert_usage(delta=0.0)
         with self._connect() as conn:
-            row = conn.execute(
-                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"
-            ).fetchone()
+            row = conn.execute(f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1").fetchone()
             return float(row[0]) if row else 0.0
 
     def exceeded(self, limit_usd: float) -> bool:
@@ -254,9 +294,9 @@ class _RedisDailyBudgetTracker:
 
     @staticmethod
     def _day_key(now: datetime | None = None) -> tuple[str, int]:
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         day = current.strftime("%Y-%m-%d")
-        midnight = datetime(current.year, current.month, current.day, tzinfo=timezone.utc)
+        midnight = datetime(current.year, current.month, current.day, tzinfo=UTC)
         next_midnight = midnight + timedelta(days=1)
         return f"{_RedisDailyBudgetTracker._KEY_PREFIX}:{day}", int(next_midnight.timestamp())
 
@@ -301,6 +341,7 @@ def record_routing_cost(cost_usd: float) -> None:
 # Ana Router
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class CostAwareRouter:
     """
     Sorgu karmaşıklığı + günlük bütçeye göre lokal / bulut model seçer.
@@ -322,28 +363,22 @@ class CostAwareRouter:
         )
         local_provider = getattr(config, "COST_ROUTING_LOCAL_PROVIDER", "ollama")
         self.local_provider: str = str(local_provider).strip() if local_provider is not None else ""
-        self.cloud_provider: str = str(
-            getattr(config, "COST_ROUTING_CLOUD_PROVIDER", "") or ""
-        )
+        self.cloud_provider: str = str(getattr(config, "COST_ROUTING_CLOUD_PROVIDER", "") or "")
         self.daily_budget_usd: float = float(
             getattr(config, "COST_ROUTING_DAILY_BUDGET_USD", 1.0) or 1.0
         )
-        self.local_model: str = str(
-            getattr(config, "COST_ROUTING_LOCAL_MODEL", "") or ""
-        )
-        self.cloud_model: str = str(
-            getattr(config, "COST_ROUTING_CLOUD_MODEL", "") or ""
-        )
+        self.local_model: str = str(getattr(config, "COST_ROUTING_LOCAL_MODEL", "") or "")
+        self.cloud_model: str = str(getattr(config, "COST_ROUTING_CLOUD_MODEL", "") or "")
         self.token_threshold: int = max(
             0, int(getattr(config, "COST_ROUTING_TOKEN_THRESHOLD", 0) or 0)
         )
 
     def select(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         default_provider: str,
-        default_model: Optional[str] = None,
-    ) -> Tuple[str, Optional[str]]:
+        default_model: str | None = None,
+    ) -> tuple[str, str | None]:
         """
         (provider, model) çifti döner.
         Router devre dışıysa veya karar verilemiyorsa (default_provider, default_model) döner.
@@ -370,7 +405,9 @@ class CostAwareRouter:
 
         # Karmaşıklık skoru hesapla
         score = self._analyzer.score(messages)
-        logger.debug("CostRouter: karmaşıklık skoru=%.4f eşik=%.4f", score, self.complexity_threshold)
+        logger.debug(
+            "CostRouter: karmaşıklık skoru=%.4f eşik=%.4f", score, self.complexity_threshold
+        )
 
         if score < self.complexity_threshold:
             logger.debug("CostRouter: Basit sorgu → lokal model")
@@ -385,19 +422,19 @@ class CostAwareRouter:
         return self.cloud_provider, self.cloud_model or default_model
 
     def _local_result(
-        self, default_provider: str, default_model: Optional[str]
-    ) -> Tuple[str, Optional[str]]:
+        self, default_provider: str, default_model: str | None
+    ) -> tuple[str, str | None]:
         """Lokal provider/model çifti döner; lokal provider ayarlanmamışsa varsayılana bırakır."""
         if not self.local_provider:
             return default_provider, default_model
         return self.local_provider, self.local_model or None
 
-    def complexity_score(self, messages: List[Dict[str, str]]) -> float:
+    def complexity_score(self, messages: list[dict[str, str]]) -> float:
         """Test/debug için karmaşıklık skorunu doğrudan döner."""
         return self._analyzer.score(messages)
 
     @staticmethod
-    def _estimate_tokens(messages: List[Dict[str, str]]) -> int:
+    def _estimate_tokens(messages: list[dict[str, str]]) -> int:
         """
         Provider bağımsız yaklaşık token hesabı.
         Öncelik: tiktoken `cl100k_base` encoder.

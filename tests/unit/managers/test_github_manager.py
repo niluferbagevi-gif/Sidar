@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import sys
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -95,7 +95,9 @@ def test_list_repos_self_and_owner_and_error(manager):
     user_repo = SimpleNamespace(full_name="me/r", default_branch="dev", private=True)
     org_account = SimpleNamespace(type="Organization", get_repos=lambda type: [owner_repo])
     self_account = SimpleNamespace(get_repos=lambda visibility: [user_repo])
-    manager._gh = SimpleNamespace(get_user=lambda owner=None: org_account if owner else self_account)
+    manager._gh = SimpleNamespace(
+        get_user=lambda owner=None: org_account if owner else self_account
+    )
     ok, rows = manager.list_repos(owner="org", limit=1)
     assert ok is True and rows[0]["full_name"] == "org/r"
     ok, rows = manager.list_repos(limit=1)
@@ -115,7 +117,9 @@ def test_list_repos_limit_break_and_exception(manager):
     ok, rows = manager.list_repos(limit=0)
     assert ok is True and rows == []
 
-    manager._gh = SimpleNamespace(get_user=lambda owner=None: (_ for _ in ()).throw(RuntimeError("boom")))
+    manager._gh = SimpleNamespace(
+        get_user=lambda owner=None: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     assert manager.list_repos() == (False, [])
 
 
@@ -123,9 +127,16 @@ def test_get_repo_info_success_and_error(manager):
     manager._repo.get_issues = lambda state: SimpleNamespace(totalCount=5)
     ok, text = manager.get_repo_info()
     assert ok is True and "[Depo Bilgisi]" in text and "Açık PR" in text
-    manager._repo = SimpleNamespace(full_name="x", description=None, language=None, stargazers_count=1, forks_count=2,
-                                    get_pulls=lambda state: (_ for _ in ()).throw(RuntimeError("boom")),
-                                    get_issues=lambda state: SimpleNamespace(totalCount=0), default_branch="main")
+    manager._repo = SimpleNamespace(
+        full_name="x",
+        description=None,
+        language=None,
+        stargazers_count=1,
+        forks_count=2,
+        get_pulls=lambda state: (_ for _ in ()).throw(RuntimeError("boom")),
+        get_issues=lambda state: SimpleNamespace(totalCount=0),
+        default_branch="main",
+    )
     ok, msg = manager.get_repo_info()
     assert ok is False and "Depo bilgisi alınamadı" in msg
     manager._repo = None
@@ -138,7 +149,10 @@ def test_list_commits_and_read_remote_file(manager):
     manager._repo.get_commits = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.list_commits()[0] is False
     manager._repo = RepoMock()
-    manager._repo._contents[("dir", None)] = [SimpleNamespace(type="dir", name="src"), SimpleNamespace(type="file", name="a.py")]
+    manager._repo._contents[("dir", None)] = [
+        SimpleNamespace(type="dir", name="src"),
+        SimpleNamespace(type="file", name="a.py"),
+    ]
     ok, text = manager.read_remote_file("dir")
     assert ok is True and "📂 src" in text
     manager._repo._contents[("bad.bin", None)] = FileMock("bad.bin")
@@ -169,6 +183,7 @@ def test_list_commits_handles_large_volume(manager):
 def test_read_remote_file_decode_and_exception_paths(manager):
     class BadDecode:
         name = "ok.txt"
+
         @property
         def decoded_content(self):
             raise UnicodeDecodeError("utf-8", b"x", 0, 1, "bad")
@@ -192,7 +207,10 @@ def test_branches_and_files_listing(manager):
     manager._repo.get_branches = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
     assert manager.list_branches()[0] is False
     manager._repo = RepoMock()
-    manager._repo._contents[("", None)] = [SimpleNamespace(type="file", name="z.py"), SimpleNamespace(type="dir", name="a")]
+    manager._repo._contents[("", None)] = [
+        SimpleNamespace(type="file", name="z.py"),
+        SimpleNamespace(type="dir", name="a"),
+    ]
     ok, text = manager.list_files()
     assert ok is True and text.splitlines()[1].endswith("a")
     manager._repo.get_contents = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
@@ -381,8 +399,10 @@ def test_init_client_success_with_repo_load(monkeypatch):
     class _FakeGithub:
         def __init__(self, auth):
             self.auth = auth
+
         def get_user(self, owner=None):
             return SimpleNamespace(login="alice")
+
         def get_repo(self, name):
             return SimpleNamespace(full_name=name, default_branch="main")
 

@@ -17,14 +17,14 @@ Kullanım:
 
     safe_text = mask_pii(original_text)
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import re
 import threading
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +41,13 @@ _RE_BEARER = re.compile(
 )
 
 # sk- / sk_live- / sk_test- (OpenAI, Stripe vb.)
-_RE_SK_KEY = re.compile(
-    r"\b(sk[-_](?:ant[-_]|proj[-_]|live[-_]|test[-_])?[A-Za-z0-9]{20,})\b"
-)
+_RE_SK_KEY = re.compile(r"\b(sk[-_](?:ant[-_]|proj[-_]|live[-_]|test[-_])?[A-Za-z0-9]{20,})\b")
 
 # GitHub Personal Access Token  (ghp_ / github_pat_)
-_RE_GITHUB_TOKEN = re.compile(
-    r"\b(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82})\b"
-)
+_RE_GITHUB_TOKEN = re.compile(r"\b(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82})\b")
 
 # AWS Access Key ID
-_RE_AWS_KEY = re.compile(
-    r"\b(AKIA[0-9A-Z]{16})\b"
-)
+_RE_AWS_KEY = re.compile(r"\b(AKIA[0-9A-Z]{16})\b")
 
 # Generic API Key/Token kv çiftleri  (api_key=... , token=... vb.)
 _RE_KV_SECRET = re.compile(
@@ -65,8 +59,7 @@ _RE_KV_SECRET = re.compile(
 
 # Parola kv çiftleri  (password=... , parola=... vb.)
 _RE_PASSWORD = re.compile(
-    r"(?i)(?:password|parola|passwd|pwd|şifre)\s*[:=]\s*"
-    r"(['\"]?)([^\s,;'\"]{6,})(['\"]?)",
+    r"(?i)(?:password|parola|passwd|pwd|şifre)\s*[:=]\s*" r"(['\"]?)([^\s,;'\"]{6,})(['\"]?)",
     re.MULTILINE,
 )
 
@@ -76,9 +69,7 @@ _RE_PASSWORD = re.compile(
 _RE_TCKN = re.compile(r"(?<!\d)(?<!\.)([1-9][0-9]{10})(?!\d)(?![\.,₺$])")
 
 # E-posta
-_RE_EMAIL = re.compile(
-    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
-)
+_RE_EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 
 # Kredi kartı — 13-19 hane, gruplar arasında boşluk/tire isteğe bağlı
 _RE_CREDIT_CARD = re.compile(
@@ -88,14 +79,11 @@ _RE_CREDIT_CARD = re.compile(
 )
 
 # JWT  (3 base64url bölümü . ile ayrılmış)
-_RE_JWT = re.compile(
-    r"\b(ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b"
-)
+_RE_JWT = re.compile(r"\b(ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b")
 
 # IPv4
 _RE_IPV4 = re.compile(
-    r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
-    r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
+    r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}" r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
 )
 
 # IPv6 (sık kullanılan tam/sıkıştırılmış biçimler)
@@ -106,6 +94,7 @@ _RE_LONG_HEX = re.compile(r"\b([0-9a-fA-F]{64,})\b")
 
 
 # ─── TC Kimlik No doğrulama ────────────────────────────────────────────────────
+
 
 def _is_valid_tckn(value: str) -> bool:
     """Basit TCKN algoritması doğrulaması."""
@@ -129,9 +118,11 @@ def _is_valid_tckn(value: str) -> bool:
 
 # ─── DLPDetection dataclass ───────────────────────────────────────────────────
 
+
 @dataclass
 class DLPDetection:
     """Tespit edilen tek bir hassas veri bulgusu."""
+
     pattern_name: str
     start: int
     end: int
@@ -139,6 +130,7 @@ class DLPDetection:
 
 
 # ─── Ana maskeleme mantığı ─────────────────────────────────────────────────────
+
 
 class DLPEngine:
     """
@@ -186,37 +178,40 @@ class DLPEngine:
 
     # ── İç yardımcılar ──────────────────────────────────────────────────────
 
-    def _sub(self, pattern: re.Pattern, text: str, group_idx: int = 0,
-             name: str = "") -> Tuple[str, List[DLPDetection]]:
+    def _sub(
+        self, pattern: re.Pattern, text: str, group_idx: int = 0, name: str = ""
+    ) -> tuple[str, list[DLPDetection]]:
         """
         Örüntü eşleşmesini maskeleme değeriyle değiştirir.
         group_idx=0 → tüm eşleşme, >0 → belirtilen grup.
         """
-        detections: List[DLPDetection] = []
+        detections: list[DLPDetection] = []
 
         def _replace(m: re.Match) -> str:
             original = m.group(group_idx)
             start, end = m.span(group_idx)
-            detections.append(DLPDetection(
-                pattern_name=name,
-                start=start,
-                end=end,
-                original_value=original[:8] + "…" if len(original) > 8 else "***",
-            ))
+            detections.append(
+                DLPDetection(
+                    pattern_name=name,
+                    start=start,
+                    end=end,
+                    original_value=original[:8] + "…" if len(original) > 8 else "***",
+                )
+            )
             if group_idx == 0:
                 return self.replacement
             # Prefix/suffix korunur; sadece yakalanan grup değiştirilir
             full = m.group(0)
             gstart, gend = m.span(group_idx)
             offset = m.start()
-            return full[:gstart - offset] + self.replacement + full[gend - offset:]
+            return full[: gstart - offset] + self.replacement + full[gend - offset :]
 
         result = pattern.sub(_replace, text)
         return result, detections
 
     # ── Ana API ─────────────────────────────────────────────────────────────
 
-    def mask(self, text: str) -> Tuple[str, List[DLPDetection]]:
+    def mask(self, text: str) -> tuple[str, list[DLPDetection]]:
         """
         Metindeki tüm aktif örüntüleri maskeler.
 
@@ -226,7 +221,7 @@ class DLPEngine:
         if not text:
             return text, []
 
-        all_detections: List[DLPDetection] = []
+        all_detections: list[DLPDetection] = []
 
         def _apply(cond: bool, pattern: re.Pattern, group_idx: int, name: str) -> None:
             nonlocal text
@@ -250,12 +245,14 @@ class DLPEngine:
 
         # Kişisel veriler
         if self.mask_tckn:
+
             def _tckn_replace(m: re.Match) -> str:
                 val = m.group(1)
                 if _is_valid_tckn(val):
                     all_detections.append(DLPDetection("tckn", m.start(1), m.end(1), val[:3] + "…"))
                     return self.replacement
                 return m.group(0)
+
             text = _RE_TCKN.sub(_tckn_replace, text)
 
         _apply(self.mask_email, _RE_EMAIL, 0, "email")
@@ -274,15 +271,13 @@ class DLPEngine:
 
         return text, all_detections
 
-    def mask_messages(
-        self, messages: List[dict]
-    ) -> Tuple[List[dict], List[DLPDetection]]:
+    def mask_messages(self, messages: list[dict]) -> tuple[list[dict], list[DLPDetection]]:
         """
         LLM mesaj listesinin `content` alanlarını maskeler.
         Orijinal listede değişiklik yapmaz; yeni bir liste döndürür.
         """
         result = []
-        all_dets: List[DLPDetection] = []
+        all_dets: list[DLPDetection] = []
         for msg in messages:
             content = msg.get("content") or ""
             if isinstance(content, str) and content:
@@ -299,7 +294,7 @@ class DLPEngine:
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
-_ENGINE: Optional[DLPEngine] = None
+_ENGINE: DLPEngine | None = None
 _ENGINE_LOCK = threading.Lock()
 
 
@@ -309,11 +304,19 @@ def _build_engine_from_env() -> DLPEngine:
     if not enabled:
         # DLP devre dışıysa hiçbir şeyi maskelemeyen pasif motor
         return DLPEngine(
-            mask_bearer=False, mask_sk_keys=False, mask_github_tokens=False,
-            mask_aws_keys=False, mask_kv_secrets=False, mask_passwords=False,
-            mask_tckn=False, mask_email=False, mask_credit_cards=False,
-            mask_ipv4=False, mask_ipv6=False,
-            mask_jwt=False, mask_long_hex=False,
+            mask_bearer=False,
+            mask_sk_keys=False,
+            mask_github_tokens=False,
+            mask_aws_keys=False,
+            mask_kv_secrets=False,
+            mask_passwords=False,
+            mask_tckn=False,
+            mask_email=False,
+            mask_credit_cards=False,
+            mask_ipv4=False,
+            mask_ipv6=False,
+            mask_jwt=False,
+            mask_long_hex=False,
             log_detections=False,
         )
     return DLPEngine(log_detections=log_dets)
@@ -335,7 +338,7 @@ def mask_pii(text: str) -> str:
     return masked
 
 
-def mask_messages(messages: List[dict]) -> List[dict]:
+def mask_messages(messages: list[dict]) -> list[dict]:
     """Kolaylık fonksiyonu: LLM mesaj listesini maskeler, yeni listeyi döndürür."""
     masked, _ = get_dlp_engine().mask_messages(messages)
     return masked

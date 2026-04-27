@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import math
 import threading
-import time
-from typing import Dict, List
 
 # ---------------------------------------------------------------------------
 # Histogram bucket sınırları (saniye cinsinden)
 # ---------------------------------------------------------------------------
-_BUCKETS: List[float] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, math.inf]
+_BUCKETS: list[float] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, math.inf]
 
 
 class _DelegationHistogram:
@@ -24,7 +22,7 @@ class _DelegationHistogram:
     __slots__ = ("_counts", "_sum", "_total", "_lock")
 
     def __init__(self) -> None:
-        self._counts: List[int] = [0] * len(_BUCKETS)
+        self._counts: list[int] = [0] * len(_BUCKETS)
         self._sum: float = 0.0
         self._total: int = 0
         self._lock = threading.Lock()
@@ -37,7 +35,7 @@ class _DelegationHistogram:
                 if duration_s <= bound:
                     self._counts[i] += 1
 
-    def snapshot(self) -> Dict:
+    def snapshot(self) -> dict:
         with self._lock:
             return {
                 "counts": list(self._counts),
@@ -52,13 +50,13 @@ class AgentMetricsCollector:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # key: (receiver, intent, status) → _DelegationHistogram
-        self._histograms: Dict[tuple, _DelegationHistogram] = {}
+        self._histograms: dict[tuple, _DelegationHistogram] = {}
         # key: (receiver, intent, status) → int
-        self._counters: Dict[tuple, int] = {}
+        self._counters: dict[tuple, int] = {}
         # key: (agent, step, target, status) → _DelegationHistogram
-        self._step_histograms: Dict[tuple, _DelegationHistogram] = {}
+        self._step_histograms: dict[tuple, _DelegationHistogram] = {}
         # key: (agent, step, target, status) → int
-        self._step_counters: Dict[tuple, int] = {}
+        self._step_counters: dict[tuple, int] = {}
 
     def record(self, receiver: str, intent: str, status: str, duration_s: float) -> None:
         """Delegasyon sonucunu kaydet."""
@@ -72,7 +70,9 @@ class AgentMetricsCollector:
         # histogram kendi kilidi var
         self._histograms[key].observe(duration_s)
 
-    def record_step(self, agent: str, step: str, target: str, status: str, duration_s: float) -> None:
+    def record_step(
+        self, agent: str, step: str, target: str, status: str, duration_s: float
+    ) -> None:
         """Ajan içindeki tekil karar/tool adımını kaydet."""
         key = (agent, step, target, status)
         with self._lock:
@@ -85,10 +85,12 @@ class AgentMetricsCollector:
 
     def render_prometheus(self) -> str:
         """Prometheus metin formatında metrik çıktısı üret."""
-        lines: List[str] = []
+        lines: list[str] = []
 
         # --- sidar_agent_delegation_duration_seconds (histogram) ---
-        lines.append("# HELP sidar_agent_delegation_duration_seconds Ajan delegasyon süresi (saniye)")
+        lines.append(
+            "# HELP sidar_agent_delegation_duration_seconds Ajan delegasyon süresi (saniye)"
+        )
         lines.append("# TYPE sidar_agent_delegation_duration_seconds histogram")
         with self._lock:
             histogram_items = list(self._histograms.items())
@@ -101,8 +103,12 @@ class AgentMetricsCollector:
                 lines.append(
                     f'sidar_agent_delegation_duration_seconds_bucket{{{labels},le="{le}"}} {snap["counts"][i]}'
                 )
-            lines.append(f"sidar_agent_delegation_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}")
-            lines.append(f"sidar_agent_delegation_duration_seconds_count{{{labels}}} {snap['count']}")
+            lines.append(
+                f"sidar_agent_delegation_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}"
+            )
+            lines.append(
+                f"sidar_agent_delegation_duration_seconds_count{{{labels}}} {snap['count']}"
+            )
 
         # --- sidar_agent_delegation_total (counter) ---
         lines.append("# HELP sidar_agent_delegation_total Toplam delegasyon sayısı")
@@ -115,7 +121,9 @@ class AgentMetricsCollector:
             lines.append(f"sidar_agent_delegation_total{{{labels}}} {count}")
 
         # --- sidar_agent_step_duration_seconds (histogram) ---
-        lines.append("# HELP sidar_agent_step_duration_seconds Ajan içi karar/tool adımı süresi (saniye)")
+        lines.append(
+            "# HELP sidar_agent_step_duration_seconds Ajan içi karar/tool adımı süresi (saniye)"
+        )
         lines.append("# TYPE sidar_agent_step_duration_seconds histogram")
         with self._lock:
             step_histogram_items = list(self._step_histograms.items())

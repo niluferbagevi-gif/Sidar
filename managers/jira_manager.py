@@ -8,10 +8,11 @@ Kullanım:
     ok, issue, err = await mgr.create_issue(project="PROJ", summary="Bug: ...", issue_type="Bug")
     issues = await mgr.search_issues('project = PROJ AND status = "To Do"')
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -48,8 +49,8 @@ class JiraManager:
         self.email = (email or "").strip()
         self.default_project = (default_project or "").strip()
         self._available = False
-        self._auth: Optional[Tuple[str, str]] = None
-        self._headers: Dict[str, str] = {
+        self._auth: tuple[str, str] | None = None
+        self._headers: dict[str, str] = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -79,9 +80,7 @@ class JiraManager:
     #  YARDIMCI HTTP
     # ─────────────────────────────────────────────
 
-    async def _request(
-        self, method: str, endpoint: str, **kwargs
-    ) -> Tuple[bool, Any, str]:
+    async def _request(self, method: str, endpoint: str, **kwargs) -> tuple[bool, Any, str]:
         if not self._available:
             return False, None, "Jira bağlantısı mevcut değil"
         url = f"{self.url}/rest/api/3/{endpoint.lstrip('/')}"
@@ -120,19 +119,19 @@ class JiraManager:
     async def create_issue(
         self,
         summary: str,
-        project: Optional[str] = None,
+        project: str | None = None,
         issue_type: str = "Task",
         description: str = "",
         priority: str = "Medium",
-        labels: Optional[List[str]] = None,
-        assignee_account_id: Optional[str] = None,
-    ) -> Tuple[bool, Dict, str]:
+        labels: list[str] | None = None,
+        assignee_account_id: str | None = None,
+    ) -> tuple[bool, dict, str]:
         """Yeni Jira issue oluşturur. Döner: (success, issue_dict, error)"""
         proj = project or self.default_project
         if not proj:
             return False, {}, "Proje anahtarı belirtilmedi"
 
-        fields: Dict[str, Any] = {
+        fields: dict[str, Any] = {
             "project": {"key": proj},
             "summary": summary,
             "issuetype": {"name": issue_type},
@@ -157,7 +156,7 @@ class JiraManager:
         ok, data, err = await self._request("POST", "issue", json={"fields": fields})
         return ok, data or {}, err
 
-    async def get_issue(self, issue_key: str) -> Tuple[bool, Dict, str]:
+    async def get_issue(self, issue_key: str) -> tuple[bool, dict, str]:
         """Issue detaylarını döner."""
         ok, data, err = await self._request("GET", f"issue/{issue_key}")
         return ok, data or {}, err
@@ -165,8 +164,8 @@ class JiraManager:
     async def update_issue(
         self,
         issue_key: str,
-        fields: Dict[str, Any],
-    ) -> Tuple[bool, str]:
+        fields: dict[str, Any],
+    ) -> tuple[bool, str]:
         """Issue alanlarını günceller. Döner: (success, error)"""
         ok, _, err = await self._request("PUT", f"issue/{issue_key}", json={"fields": fields})
         return ok, err
@@ -175,15 +174,13 @@ class JiraManager:
         self,
         issue_key: str,
         transition_name: str,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Issue durumunu geçiş adıyla değiştirir (örn. 'In Progress', 'Done')."""
         ok, data, err = await self._request("GET", f"issue/{issue_key}/transitions")
         if not ok:
             return False, err
         transitions = (data or {}).get("transitions", [])
-        match = next(
-            (t for t in transitions if t["name"].lower() == transition_name.lower()), None
-        )
+        match = next((t for t in transitions if t["name"].lower() == transition_name.lower()), None)
         if not match:
             available = [t["name"] for t in transitions]
             return False, f"Geçiş bulunamadı: '{transition_name}'. Mevcut: {available}"
@@ -194,7 +191,7 @@ class JiraManager:
         )
         return ok, err
 
-    async def add_comment(self, issue_key: str, comment: str) -> Tuple[bool, Dict, str]:
+    async def add_comment(self, issue_key: str, comment: str) -> tuple[bool, dict, str]:
         """Issue'ya yorum ekler."""
         payload = {
             "body": {
@@ -214,11 +211,11 @@ class JiraManager:
     async def search_issues(
         self,
         jql: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
         max_results: int = 50,
-    ) -> Tuple[bool, List[Dict], str]:
+    ) -> tuple[bool, list[dict], str]:
         """JQL sorgusuyla issue arar."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "jql": jql,
             "maxResults": min(max_results, 100),
             "fields": fields or ["summary", "status", "assignee", "priority", "issuetype"],
@@ -232,7 +229,9 @@ class JiraManager:
                 "key": i.get("key", ""),
                 "summary": (i.get("fields") or {}).get("summary", ""),
                 "status": ((i.get("fields") or {}).get("status") or {}).get("name", ""),
-                "assignee": (((i.get("fields") or {}).get("assignee") or {}).get("displayName", "")),
+                "assignee": (
+                    ((i.get("fields") or {}).get("assignee") or {}).get("displayName", "")
+                ),
                 "priority": ((i.get("fields") or {}).get("priority") or {}).get("name", ""),
                 "type": ((i.get("fields") or {}).get("issuetype") or {}).get("name", ""),
             }
@@ -244,7 +243,7 @@ class JiraManager:
     #  PROJE BİLGİSİ
     # ─────────────────────────────────────────────
 
-    async def list_projects(self) -> Tuple[bool, List[Dict], str]:
+    async def list_projects(self) -> tuple[bool, list[dict], str]:
         """Erişilebilir projeleri listeler."""
         ok, data, err = await self._request("GET", "project")
         if not ok:
@@ -255,13 +254,13 @@ class JiraManager:
         ]
         return True, projects, ""
 
-    async def get_project_statuses(self, project_key: str) -> Tuple[bool, List[str], str]:
+    async def get_project_statuses(self, project_key: str) -> tuple[bool, list[str], str]:
         """Projedeki olası issue durumlarını döner."""
         ok, data, err = await self._request("GET", f"project/{project_key}/statuses")
         if not ok:
             return False, [], err
-        statuses: List[str] = []
-        for issue_type in (data or []):
+        statuses: list[str] = []
+        for issue_type in data or []:
             for s in issue_type.get("statuses", []):
                 name = s.get("name", "")
                 if name and name not in statuses:

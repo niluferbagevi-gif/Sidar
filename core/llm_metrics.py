@@ -9,8 +9,8 @@ import os
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, asdict
-from typing import Any, Deque, Dict, Optional
+from dataclasses import asdict, dataclass
+from typing import Any
 
 
 @dataclass
@@ -28,8 +28,8 @@ class LLMMetricEvent:
     user_id: str = ""
     error: str = ""
     # LLM-as-a-Judge alanları (opsiyonel; yalnızca judge değerlendirmesi yapılan olaylarda dolu)
-    judge_score: Optional[float] = None       # RAG alaka puanı 0.0–1.0
-    hallucination_risk: Optional[float] = None  # Halüsinasyon riski 0.0–1.0
+    judge_score: float | None = None  # RAG alaka puanı 0.0–1.0
+    hallucination_risk: float | None = None  # Halüsinasyon riski 0.0–1.0
 
 
 def _env_float(key: str, default: float) -> float:
@@ -52,7 +52,7 @@ def _env_float(key: str, default: float) -> float:
 
 # Yaklaşık maliyet tablosu (1M token başına USD)
 # Not: Bu değerler dashboard trend amaçlıdır; faturalama sisteminin tek-kaynağı değildir.
-_MODEL_PRICES_PER_1M: Dict[str, Dict[str, float]] = {
+_MODEL_PRICES_PER_1M: dict[str, dict[str, float]] = {
     "openai:gpt-4o-mini": {"prompt": 0.15, "completion": 0.60},
     "openai:gpt-4o": {"prompt": 5.00, "completion": 15.00},
     "anthropic:claude-3-5-sonnet-latest": {"prompt": 3.00, "completion": 15.00},
@@ -60,7 +60,9 @@ _MODEL_PRICES_PER_1M: Dict[str, Dict[str, float]] = {
 }
 
 
-_CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar("sidar_llm_user_id", default="")
+_CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "sidar_llm_user_id", default=""
+)
 
 
 def set_current_metrics_user_id(user_id: str):
@@ -78,14 +80,16 @@ def get_current_metrics_user_id() -> str:
 class LLMMetricsCollector:
     def __init__(self, max_events: int = 200) -> None:
         self._lock = threading.Lock()
-        self._events: Deque[LLMMetricEvent] = deque(maxlen=max_events)
+        self._events: deque[LLMMetricEvent] = deque(maxlen=max_events)
         self._usage_sink = None
 
     def set_usage_sink(self, sink) -> None:
         self._usage_sink = sink
 
     @staticmethod
-    def estimate_cost_usd(provider: str, model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    def estimate_cost_usd(
+        provider: str, model: str, prompt_tokens: int, completion_tokens: int
+    ) -> float:
         key = f"{(provider or '').lower()}:{(model or '').lower()}"
         pricing = _MODEL_PRICES_PER_1M.get(key)
         if not pricing:
@@ -102,12 +106,12 @@ class LLMMetricsCollector:
         latency_ms: float,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
-        cost_usd: Optional[float] = None,
+        cost_usd: float | None = None,
         success: bool = True,
         error: str = "",
         user_id: str = "",
-        judge_score: Optional[float] = None,
-        hallucination_risk: Optional[float] = None,
+        judge_score: float | None = None,
+        hallucination_risk: float | None = None,
     ) -> None:
         prompt_tokens = max(0, int(prompt_tokens or 0))
         completion_tokens = max(0, int(completion_tokens or 0))
@@ -132,7 +136,9 @@ class LLMMetricsCollector:
             rate_limited=rate_limited,
             error=err[:500],
             judge_score=float(judge_score) if judge_score is not None else None,
-            hallucination_risk=float(hallucination_risk) if hallucination_risk is not None else None,
+            hallucination_risk=float(hallucination_risk)
+            if hallucination_risk is not None
+            else None,
         )
         with self._lock:
             self._events.append(event)
@@ -151,12 +157,12 @@ class LLMMetricsCollector:
             except Exception:
                 pass
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         with self._lock:
             events = list(self._events)
 
-        by_provider: Dict[str, Dict[str, Any]] = {}
-        by_user: Dict[str, Dict[str, Any]] = {}
+        by_provider: dict[str, dict[str, Any]] = {}
+        by_user: dict[str, dict[str, Any]] = {}
         total_calls = len(events)
         total_failures = 0
         total_rate_limited = 0
@@ -200,7 +206,7 @@ class LLMMetricsCollector:
             total_rate_limited += 1 if e.rate_limited else 0
 
         day_ago = time.time() - 86400
-        daily_cost_by_provider: Dict[str, float] = {}
+        daily_cost_by_provider: dict[str, float] = {}
         for e in events:
             if e.timestamp >= day_ago:
                 daily_cost_by_provider[e.provider] = (
@@ -213,8 +219,12 @@ class LLMMetricsCollector:
             row["latency_ms_max"] = round(row["latency_ms_max"], 2)
             row["cost_usd"] = round(row["cost_usd"], 6)
 
-            daily_limit = _env_float(f"{provider.upper()}_BUDGET_DAILY_USD", _env_float("LLM_BUDGET_DAILY_USD", 5.0))
-            total_limit = _env_float(f"{provider.upper()}_BUDGET_TOTAL_USD", _env_float("LLM_BUDGET_TOTAL_USD", 20.0))
+            daily_limit = _env_float(
+                f"{provider.upper()}_BUDGET_DAILY_USD", _env_float("LLM_BUDGET_DAILY_USD", 5.0)
+            )
+            total_limit = _env_float(
+                f"{provider.upper()}_BUDGET_TOTAL_USD", _env_float("LLM_BUDGET_TOTAL_USD", 20.0)
+            )
             daily_usage = round(daily_cost_by_provider.get(provider, 0.0), 6)
             total_usage = row["cost_usd"]
             row["budget"] = {
@@ -235,6 +245,7 @@ class LLMMetricsCollector:
         # Semantic cache istatistikleri (modül düzeyinde sayaçtan)
         try:
             from core.cache_metrics import get_cache_metrics as _get_cache_metrics
+
             cache_stats = _get_cache_metrics()
         except Exception:
             cache_stats = {

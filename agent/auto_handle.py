@@ -6,15 +6,14 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 import asyncio
 import inspect
 import re
-from typing import Optional, Tuple
 
-from managers.code_manager import CodeManager
-from managers.system_health import SystemHealthManager
-from managers.github_manager import GitHubManager
-from managers.web_search import WebSearchManager
-from managers.package_info import PackageInfoManager
 from core.memory import ConversationMemory
 from core.rag import DocumentStore
+from managers.code_manager import CodeManager
+from managers.github_manager import GitHubManager
+from managers.package_info import PackageInfoManager
+from managers.system_health import SystemHealthManager
+from managers.web_search import WebSearchManager
 
 
 class AutoHandle:
@@ -61,7 +60,7 @@ class AutoHandle:
 
     _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu)\b", re.IGNORECASE)
 
-    async def handle(self, text: str) -> Tuple[bool, str]:
+    async def handle(self, text: str) -> tuple[bool, str]:
         """
         text: kullanıcı mesajı
 
@@ -91,80 +90,103 @@ class AutoHandle:
             return result
 
         result = await asyncio.to_thread(self._try_list_directory, t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await asyncio.to_thread(self._try_read_file, t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_audit(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_health(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_gpu_optimize(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await asyncio.to_thread(self._try_validate_file, t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_github_commits(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_github_info(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_github_list_files(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_github_read(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_github_list_prs(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_github_get_pr(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_security_status(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         # ── Web Arama araçları (ASENKRON) ─────────────────────
         result = await self._try_web_search(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_fetch_url(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_search_docs(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_search_stackoverflow(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         # ── Paket Bilgi araçları (ASENKRON) ───────────────────
         result = await self._try_pypi(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_npm(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_gh_releases(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         # ── RAG / Belge Deposu ────────────────────────────────
         result = await self._try_docs_search(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = await self._try_docs_add(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_docs_list(t, text)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         return False, ""
 
-    async def _try_dot_command(self, raw: str, t: str) -> Tuple[bool, str]:
+    async def _try_dot_command(self, raw: str, t: str) -> tuple[bool, str]:
         """CLI ile uyumlu nokta-komut kısayollarını işler."""
         m = self._DOT_CMD_RE.match(raw.strip())
         if not m:
@@ -191,7 +213,7 @@ class AutoHandle:
     #  TEMEL ARAÇ İŞLEYİCİLERİ (SENKRON)
     # ─────────────────────────────────────────────
 
-    def _try_list_directory(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_list_directory(self, t: str, raw: str) -> tuple[bool, str]:
         # "listele" tek başına çok geniş; yalnızca açıkça dizin/klasör bağlamı varsa tetikle.
         # "commit listele", "test fonksiyonlarını listele" gibi ifadeler yanlışlıkla eşleşmesin.
         if re.search(
@@ -205,7 +227,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_read_file(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_read_file(self, t: str, raw: str) -> tuple[bool, str]:
         # "göster" ve "içeriğ" çok geniş — execute_code, health, docs_add gibi komutları
         # yanlışlıkla yakalar. Yalnızca açık dosya okuma bağlamında tetikle.
         if re.search(
@@ -226,18 +248,18 @@ class AutoHandle:
             return True, f"✗ {content}"
         return False, ""
 
-    async def _try_audit(self, t: str) -> Tuple[bool, str]:
+    async def _try_audit(self, t: str) -> tuple[bool, str]:
         if re.search(r"^\.audit\b|denetle|sistemi\s+tara|audit|teknik\s+rapor|kod.*kontrol", t):
             try:
                 result = await self._run_blocking(self.code.audit_project, ".")
                 return True, result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return True, "⚠ Denetim işlemi zaman aşımına uğradı."
             except Exception as exc:
                 return True, f"⚠ Denetim sırasında hata oluştu: {exc}"
         return False, ""
 
-    async def _try_health(self, t: str) -> Tuple[bool, str]:
+    async def _try_health(self, t: str) -> tuple[bool, str]:
         # "GPU durumunu göster" ve "CPU/RAM göster" ifadelerini de yakalamak için
         # "göster" bağlamını buraya ekledik — ancak yalnızca donanım keyword'leri ile birlikte.
         if re.search(
@@ -251,26 +273,26 @@ class AutoHandle:
             try:
                 result = await self._run_blocking(self.health.full_report)
                 return True, result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return True, "⚠ Sağlık raporu zaman aşımına uğradı."
             except Exception as exc:
                 return True, f"⚠ Sağlık raporu alınamadı: {exc}"
         return False, ""
 
-    async def _try_gpu_optimize(self, t: str) -> Tuple[bool, str]:
+    async def _try_gpu_optimize(self, t: str) -> tuple[bool, str]:
         if re.search(r"^\.gpu\b|gpu.*(optimize|temizle|boşalt|clear)|vram", t):
             if not self.health:
                 return True, "⚠ Sistem sağlık monitörü başlatılamadı."
             try:
                 result = await self._run_blocking(self.health.optimize_gpu_memory)
                 return True, result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return True, "⚠ GPU optimizasyonu zaman aşımına uğradı."
             except Exception as exc:
                 return True, f"⚠ GPU optimizasyonu başarısız: {exc}"
         return False, ""
 
-    def _try_validate_file(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_validate_file(self, t: str, raw: str) -> tuple[bool, str]:
         # "kontrol et" çok geniş — "httpx sürümünü kontrol et", "GPU durumunu kontrol et" gibi
         # ifadeleri hatalıca yakalar. Yalnızca açık sözdizimi/dosya doğrulama bağlamında tetikle.
         if re.search(r"sözdizimi|syntax|python\s+doğrula|validate.*dosya|dosya.*doğrula", t):
@@ -290,7 +312,7 @@ class AutoHandle:
             return True, f"{icon} {msg}"
         return False, ""
 
-    def _try_github_commits(self, t: str) -> Tuple[bool, str]:
+    def _try_github_commits(self, t: str) -> tuple[bool, str]:
         # "son.*commit" + "listele" genel "listele" regex'inden önce çalışmalı;
         # "commit'i getir", "commit'leri göster", "commit geçmişi" gibi ifadeleri de yakala.
         if re.search(
@@ -306,7 +328,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_github_info(self, t: str) -> Tuple[bool, str]:
+    def _try_github_info(self, t: str) -> tuple[bool, str]:
         # Yanlış-pozitifleri azalt: yalnızca açık bilgi/özet niyeti varsa tetikle.
         if re.search(
             r"(?:github|repo|depo).*(?:bilgi|info|özet|durum|detay)"
@@ -319,7 +341,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_github_list_files(self, t: str) -> Tuple[bool, str]:
+    def _try_github_list_files(self, t: str) -> tuple[bool, str]:
         """Repo dosyalarını listele: 'repodaki dosyaları listele' vb."""
         if re.search(
             r"(github|repo|depo).*(dosya|içerik).*(listele|göster|getir)"
@@ -332,7 +354,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_github_read(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_github_read(self, t: str, raw: str) -> tuple[bool, str]:
         if re.search(r"github.*(oku|dosya|file)|uzak.*dosya", t):
             if not self.github.is_available():
                 return True, "⚠ GitHub token ayarlanmamış."
@@ -343,7 +365,7 @@ class AutoHandle:
             return True, content if ok else f"✗ {content}"
         return False, ""
 
-    def _try_github_list_prs(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_github_list_prs(self, t: str, raw: str) -> tuple[bool, str]:
         """PR listesi — 'PR listele', 'açık pull requestler', 'kapalı PR'lar' vb."""
         if re.search(
             r"(pr|pull.?request).*(listele|listesi|göster|getir|var\s+m[ıi])"
@@ -366,7 +388,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_github_get_pr(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_github_get_pr(self, t: str, raw: str) -> tuple[bool, str]:
         """PR detay sorgulama — 'PR #5 detayı', '#12 pull request' vb."""
         m = re.search(
             r"(?:pr|pull.?request)\s*#?(\d+)"
@@ -389,7 +411,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_security_status(self, t: str) -> Tuple[bool, str]:
+    def _try_security_status(self, t: str) -> tuple[bool, str]:
         # "güvenlik" ve "erişim" çok geniş — "güvenlik açısından incele" gibi analiz
         # isteklerini de yakalayıp security.status_report() döndürüyor.
         # Yalnızca açıkça erişim seviyesi veya OpenClaw durumu sorulduğunda tetikle.
@@ -401,7 +423,7 @@ class AutoHandle:
             return True, self.code.security.status_report()
         return False, ""
 
-    async def _try_clear_memory(self, t: str) -> Tuple[bool, str]:
+    async def _try_clear_memory(self, t: str) -> tuple[bool, str]:
         """'.clear' veya doğal dil temizleme komutlarını işler."""
         if re.search(
             r"^\.clear\b|bell[eə][ğg]i?\s+(temizle|sıfırla|sil|resetle)"
@@ -420,7 +442,7 @@ class AutoHandle:
     #  WEB ARAMA İŞLEYİCİLERİ (ASENKRON)
     # ─────────────────────────────────────────────
 
-    async def _try_web_search(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_web_search(self, t: str, raw: str) -> tuple[bool, str]:
         """Web araması — 'web'de ara', 'internette ara', 'google:' vb."""
         m = re.search(
             r"(?:web.?de\s+ara|internette\s+ara|google\s*:|search\s*:)\s*(.+)",
@@ -434,7 +456,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_fetch_url(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_fetch_url(self, t: str, raw: str) -> tuple[bool, str]:
         """URL içerik çekme — 'url oku', 'fetch url' vb."""
         if re.search(r"url.*(oku|çek|getir|fetch)|fetch.*url", t):
             url = self._extract_url(raw)
@@ -444,7 +466,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_search_docs(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_search_docs(self, t: str, raw: str) -> tuple[bool, str]:
         """Dokümantasyon araması — 'docs ara fastapi', 'dokümantasyon' vb."""
         m = re.search(
             r"(?:docs?\s+ara|dokümantasyon\s+ara|resmi\s+docs?)\s*[:\-]?\s*(.+)",
@@ -458,7 +480,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_search_stackoverflow(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_search_stackoverflow(self, t: str, raw: str) -> tuple[bool, str]:
         """Stack Overflow araması — 'stackoverflow: python async' vb."""
         m = re.search(r"(?:stackoverflow|so)\s*[:\-]\s*(.+)", t)
         if m:
@@ -471,7 +493,7 @@ class AutoHandle:
     #  PAKET BİLGİ İŞLEYİCİLERİ (ASENKRON)
     # ─────────────────────────────────────────────
 
-    async def _try_pypi(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_pypi(self, t: str, raw: str) -> tuple[bool, str]:
         """PyPI paket sorgusu — 'pypi requests', 'paket bilgisi fastapi' vb."""
         m = re.search(
             r"(?:pypi|pip\s+show|paket\s+bilgisi?|python\s+paketi?)\s*[:\-]?\s*([\w\-_.]+)",
@@ -480,9 +502,7 @@ class AutoHandle:
         if m:
             package = m.group(1).strip()
             # Sürüm karşılaştırma: "pypi requests 2.31.0"
-            ver_m = re.search(
-                r"(?:pypi|pip\s+show|paket\s+bilgisi?)\s+[\w\-_.]+\s+([\d.]+)", t
-            )
+            ver_m = re.search(r"(?:pypi|pip\s+show|paket\s+bilgisi?)\s+[\w\-_.]+\s+([\d.]+)", t)
             if ver_m:
                 _, result = await self.pkg.pypi_compare(package, ver_m.group(1))
             else:
@@ -490,7 +510,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_npm(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_npm(self, t: str, raw: str) -> tuple[bool, str]:
         """npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
         m = re.search(
             r"(?:npm|node\s+paketi?|js\s+paketi?)\s*[:\-]?\s*([@\w\-_./]+)",
@@ -502,7 +522,7 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    async def _try_gh_releases(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_gh_releases(self, t: str, raw: str) -> tuple[bool, str]:
         """GitHub releases sorgusu — 'github releases tiangolo/fastapi' vb."""
         m = re.search(
             r"(?:github\s+releases?|gh\s+releases?|sürümler)\s*[:\-]?\s*([\w\-_.]+/[\w\-_.]+)",
@@ -518,7 +538,7 @@ class AutoHandle:
     #  RAG / BELGE DEPOSU İŞLEYİCİLERİ (SENKRON)
     # ─────────────────────────────────────────────
 
-    async def _try_docs_search(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_docs_search(self, t: str, raw: str) -> tuple[bool, str]:
         """Belge deposunda arama — 'depoda ara', 'bilgi bankası', 'rag ara vektör:' vb."""
         m = re.search(
             r"(?:depoda\s+ara|bilgi\s+bankası|rag\s+ara|belgeler.*ara)\s*[:\-]?\s*(.+)",
@@ -530,7 +550,7 @@ class AutoHandle:
             mode_m = re.search(r"\bmode:(auto|vector|bm25|keyword)\b", query_raw, re.IGNORECASE)
             if mode_m:
                 mode = mode_m.group(1).lower()
-                query = query_raw[:mode_m.start()].strip() or query_raw[mode_m.end():].strip()
+                query = query_raw[: mode_m.start()].strip() or query_raw[mode_m.end() :].strip()
             else:
                 mode = "auto"
                 query = query_raw
@@ -541,13 +561,13 @@ class AutoHandle:
             return True, result
         return False, ""
 
-    def _try_docs_list(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_docs_list(self, t: str, raw: str) -> tuple[bool, str]:
         """Belge deposunu listele."""
         if re.search(r"belge.*listele|belge\s+deposu.*listele|rag.*listele|döküman.*listele", t):
             return True, self.docs.list_documents()
         return False, ""
 
-    async def _try_docs_add(self, t: str, raw: str) -> Tuple[bool, str]:
+    async def _try_docs_add(self, t: str, raw: str) -> tuple[bool, str]:
         """URL'den belge deposuna ekle — 'belge ekle/deposuna ekle https://...' vb."""
         m = re.search(
             r"(?:belge\s+ekle|belge\s+depos[ıu]na\s+ekle|dokümana?\s+ekle|rag.*ekle"
@@ -576,20 +596,20 @@ class AutoHandle:
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
 
-    def _extract_path(self, text: str) -> Optional[str]:
+    def _extract_path(self, text: str) -> str | None:
         """Metinden dosya yolu çıkar (uzantılı dosyalar için)."""
         m = re.search(r'["\']([^"\']+\.[a-zA-Z]{1,6})["\']', text)
         if m:
             return m.group(1)
         m = re.search(
-            r'\b([\w/\\.\-]+\.(?:py|json|md|txt|yaml|yml|js|ts|sh|toml|cfg|ini))\b',
+            r"\b([\w/\\.\-]+\.(?:py|json|md|txt|yaml|yml|js|ts|sh|toml|cfg|ini))\b",
             text,
         )
         if m:
             return m.group(1)
         return None
 
-    def _extract_dir_path(self, text: str) -> Optional[str]:
+    def _extract_dir_path(self, text: str) -> str | None:
         """Metinden dizin yolu çıkar (dosya adı içermeyen yollar için).
         Uzantılı dosya adlarını dizin olarak döndürmez; yalnızca açık dizin yolları alınır.
         """
@@ -598,16 +618,16 @@ class AutoHandle:
         if m and "." not in m.group(1).split("/")[-1]:
             return m.group(1)
         # Açık dizin belirteçleri: "./", "../", "/home/..."
-        m = re.search(r'(\./[\w/\\.\-]+|\.\.?/[\w/\\.\-]*|/[\w/\\.\-]{3,})', text)
+        m = re.search(r"(\./[\w/\\.\-]+|\.\.?/[\w/\\.\-]*|/[\w/\\.\-]{3,})", text)
         if m:
             candidate = m.group(1)
             # Uzantılı dosya yoluysa dizin değil, atla
-            if re.search(r'\.\w{1,6}$', candidate):
+            if re.search(r"\.\w{1,6}$", candidate):
                 return None
             return candidate
         return None
 
-    def _extract_url(self, text: str) -> Optional[str]:
+    def _extract_url(self, text: str) -> str | None:
         """Metinden URL çıkar."""
         m = re.search(r'https?://[^\s"\'<>]+', text)
-        return m.group(0) if m else None 
+        return m.group(0) if m else None

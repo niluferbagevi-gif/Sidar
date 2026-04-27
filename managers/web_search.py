@@ -9,7 +9,7 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 import asyncio
 import logging
 from html import unescape
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import httpx
 from bs4 import BeautifulSoup
@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from agent.sidar_agent import SidarAgent
+    pass
 
 
 class WebSearchManager:
@@ -70,6 +70,7 @@ class WebSearchManager:
         try:
             # v8 uyumlu import (AsyncDDGS yerine standart DDGS)
             from duckduckgo_search import DDGS  # noqa: F401
+
             return True
         except ImportError as exc:
             logger.debug("DDG Import hatası: %s", exc)
@@ -77,7 +78,9 @@ class WebSearchManager:
 
     def is_available(self) -> bool:
         """En az bir arama motoru çalışabilir durumda mı?"""
-        return self._ddg_available or bool(self.tavily_key) or bool(self.google_key and self.google_cx)
+        return (
+            self._ddg_available or bool(self.tavily_key) or bool(self.google_key and self.google_cx)
+        )
 
     def status(self) -> str:
         engines = []
@@ -97,7 +100,7 @@ class WebSearchManager:
     #  ANA ARAMA YÖNLENDİRİCİ (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def search(self, query: str, max_results: Optional[int] = None) -> Tuple[bool, str]:
+    async def search(self, query: str, max_results: int | None = None) -> tuple[bool, str]:
         """
         Belirlenen motora veya fallback (yedek) mantığına göre arama yapar.
         """
@@ -120,7 +123,9 @@ class WebSearchManager:
                 # hataya düşmeden bu sonucu kullanıcıya ilet.
                 return True, self._normalize_result_text(res)
             # Tavily çağrısı hata verdiyse auto fallback'e düş.
-            logger.info("Tavily eyleme geçirilebilir sonuç üretmedi; otomatik fallback başlatılıyor.")
+            logger.info(
+                "Tavily eyleme geçirilebilir sonuç üretmedi; otomatik fallback başlatılıyor."
+            )
         elif self.engine == "google" and self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
             return ok, self._normalize_result_text(res)
@@ -150,7 +155,7 @@ class WebSearchManager:
     #  MOTORLAR
     # ─────────────────────────────────────────────
 
-    async def _search_tavily(self, query: str, n: int) -> Tuple[bool, str]:
+    async def _search_tavily(self, query: str, n: int) -> tuple[bool, str]:
         url = "https://api.tavily.com/search"
         payload = {
             "api_key": self.tavily_key,
@@ -195,7 +200,7 @@ class WebSearchManager:
             logger.warning("Tavily API hatası: %s", exc)
             return False, f"[HATA] Tavily: {exc}"
 
-    async def _search_google(self, query: str, n: int) -> Tuple[bool, str]:
+    async def _search_google(self, query: str, n: int) -> tuple[bool, str]:
         url = "https://customsearch.googleapis.com/customsearch/v1"
         params = {
             "key": self.google_key,
@@ -228,7 +233,7 @@ class WebSearchManager:
             logger.warning("Google API hatası: %s", exc)
             return False, f"[HATA] Google Search: {exc}"
 
-    async def _search_duckduckgo(self, query: str, n: int) -> Tuple[bool, str]:
+    async def _search_duckduckgo(self, query: str, n: int) -> tuple[bool, str]:
         try:
             import duckduckgo_search
 
@@ -268,7 +273,9 @@ class WebSearchManager:
                     raise
 
             if not results:
-                return True, self._mark_no_results(f"'{query}' için DuckDuckGo'da sonuç bulunamadı.")
+                return True, self._mark_no_results(
+                    f"'{query}' için DuckDuckGo'da sonuç bulunamadı."
+                )
 
             lines = [f"[Web Arama (DuckDuckGo): {query}]", ""]
             for i, r in enumerate(results, 1):
@@ -282,7 +289,7 @@ class WebSearchManager:
 
             return True, "\n".join(lines)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("DuckDuckGo araması zaman aşımına uğradı (%s sn).", self.FETCH_TIMEOUT)
             return False, f"[HATA] DuckDuckGo: Zaman aşımı ({self.FETCH_TIMEOUT}sn)"
         except Exception as exc:
@@ -318,7 +325,7 @@ class WebSearchManager:
             logger.error("URL çekme hatası: %s", exc)
             return f"Hata: Sayfa içeriği çekilemedi - {exc}"
 
-    async def fetch_url(self, url: str) -> Tuple[bool, str]:
+    async def fetch_url(self, url: str) -> tuple[bool, str]:
         """Geriye dönük uyumluluk: fetch_url araç çağrısını yeni scrape akışına yönlendirir."""
         text = await self.scrape_url(url)
         if text.startswith("Hata: Sayfa içeriği çekilemedi"):
@@ -350,13 +357,12 @@ class WebSearchManager:
     #  DOKÜMANTASYON ARAMALARI (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def search_docs(self, library: str, topic: str = "") -> Tuple[bool, str]:
+    async def search_docs(self, library: str, topic: str = "") -> tuple[bool, str]:
         base = f"{library} {topic} documentation".strip()
         # Tavily veya Google varsa site: filtresi ekle; DDG'de OR operatörü güvenilmez
         if self.tavily_key or (self.google_key and self.google_cx):
             q = (
-                base
-                + " site:docs.python.org OR site:pypi.org"
+                base + " site:docs.python.org OR site:pypi.org"
                 " OR site:readthedocs.io OR site:github.com"
             )
         else:
@@ -364,7 +370,7 @@ class WebSearchManager:
             q = f"{library} {topic} official docs reference".strip()
         return await self.search(q, max_results=5)
 
-    async def search_stackoverflow(self, query: str) -> Tuple[bool, str]:
+    async def search_stackoverflow(self, query: str) -> tuple[bool, str]:
         # site:stackoverflow.com Tavily/Google'da çalışır; DDG'de kısmen desteklenir
         if self.tavily_key or (self.google_key and self.google_cx):
             q = f"site:stackoverflow.com {query}"
@@ -383,7 +389,7 @@ class WebSearchManager:
     @classmethod
     def _normalize_result_text(cls, result_text: str) -> str:
         if result_text.startswith(cls._NO_RESULTS_PREFIX):
-            return result_text[len(cls._NO_RESULTS_PREFIX):].strip()
+            return result_text[len(cls._NO_RESULTS_PREFIX) :].strip()
         return result_text
 
     def __repr__(self) -> str:

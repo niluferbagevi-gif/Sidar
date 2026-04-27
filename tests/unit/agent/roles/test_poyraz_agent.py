@@ -174,7 +174,9 @@ def test_stub_base_agent_tool_error_and_llm_mode_parsing_paths():
     missing_tool = asyncio.run(agent.call_tool("bilinmeyen", "arg"))
     assert missing_tool.startswith("[HATA]")
 
-    no_mode = asyncio.run(agent.call_llm([{"content": "ilk satır\nikinci satır"}], system_prompt="SYS"))
+    no_mode = asyncio.run(
+        agent.call_llm([{"content": "ilk satır\nikinci satır"}], system_prompt="SYS")
+    )
     assert no_mode == "LLM_RESPONSE::default::SYS"
 
     multi_line_mode = asyncio.run(
@@ -211,11 +213,21 @@ def poyraz_module(monkeypatch: pytest.MonkeyPatch):
     registry_mod.AgentCatalog = _StubAgentCatalog
 
     monkeypatch.setitem(sys.modules, "config", config_mod)  # WARNING: global module table mutation
-    monkeypatch.setitem(sys.modules, "core.rag", core_rag_mod)  # WARNING: global module table mutation
-    monkeypatch.setitem(sys.modules, "managers.web_search", web_search_mod)  # WARNING: global module table mutation
-    monkeypatch.setitem(sys.modules, "managers.social_media_manager", social_mod)  # WARNING: global module table mutation
-    monkeypatch.setitem(sys.modules, "agent.base_agent", base_agent_mod)  # WARNING: global module table mutation
-    monkeypatch.setitem(sys.modules, "agent.registry", registry_mod)  # WARNING: global module table mutation
+    monkeypatch.setitem(
+        sys.modules, "core.rag", core_rag_mod
+    )  # WARNING: global module table mutation
+    monkeypatch.setitem(
+        sys.modules, "managers.web_search", web_search_mod
+    )  # WARNING: global module table mutation
+    monkeypatch.setitem(
+        sys.modules, "managers.social_media_manager", social_mod
+    )  # WARNING: global module table mutation
+    monkeypatch.setitem(
+        sys.modules, "agent.base_agent", base_agent_mod
+    )  # WARNING: global module table mutation
+    monkeypatch.setitem(
+        sys.modules, "agent.registry", registry_mod
+    )  # WARNING: global module table mutation
 
     file_path = Path(__file__).resolve().parents[4] / "agent" / "roles" / "poyraz_agent.py"
     spec = importlib.util.spec_from_file_location("poyraz_under_test", file_path)
@@ -261,7 +273,22 @@ def _agent(poyraz_module, fake_cfg, docstore=SyncDocStore):
 def test_init_registers_tools(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
     assert agent.role_name == "poyraz"
-    assert {"web_search", "fetch_url", "search_docs", "publish_social", "publish_instagram_post", "publish_facebook_post", "send_whatsapp_message", "build_landing_page", "generate_campaign_copy", "ingest_video_insights", "create_marketing_campaign", "store_content_asset", "create_operation_checklist", "plan_service_operations"} == set(agent.tools)
+    assert {
+        "web_search",
+        "fetch_url",
+        "search_docs",
+        "publish_social",
+        "publish_instagram_post",
+        "publish_facebook_post",
+        "send_whatsapp_message",
+        "build_landing_page",
+        "generate_campaign_copy",
+        "ingest_video_insights",
+        "create_marketing_campaign",
+        "store_content_asset",
+        "create_operation_checklist",
+        "plan_service_operations",
+    } == set(agent.tools)
     assert all(inspect.iscoroutinefunction(tool) for tool in agent.tools.values())
 
 
@@ -279,16 +306,40 @@ def test_publish_tools_variants(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
 
     ok = asyncio.run(agent._tool_publish_social("instagram|||text|||dest|||m|||l"))
-    err = asyncio.run(agent._tool_publish_social(json.dumps({"platform": "bad", "text": "x", "destination": "d", "media_url": "", "link_url": ""})))
+    err = asyncio.run(
+        agent._tool_publish_social(
+            json.dumps(
+                {
+                    "platform": "bad",
+                    "text": "x",
+                    "destination": "d",
+                    "media_url": "",
+                    "link_url": "",
+                }
+            )
+        )
+    )
     assert ok.startswith("[SOCIAL:PUBLISHED]")
     assert err.startswith("[SOCIAL:ERROR]")
 
-    ig_ok = asyncio.run(agent._tool_publish_instagram_post(json.dumps({"caption": "cap", "image_url": "img"})))
-    ig_err = asyncio.run(agent._tool_publish_instagram_post(json.dumps({"caption": "fail", "image_url": "img"})))
-    fb_ok = asyncio.run(agent._tool_publish_facebook_post(json.dumps({"message": "msg", "link_url": "lnk"})))
-    fb_err = asyncio.run(agent._tool_publish_facebook_post(json.dumps({"message": "fail", "link_url": "lnk"})))
-    wa_ok = asyncio.run(agent._tool_send_whatsapp_message(json.dumps({"to": "1", "text": "m", "preview_url": 1})))
-    wa_err = asyncio.run(agent._tool_send_whatsapp_message(json.dumps({"to": "0", "text": "m", "preview_url": 0})))
+    ig_ok = asyncio.run(
+        agent._tool_publish_instagram_post(json.dumps({"caption": "cap", "image_url": "img"}))
+    )
+    ig_err = asyncio.run(
+        agent._tool_publish_instagram_post(json.dumps({"caption": "fail", "image_url": "img"}))
+    )
+    fb_ok = asyncio.run(
+        agent._tool_publish_facebook_post(json.dumps({"message": "msg", "link_url": "lnk"}))
+    )
+    fb_err = asyncio.run(
+        agent._tool_publish_facebook_post(json.dumps({"message": "fail", "link_url": "lnk"}))
+    )
+    wa_ok = asyncio.run(
+        agent._tool_send_whatsapp_message(json.dumps({"to": "1", "text": "m", "preview_url": 1}))
+    )
+    wa_err = asyncio.run(
+        agent._tool_send_whatsapp_message(json.dumps({"to": "0", "text": "m", "preview_url": 0}))
+    )
 
     assert "[INSTAGRAM:PUBLISHED]" in ig_ok and "[INSTAGRAM:ERROR]" in ig_err
     assert "[FACEBOOK:PUBLISHED]" in fb_ok and "[FACEBOOK:ERROR]" in fb_err
@@ -408,7 +459,9 @@ def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypa
     assert json.loads(stored)["asset"]["tenant_id"] == "default"
 
 
-def test_landing_and_campaign_copy_tools_with_and_without_persist(poyraz_module, fake_cfg, monkeypatch):
+def test_landing_and_campaign_copy_tools_with_and_without_persist(
+    poyraz_module, fake_cfg, monkeypatch
+):
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
     db_mod.Database = DummyDatabase
@@ -488,7 +541,12 @@ def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
     assert DummyMultimodalPipeline.last_kwargs is not None
     assert DummyMultimodalPipeline.last_kwargs["ingest_document_store"] is agent.docs
     assert DummyMultimodalPipeline.last_kwargs["ingest_session_id"] == "sess"
-    assert DummyMultimodalPipeline.last_kwargs["ingest_tags"] == ["video", "multimodal", "marketing", "poyraz"]
+    assert DummyMultimodalPipeline.last_kwargs["ingest_tags"] == [
+        "video",
+        "multimodal",
+        "marketing",
+        "poyraz",
+    ]
     assert ok.startswith("[VIDEO:INGESTED]")
     assert err.startswith("[VIDEO:ERROR]")
 
@@ -521,7 +579,9 @@ def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fak
     assert DummyMultimodalPipeline.last_kwargs["frame_interval_seconds"] == 0.1
 
 
-def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(poyraz_module, fake_cfg, monkeypatch):
+def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(
+    poyraz_module, fake_cfg, monkeypatch
+):
     class FallbackPipeline(DummyMultimodalPipeline):
         pass
 
@@ -531,16 +591,24 @@ def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(poyraz_modu
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
 
     agent = _agent(poyraz_module, fake_cfg)
-    result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt|||tr|||sess|||3"))
+    result = asyncio.run(
+        agent._tool_ingest_video_insights("https://video|||prompt|||tr|||sess|||3")
+    )
 
     assert result.startswith("[VIDEO:INGESTED]")
     assert DummyMultimodalPipeline.last_kwargs is not None
     assert DummyMultimodalPipeline.last_kwargs["media_source"] == "https://video"
 
 
-def test_ingest_video_insights_returns_error_when_pipeline_unavailable(poyraz_module, fake_cfg, monkeypatch):
+def test_ingest_video_insights_returns_error_when_pipeline_unavailable(
+    poyraz_module, fake_cfg, monkeypatch
+):
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
-    monkeypatch.setattr(poyraz_module.importlib, "import_module", lambda _: (_ for _ in ()).throw(ImportError("missing")))
+    monkeypatch.setattr(
+        poyraz_module.importlib,
+        "import_module",
+        lambda _: (_ for _ in ()).throw(ImportError("missing")),
+    )
 
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt"))
@@ -652,13 +720,66 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
         "build_landing_page|brief": "LLM_RESPONSE::",
         "landing_page|brief": "LLM_RESPONSE::",
         "generate_campaign_copy|brief": "LLM_RESPONSE::",
-        "publish_instagram_post|" + json.dumps({"caption": "c", "image_url": "i"}): "[INSTAGRAM:PUBLISHED]",
-        "publish_facebook_post|" + json.dumps({"message": "m", "link_url": "l"}): "[FACEBOOK:PUBLISHED]",
-        "send_whatsapp_message|" + json.dumps({"to": "1", "text": "t", "preview_url": 0}): "[WHATSAPP:SENT]",
-        "create_marketing_campaign|" + json.dumps({"tenant_id": "", "name": "n", "channel": "c", "objective": "o", "status": "", "owner_user_id": "u", "budget": 0, "metadata": {}, "campaign_id": None}): '{"success": true',
-        "store_content_asset|" + json.dumps({"campaign_id": 1, "tenant_id": "", "asset_type": "a", "title": "t", "content": "c", "channel": "ch", "metadata": {}}): '{"success": true',
-        "create_operation_checklist|" + json.dumps({"tenant_id": "", "title": "t", "items": [], "status": "", "owner_user_id": "u", "campaign_id": None}): '{"success": true',
-        "plan_service_operations|" + json.dumps({"campaign_name": "c", "service_name": "s", "audience": "a", "menu_plan": {}, "vendor_assignments": {}, "timeline": [], "notes": "", "persist_checklist": False, "tenant_id": "", "checklist_title": "", "owner_user_id": "u", "campaign_id": None}): '{"success": true',
+        "publish_instagram_post|"
+        + json.dumps({"caption": "c", "image_url": "i"}): "[INSTAGRAM:PUBLISHED]",
+        "publish_facebook_post|"
+        + json.dumps({"message": "m", "link_url": "l"}): "[FACEBOOK:PUBLISHED]",
+        "send_whatsapp_message|"
+        + json.dumps({"to": "1", "text": "t", "preview_url": 0}): "[WHATSAPP:SENT]",
+        "create_marketing_campaign|"
+        + json.dumps(
+            {
+                "tenant_id": "",
+                "name": "n",
+                "channel": "c",
+                "objective": "o",
+                "status": "",
+                "owner_user_id": "u",
+                "budget": 0,
+                "metadata": {},
+                "campaign_id": None,
+            }
+        ): '{"success": true',
+        "store_content_asset|"
+        + json.dumps(
+            {
+                "campaign_id": 1,
+                "tenant_id": "",
+                "asset_type": "a",
+                "title": "t",
+                "content": "c",
+                "channel": "ch",
+                "metadata": {},
+            }
+        ): '{"success": true',
+        "create_operation_checklist|"
+        + json.dumps(
+            {
+                "tenant_id": "",
+                "title": "t",
+                "items": [],
+                "status": "",
+                "owner_user_id": "u",
+                "campaign_id": None,
+            }
+        ): '{"success": true',
+        "plan_service_operations|"
+        + json.dumps(
+            {
+                "campaign_name": "c",
+                "service_name": "s",
+                "audience": "a",
+                "menu_plan": {},
+                "vendor_assignments": {},
+                "timeline": [],
+                "notes": "",
+                "persist_checklist": False,
+                "tenant_id": "",
+                "checklist_title": "",
+                "owner_user_id": "u",
+                "campaign_id": None,
+            }
+        ): '{"success": true',
         "seo_audit|x": "LLM_RESPONSE::",
         "campaign_copy|x": "LLM_RESPONSE::",
         "audience_ops|x": "LLM_RESPONSE::",
@@ -725,7 +846,9 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
             }
 
     monkeypatch.setattr("agent.roles.poyraz_agent.MultimodalPipeline", _FakePipeline)
-    ingested = await agent._tool_ingest_video_insights("https://video.example/test.mp4|||ürün analizi")
+    ingested = await agent._tool_ingest_video_insights(
+        "https://video.example/test.mp4|||ürün analizi"
+    )
     assert "[VIDEO:INGESTED]" in ingested
     assert "doc-123" in ingested
 

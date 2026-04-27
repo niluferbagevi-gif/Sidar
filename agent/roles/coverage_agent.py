@@ -10,14 +10,17 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Optional
-
-from config import Config
+from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
+from config import Config
 
-@AgentCatalog.register(capabilities=['coverage_analysis', 'pytest_output_analysis', 'autonomous_test_generation'], is_builtin=True)
+
+@AgentCatalog.register(
+    capabilities=["coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"],
+    is_builtin=True,
+)
 class CoverageAgent(BaseAgent):
     """Pytest çıktısını okuyup eksik senaryoları belirleyen ve reviewer onayına sunan ajan."""
 
@@ -33,9 +36,9 @@ class CoverageAgent(BaseAgent):
 
     def __init__(
         self,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         *,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="coverage")
@@ -85,7 +88,10 @@ class CoverageAgent(BaseAgent):
         except json.JSONDecodeError:
             if re.match(r"^(pytest|python\s+-m\s+pytest)\b", text, re.IGNORECASE):
                 return {"command": text}
-            return {"instruction": text, "command": "pytest --cov=. --cov-report=xml --cov-report=term"}
+            return {
+                "instruction": text,
+                "command": "pytest --cov=. --cov-report=xml --cov-report=term",
+            }
         return parsed if isinstance(parsed, dict) else {"command": text}
 
     @staticmethod
@@ -283,7 +289,9 @@ class CoverageAgent(BaseAgent):
                 {
                     "path": path,
                     "line_rate": round(cover_pct, 2),
-                    "branch_rate": round((branch - brpart) / branch * 100, 2) if branch > 0 else 100.0,
+                    "branch_rate": round((branch - brpart) / branch * 100, 2)
+                    if branch > 0
+                    else 100.0,
                     "missing_lines_count": miss,
                     "missing_branches_count": brpart,
                     "missing_hint": missing_hint,
@@ -291,7 +299,11 @@ class CoverageAgent(BaseAgent):
             )
 
         if not collected:
-            return {"summary": "Coverage terminal çıktısı ayrıştırılamadı.", "files": [], "findings": []}
+            return {
+                "summary": "Coverage terminal çıktısı ayrıştırılamadı.",
+                "files": [],
+                "findings": [],
+            }
 
         collected_sorted = sorted(
             collected,
@@ -315,7 +327,9 @@ class CoverageAgent(BaseAgent):
                         f"missing_branches={item.get('missing_branches_count')}"
                     ),
                     "missing_lines_hint": item.get("missing_hint", ""),
-                    "suggested_test_path": CoverageAgent._suggest_test_path(str(item.get("path", ""))),
+                    "suggested_test_path": CoverageAgent._suggest_test_path(
+                        str(item.get("path", ""))
+                    ),
                 }
             )
 
@@ -329,10 +343,18 @@ class CoverageAgent(BaseAgent):
     @staticmethod
     def _build_dynamic_pytest_prompt(*, finding: dict[str, Any], coveragerc: dict[str, Any]) -> str:
         target = str(finding.get("target_path", "") or "")
-        missing_lines = ", ".join(str(x) for x in (finding.get("missing_lines", []) or [])[:50]) or "-"
-        missing_branches = ", ".join(str(x) for x in (finding.get("missing_branches", []) or [])[:50]) or "-"
-        omit_cfg = coveragerc.get("report", {}).get("omit", "") if isinstance(coveragerc, dict) else ""
-        include_cfg = coveragerc.get("run", {}).get("include", "") if isinstance(coveragerc, dict) else ""
+        missing_lines = (
+            ", ".join(str(x) for x in (finding.get("missing_lines", []) or [])[:50]) or "-"
+        )
+        missing_branches = (
+            ", ".join(str(x) for x in (finding.get("missing_branches", []) or [])[:50]) or "-"
+        )
+        omit_cfg = (
+            coveragerc.get("report", {}).get("omit", "") if isinstance(coveragerc, dict) else ""
+        )
+        include_cfg = (
+            coveragerc.get("run", {}).get("include", "") if isinstance(coveragerc, dict) else ""
+        )
         return (
             f"Hedef dosya: {target}\n"
             f"Önerilen test dosyası: {CoverageAgent._suggest_test_path(target)}\n"
@@ -385,7 +407,9 @@ class CoverageAgent(BaseAgent):
             ensure_ascii=False,
         )
 
-    async def _generate_test_candidate(self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]) -> str:
+    async def _generate_test_candidate(
+        self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]
+    ) -> str:
         read_ok, source_excerpt = (
             await self._call_maybe_async(self.code.read_file, target_path)
             if target_path
@@ -410,12 +434,20 @@ class CoverageAgent(BaseAgent):
         target_path = str(payload.get("target_path", "") or "")
         pytest_output = str(payload.get("pytest_output", "") or "")
         analysis = payload.get("analysis")
-        coverage_finding = payload.get("coverage_finding") if isinstance(payload.get("coverage_finding"), dict) else None
-        coveragerc = payload.get("coveragerc") if isinstance(payload.get("coveragerc"), dict) else {}
+        coverage_finding = (
+            payload.get("coverage_finding")
+            if isinstance(payload.get("coverage_finding"), dict)
+            else None
+        )
+        coveragerc = (
+            payload.get("coveragerc") if isinstance(payload.get("coveragerc"), dict) else {}
+        )
         if coverage_finding and not target_path:
             target_path = str(coverage_finding.get("target_path", "") or "")
         if coverage_finding:
-            payload_prompt = self._build_dynamic_pytest_prompt(finding=coverage_finding, coveragerc=coveragerc)
+            payload_prompt = self._build_dynamic_pytest_prompt(
+                finding=coverage_finding, coveragerc=coveragerc
+            )
             return await self.call_llm(
                 [{"role": "user", "content": payload_prompt}],
                 system_prompt=self.TEST_GENERATION_PROMPT,
@@ -423,7 +455,9 @@ class CoverageAgent(BaseAgent):
             )
         if not isinstance(analysis, dict):
             analysis = await self._call_maybe_async(self.code.analyze_pytest_output, pytest_output)
-        return await self._generate_test_candidate(target_path=target_path, pytest_output=pytest_output, analysis=analysis)
+        return await self._generate_test_candidate(
+            target_path=target_path, pytest_output=pytest_output, analysis=analysis
+        )
 
     async def _tool_write_missing_tests(self, arg: str) -> str:
         payload = self._parse_payload(arg)

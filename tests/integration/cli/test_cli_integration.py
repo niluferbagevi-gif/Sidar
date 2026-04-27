@@ -4,7 +4,7 @@ import sys
 
 def _run_cli_with_stubbed_agent(*args: str) -> subprocess.CompletedProcess[str]:
     """Run cli.main() in a subprocess with lightweight stub modules."""
-    script = r'''
+    script = r"""
 import asyncio
 import sys
 import types
@@ -46,7 +46,7 @@ sys.modules["agent.sidar_agent"] = fake_agent_module
 import cli
 sys.argv = ["cli.py"] + ARGS
 cli.main()
-'''.replace("ARGS", repr(list(args)))
+""".replace("ARGS", repr(list(args)))
 
     return subprocess.run(
         [sys.executable, "-c", script],

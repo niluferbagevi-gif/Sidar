@@ -5,8 +5,8 @@ Playwright öncelikli, Selenium fallback'li dinamik web etkileşim katmanı.
 
 from __future__ import annotations
 
-import asyncio
 import abc
+import asyncio
 import contextlib
 import hashlib
 import importlib
@@ -44,35 +44,49 @@ class BaseBrowserProvider(abc.ABC):
     provider_name: str
 
     @abc.abstractmethod
-    def start_session(self, manager: "BrowserManager", browser_name: str, headless: bool) -> BrowserSession:
+    def start_session(
+        self, manager: BrowserManager, browser_name: str, headless: bool
+    ) -> BrowserSession:
         """Create and return a browser session."""
 
     @abc.abstractmethod
-    def goto(self, manager: "BrowserManager", session: BrowserSession, url: str) -> None:
+    def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
         """Navigate to target URL."""
 
     @abc.abstractmethod
-    def click(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> None:
+    def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
         """Click element."""
 
     @abc.abstractmethod
-    def fill(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str, *, clear: bool) -> None:
+    def fill(
+        self,
+        manager: BrowserManager,
+        session: BrowserSession,
+        selector: str,
+        value: str,
+        *,
+        clear: bool,
+    ) -> None:
         """Fill form input."""
 
     @abc.abstractmethod
-    def select(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str) -> None:
+    def select(
+        self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
+    ) -> None:
         """Select option."""
 
     @abc.abstractmethod
-    def capture_dom(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> str:
+    def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
         """Capture DOM content."""
 
     @abc.abstractmethod
-    def capture_screenshot(self, manager: "BrowserManager", session: BrowserSession, path: str, *, full_page: bool) -> None:
+    def capture_screenshot(
+        self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
+    ) -> None:
         """Capture screenshot."""
 
     @abc.abstractmethod
-    def close(self, manager: "BrowserManager", session: BrowserSession) -> None:
+    def close(self, manager: BrowserManager, session: BrowserSession) -> None:
         """Close session resources."""
 
     @abc.abstractmethod
@@ -83,7 +97,9 @@ class BaseBrowserProvider(abc.ABC):
 class PlaywrightBrowserProvider(BaseBrowserProvider):
     provider_name = "playwright"
 
-    def start_session(self, manager: "BrowserManager", browser_name: str, headless: bool) -> BrowserSession:
+    def start_session(
+        self, manager: BrowserManager, browser_name: str, headless: bool
+    ) -> BrowserSession:
         from playwright.sync_api import sync_playwright
 
         runtime = sync_playwright().start()
@@ -108,28 +124,40 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
             runtime=runtime,
         )
 
-    def goto(self, manager: "BrowserManager", session: BrowserSession, url: str) -> None:
+    def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
         session.page.goto(url, wait_until="domcontentloaded", timeout=manager.timeout_ms)
 
-    def click(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> None:
+    def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
         session.page.click(selector, timeout=manager.timeout_ms)
 
-    def fill(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str, *, clear: bool) -> None:
+    def fill(
+        self,
+        manager: BrowserManager,
+        session: BrowserSession,
+        selector: str,
+        value: str,
+        *,
+        clear: bool,
+    ) -> None:
         if clear:
             session.page.fill(selector, value, timeout=manager.timeout_ms)
             return
         session.page.type(selector, value, timeout=manager.timeout_ms)
 
-    def select(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str) -> None:
+    def select(
+        self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
+    ) -> None:
         session.page.select_option(selector, value=value, timeout=manager.timeout_ms)
 
-    def capture_dom(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> str:
+    def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
         return session.page.locator(selector).inner_html(timeout=manager.timeout_ms)
 
-    def capture_screenshot(self, manager: "BrowserManager", session: BrowserSession, path: str, *, full_page: bool) -> None:
+    def capture_screenshot(
+        self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
+    ) -> None:
         session.page.screenshot(path=path, full_page=full_page)
 
-    def close(self, manager: "BrowserManager", session: BrowserSession) -> None:
+    def close(self, manager: BrowserManager, session: BrowserSession) -> None:
         if session.context is not None:
             session.context.close()
         if session.browser is not None:
@@ -144,7 +172,9 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
 class SeleniumBrowserProvider(BaseBrowserProvider):
     provider_name = "selenium"
 
-    def start_session(self, manager: "BrowserManager", browser_name: str, headless: bool) -> BrowserSession:
+    def start_session(
+        self, manager: BrowserManager, browser_name: str, headless: bool
+    ) -> BrowserSession:
         from selenium import webdriver
 
         if browser_name not in {"chrome", "chromium", "firefox"}:
@@ -173,15 +203,23 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
             driver=driver,
         )
 
-    def goto(self, manager: "BrowserManager", session: BrowserSession, url: str) -> None:
+    def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
         session.driver.get(url)
 
-    def click(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> None:
+    def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
         from selenium.webdriver.common.by import By
 
         session.driver.find_element(By.CSS_SELECTOR, selector).click()
 
-    def fill(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str, *, clear: bool) -> None:
+    def fill(
+        self,
+        manager: BrowserManager,
+        session: BrowserSession,
+        selector: str,
+        value: str,
+        *,
+        clear: bool,
+    ) -> None:
         from selenium.webdriver.common.by import By
 
         element = session.driver.find_element(By.CSS_SELECTOR, selector)
@@ -189,21 +227,25 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
             element.clear()
         element.send_keys(value)
 
-    def select(self, manager: "BrowserManager", session: BrowserSession, selector: str, value: str) -> None:
+    def select(
+        self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
+    ) -> None:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.select import Select
 
         Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
 
-    def capture_dom(self, manager: "BrowserManager", session: BrowserSession, selector: str) -> str:
+    def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
         _ = selector
         return str(session.driver.page_source)
 
-    def capture_screenshot(self, manager: "BrowserManager", session: BrowserSession, path: str, *, full_page: bool) -> None:
+    def capture_screenshot(
+        self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
+    ) -> None:
         _ = full_page
         session.driver.save_screenshot(path)
 
-    def close(self, manager: "BrowserManager", session: BrowserSession) -> None:
+    def close(self, manager: BrowserManager, session: BrowserSession) -> None:
         if session.driver is not None:
             session.driver.quit()
 
@@ -221,8 +263,12 @@ class BrowserManager:
         self.default_headless = bool(getattr(self.cfg, "BROWSER_HEADLESS", True))
         self.timeout_ms = int(getattr(self.cfg, "BROWSER_TIMEOUT_MS", 15_000) or 15_000)
         self.visual_qa_enabled = bool(getattr(self.cfg, "BROWSER_VISUAL_QA_ENABLED", True))
-        self.visual_qa_drift_threshold = float(getattr(self.cfg, "BROWSER_VISUAL_QA_DRIFT_THRESHOLD", 0.015) or 0.015)
-        self.visual_qa_multimodal_margin = float(getattr(self.cfg, "BROWSER_VISUAL_QA_MULTIMODAL_MARGIN", 0.005) or 0.005)
+        self.visual_qa_drift_threshold = float(
+            getattr(self.cfg, "BROWSER_VISUAL_QA_DRIFT_THRESHOLD", 0.015) or 0.015
+        )
+        self.visual_qa_multimodal_margin = float(
+            getattr(self.cfg, "BROWSER_VISUAL_QA_MULTIMODAL_MARGIN", 0.005) or 0.005
+        )
         self.allowed_domains = {
             domain.strip().lower()
             for domain in (getattr(self.cfg, "BROWSER_ALLOWED_DOMAINS", []) or [])
@@ -327,9 +373,10 @@ class BrowserManager:
         entries = [
             dict(item)
             for item in self._audit_log
-            if not normalized_session_id or str(item.get("session_id", "")).strip() == normalized_session_id
+            if not normalized_session_id
+            or str(item.get("session_id", "")).strip() == normalized_session_id
         ]
-        recent_entries = entries[-max(1, int(limit or 12)):]
+        recent_entries = entries[-max(1, int(limit or 12)) :]
 
         status_counts: dict[str, int] = {}
         action_counts: dict[str, int] = {}
@@ -353,7 +400,10 @@ class BrowserManager:
                     failed_actions.append(label)
             if status == "pending_approval" and action and action not in pending_actions:
                 pending_actions.append(action)
-            if action in {"browser_click", "browser_fill_form", "browser_select_option"} and selector:
+            if (
+                action in {"browser_click", "browser_fill_form", "browser_select_option"}
+                and selector
+            ):
                 if self._is_high_risk_click(selector):
                     label = f"{action}:{selector}"
                     if label not in high_risk_actions:
@@ -439,7 +489,9 @@ class BrowserManager:
 
         return signal
 
-    async def _analyze_screenshot_with_multimodal(self, image_path: str, prompt: str) -> dict[str, Any]:
+    async def _analyze_screenshot_with_multimodal(
+        self, image_path: str, prompt: str
+    ) -> dict[str, Any]:
         if self._llm is None:
             return {"success": False, "reason": "LLM istemcisi bağlı değil"}
         multimodal_module = importlib.import_module("core.multimodal")
@@ -556,7 +608,9 @@ class BrowserManager:
             **drift,
         }
         drift_score = float(result.get("drift_score", 0.0) or 0.0)
-        should_run_multimodal = run_multimodal_analysis and self._should_run_multimodal_for_drift(drift_score)
+        should_run_multimodal = run_multimodal_analysis and self._should_run_multimodal_for_drift(
+            drift_score
+        )
         result["multimodal_check"] = {
             "enabled": bool(run_multimodal_analysis),
             "triggered": bool(should_run_multimodal),
@@ -646,7 +700,9 @@ class BrowserManager:
         )
         return approved
 
-    def _sync_hitl_guard(self, action: str, selector: str, *, force_block: bool = False) -> tuple[bool, str] | None:
+    def _sync_hitl_guard(
+        self, action: str, selector: str, *, force_block: bool = False
+    ) -> tuple[bool, str] | None:
         gate = get_hitl_gate()
         if not getattr(gate, "enabled", False):
             return None
@@ -710,7 +766,9 @@ class BrowserManager:
             f"available={'yes' if self.is_available() else 'no'} active_sessions={active}"
         )
 
-    def start_session(self, browser_name: str = "chromium", headless: bool | None = None) -> tuple[bool, dict[str, Any]]:
+    def start_session(
+        self, browser_name: str = "chromium", headless: bool | None = None
+    ) -> tuple[bool, dict[str, Any]]:
         headless_value = self.default_headless if headless is None else bool(headless)
         last_error = "Tarayıcı sağlayıcısı başlatılamadı."
 
@@ -746,7 +804,11 @@ class BrowserManager:
                     session_id=f"startup:{candidate}",
                     action="browser_start_session",
                     status="failed",
-                    details={"provider": candidate, "browser_name": browser_name, "error": str(exc)},
+                    details={
+                        "provider": candidate,
+                        "browser_name": browser_name,
+                        "error": str(exc),
+                    },
                 )
 
         return False, {"error": last_error}
@@ -825,7 +887,11 @@ class BrowserManager:
         require_confirmation: bool | None = None,
     ) -> tuple[bool, str]:
         session = self._require_session(session_id)
-        must_confirm = self._is_high_risk_click(selector) if require_confirmation is None else bool(require_confirmation)
+        must_confirm = (
+            self._is_high_risk_click(selector)
+            if require_confirmation is None
+            else bool(require_confirmation)
+        )
         if not must_confirm:
             return await self._click_element_impl_async(session_id, selector)
 
@@ -835,9 +901,8 @@ class BrowserManager:
             "url": self._session_url(session),
             "reason": reason.strip(),
         }
-        description = (
-            f"Tarayıcıda yüksek riskli tıklama yapılacak: {selector}"
-            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        description = f"Tarayıcıda yüksek riskli tıklama yapılacak: {selector}" + (
+            f" | Gerekçe: {reason.strip()}" if reason.strip() else ""
         )
         approved = await self._request_hitl_approval(
             session=session,
@@ -871,7 +936,9 @@ class BrowserManager:
             )
             raise
 
-    def _fill_form_impl(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
+    def _fill_form_impl(
+        self, session_id: str, selector: str, value: str, clear: bool = True
+    ) -> tuple[bool, str]:
         session = self._require_session(session_id)
         provider = self._provider_for_session(session)
         provider.fill(self, session, selector, value, clear=clear)
@@ -886,7 +953,9 @@ class BrowserManager:
     ) -> tuple[bool, str]:
         return await asyncio.to_thread(self._fill_form_impl, session_id, selector, value, clear)
 
-    def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
+    def fill_form(
+        self, session_id: str, selector: str, value: str, clear: bool = True
+    ) -> tuple[bool, str]:
         session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_fill_form", selector, force_block=True)
         if blocked is not None:
@@ -914,7 +983,11 @@ class BrowserManager:
                 action="browser_fill_form",
                 status="execution_failed",
                 selector=selector,
-                details={"clear": bool(clear), "value_preview": self._summarize_value(value), "error": str(exc)},
+                details={
+                    "clear": bool(clear),
+                    "value_preview": self._summarize_value(value),
+                    "error": str(exc),
+                },
             )
             raise
 
@@ -936,9 +1009,8 @@ class BrowserManager:
             "clear": bool(clear),
             "reason": reason.strip(),
         }
-        description = (
-            f"Tarayıcı form alanı doldurulacak: {selector}"
-            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        description = f"Tarayıcı form alanı doldurulacak: {selector}" + (
+            f" | Gerekçe: {reason.strip()}" if reason.strip() else ""
         )
         approved = await self._request_hitl_approval(
             session=session,
@@ -978,7 +1050,9 @@ class BrowserManager:
         provider.select(self, session, selector, value)
         return True, f"Seçim yapıldı: {selector}={value}"
 
-    async def _select_option_impl_async(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+    async def _select_option_impl_async(
+        self, session_id: str, selector: str, value: str
+    ) -> tuple[bool, str]:
         return await asyncio.to_thread(self._select_option_impl, session_id, selector, value)
 
     def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
@@ -1029,9 +1103,8 @@ class BrowserManager:
             "value_preview": self._summarize_value(value),
             "reason": reason.strip(),
         }
-        description = (
-            f"Tarayıcı seçim alanı güncellenecek: {selector}"
-            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        description = f"Tarayıcı seçim alanı güncellenecek: {selector}" + (
+            f" | Gerekçe: {reason.strip()}" if reason.strip() else ""
         )
         approved = await self._request_hitl_approval(
             session=session,

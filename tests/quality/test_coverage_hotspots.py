@@ -6,8 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from scripts.coverage_hotspots import FileCoverage, _normalize_path, format_table, main, parse_coverage_xml, rank_hotspots
-
+from scripts.coverage_hotspots import (
+    FileCoverage,
+    _normalize_path,
+    format_table,
+    main,
+    parse_coverage_xml,
+    rank_hotspots,
+)
 
 pytestmark = pytest.mark.quality_gate
 
@@ -138,7 +144,9 @@ def test_parse_coverage_xml_skips_class_without_filename(tmp_path: Path) -> None
     assert rows[0].missed == 1
 
 
-def test_main_returns_1_and_message_when_no_files(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_returns_1_and_message_when_no_files(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """CLI should return 1 with a user-facing message when coverage XML has no class files."""
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", "empty.xml"])
     monkeypatch.setattr("scripts.coverage_hotspots.parse_coverage_xml", lambda *args, **kwargs: [])
@@ -158,7 +166,10 @@ def test_main_prints_ranked_table_and_returns_0(
         FileCoverage(path="a.py", covered=1, missed=2),
         FileCoverage(path="b.py", covered=5, missed=0),
     ]
-    monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", "custom.xml", "--top", "1", "--root", "/tmp/proj"])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["coverage_hotspots.py", "--xml", "custom.xml", "--top", "1", "--root", "/tmp/proj"],
+    )
     monkeypatch.setattr("scripts.coverage_hotspots.parse_coverage_xml", lambda xml, root: rows)
 
     rc = main()

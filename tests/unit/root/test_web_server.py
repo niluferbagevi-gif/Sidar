@@ -1,26 +1,27 @@
 import asyncio
 import json
-from dataclasses import dataclass
-from pathlib import Path
 import re
 import sys
 import types
+from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
+import jwt
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-import jwt
 from pydantic import ValidationError
 from starlette.requests import Request
 
 if "opentelemetry.instrumentation.httpx" not in sys.modules:
-    fake_httpx_mod = SimpleNamespace(HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None))
+    fake_httpx_mod = SimpleNamespace(
+        HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None)
+    )
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 import web_server
-
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
 
@@ -178,7 +179,11 @@ async def test_schedule_access_audit_log_missing_recorder_and_error_paths(monkey
 
     debug_logs = []
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_raising)
-    monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "debug",
+        lambda msg, *args: debug_logs.append(msg % args if args else msg),
+    )
     web_server._schedule_access_audit_log(
         user=SimpleNamespace(id="u2", tenant_id="default"),
         resource_type="agents",
@@ -189,6 +194,7 @@ async def test_schedule_access_audit_log_missing_recorder_and_error_paths(monkey
     )
     await asyncio.sleep(0)
     assert any("ACL audit log yazımı atlandı" in line for line in debug_logs)
+
 
 def test_collaboration_role_and_write_scope_resolution(tmp_path, monkeypatch):
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
@@ -228,7 +234,9 @@ def test_command_detection_message_build_and_chunking(monkeypatch):
 
 
 def test_append_and_serialize_room_data(monkeypatch):
-    monkeypatch.setattr(web_server, "_mask_collaboration_text", lambda text: text.replace("123", "***"))
+    monkeypatch.setattr(
+        web_server, "_mask_collaboration_text", lambda text: text.replace("123", "***")
+    )
 
     ws_b = _DummyWebSocket()
     ws_a = _DummyWebSocket()
@@ -270,7 +278,7 @@ async def test_join_leave_and_broadcast_room_lifecycle(monkeypatch, tmp_path):
         user_role="developer",
     )
     assert room.room_id == "team:room"
-    assert getattr(ws_ok, "_sidar_room_id") == "team:room"
+    assert ws_ok._sidar_room_id == "team:room"
     assert ws_ok.messages[0]["type"] == "room_state"
 
     # failing participant is pruned during broadcast
@@ -288,10 +296,10 @@ async def test_join_leave_and_broadcast_room_lifecycle(monkeypatch, tmp_path):
         user_role="user",
     )
     assert "team:room" not in web_server._collaboration_rooms
-    assert getattr(ws_ok, "_sidar_room_id") == "team:other"
+    assert ws_ok._sidar_room_id == "team:other"
 
     await web_server._leave_collaboration_room(ws_ok)
-    assert getattr(ws_ok, "_sidar_room_id") == ""
+    assert ws_ok._sidar_room_id == ""
     assert "team:other" not in web_server._collaboration_rooms
 
 
@@ -328,7 +336,9 @@ async def test_hitl_broadcast_and_prompt_helpers():
             {"role": "assistant", "author_name": "Sidar", "content": "Yanıt"},
         ],
     )
-    prompt = web_server._build_collaboration_prompt(room, actor_name="Ada", command="README güncelle")
+    prompt = web_server._build_collaboration_prompt(
+        room, actor_name="Ada", command="README güncelle"
+    )
     assert "room_id=workspace:default" in prompt
     assert "requesting_write_scopes=/tmp/workspaces/a" in prompt
     assert "Current command:\nREADME güncelle" in prompt
@@ -353,7 +363,7 @@ def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
     websocket = _DummyWebSocket()
-    setattr(websocket, "_sidar_room_id", "team:cleanup")
+    websocket._sidar_room_id = "team:cleanup"
     cancelled = {"value": False}
 
     class _FakeTask:
@@ -383,7 +393,9 @@ def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_handles_childprocesserror(monkeypatch):
-    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(ChildProcessError()))
+    monkeypatch.setattr(
+        web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(ChildProcessError())
+    )
     assert web_server._reap_child_processes_nonblocking() == 0
 
 
@@ -393,7 +405,9 @@ def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
     monkeypatch.setattr(web_server, "_list_child_ollama_pids", lambda: [21, 22])
     calls = {"term": None, "reap": 0}
-    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda pids: calls.update({"term": list(pids)}))
+    monkeypatch.setattr(
+        web_server, "_terminate_ollama_child_pids", lambda pids: calls.update({"term": list(pids)})
+    )
     monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 3)
 
     web_server._force_shutdown_local_llm_processes()
@@ -406,7 +420,11 @@ def test_force_shutdown_local_llm_processes_non_ollama_and_idempotent(monkeypatc
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
     reaped = {"count": 0}
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1))
+    monkeypatch.setattr(
+        web_server,
+        "_reap_child_processes_nonblocking",
+        lambda: reaped.__setitem__("count", reaped["count"] + 1),
+    )
 
     web_server._force_shutdown_local_llm_processes()
     assert reaped["count"] == 1
@@ -422,8 +440,16 @@ def test_force_shutdown_local_llm_processes_ollama_without_force_kill(monkeypatc
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     calls = {"reap": 0, "terminate": 0}
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: calls.__setitem__("reap", calls["reap"] + 1))
-    monkeypatch.setattr(web_server, "_terminate_ollama_child_pids", lambda *_: calls.__setitem__("terminate", calls["terminate"] + 1))
+    monkeypatch.setattr(
+        web_server,
+        "_reap_child_processes_nonblocking",
+        lambda: calls.__setitem__("reap", calls["reap"] + 1),
+    )
+    monkeypatch.setattr(
+        web_server,
+        "_terminate_ollama_child_pids",
+        lambda *_: calls.__setitem__("terminate", calls["terminate"] + 1),
+    )
 
     web_server._force_shutdown_local_llm_processes()
 
@@ -454,7 +480,9 @@ def test_bind_llm_usage_sink_sets_sink_once(monkeypatch):
 
     collector = _Collector()
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: collector)
-    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None))
+    )
 
     web_server._bind_llm_usage_sink(agent)
     first_sink = sink_holder.get("sink")
@@ -479,7 +507,11 @@ async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch
     async def _record_provider_usage_daily(**kwargs):
         persisted["calls"].append(kwargs)
 
-    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)))
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(
+            db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)
+        )
+    )
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
 
     web_server._bind_llm_usage_sink(agent)
@@ -491,7 +523,11 @@ async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch
     assert persisted["calls"][0]["tokens_used"] == 15
 
     debug_logs = []
-    monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "debug",
+        lambda msg, *args: debug_logs.append(msg % args if args else msg),
+    )
 
     async def _raise_db_error(**_kwargs):
         raise RuntimeError("db unavailable")
@@ -516,7 +552,11 @@ async def test_bind_llm_usage_sink_early_exit_for_empty_user_id(monkeypatch):
     async def _record_provider_usage_daily(**kwargs):
         persisted_calls.append(kwargs)
 
-    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)))
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(
+            db=SimpleNamespace(record_provider_usage_daily=_record_provider_usage_daily)
+        )
+    )
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
 
     web_server._bind_llm_usage_sink(agent)
@@ -539,8 +579,14 @@ def test_bind_llm_usage_sink_skips_when_no_running_loop(monkeypatch):
             captured["sink"] = sink
 
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
-    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no-loop")))
-    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+    monkeypatch.setattr(
+        web_server.asyncio,
+        "get_running_loop",
+        lambda: (_ for _ in ()).throw(RuntimeError("no-loop")),
+    )
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None))
+    )
 
     web_server._bind_llm_usage_sink(agent)
     captured["sink"](SimpleNamespace(user_id="u-1", provider="openai", total_tokens=2))
@@ -767,7 +813,10 @@ def test_socket_key_and_participant_serialization():
 
 
 def test_build_user_from_jwt_payload_defaults_and_missing_values():
-    assert web_server._build_user_from_jwt_payload({"sub": "1", "username": "ada"}).tenant_id == "default"
+    assert (
+        web_server._build_user_from_jwt_payload({"sub": "1", "username": "ada"}).tenant_id
+        == "default"
+    )
     assert web_server._build_user_from_jwt_payload({"sub": "", "username": "ada"}) is None
     assert web_server._build_user_from_jwt_payload({"sub": "1", "username": ""}) is None
 
@@ -786,14 +835,22 @@ async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
-    encoded = jwt.encode({"sub": "42", "username": "lin", "role": "admin", "tenant_id": "t1"}, "s3cr3t", algorithm="HS256")
+    encoded = jwt.encode(
+        {"sub": "42", "username": "lin", "role": "admin", "tenant_id": "t1"},
+        "s3cr3t",
+        algorithm="HS256",
+    )
     user = await web_server._resolve_user_from_token(None, encoded)
     assert user.id == "42"
     assert user.username == "lin"
 
     class _DB:
         async def get_user_by_token(self, token):
-            return SimpleNamespace(id="db-user", username="dbu", role="user", tenant_id="default") if token == "opaque" else None
+            return (
+                SimpleNamespace(id="db-user", username="dbu", role="user", tenant_id="default")
+                if token == "opaque"
+                else None
+            )
 
     agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
     fallback_user = await web_server._resolve_user_from_token(agent, "opaque")
@@ -868,7 +925,9 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     open_res = await web_server.basic_auth_middleware(open_req, _ok_next)
     assert open_res.status_code == 200
 
-    denied = await web_server.basic_auth_middleware(_make_request("/secure", method="GET"), _ok_next)
+    denied = await web_server.basic_auth_middleware(
+        _make_request("/secure", method="GET"), _ok_next
+    )
     assert denied.status_code == 401
     assert b"Yetkisiz" in denied.body
 
@@ -899,16 +958,26 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
 
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda uid: events.__setitem__("metric_set", uid) or "tok")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: events.__setitem__("metric_reset", token))
+    monkeypatch.setattr(
+        web_server,
+        "set_current_metrics_user_id",
+        lambda uid: events.__setitem__("metric_set", uid) or "tok",
+    )
+    monkeypatch.setattr(
+        web_server,
+        "reset_current_metrics_user_id",
+        lambda token: events.__setitem__("metric_reset", token),
+    )
 
-    valid_req = _make_request("/secure", method="GET", headers={"Authorization": "Bearer valid-token"})
+    valid_req = _make_request(
+        "/secure", method="GET", headers={"Authorization": "Bearer valid-token"}
+    )
     valid_res = await web_server.basic_auth_middleware(valid_req, _ok_next)
     assert valid_res.status_code == 200
     assert events["active_user"] == ("u1", "ada")
     assert events["metric_set"] == "u1"
     assert events["metric_reset"] == "tok"
-    assert getattr(valid_req.state, "user").id == "u1"
+    assert valid_req.state.user.id == "u1"
 
 
 def test_trim_autonomy_text_truncates_with_suffix():
@@ -1075,7 +1144,9 @@ async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
 
     logs: list[str] = []
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg)
+    )
 
     stop_event = asyncio.Event()
     await web_server._autonomous_cron_loop(stop_event)
@@ -1098,7 +1169,7 @@ async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
         async def wait(self):
             self.calls += 1
             if self.calls == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return True
 
     async def _wait_for(awaitable, timeout):
@@ -1112,7 +1183,11 @@ async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
 
     monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: calls["warn"].append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "warning",
+        lambda msg, *args: calls["warn"].append(msg % args if args else msg),
+    )
 
     await web_server._autonomous_cron_loop(_StopAfterFirstTimeout())
 
@@ -1124,7 +1199,9 @@ async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
 async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
     logs: list[str] = []
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg)
+    )
     await web_server._nightly_memory_loop(asyncio.Event())
     assert any("devre dışı" in item for item in logs)
 
@@ -1141,7 +1218,7 @@ async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
         async def wait(self):
             self.calls += 1
             if self.calls == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return True
 
     async def _wait_for(awaitable, timeout):
@@ -1156,7 +1233,9 @@ async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
 
     monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warns.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "warning", lambda msg, *args: warns.append(msg % args if args else msg)
+    )
 
     await web_server._nightly_memory_loop(_StopAfterFirstTimeout())
     assert any("maintenance hatası" in item for item in warns)
@@ -1173,7 +1252,11 @@ def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
         version="9.9.9",
         is_builtin=False,
     )
-    monkeypatch.setattr(web_server.AgentRegistry, "get", lambda role: fake_spec if role == "aws_management" else None)
+    monkeypatch.setattr(
+        web_server.AgentRegistry,
+        "get",
+        lambda role: fake_spec if role == "aws_management" else None,
+    )
 
     serialized = web_server._serialize_marketplace_plugin(
         "aws_management",
@@ -1189,7 +1272,12 @@ def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
 def test_verify_hmac_signature_happy_path_and_failures():
     payload = b'{"ok":true}'
     secret = "top-secret"
-    expected = "sha256=" + web_server.hmac.new(secret.encode("utf-8"), payload, web_server.hashlib.sha256).hexdigest()
+    expected = (
+        "sha256="
+        + web_server.hmac.new(
+            secret.encode("utf-8"), payload, web_server.hashlib.sha256
+        ).hexdigest()
+    )
 
     # no secret => signature checks are bypassed
     web_server._verify_hmac_signature(payload, "", "", label="Webhook")
@@ -1278,16 +1366,25 @@ def test_build_event_driven_federation_spec_returns_none_for_unqualified_payload
         "action": "updated",
         "issue": {"key": "SID-10", "summary": "Mevcut issue"},
     }
-    assert web_server._build_event_driven_federation_spec("jira", "issue_updated", jira_payload) is None
+    assert (
+        web_server._build_event_driven_federation_spec("jira", "issue_updated", jira_payload)
+        is None
+    )
 
     github_payload = {
         "action": "closed",
         "pull_request": {"number": 17, "title": "Refactor"},
     }
-    assert web_server._build_event_driven_federation_spec("github", "pull_request", github_payload) is None
+    assert (
+        web_server._build_event_driven_federation_spec("github", "pull_request", github_payload)
+        is None
+    )
 
     system_payload = {"severity": "info", "alert_name": "cpu ok"}
-    assert web_server._build_event_driven_federation_spec("system", "heartbeat", system_payload) is None
+    assert (
+        web_server._build_event_driven_federation_spec("system", "heartbeat", system_payload)
+        is None
+    )
 
 
 def test_build_swarm_goal_for_role_includes_context_and_role_marker():
@@ -1324,14 +1421,20 @@ def test_embed_event_driven_federation_payload_projects_core_fields():
 @pytest.mark.asyncio
 async def test_run_event_driven_federation_workflow_none_when_spec_missing(monkeypatch):
     monkeypatch.setattr(web_server, "_build_event_driven_federation_spec", lambda *_: None)
-    result = await web_server._run_event_driven_federation_workflow(source="github", event_name="push", payload={"x": 1})
+    result = await web_server._run_event_driven_federation_workflow(
+        source="github", event_name="push", payload={"x": 1}
+    )
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_run_event_driven_federation_workflow_builds_result_payload(monkeypatch):
-    monkeypatch.setattr(web_server, "_trim_autonomy_text", lambda value, limit=1200: str(value)[:limit])
-    monkeypatch.setattr(web_server, "_build_swarm_goal_for_role", lambda goal, role, _spec: f"{role}:{goal}")
+    monkeypatch.setattr(
+        web_server, "_trim_autonomy_text", lambda value, limit=1200: str(value)[:limit]
+    )
+    monkeypatch.setattr(
+        web_server, "_build_swarm_goal_for_role", lambda goal, role, _spec: f"{role}:{goal}"
+    )
     monkeypatch.setattr(web_server, "derive_correlation_id", lambda *args: "corr-42")
 
     spec = {
@@ -1353,6 +1456,7 @@ async def test_run_event_driven_federation_workflow_builds_result_payload(monkey
         async def run_pipeline(self, tasks, session_id):
             assert session_id == "corr-42"
             assert len(tasks) == 2
+
             @dataclass
             class _Result:
                 task_id: str
@@ -1361,8 +1465,12 @@ async def test_run_event_driven_federation_workflow_builds_result_payload(monkey
                 summary: str
 
             return [
-                _Result(task_id="task-42", role="coder", status="success", summary="Kod planı hazır"),
-                _Result(task_id="task-42", role="reviewer", status="success", summary="Review tamam"),
+                _Result(
+                    task_id="task-42", role="coder", status="success", summary="Kod planı hazır"
+                ),
+                _Result(
+                    task_id="task-42", role="reviewer", status="success", summary="Review tamam"
+                ),
             ]
 
     monkeypatch.setattr(web_server, "SwarmOrchestrator", _FakeOrchestrator)
@@ -1390,7 +1498,9 @@ def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
     def _init_telemetry(**kwargs):
         calls["init"] = kwargs
 
-    cfg_with_custom = SimpleNamespace(init_telemetry=_init_telemetry, OTEL_SERVICE_NAME="sidar-test")
+    cfg_with_custom = SimpleNamespace(
+        init_telemetry=_init_telemetry, OTEL_SERVICE_NAME="sidar-test"
+    )
     monkeypatch.setattr(web_server, "cfg", cfg_with_custom)
     web_server._setup_tracing()
     assert calls["init"]["service_name"]
@@ -1407,7 +1517,9 @@ def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
     # Fallback: tracing açık fakat bağımlılık eksik
     fallback_cfg.ENABLE_TRACING = True
     monkeypatch.setattr(web_server, "trace", None)
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: calls["warnings"].append(msg))
+    monkeypatch.setattr(
+        web_server.logger, "warning", lambda msg, *args: calls["warnings"].append(msg)
+    )
     web_server._setup_tracing()
     assert calls["warnings"]
 
@@ -1485,14 +1597,38 @@ def test_request_user_admin_and_metrics_guards():
 
 
 def test_policy_resolution_and_audit_resource_builder():
-    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", method="GET")) == ("rag", "read", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/rag/docs/42", method="DELETE")) == ("rag", "write", "42")
-    assert web_server._resolve_policy_from_request(_make_request("/github-repos", method="POST")) == ("github", "write", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/api/agents/register", method="POST")) == ("agents", "register", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/api/swarm/execute", method="POST")) == ("swarm", "execute", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/admin/stats", method="GET")) == ("admin", "manage", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/ws/room", method="GET")) == ("swarm", "execute", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/unknown", method="GET")) == ("", "", "")
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", method="GET")) == (
+        "rag",
+        "read",
+        "*",
+    )
+    assert web_server._resolve_policy_from_request(
+        _make_request("/rag/docs/42", method="DELETE")
+    ) == ("rag", "write", "42")
+    assert web_server._resolve_policy_from_request(
+        _make_request("/github-repos", method="POST")
+    ) == ("github", "write", "*")
+    assert web_server._resolve_policy_from_request(
+        _make_request("/api/agents/register", method="POST")
+    ) == ("agents", "register", "*")
+    assert web_server._resolve_policy_from_request(
+        _make_request("/api/swarm/execute", method="POST")
+    ) == ("swarm", "execute", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/admin/stats", method="GET")) == (
+        "admin",
+        "manage",
+        "*",
+    )
+    assert web_server._resolve_policy_from_request(_make_request("/ws/room", method="GET")) == (
+        "swarm",
+        "execute",
+        "*",
+    )
+    assert web_server._resolve_policy_from_request(_make_request("/unknown", method="GET")) == (
+        "",
+        "",
+        "",
+    )
     assert web_server._build_audit_resource("rag", "x") == "rag:x"
     assert web_server._build_audit_resource("", "x") == ""
 
@@ -1505,7 +1641,9 @@ async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
         recorded.update(kwargs)
 
     async def _resolve_agent():
-        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log)))
+        return SimpleNamespace(
+            memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log))
+        )
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
 
@@ -1527,7 +1665,11 @@ async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
     await scheduled["task"]
     assert recorded["resource"] == "rag:doc1"
 
-    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no-loop")))
+    monkeypatch.setattr(
+        web_server.asyncio,
+        "get_running_loop",
+        lambda: (_ for _ in ()).throw(RuntimeError("no-loop")),
+    )
     debug_logs = []
     monkeypatch.setattr(web_server.logger, "debug", lambda msg, *args: debug_logs.append(msg))
     web_server._schedule_access_audit_log(
@@ -1579,9 +1721,42 @@ def test_schedule_access_audit_log_early_exit_when_resource_type_missing(monkeyp
 
 
 def test_serialize_marketing_records():
-    campaign = SimpleNamespace(id=1, tenant_id="t1", name="Launch", channel="email", objective="signup", status="draft", owner_user_id="u1", budget=99.5, metadata_json="{}", created_at="c", updated_at="u")
-    asset = SimpleNamespace(id=2, campaign_id=1, tenant_id="t1", asset_type="post", title="Hello", content="World", channel="x", metadata_json="{}", created_at="c", updated_at="u")
-    checklist = SimpleNamespace(id=3, campaign_id=None, tenant_id="t1", title="Ops", items_json="[]", status="pending", owner_user_id="u2", created_at="c", updated_at="u")
+    campaign = SimpleNamespace(
+        id=1,
+        tenant_id="t1",
+        name="Launch",
+        channel="email",
+        objective="signup",
+        status="draft",
+        owner_user_id="u1",
+        budget=99.5,
+        metadata_json="{}",
+        created_at="c",
+        updated_at="u",
+    )
+    asset = SimpleNamespace(
+        id=2,
+        campaign_id=1,
+        tenant_id="t1",
+        asset_type="post",
+        title="Hello",
+        content="World",
+        channel="x",
+        metadata_json="{}",
+        created_at="c",
+        updated_at="u",
+    )
+    checklist = SimpleNamespace(
+        id=3,
+        campaign_id=None,
+        tenant_id="t1",
+        title="Ops",
+        items_json="[]",
+        status="pending",
+        owner_user_id="u2",
+        created_at="c",
+        updated_at="u",
+    )
 
     assert web_server._serialize_campaign(campaign)["name"] == "Launch"
     assert web_server._serialize_content_asset(asset)["campaign_id"] == 1
@@ -1634,7 +1809,9 @@ def test_persist_and_import_plugin_file_paths(monkeypatch, tmp_path):
 
 
 def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
-    monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_: {"kind": "from-core", "run_id": "1"})
+    monkeypatch.setattr(
+        web_server, "build_ci_failure_context", lambda *_: {"kind": "from-core", "run_id": "1"}
+    )
 
     result = web_server._resolve_ci_failure_context("workflow_run", {"x": 1})
     assert result == {"kind": "from-core", "run_id": "1"}
@@ -1681,7 +1858,9 @@ class DemoAgent(BaseAgent):
 def test_persist_and_read_write_plugin_marketplace_state(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    plugin_path = web_server._persist_and_import_plugin_file("my_plugin", b"x = 1\n", "test_plugin_module")
+    plugin_path = web_server._persist_and_import_plugin_file(
+        "my_plugin", b"x = 1\n", "test_plugin_module"
+    )
     assert plugin_path.exists()
     assert plugin_path.name == "my_plugin.py"
 
@@ -1718,11 +1897,17 @@ def test_get_and_serialize_marketplace_plugin(monkeypatch, tmp_path):
         web_server.AgentRegistry,
         "get",
         lambda role: SimpleNamespace(
-            role_name=role, description="desc", capabilities=["x", "y"], version="9.9.9", is_builtin=False
+            role_name=role,
+            description="desc",
+            capabilities=["x", "y"],
+            version="9.9.9",
+            is_builtin=False,
         ),
     )
 
-    payload = web_server._serialize_marketplace_plugin("demo", installed_state={"installed_at": "t1"})
+    payload = web_server._serialize_marketplace_plugin(
+        "demo", installed_state={"installed_at": "t1"}
+    )
     assert payload["installed"] is True
     assert payload["entrypoint_exists"] is True
     assert payload["agent"]["role_name"] == "demo_role"
@@ -1752,7 +1937,9 @@ def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path)
             }
         },
     )
-    monkeypatch.setattr(web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+    monkeypatch.setattr(
+        web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id}
+    )
     monkeypatch.setattr(
         web_server,
         "_register_plugin_agent",
@@ -1761,6 +1948,7 @@ def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path)
     monkeypatch.setattr(web_server.AgentRegistry, "unregister", lambda *_: True)
     state = {}
     monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: dict(state))
+
     def _write_state(new_state):
         state.clear()
         state.update(new_state)
@@ -1775,12 +1963,18 @@ def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path)
     assert removed["success"] is True
     assert "demo" not in state
 
-    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"demo": {}, "unknown": {}})
-    monkeypatch.setattr(web_server, "_install_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+    monkeypatch.setattr(
+        web_server, "_read_plugin_marketplace_state", lambda: {"demo": {}, "unknown": {}}
+    )
+    monkeypatch.setattr(
+        web_server, "_install_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id}
+    )
     assert web_server._reload_persisted_marketplace_plugins() == [{"plugin_id": "demo"}]
 
 
-def _make_request(path: str, method: str = "GET", headers: dict | None = None, client_ip: str = "127.0.0.1") -> Request:
+def _make_request(
+    path: str, method: str = "GET", headers: dict | None = None, client_ip: str = "127.0.0.1"
+) -> Request:
     return Request(
         {
             "type": "http",
@@ -1797,10 +1991,24 @@ def _make_request(path: str, method: str = "GET", headers: dict | None = None, c
 
 
 def test_policy_resolution_helpers_and_metrics_access(monkeypatch):
-    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", "GET")) == ("rag", "read", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/rag/docs/1", "DELETE")) == ("rag", "write", "1")
-    assert web_server._resolve_policy_from_request(_make_request("/github-prs", "POST")) == ("github", "write", "*")
-    assert web_server._resolve_policy_from_request(_make_request("/api/agents/register", "POST")) == ("agents", "register", "*")
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs", "GET")) == (
+        "rag",
+        "read",
+        "*",
+    )
+    assert web_server._resolve_policy_from_request(_make_request("/rag/docs/1", "DELETE")) == (
+        "rag",
+        "write",
+        "1",
+    )
+    assert web_server._resolve_policy_from_request(_make_request("/github-prs", "POST")) == (
+        "github",
+        "write",
+        "*",
+    )
+    assert web_server._resolve_policy_from_request(
+        _make_request("/api/agents/register", "POST")
+    ) == ("agents", "register", "*")
     assert web_server._resolve_policy_from_request(_make_request("/unknown", "GET")) == ("", "", "")
     assert web_server._build_audit_resource("rag", "") == "rag:*"
     assert web_server._build_audit_resource("", "1") == ""
@@ -1812,7 +2020,9 @@ def test_policy_resolution_helpers_and_metrics_access(monkeypatch):
     req = _make_request("/metrics", headers={"Authorization": "Bearer tok"})
     assert web_server._require_metrics_access(req, user) is user
     with pytest.raises(HTTPException):
-        web_server._require_metrics_access(_make_request("/metrics"), SimpleNamespace(role="user", username="lin"))
+        web_server._require_metrics_access(
+            _make_request("/metrics"), SimpleNamespace(role="user", username="lin")
+        )
 
 
 @pytest.mark.asyncio
@@ -1824,11 +2034,18 @@ async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
         called["audit"] = kwargs
 
     async def _get_agent():
-        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log)))
+        return SimpleNamespace(
+            memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=_record_audit_log))
+        )
 
     monkeypatch.setattr(web_server, "get_agent", _get_agent)
     web_server._schedule_access_audit_log(
-        user=user, resource_type="rag", action="read", resource_id="doc-1", ip_address="1.1.1.1", allowed=True
+        user=user,
+        resource_type="rag",
+        action="read",
+        resource_id="doc-1",
+        ip_address="1.1.1.1",
+        allowed=True,
     )
     await asyncio.sleep(0)
     await asyncio.sleep(0)
@@ -1909,8 +2126,16 @@ async def test_async_force_shutdown_paths(monkeypatch):
 @pytest.mark.asyncio
 async def test_prewarm_rag_embeddings_branches(monkeypatch):
     logs = {"info": [], "warn": []}
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs["info"].append(msg % args if args else msg))
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: logs["warn"].append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "info",
+        lambda msg, *args: logs["info"].append(msg % args if args else msg),
+    )
+    monkeypatch.setattr(
+        web_server.logger,
+        "warning",
+        lambda msg, *args: logs["warn"].append(msg % args if args else msg),
+    )
 
     async def _agent_without_rag():
         return SimpleNamespace(rag=None)
@@ -1952,7 +2177,11 @@ async def test_prewarm_rag_embeddings_branches(monkeypatch):
 @pytest.mark.asyncio
 async def test_prewarm_rag_embeddings_logs_when_init_chroma_raises(monkeypatch):
     warnings: list[str] = []
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "warning",
+        lambda msg, *args: warnings.append(msg % args if args else msg),
+    )
 
     class _RagBroken:
         _chroma_available = True
@@ -2017,7 +2246,9 @@ async def test_await_if_needed_and_health_response_branches(monkeypatch):
 
     class _AgentOllamaDown:
         cfg = SimpleNamespace(AI_PROVIDER="ollama")
-        health = SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": False})
+        health = SimpleNamespace(
+            get_health_summary=lambda: {"status": "ok", "ollama_online": False}
+        )
 
     async def _get_agent_ollama_down():
         return _AgentOllamaDown()
@@ -2050,21 +2281,29 @@ def test_serialize_record_helpers_cover_defaults_and_values():
     assert prompt_payload["id"] == 11
     assert prompt_payload["is_active"] is True
 
-    swarm_payload = web_server._serialize_swarm_result(SimpleNamespace(task_id=None, elapsed_ms=None, graph=None))
+    swarm_payload = web_server._serialize_swarm_result(
+        SimpleNamespace(task_id=None, elapsed_ms=None, graph=None)
+    )
     assert swarm_payload["task_id"] == ""
     assert swarm_payload["elapsed_ms"] == 0
     assert swarm_payload["graph"] == {}
 
-    campaign_payload = web_server._serialize_campaign(SimpleNamespace(id="9", metadata_json=None, budget="1.5"))
+    campaign_payload = web_server._serialize_campaign(
+        SimpleNamespace(id="9", metadata_json=None, budget="1.5")
+    )
     assert campaign_payload["id"] == 9
     assert campaign_payload["budget"] == 1.5
     assert campaign_payload["metadata_json"] == "{}"
 
-    asset_payload = web_server._serialize_content_asset(SimpleNamespace(id="7", campaign_id="3", content=123))
+    asset_payload = web_server._serialize_content_asset(
+        SimpleNamespace(id="7", campaign_id="3", content=123)
+    )
     assert asset_payload["campaign_id"] == 3
     assert asset_payload["content"] == "123"
 
-    checklist_payload = web_server._serialize_operation_checklist(SimpleNamespace(id="4", campaign_id=None, items_json=None))
+    checklist_payload = web_server._serialize_operation_checklist(
+        SimpleNamespace(id="4", campaign_id=None, items_json=None)
+    )
     assert checklist_payload["campaign_id"] is None
     assert checklist_payload["items_json"] == "[]"
 
@@ -2078,7 +2317,10 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
     with pytest.raises(HTTPException):
         web_server._verify_hmac_signature(b"{}", "secret", "sha256=wrong", label="sig")
 
-    valid = "sha256=" + __import__("hmac").new(b"secret", b"{}", __import__("hashlib").sha256).hexdigest()
+    valid = (
+        "sha256="
+        + __import__("hmac").new(b"secret", b"{}", __import__("hashlib").sha256).hexdigest()
+    )
     web_server._verify_hmac_signature(b"{}", "secret", valid, label="sig")
 
     monkeypatch.setattr(web_server.subprocess, "check_output", lambda *a, **k: b"main\n")
@@ -2110,17 +2352,28 @@ async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
     assert bad_json_res.status_code == 400
 
     async def _dispatch(**kwargs):
-        return {"ok": True, "trigger_source": kwargs["trigger_source"], "payload": kwargs["payload"]}
+        return {
+            "ok": True,
+            "trigger_source": kwargs["trigger_source"],
+            "payload": kwargs["payload"],
+        }
 
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
-    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {"kind": "workflow_run", "run_id": "42"})
-    ci_res = await web_server.autonomy_webhook("github", _Req(b'{"event_name":"workflow_run"}'), x_sidar_signature="")
+    monkeypatch.setattr(
+        web_server,
+        "_resolve_ci_failure_context",
+        lambda *_: {"kind": "workflow_run", "run_id": "42"},
+    )
+    ci_res = await web_server.autonomy_webhook(
+        "github", _Req(b'{"event_name":"workflow_run"}'), x_sidar_signature=""
+    )
     ci_body = ci_res.body.decode("utf-8")
     assert ci_res.status_code == 200
     assert "webhook:github:ci_failure" in ci_body
-    assert "event_driven_federation\":null" in ci_body
+    assert 'event_driven_federation":null' in ci_body
 
     monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+
     async def _run_workflow(**_):
         return {"workflow_type": "github_pull_request", "correlation_id": "corr-1"}
 
@@ -2128,9 +2381,15 @@ async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
     monkeypatch.setattr(
         web_server,
         "_embed_event_driven_federation_payload",
-        lambda payload, workflow: {"embedded": True, "event_payload": payload, "workflow": workflow},
+        lambda payload, workflow: {
+            "embedded": True,
+            "event_payload": payload,
+            "workflow": workflow,
+        },
     )
-    fed_res = await web_server.autonomy_webhook("github", _Req(b'{"event_name":"pull_request"}'), x_sidar_signature="")
+    fed_res = await web_server.autonomy_webhook(
+        "github", _Req(b'{"event_name":"pull_request"}'), x_sidar_signature=""
+    )
     fed_body = fed_res.body.decode("utf-8")
     assert fed_res.status_code == 200
     assert "event_driven_federation" in fed_body
@@ -2174,6 +2433,7 @@ async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch)
         closed["reason"] = reason
 
     monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close)
+
     async def _resolve_agent():
         return SimpleNamespace(memory=SimpleNamespace())
 
@@ -2268,7 +2528,9 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     user = SimpleNamespace(id="u1", username="ada", role="developer")
     ws = _ChatWebSocket(
         [
-            web_server.json.dumps({"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}),
+            web_server.json.dumps(
+                {"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}
+            ),
             web_server.json.dumps({"action": "message", "message": "@sidar   "}),
             web_server.json.dumps({"action": "message", "message": "hello"}),
         ],
@@ -2284,12 +2546,14 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
         can_write=True,
         write_scopes=["/tmp/workspaces/team/sync"],
     )
-    room = web_server._CollaborationRoom(room_id="team:sync", participants={web_server._socket_key(ws): participant})
+    room = web_server._CollaborationRoom(
+        room_id="team:sync", participants={web_server._socket_key(ws): participant}
+    )
     broadcast_events: list[dict] = []
 
     async def _join(*_args, **_kwargs):
         web_server._collaboration_rooms["team:sync"] = room
-        setattr(ws, "_sidar_room_id", "team:sync")
+        ws._sidar_room_id = "team:sync"
         return room
 
     async def _broadcast(_room, payload):
@@ -2304,6 +2568,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     agent = SimpleNamespace(
         memory=SimpleNamespace(set_active_user=_set_active_user),
     )
+
     async def _resolve_agent():
         return agent
 
@@ -2325,6 +2590,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     assert any(event.get("type") == "room_error" for event in broadcast_events)
     assert any("Hız Sınırı" in payload.get("chunk", "") for payload in ws.sent)
 
+
 @pytest.mark.asyncio
 async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
     class _DB:
@@ -2333,7 +2599,9 @@ async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
 
         async def get_session_messages(self, session_id):
             if session_id == "s1":
-                return [SimpleNamespace(role="user", content="merhaba", created_at="ts", tokens_used=3)]
+                return [
+                    SimpleNamespace(role="user", content="merhaba", created_at="ts", tokens_used=3)
+                ]
             return []
 
         async def load_session(self, session_id, _user_id):
@@ -2404,12 +2672,16 @@ async def test_git_and_branch_endpoints(monkeypatch):
         return fn(*args, **kwargs)
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
-    monkeypatch.setattr(web_server, "_git_run", lambda cmd, *_: {
-        "rev-parse": "feature/x",
-        "remote": "git@github.com:org/repo.git",
-        "symbolic-ref": "origin/main",
-        "branch": "main\nfeature/x",
-    }[[k for k in ("rev-parse", "remote", "symbolic-ref", "branch") if k in " ".join(cmd)][0]])
+    monkeypatch.setattr(
+        web_server,
+        "_git_run",
+        lambda cmd, *_: {
+            "rev-parse": "feature/x",
+            "remote": "git@github.com:org/repo.git",
+            "symbolic-ref": "origin/main",
+            "branch": "main\nfeature/x",
+        }[[k for k in ("rev-parse", "remote", "symbolic-ref", "branch") if k in " ".join(cmd)][0]],
+    )
 
     info = await web_server.git_info()
     branches = await web_server.git_branches()
@@ -2545,6 +2817,7 @@ async def test_vision_endpoints_cover_success(monkeypatch):
     assert mockup_res.status_code == 200
     assert b'"code":"code:react"' in mockup_res.body
 
+
 @pytest.mark.asyncio
 async def test_entity_and_feedback_store_endpoints(monkeypatch):
     class _EntityMem:
@@ -2609,7 +2882,9 @@ async def test_slack_jira_and_teams_endpoints_error_and_success(monkeypatch):
     with pytest.raises(HTTPException):
         await web_server.api_slack_send(web_server._SlackSendRequest(text="x"))
     web_server._slack_mgr_instance = _Slack(available=True)
-    slack_send = await web_server.api_slack_send(web_server._SlackSendRequest(text="x", channel="#g"))
+    slack_send = await web_server.api_slack_send(
+        web_server._SlackSendRequest(text="x", channel="#g")
+    )
     slack_channels = await web_server.api_slack_channels()
     assert slack_send.status_code == 200
     assert b'"general"' in slack_channels.body
@@ -2676,14 +2951,20 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
     create_campaign = await web_server.api_operations_create_campaign(
         web_server._CampaignCreateRequest(
             name="Launch",
-            initial_assets=[web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c")],
-            initial_checklists=[web_server._OperationChecklistCreateRequest(title="todo", items=["a"])],
+            initial_assets=[
+                web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c")
+            ],
+            initial_checklists=[
+                web_server._OperationChecklistCreateRequest(title="todo", items=["a"])
+            ],
         ),
         _user=user,
     )
     assets = await web_server.api_operations_list_assets(1, _user=user)
     add_asset = await web_server.api_operations_add_asset(
-        1, web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c"), _user=user
+        1,
+        web_server._ContentAssetCreateRequest(asset_type="post", title="t", content="c"),
+        _user=user,
     )
     checklists = await web_server.api_operations_list_checklists(1, _user=user)
     add_checklist = await web_server.api_operations_add_checklist(
@@ -2699,9 +2980,14 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
     monkeypatch.setattr(
         web_server,
         "_dispatch_autonomy_trigger",
-        lambda **kwargs: {"trigger_source": kwargs["trigger_source"], "event_name": kwargs["event_name"]},
+        lambda **kwargs: {
+            "trigger_source": kwargs["trigger_source"],
+            "event_name": kwargs["event_name"],
+        },
     )
-    wake = await web_server.autonomy_wake(web_server._AutonomyWakeRequest(prompt=" çalış ", source="user"))
+    wake = await web_server.autonomy_wake(
+        web_server._AutonomyWakeRequest(prompt=" çalış ", source="user")
+    )
     activity = await web_server.autonomy_activity(limit=7)
     assert b'"trigger_source":"manual:user"' in wake.body
     assert b'"limit":7' in activity.body
@@ -2756,8 +3042,14 @@ async def test_basic_auth_middleware_branches(monkeypatch):
 
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda uid: calls.update({"set_token": uid}) or "tok-1")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda tok: calls.update({"reset_token": tok}))
+    monkeypatch.setattr(
+        web_server,
+        "set_current_metrics_user_id",
+        lambda uid: calls.update({"set_token": uid}) or "tok-1",
+    )
+    monkeypatch.setattr(
+        web_server, "reset_current_metrics_user_id", lambda tok: calls.update({"reset_token": tok})
+    )
 
     ok = await web_server.basic_auth_middleware(
         _make_request("/admin/stats", headers={"Authorization": "Bearer good-token"}),
@@ -2775,10 +3067,14 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
         return web_server.JSONResponse({"ok": True}, status_code=200)
 
     request_no_user = _make_request("/rag/docs", "GET")
-    assert (await web_server.access_policy_middleware(request_no_user, _call_next)).status_code == 200
+    assert (
+        await web_server.access_policy_middleware(request_no_user, _call_next)
+    ).status_code == 200
 
     logs = []
-    monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **kwargs: logs.append(kwargs))
+    monkeypatch.setattr(
+        web_server, "_schedule_access_audit_log", lambda **kwargs: logs.append(kwargs)
+    )
     monkeypatch.setattr(web_server, "_get_client_ip", lambda _request: "9.9.9.9")
 
     admin_req = _make_request("/rag/docs", "GET")
@@ -2805,13 +3101,18 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
         raise RuntimeError("db down")
 
     async def _resolve_agent_fail():
-        return SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=_raise_policy)))
+        return SimpleNamespace(
+            memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=_raise_policy))
+        )
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent_fail)
     denied_on_error = await web_server.access_policy_middleware(denied_req, _call_next)
     assert denied_on_error.status_code == 403
 
-    assert (await web_server.ddos_rate_limit_middleware(_make_request("/healthz"), _call_next)).status_code == 200
+    assert (
+        await web_server.ddos_rate_limit_middleware(_make_request("/healthz"), _call_next)
+    ).status_code == 200
+
     async def _rate_limited(*_args, **_kwargs):
         return True
 
@@ -2821,7 +3122,9 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
     assert "Rate Limit Aşıldı" in ddos_block.body.decode("utf-8")
 
     ws_block = await web_server.rate_limit_middleware(_make_request("/ws/chat", "GET"), _call_next)
-    post_block = await web_server.rate_limit_middleware(_make_request("/set-repo", "POST"), _call_next)
+    post_block = await web_server.rate_limit_middleware(
+        _make_request("/set-repo", "POST"), _call_next
+    )
     get_block = await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
     non_io_get = await web_server.rate_limit_middleware(_make_request("/status", "GET"), _call_next)
     assert ws_block.status_code == 429
@@ -2836,7 +3139,9 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
         return False
 
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_open)
-    assert (await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)).status_code == 200
+    assert (
+        await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
+    ).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -2860,6 +3165,7 @@ async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monke
 async def test_federation_and_github_webhook_paths(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+
     async def _dispatch_ok(**kwargs):
         return {
             "summary": "done",
@@ -2922,16 +3228,19 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
 
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+
     async def _resolve_agent():
         return SimpleNamespace(memory=_Memory())
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+
     async def _run_federation(**_):
         return {"workflow_type": "github_pull_request", "correlation_id": "corr-2"}
 
     monkeypatch.setattr(web_server, "_run_event_driven_federation_workflow", _run_federation)
     dispatch_calls = []
+
     async def _dispatch_capture(**kwargs):
         dispatch_calls.append(kwargs)
         return {"ok": True}
@@ -2940,17 +3249,23 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
 
     payload = b'{"action":"opened","pull_request":{"title":"Fix","number":5}}'
-    gh_res = await web_server.github_webhook(_Req(payload), x_github_event="pull_request", x_hub_signature_256="")
+    gh_res = await web_server.github_webhook(
+        _Req(payload), x_github_event="pull_request", x_hub_signature_256=""
+    )
     assert gh_res.status_code == 200
     assert memory_calls
     assert dispatch_calls
 
-    bad_json = await web_server.github_webhook(_Req(b"{"), x_github_event="push", x_hub_signature_256="")
+    bad_json = await web_server.github_webhook(
+        _Req(b"{"), x_github_event="push", x_hub_signature_256=""
+    )
     assert bad_json.status_code == 400
 
 
 def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
-    monkeypatch.setitem(sys.modules, "core.dlp", SimpleNamespace(mask_pii=lambda value: f"masked:{value}"))
+    monkeypatch.setitem(
+        sys.modules, "core.dlp", SimpleNamespace(mask_pii=lambda value: f"masked:{value}")
+    )
     assert web_server._mask_collaboration_text("abc") == "masked:abc"
 
     original_import = __import__
@@ -3016,7 +3331,9 @@ def test_list_child_ollama_pids_psutil_success_path(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch):
-    monkeypatch.setattr(web_server.os, "waitpid", lambda *_: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        web_server.os, "waitpid", lambda *_: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     assert web_server._reap_child_processes_nonblocking() == 0
 
 
@@ -3066,14 +3383,18 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
 async def test_leave_collaboration_room_broadcasts_when_room_survives(monkeypatch):
     ws_departing = _DummyWebSocket()
     ws_staying = _DummyWebSocket()
-    setattr(ws_departing, "_sidar_room_id", "team:survive")
-    setattr(ws_staying, "_sidar_room_id", "team:survive")
+    ws_departing._sidar_room_id = "team:survive"
+    ws_staying._sidar_room_id = "team:survive"
 
     room = web_server._CollaborationRoom(
         room_id="team:survive",
         participants={
-            web_server._socket_key(ws_departing): web_server._CollaborationParticipant(ws_departing, "u1", "a", "A"),
-            web_server._socket_key(ws_staying): web_server._CollaborationParticipant(ws_staying, "u2", "b", "B"),
+            web_server._socket_key(ws_departing): web_server._CollaborationParticipant(
+                ws_departing, "u1", "a", "A"
+            ),
+            web_server._socket_key(ws_staying): web_server._CollaborationParticipant(
+                ws_staying, "u2", "b", "B"
+            ),
         },
     )
     web_server._collaboration_rooms["team:survive"] = room
@@ -3117,7 +3438,11 @@ def test_terminate_ollama_child_pids_without_grace_skips_sleep_and_kill(monkeypa
 
 def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(monkeypatch):
     reaped = {"count": 0}
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1) or 0)
+    monkeypatch.setattr(
+        web_server,
+        "_reap_child_processes_nonblocking",
+        lambda: reaped.__setitem__("count", reaped["count"] + 1) or 0,
+    )
 
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
@@ -3151,7 +3476,11 @@ def test_force_shutdown_local_llm_processes_logs_when_reap_or_pids_present(monke
 async def test_async_force_shutdown_handles_idempotent_and_no_force_paths(monkeypatch):
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", True)
     reaped = {"count": 0}
-    monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("count", reaped["count"] + 1))
+    monkeypatch.setattr(
+        web_server,
+        "_reap_child_processes_nonblocking",
+        lambda: reaped.__setitem__("count", reaped["count"] + 1),
+    )
     await web_server._async_force_shutdown_local_llm_processes()
     assert reaped["count"] == 0
 
@@ -3169,7 +3498,9 @@ def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatc
     collector = _Collector()
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: collector)
 
-    agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None)))
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(db=SimpleNamespace(record_provider_usage_daily=lambda **_: None))
+    )
     web_server._bind_llm_usage_sink(agent)
 
     assert collector._sidar_usage_sink_bound is True
@@ -3187,7 +3518,11 @@ def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatc
     sink = sink_holder["sink"]
 
     sink(SimpleNamespace(user_id="", provider="x", total_tokens=1))
-    monkeypatch.setattr(web_server.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        web_server.asyncio,
+        "get_running_loop",
+        lambda: (_ for _ in ()).throw(RuntimeError("no loop")),
+    )
     sink(SimpleNamespace(user_id="u-1", provider="x", total_tokens=1))
 
 
@@ -3236,7 +3571,9 @@ async def test_ws_stream_agent_text_response_handles_sentinels_and_voice_packets
     assert {"tool_call": "search"} in ws.payloads
     assert {"thought": "thinking"} in ws.payloads
     assert {"chunk": "Merhaba"} in ws.payloads
-    assert any("audio_chunk" in payload and payload["audio_text"] == "Merhaba" for payload in ws.payloads)
+    assert any(
+        "audio_chunk" in payload and payload["audio_text"] == "Merhaba" for payload in ws.payloads
+    )
 
 
 @pytest.mark.asyncio
@@ -3300,6 +3637,7 @@ async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
         return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
     async def _resolve_none(*_):
         return None
 
@@ -3329,8 +3667,10 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
             self.messages.append((role, content))
 
     agent = SimpleNamespace(memory=_Memory())
+
     async def _resolve_agent():
         return agent
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
@@ -3348,13 +3688,23 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
             x_hub_signature_256="sha256=invalid",
         )
 
-    good_sig = "sha256=" + __import__("hmac").new(b"sekret", b"{}", __import__("hashlib").sha256).hexdigest()
-    push_res = await web_server.github_webhook(_Req(b"{}"), x_github_event="push", x_hub_signature_256=good_sig)
+    good_sig = (
+        "sha256="
+        + __import__("hmac").new(b"sekret", b"{}", __import__("hashlib").sha256).hexdigest()
+    )
+    push_res = await web_server.github_webhook(
+        _Req(b"{}"), x_github_event="push", x_hub_signature_256=good_sig
+    )
     assert push_res.status_code == 200
 
     payload = b'{"action":"opened","issue":{"title":"Bug","number":3}}'
-    issue_sig = "sha256=" + __import__("hmac").new(b"sekret", payload, __import__("hashlib").sha256).hexdigest()
-    issues_res = await web_server.github_webhook(_Req(payload), x_github_event="issues", x_hub_signature_256=issue_sig)
+    issue_sig = (
+        "sha256="
+        + __import__("hmac").new(b"sekret", payload, __import__("hashlib").sha256).hexdigest()
+    )
+    issues_res = await web_server.github_webhook(
+        _Req(payload), x_github_event="issues", x_hub_signature_256=issue_sig
+    )
     assert issues_res.status_code == 200
     assert any("Issue #3" in content for role, content in agent.memory.messages if role == "user")
 
@@ -3366,7 +3716,9 @@ async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monk
     assert api_like.status_code == 404
     assert static_like.status_code == 404
 
-    monkeypatch.setattr(web_server, "index", lambda: web_server.HTMLResponse("<h1>ok</h1>", status_code=200))
+    monkeypatch.setattr(
+        web_server, "index", lambda: web_server.HTMLResponse("<h1>ok</h1>", status_code=200)
+    )
     ok = await web_server.spa_fallback("dashboard/home")
     assert ok.status_code == 200
     assert b"<h1>ok</h1>" in ok.body
@@ -3414,6 +3766,7 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
 
     async def _resolve_agent():
         return agent
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(
         web_server,
@@ -3421,24 +3774,35 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
         lambda *_: {"workflow_name": "CI", "run_id": 10, "conclusion": "failure"},
     )
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
-    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **kwargs: dispatch_calls.append(kwargs) or {"ok": True})
+    monkeypatch.setattr(
+        web_server,
+        "_dispatch_autonomy_trigger",
+        lambda **kwargs: dispatch_calls.append(kwargs) or {"ok": True},
+    )
     monkeypatch.setattr(
         web_server,
         "_run_event_driven_federation_workflow",
-        lambda **kwargs: workflow_calls.append(kwargs) or {"workflow_type": "external_event", "correlation_id": "cid-1"},
+        lambda **kwargs: workflow_calls.append(kwargs)
+        or {"workflow_type": "external_event", "correlation_id": "cid-1"},
     )
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
-    response = await web_server.github_webhook(_Req(), x_github_event="issues", x_hub_signature_256="")
+    response = await web_server.github_webhook(
+        _Req(), x_github_event="issues", x_hub_signature_256=""
+    )
     assert response.status_code == 200
     assert dispatch_calls[-1]["trigger_source"] == "webhook:github:ci_failure"
     assert workflow_calls == []  # ci_context varken federation workflow çağrılmaz.
-    assert any("[GITHUB CI]" in content for role, content in agent.memory.messages if role == "user")
+    assert any(
+        "[GITHUB CI]" in content for role, content in agent.memory.messages if role == "user"
+    )
 
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", False)
     dispatch_calls.clear()
-    response_disabled = await web_server.github_webhook(_Req(), x_github_event="issues", x_hub_signature_256="")
+    response_disabled = await web_server.github_webhook(
+        _Req(), x_github_event="issues", x_hub_signature_256=""
+    )
     assert response_disabled.status_code == 200
 
 
@@ -3456,7 +3820,9 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
             self.calls.append((role, content))
 
     memory = _Memory()
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: SimpleNamespace(memory=memory))
+    monkeypatch.setattr(
+        web_server, "_resolve_agent_instance", lambda: SimpleNamespace(memory=memory)
+    )
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
 
     dispatched = {"count": 0}
@@ -3466,7 +3832,9 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
 
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
 
-    response = await web_server.github_webhook(_Req(), x_github_event="repository", x_hub_signature_256="")
+    response = await web_server.github_webhook(
+        _Req(), x_github_event="repository", x_hub_signature_256=""
+    )
 
     assert response.status_code == 200
     assert memory.calls == []
@@ -3489,7 +3857,9 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", lambda **_kwargs: {"ok": True})
 
-    response = await web_server.github_webhook(_Req(), x_github_event="repository", x_hub_signature_256="")
+    response = await web_server.github_webhook(
+        _Req(), x_github_event="repository", x_hub_signature_256=""
+    )
 
     assert response.status_code == 200
 
@@ -3510,10 +3880,12 @@ async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
             return None
 
     agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+
     async def _resolve_agent():
         return agent
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+
     async def _issue_token(*_):
         return "jwt-token"
 
@@ -3529,7 +3901,9 @@ async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
     assert b'"access_token":"jwt-token"' in register_res.body
 
     with pytest.raises(HTTPException):
-        await web_server.register_user(web_server._RegisterRequest(username="taken", password="123456", tenant_id="t1"))
+        await web_server.register_user(
+            web_server._RegisterRequest(username="taken", password="123456", tenant_id="t1")
+        )
 
     with pytest.raises(HTTPException):
         await web_server.login_user(web_server._LoginRequest(username="lin", password="bad"))
@@ -3540,7 +3914,9 @@ async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
     with pytest.raises(HTTPException):
         await web_server.login_user(web_server._LoginRequest(username="db-error", password="ok"))
 
-    me = await web_server.auth_me(_make_request("/auth/me"), user=SimpleNamespace(id="u", username="ada", role="admin"))
+    me = await web_server.auth_me(
+        _make_request("/auth/me"), user=SimpleNamespace(id="u", username="ada", role="admin")
+    )
     assert me.status_code == 200
     assert b'"username":"ada"' in me.body
 
@@ -3562,8 +3938,18 @@ async def test_admin_prompt_and_policy_endpoints(monkeypatch):
             ]
 
         async def get_active_prompt(self, role_name):
-            return None if role_name == "none" else SimpleNamespace(
-                id="2", role_name=role_name, prompt_text="live", version="2", is_active=1, created_at="ts1", updated_at="ts2"
+            return (
+                None
+                if role_name == "none"
+                else SimpleNamespace(
+                    id="2",
+                    role_name=role_name,
+                    prompt_text="live",
+                    version="2",
+                    is_active=1,
+                    created_at="ts1",
+                    updated_at="ts2",
+                )
             )
 
         async def upsert_prompt(self, role_name, prompt_text, activate):
@@ -3578,29 +3964,53 @@ async def test_admin_prompt_and_policy_endpoints(monkeypatch):
             )
 
         async def activate_prompt(self, prompt_id):
-            return None if prompt_id == 0 else SimpleNamespace(
-                id=str(prompt_id), role_name="system", prompt_text="new", version="4", is_active=1, created_at="ts1", updated_at="ts2"
+            return (
+                None
+                if prompt_id == 0
+                else SimpleNamespace(
+                    id=str(prompt_id),
+                    role_name="system",
+                    prompt_text="new",
+                    version="4",
+                    is_active=1,
+                    created_at="ts1",
+                    updated_at="ts2",
+                )
             )
 
         async def list_access_policies(self, **_):
-            return [SimpleNamespace(user_id="u1", tenant_id="t1", resource_type="rag", resource_id="*", action="read", effect="allow")]
+            return [
+                SimpleNamespace(
+                    user_id="u1",
+                    tenant_id="t1",
+                    resource_type="rag",
+                    resource_id="*",
+                    action="read",
+                    effect="allow",
+                )
+            ]
 
         async def upsert_access_policy(self, **_):
             return None
 
     agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()), system_prompt="old")
+
     async def _resolve_agent():
         return agent
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
 
-    prompts = await web_server.admin_list_prompts(role_name="reviewer", _user=SimpleNamespace(role="admin"))
+    prompts = await web_server.admin_list_prompts(
+        role_name="reviewer", _user=SimpleNamespace(role="admin")
+    )
     assert prompts.status_code == 200
 
     with pytest.raises(HTTPException):
         await web_server.admin_active_prompt(role_name="none", _user=SimpleNamespace(role="admin"))
 
-    active = await web_server.admin_active_prompt(role_name="system", _user=SimpleNamespace(role="admin"))
+    active = await web_server.admin_active_prompt(
+        role_name="system", _user=SimpleNamespace(role="admin")
+    )
     assert active.status_code == 200
 
     with pytest.raises(ValidationError):
@@ -3621,11 +4031,18 @@ async def test_admin_prompt_and_policy_endpoints(monkeypatch):
     )
     assert activated.status_code == 200
 
-    policies = await web_server.admin_list_policies("u1", tenant_id="t1", _user=SimpleNamespace(role="admin"))
+    policies = await web_server.admin_list_policies(
+        "u1", tenant_id="t1", _user=SimpleNamespace(role="admin")
+    )
     assert policies.status_code == 200
     policy_upsert = await web_server.admin_upsert_policy(
         web_server._PolicyUpsertRequest(
-            user_id="u1", tenant_id="t1", resource_type="rag", resource_id="*", action="read", effect="allow"
+            user_id="u1",
+            tenant_id="t1",
+            resource_type="rag",
+            resource_id="*",
+            action="read",
+            effect="allow",
         ),
         _user=SimpleNamespace(role="admin"),
     )
@@ -3655,6 +4072,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
     monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+
     def _run_and_finalize(coro):
         if asyncio.iscoroutine(coro):
             coro.close()
@@ -3676,7 +4094,9 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
     assert web_server.cfg.ACCESS_LEVEL == "sandbox"
     assert web_server.cfg.AI_PROVIDER == "openai"
 
-    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     web_server.main()
     assert run_calls[-1][1]["port"] == 9191
 
@@ -3717,7 +4137,11 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
     monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
-    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: SimpleNamespace(VERSION="1.0.0", initialize=lambda: None))
+    monkeypatch.setattr(
+        web_server,
+        "SidarAgent",
+        lambda _cfg: SimpleNamespace(VERSION="1.0.0", initialize=lambda: None),
+    )
 
     web_server.main()
 
@@ -3788,7 +4212,9 @@ async def test_favicon_vendor_and_index_paths(tmp_path, monkeypatch):
     index_missing = await web_server.index()
     assert index_missing.status_code == 500
 
-    (tmp_path / "index.html").write_text("<html><head></head><body>ok</body></html>", encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        "<html><head></head><body>ok</body></html>", encoding="utf-8"
+    )
     index_ok = await web_server.index()
     assert index_ok.status_code == 200
     assert "grafana.local" in index_ok.body.decode("utf-8")
@@ -3907,7 +4333,9 @@ async def test_redis_rate_limit_first_request_sets_expire_and_get_client_ip_real
     req_real = _make_request("/x", headers={"X-Real-IP": "8.8.8.8"}, client_ip="127.0.0.1")
     assert web_server._get_client_ip(req_real) == "8.8.8.8"
 
-    req_untrusted = _make_request("/x", headers={"X-Forwarded-For": "9.9.9.9"}, client_ip="10.0.0.7")
+    req_untrusted = _make_request(
+        "/x", headers={"X-Forwarded-For": "9.9.9.9"}, client_ip="10.0.0.7"
+    )
     assert web_server._get_client_ip(req_untrusted) == "10.0.0.7"
 
 
@@ -4361,7 +4789,11 @@ async def test_websocket_chat_generate_response_finally_skips_unset_sub_and_ctx(
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1))
+    monkeypatch.setattr(
+        web_server,
+        "reset_current_metrics_user_id",
+        lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1),
+    )
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
@@ -4503,7 +4935,11 @@ async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monk
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1))
+    monkeypatch.setattr(
+        web_server,
+        "reset_current_metrics_user_id",
+        lambda _tok: reset_called.__setitem__("count", reset_called["count"] + 1),
+    )
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
@@ -4598,7 +5034,9 @@ async def test_websocket_chat_room_status_pump_stops_cleanly_when_flag_set(monke
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
-    assert any(item.get("type") == "assistant_done" for item in ws.payloads if isinstance(item, dict))
+    assert any(
+        item.get("type") == "assistant_done" for item in ws.payloads if isinstance(item, dict)
+    )
 
 
 @pytest.mark.asyncio
@@ -4818,7 +5256,10 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
 
     assert ws.subprotocol == "good-token"
     assert any(item.get("type") == "assistant_stream_start" for item in events)
-    assert any(item.get("type") == "room_error" and "network timeout" in item.get("error", "") for item in events)
+    assert any(
+        item.get("type") == "room_error" and "network timeout" in item.get("error", "")
+        for item in events
+    )
 
 
 @pytest.mark.asyncio
@@ -4967,6 +5408,7 @@ async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(mon
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: None)
     monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
+
     def _fake_create_task(coro):
         coro.close()
         return _Task()
@@ -4977,7 +5419,9 @@ async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(mon
     await web_server.websocket_chat(ws)
 
     assert state["cancelled"] is True
-    assert any(item.get("done") is True and "iptal edildi" in item.get("chunk", "") for item in ws.payloads)
+    assert any(
+        item.get("done") is True and "iptal edildi" in item.get("chunk", "") for item in ws.payloads
+    )
 
 
 @pytest.mark.asyncio
@@ -5015,11 +5459,13 @@ async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
         return _Agent()
 
     ticks = iter([10.0, 10.1226, 10.1226])
+
     def _monotonic():
         try:
             return next(ticks)
         except StopIteration:
             return 10.1226
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server.time, "monotonic", _monotonic)
 
@@ -5086,11 +5532,16 @@ async def test_websocket_voice_core_voice_import_error_falls_back_without_crashi
         def __init__(self):
             self.headers = {}
             self.sent: list[dict[str, object]] = []
-            self._packets = iter([
-                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
-                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
-                {"type": "websocket.disconnect"},
-            ])
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"start","mime_type":"audio/wav"}',
+                    },
+                    {"type": "websocket.disconnect"},
+                ]
+            )
 
         async def accept(self, subprotocol=None):
             _ = subprotocol
@@ -5144,7 +5595,9 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
             self.duplex_enabled = True
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=0, output_text_buffer="", last_interrupt_reason=""
+            )
 
         def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
             return {
@@ -5195,15 +5648,29 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
             self.sent = []
             self.accepted = None
             self.closed = None
-            self._packets = iter([
-                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
-                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
-                {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"###"}'},
-                {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
-                {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_end"}'},
-                {"type": "websocket.receive", "text": '{"action":"cancel"}'},
-                {"type": "websocket.disconnect"},
-            ])
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"start","mime_type":"audio/wav"}',
+                    },
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"###"}',
+                    },
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"vad_event","state":"speech_end"}',
+                    },
+                    {"type": "websocket.receive", "text": '{"action":"cancel"}'},
+                    {"type": "websocket.disconnect"},
+                ]
+            )
 
         async def accept(self, subprotocol=None):
             self.accepted = subprotocol
@@ -5280,11 +5747,16 @@ async def test_websocket_voice_degrades_when_voice_pipeline_init_fails(monkeypat
         def __init__(self):
             self.headers = {}
             self.sent = []
-            self._packets = iter([
-                {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
-                {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
-                {"type": "websocket.disconnect"},
-            ])
+            self._packets = iter(
+                [
+                    {"type": "websocket.receive", "text": '{"action":"auth","token":"tok"}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"start","mime_type":"audio/wav"}',
+                    },
+                    {"type": "websocket.disconnect"},
+                ]
+            )
 
         async def accept(self, subprotocol=None):
             _ = subprotocol
@@ -5526,7 +5998,9 @@ async def test_websocket_voice_handles_malformed_packets_and_empty_chunks(monkey
             self.vad_enabled = False
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=0, output_text_buffer="", last_interrupt_reason=""
+            )
 
         def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
             return {
@@ -5560,7 +6034,10 @@ async def test_websocket_voice_handles_malformed_packets_and_empty_chunks(monkey
                     {"type": "websocket.receive", "text": "{invalid json"},
                     {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":""}'},
                     {"type": "websocket.receive", "text": '{"action":"unknown"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
                     {"type": "websocket.disconnect"},
                 ]
@@ -5634,7 +6111,10 @@ async def test_websocket_voice_reports_transcription_failure_reason(monkeypatch)
                 [
                     {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
                     {"type": "websocket.receive", "text": '{"action":"start"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
                     {"type": "websocket.disconnect"},
                 ]
@@ -5725,18 +6205,24 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
 
     monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close_policy)
 
-    ws_header_auth = _Ws({"sec-websocket-protocol": "good-token"}, [{"type": "websocket.disconnect"}])
+    ws_header_auth = _Ws(
+        {"sec-websocket-protocol": "good-token"}, [{"type": "websocket.disconnect"}]
+    )
     await web_server.websocket_voice(ws_header_auth)
     assert ws_header_auth.accepted == "good-token"
     assert {"auth_ok": True} in ws_header_auth.sent
 
-    ws_unauth_action = _Ws({}, [{"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'}])
+    ws_unauth_action = _Ws(
+        {}, [{"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'}]
+    )
     await web_server.websocket_voice(ws_unauth_action)
     assert closed_reasons[-1] == "Authentication required"
 
 
 @pytest.mark.asyncio
-async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_active_turn(monkeypatch):
+async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_active_turn(
+    monkeypatch,
+):
     class _VoicePipeline:
         def __init__(self, _cfg):
             self.enabled = True
@@ -5744,7 +6230,9 @@ async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_act
             self.duplex_enabled = True
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=0, output_text_buffer="", last_interrupt_reason=""
+            )
 
         def build_voice_state_payload(self, event, buffered_bytes, sequence, duplex_state):
             return {"voice_state": event, "buffered_bytes": buffered_bytes, "sequence": sequence}
@@ -5791,10 +6279,19 @@ async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_act
                 [
                     {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
-                    {"type": "websocket.receive", "text": '{"action":"start","mime_type":"audio/wav"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"start","mime_type":"audio/wav"}',
+                    },
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
-                    {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_start"}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"vad_event","state":"speech_start"}',
+                    },
                     {"type": "websocket.disconnect"},
                 ]
             )
@@ -5835,7 +6332,10 @@ async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_act
     await web_server.websocket_voice(ws)
 
     assert any(item.get("error") == "İşlenecek ses verisi bulunamadı." for item in ws.sent)
-    assert any(item.get("voice_interruption") == "barge_in" and item.get("cancelled") is True for item in ws.sent)
+    assert any(
+        item.get("voice_interruption") == "barge_in" and item.get("cancelled") is True
+        for item in ws.sent
+    )
 
 
 @pytest.mark.asyncio
@@ -5860,7 +6360,10 @@ async def test_websocket_voice_vad_event_without_voice_pipeline_skips_commit_pat
             self._packets = iter(
                 [
                     {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
-                    {"type": "websocket.receive", "text": '{"action":"vad_event","state":"speech_end"}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"vad_event","state":"speech_end"}',
+                    },
                     {"type": "websocket.disconnect"},
                 ]
             )
@@ -5895,6 +6398,7 @@ async def test_websocket_voice_vad_event_without_voice_pipeline_skips_commit_pat
     await web_server.websocket_voice(ws)
 
     assert any(item.get("voice_state") == "speech_end" for item in ws.sent)
+
 
 @pytest.mark.asyncio
 async def test_status_uses_coding_model_for_non_gemini_provider(monkeypatch):
@@ -5975,21 +6479,31 @@ async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
             self.closed = True
 
     with pytest.raises(HTTPException) as empty_exc:
-        await web_server.register_agent_plugin_file(_Upload("demo.py", b""), _user=SimpleNamespace(role="admin"))
+        await web_server.register_agent_plugin_file(
+            _Upload("demo.py", b""), _user=SimpleNamespace(role="admin")
+        )
     assert empty_exc.value.status_code == 400
 
     too_large = b"a" * (web_server.MAX_FILE_CONTENT_BYTES + 1)
     with pytest.raises(HTTPException) as large_exc:
-        await web_server.register_agent_plugin_file(_Upload("demo.py", too_large), _user=SimpleNamespace(role="admin"))
+        await web_server.register_agent_plugin_file(
+            _Upload("demo.py", too_large), _user=SimpleNamespace(role="admin")
+        )
     assert large_exc.value.status_code == 413
 
     with pytest.raises(HTTPException) as utf_exc:
-        await web_server.register_agent_plugin_file(_Upload("demo.py", b"\xff"), _user=SimpleNamespace(role="admin"))
+        await web_server.register_agent_plugin_file(
+            _Upload("demo.py", b"\xff"), _user=SimpleNamespace(role="admin")
+        )
     assert utf_exc.value.status_code == 400
 
     captured = {}
     monkeypatch.setattr(web_server.secrets, "token_hex", lambda _: "beefbeef")
-    monkeypatch.setattr(web_server, "_persist_and_import_plugin_file", lambda *args: captured.setdefault("persist", args))
+    monkeypatch.setattr(
+        web_server,
+        "_persist_and_import_plugin_file",
+        lambda *args: captured.setdefault("persist", args),
+    )
 
     def _register_plugin_agent(**kwargs):
         captured["register"] = kwargs
@@ -6015,27 +6529,48 @@ async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_plugin_marketplace_http_handlers(monkeypatch):
-    monkeypatch.setattr(web_server, "PLUGIN_MARKETPLACE_CATALOG", {
-        "xx": {"name": "Plugin X"},
-        "aa": {"name": "Plugin A"},
-    })
-    monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {"aa": {"installed_at": "now"}})
+    monkeypatch.setattr(
+        web_server,
+        "PLUGIN_MARKETPLACE_CATALOG",
+        {
+            "xx": {"name": "Plugin X"},
+            "aa": {"name": "Plugin A"},
+        },
+    )
+    monkeypatch.setattr(
+        web_server, "_read_plugin_marketplace_state", lambda: {"aa": {"installed_at": "now"}}
+    )
     monkeypatch.setattr(
         web_server,
         "_serialize_marketplace_plugin",
-        lambda plugin_id, installed_state=None: {"plugin_id": plugin_id, "state": installed_state or {}},
+        lambda plugin_id, installed_state=None: {
+            "plugin_id": plugin_id,
+            "state": installed_state or {},
+        },
     )
-    monkeypatch.setattr(web_server, "_install_marketplace_plugin", lambda plugin_id: {"ok": True, "plugin_id": plugin_id})
-    monkeypatch.setattr(web_server, "_uninstall_marketplace_plugin", lambda plugin_id: {"removed": plugin_id})
+    monkeypatch.setattr(
+        web_server,
+        "_install_marketplace_plugin",
+        lambda plugin_id: {"ok": True, "plugin_id": plugin_id},
+    )
+    monkeypatch.setattr(
+        web_server, "_uninstall_marketplace_plugin", lambda plugin_id: {"removed": plugin_id}
+    )
 
     catalog = await web_server.plugin_marketplace_catalog(_user=SimpleNamespace(role="admin"))
     assert b'"plugin_id":"aa"' in catalog.body
     assert b'"plugin_id":"xx"' in catalog.body
 
     payload = web_server._PluginMarketplaceInstallRequest(plugin_id="aa")
-    install = await web_server.install_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
-    reload_res = await web_server.reload_plugin_marketplace_item(payload, _user=SimpleNamespace(role="admin"))
-    uninstall = await web_server.uninstall_plugin_marketplace_item("aa", _user=SimpleNamespace(role="admin"))
+    install = await web_server.install_plugin_marketplace_item(
+        payload, _user=SimpleNamespace(role="admin")
+    )
+    reload_res = await web_server.reload_plugin_marketplace_item(
+        payload, _user=SimpleNamespace(role="admin")
+    )
+    uninstall = await web_server.uninstall_plugin_marketplace_item(
+        "aa", _user=SimpleNamespace(role="admin")
+    )
 
     assert install.body == b'{"ok":true,"plugin_id":"aa"}'
     assert reload_res.body == b'{"ok":true,"plugin_id":"aa"}'
@@ -6049,12 +6584,21 @@ async def test_execute_swarm_pipeline_parallel_and_validation(monkeypatch):
             self.cfg = _cfg
 
         async def run_pipeline(self, tasks, session_id):
-            return [SimpleNamespace(task_id="p1", status="ok", summary=f"{session_id}:{len(tasks)}")]
+            return [
+                SimpleNamespace(task_id="p1", status="ok", summary=f"{session_id}:{len(tasks)}")
+            ]
 
         async def run_parallel(self, tasks, session_id, max_concurrency):
-            return [SimpleNamespace(task_id="r1", status="ok", summary=f"{session_id}:{max_concurrency}:{len(tasks)}")]
+            return [
+                SimpleNamespace(
+                    task_id="r1",
+                    status="ok",
+                    summary=f"{session_id}:{max_concurrency}:{len(tasks)}",
+                )
+            ]
 
     monkeypatch.setattr(web_server, "SwarmOrchestrator", _Orchestrator)
+
     async def _resolve_agent():
         return SimpleNamespace(cfg=SimpleNamespace())
 
@@ -6153,7 +6697,9 @@ async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         await web_server.hitl_respond(
             "missing",
-            payload=web_server._HITLRespondRequest(approved=False, decided_by="op", rejection_reason="no"),
+            payload=web_server._HITLRespondRequest(
+                approved=False, decided_by="op", rejection_reason="no"
+            ),
             user=user,
         )
     assert exc_info.value.status_code == 404
@@ -6306,11 +6852,11 @@ def test_append_room_telemetry_handles_missing_optional_fields():
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_when_room_missing_is_noop():
     websocket = _DummyWebSocket()
-    setattr(websocket, "_sidar_room_id", "team:missing")
+    websocket._sidar_room_id = "team:missing"
 
     await web_server._leave_collaboration_room(websocket)
 
-    assert getattr(websocket, "_sidar_room_id") == ""
+    assert websocket._sidar_room_id == ""
 
 
 @pytest.mark.asyncio
@@ -6327,7 +6873,11 @@ async def test_async_force_shutdown_local_llm_processes_ollama_logs_when_reaped(
 
     monkeypatch.setattr(web_server.os, "kill", _kill)
     monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 2)
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: calls["logs"].append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "info",
+        lambda msg, *args: calls["logs"].append(msg % args if args else msg),
+    )
 
     await web_server._async_force_shutdown_local_llm_processes()
 
@@ -6345,7 +6895,9 @@ async def test_async_force_shutdown_local_llm_processes_without_children_skips_l
     monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 0)
 
     logs: list[str] = []
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: logs.append(msg % args if args else msg)
+    )
 
     await web_server._async_force_shutdown_local_llm_processes()
 
@@ -6390,7 +6942,9 @@ async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatc
 
     monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraUnavailable())
     with pytest.raises(HTTPException) as jira_unavailable:
-        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SIDAR", summary="s"))
+        await web_server.api_jira_create_issue(
+            web_server._JiraCreateRequest(project_key="SIDAR", summary="s")
+        )
     assert jira_unavailable.value.status_code == 503
 
     with pytest.raises(HTTPException) as jira_search_unavailable:
@@ -6409,7 +6963,9 @@ async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatc
 
     monkeypatch.setattr(web_server, "_get_jira_manager", lambda: _JiraErr())
     with pytest.raises(HTTPException) as jira_create_err:
-        await web_server.api_jira_create_issue(web_server._JiraCreateRequest(project_key="SIDAR", summary="s"))
+        await web_server.api_jira_create_issue(
+            web_server._JiraCreateRequest(project_key="SIDAR", summary="s")
+        )
     assert jira_create_err.value.status_code == 502
 
     with pytest.raises(HTTPException) as jira_search_err:
@@ -6447,8 +7003,12 @@ async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatc
 
     monkeypatch.setattr(web_server, "_jira_mgr_instance", None)
     monkeypatch.setattr(web_server, "_teams_mgr_instance", None)
-    monkeypatch.setitem(sys.modules, "managers.jira_manager", types.SimpleNamespace(JiraManager=_JiraManager))
-    monkeypatch.setitem(sys.modules, "managers.teams_manager", types.SimpleNamespace(TeamsManager=_TeamsManager))
+    monkeypatch.setitem(
+        sys.modules, "managers.jira_manager", types.SimpleNamespace(JiraManager=_JiraManager)
+    )
+    monkeypatch.setitem(
+        sys.modules, "managers.teams_manager", types.SimpleNamespace(TeamsManager=_TeamsManager)
+    )
     monkeypatch.setattr(web_server.cfg, "JIRA_BASE_URL", "https://jira.example")
     monkeypatch.setattr(web_server.cfg, "JIRA_EMAIL", "bot@example.com")
     monkeypatch.setattr(web_server.cfg, "JIRA_API_TOKEN", "token")
@@ -6510,7 +7070,9 @@ def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
         "opentelemetry.exporter": types.ModuleType("opentelemetry.exporter"),
         "opentelemetry.exporter.otlp": types.ModuleType("opentelemetry.exporter.otlp"),
         "opentelemetry.exporter.otlp.proto": types.ModuleType("opentelemetry.exporter.otlp.proto"),
-        "opentelemetry.exporter.otlp.proto.grpc": types.ModuleType("opentelemetry.exporter.otlp.proto.grpc"),
+        "opentelemetry.exporter.otlp.proto.grpc": types.ModuleType(
+            "opentelemetry.exporter.otlp.proto.grpc"
+        ),
         "opentelemetry.exporter.otlp.proto.grpc.trace_exporter": types.SimpleNamespace(
             OTLPSpanExporter=type("OTLPSpanExporter", (), {})
         ),
@@ -6523,8 +7085,12 @@ def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
         ),
         "opentelemetry.sdk": types.ModuleType("opentelemetry.sdk"),
         "opentelemetry.sdk.resources": types.SimpleNamespace(Resource=type("Resource", (), {})),
-        "opentelemetry.sdk.trace": types.SimpleNamespace(TracerProvider=type("TracerProvider", (), {})),
-        "opentelemetry.sdk.trace.export": types.SimpleNamespace(BatchSpanProcessor=type("BatchSpanProcessor", (), {})),
+        "opentelemetry.sdk.trace": types.SimpleNamespace(
+            TracerProvider=type("TracerProvider", (), {})
+        ),
+        "opentelemetry.sdk.trace.export": types.SimpleNamespace(
+            BatchSpanProcessor=type("BatchSpanProcessor", (), {})
+        ),
     }
     for name, mod in fake_modules.items():
         monkeypatch.setitem(sys.modules, name, mod)
@@ -6559,7 +7125,7 @@ async def test_autonomous_cron_loop_logs_success(monkeypatch):
         async def wait(self):
             self.calls += 1
             if self.calls == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return True
 
     async def _wait_for(awaitable, timeout):
@@ -6571,7 +7137,9 @@ async def test_autonomous_cron_loop_logs_success(monkeypatch):
     info_logs: list[str] = []
     monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
     monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch)
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg)
+    )
 
     await web_server._autonomous_cron_loop(_StopAfterFirstTimeout())
     assert any("Autonomous cron tetiklendi" in item for item in info_logs)
@@ -6592,7 +7160,7 @@ async def test_nightly_memory_loop_logs_success(monkeypatch):
         async def wait(self):
             self.calls += 1
             if self.calls == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return True
 
     async def _wait_for(awaitable, timeout):
@@ -6609,7 +7177,9 @@ async def test_nightly_memory_loop_logs_success(monkeypatch):
     info_logs: list[str] = []
     monkeypatch.setattr(web_server.asyncio, "wait_for", _wait_for)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg)
+    )
 
     await web_server._nightly_memory_loop(_StopAfterFirstTimeout())
     assert any("Nightly memory maintenance sonucu: ok" in item for item in info_logs)
@@ -6718,11 +7288,17 @@ async def test_metrics_prometheus_importerror_falls_back_to_json(monkeypatch):
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
     monkeypatch.setattr(web_server, "_local_rate_limits", {})
     monkeypatch.setattr("builtins.__import__", _fake_import)
 
-    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    response = await web_server.metrics(
+        Request(scope, _receive), _user=SimpleNamespace(role="admin")
+    )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -6735,7 +7311,11 @@ async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapsho
             return {"totals": {"calls": 2}}
 
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
-    monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda snap: f"calls={snap['totals']['calls']}\n")
+    monkeypatch.setattr(
+        web_server,
+        "render_llm_metrics_prometheus",
+        lambda snap: f"calls={snap['totals']['calls']}\n",
+    )
 
     original_import = __import__
 
@@ -6781,7 +7361,9 @@ def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
             is_builtin=False,
         )
 
-    monkeypatch.setattr(web_server, "_load_plugin_agent_class", lambda *_args, **_kwargs: _PluginAgent)
+    monkeypatch.setattr(
+        web_server, "_load_plugin_agent_class", lambda *_args, **_kwargs: _PluginAgent
+    )
     monkeypatch.setattr(web_server.AgentRegistry, "register_type", _fake_register_type)
     monkeypatch.setattr(web_server.AgentRegistry, "get", _fake_get)
     monkeypatch.setattr(web_server.secrets, "token_hex", lambda _n: "cafebabe")
@@ -6817,7 +7399,9 @@ async def test_register_user_rejects_invalid_short_credentials_without_db_call(m
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
 
     with pytest.raises(HTTPException) as exc:
-        await web_server.register_user(SimpleNamespace(username="ab", password="12345", tenant_id="default"))
+        await web_server.register_user(
+            SimpleNamespace(username="ab", password="12345", tenant_id="default")
+        )
 
     assert exc.value.status_code == 400
     assert called["resolve"] == 0
@@ -6879,11 +7463,17 @@ async def test_metrics_prometheus_plain_text_success_path(monkeypatch):
     )
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
     monkeypatch.setattr(web_server, "_local_rate_limits", {})
     monkeypatch.setitem(sys.modules, "prometheus_client", fake_prom)
 
-    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    response = await web_server.metrics(
+        Request(scope, _receive), _user=SimpleNamespace(role="admin")
+    )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
@@ -6903,7 +7493,9 @@ async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available
     fake_agent_metrics_mod = SimpleNamespace(get_agent_metrics_collector=lambda: _AgentCollector())
 
     monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: _Collector())
-    monkeypatch.setattr(web_server, "render_llm_metrics_prometheus", lambda _snap: "llm_calls_total 1\n")
+    monkeypatch.setattr(
+        web_server, "render_llm_metrics_prometheus", lambda _snap: "llm_calls_total 1\n"
+    )
     monkeypatch.setitem(sys.modules, "core.agent_metrics", fake_agent_metrics_mod)
 
     response = await web_server.llm_prometheus_metrics(_user=SimpleNamespace(role="admin"))
@@ -7104,8 +7696,8 @@ async def test_entity_feedback_success_paths(monkeypatch):
     mem_obj = _MemStore()
     fb_obj = _FeedbackStore()
 
-    import types
     import sys
+    import types
 
     entity_mod = types.ModuleType("core.entity_memory")
     entity_mod.get_entity_memory = lambda _cfg: mem_obj
@@ -7147,8 +7739,8 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
         async def list_channels(self):
             return False, [], "list failed"
 
-    import types
     import sys
+    import types
 
     mgr_mod = types.ModuleType("managers.slack_manager")
     mgr_mod.SlackManager = _SlackManager
@@ -7167,14 +7759,23 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
     assert send_exc.value.status_code == 502
     assert channels_exc.value.status_code == 502
 
+
 def test_mask_collaboration_text_returns_original_on_runtime_error(monkeypatch):
-    monkeypatch.setattr(web_server.importlib, "import_module", lambda _name: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        web_server.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     assert web_server._mask_collaboration_text("raw-text") == "raw-text"
 
 
 def test_reap_child_processes_nonblocking_breaks_on_unexpected_error(monkeypatch):
-    monkeypatch.setattr(web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(RuntimeError("waitpid failed")))
+    monkeypatch.setattr(
+        web_server.os,
+        "waitpid",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("waitpid failed")),
+    )
 
     assert web_server._reap_child_processes_nonblocking() == 0
 
@@ -7188,7 +7789,9 @@ def test_force_shutdown_local_llm_processes_without_children_skips_info_log(monk
     monkeypatch.setattr(web_server, "_reap_child_processes_nonblocking", lambda: 0)
 
     info_logs = []
-    monkeypatch.setattr(web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger, "info", lambda msg, *args: info_logs.append(msg % args if args else msg)
+    )
 
     web_server._force_shutdown_local_llm_processes()
 
@@ -7224,7 +7827,11 @@ async def test_get_agent_lock_guard_skips_reinitialize_when_agent_set_inside_loc
 
 
 def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch):
-    monkeypatch.setattr(web_server, "_resolve_psutil_module", lambda: (_ for _ in ()).throw(RuntimeError("no psutil")))
+    monkeypatch.setattr(
+        web_server,
+        "_resolve_psutil_module",
+        lambda: (_ for _ in ()).throw(RuntimeError("no psutil")),
+    )
     monkeypatch.setattr(web_server.os, "name", "posix")
     monkeypatch.setattr(web_server.os, "getpid", lambda: 500)
 
@@ -7267,12 +7874,16 @@ def test_reload_persisted_marketplace_plugins_tolerates_reload_failures(monkeypa
 async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkeypatch):
     class _DB:
         async def upsert_prompt(self, **_kwargs):
-            return SimpleNamespace(is_active=True, role_name="system", prompt_text="sys-new", id="p1")
+            return SimpleNamespace(
+                is_active=True, role_name="system", prompt_text="sys-new", id="p1"
+            )
 
         async def activate_prompt(self, prompt_id):
             if prompt_id == 999:
                 return None
-            return SimpleNamespace(role_name="system", prompt_text="sys-active", id=prompt_id, is_active=True)
+            return SimpleNamespace(
+                role_name="system", prompt_text="sys-active", id=prompt_id, is_active=True
+            )
 
     agent = SimpleNamespace(system_prompt="old", memory=SimpleNamespace(db=_DB()))
     monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
@@ -7325,10 +7936,14 @@ async def test_rag_add_url_and_set_level_additional_error_paths(monkeypatch):
     rag_empty = await web_server.rag_add_url(_JsonRequest({"url": " ", "title": "x"}))
     assert rag_empty.status_code == 400
 
-    missing_level = await web_server.set_level_endpoint(_JsonRequest({"level": " "}), _user=SimpleNamespace(role="admin"))
+    missing_level = await web_server.set_level_endpoint(
+        _JsonRequest({"level": " "}), _user=SimpleNamespace(role="admin")
+    )
     assert missing_level.status_code == 400
 
-    level_ok = await web_server.set_level_endpoint(_JsonRequest({"level": "strict"}), _user=SimpleNamespace(role="admin"))
+    level_ok = await web_server.set_level_endpoint(
+        _JsonRequest({"level": "strict"}), _user=SimpleNamespace(role="admin")
+    )
     assert level_ok.status_code == 200
     assert b'"message":"ok-async"' in level_ok.body
 
@@ -7358,7 +7973,11 @@ async def test_upload_rag_file_sanitizes_empty_filename_and_cleanup_error(monkey
         return fn(*args, **kwargs)
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
-    monkeypatch.setattr(web_server.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")))
+    monkeypatch.setattr(
+        web_server.shutil,
+        "rmtree",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")),
+    )
 
     res = await web_server.upload_rag_file(_Upload())
     assert res.status_code == 200
@@ -7385,7 +8004,9 @@ async def test_git_info_without_remote_and_slack_unavailable(monkeypatch):
     assert b'"repo":"Sidar"' in info.body
     assert b'"default_branch":"develop"' in info.body
 
-    monkeypatch.setattr(web_server, "_get_slack_manager", lambda: SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setattr(
+        web_server, "_get_slack_manager", lambda: SimpleNamespace(is_available=lambda: False)
+    )
     with pytest.raises(HTTPException) as slack_exc:
         await web_server.api_slack_channels()
     assert slack_exc.value.status_code == 503
@@ -7498,7 +8119,9 @@ async def test_schedule_access_audit_log_recorder_missing_and_no_loop(monkeypatc
 async def test_plugin_install_missing_source_raises(monkeypatch):
     pid = next(iter(web_server.PLUGIN_MARKETPLACE_CATALOG.keys()))
     entry = dict(web_server.PLUGIN_MARKETPLACE_CATALOG[pid])
-    monkeypatch.setitem(web_server.PLUGIN_MARKETPLACE_CATALOG, pid, {**entry, "entrypoint": "plugins/missing.py"})
+    monkeypatch.setitem(
+        web_server.PLUGIN_MARKETPLACE_CATALOG, pid, {**entry, "entrypoint": "plugins/missing.py"}
+    )
     with pytest.raises(HTTPException):
         web_server._install_marketplace_plugin(pid)
 
@@ -7507,7 +8130,14 @@ async def test_plugin_install_missing_source_raises(monkeypatch):
 async def test_admin_prompt_and_stats_branches(monkeypatch):
     db = SimpleNamespace(
         get_admin_stats=lambda: {"k": 1},
-        upsert_prompt=lambda **_: SimpleNamespace(role_name="assistant", prompt_text="x", is_active=False, id=1, created_at="n", updated_at="n"),
+        upsert_prompt=lambda **_: SimpleNamespace(
+            role_name="assistant",
+            prompt_text="x",
+            is_active=False,
+            id=1,
+            created_at="n",
+            updated_at="n",
+        ),
         activate_prompt=lambda _pid: None,
     )
 
@@ -7515,7 +8145,14 @@ async def test_admin_prompt_and_stats_branches(monkeypatch):
         return {"k": 1}
 
     async def _upsert(**_kwargs):
-        return SimpleNamespace(id=1, role_name="assistant", prompt_text="x", is_active=False, created_at="n", updated_at="n")
+        return SimpleNamespace(
+            id=1,
+            role_name="assistant",
+            prompt_text="x",
+            is_active=False,
+            created_at="n",
+            updated_at="n",
+        )
 
     async def _activate(_pid):
         return None
@@ -7524,8 +8161,10 @@ async def test_admin_prompt_and_stats_branches(monkeypatch):
     db.upsert_prompt = _upsert
     db.activate_prompt = _activate
     agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="old")
+
     async def _resolve_agent():
         return agent
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda x: x)
 
@@ -7533,10 +8172,14 @@ async def test_admin_prompt_and_stats_branches(monkeypatch):
     assert _decode_json_response(stats_resp)["k"] == 1
 
     with pytest.raises(ValidationError):
-        await web_server.admin_upsert_prompt(web_server._PromptUpsertRequest(role_name="", prompt_text=""), _user=SimpleNamespace())
+        await web_server.admin_upsert_prompt(
+            web_server._PromptUpsertRequest(role_name="", prompt_text=""), _user=SimpleNamespace()
+        )
 
     with pytest.raises(HTTPException):
-        await web_server.admin_activate_prompt(web_server._PromptActivateRequest(prompt_id=1), _user=SimpleNamespace())
+        await web_server.admin_activate_prompt(
+            web_server._PromptActivateRequest(prompt_id=1), _user=SimpleNamespace()
+        )
 
 
 @pytest.mark.asyncio
@@ -7544,16 +8187,34 @@ async def test_access_policy_middleware_and_rate_limit_helpers(monkeypatch):
     async def _next(_request):
         return JSONResponse({"ok": True})
 
-    req = SimpleNamespace(method="OPTIONS", state=SimpleNamespace(user=None), url=SimpleNamespace(path="/x"), headers={}, client=None)
+    req = SimpleNamespace(
+        method="OPTIONS",
+        state=SimpleNamespace(user=None),
+        url=SimpleNamespace(path="/x"),
+        headers={},
+        client=None,
+    )
     resp = await web_server.access_policy_middleware(req, _next)
     assert _decode_json_response(resp)["ok"] is True
 
-    user_req = SimpleNamespace(method="GET", state=SimpleNamespace(user=SimpleNamespace(id="u", username="u", role="user", tenant_id="t")), url=SimpleNamespace(path="/x"), headers={}, client=None)
-    monkeypatch.setattr(web_server, "_resolve_policy_from_request", lambda _req: ("repo", "read", "1"))
+    user_req = SimpleNamespace(
+        method="GET",
+        state=SimpleNamespace(
+            user=SimpleNamespace(id="u", username="u", role="user", tenant_id="t")
+        ),
+        url=SimpleNamespace(path="/x"),
+        headers={},
+        client=None,
+    )
+    monkeypatch.setattr(
+        web_server, "_resolve_policy_from_request", lambda _req: ("repo", "read", "1")
+    )
     monkeypatch.setattr(web_server, "_get_client_ip", lambda _req: "127.0.0.1")
     agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=None)))
+
     async def _resolve_agent():
         return agent
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **_: None)
     allow_resp = await web_server.access_policy_middleware(user_req, _next)
@@ -7580,17 +8241,22 @@ async def test_redis_and_client_ip_and_static_and_close_helpers(monkeypatch, tmp
             self.expire_calls += 1
 
     redis = _Redis()
+
     async def _get_redis_obj():
         return redis
+
     monkeypatch.setattr(web_server, "_get_redis", _get_redis_obj)
     assert await web_server._redis_is_rate_limited("ns", "k", 5, 60) is False
     assert redis.expire_calls == 1
 
     async def _broken_redis():
         raise Exception("x")
+
     monkeypatch.setattr(web_server, "_get_redis", _broken_redis)
 
-    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={"X-Forwarded-For": "1.2.3.4"})
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"), headers={"X-Forwarded-For": "1.2.3.4"}
+    )
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", ["127.0.0.1"])
     assert web_server._get_client_ip(req) == "1.2.3.4"
 
@@ -7598,6 +8264,7 @@ async def test_redis_and_client_ip_and_static_and_close_helpers(monkeypatch, tmp
 
     class _Boom:
         first = True
+
         def __init__(self, *args, **kwargs):
             if _Boom.first and "check_dir" in kwargs:
                 _Boom.first = False
@@ -7631,9 +8298,13 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
         return True, []
 
     docs = SimpleNamespace(search=lambda *args: (True, {"args": args}))
-    agent = SimpleNamespace(github=_Github(), memory=SimpleNamespace(active_session_id="s1"), docs=docs)
+    agent = SimpleNamespace(
+        github=_Github(), memory=SimpleNamespace(active_session_id="s1"), docs=docs
+    )
+
     async def _resolve_agent():
         return agent
+
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
 
     repos_resp = await web_server.github_repos(owner="", q="repo-a")
@@ -7680,10 +8351,13 @@ async def test_dispatch_autonomy_trigger_non_awaitable_agent_and_ci_fallback_edg
     )
     assert workflow_context["base_branch"] == "main"
 
-    assert web_server._fallback_ci_failure_context(
-        "check_suite",
-        {"repository": {"name": "sidar"}, "check_suite": {"conclusion": "success"}},
-    ) == {}
+    assert (
+        web_server._fallback_ci_failure_context(
+            "check_suite",
+            {"repository": {"name": "sidar"}, "check_suite": {"conclusion": "success"}},
+        )
+        == {}
+    )
 
 
 @pytest.mark.asyncio
@@ -7736,7 +8410,6 @@ def test_load_plugin_agent_class_rejects_baseagent_itself():
         web_server._load_plugin_agent_class(source, "PluginAgent", "baseagent_alias")
 
 
-
 def test_load_plugin_agent_class_class_name_path_uses_direct_issubclass_branch():
     source = (
         "from web_server import BaseAgent\n"
@@ -7777,7 +8450,9 @@ async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
 
     await web_server.admin_upsert_prompt(
-        web_server._PromptUpsertRequest(role_name="system", prompt_text="new system prompt", activate=True),
+        web_server._PromptUpsertRequest(
+            role_name="system", prompt_text="new system prompt", activate=True
+        ),
         _user=SimpleNamespace(role="admin"),
     )
     assert agent.system_prompt == "new system prompt"
@@ -7790,7 +8465,9 @@ async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_proxy_headers(monkeypatch):
+async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_proxy_headers(
+    monkeypatch,
+):
     class _Lock:
         async def __aenter__(self):
             web_server._redis_client = object()
@@ -7893,7 +8570,9 @@ async def test_github_repos_query_empty_takes_non_filter_branch(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_filter_branch(monkeypatch):
+async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_filter_branch(
+    monkeypatch,
+):
     class _Memory:
         def __len__(self):
             return 0
@@ -7901,6 +8580,7 @@ async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_
         def get_all_sessions(self):
             async def _co():
                 return ["s1", "s2"]
+
             return _co()
 
     class _Agent:
@@ -7936,10 +8616,16 @@ async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_
     }
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
     monkeypatch.setattr(web_server, "_local_rate_limits", {})
 
-    metrics_resp = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    metrics_resp = await web_server.metrics(
+        Request(scope, _receive), _user=SimpleNamespace(role="admin")
+    )
     repos_resp = await web_server.github_repos(q="repo-a")
 
     assert metrics_resp.status_code == 200
@@ -7971,12 +8657,18 @@ def test_install_marketplace_plugin_without_persist_does_not_write_state(monkeyp
         },
     )
     monkeypatch.setattr(web_server.AgentRegistry, "unregister", lambda *_: True)
-    monkeypatch.setattr(web_server, "_register_plugin_agent", lambda **_: {"role_name": "demo_role"})
-    monkeypatch.setattr(web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id})
+    monkeypatch.setattr(
+        web_server, "_register_plugin_agent", lambda **_: {"role_name": "demo_role"}
+    )
+    monkeypatch.setattr(
+        web_server, "_serialize_marketplace_plugin", lambda plugin_id: {"plugin_id": plugin_id}
+    )
 
     writes: list[dict] = []
     monkeypatch.setattr(web_server, "_read_plugin_marketplace_state", lambda: {})
-    monkeypatch.setattr(web_server, "_write_plugin_marketplace_state", lambda state: writes.append(state))
+    monkeypatch.setattr(
+        web_server, "_write_plugin_marketplace_state", lambda state: writes.append(state)
+    )
 
     payload = web_server._install_marketplace_plugin("demo", persist=False)
     assert payload["success"] is True
@@ -7984,7 +8676,9 @@ def test_install_marketplace_plugin_without_persist_does_not_write_state(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_system_role(monkeypatch):
+async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_system_role(
+    monkeypatch,
+):
     class _Record:
         def __init__(self, role_name: str):
             self.id = 1
@@ -8009,7 +8703,9 @@ async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_syst
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
 
     upsert = await web_server.admin_upsert_prompt(
-        web_server._PromptUpsertRequest(role_name="assistant", prompt_text="new text", activate=True),
+        web_server._PromptUpsertRequest(
+            role_name="assistant", prompt_text="new text", activate=True
+        ),
         _user=SimpleNamespace(role="admin"),
     )
     activate = await web_server.admin_activate_prompt(
@@ -8076,6 +8772,7 @@ async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(m
         web=SimpleNamespace(is_available=lambda: True),
         pkg=SimpleNamespace(status=lambda: {"ok": True}),
     )
+
     async def _resolve_agent():
         return agent
 
@@ -8083,7 +8780,11 @@ async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(m
     monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
     monkeypatch.setattr(web_server, "_start_time", 0.0)
     monkeypatch.setattr(web_server.time, "monotonic", lambda: 5.0)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
 
     async def _inline_to_thread(fn, *args, **kwargs):
         return fn(*args, **kwargs)
@@ -8408,7 +9109,11 @@ async def test_websocket_chat_llm_error_send_failure_and_cleanup(monkeypatch):
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: event_bus)
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda _uid: "ctx-1")
     monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda _tok: None)
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "warning",
+        lambda msg, *args: warnings.append(msg % args if args else msg),
+    )
 
     await web_server.websocket_chat(_Ws())
 
@@ -8441,9 +9146,15 @@ async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(m
                 [
                     {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
                     {"type": "websocket.receive", "text": '{"action":"start"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YWE="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YWE="}',
+                    },
                 ]
             )
 
@@ -8514,7 +9225,9 @@ async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeyp
             self.voice_disabled_reason = ""
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=0, output_text_buffer="", last_interrupt_reason=""
+            )
 
         def interrupt_assistant_turn(self, duplex_state, *, reason: str):
             duplex_state.last_interrupt_reason = reason
@@ -8570,7 +9283,9 @@ async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeyp
     monkeypatch.setitem(sys.modules, "core.voice", voice_module)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
-    monkeypatch.setattr(web_server, "_ws_stream_agent_text_response", lambda *_a, **_k: asyncio.sleep(0))
+    monkeypatch.setattr(
+        web_server, "_ws_stream_agent_text_response", lambda *_a, **_k: asyncio.sleep(0)
+    )
 
     ws = _Ws()
     await web_server.websocket_voice(ws)
@@ -8688,7 +9403,11 @@ async def test_websocket_voice_exception_branch_logs_warning(monkeypatch):
     monkeypatch.delitem(sys.modules, "core.voice", raising=False)
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
-    monkeypatch.setattr(web_server.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        web_server.logger,
+        "warning",
+        lambda msg, *args: warnings.append(msg % args if args else msg),
+    )
     monkeypatch.setattr(web_server, "_ANYIO_CLOSED", None)
 
     await web_server.websocket_voice(_Ws())
@@ -8731,9 +9450,16 @@ async def test_metrics_get_all_sessions_non_awaitable_branch(monkeypatch):
     }
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
-    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
+    response = await web_server.metrics(
+        Request(scope, _receive), _user=SimpleNamespace(role="admin")
+    )
     assert response.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeypatch):
@@ -8759,7 +9485,11 @@ async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeyp
         return _Agent()
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
-    monkeypatch.setattr(web_server, "get_llm_metrics_collector", lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}))
+    monkeypatch.setattr(
+        web_server,
+        "get_llm_metrics_collector",
+        lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+    )
 
     async def _receive():
         return {"type": "http.request", "body": b"", "more_body": False}
@@ -8775,7 +9505,9 @@ async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeyp
         "scheme": "http",
         "http_version": "1.1",
     }
-    response = await web_server.metrics(Request(scope, _receive), _user=SimpleNamespace(role="admin"))
+    response = await web_server.metrics(
+        Request(scope, _receive), _user=SimpleNamespace(role="admin")
+    )
     payload = json.loads(response.body.decode("utf-8"))
     assert payload["sessions_total"] == 3
 
@@ -8929,7 +9661,9 @@ async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypa
 
     assert ws.subprotocol == "good-token"
     assert any(item.get("type") == "collaboration_event" for item in events)
-    assert any(item.get("type") == "assistant_done" and item.get("cancelled") is True for item in events)
+    assert any(
+        item.get("type") == "assistant_done" and item.get("cancelled") is True for item in events
+    )
 
 
 @pytest.mark.asyncio
@@ -9028,7 +9762,9 @@ async def test_websocket_voice_recommit_cancels_active_task_and_disconnect_waits
             self.voice_disabled_reason = ""
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=1, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=1, output_text_buffer="", last_interrupt_reason=""
+            )
 
         def interrupt_assistant_turn(self, duplex_state, *, reason: str):
             duplex_state.last_interrupt_reason = reason
@@ -9054,9 +9790,15 @@ async def test_websocket_voice_recommit_cancels_active_task_and_disconnect_waits
                 [
                     {"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'},
                     {"type": "websocket.receive", "text": '{"action":"start"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
-                    {"type": "websocket.receive", "text": '{"action":"append_base64","chunk":"YQ=="}'},
+                    {
+                        "type": "websocket.receive",
+                        "text": '{"action":"append_base64","chunk":"YQ=="}',
+                    },
                     {"type": "websocket.receive", "text": '{"action":"commit"}'},
                     {"type": "websocket.disconnect"},
                 ]
@@ -9126,7 +9868,9 @@ async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
             self.voice_disabled_reason = ""
 
         def create_duplex_state(self):
-            return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+            return SimpleNamespace(
+                assistant_turn_id=0, output_text_buffer="", last_interrupt_reason=""
+            )
 
     class _Memory:
         async def set_active_user(self, *_):
@@ -9140,7 +9884,9 @@ async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
     class _Ws:
         def __init__(self):
             self.headers = {}
-            self._packets = iter([{"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'}])
+            self._packets = iter(
+                [{"type": "websocket.receive", "text": '{"action":"auth","token":"ok"}'}]
+            )
 
         async def accept(self, subprotocol=None):
             _ = subprotocol
@@ -9354,7 +10100,9 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
                 [
                     json.dumps({"action": "auth", "token": "ok"}),
                     json.dumps({"action": "message", "message": "hello from websocket"}),
-                    json.dumps({"action": "join_room", "room_id": "team:qa", "display_name": "Ada"}),
+                    json.dumps(
+                        {"action": "join_room", "room_id": "team:qa", "display_name": "Ada"}
+                    ),
                     json.dumps({"action": "message", "message": "@sidar check room status"}),
                 ]
             )
@@ -9394,7 +10142,12 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: event_bus)
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", _set_metrics)
     monkeypatch.setattr(web_server, "reset_current_metrics_user_id", _reset_metrics)
-    monkeypatch.setattr(web_server, "_broadcast_room_payload", lambda room, payload: calls["broadcasts"].append((room.room_id, payload)) or asyncio.sleep(0))
+    monkeypatch.setattr(
+        web_server,
+        "_broadcast_room_payload",
+        lambda room, payload: calls["broadcasts"].append((room.room_id, payload))
+        or asyncio.sleep(0),
+    )
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
@@ -9471,7 +10224,9 @@ async def test_websocket_chat_message_status_stream_emits_and_cleans_context(mon
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(
+        web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token)
+    )
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
@@ -9513,7 +10268,9 @@ async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkey
             self._messages = iter(
                 [
                     json.dumps({"action": "auth", "token": "ok"}),
-                    json.dumps({"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}),
+                    json.dumps(
+                        {"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}
+                    ),
                     json.dumps({"action": "message", "message": "@sidar plan çıkar"}),
                 ]
             )
@@ -9550,16 +10307,20 @@ async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkey
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "_broadcast_room_payload", _capture_broadcast)
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(
+        web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token)
+    )
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
     await asyncio.sleep(0.05)
 
     assert any(
-        payload.get("type") == "collaboration_event" and payload.get("event", {}).get("kind") == "status"
+        payload.get("type") == "collaboration_event"
+        and payload.get("event", {}).get("kind") == "status"
         for _, payload in calls["broadcast"]
     )
+
 
 @pytest.mark.asyncio
 async def test_health_check_delegates_to_health_response(monkeypatch):
@@ -9575,7 +10336,9 @@ async def test_health_check_delegates_to_health_response(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset_when_status_task_creation_fails(monkeypatch):
+async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset_when_status_task_creation_fails(
+    monkeypatch,
+):
     calls = {"unsubscribe": [], "reset": []}
 
     class _EventBus:
@@ -9648,7 +10411,9 @@ async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(
+        web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token)
+    )
     monkeypatch.setattr(web_server.asyncio, "create_task", _fake_create_task)
 
     ws = _Ws()
@@ -9659,7 +10424,9 @@ async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset
 
 
 @pytest.mark.asyncio
-async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_task_creation_fails(monkeypatch):
+async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_task_creation_fails(
+    monkeypatch,
+):
     calls = {"unsubscribe": [], "reset": []}
     room = web_server._CollaborationRoom("team:cleanup")
 
@@ -9692,7 +10459,9 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
             self._messages = iter(
                 [
                     json.dumps({"action": "auth", "token": "ok"}),
-                    json.dumps({"action": "join_room", "room_id": "team:cleanup", "display_name": "Ada"}),
+                    json.dumps(
+                        {"action": "join_room", "room_id": "team:cleanup", "display_name": "Ada"}
+                    ),
                     json.dumps({"action": "message", "message": "@sidar cleanup et"}),
                 ]
             )
@@ -9736,6 +10505,7 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
     monkeypatch.setattr(web_server, "get_agent_event_bus", lambda: _EventBus())
+
     async def _broadcast(room_obj, *_args, **_kwargs):
         room_obj.active_task = _DoneTask()
         await asyncio.sleep(0)
@@ -9743,7 +10513,9 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
     monkeypatch.setattr(web_server, "_join_collaboration_room", _join_room)
     monkeypatch.setattr(web_server, "_broadcast_room_payload", _broadcast)
     monkeypatch.setattr(web_server, "set_current_metrics_user_id", lambda user_id: f"ctx:{user_id}")
-    monkeypatch.setattr(web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token))
+    monkeypatch.setattr(
+        web_server, "reset_current_metrics_user_id", lambda token: calls["reset"].append(token)
+    )
     monkeypatch.setattr(web_server.asyncio, "create_task", _fake_create_task)
 
     ws = _Ws()

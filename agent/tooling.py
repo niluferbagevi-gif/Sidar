@@ -1,7 +1,7 @@
 """Sidar araç kayıt/argüman şema yardımcıları."""
 
 import json
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -19,26 +19,26 @@ class PatchFileSchema(BaseModel):
 
 class GithubListFilesSchema(BaseModel):
     path: str = ""
-    branch: Optional[str] = None
+    branch: str | None = None
 
 
 class GithubWriteSchema(BaseModel):
     path: str
     content: str
     commit_message: str
-    branch: Optional[str] = None
+    branch: str | None = None
 
 
 class GithubCreateBranchSchema(BaseModel):
     branch_name: str
-    from_branch: Optional[str] = None
+    from_branch: str | None = None
 
 
 class GithubCreatePRSchema(BaseModel):
     title: str
     body: str
     head: str
-    base: Optional[str] = None
+    base: str | None = None
 
 
 class GithubListPRsSchema(BaseModel):
@@ -70,12 +70,18 @@ class GithubPRDiffSchema(BaseModel):
 
 
 class ScanProjectTodosSchema(BaseModel):
-    directory: Optional[str] = Field(default=None, description="Taranacak alt dizin (boş bırakılırsa tüm proje taranır)")
-    extensions: Optional[List[str]] = Field(default=None, description="Taranacak dosya uzantıları listesi (Örn: ['.py', '.js'])")
+    directory: str | None = Field(
+        default=None, description="Taranacak alt dizin (boş bırakılırsa tüm proje taranır)"
+    )
+    extensions: list[str] | None = Field(
+        default=None, description="Taranacak dosya uzantıları listesi (Örn: ['.py', '.js'])"
+    )
 
 
 class LspDiagnosticsSchema(BaseModel):
-    paths: Optional[List[str]] = Field(default=None, description="LSP diagnostics çalıştırılacak dosya yolları")
+    paths: list[str] | None = Field(
+        default=None, description="LSP diagnostics çalıştırılacak dosya yolları"
+    )
 
 
 class LspRenameSchema(BaseModel):
@@ -116,8 +122,8 @@ class LandingPageDraftSchema(BaseModel):
     audience: str
     call_to_action: str
     tone: str = "professional"
-    sections: Optional[List[str]] = None
-    campaign_id: Optional[int] = None
+    sections: list[str] | None = None
+    campaign_id: int | None = None
     tenant_id: str = "default"
     store_asset: bool = False
     asset_title: str = "Landing Page Taslağı"
@@ -128,11 +134,11 @@ class CampaignCopySchema(BaseModel):
     campaign_name: str
     objective: str
     audience: str
-    channels: Optional[List[str]] = None
+    channels: list[str] | None = None
     offer: str = ""
     tone: str = "professional"
     call_to_action: str = ""
-    campaign_id: Optional[int] = None
+    campaign_id: int | None = None
     tenant_id: str = "default"
     store_asset: bool = False
     asset_title: str = "Kampanya Kopyası"
@@ -155,8 +161,8 @@ class MarketingCampaignCreateSchema(BaseModel):
     status: str = "draft"
     owner_user_id: str = ""
     budget: float = 0.0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    campaign_id: Optional[int] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    campaign_id: int | None = None
 
 
 class ContentAssetCreateSchema(BaseModel):
@@ -166,34 +172,34 @@ class ContentAssetCreateSchema(BaseModel):
     title: str
     content: str
     channel: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class OperationChecklistSchema(BaseModel):
     tenant_id: str = "default"
     title: str
-    items: List[Any] = Field(default_factory=list)
+    items: list[Any] = Field(default_factory=list)
     status: str = "pending"
     owner_user_id: str = ""
-    campaign_id: Optional[int] = None
+    campaign_id: int | None = None
 
 
 class ServiceOperationsPlanSchema(BaseModel):
     tenant_id: str = "default"
-    campaign_id: Optional[int] = None
+    campaign_id: int | None = None
     campaign_name: str = ""
     service_name: str = ""
     audience: str = ""
-    menu_plan: Dict[str, List[str]] = Field(default_factory=dict)
-    vendor_assignments: Dict[str, str] = Field(default_factory=dict)
-    timeline: List[str] = Field(default_factory=list)
+    menu_plan: dict[str, list[str]] = Field(default_factory=dict)
+    vendor_assignments: dict[str, str] = Field(default_factory=dict)
+    timeline: list[str] = Field(default_factory=list)
     notes: str = ""
     owner_user_id: str = ""
     persist_checklist: bool = True
     checklist_title: str = "Operasyon Planı"
 
 
-TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
+TOOL_ARG_SCHEMAS: dict[str, type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
     "github_list_files": GithubListFilesSchema,
@@ -222,6 +228,7 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "plan_service_operations": ServiceOperationsPlanSchema,
 }
 
+
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
     """Şema tanımlı araçlar için yalnızca JSON object argümanı typed modele dönüştür."""
     schema = TOOL_ARG_SCHEMAS.get(tool_name)
@@ -240,6 +247,5 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
         raise ValueError("Argüman JSON object olmalıdır")
     except json.JSONDecodeError:
         raise ValueError(
-            f"'{tool_name}' için legacy '|||' formatı kaldırıldı. "
-            "JSON object argümanı gönderin."
+            f"'{tool_name}' için legacy '|||' formatı kaldırıldı. " "JSON object argümanı gönderin."
         )

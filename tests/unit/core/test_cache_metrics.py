@@ -69,7 +69,9 @@ def test_get_prometheus_metric_returns_none_when_import_fails(
     assert cache_metrics._get_prometheus_metric("x", "desc", "counter") is None
 
 
-def test_get_prometheus_metric_returns_cached_inside_lock_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_prometheus_metric_returns_cached_inside_lock_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sentinel = object()
     cache_metrics._prometheus_metric_cache.clear()
 
@@ -153,7 +155,9 @@ def test_inc_prometheus_counter_calls_inc_only_when_available(
     assert inc_calls == [4]
 
 
-def test_inc_prometheus_counter_noop_when_counter_has_no_inc(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inc_prometheus_counter_noop_when_counter_has_no_inc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: object())
     cache_metrics._inc_prometheus_counter("metric", "desc", count=2)
 

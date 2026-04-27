@@ -98,7 +98,9 @@ def test_record_usage_sink_schedules_awaitable_with_running_loop() -> None:
     assert seen == ["openai"]
 
 
-def test_record_usage_sink_closes_awaitable_without_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_record_usage_sink_closes_awaitable_without_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     collector = LLMMetricsCollector()
 
     class ClosableAwaitable:
@@ -120,7 +122,9 @@ def test_record_usage_sink_closes_awaitable_without_running_loop(monkeypatch: py
 
     assert asyncio.run(_await_closable()) is None
     collector.set_usage_sink(lambda _event: awaitable)
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop"))
+    )
 
     collector.record(provider="openai", model="gpt-4o", latency_ms=1)
 
@@ -145,7 +149,9 @@ def test_record_usage_sink_awaitable_without_close_and_without_running_loop(
 
     assert asyncio.run(_await_non_closable()) is None
     collector.set_usage_sink(lambda _event: awaitable)
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    monkeypatch.setattr(
+        asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop"))
+    )
 
     collector.record(provider="openai", model="gpt-4o", latency_ms=1)
 
@@ -174,7 +180,9 @@ def test_record_usage_sink_non_awaitable_result_is_ignored() -> None:
     assert called["n"] == 1
 
 
-def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     collector = LLMMetricsCollector(max_events=10)
 
     monkeypatch.setenv("LLM_BUDGET_DAILY_USD", "1.0")

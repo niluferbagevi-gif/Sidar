@@ -6,7 +6,8 @@ import json
 import logging
 import math
 import time
-from typing import Any, Callable, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 try:
     from redis.asyncio import Redis
@@ -15,10 +16,10 @@ except ImportError:
 
 from core.cache_metrics import (
     observe_cache_redis_latency,
+    record_cache_circuit_open_bypass,
     record_cache_eviction,
     record_cache_hit,
     record_cache_miss,
-    record_cache_circuit_open_bypass,
     record_cache_redis_error,
     record_cache_skip,
     set_cache_items,
@@ -31,7 +32,7 @@ def _setting(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
 
 
-def _default_semantic_embedding_fn(texts: List[str], *, cfg: Any = None) -> List[List[float]]:
+def _default_semantic_embedding_fn(texts: list[str], *, cfg: Any = None) -> list[list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache
 
     return embed_texts_for_semantic_cache(texts, cfg=cfg)
@@ -43,15 +44,19 @@ class SemanticCacheManager:
     def __init__(
         self,
         config: Any,
-        embedding_fn: Optional[Callable[..., List[List[float]]]] = None,
+        embedding_fn: Callable[..., list[list[float]]] | None = None,
     ) -> None:
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
         self.threshold = max(0.0, float(_setting(config, "SEMANTIC_CACHE_THRESHOLD", 0.90)))
         self.ttl = max(1, int(_setting(config, "SEMANTIC_CACHE_TTL", 3600)))
         self.max_items = max(1, int(_setting(config, "SEMANTIC_CACHE_MAX_ITEMS", 500)))
-        self.redis_cb_fail_threshold = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3)))
-        self.redis_cb_cooldown_seconds = max(1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS", 30)))
+        self.redis_cb_fail_threshold = max(
+            1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3))
+        )
+        self.redis_cb_cooldown_seconds = max(
+            1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS", 30))
+        )
         self.index_key = "sidar:semantic_cache:index"
         self._embedding_fn = embedding_fn or _default_semantic_embedding_fn
         self._redis: Redis | None = None
@@ -71,7 +76,9 @@ class SemanticCacheManager:
     def _mark_redis_failure(self) -> None:
         self._redis_failures += 1
         if self._redis_failures >= self.redis_cb_fail_threshold:
-            self._redis_circuit_open_until = time.monotonic() + float(self.redis_cb_cooldown_seconds)
+            self._redis_circuit_open_until = time.monotonic() + float(
+                self.redis_cb_cooldown_seconds
+            )
             logger.warning(
                 "Semantic cache circuit breaker açıldı (failures=%d, cooldown=%ss).",
                 self._redis_failures,
@@ -107,7 +114,9 @@ class SemanticCacheManager:
                     decode_responses=True,
                     max_connections=max(1, int(_setting(self.config, "REDIS_MAX_CONNECTIONS", 50))),
                 )
-                ping_timeout = max(0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0)))
+                ping_timeout = max(
+                    0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0))
+                )
                 await asyncio.wait_for(redis_client.ping(), timeout=ping_timeout)
                 self._redis = redis_client
                 self._mark_redis_success()
@@ -121,17 +130,17 @@ class SemanticCacheManager:
                 return None
 
     @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
         if not a or not b or len(a) != len(b):
             return 0.0
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         an = math.sqrt(sum(x * x for x in a))
         bn = math.sqrt(sum(y * y for y in b))
         if an == 0 or bn == 0:
             return 0.0
         return dot / (an * bn)
 
-    def _embed_prompt(self, prompt: str) -> List[float]:
+    def _embed_prompt(self, prompt: str) -> list[float]:
         try:
             vectors = self._embedding_fn([prompt], cfg=self.config)
             if vectors:
@@ -140,7 +149,7 @@ class SemanticCacheManager:
             logger.debug("Semantic cache embedding hatası: %s", exc)
         return []
 
-    async def get(self, prompt: str) -> Optional[str]:
+    async def get(self, prompt: str) -> str | None:
         redis = await self._get_redis()
         if redis is None or not prompt:
             return None
@@ -159,7 +168,7 @@ class SemanticCacheManager:
             set_cache_items(len(keys))
 
             best_sim = -1.0
-            best_response: Optional[str] = None
+            best_response: str | None = None
             for key in keys:
                 raw = await redis.hgetall(key)
                 if not raw:

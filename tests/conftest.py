@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import importlib
 import os
-from pathlib import Path
 import sys
 import time
+from collections.abc import AsyncGenerator, Callable, Generator
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, AsyncGenerator, Callable, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,7 +21,11 @@ _REQUIRED_TEST_MODULES = {
     "sqlalchemy": "sqlalchemy",
     "testcontainers": "testcontainers",
 }
-_missing_test_deps = [pkg_name for module_name, pkg_name in _REQUIRED_TEST_MODULES.items() if importlib.util.find_spec(module_name) is None]
+_missing_test_deps = [
+    pkg_name
+    for module_name, pkg_name in _REQUIRED_TEST_MODULES.items()
+    if importlib.util.find_spec(module_name) is None
+]
 if _missing_test_deps:
     missing = ", ".join(sorted(set(_missing_test_deps)))
     raise pytest.UsageError(
@@ -35,20 +40,25 @@ from sqlalchemy.pool import StaticPool
 from testcontainers.postgres import PostgresContainer
 
 try:
-    from core.db import Database
-    from agent.core.event_stream import AgentEvent
     import agent.sidar_agent as sidar_agent_module
+    from agent.core.event_stream import AgentEvent
+    from core.db import Database
 except ModuleNotFoundError as exc:
     raise pytest.UsageError(
         "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --all-extras` çalıştırın."
     ) from exc
 
-from tests.helpers import make_test_config
 from tests.fixtures.factories import build_hitl_request
+from tests.helpers import make_test_config
 
 _fakeredis_spec = importlib.util.find_spec("fakeredis")
 fakeredis = importlib.import_module("fakeredis") if _fakeredis_spec is not None else None
-TEST_REDIS_DECODE_RESPONSES = os.getenv("TEST_REDIS_DECODE_RESPONSES", "true").strip().lower() in {"1", "true", "yes", "on"}
+TEST_REDIS_DECODE_RESPONSES = os.getenv("TEST_REDIS_DECODE_RESPONSES", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DEFAULT_FREEZEGUN_IGNORE_MODULES = (
     "transformers",
     "tiktoken",
@@ -189,10 +199,12 @@ def fake_social_api() -> AsyncMock:
 def fake_video_stream() -> AsyncMock:
     """Video analiz pipeline'ı için deterministik asenkron fake akış."""
     stream = AsyncMock()
-    stream.read_frames = AsyncMock(return_value=[
-        {"frame_id": 1, "timestamp": 0.0},
-        {"frame_id": 2, "timestamp": 0.04},
-    ])
+    stream.read_frames = AsyncMock(
+        return_value=[
+            {"frame_id": 1, "timestamp": 0.0},
+            {"frame_id": 2, "timestamp": 0.04},
+        ]
+    )
     # metadata çoğu stream implementasyonunda property olarak okunur.
     # Bu yüzden dict ataması yapıp testlerde sessizce AsyncMock zincirlenmesini önlüyoruz.
     stream.metadata = {"fps": 25, "duration_sec": 2}
@@ -322,7 +334,8 @@ async def pg_db_session(pg_schema_initialized: str) -> AsyncGenerator[Any, None]
         # Commit edilen verilerin sonraki testlere sızmasını engellemek için
         # public şemasındaki tüm kullanıcı tablolarını temizler.
         async with engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 DO $$
                 DECLARE r RECORD;
                 BEGIN
@@ -339,7 +352,8 @@ async def pg_db_session(pg_schema_initialized: str) -> AsyncGenerator[Any, None]
                     );
                   END LOOP;
                 END $$;
-            """))
+            """)
+            )
 
     try:
         # Önceki testte yarım kalan/commit edilen veriler varsa sıfırla.
@@ -393,8 +407,6 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
     return _create_agent
 
 
-
-
 @pytest.fixture
 def respx_mock_router() -> Generator[Any, None, None]:
     respx = pytest.importorskip("respx")
@@ -432,19 +444,25 @@ def fake_coverage_code_manager() -> MagicMock:
     """Coverage testleri için standart MagicMock kullanan code manager."""
     mock_manager = MagicMock()
 
-    mock_manager.run_pytest_and_collect = AsyncMock(return_value={
-        "analysis": {"summary": "ok", "findings": []},
-        "output": "OUT",
-    })
-    mock_manager.analyze_pytest_output = AsyncMock(side_effect=lambda output: {
-        "summary": f"ANALYZED:{output}",
-        "findings": [{"target_path": "src/m.py"}],
-    })
+    mock_manager.run_pytest_and_collect = AsyncMock(
+        return_value={
+            "analysis": {"summary": "ok", "findings": []},
+            "output": "OUT",
+        }
+    )
+    mock_manager.analyze_pytest_output = AsyncMock(
+        side_effect=lambda output: {
+            "summary": f"ANALYZED:{output}",
+            "findings": [{"target_path": "src/m.py"}],
+        }
+    )
     mock_manager.read_file = AsyncMock(side_effect=lambda path: (True, f"SOURCE:{path}"))
-    mock_manager.write_generated_test = AsyncMock(side_effect=lambda path, content, append=True: (
-        True,
-        f"WROTE:{path}:{append}",
-    ))
+    mock_manager.write_generated_test = AsyncMock(
+        side_effect=lambda path, content, append=True: (
+            True,
+            f"WROTE:{path}:{append}",
+        )
+    )
 
     return mock_manager
 
@@ -462,8 +480,6 @@ def fake_coverage_db_class() -> type:
             self.add_coverage_finding = AsyncMock()
 
     return _FakeCoverageDB
-
-
 
 
 @pytest.fixture
@@ -485,10 +501,13 @@ def fake_web_search_result() -> Callable[[bool, str], AsyncMock]:
 
     return _build
 
+
 @pytest.fixture
 def fake_vector_store() -> AsyncMock:
     """core/rag.py testleri için deterministik vector DB adaptörü."""
-    mock_store = AsyncMock(spec=["search", "add_documents", "delete", "set_empty_result", "set_db_error"])
+    mock_store = AsyncMock(
+        spec=["search", "add_documents", "delete", "set_empty_result", "set_db_error"]
+    )
 
     mock_store.search.return_value = [
         {"id": "doc-1", "content": "mock context for RAG", "score": 0.95},

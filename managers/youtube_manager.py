@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import html
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from core.multimodal import ExtractedFrame, build_multimodal_context, extract_video_frames
+from core.multimodal import build_multimodal_context, extract_video_frames
 from core.vision import VisionPipeline
 
 
@@ -20,11 +21,16 @@ class YouTubeManager:
     TRANSCRIPT_TIMEOUT = 15.0
     DEFAULT_LANGUAGES = ("tr", "en")
 
-    def __init__(self, llm_client=None, config=None, *, http_client_factory: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self, llm_client=None, config=None, *, http_client_factory: Callable[..., Any] | None = None
+    ) -> None:
         self.llm_client = llm_client
         self.config = config
         self.http_client_factory = http_client_factory or httpx.AsyncClient
-        self.transcript_timeout = float(getattr(config, "YOUTUBE_TRANSCRIPT_TIMEOUT", self.TRANSCRIPT_TIMEOUT) or self.TRANSCRIPT_TIMEOUT)
+        self.transcript_timeout = float(
+            getattr(config, "YOUTUBE_TRANSCRIPT_TIMEOUT", self.TRANSCRIPT_TIMEOUT)
+            or self.TRANSCRIPT_TIMEOUT
+        )
 
     @staticmethod
     def extract_video_id(value: str) -> str:
@@ -62,7 +68,11 @@ class YouTubeManager:
             pieces = item.get("segs") or []
             if not isinstance(pieces, list):
                 continue
-            text = "".join(html.unescape(str(piece.get("utf8") or "")) for piece in pieces if isinstance(piece, dict)).strip()
+            text = "".join(
+                html.unescape(str(piece.get("utf8") or ""))
+                for piece in pieces
+                if isinstance(piece, dict)
+            ).strip()
             if not text:
                 continue
             start_ms = int(item.get("tStartMs") or 0)
@@ -77,20 +87,30 @@ class YouTubeManager:
             )
         return {"text": " ".join(lines).strip(), "segments": segments}
 
-    async def fetch_transcript(self, video_url_or_id: str, *, languages: tuple[str, ...] | None = None) -> dict[str, Any]:
+    async def fetch_transcript(
+        self, video_url_or_id: str, *, languages: tuple[str, ...] | None = None
+    ) -> dict[str, Any]:
         video_id = self.extract_video_id(video_url_or_id)
         if not video_id:
-            return {"success": False, "reason": "Geçerli YouTube video id bulunamadı.", "video_id": ""}
+            return {
+                "success": False,
+                "reason": "Geçerli YouTube video id bulunamadı.",
+                "video_id": "",
+            }
 
         langs = tuple(languages or self.DEFAULT_LANGUAGES)
-        async with self.http_client_factory(timeout=self.transcript_timeout, follow_redirects=True) as client:
+        async with self.http_client_factory(
+            timeout=self.transcript_timeout, follow_redirects=True
+        ) as client:
             for language in langs:
                 response = await client.get(self._timedtext_url(video_id, language))
                 if response.status_code >= 400:
                     continue
                 payload = response.json() if hasattr(response, "json") else {}
                 events = payload.get("events") if isinstance(payload, dict) else []
-                normalized = self._normalize_transcript_events(events if isinstance(events, list) else [])
+                normalized = self._normalize_transcript_events(
+                    events if isinstance(events, list) else []
+                )
                 if normalized["text"]:
                     return {
                         "success": True,
@@ -139,8 +159,12 @@ class YouTubeManager:
                 {
                     "timestamp_seconds": frame.timestamp_seconds,
                     "frame_path": frame.path,
-                    "analysis": str(result.get("analysis", "") or "") if isinstance(result, dict) else "",
-                    "success": bool(result.get("success", False)) if isinstance(result, dict) else False,
+                    "analysis": str(result.get("analysis", "") or "")
+                    if isinstance(result, dict)
+                    else "",
+                    "success": bool(result.get("success", False))
+                    if isinstance(result, dict)
+                    else False,
                 }
             )
 

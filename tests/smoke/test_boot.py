@@ -38,7 +38,9 @@ def test_boot_agent_catalog_can_instantiate_coder_agent() -> None:
 
     assert getattr(coder_agent, "role_name", "") == "coder"
     assert callable(getattr(coder_agent, "run_task", None))
-    assert {"read_file", "write_file", "execute_code"}.issubset(set(getattr(coder_agent, "tools", {}).keys()))
+    assert {"read_file", "write_file", "execute_code"}.issubset(
+        set(getattr(coder_agent, "tools", {}).keys())
+    )
 
 
 def test_environment_sanity_required_ai_provider_settings() -> None:
@@ -56,13 +58,17 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
     }
     required_fields = requirements.get(provider, tuple())
 
-    missing_fields = [field for field in required_fields if not str(getattr(cfg, field, "") or "").strip()]
-    assert not missing_fields, (
-        f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
-    )
+    missing_fields = [
+        field for field in required_fields if not str(getattr(cfg, field, "") or "").strip()
+    ]
+    assert (
+        not missing_fields
+    ), f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
 
     if provider == "ollama":
-        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith("http"), "OLLAMA_URL http/https ile başlamalı."
+        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith(
+            "http"
+        ), "OLLAMA_URL http/https ile başlamalı."
     if provider == "litellm":
         assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith(
             "http"
@@ -70,7 +76,9 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
 
 
 @pytest.mark.asyncio
-async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """FastAPI uygulamasının temel boot akışında çökmeden ayağa kalktığını doğrular."""
     web_server = pytest.importorskip("web_server")
 
@@ -93,7 +101,9 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
 
     try:
         async with web_server.app.router.lifespan_context(web_server.app):
-            async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
+            async with AsyncClient(
+                transport=ASGITransport(app=web_server.app), base_url="http://test"
+            ) as client:
                 response = await client.get("/healthz")
 
         assert response.status_code == 200
@@ -107,7 +117,9 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_boot_health_probes_bypass_ddos_redis_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Health probe endpoint'leri DDOS Redis rate-limit kontrolünü tetiklememelidir."""
     web_server = pytest.importorskip("web_server")
 
@@ -128,7 +140,9 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(monkeypatch: pyte
 
     try:
         async with web_server.app.router.lifespan_context(web_server.app):
-            async with AsyncClient(transport=ASGITransport(app=web_server.app), base_url="http://test") as client:
+            async with AsyncClient(
+                transport=ASGITransport(app=web_server.app), base_url="http://test"
+            ) as client:
                 healthz = await client.get("/healthz")
 
         assert healthz.status_code == 200
@@ -156,7 +170,9 @@ async def test_boot_postgresql_connection_select_1() -> None:
     if _is_external_infra_checks_disabled():
         pytest.skip("Harici altyapı smoke testleri SMOKE_SKIP_EXTERNAL_INFRA=1 ile kapatıldı.")
 
-    asyncpg = pytest.importorskip("asyncpg", reason="PostgreSQL smoke testi için asyncpg gereklidir.")
+    asyncpg = pytest.importorskip(
+        "asyncpg", reason="PostgreSQL smoke testi için asyncpg gereklidir."
+    )
 
     database_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sidar")
     if database_url.startswith("postgresql+asyncpg://"):
@@ -178,7 +194,9 @@ async def test_boot_redis_ping() -> None:
         pytest.skip("Harici altyapı smoke testleri SMOKE_SKIP_EXTERNAL_INFRA=1 ile kapatıldı.")
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    client = Redis.from_url(redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3)
+    client = Redis.from_url(
+        redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3
+    )
     try:
         is_alive = await client.ping()
     finally:

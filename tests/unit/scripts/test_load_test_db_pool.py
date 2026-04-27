@@ -156,10 +156,22 @@ def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
 @pytest.mark.parametrize(
     ("argv", "expected_msg"),
     [
-        (["prog", "--database-url", "postgresql://x", "--concurrency", "0"], "--concurrency en az 1 olmalıdır."),
-        (["prog", "--database-url", "postgresql://x", "--requests", "0"], "--requests en az 1 olmalıdır."),
-        (["prog", "--database-url", "postgresql://x", "--warmup-requests", "-1"], "--warmup-requests negatif olamaz."),
-        (["prog", "--database-url", "postgresql://x", "--acquire-timeout", "0"], "--acquire-timeout 0'dan büyük olmalıdır."),
+        (
+            ["prog", "--database-url", "postgresql://x", "--concurrency", "0"],
+            "--concurrency en az 1 olmalıdır.",
+        ),
+        (
+            ["prog", "--database-url", "postgresql://x", "--requests", "0"],
+            "--requests en az 1 olmalıdır.",
+        ),
+        (
+            ["prog", "--database-url", "postgresql://x", "--warmup-requests", "-1"],
+            "--warmup-requests negatif olamaz.",
+        ),
+        (
+            ["prog", "--database-url", "postgresql://x", "--acquire-timeout", "0"],
+            "--acquire-timeout 0'dan büyük olmalıdır.",
+        ),
     ],
 )
 def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
@@ -192,7 +204,9 @@ def test_main_runs_load_test_with_parsed_args(monkeypatch):
 
     captured = {}
 
-    async def fake_run_load_test(database_url, concurrency, requests, warmup_requests, acquire_timeout_s):
+    async def fake_run_load_test(
+        database_url, concurrency, requests, warmup_requests, acquire_timeout_s
+    ):
         captured["args"] = (database_url, concurrency, requests, warmup_requests, acquire_timeout_s)
 
     original_asyncio_run = asyncio.run

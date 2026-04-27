@@ -128,7 +128,7 @@ def test_create_uses_factory_when_agent_class_is_missing() -> None:
         version="1.0.0",
         is_builtin=False,
     )
-    setattr(AgentCatalog._registry["tmp_factory"], "_agent_factory", _factory)  # type: ignore[attr-defined]
+    AgentCatalog._registry["tmp_factory"]._agent_factory = _factory  # type: ignore[attr-defined]
 
     instance = AgentCatalog.create("tmp_factory", value=7)
     assert instance == {"value": 7}

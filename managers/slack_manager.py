@@ -9,11 +9,12 @@ Kullanım:
     ok, err = await mgr.send_message(channel="#general", text="Merhaba!")
     ok, err = await mgr.send_webhook(text="Build başarılı ✅", blocks=[...])
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -24,7 +25,9 @@ _WEBHOOK_TIMEOUT = 10.0
 
 def _is_valid_webhook_url(url: str) -> bool:
     normalized = (url or "").strip()
-    return normalized.startswith("https://hooks.slack.com/") or normalized.startswith("https://hooks.slack-gov.com/")
+    return normalized.startswith("https://hooks.slack.com/") or normalized.startswith(
+        "https://hooks.slack-gov.com/"
+    )
 
 
 class SlackManager:
@@ -44,7 +47,7 @@ class SlackManager:
         self.token = (token or "").strip()
         self.webhook_url = (webhook_url or "").strip()
         self.default_channel = (default_channel or "").strip()
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._available = False
         self._webhook_only = False
         self._init_client()
@@ -58,10 +61,13 @@ class SlackManager:
         if self.token:
             try:
                 from slack_sdk import WebClient  # type: ignore
+
                 self._client = WebClient(token=self.token)
                 # Bulgu O-8: auth_test() burada çağrılmıyor — event loop'u bloklar.
                 # Doğrulama initialize() içinde asyncio.to_thread ile yapılır.
-                logger.debug("Slack SDK istemcisi oluşturuldu; token doğrulaması initialize() ile yapılacak.")
+                logger.debug(
+                    "Slack SDK istemcisi oluşturuldu; token doğrulaması initialize() ile yapılacak."
+                )
                 return
             except ImportError:
                 logger.warning("slack-sdk paketi kurulu değil. pip install slack-sdk")
@@ -70,7 +76,9 @@ class SlackManager:
 
         if self.webhook_url:
             if not _is_valid_webhook_url(self.webhook_url):
-                logger.warning("Geçersiz Slack webhook URL formatı; webhook modu devre dışı bırakıldı.")
+                logger.warning(
+                    "Geçersiz Slack webhook URL formatı; webhook modu devre dışı bırakıldı."
+                )
                 return
             self._available = True
             self._webhook_only = True
@@ -118,10 +126,10 @@ class SlackManager:
     async def send_message(
         self,
         text: str,
-        channel: Optional[str] = None,
-        blocks: Optional[List[Dict]] = None,
-        thread_ts: Optional[str] = None,
-    ) -> Tuple[bool, str]:
+        channel: str | None = None,
+        blocks: list[dict] | None = None,
+        thread_ts: str | None = None,
+    ) -> tuple[bool, str]:
         """
         Kanala mesaj gönderir (SDK veya Webhook fallback).
         Döner: (success: bool, error_or_ts: str)
@@ -137,7 +145,8 @@ class SlackManager:
         if self._client and not self._webhook_only:
             try:
                 import asyncio
-                kwargs: Dict[str, Any] = {"channel": ch, "text": text}
+
+                kwargs: dict[str, Any] = {"channel": ch, "text": text}
                 if blocks:
                     kwargs["blocks"] = blocks
                 if thread_ts:
@@ -160,16 +169,16 @@ class SlackManager:
     async def send_webhook(
         self,
         text: str = "",
-        blocks: Optional[List[Dict]] = None,
-        attachments: Optional[List[Dict]] = None,
-    ) -> Tuple[bool, str]:
+        blocks: list[dict] | None = None,
+        attachments: list[dict] | None = None,
+    ) -> tuple[bool, str]:
         """Incoming Webhook URL'ye POST gönderir."""
         if not self.webhook_url:
             return False, "SLACK_WEBHOOK_URL ayarlanmamış"
         if not _is_valid_webhook_url(self.webhook_url):
             return False, "Geçersiz Slack webhook URL formatı"
 
-        payload: Dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         if text:  # pragma: no cover
             payload["text"] = text
         if blocks:
@@ -195,12 +204,13 @@ class SlackManager:
     #  KANAL LİSTESİ
     # ─────────────────────────────────────────────
 
-    async def list_channels(self, limit: int = 50) -> Tuple[bool, List[Dict], str]:
+    async def list_channels(self, limit: int = 50) -> tuple[bool, list[dict], str]:
         """Workspace kanallarını listeler (SDK gerekli)."""
         if not self._client or self._webhook_only:
             return False, [], "Kanal listesi için slack-sdk ve bot token gerekli"
         try:
             import asyncio
+
             resp = await asyncio.to_thread(
                 self._client.conversations_list,
                 limit=min(limit, 200),
@@ -225,11 +235,11 @@ class SlackManager:
         title: str,
         body: str,
         status: str = "info",
-        fields: Optional[List[Dict[str, str]]] = None,
-    ) -> List[Dict]:
+        fields: list[dict[str, str]] | None = None,
+    ) -> list[dict]:
         """Zengin bildirim için Block Kit JSON üretir."""
         emoji = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(status, "ℹ️")
-        blocks: List[Dict] = [
+        blocks: list[dict] = [
             {
                 "type": "header",
                 "text": {"type": "plain_text", "text": f"{emoji} {title}", "emoji": True},
@@ -237,12 +247,13 @@ class SlackManager:
             {"type": "section", "text": {"type": "mrkdwn", "text": body}},
         ]
         if fields:
-            blocks.append({
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*{f['key']}*\n{f['value']}"}
-                    for f in fields
-                ],
-            })
+            blocks.append(
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*{f['key']}*\n{f['value']}"} for f in fields
+                    ],
+                }
+            )
         blocks.append({"type": "divider"})
         return blocks

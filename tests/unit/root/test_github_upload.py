@@ -102,7 +102,9 @@ class MainHarness:
         self.inputs = list(inputs or [])
         self.calls = []
         gu.sys.argv = ["github_upload.py", *argv]
-        monkeypatch.setattr(gu, "cfg", types.SimpleNamespace(GITHUB_TOKEN=cfg_token, VERSION=cfg_version))
+        monkeypatch.setattr(
+            gu, "cfg", types.SimpleNamespace(GITHUB_TOKEN=cfg_token, VERSION=cfg_version)
+        )
         self._outputs = list(outputs)
 
         def fake_run(cmd, show_output=True):
@@ -113,6 +115,7 @@ class MainHarness:
 
         monkeypatch.setattr(gu, "run_command", fake_run)
         import builtins
+
         monkeypatch.setattr(builtins, "input", lambda _p="": self.inputs.pop(0))
 
 
@@ -249,7 +252,13 @@ def test_main_add_failure(monkeypatch):
     MainHarness(
         monkeypatch,
         [],
-        outputs=[(True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, "")],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+        ],
     )
     assert run_main_and_exit_code() == 1
 
@@ -276,7 +285,9 @@ def test_main_nothing_to_push_exits(monkeypatch):
 
 def test_main_commit_fail(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
-    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], [".env"]))
+    monkeypatch.setattr(
+        gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], [".env"])
+    )
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
     MainHarness(
         monkeypatch,
@@ -328,8 +339,14 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, "A a.py"), (True, "ok"), (False, "fetch first")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (False, "fetch first"),
         ],
         inputs=["m", "n"],
     )
@@ -340,8 +357,15 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, "A a.py"), (True, "ok"), (False, "non-fast-forward"), (False, "fatal")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (False, "non-fast-forward"),
+            (False, "fatal"),
         ],
         inputs=["m", "y"],
     )
@@ -352,8 +376,14 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, "A a.py"), (True, "ok"), (False, "boom")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (False, "boom"),
         ],
         inputs=["m"],
     )
@@ -362,7 +392,9 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
 
 def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: ["gone.py"])
-    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], [".env"]))
+    monkeypatch.setattr(
+        gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], [".env"])
+    )
     monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
     monkeypatch.setattr(gu.os.path, "exists", lambda p: False if p == ".git" else True)
 
@@ -384,7 +416,6 @@ def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
         inputs=["https://github.com/test/repo", "hayır", "manual commit"],
     )
     gu.main()
-
 
 
 def test_run_command_silent_branches(monkeypatch):
@@ -428,7 +459,12 @@ def test_main_switch_to_main_stash_creation_fails(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "dev"), (True, "M a"), (False, "stash err")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "dev"),
+            (True, "M a"),
+            (False, "stash err"),
         ],
     )
     assert run_main_and_exit_code() == 1
@@ -441,8 +477,16 @@ def test_main_switch_to_main_success_without_stash(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "feature"), (True, ""), (True, "ok"),
-            (True, ""), (True, ""), (True, "unpushed") ,(True, "push")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "feature"),
+            (True, ""),
+            (True, "ok"),
+            (True, ""),
+            (True, ""),
+            (True, "unpushed"),
+            (True, "push"),
         ],
     )
     gu.main()
@@ -453,7 +497,11 @@ def test_main_rollback_reset_fail(monkeypatch):
         monkeypatch,
         ["-1"],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (False, "reset fail")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (False, "reset fail"),
         ],
         inputs=["yes"],
     )
@@ -469,8 +517,15 @@ def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
         monkeypatch,
         ["feature-x"],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (False, "merge made"),
-            (True, ""), (True, "A a.py"), (True, "ok"), (True, "ok")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (False, "merge made"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (True, "ok"),
         ],
         inputs=[""],
     )
@@ -488,8 +543,16 @@ def test_main_retry_push_failure_non_rule_violations(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, "A a.py"), (True, "ok"), (False, "rejected"), (True, "up to date"), (False, "some other err")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (False, "rejected"),
+            (True, "up to date"),
+            (False, "some other err"),
         ],
         inputs=["msg", "y"],
     )
@@ -505,8 +568,16 @@ def test_main_retry_push_success(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, "A a.py"), (True, "ok"), (False, "fetch first"), (True, "ok"), (True, "ok")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "ok"),
+            (False, "fetch first"),
+            (True, "ok"),
+            (True, "ok"),
         ],
         inputs=["msg", "y"],
     )
@@ -518,7 +589,12 @@ def test_main_checkout_fail_without_stash(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "dev"), (True, ""), (False, "fail")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "dev"),
+            (True, ""),
+            (False, "fail"),
         ],
     )
     assert run_main_and_exit_code() == 1
@@ -531,8 +607,18 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "feature"), (True, "M x"),
-            (True, "stashed"), (True, "checkout"), (True, "pop"), (True, ""), (True, ""), (True, "unpushed"), (True, "pushed")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "feature"),
+            (True, "M x"),
+            (True, "stashed"),
+            (True, "checkout"),
+            (True, "pop"),
+            (True, ""),
+            (True, ""),
+            (True, "unpushed"),
+            (True, "pushed"),
         ],
     )
     gu.main()
@@ -545,18 +631,31 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
         monkeypatch,
         [],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, ""),
-            (True, ""), (True, ""), (True, "commit1"), (True, "push ok")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, ""),
+            (True, ""),
+            (True, "commit1"),
+            (True, "push ok"),
         ],
     )
     gu.main()
+
 
 def test_main_rollback_push_success(monkeypatch):
     MainHarness(
         monkeypatch,
         ["-1"],
         outputs=[
-            (True, "git version"), (True, "name"), (True, "origin"), (True, "main"), (True, "reset ok"), (True, "push ok")
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "reset ok"),
+            (True, "push ok"),
         ],
         inputs=["evet"],
     )

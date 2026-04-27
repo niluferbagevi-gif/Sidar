@@ -12,6 +12,7 @@ class DummyConfig:
     TEXT_MODEL = "text-model"
     CODING_MODEL = "coding-model"
 
+
 def _install_config_module(monkeypatch):
     fake = types.ModuleType("config")
     fake.Config = DummyConfig
@@ -273,7 +274,9 @@ async def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judg
     monkeypatch.setattr(judge_instance, "_call_llm", llm_once)
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
     monkeypatch.setattr(judge, "_record_judge_metrics", lambda result: None)
-    monkeypatch.setattr(judge_instance, "_maybe_record_feedback", lambda **kwargs: asyncio.sleep(0, result=False))
+    monkeypatch.setattr(
+        judge_instance, "_maybe_record_feedback", lambda **kwargs: asyncio.sleep(0, result=False)
+    )
     out = await judge_instance.evaluate_rag("q", ["d1", "d2"], answer=None)
     assert out.relevance_score == 0.8
     assert out.hallucination_risk == 0.0
@@ -285,14 +288,29 @@ async def test_maybe_record_feedback_paths(judge_instance):
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
     judge_instance.auto_feedback_enabled = False
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is False
+    )
 
     judge_instance.auto_feedback_enabled = True
     judge_instance.auto_feedback_threshold = 1.0
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is False
+    )
 
     judge_instance.auto_feedback_threshold = 9.5
-    assert await judge_instance._maybe_record_feedback(query="", documents=["d"], answer="a", result=result) is False
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="", documents=["d"], answer="a", result=result
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -313,24 +331,46 @@ async def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_i
     fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: None
     monkeypatch.setitem(sys.modules, "core.active_learning", fake_mod)
 
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is True
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is True
+    )
 
-    fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x"))
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is True
+    fake_mod.schedule_continuous_learning_cycle = lambda **kwargs: (_ for _ in ()).throw(
+        RuntimeError("x")
+    )
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is True
+    )
 
     class BadStore:
         async def flag_weak_response(self, **kwargs):
             raise RuntimeError("boom")
 
     fake_mod.get_feedback_store = lambda config: BadStore()
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is False
+    )
 
     class FalseStore:
         async def flag_weak_response(self, **kwargs):
             return False
 
     fake_mod.get_feedback_store = lambda config: FalseStore()
-    assert await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result) is False
+    assert (
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -347,7 +387,9 @@ async def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
     monkeypatch.setitem(sys.modules, "core.active_learning", fake_mod)
 
     with pytest.raises(asyncio.CancelledError, match=r"^$"):
-        await judge_instance._maybe_record_feedback(query="q", documents=["d"], answer="a", result=result)
+        await judge_instance._maybe_record_feedback(
+            query="q", documents=["d"], answer="a", result=result
+        )
 
 
 @pytest.mark.asyncio

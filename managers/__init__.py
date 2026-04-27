@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from importlib import import_module
 
-
 _MANAGER_IMPORT_MAP = {
     "BrowserManager": "managers.browser_manager",
     "CodeManager": "managers.code_manager",

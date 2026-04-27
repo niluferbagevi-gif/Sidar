@@ -323,7 +323,9 @@ def test_search_google_success_no_items_and_error(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
 
-    client = DummyAsyncClient(response=DummyResponse(payload={"items": [{"title": "t", "snippet": "s", "link": "l"}]}))
+    client = DummyAsyncClient(
+        response=DummyResponse(payload={"items": [{"title": "t", "snippet": "s", "link": "l"}]})
+    )
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
     ok, res = run(m._search_google("python", 3))
     assert ok is True
@@ -419,14 +421,16 @@ def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatc
     assert res.startswith(m._NO_RESULTS_PREFIX)
 
     async def timeout_wait_for(*args, **kwargs):
-        raise asyncio.TimeoutError
+        raise TimeoutError
 
     monkeypatch.setattr(asyncio, "wait_for", timeout_wait_for)
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is False
     assert "Zaman aşımı" in res
 
-    monkeypatch.setattr(asyncio, "wait_for", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        asyncio, "wait_for", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is False
     assert "DuckDuckGo" in res
@@ -446,7 +450,9 @@ def test_search_duckduckgo_no_body_line(monkeypatch):
         async def text(self, query, max_results):
             return [{"title": "t", "body": "", "href": "h"}]
 
-    monkeypatch.setitem(sys.modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS))
+    monkeypatch.setitem(
+        sys.modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS)
+    )
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is True
     assert "   → h" in res
@@ -457,7 +463,9 @@ def test_scrape_url_fetch_url_and_truncate(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager()
 
-    client = DummyAsyncClient(response=DummyResponse(text="<html><body><h1>A</h1><script>x</script> B</body></html>"))
+    client = DummyAsyncClient(
+        response=DummyResponse(text="<html><body><h1>A</h1><script>x</script> B</body></html>")
+    )
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
     text = run(m.scrape_url("https://example.com"))
     assert text == "A B"
@@ -475,13 +483,17 @@ def test_scrape_url_fetch_url_and_truncate(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: DummyAsyncClient(exc=status_err))
     assert "HTTP 500" in run(m.scrape_url("https://x"))
 
-    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: DummyAsyncClient(exc=RuntimeError("e")))
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **kwargs: DummyAsyncClient(exc=RuntimeError("e"))
+    )
     assert "çekilemedi" in run(m.scrape_url("https://x"))
 
     monkeypatch.setattr(m, "scrape_url", lambda url: asyncio.sleep(0, result="ok"))
     assert run(m.fetch_url("https://ok")) == (True, "[URL: https://ok]\n\nok")
 
-    monkeypatch.setattr(m, "scrape_url", lambda url: asyncio.sleep(0, result="Hata: Sayfa içeriği çekilemedi - x"))
+    monkeypatch.setattr(
+        m, "scrape_url", lambda url: asyncio.sleep(0, result="Hata: Sayfa içeriği çekilemedi - x")
+    )
     assert run(m.fetch_url("https://bad"))[0] is False
 
     m.FETCH_MAX_CHARS = "bad"
@@ -494,7 +506,9 @@ def test_clean_html_docs_stackoverflow_and_helpers(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager()
 
-    cleaned = m._clean_html("<html><header>x</header><body>a &amp; b <style>c</style></body></html>")
+    cleaned = m._clean_html(
+        "<html><header>x</header><body>a &amp; b <style>c</style></body></html>"
+    )
     assert cleaned == "a & b"
 
     calls = {}

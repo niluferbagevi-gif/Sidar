@@ -18,6 +18,7 @@ Yapılandırma (.env):
   HITL_ENABLED=true
   HITL_TIMEOUT_SECONDS=120
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,16 +27,17 @@ import os
 import time
 import uuid
 from collections import deque
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable, Coroutine
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Callable, Coroutine, Deque, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
 
 _DEFAULT_TIMEOUT = 120  # saniye
-_MAX_QUEUE_SIZE = 200   # bellekte tutulan maks. istek
+_MAX_QUEUE_SIZE = 200  # bellekte tutulan maks. istek
 
 # ─── Veri modelleri ───────────────────────────────────────────────────────────
 
@@ -50,22 +52,23 @@ class HITLDecision(str, Enum):
 @dataclass
 class HITLRequest:
     """Tek bir onay isteği kaydı."""
+
     request_id: str
-    action: str               # "file_delete", "file_overwrite", "github_pr_create" vb.
-    description: str          # Kullanıcıya gösterilecek açıklama
-    payload: Dict[str, Any]   # İşleme özgü meta-veri (yol, repo adı vb.)
-    requested_by: str         # Hangi ajan/yönetici tetikledi
+    action: str  # "file_delete", "file_overwrite", "github_pr_create" vb.
+    description: str  # Kullanıcıya gösterilecek açıklama
+    payload: dict[str, Any]  # İşleme özgü meta-veri (yol, repo adı vb.)
+    requested_by: str  # Hangi ajan/yönetici tetikledi
     created_at: float
     expires_at: float
     decision: HITLDecision = HITLDecision.PENDING
-    decided_at: Optional[float] = None
+    decided_at: float | None = None
     decided_by: str = ""
     rejection_reason: str = ""
 
     def is_expired(self) -> bool:
         return time.time() > self.expires_at and self.decision == HITLDecision.PENDING
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["decision"] = self.decision.value
         return d
@@ -73,13 +76,14 @@ class HITLRequest:
 
 # ─── Onay isteği deposu ───────────────────────────────────────────────────────
 
+
 class _HITLStore:
     """Thread-safe in-memory HITL istek deposu."""
 
     def __init__(self, max_size: int = _MAX_QUEUE_SIZE) -> None:
-        self._requests: Deque[HITLRequest] = deque(maxlen=max_size)
-        self._index: Dict[str, HITLRequest] = {}
-        self._lock: Optional[asyncio.Lock] = None
+        self._requests: deque[HITLRequest] = deque(maxlen=max_size)
+        self._index: dict[str, HITLRequest] = {}
+        self._lock: asyncio.Lock | None = None
 
     async def add(self, req: HITLRequest) -> None:
         if self._lock is None:
@@ -89,7 +93,9 @@ class _HITLStore:
             if len(self._requests) == self._requests.maxlen:
                 oldest = self._requests[0]
                 if oldest.decision == HITLDecision.PENDING:
-                    logger.warning("HITL: Kuyruk dolu, bekleyen istek düşürüldü: %s", oldest.request_id)
+                    logger.warning(
+                        "HITL: Kuyruk dolu, bekleyen istek düşürüldü: %s", oldest.request_id
+                    )
                 else:
                     logger.warning(
                         "HITL: Kuyruk dolu, kararı verilmiş istek düşürüldü: %s (karar=%s)",
@@ -100,13 +106,13 @@ class _HITLStore:
             self._requests.append(req)
             self._index[req.request_id] = req
 
-    async def get(self, request_id: str) -> Optional[HITLRequest]:
+    async def get(self, request_id: str) -> HITLRequest | None:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
             return self._index.get(request_id)
 
-    async def pending(self) -> List[HITLRequest]:
+    async def pending(self) -> list[HITLRequest]:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
@@ -120,7 +126,7 @@ class _HITLStore:
                         result.append(r)
             return list(result)
 
-    async def all_recent(self, limit: int = 50) -> List[HITLRequest]:
+    async def all_recent(self, limit: int = 50) -> list[HITLRequest]:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
@@ -136,10 +142,10 @@ def get_hitl_store() -> _HITLStore:
 
 # ─── Broadcast hook (WebSocket bildirim) ─────────────────────────────────────
 
-_broadcast_hook: Optional[Callable[[Dict[str, Any]], Coroutine]] = None
+_broadcast_hook: Callable[[dict[str, Any]], Coroutine] | None = None
 
 
-def set_hitl_broadcast_hook(hook: Callable[[Dict[str, Any]], Coroutine]) -> None:
+def set_hitl_broadcast_hook(hook: Callable[[dict[str, Any]], Coroutine]) -> None:
     """
     WebSocket yayın fonksiyonunu kaydet.
     web_server.py başlangıcında çağrılır:
@@ -154,10 +160,12 @@ async def _notify(req: HITLRequest) -> None:
     if _broadcast_hook is None:
         return
     try:
-        await _broadcast_hook({
-            "type": "hitl_request",
-            "data": req.to_dict(),
-        })
+        await _broadcast_hook(
+            {
+                "type": "hitl_request",
+                "data": req.to_dict(),
+            }
+        )
     except Exception as exc:
         logger.warning("HITL broadcast hatası: %s", exc)
         logging.getLogger().warning("HITL broadcast hatası: %s", exc)
@@ -169,6 +177,7 @@ async def notify(req: HITLRequest) -> None:
 
 
 # ─── HITLGate — iş mantığı ───────────────────────────────────────────────────
+
 
 class HITLGate:
     """
@@ -188,14 +197,16 @@ class HITLGate:
 
     def __init__(self) -> None:
         self.enabled = os.getenv("HITL_ENABLED", "false").lower() in ("1", "true", "yes")
-        self.timeout = max(10, int(os.getenv("HITL_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT)) or _DEFAULT_TIMEOUT))
+        self.timeout = max(
+            10, int(os.getenv("HITL_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT)) or _DEFAULT_TIMEOUT)
+        )
 
     async def request_approval(
         self,
         *,
         action: str,
         description: str,
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         requested_by: str = "system",
     ) -> bool:
         """
@@ -225,7 +236,9 @@ class HITLGate:
 
         logger.info(
             "HITL onay bekleniyor — action=%s, id=%s, timeout=%ds",
-            action, req.request_id, self.timeout,
+            action,
+            req.request_id,
+            self.timeout,
         )
 
         # Onay veya red gelene kadar polling
@@ -240,7 +253,8 @@ class HITLGate:
             if current.decision in (HITLDecision.REJECTED, HITLDecision.TIMEOUT):
                 logger.warning(
                     "HITL REDDEDİLDİ/ZAMAN AŞIMI — id=%s, karar=%s",
-                    req.request_id, current.decision.value,
+                    req.request_id,
+                    current.decision.value,
                 )
                 return False
             await asyncio.sleep(1.0)
@@ -260,7 +274,7 @@ class HITLGate:
         approved: bool,
         decided_by: str = "operator",
         rejection_reason: str = "",
-    ) -> Optional[HITLRequest]:
+    ) -> HITLRequest | None:
         """
         Onay veya red kararını kaydet.
 
@@ -285,7 +299,7 @@ class HITLGate:
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
-_GATE: Optional[HITLGate] = None
+_GATE: HITLGate | None = None
 
 
 def get_hitl_gate() -> HITLGate:

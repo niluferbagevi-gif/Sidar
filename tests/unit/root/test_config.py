@@ -1,10 +1,11 @@
-import config
-import types
-import os
-from pathlib import Path
 import importlib
+import os
+import types
+from pathlib import Path
 
 import pytest
+
+import config
 
 
 def test_get_bool_env_truthy_and_default(monkeypatch):
@@ -92,7 +93,9 @@ def test_ensure_hardware_info_loaded_cpu_only(monkeypatch):
 
 
 def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full")
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -180,7 +183,9 @@ def test_initialize_directories_returns_false_when_mkdir_fails(monkeypatch):
 
 
 def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", True)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -242,8 +247,12 @@ def test_apply_gpu_memory_safety_check_second_scale_branch(monkeypatch):
 
 
 def test_validate_critical_settings_exits_in_production_without_memory_key(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
-    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -271,7 +280,9 @@ def test_validate_critical_settings_exits_in_production_without_memory_key(monke
 
 
 def test_validate_critical_settings_ollama_http_paths(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -303,7 +314,9 @@ def test_validate_critical_settings_ollama_http_paths(monkeypatch):
         def get(self, _url):
             return _Resp(503)
 
-    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBad))
+    monkeypatch.setitem(
+        __import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBad)
+    )
     assert config.Config.validate_critical_settings() is True
 
 
@@ -416,7 +429,9 @@ def test_print_config_summary_cpu_branch(monkeypatch, capsys):
 
 
 def test_validate_critical_settings_memory_key_and_crypto_missing(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -430,10 +445,13 @@ def test_validate_critical_settings_memory_key_and_crypto_missing(monkeypatch):
     class _ClientOK:
         def __init__(self, *args, **kwargs):
             pass
+
         def __enter__(self):
             return self
+
         def __exit__(self, *args):
             return False
+
         def get(self, _url):
             return _Resp()
 
@@ -442,7 +460,9 @@ def test_validate_critical_settings_memory_key_and_crypto_missing(monkeypatch):
 
 
 def test_validate_critical_settings_ollama_client_exception(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -454,7 +474,9 @@ def test_validate_critical_settings_ollama_client_exception(monkeypatch):
         def __init__(self, *args, **kwargs):
             raise RuntimeError("boom")
 
-    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBoom))
+    monkeypatch.setitem(
+        __import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBoom)
+    )
     assert config.Config.validate_critical_settings() is True
 
 
@@ -474,6 +496,7 @@ def test_init_telemetry_runtime_failure(monkeypatch):
     class _Provider:
         def __init__(self, resource):
             self.resource = resource
+
         def add_span_processor(self, _processor):
             return None
 
@@ -733,7 +756,9 @@ def test_initialize_directories_success_debug_path(monkeypatch, tmp_path):
 
 
 def test_validate_critical_settings_invalid_fernet_and_ollama_api_suffix(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -754,10 +779,13 @@ def test_validate_critical_settings_invalid_fernet_and_ollama_api_suffix(monkeyp
     class _ClientOK:
         def __init__(self, *args, **kwargs):
             pass
+
         def __enter__(self):
             return self
+
         def __exit__(self, *args):
             return False
+
         def get(self, url):
             assert url.endswith("/tags")
             return _Resp()
@@ -767,7 +795,9 @@ def test_validate_critical_settings_invalid_fernet_and_ollama_api_suffix(monkeyp
 
 
 def test_validate_critical_settings_missing_cryptography_dependency(monkeypatch):
-    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
     monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
     monkeypatch.setattr(config.Config, "USE_GPU", False)
@@ -781,10 +811,13 @@ def test_validate_critical_settings_missing_cryptography_dependency(monkeypatch)
     class _ClientOK:
         def __init__(self, *args, **kwargs):
             pass
+
         def __enter__(self):
             return self
+
         def __exit__(self, *args):
             return False
+
         def get(self, _url):
             return _Resp()
 
@@ -793,6 +826,7 @@ def test_validate_critical_settings_missing_cryptography_dependency(monkeypatch)
     monkeypatch.delitem(__import__("sys").modules, "cryptography", raising=False)
 
     import builtins
+
     real_import = builtins.__import__
 
     def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -813,11 +847,17 @@ def test_init_telemetry_dependency_auto_success_with_instrumentation(monkeypatch
 
     trace_mod = types.SimpleNamespace(set_tracer_provider=lambda provider: None)
     otlp_mod = types.SimpleNamespace(OTLPSpanExporter=lambda endpoint, insecure: object())
-    sdk_trace = types.SimpleNamespace(TracerProvider=lambda resource: types.SimpleNamespace(add_span_processor=lambda p: None))
+    sdk_trace = types.SimpleNamespace(
+        TracerProvider=lambda resource: types.SimpleNamespace(add_span_processor=lambda p: None)
+    )
     sdk_resource = types.SimpleNamespace(Resource=types.SimpleNamespace(create=lambda x: object()))
     sdk_export = types.SimpleNamespace(BatchSpanProcessor=lambda exporter: object())
-    fastapi_inst = types.SimpleNamespace(FastAPIInstrumentor=types.SimpleNamespace(instrument_app=lambda app: None))
-    httpx_inst = types.SimpleNamespace(HTTPXClientInstrumentor=lambda: types.SimpleNamespace(instrument=lambda: None))
+    fastapi_inst = types.SimpleNamespace(
+        FastAPIInstrumentor=types.SimpleNamespace(instrument_app=lambda app: None)
+    )
+    httpx_inst = types.SimpleNamespace(
+        HTTPXClientInstrumentor=lambda: types.SimpleNamespace(instrument=lambda: None)
+    )
 
     modules = __import__("sys").modules
     monkeypatch.setitem(modules, "opentelemetry", types.SimpleNamespace(trace=trace_mod))
@@ -850,6 +890,7 @@ def test_init_telemetry_custom_fastapi_and_missing_httpx_instrumentor(monkeypatc
     class _Provider:
         def __init__(self, resource):
             self.resource = resource
+
         def add_span_processor(self, _processor):
             return None
 
@@ -930,6 +971,7 @@ def test_init_telemetry_with_explicit_httpx_instrumentor(monkeypatch):
     class _Provider:
         def __init__(self, resource):
             self.resource = resource
+
         def add_span_processor(self, _processor):
             return None
 

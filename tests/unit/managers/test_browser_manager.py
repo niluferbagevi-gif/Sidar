@@ -228,9 +228,15 @@ def test_helpers_and_summary(manager: BrowserManager) -> None:
     assert manager._summarize_value("12345678") == "********"
     assert manager._summarize_value("123456789") == "12***89 (len=9)"
 
-    manager._record_audit_event(session_id="s1", action="browser_click", status="execution_failed", selector="#x")
-    manager._record_audit_event(session_id="s1", action="browser_fill_form", status="pending_approval", selector="#save")
-    manager._record_audit_event(session_id="s1", action="browser_click", status="executed", selector="#delete")
+    manager._record_audit_event(
+        session_id="s1", action="browser_click", status="execution_failed", selector="#x"
+    )
+    manager._record_audit_event(
+        session_id="s1", action="browser_fill_form", status="pending_approval", selector="#save"
+    )
+    manager._record_audit_event(
+        session_id="s1", action="browser_click", status="executed", selector="#delete"
+    )
     summary = manager.summarize_audit_log("s1", limit=2)
     assert summary["status"] == "failed"
     assert summary["risk"] == "yüksek"
@@ -240,7 +246,9 @@ def test_helpers_and_summary(manager: BrowserManager) -> None:
     assert manager.summarize_audit_log()["status"] == "no-signal"
 
 
-def test_collect_signals_and_session_url(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_signals_and_session_url(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sess = _session("playwright")
     sess.current_url = "https://set.local"
     manager._sessions[sess.session_id] = sess
@@ -259,7 +267,9 @@ def test_collect_signals_and_session_url(manager: BrowserManager, monkeypatch: p
     assert manager._session_url(sess) == ""
 
 
-def test_hitl_request_and_sync_guard(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hitl_request_and_sync_guard(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls: list[str] = []
 
     class _Gate:
@@ -270,13 +280,15 @@ def test_hitl_request_and_sync_guard(manager: BrowserManager, monkeypatch: pytes
             return True
 
     monkeypatch.setattr("managers.browser_manager.get_hitl_gate", lambda: _Gate())
-    approved = asyncio.run(manager._request_hitl_approval(
-        session=_session(),
-        action="browser_click",
-        description="d",
-        payload={"x": 1},
-        selector="#ok",
-    ))
+    approved = asyncio.run(
+        manager._request_hitl_approval(
+            session=_session(),
+            action="browser_click",
+            description="d",
+            payload={"x": 1},
+            selector="#ok",
+        )
+    )
     assert approved is True and calls == ["asked"]
 
     assert manager._sync_hitl_guard("browser_click", "#view") is None
@@ -318,7 +330,9 @@ def test_start_playwright_session(manager: BrowserManager, monkeypatch: pytest.M
         manager._start_playwright_session("firefox", True)
 
 
-def test_start_selenium_session_and_impls(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_selenium_session_and_impls(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     reg = _register_fake_selenium(monkeypatch)
     session = manager._start_selenium_session("chrome", True)
     assert session.provider == "selenium"
@@ -344,7 +358,9 @@ def test_start_selenium_session_and_impls(manager: BrowserManager, monkeypatch: 
     assert ok is True and reg["selected_values"][-1] == "v1"
 
 
-def test_is_available_status_and_start_session(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_available_status_and_start_session(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _register_fake_playwright(monkeypatch)
     assert manager.is_available() is True
 
@@ -370,7 +386,9 @@ def test_is_available_status_and_start_session(manager: BrowserManager, monkeypa
 
     test_session = _session("playwright")
     monkeypatch.setattr(manager, "_provider_candidates", lambda: ["playwright"])
-    monkeypatch.setattr(manager._browser_providers["playwright"], "start_session", lambda *_a, **_k: test_session)
+    monkeypatch.setattr(
+        manager._browser_providers["playwright"], "start_session", lambda *_a, **_k: test_session
+    )
     ok, info = manager.start_session()
     assert ok is True and info["session_id"] == "s1"
 
@@ -393,7 +411,9 @@ def test_is_available_status_and_start_session(manager: BrowserManager, monkeypa
     assert ok is False and info["error"] == "se"
 
 
-def test_start_session_respects_selenium_provider_preference(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_start_session_respects_selenium_provider_preference(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     class _SeleniumCfg(_Cfg):
         BROWSER_PROVIDER = "selenium"
 
@@ -422,14 +442,18 @@ def test_start_session_respects_selenium_provider_preference(monkeypatch: pytest
     assert calls["selenium"] == 1
 
 
-def test_navigation_and_sync_actions(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_navigation_and_sync_actions(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw"
     manager._sessions["pw"] = pw
 
     assert manager.goto_url("pw", "https://example.com")[0] is True
-    monkeypatch.setattr(pw.page, "goto", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        pw.page, "goto", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     with pytest.raises(RuntimeError):
         manager.goto_url("pw", "https://example.com")
 
@@ -437,7 +461,9 @@ def test_navigation_and_sync_actions(manager: BrowserManager, monkeypatch: pytes
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: (False, "blocked"))
     assert manager.click_element("pw", "#submit") == (False, "blocked")
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: None)
-    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     with pytest.raises(RuntimeError):
         manager.click_element("pw", "#x")
 
@@ -446,7 +472,9 @@ def test_navigation_and_sync_actions(manager: BrowserManager, monkeypatch: pytes
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: (False, "blocked"))
     assert manager.fill_form("pw", "#i", "value") == (False, "blocked")
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: None)
-    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ff")))
+    monkeypatch.setattr(
+        manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ff"))
+    )
     with pytest.raises(RuntimeError):
         manager.fill_form("pw", "#i", "value")
 
@@ -455,7 +483,9 @@ def test_navigation_and_sync_actions(manager: BrowserManager, monkeypatch: pytes
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: (False, "blocked"))
     assert manager.select_option("pw", "#s", "v") == (False, "blocked")
     monkeypatch.setattr(manager, "_sync_hitl_guard", lambda *_a, **_k: None)
-    monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("so")))
+    monkeypatch.setattr(
+        manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("so"))
+    )
     with pytest.raises(RuntimeError):
         manager.select_option("pw", "#s", "v")
 
@@ -468,7 +498,10 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         return True, "async"
 
     monkeypatch.setattr(manager, "_click_element_impl_async", _click_async)
-    assert asyncio.run(manager.click_element_hitl("s1", "#safe", require_confirmation=False)) == (True, "async")
+    assert asyncio.run(manager.click_element_hitl("s1", "#safe", require_confirmation=False)) == (
+        True,
+        "async",
+    )
 
     async def _deny(**_k: object) -> bool:
         return False
@@ -477,45 +510,67 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
         return True
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
-    ok, message = asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
+    monkeypatch.setattr(
+        manager,
+        "_click_element_impl",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    ok, message = asyncio.run(
+        manager.click_element_hitl("s1", "#submit", require_confirmation=True)
+    )
     assert ok is False
     assert "reddedildi" in message
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (True, "ok"))
-    assert (asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True)))[0] is True
+    assert (asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True)))[
+        0
+    ] is True
 
     monkeypatch.setattr(
         manager,
         "_click_element_impl_async",
         manager.__class__._click_element_impl_async.__get__(manager, manager.__class__),
     )
-    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ce")))
+    monkeypatch.setattr(
+        manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("ce"))
+    )
     with pytest.raises(RuntimeError):
         asyncio.run(manager.click_element_hitl("s1", "#submit", require_confirmation=True))
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    monkeypatch.setattr(
+        manager,
+        "_fill_form_impl",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
     deny_fill_ok, deny_fill_message = asyncio.run(manager.fill_form_hitl("s1", "#i", "secret"))
     assert deny_fill_ok is False
     assert "reddedildi" in deny_fill_message
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (True, "ok"))
     assert (asyncio.run(manager.fill_form_hitl("s1", "#i", "secret")))[0] is True
-    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fe")))
+    monkeypatch.setattr(
+        manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fe"))
+    )
     with pytest.raises(RuntimeError):
         asyncio.run(manager.fill_form_hitl("s1", "#i", "secret"))
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    monkeypatch.setattr(
+        manager,
+        "_select_option_impl",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
     deny_select_ok, deny_select_message = asyncio.run(manager.select_option_hitl("s1", "#s", "v"))
     assert deny_select_ok is False
     assert "reddedildi" in deny_select_message
     monkeypatch.setattr(manager, "_request_hitl_approval", _allow)
     monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (True, "ok"))
     assert (asyncio.run(manager.select_option_hitl("s1", "#s", "v")))[0] is True
-    monkeypatch.setattr(manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("se")))
+    monkeypatch.setattr(
+        manager, "_select_option_impl", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("se"))
+    )
     with pytest.raises(RuntimeError):
         asyncio.run(manager.select_option_hitl("s1", "#s", "v"))
 
@@ -530,9 +585,15 @@ def test_click_element_hitl_returns_rejected_when_approval_denied(
         return False
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    monkeypatch.setattr(manager, "_click_element_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    monkeypatch.setattr(
+        manager,
+        "_click_element_impl",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
 
-    ok, message = asyncio.run(manager.click_element_hitl("s1", "#danger", require_confirmation=True))
+    ok, message = asyncio.run(
+        manager.click_element_hitl("s1", "#danger", require_confirmation=True)
+    )
     assert ok is False
     assert "reddedildi" in message
 
@@ -547,14 +608,20 @@ def test_fill_form_hitl_returns_rejected_when_approval_denied(
         return False
 
     monkeypatch.setattr(manager, "_request_hitl_approval", _deny)
-    monkeypatch.setattr(manager, "_fill_form_impl", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")))
+    monkeypatch.setattr(
+        manager,
+        "_fill_form_impl",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
 
     ok, message = asyncio.run(manager.fill_form_hitl("s1", "#secret", "value"))
     assert ok is False
     assert "reddedildi" in message
 
 
-def test_capture_and_close(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_capture_and_close(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw"
@@ -562,7 +629,9 @@ def test_capture_and_close(manager: BrowserManager, monkeypatch: pytest.MonkeyPa
 
     ok, dom = manager.capture_dom("pw", "html")
     assert ok is True and "playwright" in dom
-    monkeypatch.setattr(pw.page, "locator", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("dom")))
+    monkeypatch.setattr(
+        pw.page, "locator", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("dom"))
+    )
     assert manager.capture_dom("pw", "html")[0] is False
 
     manager.artifact_dir = tmp_path
@@ -596,6 +665,7 @@ def test_capture_and_close(manager: BrowserManager, monkeypatch: pytest.MonkeyPa
     manager._sessions["f"] = fail
     assert manager.close_session("f")[0] is False
 
+
 def test_additional_summary_and_list(manager: BrowserManager) -> None:
     manager._record_audit_event(
         session_id="s2",
@@ -625,7 +695,13 @@ def test_additional_summary_and_list(manager: BrowserManager) -> None:
     assert isinstance(logs, list) and len(logs) == 3
 
     manager._audit_log = [
-        {"session_id": "ok1", "action": "browser_goto_url", "status": "executed", "selector": "", "url": ""}
+        {
+            "session_id": "ok1",
+            "action": "browser_goto_url",
+            "status": "executed",
+            "selector": "",
+            "url": "",
+        }
     ]
     assert manager.summarize_audit_log("ok1")["status"] == "ok"
 
@@ -661,7 +737,9 @@ def test_summary_branch_gaps_and_collect_signal_defaults(manager: BrowserManager
     assert "screenshot" not in signal
 
 
-def test_playwright_impl_and_goto_selenium(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_playwright_impl_and_goto_selenium(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw2"
@@ -681,7 +759,9 @@ def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> N
     class _CustomProvider(BaseBrowserProvider):
         provider_name = "custom"
 
-        def start_session(self, manager: BrowserManager, browser_name: str, headless: bool) -> BrowserSession:
+        def start_session(
+            self, manager: BrowserManager, browser_name: str, headless: bool
+        ) -> BrowserSession:
             return BrowserSession(
                 session_id="c1",
                 provider="custom",
@@ -696,17 +776,31 @@ def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> N
         def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
             _ = (manager, session, selector)
 
-        def fill(self, manager: BrowserManager, session: BrowserSession, selector: str, value: str, *, clear: bool) -> None:
+        def fill(
+            self,
+            manager: BrowserManager,
+            session: BrowserSession,
+            selector: str,
+            value: str,
+            *,
+            clear: bool,
+        ) -> None:
             _ = (manager, session, selector, value, clear)
 
-        def select(self, manager: BrowserManager, session: BrowserSession, selector: str, value: str) -> None:
+        def select(
+            self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
+        ) -> None:
             _ = (manager, session, selector, value)
 
-        def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
+        def capture_dom(
+            self, manager: BrowserManager, session: BrowserSession, selector: str
+        ) -> str:
             _ = (manager, session, selector)
             return "<html>custom</html>"
 
-        def capture_screenshot(self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool) -> None:
+        def capture_screenshot(
+            self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
+        ) -> None:
             _ = (manager, session, full_page)
             Path(path).write_bytes(b"x")
 
@@ -725,7 +819,9 @@ def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> N
     assert manager._sessions["c1"].current_url.startswith("custom://")
 
 
-def test_start_selenium_non_headless_and_close_partial(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_selenium_non_headless_and_close_partial(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _register_fake_selenium(monkeypatch)
     ch = manager._start_selenium_session("chrome", False)
     ff = manager._start_selenium_session("firefox", False)
@@ -812,11 +908,17 @@ def test_selenium_interaction_impls_parametrized(
         assert reg["selected_values"][-1] == "v2"
 
 
-def test_analyze_visual_drift_reports_missing_baseline(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_visual_drift_reports_missing_baseline(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sess = _session("playwright")
     sess.session_id = "v1"
     manager._sessions["v1"] = sess
-    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(manager.artifact_dir / "cur.png")))
+    monkeypatch.setattr(
+        manager,
+        "capture_screenshot",
+        lambda *_a, **_k: (True, str(manager.artifact_dir / "cur.png")),
+    )
     (manager.artifact_dir / "cur.png").write_bytes(b"same")
 
     result = asyncio.run(manager.analyze_visual_drift("v1"))
@@ -825,7 +927,9 @@ def test_analyze_visual_drift_reports_missing_baseline(manager: BrowserManager, 
     assert result["drift_detected"] is False
 
 
-def test_analyze_visual_drift_with_hash_fallback_detects_change(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_visual_drift_with_hash_fallback_detects_change(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sess = _session("playwright")
     sess.session_id = "v2"
     manager._sessions["v2"] = sess
@@ -836,9 +940,16 @@ def test_analyze_visual_drift_with_hash_fallback_detects_change(manager: Browser
     current.write_bytes(b"current-bytes")
 
     monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
-    monkeypatch.setattr("managers.browser_manager.importlib.import_module", lambda name: (_ for _ in ()).throw(ImportError(name)))
+    monkeypatch.setattr(
+        "managers.browser_manager.importlib.import_module",
+        lambda name: (_ for _ in ()).throw(ImportError(name)),
+    )
 
-    result = asyncio.run(manager.analyze_visual_drift("v2", baseline_path=str(baseline), run_multimodal_analysis=False))
+    result = asyncio.run(
+        manager.analyze_visual_drift(
+            "v2", baseline_path=str(baseline), run_multimodal_analysis=False
+        )
+    )
     assert result["ok"] is True
     assert result["drift_detected"] is True
     assert result["reason"] == "hash_fallback"
@@ -877,7 +988,9 @@ def test_compute_visual_drift_uses_hash_fallback_when_pil_processing_fails(
     assert drift["baseline_hash"] != drift["current_hash"]
 
 
-def test_collect_signals_includes_visual_qa(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_signals_includes_visual_qa(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sess = _session("playwright")
     sess.session_id = "v3"
     manager._sessions["v3"] = sess
@@ -946,7 +1059,11 @@ def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
     current.write_bytes(b"current")
 
     monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
-    monkeypatch.setattr(manager, "_compute_visual_drift", lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.016})
+    monkeypatch.setattr(
+        manager,
+        "_compute_visual_drift",
+        lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.016},
+    )
 
     calls = {"mm": 0}
 
@@ -955,7 +1072,11 @@ def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
         return {"success": True}
 
     monkeypatch.setattr(manager, "_analyze_screenshot_with_multimodal", _mm)
-    result = asyncio.run(manager.analyze_visual_drift("v4", baseline_path=str(baseline), run_multimodal_analysis=True))
+    result = asyncio.run(
+        manager.analyze_visual_drift(
+            "v4", baseline_path=str(baseline), run_multimodal_analysis=True
+        )
+    )
 
     assert calls["mm"] == 1
     assert result["multimodal_check"]["triggered"] is True
@@ -975,13 +1096,23 @@ def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
     current.write_bytes(b"current")
 
     monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
-    monkeypatch.setattr(manager, "_compute_visual_drift", lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.9})
+    monkeypatch.setattr(
+        manager,
+        "_compute_visual_drift",
+        lambda *_a, **_k: {"drift_detected": True, "drift_score": 0.9},
+    )
 
     async def _mm(*_a, **_k):
-        raise AssertionError("multimodal should not be called when drift score is far from threshold")
+        raise AssertionError(
+            "multimodal should not be called when drift score is far from threshold"
+        )
 
     monkeypatch.setattr(manager, "_analyze_screenshot_with_multimodal", _mm)
-    result = asyncio.run(manager.analyze_visual_drift("v5", baseline_path=str(baseline), run_multimodal_analysis=True))
+    result = asyncio.run(
+        manager.analyze_visual_drift(
+            "v5", baseline_path=str(baseline), run_multimodal_analysis=True
+        )
+    )
 
     assert result["multimodal_check"]["triggered"] is False
     assert "multimodal_analysis" not in result
@@ -1019,7 +1150,9 @@ def test_compute_visual_drift_with_broken_png_bytes_falls_back_to_hash(
     assert drift["drift_detected"] is True
 
 
-def test_compute_visual_drift_pixel_diff_path(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compute_visual_drift_pixel_diff_path(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     baseline = manager.artifact_dir / "baseline-ok.png"
     current = manager.artifact_dir / "current-ok.png"
     baseline.write_bytes(b"a")
@@ -1059,7 +1192,9 @@ def test_compute_visual_drift_pixel_diff_path(manager: BrowserManager, monkeypat
     assert drift["drift_score"] == pytest.approx(0.75)
 
 
-def test_compute_visual_drift_returns_size_mismatch_payload(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compute_visual_drift_returns_size_mismatch_payload(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     baseline = manager.artifact_dir / "baseline-size.png"
     current = manager.artifact_dir / "current-size.png"
     baseline.write_bytes(b"a")
@@ -1097,7 +1232,9 @@ def test_compute_visual_drift_returns_size_mismatch_payload(manager: BrowserMana
     assert drift["drift_detected"] is True
 
 
-def test_analyze_screenshot_with_multimodal_success(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_screenshot_with_multimodal_success(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manager._llm = object()
 
     class _Pipeline:
@@ -1109,21 +1246,27 @@ def test_analyze_screenshot_with_multimodal_success(manager: BrowserManager, mon
             return {"success": True, "kwargs": kwargs}
 
     fake_module = SimpleNamespace(MultimodalPipeline=_Pipeline)
-    monkeypatch.setattr("managers.browser_manager.importlib.import_module", lambda _name: fake_module)
+    monkeypatch.setattr(
+        "managers.browser_manager.importlib.import_module", lambda _name: fake_module
+    )
 
     result = asyncio.run(manager._analyze_screenshot_with_multimodal("/tmp/a.png", "prompt"))
     assert result["success"] is True
     assert result["kwargs"]["mime_type"] == "image/png"
 
 
-def test_analyze_screenshot_with_multimodal_returns_reason_when_llm_missing(manager: BrowserManager) -> None:
+def test_analyze_screenshot_with_multimodal_returns_reason_when_llm_missing(
+    manager: BrowserManager,
+) -> None:
     manager._llm = None
     result = asyncio.run(manager._analyze_screenshot_with_multimodal("/tmp/a.png", "prompt"))
     assert result["success"] is False
     assert "bağlı değil" in result["reason"]
 
 
-def test_analyze_visual_drift_disabled_and_error_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_visual_drift_disabled_and_error_paths(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sess = _session("playwright")
     sess.session_id = "v6"
     manager._sessions["v6"] = sess
@@ -1141,7 +1284,9 @@ def test_analyze_visual_drift_disabled_and_error_paths(manager: BrowserManager, 
     cur = manager.artifact_dir / "cur-only.png"
     cur.write_bytes(b"x")
     monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(cur)))
-    baseline_not_found = asyncio.run(manager.analyze_visual_drift("v6", baseline_path=str(manager.artifact_dir / "nope.png")))
+    baseline_not_found = asyncio.run(
+        manager.analyze_visual_drift("v6", baseline_path=str(manager.artifact_dir / "nope.png"))
+    )
     assert baseline_not_found["ok"] is False
     assert baseline_not_found["reason"] == "baseline_not_found"
 
@@ -1169,7 +1314,9 @@ def test_selenium_provider_close_with_none_driver_and_current_url_fallback() -> 
     assert provider.current_url(session) == ""
 
 
-def test_run_coro_sync_uses_new_event_loop_when_running_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_coro_sync_uses_new_event_loop_when_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _FakeLoop:
         def __init__(self) -> None:
             self.closed = False

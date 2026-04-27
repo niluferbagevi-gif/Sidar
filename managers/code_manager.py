@@ -19,12 +19,12 @@ import sys
 import tempfile
 import threading
 import time
-from pathlib import Path, PureWindowsPath, PosixPath
-from typing import Any, Dict, List, Optional, Tuple, Union
+from pathlib import Path, PosixPath, PureWindowsPath
+from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 try:
-    from config import Config, SANDBOX_LIMITS
+    from config import SANDBOX_LIMITS, Config
 except ImportError:
     from config import Config
 
@@ -58,14 +58,14 @@ def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
     return PosixPath(raw_path)
 
 
-def _encode_lsp_message(payload: Dict[str, Any]) -> bytes:
+def _encode_lsp_message(payload: dict[str, Any]) -> bytes:
     body = json.dumps(payload).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
     return header + body
 
 
-def _decode_lsp_stream(raw: bytes) -> List[Dict[str, Any]]:
-    messages: List[Dict[str, Any]] = []
+def _decode_lsp_stream(raw: bytes) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(raw):
         header_end = raw.find(b"\r\n\r\n", cursor)
@@ -100,10 +100,10 @@ class CodeManager:
     def __init__(
         self,
         security: SecurityManager,
-        base_dir: Union[Path, str],
-        docker_image: Optional[str] = None,
-        docker_exec_timeout: Optional[int] = None,
-        cfg: Optional[Config] = None,
+        base_dir: Path | str,
+        docker_image: str | None = None,
+        docker_exec_timeout: int | None = None,
+        cfg: Config | None = None,
     ) -> None:
         self.security = security
         self.base_dir = Path(base_dir).resolve()
@@ -182,7 +182,7 @@ class CodeManager:
             return ""
         return runtime
 
-    def _resolve_sandbox_limits(self) -> Dict[str, object]:
+    def _resolve_sandbox_limits(self) -> dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
         limits = dict(SANDBOX_LIMITS)
         cfg = getattr(self, "cfg", None)
@@ -194,10 +194,7 @@ class CodeManager:
         # 2) DOCKER_MEM_LIMIT
         # 3) modül/genel SANDBOX_LIMITS['memory']
         memory = str(
-            cfg_limits.get("memory")
-            or self.docker_mem_limit
-            or limits.get("memory")
-            or "256m"
+            cfg_limits.get("memory") or self.docker_mem_limit or limits.get("memory") or "256m"
         ).strip()
         cpus = str(limits.get("cpus") or "0.5").strip()
         pids_limit = int(limits.get("pids_limit", 64))
@@ -230,7 +227,7 @@ class CodeManager:
             "network_mode": network_mode,
         }
 
-    def _build_docker_cli_command(self, code: str, limits: Dict[str, object]) -> List[str]:
+    def _build_docker_cli_command(self, code: str, limits: dict[str, object]) -> list[str]:
         """Docker CLI ile sandbox çalıştırma komutunu oluşturur."""
         return [
             "docker",
@@ -247,8 +244,8 @@ class CodeManager:
         ]
 
     def _execute_code_with_docker_cli(
-        self, code: str, limits: Dict[str, object]
-    ) -> Tuple[bool, str]:
+        self, code: str, limits: dict[str, object]
+    ) -> tuple[bool, str]:
         """Docker SDK başarısız olursa docker CLI ile çalıştırmayı dener."""
         docker_cmd = self._build_docker_cli_command(code, limits)
         result = subprocess.run(
@@ -362,7 +359,7 @@ class CodeManager:
     #  DOSYA OKUMA
     # ─────────────────────────────────────────────
 
-    def read_file(self, path: str, line_numbers: bool = True) -> Tuple[bool, str]:
+    def read_file(self, path: str, line_numbers: bool = True) -> tuple[bool, str]:
         """
         Dosya içeriğini oku. Claude Code gibi satır numaralarıyla gösterir.
 
@@ -387,7 +384,7 @@ class CodeManager:
                 return False, f"Belirtilen yol bir dizin: {path}"
 
             with self._lock:
-                with open(target, "r", encoding="utf-8", errors="replace") as f:
+                with open(target, encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 self._files_read += 1
 
@@ -412,7 +409,7 @@ class CodeManager:
     #  DOSYA YAZMA
     # ─────────────────────────────────────────────
 
-    def write_file(self, path: str, content: str, validate: bool = True) -> Tuple[bool, str]:
+    def write_file(self, path: str, content: str, validate: bool = True) -> tuple[bool, str]:
         """
         Dosyaya içerik yaz (Tam üzerine yazma).
 
@@ -484,7 +481,7 @@ class CodeManager:
         content: str,
         *,
         append: bool = True,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Coverage ajanı için üretilen pytest içeriğini güvenli biçimde yazar.
 
         - Markdown kod çitlerini temizler.
@@ -513,7 +510,7 @@ class CodeManager:
     #  AKILLI YAMA (PATCH)
     # ─────────────────────────────────────────────
 
-    def patch_file(self, path: str, target_block: str, replacement_block: str) -> Tuple[bool, str]:
+    def patch_file(self, path: str, target_block: str, replacement_block: str) -> tuple[bool, str]:
         """
         Dosyadaki belirli bir kod bloğunu yenisiyle değiştirir.
         """
@@ -543,7 +540,7 @@ class CodeManager:
     #  GÜVENLİ KOD ÇALIŞTIRMA (DOCKER SANDBOX)
     # ─────────────────────────────────────────────
 
-    def execute_code(self, code: str) -> Tuple[bool, str]:
+    def execute_code(self, code: str) -> tuple[bool, str]:
         """
         Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
         - Ağ erişimi kapalı (network_disabled=True)
@@ -668,7 +665,7 @@ class CodeManager:
                 )
                 return self.execute_code_local(code)
 
-    def execute_code_local(self, code: str) -> Tuple[bool, str]:
+    def execute_code_local(self, code: str) -> tuple[bool, str]:
         """
         Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
@@ -684,7 +681,7 @@ class CodeManager:
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
 
-        tmp_path: Optional[str] = None
+        tmp_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".py", delete=False, encoding="utf-8"
@@ -737,8 +734,8 @@ class CodeManager:
     def run_shell_in_sandbox(
         self,
         command: str,
-        cwd: Optional[str] = None,
-    ) -> Tuple[bool, str]:
+        cwd: str | None = None,
+    ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde shell yetkisine ihtiyaç duymadan çalıştırır."""
         if not self.security.can_execute():
             return False, "[OpenClaw] Sandbox komutu çalıştırma yetkisi yok."
@@ -811,11 +808,11 @@ class CodeManager:
         return True, combined
 
     @staticmethod
-    def analyze_pytest_output(output: str) -> Dict[str, Any]:
+    def analyze_pytest_output(output: str) -> dict[str, Any]:
         text = str(output or "")
-        findings: List[Dict[str, Any]] = []
-        coverage_targets: List[Dict[str, Any]] = []
-        failure_targets: List[Dict[str, Any]] = []
+        findings: list[dict[str, Any]] = []
+        coverage_targets: list[dict[str, Any]] = []
+        failure_targets: list[dict[str, Any]] = []
 
         summary_match = re.search(
             r"(?P<failed>\d+)\s+failed|(?P<passed>\d+)\s+passed|(?P<errors>\d+)\s+error",
@@ -889,8 +886,8 @@ class CodeManager:
     def run_pytest_and_collect(
         self,
         command: str = "pytest -q",
-        cwd: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        cwd: str | None = None,
+    ) -> dict[str, Any]:
         normalized = (command or "").strip() or "pytest -q"
         if "pytest" not in normalized:
             return {
@@ -911,9 +908,9 @@ class CodeManager:
     def run_shell(
         self,
         command: str,
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
         allow_shell_features: bool = False,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Kabuk komutunu güvenli subprocess ile çalıştırır.
         Claude Code'daki Bash aracına eşdeğer.
@@ -1035,7 +1032,7 @@ class CodeManager:
     #  GLOB DOSYA ARAMA
     # ─────────────────────────────────────────────
 
-    def glob_search(self, pattern: str, base_path: str = ".") -> Tuple[bool, str]:
+    def glob_search(self, pattern: str, base_path: str = ".") -> tuple[bool, str]:
         """
         Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
 
@@ -1106,7 +1103,7 @@ class CodeManager:
         case_sensitive: bool = True,
         context_lines: int = 0,
         max_results: int = 100,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
 
@@ -1132,7 +1129,7 @@ class CodeManager:
 
         try:
             target = Path(path).resolve()
-            files_to_search: List[Path] = []
+            files_to_search: list[Path] = []
 
             if target.is_file():
                 files_to_search = [target]
@@ -1149,7 +1146,7 @@ class CodeManager:
             else:
                 return False, f"Yol bulunamadı: {path}"
 
-            results: List[str] = []
+            results: list[str] = []
             match_count = 0
             files_with_matches = 0
 
@@ -1159,7 +1156,7 @@ class CodeManager:
                 except Exception:
                     continue
 
-                file_matches: List[str] = []
+                file_matches: list[str] = []
                 for i, line in enumerate(lines):
                     if compiled.search(line):
                         if match_count >= max_results:
@@ -1207,7 +1204,7 @@ class CodeManager:
     #  DİZİN LİSTELEME
     # ─────────────────────────────────────────────
 
-    def list_directory(self, path: str = ".") -> Tuple[bool, str]:
+    def list_directory(self, path: str = ".") -> tuple[bool, str]:
         """Dizin içeriğini listele."""
         try:
             target = Path(path).resolve()
@@ -1234,7 +1231,7 @@ class CodeManager:
     #  SÖZDİZİMİ DOĞRULAMA
     # ─────────────────────────────────────────────
 
-    def validate_python_syntax(self, code: str) -> Tuple[bool, str]:
+    def validate_python_syntax(self, code: str) -> tuple[bool, str]:
         """Python sözdizimini doğrula."""
         with self._lock:
             self._syntax_checks += 1
@@ -1244,7 +1241,7 @@ class CodeManager:
         except SyntaxError as exc:
             return False, f"Sözdizimi hatası — Satır {exc.lineno}: {exc.msg}"
 
-    def validate_json(self, content: str) -> Tuple[bool, str]:
+    def validate_json(self, content: str) -> tuple[bool, str]:
         """JSON sözdizimini doğrula."""
         try:
             json.loads(content)
@@ -1256,7 +1253,7 @@ class CodeManager:
     #  LSP (LANGUAGE SERVER PROTOCOL) YARDIMCILARI
     # ─────────────────────────────────────────────
 
-    def _detect_language_id(self, path: Path) -> Optional[str]:
+    def _detect_language_id(self, path: Path) -> str | None:
         suffix = path.suffix.lower()
         if suffix == ".py":
             return "python"
@@ -1264,7 +1261,7 @@ class CodeManager:
             return "typescript"
         return None
 
-    def _resolve_lsp_command(self, language_id: str) -> List[str]:
+    def _resolve_lsp_command(self, language_id: str) -> list[str]:
         if language_id == "python":
             binary = self.python_lsp_server
             args = ["--stdio"]
@@ -1283,7 +1280,7 @@ class CodeManager:
             target = self.base_dir / target
         return target.resolve()
 
-    def _build_lsp_initialize_payload(self, workspace_root: Path) -> Dict[str, Any]:
+    def _build_lsp_initialize_payload(self, workspace_root: Path) -> dict[str, Any]:
         workspace_uri = _path_to_file_uri(workspace_root)
         return {
             "jsonrpc": "2.0",
@@ -1313,10 +1310,10 @@ class CodeManager:
         self,
         *,
         primary_path: Path,
-        request_method: Optional[str],
-        request_params: Optional[Dict[str, Any]] = None,
-        extra_open_files: Optional[List[Path]] = None,
-    ) -> List[Dict[str, Any]]:
+        request_method: str | None,
+        request_params: dict[str, Any] | None = None,
+        extra_open_files: list[Path] | None = None,
+    ) -> list[dict[str, Any]]:
         if not self.enable_lsp:
             raise RuntimeError("ENABLE_LSP devre dışı.")
 
@@ -1332,7 +1329,7 @@ class CodeManager:
             if resolved_extra not in open_files and resolved_extra.exists():
                 open_files.append(resolved_extra)
 
-        messages: List[Dict[str, Any]] = [self._build_lsp_initialize_payload(workspace_root)]
+        messages: list[dict[str, Any]] = [self._build_lsp_initialize_payload(workspace_root)]
         messages.append({"jsonrpc": "2.0", "method": "initialized", "params": {}})
 
         for file_path in open_files:
@@ -1394,10 +1391,10 @@ class CodeManager:
 
     @staticmethod
     def _extract_lsp_result(
-        messages: List[Dict[str, Any]], request_id: int = 2
-    ) -> Tuple[Any, List[Dict[str, Any]]]:
+        messages: list[dict[str, Any]], request_id: int = 2
+    ) -> tuple[Any, list[dict[str, Any]]]:
         result = None
-        notifications: List[Dict[str, Any]] = []
+        notifications: list[dict[str, Any]] = []
         for message in messages:
             if message.get("id") == request_id:
                 if "error" in message:
@@ -1412,7 +1409,7 @@ class CodeManager:
         if not locations:
             return "Sonuç bulunamadı."
 
-        normalized: List[Dict[str, Any]] = []
+        normalized: list[dict[str, Any]] = []
         for item in locations:
             if "targetUri" in item:
                 normalized.append(
@@ -1438,13 +1435,13 @@ class CodeManager:
         return "\n".join(lines)
 
     @staticmethod
-    def _position_params(path: Path, line: int, character: int) -> Dict[str, Any]:
+    def _position_params(path: Path, line: int, character: int) -> dict[str, Any]:
         return {
             "textDocument": {"uri": _path_to_file_uri(path)},
             "position": {"line": line, "character": character},
         }
 
-    def lsp_go_to_definition(self, path: str, line: int, character: int) -> Tuple[bool, str]:
+    def lsp_go_to_definition(self, path: str, line: int, character: int) -> tuple[bool, str]:
         """LSP üzerinden sembol tanımına gider."""
         target = self._normalize_lsp_path(path)
         try:
@@ -1466,7 +1463,7 @@ class CodeManager:
         line: int,
         character: int,
         include_declaration: bool = True,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """LSP üzerinden tüm referansları listeler."""
         target = self._normalize_lsp_path(path)
         try:
@@ -1482,8 +1479,8 @@ class CodeManager:
         except Exception as exc:
             return False, f"LSP referans sorgusu hatası: {exc}"
 
-    def _apply_workspace_edit(self, edit: Dict[str, Any]) -> Tuple[bool, str]:
-        changes: Dict[str, List[Dict[str, Any]]] = {}
+    def _apply_workspace_edit(self, edit: dict[str, Any]) -> tuple[bool, str]:
+        changes: dict[str, list[dict[str, Any]]] = {}
         for uri, items in (edit.get("changes") or {}).items():
             changes[uri] = list(items or [])
 
@@ -1546,7 +1543,7 @@ class CodeManager:
         character: int,
         new_name: str,
         apply: bool = False,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """LSP rename işlemini dry-run veya apply modunda yürütür."""
         if not new_name.strip():
             return False, "Yeni sembol adı boş olamaz."
@@ -1584,9 +1581,9 @@ class CodeManager:
             return False, f"LSP rename hatası: {exc}"
 
     @staticmethod
-    def _summarize_lsp_diagnostic_entries(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _summarize_lsp_diagnostic_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Ham diagnostic girişlerini kalite kapısı için özetler."""
-        severity_counts: Dict[int, int] = {}
+        severity_counts: dict[int, int] = {}
         for item in entries:
             try:
                 severity = int(item.get("severity", 0) or 0)
@@ -1630,9 +1627,9 @@ class CodeManager:
             "summary": summary,
         }
 
-    def lsp_semantic_audit(self, paths: Optional[List[str]] = None) -> Tuple[bool, Dict[str, Any]]:
+    def lsp_semantic_audit(self, paths: list[str] | None = None) -> tuple[bool, dict[str, Any]]:
         """Reviewer kalite kapısı için yapılandırılmış LSP semantik denetim raporu üretir."""
-        candidate_paths: List[Path]
+        candidate_paths: list[Path]
         if paths:
             normalized_paths = [self._normalize_lsp_path(p) for p in paths]
             candidate_paths = [
@@ -1682,7 +1679,7 @@ class CodeManager:
                     "summary": "LSP diagnostics bildirimi dönmedi.",
                 }
 
-            issues: List[Dict[str, Any]] = []
+            issues: list[dict[str, Any]] = []
             for item in diagnostics:
                 params = item.get("params", {})
                 path = _file_uri_to_path(params.get("uri", "file:///unknown"))
@@ -1715,7 +1712,7 @@ class CodeManager:
                 "summary": f"LSP diagnostics hatası: {exc}",
             }
 
-    def lsp_workspace_diagnostics(self, paths: Optional[List[str]] = None) -> Tuple[bool, str]:
+    def lsp_workspace_diagnostics(self, paths: list[str] | None = None) -> tuple[bool, str]:
         """Açılan dosyalar için publishDiagnostics bildirimlerini toplar."""
         ok, audit = self.lsp_semantic_audit(paths)
         issues = list(audit.get("issues", []) or [])
@@ -1735,7 +1732,7 @@ class CodeManager:
     def audit_project(
         self,
         root: str = ".",
-        exclude_dirs: Optional[List[str]] = None,
+        exclude_dirs: list[str] | None = None,
         max_files: int = 5000,
     ) -> str:
         with self._lock:
@@ -1746,7 +1743,7 @@ class CodeManager:
             exclude_dirs = [".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"]
         exclude_set = {name.strip() for name in exclude_dirs if name and name.strip()}
 
-        py_files: List[Path] = []
+        py_files: list[Path] = []
         for cur_root, dirs, files in os.walk(target):
             dirs[:] = [d for d in dirs if d not in exclude_set]
             for file_name in files:
@@ -1758,7 +1755,7 @@ class CodeManager:
             if len(py_files) >= max_files:
                 break
 
-        errors: List[str] = []
+        errors: list[str] = []
         ok_count = 0
 
         for fp in py_files:
@@ -1794,7 +1791,7 @@ class CodeManager:
     #  METRİKLER
     # ─────────────────────────────────────────────
 
-    def get_metrics(self) -> Dict[str, int]:
+    def get_metrics(self) -> dict[str, int]:
         with self._lock:
             return {
                 "files_read": self._files_read,

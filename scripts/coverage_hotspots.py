@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import dataclass
-from typing import Iterable
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 
 @dataclass
@@ -58,7 +58,9 @@ def parse_coverage_xml(xml_path: str, root: str = ".") -> list[FileCoverage]:
             else:
                 missed += 1
 
-        records.append(FileCoverage(path=_normalize_path(filename, root_abs), covered=covered, missed=missed))
+        records.append(
+            FileCoverage(path=_normalize_path(filename, root_abs), covered=covered, missed=missed)
+        )
 
     return records
 
@@ -79,8 +81,12 @@ def format_table(files: Iterable[FileCoverage]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="List lowest-coverage files from coverage XML.")
-    parser.add_argument("--xml", default="coverage.xml", help="Path to coverage XML report (default: coverage.xml)")
-    parser.add_argument("--top", type=int, default=10, help="Number of hotspots to show (default: 10)")
+    parser.add_argument(
+        "--xml", default="coverage.xml", help="Path to coverage XML report (default: coverage.xml)"
+    )
+    parser.add_argument(
+        "--top", type=int, default=10, help="Number of hotspots to show (default: 10)"
+    )
     parser.add_argument("--root", default=".", help="Project root used to normalize paths")
     args = parser.parse_args()
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
 
 from config import Config
 
@@ -13,13 +12,17 @@ except ImportError:  # pragma: no cover - test doubles may only expose Config
 logger = logging.getLogger(__name__)
 
 
-def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = None) -> List[List[float]]:
+def embed_texts_for_semantic_cache(
+    texts: list[str], cfg: Config | None = None
+) -> list[list[float]]:
     """Semantic cache için metinleri normalize edilmiş embedding vektörlerine dönüştürür."""
     if not texts:
         return []
 
     cfg = cfg or (_config_get_config() if callable(_config_get_config) else Config())
-    model_name = str(getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2")
+    model_name = str(
+        getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2"
+    )
     try:
         from sentence_transformers import SentenceTransformer
 

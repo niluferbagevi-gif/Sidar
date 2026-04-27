@@ -9,17 +9,22 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from typing import Any, Dict, Optional
+from typing import Any
 
-
-_CI_FAILURE_CONCLUSIONS = {"failure", "timed_out", "cancelled", "startup_failure", "action_required"}
-_TARGET_PATTERN = re.compile(r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)""")
+_CI_FAILURE_CONCLUSIONS = {
+    "failure",
+    "timed_out",
+    "cancelled",
+    "startup_failure",
+    "action_required",
+}
+_TARGET_PATTERN = re.compile(
+    r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
+)
 _ROOT_CAUSE_PATTERN = re.compile(
     r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed).*)""",
     re.IGNORECASE,
 )
-
-
 
 
 def _is_allowed_validation_command(command: str) -> bool:
@@ -54,6 +59,7 @@ def _is_allowed_validation_command(command: str) -> bool:
         return all(re.fullmatch(r"[\w./-]+", token) for token in parts[2:])
     return False
 
+
 def _trim_text(value: Any, limit: int = 1200) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
@@ -86,7 +92,7 @@ def _extract_root_cause_line(*values: Any) -> str:
     return ""
 
 
-def _extract_failed_job_names(data: Dict[str, Any]) -> list[str]:
+def _extract_failed_job_names(data: dict[str, Any]) -> list[str]:
     jobs = list(data.get("failed_jobs") or data.get("jobs") or [])
     names: list[str] = []
     for item in jobs:
@@ -99,7 +105,7 @@ def _extract_failed_job_names(data: Dict[str, Any]) -> list[str]:
     return names[:6]
 
 
-def _generic_ci_context(event_name: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _generic_ci_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any] | None:
     data = dict(payload or {})
     normalized = str(event_name or "").strip().lower()
     explicit_flag = bool(data.get("ci_failure") or data.get("pipeline_failed"))
@@ -112,7 +118,11 @@ def _generic_ci_context(event_name: str, payload: Dict[str, Any]) -> Optional[Di
         220,
     )
     log_excerpt = _trim_text(
-        data.get("log_excerpt") or data.get("logs") or data.get("error") or data.get("details") or "",
+        data.get("log_excerpt")
+        or data.get("logs")
+        or data.get("error")
+        or data.get("details")
+        or "",
         1200,
     )
     suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
@@ -120,8 +130,15 @@ def _generic_ci_context(event_name: str, payload: Dict[str, Any]) -> Optional[Di
     return {
         "kind": "generic_ci_failure",
         "repo": str(data.get("repo") or data.get("repository") or "").strip(),
-        "workflow_name": str(data.get("workflow_name") or data.get("pipeline") or data.get("job_name") or "ci_failure").strip(),
-        "run_id": str(data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or "").strip(),
+        "workflow_name": str(
+            data.get("workflow_name")
+            or data.get("pipeline")
+            or data.get("job_name")
+            or "ci_failure"
+        ).strip(),
+        "run_id": str(
+            data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or ""
+        ).strip(),
         "run_number": str(data.get("run_number") or data.get("pipeline_number") or "").strip(),
         "branch": str(data.get("branch") or data.get("ref") or "").strip(),
         "base_branch": str(data.get("base_branch") or data.get("target_branch") or "main").strip(),
@@ -136,11 +153,15 @@ def _generic_ci_context(event_name: str, payload: Dict[str, Any]) -> Optional[Di
         "suspected_targets": suspected_targets,
         "failed_jobs": failed_jobs,
         "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
-        "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
+        "diagnostic_hints": _build_diagnostic_hints(
+            failure_summary, log_excerpt, suspected_targets
+        ),
     }
 
 
-def _build_diagnostic_hints(failure_summary: str, log_excerpt: str, suspected_targets: list[str]) -> list[str]:
+def _build_diagnostic_hints(
+    failure_summary: str, log_excerpt: str, suspected_targets: list[str]
+) -> list[str]:
     hints: list[str] = []
     if suspected_targets:
         hints.append(f"İlk inceleme hedefleri: {', '.join(suspected_targets)}")
@@ -149,11 +170,13 @@ def _build_diagnostic_hints(failure_summary: str, log_excerpt: str, suspected_ta
     if "timeout" in failure_summary.lower():
         hints.append("Timeout / yarış durumu / dış bağımlılık gecikmesi araştırılmalı.")
     if "import" in log_excerpt.lower() or "module" in log_excerpt.lower():
-        hints.append("Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli.")
+        hints.append(
+            "Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli."
+        )
     return hints[:5]
 
 
-def is_ci_failure_event(event_name: str, payload: Dict[str, Any]) -> bool:
+def is_ci_failure_event(event_name: str, payload: dict[str, Any]) -> bool:
     normalized = str(event_name or "").strip().lower()
     data = dict(payload or {})
 
@@ -175,7 +198,7 @@ def is_ci_failure_event(event_name: str, payload: Dict[str, Any]) -> bool:
     return False
 
 
-def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any] | None:
     generic = _generic_ci_context(event_name, payload)
     if generic:
         return generic
@@ -216,14 +239,20 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
             "suspected_targets": suspected_targets,
             "failed_jobs": _extract_failed_job_names(workflow),
             "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
-            "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
+            "diagnostic_hints": _build_diagnostic_hints(
+                failure_summary, log_excerpt, suspected_targets
+            ),
         }
 
     if normalized == "check_run":
         check = dict(data.get("check_run") or {})
         output = dict(check.get("output") or {})
-        log_excerpt = _trim_text("\n\n".join(filter(None, [output.get("summary"), output.get("text")])), 1200)
-        failure_summary = _trim_text(output.get("title") or check.get("name") or "check failed", 200)
+        log_excerpt = _trim_text(
+            "\n\n".join(filter(None, [output.get("summary"), output.get("text")])), 1200
+        )
+        failure_summary = _trim_text(
+            output.get("title") or check.get("name") or "check failed", 200
+        )
         suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
         return {
             "kind": "check_run",
@@ -231,7 +260,9 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
             "workflow_name": str(check.get("name", "") or "check_run"),
             "run_id": str(check.get("id", "") or ""),
             "run_number": "",
-            "branch": str(data.get("check_run", {}).get("check_suite", {}).get("head_branch", "") or ""),
+            "branch": str(
+                data.get("check_run", {}).get("check_suite", {}).get("head_branch", "") or ""
+            ),
             "base_branch": str(repo.get("default_branch", "") or "main"),
             "sha": str(check.get("head_sha", "") or ""),
             "conclusion": str(check.get("conclusion", "") or ""),
@@ -244,7 +275,9 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
             "suspected_targets": suspected_targets,
             "failed_jobs": _extract_failed_job_names(check),
             "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
-            "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
+            "diagnostic_hints": _build_diagnostic_hints(
+                failure_summary, log_excerpt, suspected_targets
+            ),
         }
 
     suite = dict(data.get("check_suite") or {})
@@ -270,11 +303,13 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
         "suspected_targets": suspected_targets,
         "failed_jobs": _extract_failed_job_names(suite),
         "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
-        "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
+        "diagnostic_hints": _build_diagnostic_hints(
+            failure_summary, log_excerpt, suspected_targets
+        ),
     }
 
 
-def build_ci_failure_prompt(context: Dict[str, Any]) -> str:
+def build_ci_failure_prompt(context: dict[str, Any]) -> str:
     info = dict(context or {})
     suspected_targets = ", ".join(info.get("suspected_targets") or [])
     diagnostic_hints = " | ".join(info.get("diagnostic_hints") or [])
@@ -310,16 +345,22 @@ def build_ci_failure_prompt(context: Dict[str, Any]) -> str:
 
 
 def build_self_heal_patch_prompt(
-    context: Dict[str, Any],
+    context: dict[str, Any],
     diagnosis: str,
-    remediation_loop: Dict[str, Any],
-    file_snapshots: list[Dict[str, str]],
+    remediation_loop: dict[str, Any],
+    file_snapshots: list[dict[str, str]],
 ) -> str:
     """Self-healing için düşük riskli JSON patch planı prompt'u üretir."""
     info = dict(context or {})
     loop = dict(remediation_loop or {})
-    scope_paths = [str(item).strip() for item in list(loop.get("scope_paths") or []) if str(item).strip()]
-    validation_commands = [str(item).strip() for item in list(loop.get("validation_commands") or []) if str(item).strip()]
+    scope_paths = [
+        str(item).strip() for item in list(loop.get("scope_paths") or []) if str(item).strip()
+    ]
+    validation_commands = [
+        str(item).strip()
+        for item in list(loop.get("validation_commands") or [])
+        if str(item).strip()
+    ]
     snapshot_lines: list[str] = []
     for item in file_snapshots[:6]:
         path = str(item.get("path") or "").strip()
@@ -356,7 +397,7 @@ def normalize_self_heal_plan(
     scope_paths: list[str],
     fallback_validation_commands: list[str],
     max_operations: int = 3,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """LLM çıktısını güvenli, kapsam kısıtlı self-heal planına dönüştürür."""
     if isinstance(raw_plan, str):
         text = raw_plan.strip()
@@ -367,7 +408,7 @@ def normalize_self_heal_plan(
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
-            text = text[start:end + 1]
+            text = text[start : end + 1]
         try:
             payload = json.loads(text)
         except Exception:
@@ -377,28 +418,32 @@ def normalize_self_heal_plan(
     else:
         payload = {}
 
-    allowed_paths = {str(path).strip().lstrip('./') for path in scope_paths if str(path).strip()}
+    allowed_paths = {str(path).strip().lstrip("./") for path in scope_paths if str(path).strip()}
     operations = []
     for item in list(payload.get("operations") or [])[:max_operations]:
         if not isinstance(item, dict):
             continue
         action = str(item.get("action") or "").strip().lower()
-        path = str(item.get("path") or "").strip().lstrip('./')
+        path = str(item.get("path") or "").strip().lstrip("./")
         target = str(item.get("target") or "")
         replacement = str(item.get("replacement") or "")
         if action != "patch" or not path or not target or path.startswith("/") or ".." in path:
             continue
         if allowed_paths and path not in allowed_paths:
             continue
-        operations.append({
-            "action": "patch",
-            "path": path,
-            "target": target,
-            "replacement": replacement,
-        })
+        operations.append(
+            {
+                "action": "patch",
+                "path": path,
+                "target": target,
+                "replacement": replacement,
+            }
+        )
 
     validation_commands: list[str] = []
-    for command in list(payload.get("validation_commands") or []) + list(fallback_validation_commands or []):
+    for command in list(payload.get("validation_commands") or []) + list(
+        fallback_validation_commands or []
+    ):
         normalized = str(command or "").strip().strip("`")
         if not _is_allowed_validation_command(normalized):
             continue
@@ -406,14 +451,15 @@ def normalize_self_heal_plan(
             validation_commands.append(normalized)
 
     return {
-        "summary": str(payload.get("summary") or "").strip() or "LLM self-heal planı normalize edildi.",
+        "summary": str(payload.get("summary") or "").strip()
+        or "LLM self-heal planı normalize edildi.",
         "confidence": str(payload.get("confidence") or "unknown").strip().lower(),
         "operations": operations,
         "validation_commands": validation_commands[:5],
     }
 
 
-def build_root_cause_summary(context: Dict[str, Any], diagnosis: str) -> str:
+def build_root_cause_summary(context: dict[str, Any], diagnosis: str) -> str:
     info = dict(context or {})
     diagnosis_text = str(diagnosis or "").strip()
     if diagnosis_text:
@@ -422,15 +468,19 @@ def build_root_cause_summary(context: Dict[str, Any], diagnosis: str) -> str:
             compact_sentence = _trim_text(first_sentence, 220)
             if compact_sentence.lower().startswith(("kök neden", "root cause")):
                 return compact_sentence
-    inferred = _extract_root_cause_line(diagnosis, info.get("log_excerpt"), info.get("failure_summary"))
+    inferred = _extract_root_cause_line(
+        diagnosis, info.get("log_excerpt"), info.get("failure_summary")
+    )
     if inferred:
         return inferred
     if info.get("root_cause_hint"):
         return str(info.get("root_cause_hint"))
-    return _trim_text(str(info.get("failure_summary") or "CI başarısızlığı için ek teşhis gerekiyor."), 220)
+    return _trim_text(
+        str(info.get("failure_summary") or "CI başarısızlığı için ek teşhis gerekiyor."), 220
+    )
 
 
-def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
+def build_pr_proposal(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
     info = dict(context or {})
     workflow_name = str(info.get("workflow_name", "") or "CI")
     run_id = str(info.get("run_id", "") or "manual")
@@ -470,9 +520,7 @@ def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]
     }
 
 
-
-
-def _extract_validation_commands(context: Dict[str, Any], diagnosis: str) -> list[str]:
+def _extract_validation_commands(context: dict[str, Any], diagnosis: str) -> list[str]:
     commands: list[str] = []
     for source in (context.get("failure_summary"), context.get("log_excerpt"), diagnosis):
         for line in str(source or "").splitlines():
@@ -489,18 +537,40 @@ def _extract_validation_commands(context: Dict[str, Any], diagnosis: str) -> lis
     return list(dict.fromkeys(cmd for cmd in commands if cmd))[:5]
 
 
-def build_remediation_loop(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
+def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
     info = dict(context or {})
     diagnosis_text = str(diagnosis or "").strip()
-    suspected_targets = [str(item).strip() for item in list(info.get("suspected_targets") or []) if str(item).strip()]
-    failed_jobs = [str(item).strip() for item in list(info.get("failed_jobs") or []) if str(item).strip()]
+    suspected_targets = [
+        str(item).strip() for item in list(info.get("suspected_targets") or []) if str(item).strip()
+    ]
+    failed_jobs = [
+        str(item).strip() for item in list(info.get("failed_jobs") or []) if str(item).strip()
+    ]
     root_cause = build_root_cause_summary(info, diagnosis_text)
     validation_commands = _extract_validation_commands(info, diagnosis_text)
-    high_risk_keywords = ("syntaxerror", "modulenotfounderror", "importerror", "timeout", "typeerror", "valueerror")
+    high_risk_keywords = (
+        "syntaxerror",
+        "modulenotfounderror",
+        "importerror",
+        "timeout",
+        "typeerror",
+        "valueerror",
+    )
     combined_text = "\n".join(
-        filter(None, [diagnosis_text, root_cause, info.get("failure_summary", ""), info.get("log_excerpt", "")])
+        filter(
+            None,
+            [
+                diagnosis_text,
+                root_cause,
+                info.get("failure_summary", ""),
+                info.get("log_excerpt", ""),
+            ],
+        )
     ).lower()
-    needs_human_approval = any(keyword in combined_text for keyword in high_risk_keywords) or len(suspected_targets) > 3
+    needs_human_approval = (
+        any(keyword in combined_text for keyword in high_risk_keywords)
+        or len(suspected_targets) > 3
+    )
     mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
     status = "planned" if (diagnosis_text or suspected_targets) else "needs_diagnosis"
     return {
@@ -543,7 +613,8 @@ def build_remediation_loop(context: Dict[str, Any], diagnosis: str) -> Dict[str,
         ),
     }
 
-def build_ci_remediation_payload(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
+
+def build_ci_remediation_payload(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
     info = dict(context or {})
     pr_proposal = build_pr_proposal(info, diagnosis)
     root_cause = pr_proposal.get("root_cause_summary") or build_root_cause_summary(info, diagnosis)

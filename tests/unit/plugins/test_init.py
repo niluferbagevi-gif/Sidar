@@ -3,8 +3,6 @@
 import sys
 import types
 
-import pytest
-
 
 def _stub_base_agent() -> None:
     """Test ortamında ağır bağımlılıkları atlamak için BaseAgent stub'ı kurar."""

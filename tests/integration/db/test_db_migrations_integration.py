@@ -78,7 +78,9 @@ async def test_schema_version_migration_is_idempotent_under_concurrency(tmp_path
 
         def _fetch_versions():
             assert db._sqlite_conn is not None
-            rows = db._sqlite_conn.execute("SELECT version FROM schema_versions ORDER BY version ASC").fetchall()
+            rows = db._sqlite_conn.execute(
+                "SELECT version FROM schema_versions ORDER BY version ASC"
+            ).fetchall()
             return [int(row["version"]) for row in rows]
 
         versions = await db._run_sqlite_op(_fetch_versions)
@@ -108,10 +110,16 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
     messages_per_session = 10
     try:
         created_users = await asyncio.gather(
-            *[db.create_user(f"u{idx}", tenant_id=f"tenant-{idx % 3}", password="pw") for idx in range(users)]
+            *[
+                db.create_user(f"u{idx}", tenant_id=f"tenant-{idx % 3}", password="pw")
+                for idx in range(users)
+            ]
         )
         sessions = await asyncio.gather(
-            *[db.create_session(user.id, f"session-{idx}") for idx, user in enumerate(created_users)]
+            *[
+                db.create_session(user.id, f"session-{idx}")
+                for idx, user in enumerate(created_users)
+            ]
         )
 
         await asyncio.gather(
@@ -122,9 +130,14 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
             ]
         )
 
-        session_messages = await asyncio.gather(*[db.get_session_messages(session.id) for session in sessions])
+        session_messages = await asyncio.gather(
+            *[db.get_session_messages(session.id) for session in sessions]
+        )
         assert all(len(items) == messages_per_session for items in session_messages)
-        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in session_messages)
+        assert all(
+            [m.tokens_used for m in items] == list(range(messages_per_session))
+            for items in session_messages
+        )
 
         for session, user in zip(sessions[:6], created_users[:6], strict=True):
             assert await db.load_session(session.id, user_id=user.id) is not None
@@ -141,7 +154,9 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
                 WHERE s.id IS NULL
                 """
             ).fetchone()
-            return str(integrity[0] if integrity else ""), int(orphan_messages[0] if orphan_messages else 0)
+            return str(integrity[0] if integrity else ""), int(
+                orphan_messages[0] if orphan_messages else 0
+            )
 
         integrity_result, orphan_count = await db._run_sqlite_op(_integrity_check)
         assert integrity_result.lower() == "ok"

@@ -18,6 +18,7 @@ def _optional_import(module_name: str, attr_name: str):
         module = import_module(module_name)
         return getattr(module, attr_name)
     except Exception:
+
         class _MissingDependencyProxy:  # pragma: no cover - yalnızca bağımlılık eksikse çalışır
             __name__ = attr_name
 

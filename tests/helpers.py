@@ -6,7 +6,8 @@ can import them directly without relying on pytest's conftest loading behavior.
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 from unittest.mock import MagicMock
 
 
@@ -49,7 +50,8 @@ def make_test_config(**overrides: Any) -> MagicMock:
         AppConfig = None
 
     if AppConfig is not None and all(
-        hasattr(AppConfig, attr) for attr in ("initialize_directories", "validate_critical_settings")
+        hasattr(AppConfig, attr)
+        for attr in ("initialize_directories", "validate_critical_settings")
     ):
         known_attrs = set(dir(AppConfig))
         # Test override'larında AppConfig üzerinde henüz bulunmayan yeni/deneysel

@@ -9,7 +9,6 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 from config import Config
 
@@ -32,6 +31,7 @@ STATUS_ICONS = {
 @dataclass
 class Task:
     """Tek bir görev kaydı."""
+
     id: int
     content: str
     status: str = STATUS_PENDING
@@ -57,12 +57,12 @@ class TodoManager:
     - Aynı anda yalnızca bir "in_progress" göreve uyarı
     """
 
-    def __init__(self, cfg: Optional[Config] = None) -> None:
+    def __init__(self, cfg: Config | None = None) -> None:
         self.cfg = cfg or Config()
         base_dir = Path(getattr(self.cfg, "BASE_DIR", ".")).resolve()
         self.base_dir = base_dir
         self.todo_path = base_dir / "todos.json"
-        self._tasks: List[Task] = []
+        self._tasks: list[Task] = []
         self._next_id: int = 1
         self._lock = threading.RLock()
         self._load()
@@ -75,26 +75,28 @@ class TodoManager:
                 if not self.todo_path.exists():
                     self.todo_path.parent.mkdir(parents=True, exist_ok=True)
                     return
-                with open(self.todo_path, "r", encoding="utf-8") as f:
+                with open(self.todo_path, encoding="utf-8") as f:
                     raw = json.load(f)
                 if not isinstance(raw, list):
                     return
-                tasks: List[Task] = []
+                tasks: list[Task] = []
                 for item in raw:
                     if not isinstance(item, dict):
                         continue
                     status = item.get("status", STATUS_PENDING)
                     if status not in VALID_STATUSES:
                         status = STATUS_PENDING
-                    tasks.append(Task(
-                        id=int(item.get("id", len(tasks) + 1)),
-                        content=str(item.get("content", "")).strip(),
-                        status=status,
-                        created_at=float(item.get("created_at", time.time())),
-                        updated_at=float(item.get("updated_at", time.time())),
-                    ))
+                    tasks.append(
+                        Task(
+                            id=int(item.get("id", len(tasks) + 1)),
+                            content=str(item.get("content", "")).strip(),
+                            status=status,
+                            created_at=float(item.get("created_at", time.time())),
+                            updated_at=float(item.get("updated_at", time.time())),
+                        )
+                    )
                 self._tasks = [t for t in tasks if t.content]
-                self._next_id = (max((t.id for t in self._tasks), default=0) + 1)
+                self._next_id = max((t.id for t in self._tasks), default=0) + 1
             except Exception as exc:
                 logger.warning("TodoManager yükleme hatası: %s", exc)
 
@@ -106,7 +108,6 @@ class TodoManager:
             with open(self.todo_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
 
-
     def _ensure_single_in_progress(self, preferred_task_id: int) -> int:
         """Tek bir in_progress görev kalacak şekilde diğerlerini pending'e çeker."""
         demoted = 0
@@ -117,7 +118,6 @@ class TodoManager:
                 task.update_status(STATUS_PENDING)
                 demoted += 1
         return demoted
-
 
     def _normalize_limit(self, limit: int, default: int = 50) -> int:
         """Limit değerini güvenli şekilde 1..200 aralığına normalize et."""
@@ -184,7 +184,7 @@ class TodoManager:
             self._tasks.clear()
             self._next_id = 1
             added = 0
-            latest_in_progress_id: Optional[int] = None
+            latest_in_progress_id: int | None = None
             for item in tasks_data:
                 if not isinstance(item, dict):
                     continue
@@ -265,7 +265,7 @@ class TodoManager:
     #  GÖREV LİSTESİ
     # ─────────────────────────────────────────────
 
-    def list_tasks(self, filter_status: Optional[str] = None, limit: int = 50) -> str:
+    def list_tasks(self, filter_status: str | None = None, limit: int = 50) -> str:
         """
         Görev listesini okunabilir formatta döndür.
 
@@ -295,7 +295,9 @@ class TodoManager:
         completed = [t for t in tasks if t.status == STATUS_COMPLETED]
 
         lines = ["📋 Görev Listesi"]
-        lines.append(f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} | ✅ Tamamlanan: {len(completed)}")
+        lines.append(
+            f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} | ✅ Tamamlanan: {len(completed)}"
+        )
         lines.append("")
 
         if in_progress:
@@ -344,7 +346,7 @@ class TodoManager:
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
 
-    def get_tasks(self, status: Optional[str] = None, limit: int = 50) -> list:
+    def get_tasks(self, status: str | None = None, limit: int = 50) -> list:
         """
         Görev listesini dict listesi olarak döndürür.
         REST endpoint ve UI entegrasyonu için kullanılır.
@@ -379,9 +381,11 @@ class TodoManager:
             return len(self._tasks)
 
     def __repr__(self) -> str:
-        return f"<TodoManager tasks={len(self)}>" 
+        return f"<TodoManager tasks={len(self)}>"
 
-    def scan_project_todos(self, directory: Optional[str] = None, extensions: Optional[List[str]] = None) -> str:
+    def scan_project_todos(
+        self, directory: str | None = None, extensions: list[str] | None = None
+    ) -> str:
         """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarayarak TODO ve FIXME etiketlerini bulur."""
         import os
 
@@ -395,8 +399,20 @@ class TodoManager:
 
         if not extensions:
             extensions = [
-                ".py", ".js", ".ts", ".html", ".css", ".md", ".sh",
-                ".yaml", ".yml", ".json", ".c", ".cpp", ".java", ".go",
+                ".py",
+                ".js",
+                ".ts",
+                ".html",
+                ".css",
+                ".md",
+                ".sh",
+                ".yaml",
+                ".yml",
+                ".json",
+                ".c",
+                ".cpp",
+                ".java",
+                ".go",
             ]
 
         # Kullanıcı girdisini normalize et
@@ -405,8 +421,8 @@ class TodoManager:
             e = str(ext).strip().lower()
             if not e:
                 continue
-            if not e.startswith('.'):
-                e = f'.{e}'
+            if not e.startswith("."):
+                e = f".{e}"
             norm_exts.add(e)
 
         if not norm_exts:
@@ -415,8 +431,17 @@ class TodoManager:
         found_items = []
         # Tarama esnasında zaman kaybetmemek ve çöp veri almamak için gereksiz klasörleri atla
         ignore_dirs = {
-            ".git", "node_modules", "venv", "__pycache__", "build", "dist",
-            ".idea", ".vscode", "logs", "sessions", "sidar_knowledge_base",
+            ".git",
+            "node_modules",
+            "venv",
+            "__pycache__",
+            "build",
+            "dist",
+            ".idea",
+            ".vscode",
+            "logs",
+            "sessions",
+            "sidar_knowledge_base",
         }
 
         try:
@@ -434,14 +459,21 @@ class TodoManager:
                         lines = content.splitlines()
                         for i, line in enumerate(lines, 1):
                             # TODO veya FIXME kelimesini içeren satırları yakala
-                            if "TODO:" in line or "FIXME:" in line or "TODO " in line or "FIXME " in line:
+                            if (
+                                "TODO:" in line
+                                or "FIXME:" in line
+                                or "TODO " in line
+                                or "FIXME " in line
+                            ):
                                 rel_path = file_path.relative_to(self.base_dir)
                                 found_items.append(f"[{rel_path} : Satır {i}] {line.strip()}")
                     except Exception:
                         pass
 
             if not found_items:
-                return "Harika! Projedeki dosyalarda herhangi bir TODO veya FIXME etiketi bulunamadı."
+                return (
+                    "Harika! Projedeki dosyalarda herhangi bir TODO veya FIXME etiketi bulunamadı."
+                )
 
             result = [f"--- PROJEDEKİ TODO VE FIXME LİSTESİ ({len(found_items)} adet) ---"]
             result.extend(found_items)

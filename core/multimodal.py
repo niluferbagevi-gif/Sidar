@@ -11,10 +11,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import html
+import importlib
 import json
 import logging
 import mimetypes
-import importlib
 import re
 import shutil
 import subprocess
@@ -147,7 +147,11 @@ def _normalize_youtube_transcript_events(events: list[dict[str, Any]]) -> dict[s
         pieces = item.get("segs") or []
         if not isinstance(pieces, list):
             continue
-        text = "".join(html.unescape(str(piece.get("utf8") or "")) for piece in pieces if isinstance(piece, dict)).strip()
+        text = "".join(
+            html.unescape(str(piece.get("utf8") or ""))
+            for piece in pieces
+            if isinstance(piece, dict)
+        ).strip()
         if not text:
             continue
         start_ms = int(item.get("tStartMs") or 0)
@@ -185,7 +189,9 @@ async def fetch_youtube_transcript(
                 continue
             payload = response.json() if hasattr(response, "json") else {}
             events = payload.get("events") if isinstance(payload, dict) else []
-            normalized = _normalize_youtube_transcript_events(events if isinstance(events, list) else [])
+            normalized = _normalize_youtube_transcript_events(
+                events if isinstance(events, list) else []
+            )
             if normalized["text"]:
                 return {
                     "success": True,
@@ -330,7 +336,11 @@ async def materialize_remote_media_for_ffmpeg(
         str(target_path),
     ]
     await asyncio.to_thread(_run_subprocess, command)
-    resolved_mime = mime_type or str(stream.get("mime_type") or "") or (mimetypes.guess_type(str(target_path))[0] or "")
+    resolved_mime = (
+        mime_type
+        or str(stream.get("mime_type") or "")
+        or (mimetypes.guess_type(str(target_path))[0] or "")
+    )
     return DownloadedMedia(
         path=str(target_path),
         source_url=source_url,
@@ -381,7 +391,9 @@ async def extract_video_frames(
 
     frames: list[ExtractedFrame] = []
     for index, frame_path in enumerate(sorted(target_dir.glob("frame_*.jpg"))):
-        frames.append(ExtractedFrame(path=str(frame_path), timestamp_seconds=index * interval_seconds))
+        frames.append(
+            ExtractedFrame(path=str(frame_path), timestamp_seconds=index * interval_seconds)
+        )
     return frames
 
 
@@ -596,7 +608,9 @@ def render_multimodal_document(
 ) -> tuple[str, str]:
     transcript = analysis.get("transcript") if isinstance(analysis, dict) else {}
     frame_analyses = analysis.get("frame_analyses") if isinstance(analysis, dict) else []
-    resolved_title = title.strip() or f"Video İçgörü Özeti - {Path(str(source)).name or 'remote-source'}"
+    resolved_title = (
+        title.strip() or f"Video İçgörü Özeti - {Path(str(source)).name or 'remote-source'}"
+    )
     body = [
         f"Kaynak: {source}",
         f"Medya Türü: {analysis.get('media_kind', 'video')}",
@@ -700,7 +714,9 @@ class MultimodalPipeline:
         with tempfile.TemporaryDirectory(prefix="sidar-multimodal-") as tmpdir:
             if media_kind == "video":
                 if transcript is None or not str(transcript.get("text", "") or "").strip():
-                    audio_path = await extract_audio_track(source, output_path=Path(tmpdir) / "audio.wav")
+                    audio_path = await extract_audio_track(
+                        source, output_path=Path(tmpdir) / "audio.wav"
+                    )
                     transcript = await transcribe_audio(
                         audio_path,
                         provider=self.stt_provider,
@@ -709,7 +725,9 @@ class MultimodalPipeline:
                         prompt=prompt,
                     )
 
-                vision = importlib.import_module("core.vision").VisionPipeline(self._llm, self._config)
+                vision = importlib.import_module("core.vision").VisionPipeline(
+                    self._llm, self._config
+                )
                 frames = await extract_video_frames(
                     source,
                     interval_seconds=frame_interval_seconds,
@@ -721,7 +739,9 @@ class MultimodalPipeline:
                     frame_analyses.append(
                         {
                             "timestamp_seconds": frame.timestamp_seconds,
-                            "analysis": analysis.get("analysis", "") if isinstance(analysis, dict) else "",
+                            "analysis": analysis.get("analysis", "")
+                            if isinstance(analysis, dict)
+                            else "",
                             "frame_path": frame.path,
                         }
                     )

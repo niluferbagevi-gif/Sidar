@@ -39,7 +39,9 @@ class FakeDB:
     async def create_session(self, user_id, title):
         self._seq += 1
         sid = f"s{self._seq}"
-        row = types.SimpleNamespace(id=sid, user_id=user_id, title=title, updated_at="2024-01-01T00:00:00Z")
+        row = types.SimpleNamespace(
+            id=sid, user_id=user_id, title=title, updated_at="2024-01-01T00:00:00Z"
+        )
         self.sessions[sid] = row
         self.messages.setdefault(sid, [])
         self.user_sessions.setdefault(user_id, []).insert(0, sid)
@@ -58,7 +60,9 @@ class FakeDB:
         self.sessions.pop(session_id, None)
         self.messages.pop(session_id, None)
         if user_id in self.user_sessions:
-            self.user_sessions[user_id] = [sid for sid in self.user_sessions[user_id] if sid != session_id]
+            self.user_sessions[user_id] = [
+                sid for sid in self.user_sessions[user_id] if sid != session_id
+            ]
         return True
 
     async def update_session_title(self, session_id, new_title):
@@ -67,12 +71,22 @@ class FakeDB:
 
     async def add_message(self, session_id, role, content, tokens_used=0):
         self.messages.setdefault(session_id, []).append(
-            types.SimpleNamespace(role=role, content=content, created_at="2024-01-01T00:00:00Z", tokens_used=tokens_used)
+            types.SimpleNamespace(
+                role=role,
+                content=content,
+                created_at="2024-01-01T00:00:00Z",
+                tokens_used=tokens_used,
+            )
         )
 
     async def replace_session_messages(self, session_id, compact_turns):
         self.messages[session_id] = [
-            types.SimpleNamespace(role=i["role"], content=i["content"], created_at="2024-01-01T00:00:00Z", tokens_used=0)
+            types.SimpleNamespace(
+                role=i["role"],
+                content=i["content"],
+                created_at="2024-01-01T00:00:00Z",
+                tokens_used=0,
+            )
             for i in compact_turns
         ]
         return len(compact_turns)
@@ -126,7 +140,9 @@ def test_init_path_and_database_url_resolution(monkeypatch, tmp_path: Path):
 
 def test_init_replaces_placeholder_sqlite_database_url_from_config(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(memory_module, "Database", FakeDB)
-    monkeypatch.setattr(memory_module, "get_config", lambda: types.SimpleNamespace(DATABASE_URL="sqlite:///x"))
+    monkeypatch.setattr(
+        memory_module, "get_config", lambda: types.SimpleNamespace(DATABASE_URL="sqlite:///x")
+    )
 
     mem = ConversationMemory(base_dir=tmp_path)
     assert "sidar_memory.db" in mem.cfg.DATABASE_URL
@@ -162,7 +178,6 @@ def test_estimate_tokens_with_tiktoken(monkeypatch, mem):
 
     mem._turns = [{"role": "u", "content": "abc"}, {"role": "a", "content": "de"}]
     assert mem._estimate_tokens() == 5
-
 
 
 def test_async_main_flows(mem):
@@ -220,7 +235,10 @@ def test_apply_summary_and_clear(mem):
 
         await mem.apply_summary("kisa ozet")
         assert mem._turns[1]["content"].startswith("[KONUŞMA ÖZETİ]")
-        assert any(m.content == "kisa ozet" or "KONUŞMA ÖZETİ" in m.content for m in mem.db.messages[mem.active_session_id])
+        assert any(
+            m.content == "kisa ozet" or "KONUŞMA ÖZETİ" in m.content
+            for m in mem.db.messages[mem.active_session_id]
+        )
 
         old_sid = mem.active_session_id
         await mem.clear()
@@ -243,7 +261,9 @@ def test_compaction_and_nightly(mem):
         skipped = await mem.compact_session(user_id="u1", session_id=sid, min_messages=99)
         assert skipped["status"] == "skipped"
 
-        compacted = await mem.compact_session(user_id="u1", session_id=sid, keep_last=2, min_messages=3)
+        compacted = await mem.compact_session(
+            user_id="u1", session_id=sid, keep_last=2, min_messages=3
+        )
         assert compacted["status"] == "compacted"
         assert compacted["messages_after"] >= 2
 
@@ -391,7 +411,9 @@ def test_nightly_consolidation_skip_and_non_compacted_report(mem):
     asyncio.run(scenario())
 
 
-def test_ensure_initialized_with_existing_lock_and_inner_already_initialized(monkeypatch, tmp_path: Path):
+def test_ensure_initialized_with_existing_lock_and_inner_already_initialized(
+    monkeypatch, tmp_path: Path
+):
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     mem = ConversationMemory(base_dir=tmp_path)
     mem._initialized = False

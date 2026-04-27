@@ -1,16 +1,16 @@
 """core/vision.py için unit testler."""
+
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from core.vision import (
+    _DEFAULT_MAX_BYTES,
     SUPPORTED_MIME_TYPES,
     VisionPipeline,
-    _DEFAULT_MAX_BYTES,
     build_analyze_prompt,
     build_mockup_prompt,
     build_vision_messages,
@@ -18,10 +18,10 @@ from core.vision import (
     load_image_from_bytes,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # load_image_from_bytes
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_load_image_from_bytes_valid():
     data = b"\x89PNG\r\n"
@@ -50,6 +50,7 @@ def test_load_image_from_bytes_too_large():
 # ──────────────────────────────────────────────────────────────────────────────
 # load_image_as_base64 (async)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_file_not_found(tmp_path):
@@ -86,6 +87,7 @@ async def test_load_image_as_base64_success(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 # build_vision_messages
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _b64():
     return base64.b64encode(b"img").decode()
@@ -142,6 +144,7 @@ def test_build_vision_messages_case_insensitive():
 # build_mockup_prompt
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_build_mockup_prompt_defaults():
     prompt = build_mockup_prompt()
     assert "React" in prompt
@@ -171,6 +174,7 @@ def test_build_mockup_prompt_empty_strings_use_defaults():
 # build_analyze_prompt
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_build_analyze_prompt_general():
     p = build_analyze_prompt("general")
     assert "analiz" in p.lower()
@@ -195,6 +199,7 @@ def test_build_analyze_prompt_unknown_falls_back_to_general():
 # ──────────────────────────────────────────────────────────────────────────────
 # VisionPipeline
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_pipeline(provider="openai", enabled=True):
     llm = AsyncMock()

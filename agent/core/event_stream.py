@@ -13,7 +13,6 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass
-from typing import Dict
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -32,17 +31,27 @@ class AgentEvent:
 
 class AgentEventBus:
     def __init__(self) -> None:
-        self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
-        self._buffered_events: Dict[int, deque[AgentEvent]] = {}
+        self._subscribers: dict[int, asyncio.Queue[AgentEvent]] = {}
+        self._buffered_events: dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
-        self._backend = str(os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
+        self._backend = (
+            str(os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
+        )
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
         self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
-        self._dlq_buffer: deque[dict[str, object]] = deque(maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000")))
-        self._dlq_persist_path = str(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or "").strip()
-        self._dlq_persist_batch_size = max(1, int(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", "100") or "100"))
-        self._dlq_persist_flush_interval = max(0.05, float(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", "1.0") or "1.0"))
+        self._dlq_buffer: deque[dict[str, object]] = deque(
+            maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000"))
+        )
+        self._dlq_persist_path = str(
+            os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or ""
+        ).strip()
+        self._dlq_persist_batch_size = max(
+            1, int(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", "100") or "100")
+        )
+        self._dlq_persist_flush_interval = max(
+            0.05, float(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", "1.0") or "1.0")
+        )
         self._dlq_persist_pending: list[dict[str, object]] = []
         self._dlq_persist_lock: asyncio.Lock | None = None
         self._dlq_persist_flush_task: asyncio.Task | None = None
@@ -69,10 +78,16 @@ class AgentEventBus:
         self._kafka_producer = None
         self._kafka_consumer = None
         self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
-        self._kafka_group = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}")
+        self._kafka_group = os.getenv(
+            "SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}"
+        )
         self._kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-        self._remote_circuit_failure_threshold = max(1, int(os.getenv("SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", "5") or "5"))
-        self._remote_circuit_open_seconds = max(1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", "15") or "15"))
+        self._remote_circuit_failure_threshold = max(
+            1, int(os.getenv("SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", "5") or "5")
+        )
+        self._remote_circuit_open_seconds = max(
+            1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", "15") or "15")
+        )
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
         self._backends: dict[str, BaseEventBusBackend] = self._build_backends()
@@ -182,7 +197,9 @@ class AgentEventBus:
             self._redis_listener_task = loop.create_task(self._redis_listener_loop())
         except Exception as exc:
             self._redis_available = False
-            logger.debug("AgentEventBus Redis bootstrap başarısız, local fallback kullanılacak: %s", exc)
+            logger.debug(
+                "AgentEventBus Redis bootstrap başarısız, local fallback kullanılacak: %s", exc
+            )
             await self._cleanup_redis()
 
     async def _ensure_rabbit_listener(self) -> None:
@@ -195,12 +212,16 @@ class AgentEventBus:
             if self._rabbit_connection is None:
                 self._rabbit_connection = await aio_pika.connect_robust(self._rabbit_url)
                 self._rabbit_channel = await self._rabbit_connection.channel()
-                self._rabbit_queue = await self._rabbit_channel.declare_queue(self._channel, durable=True)
+                self._rabbit_queue = await self._rabbit_channel.declare_queue(
+                    self._channel, durable=True
+                )
             self._rabbit_available = True
             self._rabbit_listener_task = asyncio.create_task(self._rabbit_listener_loop())
         except Exception as exc:
             self._rabbit_available = False
-            logger.debug("AgentEventBus RabbitMQ bootstrap başarısız, local fallback kullanılacak: %s", exc)
+            logger.debug(
+                "AgentEventBus RabbitMQ bootstrap başarısız, local fallback kullanılacak: %s", exc
+            )
             await self._cleanup_rabbit()
 
     async def _ensure_kafka_listener(self) -> None:
@@ -211,7 +232,9 @@ class AgentEventBus:
         try:
             aiokafka = importlib.import_module("aiokafka")
             if self._kafka_producer is None:
-                self._kafka_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=self._kafka_bootstrap_servers)
+                self._kafka_producer = aiokafka.AIOKafkaProducer(
+                    bootstrap_servers=self._kafka_bootstrap_servers
+                )
                 await self._kafka_producer.start()
             if self._kafka_consumer is None:
                 self._kafka_consumer = aiokafka.AIOKafkaConsumer(
@@ -226,7 +249,9 @@ class AgentEventBus:
             self._kafka_listener_task = asyncio.create_task(self._kafka_listener_loop())
         except Exception as exc:
             self._kafka_available = False
-            logger.debug("AgentEventBus Kafka bootstrap başarısız, local fallback kullanılacak: %s", exc)
+            logger.debug(
+                "AgentEventBus Kafka bootstrap başarısız, local fallback kullanılacak: %s", exc
+            )
             await self._cleanup_kafka()
 
     async def _publish_via_remote(self, evt: AgentEvent) -> bool:
@@ -317,7 +342,9 @@ class AgentEventBus:
         payload = self._serialize_event_payload(evt)
         try:
             aio_pika = importlib.import_module("aio_pika")
-            message = aio_pika.Message(body=payload.encode("utf-8"), content_type="application/json")
+            message = aio_pika.Message(
+                body=payload.encode("utf-8"), content_type="application/json"
+            )
             await self._rabbit_channel.default_exchange.publish(message, routing_key=self._channel)
             return True
         except Exception as exc:
@@ -390,7 +417,9 @@ class AgentEventBus:
                     finally:
                         with contextlib.suppress(Exception):
                             try:
-                                await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
+                                await self._redis_client.xack(
+                                    self._channel, self._consumer_group, msg_id
+                                )
                             except Exception as exc:
                                 await self._write_dead_letter(
                                     reason="ack_failed",
@@ -555,7 +584,9 @@ class AgentEventBus:
         self._redis_available = None
         await self._cleanup_redis()
 
-    async def _write_dead_letter(self, *, reason: str, payload: dict[str, object], error: Exception | None = None) -> None:
+    async def _write_dead_letter(
+        self, *, reason: str, payload: dict[str, object], error: Exception | None = None
+    ) -> None:
         item = {
             "ts": time.time(),
             "reason": reason,
@@ -570,7 +601,11 @@ class AgentEventBus:
         self._dlq_buffer.append(item)
         await self._persist_dead_letter_item(item)
 
-        if self._backend == "redis" and self._redis_client is not None and self._redis_available is True:
+        if (
+            self._backend == "redis"
+            and self._redis_client is not None
+            and self._redis_available is True
+        ):
             try:
                 await self._redis_client.xadd(
                     self._dlq_channel,
@@ -581,7 +616,9 @@ class AgentEventBus:
             except Exception as exc:
                 logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
-    async def _persist_dead_letter_item(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+    async def _persist_dead_letter_item(
+        self, item: dict[str, object], *, dropped_from_memory: bool = False
+    ) -> None:
         if not self._dlq_persist_path:
             return
         record = {
@@ -621,7 +658,9 @@ class AgentEventBus:
             self._dlq_persist_pending.clear()
             await asyncio.to_thread(self._persist_dead_letter_items_sync, records)
 
-    def _persist_dead_letter_item_sync(self, item: dict[str, object], *, dropped_from_memory: bool = False) -> None:
+    def _persist_dead_letter_item_sync(
+        self, item: dict[str, object], *, dropped_from_memory: bool = False
+    ) -> None:
         record = {
             "ts": time.time(),
             "dropped_from_memory": dropped_from_memory,

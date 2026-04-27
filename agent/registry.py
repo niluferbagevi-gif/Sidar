@@ -9,8 +9,9 @@ veya `AgentCatalog.register_type(...)` metoduyla eklenir.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ class AgentSpec:
     """Kayıtlı bir ajan tipinin meta verisi."""
 
     role_name: str
-    agent_class: Optional[Type[Any]] = None
-    capabilities: List[str] = field(default_factory=list)
+    agent_class: type[Any] | None = None
+    capabilities: list[str] = field(default_factory=list)
     description: str = ""
     version: str = "1.0.0"
     is_builtin: bool = True
@@ -30,18 +31,18 @@ class AgentSpec:
 class AgentCatalog:
     """Sınıf-tabanlı ajan tip kataloğu."""
 
-    _registry: Dict[str, AgentSpec] = {}
+    _registry: dict[str, AgentSpec] = {}
 
     @classmethod
     def register(
         cls,
         *,
-        capabilities: Optional[List[str]] = None,
+        capabilities: list[str] | None = None,
         description: str = "",
         version: str = "1.0.0",
         is_builtin: bool = False,
-    ) -> Callable[[Type], Type]:
-        def _decorator(agent_cls: Type) -> Type:
+    ) -> Callable[[type], type]:
+        def _decorator(agent_cls: type) -> type:
             role = getattr(agent_cls, "ROLE_NAME", agent_cls.__name__.lower().replace("agent", ""))
             cls.register_type(
                 role_name=role,
@@ -60,8 +61,8 @@ class AgentCatalog:
         cls,
         *,
         role_name: str,
-        agent_class: Type,
-        capabilities: Optional[List[str]] = None,
+        agent_class: type,
+        capabilities: list[str] | None = None,
         description: str = "",
         version: str = "1.0.0",
         is_builtin: bool = True,
@@ -78,12 +79,12 @@ class AgentCatalog:
         logger.debug("AgentCatalog: '%s' kaydedildi (yetenekler: %s)", role_name, capabilities)
 
     @classmethod
-    def get(cls, role_name: str) -> Optional[AgentSpec]:
+    def get(cls, role_name: str) -> AgentSpec | None:
         return cls._registry.get(role_name)
 
     @classmethod
-    def find_by_capability(cls, capability: str) -> List[AgentSpec]:
-        matches: List[AgentSpec] = []
+    def find_by_capability(cls, capability: str) -> list[AgentSpec]:
+        matches: list[AgentSpec] = []
         for spec in cls._registry.values():
             capabilities = getattr(spec, "capabilities", []) or []
             if capability in capabilities:
@@ -91,7 +92,7 @@ class AgentCatalog:
         return matches
 
     @classmethod
-    def list_all(cls) -> List[AgentSpec]:
+    def list_all(cls) -> list[AgentSpec]:
         return list(cls._registry.values())
 
     @classmethod
@@ -99,7 +100,9 @@ class AgentCatalog:
         spec = cls.get(role_name)
         if spec is None:
             available = list(cls._registry.keys())
-            raise KeyError(f"'{role_name}' ajan tipi kayıt defterinde bulunamadı. Mevcut tipler: {available}")
+            raise KeyError(
+                f"'{role_name}' ajan tipi kayıt defterinde bulunamadı. Mevcut tipler: {available}"
+            )
         if spec.agent_class is not None:
             return spec.agent_class(**kwargs)
 
@@ -133,7 +136,6 @@ def _import_builtin_roles() -> None:
             importlib.import_module(module_name)
         except Exception:
             logger.debug("Builtin role import'u atlandı: %s", module_name, exc_info=True)
-
 
 
 _import_builtin_roles()

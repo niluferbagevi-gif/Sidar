@@ -2,28 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import importlib.util
+import json
 import sqlite3
 import sys
 import types
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import jwt
 import pytest
-from unittest.mock import AsyncMock
 
 import core.db as core_db
 from core.db import (
     Database,
-    _parse_asyncpg_affected_rows,
-    _parse_iso_datetime,
     _expires_in,
     _hash_password,
     _json_dumps,
     _new_entity_id,
+    _parse_asyncpg_affected_rows,
+    _parse_iso_datetime,
     _quote_sql_identifier,
     _utc_now_iso,
     _verify_password,
@@ -97,7 +97,11 @@ async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_pa
     db._backend = "postgresql"
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
-    fake_pg.conn.execute.side_effect = [None, None, ConnectionError("database connection lost during migration")]
+    fake_pg.conn.execute.side_effect = [
+        None,
+        None,
+        ConnectionError("database connection lost during migration"),
+    ]
 
     with pytest.raises(ConnectionError, match="migration"):
         await db._init_schema_postgresql()
@@ -106,7 +110,9 @@ async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_ensure_default_prompt_registry_postgres_branches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+async def test_ensure_default_prompt_registry_postgres_branches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
@@ -225,7 +231,9 @@ def test_new_entity_id_prefers_builtin_uuid7(monkeypatch: pytest.MonkeyPatch) ->
     assert _new_entity_id() == "00000000-0000-7000-8000-000000000001"
 
 
-def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delattr(uuid, "uuid7", raising=False)
 
     fake_uuid6 = types.ModuleType("uuid6")
@@ -245,7 +253,9 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid7_not_callable_and_uuid6_mis
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000111"
 
 
-def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _FakeMatch:
         def group(self, _index: int) -> str:
             return "not-a-number"
@@ -427,7 +437,9 @@ async def test_access_policy_precedence_and_fallback(sqlite_db: Database) -> Non
     )
 
     with pytest.raises(ValueError, match="effect must be allow or deny"):
-        await sqlite_db.upsert_access_policy(user_id=user.id, resource_type="repo", action="write", effect="maybe")
+        await sqlite_db.upsert_access_policy(
+            user_id=user.id, resource_type="repo", action="write", effect="maybe"
+        )
 
 
 @pytest.mark.asyncio
@@ -453,7 +465,9 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_jwt_token_flow_prefers_db_user(sqlite_db: Database) -> None:
-    user = await sqlite_db.create_user("jwt-user", role="admin", password="pw", tenant_id="tenant-a")
+    user = await sqlite_db.create_user(
+        "jwt-user", role="admin", password="pw", tenant_id="tenant-a"
+    )
     token_record = await sqlite_db.create_auth_token(
         user.id,
         role="admin",
@@ -484,7 +498,9 @@ async def test_run_sqlite_op_requires_initialized_connection(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_message_rows_by_session_ids_returns_empty_for_blank_input(sqlite_db: Database) -> None:
+async def test_fetch_message_rows_by_session_ids_returns_empty_for_blank_input(
+    sqlite_db: Database,
+) -> None:
     assert await sqlite_db._fetch_message_rows_by_session_ids([]) == []
     assert await sqlite_db._fetch_message_rows_by_session_ids(["", "   "]) == []
 
@@ -522,7 +538,9 @@ async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database
 
 
 @pytest.mark.asyncio
-async def test_run_sqlite_op_raises_after_max_retries_for_locked_database(sqlite_db: Database) -> None:
+async def test_run_sqlite_op_raises_after_max_retries_for_locked_database(
+    sqlite_db: Database,
+) -> None:
     attempts = {"count": 0}
 
     def _always_locked() -> int:
@@ -571,7 +589,11 @@ async def test_run_sqlite_op_initializes_write_lock_and_keeps_reads_unlocked(tmp
 
 @pytest.mark.asyncio
 async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-no-conn.db'}", BASE_DIR=str(tmp_path)))
+    db = Database(
+        DummyCfg(
+            DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-no-conn.db'}", BASE_DIR=str(tmp_path)
+        )
+    )
     db._backend = "sqlite"
     db._sqlite_conn = None
     with pytest.raises(RuntimeError, match="SQLite bağlantısı başlatılmadı"):
@@ -596,7 +618,12 @@ async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -
 
 @pytest.mark.asyncio
 async def test_transaction_sqlite_rolls_back_on_operational_error(tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-rollback.db'}", BASE_DIR=str(tmp_path)))
+    db = Database(
+        DummyCfg(
+            DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-rollback.db'}",
+            BASE_DIR=str(tmp_path),
+        )
+    )
     db._backend = "sqlite"
 
     class _Conn:
@@ -631,7 +658,9 @@ async def test_transaction_sqlite_rolls_back_on_operational_error(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_transaction_postgresql_supports_awaitable_transaction_factory(tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    db = Database(
+        DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    )
     fake_pg = FakePgAdapter()
     db._backend = "postgresql"
     db._pg_pool = fake_pg
@@ -653,7 +682,9 @@ async def test_transaction_postgresql_supports_awaitable_transaction_factory(tmp
 
 @pytest.mark.asyncio
 async def test_transaction_postgresql_supports_sync_transaction_factory(tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    db = Database(
+        DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    )
     fake_pg = FakePgAdapter()
     db._backend = "postgresql"
     db._pg_pool = fake_pg
@@ -671,7 +702,9 @@ async def test_transaction_postgresql_supports_sync_transaction_factory(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_ensure_default_prompt_registry_branches(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database) -> None:
+async def test_ensure_default_prompt_registry_branches(
+    monkeypatch: pytest.MonkeyPatch, sqlite_db: Database
+) -> None:
     class _BrokenLoader:
         def exec_module(self, module):
             module.SIDAR_SYSTEM_PROMPT = "sys prompt"
@@ -679,7 +712,9 @@ async def test_ensure_default_prompt_registry_branches(monkeypatch: pytest.Monke
     class _BrokenSpec:
         loader = _BrokenLoader()
 
-    monkeypatch.setattr("importlib.util.spec_from_file_location", lambda *args, **kwargs: _BrokenSpec())
+    monkeypatch.setattr(
+        "importlib.util.spec_from_file_location", lambda *args, **kwargs: _BrokenSpec()
+    )
     monkeypatch.setattr("importlib.util.module_from_spec", lambda spec: types.SimpleNamespace())
 
     async def _missing_prompt(*_args, **_kwargs):
@@ -697,7 +732,9 @@ async def test_ensure_default_prompt_registry_branches(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database) -> None:
     payload = {"sub": "u1", "role": "", "username": "x", "tenant_id": "default"}
-    bad_token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
+    bad_token = jwt.encode(
+        payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM
+    )
     assert sqlite_db.verify_auth_token(bad_token) is None
 
     assert await sqlite_db.get_user_by_token("not-a-token") is None
@@ -724,7 +761,9 @@ async def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path)
         )
     )
     await db._ensure_access_control_schema_sqlite()
-    cols = await db._run_sqlite_op(lambda: db._sqlite_conn.execute("PRAGMA table_info(users)").fetchall())
+    cols = await db._run_sqlite_op(
+        lambda: db._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
+    )
     assert "tenant_id" in {str(col[1]) for col in cols}
     await db.close()
 
@@ -738,7 +777,9 @@ async def test_campaign_content_checklist_coverage_workflow(sqlite_db: Database)
         objective="Awareness",
         metadata={"k": "v"},
     )
-    updated = await sqlite_db.upsert_marketing_campaign(campaign_id=campaign.id, tenant_id="t1", name="Launch 2", status="ACTIVE")
+    updated = await sqlite_db.upsert_marketing_campaign(
+        campaign_id=campaign.id, tenant_id="t1", name="Launch 2", status="ACTIVE"
+    )
     assert updated.status == "active"
 
     asset = await sqlite_db.add_content_asset(
@@ -759,7 +800,9 @@ async def test_campaign_content_checklist_coverage_workflow(sqlite_db: Database)
     )
     assert checklist.status == "done"
 
-    task = await sqlite_db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok", target_path="core/db.py")
+    task = await sqlite_db.create_coverage_task(
+        tenant_id="t1", command="pytest", pytest_output="ok", target_path="core/db.py"
+    )
     await sqlite_db.add_coverage_finding(
         task_id=task.id,
         finding_type="missing_test",
@@ -778,9 +821,24 @@ async def test_postgresql_session_ops_with_fake_adapter() -> None:
 
     fake_pg.conn.fetch.side_effect = [
         [{"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}],
-        [{"id": 1, "session_id": "s1", "role": "assistant", "content": "hi", "tokens_used": 1, "created_at": "c"}],
+        [
+            {
+                "id": 1,
+                "session_id": "s1",
+                "role": "assistant",
+                "content": "hi",
+                "tokens_used": 1,
+                "created_at": "c",
+            }
+        ],
     ]
-    fake_pg.conn.fetchrow.return_value = {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}
+    fake_pg.conn.fetchrow.return_value = {
+        "id": "s1",
+        "user_id": "u1",
+        "title": "t",
+        "created_at": "c",
+        "updated_at": "u",
+    }
     fake_pg.conn.execute.side_effect = ["UPDATE 1", "DELETE 1", "DELETE BAD"]
 
     sessions = await db.list_sessions("u1")
@@ -814,8 +872,22 @@ async def test_postgresql_bulk_and_grouped_message_paths() -> None:
     assert len(rows) == 2
 
     fake_pg.conn.fetch.return_value = [
-        {"id": 1, "session_id": "s1", "role": "user", "content": "one", "tokens_used": 2, "created_at": "c1"},
-        {"id": 2, "session_id": "s2", "role": "assistant", "content": "two", "tokens_used": 4, "created_at": "c2"},
+        {
+            "id": 1,
+            "session_id": "s1",
+            "role": "user",
+            "content": "one",
+            "tokens_used": 2,
+            "created_at": "c1",
+        },
+        {
+            "id": 2,
+            "session_id": "s2",
+            "role": "assistant",
+            "content": "two",
+            "tokens_used": 4,
+            "created_at": "c2",
+        },
     ]
     grouped = await db.get_messages_for_sessions(["s1", "s2"])
     assert [m.content for m in grouped["s1"]] == ["one"]
@@ -863,6 +935,7 @@ async def test_postgresql_adapter_conflict_and_close_path() -> None:
     await db.close()
     assert fake_pg.closed is True
 
+
 @pytest.mark.asyncio
 async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None:
     created = await sqlite_db.ensure_user("ensured-user", role="admin")
@@ -870,7 +943,9 @@ async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None
     assert existing.id == created.id
     assert existing.role == "admin"
 
-    ensured = await sqlite_db.ensure_user_id("fixed-id", username="fixed-name", role="reviewer", tenant_id="tenant-z")
+    ensured = await sqlite_db.ensure_user_id(
+        "fixed-id", username="fixed-name", role="reviewer", tenant_id="tenant-z"
+    )
     assert ensured.id == "fixed-id"
     assert ensured.tenant_id == "tenant-z"
 
@@ -887,18 +962,28 @@ async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: 
     c2 = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-1", name="C2", status="ACTIVE")
     _ = c2
 
-    active = await sqlite_db.list_marketing_campaigns(tenant_id="tenant-1", status="active", limit=1)
+    active = await sqlite_db.list_marketing_campaigns(
+        tenant_id="tenant-1", status="active", limit=1
+    )
     assert len(active) == 1
     assert active[0].status == "active"
 
     with pytest.raises(ValueError, match="asset_type, title and content are required"):
-        await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="", title="x", content="y")
+        await sqlite_db.add_content_asset(
+            campaign_id=c1.id, tenant_id="tenant-1", asset_type="", title="x", content="y"
+        )
 
-    a1 = await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T1", content="Body")
-    _a2 = await sqlite_db.add_content_asset(campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T2", content="Body")
+    a1 = await sqlite_db.add_content_asset(
+        campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T1", content="Body"
+    )
+    _a2 = await sqlite_db.add_content_asset(
+        campaign_id=c1.id, tenant_id="tenant-1", asset_type="post", title="T2", content="Body"
+    )
 
     all_assets = await sqlite_db.list_content_assets(tenant_id="tenant-1", limit=10)
-    by_campaign = await sqlite_db.list_content_assets(tenant_id="tenant-1", campaign_id=c1.id, limit=10)
+    by_campaign = await sqlite_db.list_content_assets(
+        tenant_id="tenant-1", campaign_id=c1.id, limit=10
+    )
     assert len(by_campaign) == len(all_assets) == 2
     assert by_campaign[0].campaign_id == a1.campaign_id
 
@@ -930,7 +1015,9 @@ async def test_operation_checklist_and_coverage_management(sqlite_db: Database) 
     assert task.status == "IN_PROGRESS"
 
     with pytest.raises(ValueError, match="finding_type and summary are required"):
-        await sqlite_db.add_coverage_finding(task_id=task.id, finding_type="", target_path="a", summary="b")
+        await sqlite_db.add_coverage_finding(
+            task_id=task.id, finding_type="", target_path="a", summary="b"
+        )
 
     finding = await sqlite_db.add_coverage_finding(
         task_id=task.id,
@@ -974,7 +1061,9 @@ async def test_audit_log_sqlite_validation_and_listing(sqlite_db: Database) -> N
     user = await sqlite_db.create_user("audit-user", password="pw")
 
     with pytest.raises(ValueError, match="action and resource are required"):
-        await sqlite_db.record_audit_log(action="", resource="repo", ip_address="127.0.0.1", allowed=True)
+        await sqlite_db.record_audit_log(
+            action="", resource="repo", ip_address="127.0.0.1", allowed=True
+        )
 
     await sqlite_db.record_audit_log(
         user_id=user.id,
@@ -1102,19 +1191,25 @@ async def test_postgresql_marketing_and_coverage_branches() -> None:
     campaigns = await db.list_marketing_campaigns(tenant_id="t1", status="active", limit=5)
     assert campaigns and campaigns[0].id == 10
 
-    asset = await db.add_content_asset(campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world")
+    asset = await db.add_content_asset(
+        campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world"
+    )
     assert asset.id == 20
     assets = await db.list_content_assets(tenant_id="t1", campaign_id=10, limit=3)
     assert assets and assets[0].campaign_id == 10
 
-    checklist = await db.add_operation_checklist(tenant_id="t1", title="ops", items=["a"], campaign_id=10)
+    checklist = await db.add_operation_checklist(
+        tenant_id="t1", title="ops", items=["a"], campaign_id=10
+    )
     assert checklist.id == 30
     checklists = await db.list_operation_checklists(tenant_id="t1", campaign_id=10, limit=3)
     assert checklists and checklists[0].id == 30
 
     task = await db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok")
     assert task.id == 40
-    finding = await db.add_coverage_finding(task_id=40, finding_type="missing_test", target_path="core/db.py", summary="line missed")
+    finding = await db.add_coverage_finding(
+        task_id=40, finding_type="missing_test", target_path="core/db.py", summary="line missed"
+    )
     assert finding.id == 50
     tasks = await db.list_coverage_tasks(tenant_id="t1", status="pending_review", limit=3)
     assert tasks and tasks[0].id == 40
@@ -1133,16 +1228,18 @@ async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
             {"total_tokens_used": 100, "total_api_requests": 5},
         ]
     )
-    fake_pg.conn.fetch = AsyncMock(return_value=[
-        {
-            "id": "u1",
-            "username": "john",
-            "role": "user",
-            "created_at": "c",
-            "daily_token_limit": 100,
-            "daily_request_limit": 5,
-        }
-    ])
+    fake_pg.conn.fetch = AsyncMock(
+        return_value=[
+            {
+                "id": "u1",
+                "username": "john",
+                "role": "user",
+                "created_at": "c",
+                "daily_token_limit": 100,
+                "daily_request_limit": 5,
+            }
+        ]
+    )
 
     await db.upsert_user_quota("u1", daily_token_limit=100, daily_request_limit=5)
     await db.record_provider_usage_daily("u1", "OpenAI", tokens_used=100, requests_inc=5)
@@ -1162,13 +1259,19 @@ async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
             return False
 
     fake_pg.conn.transaction = lambda: _Tx()
-    replaced = await db.replace_session_messages("s1", [{"content": "x"}, {"role": "user", "content": "y"}])
+    replaced = await db.replace_session_messages(
+        "s1", [{"content": "x"}, {"role": "user", "content": "y"}]
+    )
     assert replaced == 2
 
 
 @pytest.mark.asyncio
-async def test_replace_session_messages_postgresql_supports_awaitable_transaction_factory(tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+async def test_replace_session_messages_postgresql_supports_awaitable_transaction_factory(
+    tmp_path,
+) -> None:
+    db = Database(
+        DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    )
     fake_pg = FakePgAdapter()
     db._backend = "postgresql"
     db._pg_pool = fake_pg
@@ -1184,8 +1287,11 @@ async def test_replace_session_messages_postgresql_supports_awaitable_transactio
         return _Tx()
 
     fake_pg.conn.transaction = _tx_factory
-    replaced = await db.replace_session_messages("s-awaitable", [{"role": "user", "content": "hello"}])
+    replaced = await db.replace_session_messages(
+        "s-awaitable", [{"role": "user", "content": "hello"}]
+    )
     assert replaced == 1
+
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -> None:
@@ -1241,7 +1347,11 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     async def _raise_timeout(**_kwargs):
         raise TimeoutError("pool timeout")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_timeout, PoolError=_AsyncpgStub.PoolError))
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_timeout, PoolError=_AsyncpgStub.PoolError),
+    )
     with pytest.raises(TimeoutError):
         await timeout_db._connect_postgresql()
 
@@ -1250,7 +1360,11 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     async def _raise_pool(**_kwargs):
         raise _AsyncpgStub.PoolError("pool is down")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_pool, PoolError=_AsyncpgStub.PoolError))
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_pool, PoolError=_AsyncpgStub.PoolError),
+    )
     with pytest.raises(_AsyncpgStub.PoolError):
         await pool_error_db._connect_postgresql()
 
@@ -1259,7 +1373,11 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     async def _raise_generic(**_kwargs):
         raise RuntimeError("connection failed")
 
-    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(create_pool=_raise_generic, PoolError=_AsyncpgStub.PoolError))
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_generic, PoolError=_AsyncpgStub.PoolError),
+    )
     with pytest.raises(RuntimeError, match="connection failed"):
         await generic_db._connect_postgresql()
 
@@ -1317,7 +1435,20 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
     assert await db.get_active_prompt("") is None
 
     # get_active_prompt: missing row path then success path
-    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": 1, "role_name": "system", "prompt_text": "p", "version": 2, "is_active": True, "created_at": "c", "updated_at": "u"}])
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "id": 1,
+                "role_name": "system",
+                "prompt_text": "p",
+                "version": 2,
+                "is_active": True,
+                "created_at": "c",
+                "updated_at": "u",
+            },
+        ]
+    )
     assert await db.get_active_prompt("system") is None
     active = await db.get_active_prompt("system")
     assert active is not None
@@ -1325,7 +1456,17 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
 
     # upsert_prompt postgresql path
     fake_pg.conn.fetchval = AsyncMock(return_value=2)
-    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": 3, "role_name": "system", "prompt_text": "p3", "version": 3, "is_active": False, "created_at": "c", "updated_at": "u"})
+    fake_pg.conn.fetchrow = AsyncMock(
+        return_value={
+            "id": 3,
+            "role_name": "system",
+            "prompt_text": "p3",
+            "version": 3,
+            "is_active": False,
+            "created_at": "c",
+            "updated_at": "u",
+        }
+    )
     inserted = await db.upsert_prompt("system", "p3", activate=False)
     assert inserted.id == 3
 
@@ -1340,7 +1481,15 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
     fake_pg.conn.fetchrow = AsyncMock(return_value={"id": 4, "role_name": "system"})
 
     async def _fake_get_active(role_name: str):
-        return PromptRecord(id=4, role_name=role_name, prompt_text="x", version=4, is_active=True, created_at="c", updated_at="u")
+        return PromptRecord(
+            id=4,
+            role_name=role_name,
+            prompt_text="x",
+            version=4,
+            is_active=True,
+            created_at="c",
+            updated_at="u",
+        )
 
     from core.db import PromptRecord
 
@@ -1357,7 +1506,15 @@ async def test_postgresql_user_and_session_branches() -> None:
     db._pg_pool = fake_pg
 
     # ensure_user existing path
-    fake_pg.conn.fetchrow = AsyncMock(return_value={"id": "u1", "username": "john", "role": "admin", "created_at": "c", "tenant_id": "t1"})
+    fake_pg.conn.fetchrow = AsyncMock(
+        return_value={
+            "id": "u1",
+            "username": "john",
+            "role": "admin",
+            "created_at": "c",
+            "tenant_id": "t1",
+        }
+    )
     existing = await db.ensure_user("john", role="user")
     assert existing.role == "admin"
 
@@ -1372,24 +1529,57 @@ async def test_postgresql_user_and_session_branches() -> None:
 
     # authenticate branches: missing, wrong password, and success
     hashed = _hash_password("pw")
-    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": "u2", "username": "x", "password_hash": hashed, "role": "user", "created_at": "c", "tenant_id": "t"}, {"id": "u2", "username": "x", "password_hash": hashed, "role": "user", "created_at": "c", "tenant_id": "t"}])
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "id": "u2",
+                "username": "x",
+                "password_hash": hashed,
+                "role": "user",
+                "created_at": "c",
+                "tenant_id": "t",
+            },
+            {
+                "id": "u2",
+                "username": "x",
+                "password_hash": hashed,
+                "role": "user",
+                "created_at": "c",
+                "tenant_id": "t",
+            },
+        ]
+    )
     assert await db.authenticate_user("x", "pw") is None
     assert await db.authenticate_user("x", "wrong") is None
     ok = await db.authenticate_user("x", "pw")
     assert ok is not None
 
     # _get_user_by_id none and success
-    fake_pg.conn.fetchrow = AsyncMock(side_effect=[None, {"id": "u3", "username": "y", "role": "user", "created_at": "c", "tenant_id": "default"}])
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "id": "u3",
+                "username": "y",
+                "role": "user",
+                "created_at": "c",
+                "tenant_id": "default",
+            },
+        ]
+    )
     assert await db._get_user_by_id("u3") is None
     got = await db._get_user_by_id("u3")
     assert got is not None
 
     # load_session with user filter, without user filter, and missing
-    fake_pg.conn.fetchrow = AsyncMock(side_effect=[
-        {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"},
-        {"id": "s2", "user_id": "u1", "title": "t2", "created_at": "c", "updated_at": "u"},
-        None,
-    ])
+    fake_pg.conn.fetchrow = AsyncMock(
+        side_effect=[
+            {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"},
+            {"id": "s2", "user_id": "u1", "title": "t2", "created_at": "c", "updated_at": "u"},
+            None,
+        ]
+    )
     assert (await db.load_session("s1", user_id="u1")) is not None
     assert (await db.load_session("s2")) is not None
     assert (await db.load_session("s3")) is None
@@ -1411,13 +1601,62 @@ async def test_postgresql_policy_audit_and_listing_branches() -> None:
     await db.connect()
 
     # access-policy early false / no match
-    assert await db.check_access_policy(user_id="", tenant_id="t", resource_type="repo", action="read") is False
-    assert await db.check_access_policy(user_id="u1", tenant_id="t", resource_type="repo", action="read", resource_id="x") is False
+    assert (
+        await db.check_access_policy(user_id="", tenant_id="t", resource_type="repo", action="read")
+        is False
+    )
+    assert (
+        await db.check_access_policy(
+            user_id="u1", tenant_id="t", resource_type="repo", action="read", resource_id="x"
+        )
+        is False
+    )
 
-    await db.upsert_access_policy(user_id="u1", tenant_id="default", resource_type="repo", action="read", resource_id="*", effect="allow")
-    rows = [{"id": 1, "user_id": "u1", "tenant_id": "default", "resource_type": "repo", "resource_id": "*", "action": "read", "effect": "allow", "created_at": "c", "updated_at": "u"}]
-    user_logs_rows = [{"id": 1, "user_id": "u1", "tenant_id": "default", "action": "read", "resource": "repo/1", "ip_address": "127.0.0.1", "allowed": True, "timestamp": "c"}]
-    all_logs_rows = [{"id": 2, "user_id": "u2", "tenant_id": "default", "action": "write", "resource": "repo/2", "ip_address": "10.0.0.2", "allowed": False, "timestamp": "c"}]
+    await db.upsert_access_policy(
+        user_id="u1",
+        tenant_id="default",
+        resource_type="repo",
+        action="read",
+        resource_id="*",
+        effect="allow",
+    )
+    rows = [
+        {
+            "id": 1,
+            "user_id": "u1",
+            "tenant_id": "default",
+            "resource_type": "repo",
+            "resource_id": "*",
+            "action": "read",
+            "effect": "allow",
+            "created_at": "c",
+            "updated_at": "u",
+        }
+    ]
+    user_logs_rows = [
+        {
+            "id": 1,
+            "user_id": "u1",
+            "tenant_id": "default",
+            "action": "read",
+            "resource": "repo/1",
+            "ip_address": "127.0.0.1",
+            "allowed": True,
+            "timestamp": "c",
+        }
+    ]
+    all_logs_rows = [
+        {
+            "id": 2,
+            "user_id": "u2",
+            "tenant_id": "default",
+            "action": "write",
+            "resource": "repo/2",
+            "ip_address": "10.0.0.2",
+            "allowed": False,
+            "timestamp": "c",
+        }
+    ]
 
     async def _fake_fetch(query: str, *args):
         if "FROM access_policies" in query:
@@ -1432,9 +1671,21 @@ async def test_postgresql_policy_audit_and_listing_branches() -> None:
     listed_tenant = await db.list_access_policies("u1", tenant_id="default")
     assert listed_default and listed_tenant
 
-    assert await db.check_access_policy(user_id="u1", tenant_id="any", resource_type="repo", action="read", resource_id="x") is True
+    assert (
+        await db.check_access_policy(
+            user_id="u1", tenant_id="any", resource_type="repo", action="read", resource_id="x"
+        )
+        is True
+    )
 
-    await db.record_audit_log(user_id="u1", tenant_id="default", action="read", resource="repo/1", ip_address="127.0.0.1", allowed=True)
+    await db.record_audit_log(
+        user_id="u1",
+        tenant_id="default",
+        action="read",
+        resource="repo/1",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
     user_logs = await db.list_audit_logs(user_id="u1", limit=2)
     all_logs = await db.list_audit_logs(limit=2)
     assert len(user_logs) == 1
@@ -1450,23 +1701,98 @@ async def test_postgresql_timestamp_writes_use_datetime_instances() -> None:
     fake_pg.conn.fetchval = AsyncMock(return_value=0)
     fake_pg.conn.fetchrow = AsyncMock(
         side_effect=[
-            {"id": 1, "role_name": "system", "prompt_text": "p", "version": 1, "is_active": True, "created_at": "c", "updated_at": "u"},
-            {"id": 10, "tenant_id": "t1", "name": "Launch", "channel": "", "objective": "", "status": "active", "owner_user_id": "", "budget": 0.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"},
-            {"id": 11, "campaign_id": 10, "tenant_id": "t1", "asset_type": "post", "title": "hello", "content": "world", "channel": "", "metadata_json": "{}", "created_at": "c", "updated_at": "u"},
-            {"id": 12, "campaign_id": 10, "tenant_id": "t1", "title": "ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"},
-            {"id": 13, "tenant_id": "t1", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "", "suggested_test_path": "", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"},
-            {"id": 14, "task_id": 13, "finding_type": "missing_test", "target_path": "core/db.py", "summary": "line missed", "severity": "medium", "details_json": "{}", "created_at": "c"},
+            {
+                "id": 1,
+                "role_name": "system",
+                "prompt_text": "p",
+                "version": 1,
+                "is_active": True,
+                "created_at": "c",
+                "updated_at": "u",
+            },
+            {
+                "id": 10,
+                "tenant_id": "t1",
+                "name": "Launch",
+                "channel": "",
+                "objective": "",
+                "status": "active",
+                "owner_user_id": "",
+                "budget": 0.0,
+                "metadata_json": "{}",
+                "created_at": "c",
+                "updated_at": "u",
+            },
+            {
+                "id": 11,
+                "campaign_id": 10,
+                "tenant_id": "t1",
+                "asset_type": "post",
+                "title": "hello",
+                "content": "world",
+                "channel": "",
+                "metadata_json": "{}",
+                "created_at": "c",
+                "updated_at": "u",
+            },
+            {
+                "id": 12,
+                "campaign_id": 10,
+                "tenant_id": "t1",
+                "title": "ops",
+                "items_json": "[]",
+                "status": "pending",
+                "owner_user_id": "",
+                "created_at": "c",
+                "updated_at": "u",
+            },
+            {
+                "id": 13,
+                "tenant_id": "t1",
+                "requester_role": "coverage",
+                "command": "pytest",
+                "pytest_output": "ok",
+                "status": "pending_review",
+                "target_path": "",
+                "suggested_test_path": "",
+                "review_payload_json": "{}",
+                "created_at": "c",
+                "updated_at": "u",
+            },
+            {
+                "id": 14,
+                "task_id": 13,
+                "finding_type": "missing_test",
+                "target_path": "core/db.py",
+                "summary": "line missed",
+                "severity": "medium",
+                "details_json": "{}",
+                "created_at": "c",
+            },
         ]
     )
 
     await db.upsert_prompt("system", "p", activate=True)
-    await db.upsert_access_policy(user_id="u1", tenant_id="default", resource_type="repo", action="read", effect="allow")
-    await db.record_audit_log(user_id="u1", tenant_id="default", action="read", resource="repo/1", ip_address="127.0.0.1", allowed=True)
+    await db.upsert_access_policy(
+        user_id="u1", tenant_id="default", resource_type="repo", action="read", effect="allow"
+    )
+    await db.record_audit_log(
+        user_id="u1",
+        tenant_id="default",
+        action="read",
+        resource="repo/1",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
     await db.upsert_marketing_campaign(tenant_id="t1", name="Launch", status="ACTIVE")
-    await db.add_content_asset(campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world")
+    await db.add_content_asset(
+        campaign_id=10, tenant_id="t1", asset_type="post", title="hello", content="world"
+    )
     await db.add_operation_checklist(tenant_id="t1", title="ops", items=["a"], campaign_id=10)
     await db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok")
-    await db.add_coverage_finding(task_id=13, finding_type="missing_test", target_path="core/db.py", summary="line missed")
+    await db.add_coverage_finding(
+        task_id=13, finding_type="missing_test", target_path="core/db.py", summary="line missed"
+    )
     await db.create_user("pg-user", role="user", password="pw")
 
     datetime_args = []
@@ -1484,12 +1810,59 @@ async def test_postgresql_listing_without_optional_filters() -> None:
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
 
-    campaign_row = {"id": 1, "tenant_id": "t", "name": "n", "channel": "", "objective": "", "status": "active", "owner_user_id": "", "budget": 0.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
-    asset_row = {"id": 2, "campaign_id": 1, "tenant_id": "t", "asset_type": "post", "title": "ttl", "content": "c", "channel": "", "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
-    checklist_row = {"id": 3, "campaign_id": 1, "tenant_id": "t", "title": "ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"}
-    task_row = {"id": 4, "tenant_id": "t", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "core/db.py", "suggested_test_path": "tests/unit/core/test_db.py", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"}
+    campaign_row = {
+        "id": 1,
+        "tenant_id": "t",
+        "name": "n",
+        "channel": "",
+        "objective": "",
+        "status": "active",
+        "owner_user_id": "",
+        "budget": 0.0,
+        "metadata_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    asset_row = {
+        "id": 2,
+        "campaign_id": 1,
+        "tenant_id": "t",
+        "asset_type": "post",
+        "title": "ttl",
+        "content": "c",
+        "channel": "",
+        "metadata_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    checklist_row = {
+        "id": 3,
+        "campaign_id": 1,
+        "tenant_id": "t",
+        "title": "ops",
+        "items_json": "[]",
+        "status": "pending",
+        "owner_user_id": "",
+        "created_at": "c",
+        "updated_at": "u",
+    }
+    task_row = {
+        "id": 4,
+        "tenant_id": "t",
+        "requester_role": "coverage",
+        "command": "pytest",
+        "pytest_output": "ok",
+        "status": "pending_review",
+        "target_path": "core/db.py",
+        "suggested_test_path": "tests/unit/core/test_db.py",
+        "review_payload_json": "{}",
+        "created_at": "c",
+        "updated_at": "u",
+    }
 
-    fake_pg.conn.fetch = AsyncMock(side_effect=[[campaign_row], [asset_row], [checklist_row], [task_row]])
+    fake_pg.conn.fetch = AsyncMock(
+        side_effect=[[campaign_row], [asset_row], [checklist_row], [task_row]]
+    )
     fake_pg.conn.fetchrow = AsyncMock(return_value=None)
 
     campaigns = await db.list_marketing_campaigns(tenant_id="t", limit=2)
@@ -1531,7 +1904,9 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
     assert policies and policies[0].tenant_id == "default"
 
     with pytest.raises(ValueError, match="resource_type and action are required"):
-        await sqlite_db.upsert_access_policy(user_id=user.id, tenant_id="default", resource_type="", action="read")
+        await sqlite_db.upsert_access_policy(
+            user_id=user.id, tenant_id="default", resource_type="", action="read"
+        )
 
     campaign = await sqlite_db.upsert_marketing_campaign(tenant_id="tenant-l", name="Campaign A")
     # no status branch (2046)
@@ -1542,7 +1917,9 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
         campaign_id=campaign.id, tenant_id="tenant-l", title="Ops", items=["a", "b"]
     )
     # campaign_id is not None branch (2373)
-    checklists = await sqlite_db.list_operation_checklists(tenant_id="tenant-l", campaign_id=campaign.id)
+    checklists = await sqlite_db.list_operation_checklists(
+        tenant_id="tenant-l", campaign_id=campaign.id
+    )
     assert checklists and checklists[0].id == checklist.id
 
     await sqlite_db.create_coverage_task(tenant_id="tenant-l", command="pytest", pytest_output="ok")
@@ -1571,7 +1948,9 @@ async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
 
 @pytest.mark.asyncio
 async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
-    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+    db = Database(
+        DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
+    )
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
 
@@ -1611,7 +1990,9 @@ async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
         return None
 
     db._get_user_by_id = _none_user  # type: ignore[method-assign]
-    created = await db.ensure_user_id("uid-postgres", username="u-post", role="reviewer", tenant_id="t-post")
+    created = await db.ensure_user_id(
+        "uid-postgres", username="u-post", role="reviewer", tenant_id="t-post"
+    )
     assert created.id == "uid-postgres"
 
     # current >= target branch (1147)
@@ -1621,7 +2002,11 @@ async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
-    cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'edges.db'}", BASE_DIR=str(tmp_path), DB_SCHEMA_TARGET_VERSION=1)
+    cfg = DummyCfg(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'edges.db'}",
+        BASE_DIR=str(tmp_path),
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
     db = Database(cfg)
     await db.connect()
     await db.init_schema()
@@ -1647,11 +2032,13 @@ async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
 
 def test_parse_iso_datetime_assumes_utc_for_naive_input() -> None:
     parsed = _parse_iso_datetime("2026-01-02T03:04:05")
-    assert parsed.tzinfo == timezone.utc
+    assert parsed.tzinfo == UTC
     assert parsed.isoformat() == "2026-01-02T03:04:05+00:00"
 
 
-def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delattr(uuid, "uuid7", raising=False)
     monkeypatch.setitem(sys.modules, "uuid6", None)
     monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000099"))
@@ -1660,13 +2047,15 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(monk
 
 
 def test_expires_in_uses_default_days_when_no_argument() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expiry = datetime.fromisoformat(_expires_in())
     assert timedelta(days=6, hours=23, minutes=59) < (expiry - now) < timedelta(days=7, minutes=1)
 
 
 @pytest.mark.asyncio
-async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(sqlite_db: Database) -> None:
+async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
+    sqlite_db: Database,
+) -> None:
     token = await sqlite_db.create_auth_token(
         user_id="missing-user",
         role="analyst",

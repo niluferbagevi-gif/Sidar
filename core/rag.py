@@ -12,29 +12,30 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 """
 
 import ast
+import asyncio
 import builtins
 import hashlib
 import importlib
+import ipaddress
 import json
 import logging
 import os
 import re
-import shutil
 import sys
 import tempfile
 import threading
-import asyncio
-import ipaddress
 import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
+
+import bleach as _bleach
+from opentelemetry import trace as _otel_trace
 
 from config import Config
-from opentelemetry import trace as _otel_trace
-import bleach as _bleach
+
 _BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
@@ -58,10 +59,10 @@ class GraphIndex:
     def __init__(self, root_dir: Path, *, max_files: int = 5000) -> None:
         self.root_dir = Path(root_dir).resolve()
         self.max_files = max_files
-        self.nodes: Dict[str, Dict[str, Any]] = {}
-        self.edges: Dict[str, Set[str]] = {}
-        self.reverse_edges: Dict[str, Set[str]] = {}
-        self.edge_kinds: Dict[Tuple[str, str], Set[str]] = {}
+        self.nodes: dict[str, dict[str, Any]] = {}
+        self.edges: dict[str, set[str]] = {}
+        self.reverse_edges: dict[str, set[str]] = {}
+        self.edge_kinds: dict[tuple[str, str], set[str]] = {}
 
     @staticmethod
     def _normalize_node_id(root_dir: Path, path: Path) -> str:
@@ -91,12 +92,15 @@ class GraphIndex:
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"endpoint:{method.upper()} {normalized_path}"
 
-    def _iter_source_files(self, root_dir: Path) -> List[Path]:
-        files: List[Path] = []
+    def _iter_source_files(self, root_dir: Path) -> builtins.list[Path]:
+        files: builtins.list[Path] = []
         for path in root_dir.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
                 continue
-            if any(part in {".git", "node_modules", "__pycache__", ".venv", "dist", "build"} for part in path.parts):
+            if any(
+                part in {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
+                for part in path.parts
+            ):
                 continue
             files.append(path)
             if len(files) >= self.max_files:
@@ -104,7 +108,9 @@ class GraphIndex:
         return sorted(files)
 
     @staticmethod
-    def _python_import_candidates(current_file: Path, module_name: str, level: int, root_dir: Path) -> List[Path]:
+    def _python_import_candidates(
+        current_file: Path, module_name: str, level: int, root_dir: Path
+    ) -> builtins.list[Path]:
         base_dir = current_file.parent
         if level > 0:
             for _ in range(max(0, level - 1)):
@@ -115,10 +121,16 @@ class GraphIndex:
             base_target.with_suffix(".py"),
             base_target / "__init__.py",
         ]
-        return [candidate.resolve() for candidate in candidates if candidate.exists() and candidate.is_relative_to(root_dir)]
+        return [
+            candidate.resolve()
+            for candidate in candidates
+            if candidate.exists() and candidate.is_relative_to(root_dir)
+        ]
 
     @staticmethod
-    def _script_import_candidates(current_file: Path, import_ref: str, root_dir: Path) -> List[Path]:
+    def _script_import_candidates(
+        current_file: Path, import_ref: str, root_dir: Path
+    ) -> builtins.list[Path]:
         import_ref = import_ref.strip()
         if not import_ref.startswith("."):
             return []
@@ -134,10 +146,14 @@ class GraphIndex:
             base_target / "index.jsx",
             base_target / "index.tsx",
         ]
-        return [candidate for candidate in candidates if candidate.exists() and candidate.is_file() and candidate.is_relative_to(root_dir)]
+        return [
+            candidate
+            for candidate in candidates
+            if candidate.exists() and candidate.is_file() and candidate.is_relative_to(root_dir)
+        ]
 
     @staticmethod
-    def _extract_str_literal(node: Any) -> Optional[str]:
+    def _extract_str_literal(node: Any) -> str | None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value.strip()
         if isinstance(node, ast.Str):
@@ -145,7 +161,7 @@ class GraphIndex:
         return None
 
     @staticmethod
-    def _normalize_endpoint_path(raw_url: str) -> Optional[str]:
+    def _normalize_endpoint_path(raw_url: str) -> str | None:
         value = (raw_url or "").strip().strip("'\"")
         if not value or "${" in value or "{" in value:
             return None
@@ -159,10 +175,12 @@ class GraphIndex:
             return None
         return value or "/"
 
-    def _parse_python_source(self, file_path: Path, content: str) -> Tuple[List[Path], List[Dict[str, str]], List[Dict[str, str]]]:
-        deps: List[Path] = []
-        endpoint_defs: List[Dict[str, str]] = []
-        endpoint_calls: List[Dict[str, str]] = []
+    def _parse_python_source(
+        self, file_path: Path, content: str
+    ) -> tuple[builtins.list[Path], builtins.list[dict[str, str]], builtins.list[dict[str, str]]]:
+        deps: builtins.list[Path] = []
+        endpoint_defs: builtins.list[dict[str, str]] = []
+        endpoint_calls: builtins.list[dict[str, str]] = []
         try:
             tree = ast.parse(content)
         except SyntaxError:
@@ -171,16 +189,24 @@ class GraphIndex:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    deps.extend(self._python_import_candidates(file_path, alias.name, 0, self.root_dir))
+                    deps.extend(
+                        self._python_import_candidates(file_path, alias.name, 0, self.root_dir)
+                    )
                 continue
 
             if isinstance(node, ast.ImportFrom):
-                deps.extend(self._python_import_candidates(file_path, node.module or "", int(node.level or 0), self.root_dir))
+                deps.extend(
+                    self._python_import_candidates(
+                        file_path, node.module or "", int(node.level or 0), self.root_dir
+                    )
+                )
                 continue
 
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for decorator in node.decorator_list:
-                    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                    if not isinstance(decorator, ast.Call) or not isinstance(
+                        decorator.func, ast.Attribute
+                    ):
                         continue
                     method = self.ROUTE_DECORATOR_METHODS.get(decorator.func.attr.lower())
                     if not method or not decorator.args:
@@ -230,9 +256,9 @@ class GraphIndex:
 
         return deps, endpoint_defs, endpoint_calls
 
-    def _extract_script_endpoint_calls(self, content: str) -> List[Dict[str, str]]:
-        calls: List[Dict[str, str]] = []
-        seen: Set[Tuple[str, str]] = set()
+    def _extract_script_endpoint_calls(self, content: str) -> builtins.list[dict[str, str]]:
+        calls: builtins.list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
 
         fetch_pattern = re.compile(
             r"""fetch\(\s*['"](?P<url>[^'"]+)['"]\s*(?:,\s*\{(?P<opts>.*?)\})?\s*\)""",
@@ -249,7 +275,13 @@ class GraphIndex:
             if key in seen:
                 continue
             seen.add(key)
-            calls.append({"endpoint_id": self._endpoint_node_id(method, path), "method": method, "path": path})
+            calls.append(
+                {
+                    "endpoint_id": self._endpoint_node_id(method, path),
+                    "method": method,
+                    "path": path,
+                }
+            )
 
         for match in re.finditer(r"""new\s+WebSocket\(\s*['"](?P<url>[^'"]+)['"]\s*\)""", content):
             path = self._normalize_endpoint_path(match.group("url"))
@@ -259,22 +291,28 @@ class GraphIndex:
             if key in seen:
                 continue
             seen.add(key)
-            calls.append({"endpoint_id": self._endpoint_node_id("WS", path), "method": "WS", "path": path})
+            calls.append(
+                {"endpoint_id": self._endpoint_node_id("WS", path), "method": "WS", "path": path}
+            )
 
         return calls
 
-    def _extract_dependencies(self, file_path: Path, content: str) -> Tuple[List[Path], List[Dict[str, str]], List[Dict[str, str]]]:
+    def _extract_dependencies(
+        self, file_path: Path, content: str
+    ) -> tuple[builtins.list[Path], builtins.list[dict[str, str]], builtins.list[dict[str, str]]]:
         if file_path.suffix.lower() == ".py":
             return self._parse_python_source(file_path, content)
 
-        deps: List[Path] = []
-        import_refs = re.findall(r"""(?:from|import)\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)""", content)
+        deps: builtins.list[Path] = []
+        import_refs = re.findall(
+            r"""(?:from|import)\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)""", content
+        )
         for pair in import_refs:
             ref = next((item for item in pair if item), "")
             deps.extend(self._script_import_candidates(file_path, ref, self.root_dir))
         return deps, [], self._extract_script_endpoint_calls(content)
 
-    def rebuild(self, root_dir: Optional[Path] = None) -> Dict[str, int]:
+    def rebuild(self, root_dir: Path | None = None) -> dict[str, int]:
         scan_root = Path(root_dir or self.root_dir).resolve()
         self.root_dir = scan_root
         self.clear()
@@ -288,7 +326,9 @@ class GraphIndex:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 continue
-            dep_paths, endpoint_defs, endpoint_calls = self._extract_dependencies(file_path, content)
+            dep_paths, endpoint_defs, endpoint_calls = self._extract_dependencies(
+                file_path, content
+            )
             for dep_path in dep_paths:
                 target_id = self._normalize_node_id(scan_root, dep_path)
                 if target_id in self.nodes:
@@ -317,13 +357,13 @@ class GraphIndex:
         edge_count = sum(len(targets) for targets in self.edges.values())
         return {"nodes": len(self.nodes), "edges": edge_count}
 
-    def neighbors(self, node_id: str) -> List[str]:
+    def neighbors(self, node_id: str) -> builtins.list[str]:
         return sorted(self.edges.get(node_id, set()))
 
-    def reverse_neighbors(self, node_id: str) -> List[str]:
+    def reverse_neighbors(self, node_id: str) -> builtins.list[str]:
         return sorted(self.reverse_edges.get(node_id, set()))
 
-    def resolve_node_id(self, query: str) -> Optional[str]:
+    def resolve_node_id(self, query: str) -> str | None:
         normalized = query.strip()
         if not normalized:
             return None
@@ -334,17 +374,18 @@ class GraphIndex:
         if len(exact_matches) == 1:
             return exact_matches[0]
         suffix_matches = [
-            node_id for node_id in self.nodes
+            node_id
+            for node_id in self.nodes
             if node_id.lower().endswith(lowered) or lowered in node_id.lower()
         ]
         return sorted(suffix_matches, key=len)[0] if len(suffix_matches) == 1 else None
 
-    def explain_dependency_path(self, source: str, target: str) -> List[str]:
+    def explain_dependency_path(self, source: str, target: str) -> builtins.list[str]:
         source_id = self.resolve_node_id(source) or source.strip()
         target_id = self.resolve_node_id(target) or target.strip()
         if source_id not in self.nodes or target_id not in self.nodes:
             return []
-        queue: List[List[str]] = [[source_id]]
+        queue: builtins.list[builtins.list[str]] = [[source_id]]
         seen = {source_id}
         while queue:
             path = queue.pop(0)
@@ -358,12 +399,14 @@ class GraphIndex:
                 queue.append(path + [neighbor])
         return []
 
-    def _collect_bfs(self, start: str, adjacency: Dict[str, Set[str]], max_depth: int) -> Dict[str, int]:
+    def _collect_bfs(
+        self, start: str, adjacency: dict[str, set[str]], max_depth: int
+    ) -> dict[str, int]:
         if start not in adjacency:
             return {}
-        queue: List[Tuple[str, int]] = [(start, 0)]
+        queue: builtins.list[tuple[str, int]] = [(start, 0)]
         seen = {start}
-        distances: Dict[str, int] = {}
+        distances: dict[str, int] = {}
         while queue:
             node_id, depth = queue.pop(0)
             if depth >= max_depth:
@@ -376,7 +419,9 @@ class GraphIndex:
                 queue.append((neighbor, depth + 1))
         return distances
 
-    def impact_analysis(self, target: str, *, max_depth: int = 4, top_k: int = 10) -> Dict[str, Any]:
+    def impact_analysis(
+        self, target: str, *, max_depth: int = 4, top_k: int = 10
+    ) -> dict[str, Any]:
         node_id = self.resolve_node_id(target)
         if not node_id or node_id not in self.nodes:
             return {}
@@ -386,10 +431,9 @@ class GraphIndex:
         direct_dependents = self.reverse_neighbors(node_id)
         endpoint_impacts = [item for item in reverse if str(item).startswith("endpoint:")]
         caller_files = [
-            item for item in reverse
-            if self.nodes.get(item, {}).get("node_type") == "file"
+            item for item in reverse if self.nodes.get(item, {}).get("node_type") == "file"
         ]
-        impacted_endpoint_handlers: List[str] = []
+        impacted_endpoint_handlers: builtins.list[str] = []
         for endpoint_id in sorted(endpoint_impacts):
             for handler_file in self.neighbors(endpoint_id):
                 if self.nodes.get(handler_file, {}).get("node_type") == "file":
@@ -404,7 +448,7 @@ class GraphIndex:
             )
         )[:top_k]
 
-        dependency_samples: List[List[str]] = []
+        dependency_samples: builtins.list[builtins.list[str]] = []
         sample_candidates = endpoint_impacts[:3] + caller_files[:3]
         for candidate in sample_candidates[:3]:
             path = self.explain_dependency_path(candidate, node_id)
@@ -423,7 +467,9 @@ class GraphIndex:
             "node_type": self.nodes.get(node_id, {}).get("node_type", "file"),
             "risk_level": risk_level,
             "direct_dependents": direct_dependents[:top_k],
-            "transitive_dependents": sorted(reverse, key=lambda item: (reverse[item], item))[:top_k],
+            "transitive_dependents": sorted(reverse, key=lambda item: (reverse[item], item))[
+                :top_k
+            ],
             "dependencies": sorted(forward, key=lambda item: (forward[item], item))[:top_k],
             "impacted_endpoints": sorted(endpoint_impacts)[:top_k],
             "impacted_endpoint_handlers": impacted_endpoint_handlers[:top_k],
@@ -432,9 +478,9 @@ class GraphIndex:
             "dependency_paths": dependency_samples[:3],
         }
 
-    def search_related(self, query: str, top_k: int = 5) -> List[Dict[str, object]]:
+    def search_related(self, query: str, top_k: int = 5) -> builtins.list[dict[str, object]]:
         tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
-        scored: List[Tuple[str, int]] = []
+        scored: builtins.list[tuple[str, int]] = []
         for node_id in self.nodes:
             lowered = node_id.lower()
             score = sum(lowered.count(token) * 2 for token in tokens)
@@ -459,7 +505,7 @@ class GraphIndex:
 class KnowledgeGraphNode:
     id: str
     label: str
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -467,29 +513,31 @@ class KnowledgeGraphEdge:
     source: str
     target: str
     relation: str
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class GraphRAGSearchPlan:
     query: str
     vector_backend: str
-    vector_candidates: List[str] = field(default_factory=list)
-    graph_nodes: List[KnowledgeGraphNode] = field(default_factory=list)
-    graph_edges: List[KnowledgeGraphEdge] = field(default_factory=list)
-    broker_topics: List[str] = field(default_factory=list)
+    vector_candidates: builtins.list[str] = field(default_factory=list)
+    graph_nodes: builtins.list[KnowledgeGraphNode] = field(default_factory=list)
+    graph_edges: builtins.list[KnowledgeGraphEdge] = field(default_factory=list)
+    broker_topics: builtins.list[str] = field(default_factory=list)
     cypher_hint: str = ""
 
 
-def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = None) -> List[List[float]]:
+def embed_texts_for_semantic_cache(
+    texts: builtins.list[str], cfg: Config | None = None
+) -> builtins.list[builtins.list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache as _embed
 
     return _embed(texts, cfg=cfg)
 
 
-def _build_embedding_function(use_gpu: bool = False,
-                               gpu_device: int = 0,
-                               mixed_precision: bool = False):
+def _build_embedding_function(
+    use_gpu: bool = False, gpu_device: int = 0, mixed_precision: bool = False
+):
     """
     ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
 
@@ -505,7 +553,7 @@ def _build_embedding_function(use_gpu: bool = False,
         embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
         if embedding_module is None:
             embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
-        SentenceTransformerEmbeddingFunction = getattr(embedding_module, "SentenceTransformerEmbeddingFunction")
+        SentenceTransformerEmbeddingFunction = embedding_module.SentenceTransformerEmbeddingFunction
         import torch
 
         device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
@@ -532,14 +580,13 @@ def _build_embedding_function(use_gpu: bool = False,
 
         logger.info(
             "🚀 ChromaDB GPU Embedding: device=%s  mixed_precision=%s",
-            device, mixed_precision,
+            device,
+            mixed_precision,
         )
         return ef
 
     except Exception as exc:
-        logger.warning(
-            "⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc
-        )
+        logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
         return None
 
 
@@ -556,21 +603,23 @@ class DocumentStore:
     def __init__(
         self,
         store_dir: Path,
-        top_k: Optional[int] = None,
-        chunk_size: Optional[int] = None,
-        chunk_overlap: Optional[int] = None,
+        top_k: int | None = None,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
         use_gpu: bool = False,
         gpu_device: int = 0,
         mixed_precision: bool = False,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         initialize_vector: bool = True,
     ) -> None:
         self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
-        self.index_file    = self.store_dir / "index.json"
+        self.index_file = self.store_dir / "index.json"
         self.default_top_k = top_k if top_k is not None else getattr(self.cfg, "RAG_TOP_K", 3)
-        self._chunk_size = chunk_size if chunk_size is not None else getattr(self.cfg, "RAG_CHUNK_SIZE", 1000)
+        self._chunk_size = (
+            chunk_size if chunk_size is not None else getattr(self.cfg, "RAG_CHUNK_SIZE", 1000)
+        )
         self._chunk_overlap = (
             chunk_overlap
             if chunk_overlap is not None
@@ -578,21 +627,27 @@ class DocumentStore:
         )
 
         # GPU embedding ayarları
-        self._use_gpu          = use_gpu
-        self._gpu_device       = gpu_device
-        self._mixed_precision  = mixed_precision
+        self._use_gpu = use_gpu
+        self._gpu_device = gpu_device
+        self._mixed_precision = mixed_precision
 
         # ChromaDB delete+upsert atomikliği için lock
         self._write_lock = threading.Lock()
 
         # Meta verileri yükle
-        self._index: Dict[str, Dict] = self._load_index()
+        self._index: dict[str, dict] = self._load_index()
 
-        self._vector_backend = str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
-        self._is_local_llm_provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower() == "ollama"
+        self._vector_backend = (
+            str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
+        )
+        self._is_local_llm_provider = (
+            str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower() == "ollama"
+        )
         self._local_hybrid_enabled = bool(getattr(self.cfg, "RAG_LOCAL_ENABLE_HYBRID", False))
         self._graph_rag_enabled = bool(getattr(self.cfg, "ENABLE_GRAPH_RAG", True))
-        self._graph_root_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()) or Path.cwd()).resolve()
+        self._graph_root_dir = Path(
+            getattr(self.cfg, "BASE_DIR", Path.cwd()) or Path.cwd()
+        ).resolve()
         self._graph_index = GraphIndex(
             self._graph_root_dir,
             max_files=int(getattr(self.cfg, "GRAPH_RAG_MAX_FILES", 5000) or 5000),
@@ -604,10 +659,12 @@ class DocumentStore:
         self._pgvector_available = False
 
         self.chroma_client = None
-        self.collection    = None
+        self.collection = None
         self.pg_engine = None
         self._pg_embedding_model = None
-        self._pg_table = str(getattr(self.cfg, "PGVECTOR_TABLE", "rag_embeddings") or "rag_embeddings")
+        self._pg_table = str(
+            getattr(self.cfg, "PGVECTOR_TABLE", "rag_embeddings") or "rag_embeddings"
+        )
         self._pg_embedding_dim = int(getattr(self.cfg, "PGVECTOR_EMBEDDING_DIM", 384) or 384)
         self._pg_embedding_model_name = str(
             getattr(self.cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2"
@@ -677,7 +734,7 @@ class DocumentStore:
                 mixed_precision=self._mixed_precision,
             )
 
-            create_kwargs: Dict = {"metadata": {"hnsw:space": "cosine"}}
+            create_kwargs: dict = {"metadata": {"hnsw:space": "cosine"}}
             if embedding_fn is not None:
                 create_kwargs["embedding_function"] = embedding_fn
 
@@ -686,9 +743,7 @@ class DocumentStore:
                 **create_kwargs,
             )
 
-            device_info = (
-                f"cuda:{self._gpu_device}" if self._use_gpu and embedding_fn else "cpu"
-            )
+            device_info = f"cuda:{self._gpu_device}" if self._use_gpu and embedding_fn else "cpu"
             logger.info(
                 "ChromaDB vektör veritabanı başlatıldı. Embedding device: %s",
                 device_info,
@@ -700,6 +755,7 @@ class DocumentStore:
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
         import sqlite3
+
         try:
             db_path = self.store_dir / "bm25_fts.db"
             self.fts_conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -725,7 +781,7 @@ class DocumentStore:
                             session_id = meta.get("session_id", "global")
                             self.fts_conn.execute(
                                 "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
-                                (doc_id, session_id, content)
+                                (doc_id, session_id, content),
                             )
                         except Exception:
                             pass
@@ -740,14 +796,16 @@ class DocumentStore:
         return url.replace("+asyncpg", "")
 
     @staticmethod
-    def _format_vector_for_sql(values: List[float]) -> str:
+    def _format_vector_for_sql(values: builtins.list[float]) -> str:
         return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
         db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
         if not db_url.startswith("postgresql"):
-            logger.warning("pgvector backend için PostgreSQL DATABASE_URL gerekli. Alınan: %s", db_url)
+            logger.warning(
+                "pgvector backend için PostgreSQL DATABASE_URL gerekli. Alınan: %s", db_url
+            )
             return
 
         if not self._check_import("sqlalchemy") or not self._check_import("pgvector"):
@@ -762,7 +820,8 @@ class DocumentStore:
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
             with self.pg_engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                conn.execute(text(f"""
+                conn.execute(
+                    text(f"""
                     CREATE TABLE IF NOT EXISTS {self._pg_table} (
                         doc_id TEXT NOT NULL,
                         parent_id TEXT NOT NULL,
@@ -774,19 +833,38 @@ class DocumentStore:
                         embedding vector({self._pg_embedding_dim}),
                         PRIMARY KEY (doc_id, chunk_index)
                     )
-                """))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_embedding_hnsw ON {self._pg_table} USING hnsw (embedding vector_cosine_ops)"))
+                """)
+                )
+                conn.execute(
+                    text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_embedding_hnsw ON {self._pg_table} USING hnsw (embedding vector_cosine_ops)"
+                    )
+                )
 
             self._pg_embedding_model = SentenceTransformer(self._pg_embedding_model_name)
             self._pgvector_available = True
-            logger.info("pgvector backend başlatıldı: table=%s model=%s", self._pg_table, self._pg_embedding_model_name)
+            logger.info(
+                "pgvector backend başlatıldı: table=%s model=%s",
+                self._pg_table,
+                self._pg_embedding_model_name,
+            )
         except Exception as exc:
             logger.error("pgvector başlatma hatası: %s", exc)
             self._pgvector_available = False
 
-    def _pgvector_embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def _pgvector_embed_texts(
+        self, texts: builtins.list[str]
+    ) -> builtins.list[builtins.list[float]]:
         if not self._pg_embedding_model or not texts:
             return []
         try:
@@ -803,9 +881,13 @@ class DocumentStore:
         session_id: str,
         title: str,
         source: str,
-        chunks: List[str],
+        chunks: builtins.list[str],
     ) -> None:
-        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None) or not chunks:
+        if (
+            not getattr(self, "_pgvector_available", False)
+            or not getattr(self, "pg_engine", None)
+            or not chunks
+        ):
             return
         try:
             from sqlalchemy import text
@@ -816,7 +898,9 @@ class DocumentStore:
 
             with self.pg_engine.begin() as conn:
                 conn.execute(
-                    text(f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),
+                    text(
+                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
+                    ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
                 rows = [
@@ -830,7 +914,7 @@ class DocumentStore:
                         "chunk_content": chunk,
                         "embedding": self._format_vector_for_sql(vec),
                     }
-                    for idx, (chunk, vec) in enumerate(zip(chunks, vectors))
+                    for idx, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False))
                 ]
                 conn.execute(
                     text(f"""
@@ -860,13 +944,15 @@ class DocumentStore:
 
             with self.pg_engine.begin() as conn:
                 conn.execute(
-                    text(f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),
+                    text(
+                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
+                    ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
         except Exception as exc:
             logger.error("pgvector silme hatası: %s", exc)
 
-    def _load_index(self) -> Dict[str, Dict]:
+    def _load_index(self) -> dict[str, dict]:
         if self.index_file.exists():
             try:
                 return json.loads(self.index_file.read_text(encoding="utf-8"))
@@ -884,7 +970,7 @@ class DocumentStore:
     #  BELGE YÖNETİMİ & CHUNKING
     # ─────────────────────────────────────────────
 
-    def _recursive_chunk_text(self, text: str, size: int, overlap: int) -> List[str]:
+    def _recursive_chunk_text(self, text: str, size: int, overlap: int) -> builtins.list[str]:
         """
         Metni kod yapısına uygun ayırıcılarla (separators) mantıksal parçalara böler.
         LangChain'in RecursiveCharacterTextSplitter mantığını simüle eder.
@@ -898,7 +984,7 @@ class DocumentStore:
         # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
         separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
 
-        def _split(text_part: str, sep_idx: int) -> List[str]:
+        def _split(text_part: str, sep_idx: int) -> builtins.list[str]:
             """Recursive bölme fonksiyonu"""
             if len(text_part) <= size:
                 return [text_part]
@@ -906,14 +992,14 @@ class DocumentStore:
             if sep_idx >= len(separators):
                 # Hiçbir ayırıcı ile bölünemiyorsa zorla böl (character limit)
                 step = max(1, size - overlap)
-                return [text_part[i:i + size] for i in range(0, len(text_part), step)]
+                return [text_part[i : i + size] for i in range(0, len(text_part), step)]
 
             sep = separators[sep_idx]
             # Ayırıcıya göre böl (ayırıcı başta kalsın diye lookahead simülasyonu yapılabilir ama basit split yeterli)
             # Not: Python split ayırıcıyı yutar, tekrar eklemek gerekebilir.
             # Burada basit split kullanıyoruz, bağlam kaybı olmaması için overlap önemli.
             if sep == "":
-                parts = list(text_part) # Karakter karakter
+                parts = list(text_part)  # Karakter karakter
             else:
                 parts = text_part.split(sep)
                 # Ayırıcıyı parçalara geri ekleyelim (özellikle class/def için önemli)
@@ -951,12 +1037,20 @@ class DocumentStore:
     def _chunk_text(
         self,
         text: str,
-        chunk_size: Optional[int] = None,
-        chunk_overlap: Optional[int] = None,
-    ) -> List[str]:
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> builtins.list[str]:
         """Chunking ayarlarını Config'den çözerek recursive parçalama yap."""
-        size_raw = chunk_size if chunk_size is not None else getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
-        overlap_raw = chunk_overlap if chunk_overlap is not None else getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+        size_raw = (
+            chunk_size
+            if chunk_size is not None
+            else getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
+        )
+        overlap_raw = (
+            chunk_overlap
+            if chunk_overlap is not None
+            else getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+        )
         c_size = int(size_raw or 0)
         c_overlap = int(overlap_raw or 0)
         if c_size <= 0:
@@ -970,8 +1064,8 @@ class DocumentStore:
         title: str,
         content: str,
         source: str = "",
-        tags: Optional[List[str]] = None,
-        session_id: str = "global"
+        tags: builtins.list[str] | None = None,
+        session_id: str = "global",
     ) -> str:
         doc_id = uuid.uuid4().hex[:12]
         parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
@@ -1026,7 +1120,10 @@ class DocumentStore:
                     if chunks:
                         logger.info(
                             "ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi. (Oturum: %s)",
-                            doc_id, parent_id, len(chunks), session_id
+                            doc_id,
+                            parent_id,
+                            len(chunks),
+                            session_id,
                         )
                 except Exception as exc:
                     logger.error("ChromaDB belge ekleme hatası: %s", exc)
@@ -1034,7 +1131,13 @@ class DocumentStore:
             if getattr(self, "_pgvector_available", False):
                 self._upsert_pgvector_chunks(doc_id, parent_id, session_id, title, source, chunks)
 
-        logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
+        logger.info(
+            "RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]",
+            doc_id,
+            title,
+            len(content),
+            session_id,
+        )
         return doc_id
 
     async def add_document(
@@ -1042,7 +1145,7 @@ class DocumentStore:
         title: str,
         content: str,
         source: str = "",
-        tags: Optional[List[str]] = None,
+        tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> str:
         return await asyncio.to_thread(
@@ -1059,7 +1162,9 @@ class DocumentStore:
         """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"Yalnızca http/https URL'lerine izin verilir, alınan: '{parsed.scheme}'")
+            raise ValueError(
+                f"Yalnızca http/https URL'lerine izin verilir, alınan: '{parsed.scheme}'"
+            )
         hostname = parsed.hostname or ""
         if not hostname:
             raise ValueError("URL geçerli bir hostname içermiyor.")
@@ -1075,11 +1180,23 @@ class DocumentStore:
         if hostname.lower() in blocked_hosts:
             raise ValueError(f"Engellenen hostname: {hostname}")
 
-    async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
+    async def add_document_from_url(
+        self,
+        url: str,
+        title: str = "",
+        tags: builtins.list[str] | None = None,
+        session_id: str = "global",
+    ) -> tuple[bool, str]:
         import httpx
+
         try:
             self._validate_url_safe(url)
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True, max_redirects=5, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            async with httpx.AsyncClient(
+                timeout=15,
+                follow_redirects=True,
+                max_redirects=5,
+                headers={"User-Agent": "Mozilla/5.0"},
+            ) as client:
                 resp = await client.get(url)
             resp.raise_for_status()
             content = self._clean_html(resp.text)
@@ -1094,15 +1211,44 @@ class DocumentStore:
             logger.error("URL belge çekme hatası: %s", exc)
             return False, f"[HATA] URL belge eklenemedi: {exc}"
 
-    def add_document_from_file(self, path: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
+    def add_document_from_file(
+        self,
+        path: str,
+        title: str = "",
+        tags: builtins.list[str] | None = None,
+        session_id: str = "global",
+    ) -> tuple[bool, str]:
         # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal riski taşır
-        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".gitignore", ".dockerignore"}
+        _TEXT_EXTS = {
+            ".py",
+            ".txt",
+            ".md",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".ini",
+            ".cfg",
+            ".html",
+            ".css",
+            ".js",
+            ".ts",
+            ".sh",
+            ".sql",
+            ".csv",
+            ".xml",
+            ".rst",
+            ".gitignore",
+            ".dockerignore",
+        }
         # Hassas yol kalıpları — proje kökü dışındaki kritik dosyalara erişimi engelle
         _BLOCKED_PARTS = {".env", ".git", "sessions", "__pycache__", "logs", "proc", "etc", "sys"}
         try:
             file = Path(path).resolve()
-            if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
-            if not file.is_file(): return False, f"✗ Belirtilen yol bir dosya değil: {path}"
+            if not file.exists():
+                return False, f"✗ Dosya bulunamadı: {path}"
+            if not file.is_file():
+                return False, f"✗ Belirtilen yol bir dosya değil: {path}"
             # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara izin ver
             # (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
             _allowed_roots = (Config.BASE_DIR, Path(tempfile.gettempdir()).resolve())
@@ -1110,29 +1256,40 @@ class DocumentStore:
                 return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
             # Path traversal koruması: dosyanın hassas dizinler içermediğini doğrula
             if _BLOCKED_PARTS.intersection(set(file.parts)):
-                return False, f"✗ Erişim engellendi: güvenlik politikası bu yola izin vermiyor: {path}"
-            if file.suffix.lower() not in _TEXT_EXTS: return False, f"✗ Desteklenmeyen dosya türü: {file.suffix}"
+                return (
+                    False,
+                    f"✗ Erişim engellendi: güvenlik politikası bu yola izin vermiyor: {path}",
+                )
+            if file.suffix.lower() not in _TEXT_EXTS:
+                return False, f"✗ Desteklenmeyen dosya türü: {file.suffix}"
 
             content = file.read_text(encoding="utf-8", errors="replace")
-            if not content.strip(): return False, f"✗ Dosya boş: {path}"
-            if not title: title = file.name
+            if not content.strip():
+                return False, f"✗ Dosya boş: {path}"
+            if not title:
+                title = file.name
 
             source = f"file://{file}"
-            doc_id = self._add_document_sync(title, content, source=source, tags=tags or [], session_id=session_id)
-            return True, f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} ({len(content):,} karakter)"
+            doc_id = self._add_document_sync(
+                title, content, source=source, tags=tags or [], session_id=session_id
+            )
+            return (
+                True,
+                f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} ({len(content):,} karakter)",
+            )
         except Exception as exc:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
             return False, f"[HATA] Dosya eklenemedi: {exc}"
 
-    def get_index_info(self, session_id: Optional[str] = None) -> List[Dict]:
+    def get_index_info(self, session_id: str | None = None) -> builtins.list[dict]:
         return [
             {
-                "id":      doc_id,
-                "title":   meta.get("title", "?"),
-                "source":  meta.get("source", ""),
-                "size":    meta.get("size", 0),
+                "id": doc_id,
+                "title": meta.get("title", "?"),
+                "source": meta.get("source", ""),
+                "size": meta.get("size", 0),
                 "preview": meta.get("preview", "")[:120],
-                "tags":    meta.get("tags", []),
+                "tags": meta.get("tags", []),
                 "session_id": meta.get("session_id", "global"),
                 "access_count": int(meta.get("access_count", 0) or 0),
             }
@@ -1153,7 +1310,7 @@ class DocumentStore:
         # İzolasyon yetki kontrolü
         meta = self._index[doc_id]
         if meta.get("session_id", "global") != session_id and session_id != "global":
-            return f"✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
+            return "✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
 
         with self._write_lock:
             if doc_id not in self._index:
@@ -1193,14 +1350,14 @@ class DocumentStore:
         meta["access_count"] = int(meta.get("access_count", 0) or 0) + 1
         self._save_index()
 
-    def get_document(self, doc_id: str, session_id: str = "global") -> Tuple[bool, str]:
+    def get_document(self, doc_id: str, session_id: str = "global") -> tuple[bool, str]:
         """Belge ID ile tam içerik getir (İzolasyon Korumalı)."""
         if doc_id not in self._index:
             return False, f"✗ Belge bulunamadı: {doc_id}"
 
         meta = self._index[doc_id]
         if meta.get("session_id", "global") != session_id and session_id != "global":
-            return False, f"✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
+            return False, "✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
 
         doc_file = self.store_dir / f"{doc_id}.txt"
         if not doc_file.exists():
@@ -1213,7 +1370,7 @@ class DocumentStore:
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────
 
-    def rebuild_graph_index(self, root_dir: Optional[str] = None) -> Tuple[bool, str]:
+    def rebuild_graph_index(self, root_dir: str | None = None) -> tuple[bool, str]:
         """Kod tabanı için modül bağımlılık grafiğini yeniden oluştur."""
         if not self._graph_rag_enabled:
             return False, "GraphRAG devre dışı."
@@ -1230,7 +1387,7 @@ class DocumentStore:
             return
         self.rebuild_graph_index()
 
-    def search_graph(self, query: str, top_k: int = 5) -> Tuple[bool, str]:
+    def search_graph(self, query: str, top_k: int = 5) -> tuple[bool, str]:
         """GraphRAG üzerinden modül ilişkilerini ve ilgili düğümleri arar."""
         if not self._graph_rag_enabled:
             return False, "GraphRAG devre dışı."
@@ -1262,7 +1419,7 @@ class DocumentStore:
                 lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
         return True, "\n".join(lines)
 
-    def explain_dependency_path(self, source: str, target: str) -> Tuple[bool, str]:
+    def explain_dependency_path(self, source: str, target: str) -> tuple[bool, str]:
         """İki modül arasındaki en kısa bağımlılık yolunu açıklar."""
         if not self._graph_rag_enabled:
             return False, "GraphRAG devre dışı."
@@ -1277,7 +1434,7 @@ class DocumentStore:
             lines.append(f"{index}. {node_id}")
         return True, "\n".join(lines)
 
-    def analyze_graph_impact(self, target: str, top_k: int = 10) -> Tuple[bool, str]:
+    def analyze_graph_impact(self, target: str, top_k: int = 10) -> tuple[bool, str]:
         """Bir modül veya endpoint değişiminin olası etki alanını açıklar."""
         ok, analysis = self.graph_impact_details(target, top_k=top_k)
         if not ok:
@@ -1302,7 +1459,9 @@ class DocumentStore:
         if impacted_endpoints:
             lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
         if impacted_endpoint_handlers:
-            lines.append(f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}")
+            lines.append(
+                f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}"
+            )
         if caller_files:
             lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
         if review_targets:
@@ -1313,7 +1472,9 @@ class DocumentStore:
                 lines.append(f"  {idx}. {' -> '.join(path)}")
         return True, "\n".join(lines)
 
-    def graph_impact_details(self, target: str, top_k: int = 10) -> Tuple[bool, Dict[str, Any] | str]:
+    def graph_impact_details(
+        self, target: str, top_k: int = 10
+    ) -> tuple[bool, dict[str, Any] | str]:
         """GraphRAG etki analizini yapılandırılmış veri olarak döndürür."""
         if not self._graph_rag_enabled:
             return False, "GraphRAG devre dışı."
@@ -1334,15 +1495,15 @@ class DocumentStore:
         session_id: str = "global",
         include_code_graph: bool = True,
         limit: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """pgvector/Chroma belge katmanını bilgi grafı düğüm/kenarlarına yansıtır.
 
         Neo4j gibi bir katmana doğrudan yazmak yerine, önce taşınabilir bir projection
         üretir. Böylece ileride GraphRAG için `MERGE` tabanlı sync işleri kolaylaşır.
         """
         max_items = max(1, min(int(limit or 100), 1000))
-        nodes: List[KnowledgeGraphNode] = []
-        edges: List[KnowledgeGraphEdge] = []
+        nodes: builtins.list[KnowledgeGraphNode] = []
+        edges: builtins.list[KnowledgeGraphEdge] = []
 
         doc_items = list(self._index.items())[:max_items]
         for doc_id, meta in doc_items:
@@ -1360,7 +1521,9 @@ class DocumentStore:
                         "title": title,
                         "source": source,
                         "session_id": doc_session,
-                        "vector_backend": "pgvector" if getattr(self, "_pgvector_available", False) else self._vector_backend,
+                        "vector_backend": "pgvector"
+                        if getattr(self, "_pgvector_available", False)
+                        else self._vector_backend,
                     },
                 )
             )
@@ -1410,7 +1573,9 @@ class DocumentStore:
                     edge_count += 1
                     if edge_count > max_items:
                         break
-                    edge_kinds = sorted(self._graph_index.edge_kinds.get((source_id, target_id), {"RELATED_TO"}))
+                    edge_kinds = sorted(
+                        self._graph_index.edge_kinds.get((source_id, target_id), {"RELATED_TO"})
+                    )
                     edges.append(
                         KnowledgeGraphEdge(
                             source=f"code:{source_id}",
@@ -1433,7 +1598,9 @@ class DocumentStore:
             "nodes": unique_nodes,
             "edges": edges,
             "cypher_hint": cypher_hint,
-            "vector_backend": "pgvector" if getattr(self, "_pgvector_available", False) else self._vector_backend,
+            "vector_backend": "pgvector"
+            if getattr(self, "_pgvector_available", False)
+            else self._vector_backend,
         }
 
     def build_graphrag_search_plan(
@@ -1445,22 +1612,32 @@ class DocumentStore:
     ) -> GraphRAGSearchPlan:
         """Vektör sonuçlarını bilgi grafı düğümleri ve dağıtık ajan topic'leriyle eşler."""
         normalized = str(query or "").strip()
-        vector_backend = "pgvector" if getattr(self, "_pgvector_available", False) else (
-            "chromadb" if self._chroma_available and self.collection else "bm25"
+        vector_backend = (
+            "pgvector"
+            if getattr(self, "_pgvector_available", False)
+            else ("chromadb" if self._chroma_available and self.collection else "bm25")
         )
-        vector_results: List[Dict[str, Any]] = []
+        vector_results: builtins.list[dict[str, Any]] = []
         if normalized:
             if getattr(self, "_pgvector_available", False):
                 vector_results = self._fetch_pgvector(normalized, top_k, session_id)
             elif self._chroma_available and self.collection:  # pragma: no cover
                 vector_results = self._fetch_chroma(normalized, top_k, session_id)
 
-        vector_candidates = [str(item.get("doc_id", "") or "") for item in vector_results if str(item.get("doc_id", "") or "")]
-        projection = self.build_knowledge_graph_projection(session_id=session_id, include_code_graph=True, limit=max(20, top_k * 10))
+        vector_candidates = [
+            str(item.get("doc_id", "") or "")
+            for item in vector_results
+            if str(item.get("doc_id", "") or "")
+        ]
+        projection = self.build_knowledge_graph_projection(
+            session_id=session_id, include_code_graph=True, limit=max(20, top_k * 10)
+        )
         graph_nodes = list(projection["nodes"])
         graph_edges = list(projection["edges"])
+
         def _broker_topic(receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
             return f"{namespace}.{str(receiver or 'unknown').strip().lower() or 'unknown'}.{str(intent or 'mixed').strip().lower() or 'mixed'}"
+
         broker_topics = [
             _broker_topic(receiver="researcher", intent="rag_search"),
             _broker_topic(receiver="reviewer", intent="graph_review"),
@@ -1475,33 +1652,51 @@ class DocumentStore:
             cypher_hint=str(projection.get("cypher_hint", "")),
         )
 
-    def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
-        if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
+    def _search_sync(
+        self, query: str, top_k: int | None = None, mode: str = "auto", session_id: str = "global"
+    ) -> tuple[bool, str]:
+        if top_k is None:
+            top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
 
-        session_docs = [k for k, v in self._index.items() if v.get("session_id", "global") == session_id]
+        session_docs = [
+            k for k, v in self._index.items() if v.get("session_id", "global") == session_id
+        ]
         if mode != "graph" and not session_docs:
-            return False, "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>"
+            return (
+                False,
+                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>",
+            )
 
         if mode == "graph":
             return self.search_graph(query, top_k)
 
         if mode == "vector":
-            if getattr(self, "_pgvector_available", False): return self._pgvector_search(query, top_k, session_id)
-            if self._chroma_available and self.collection: return self._chroma_search(query, top_k, session_id)
+            if getattr(self, "_pgvector_available", False):
+                return self._pgvector_search(query, top_k, session_id)
+            if self._chroma_available and self.collection:
+                return self._chroma_search(query, top_k, session_id)
             return False, "Vektör arama kullanılamıyor — pgvector/ChromaDB hazır değil."
 
         if mode == "bm25":
-            if self._bm25_available: return self._bm25_search(query, top_k, session_id)
+            if self._bm25_available:
+                return self._bm25_search(query, top_k, session_id)
             return False, "BM25 kullanılamıyor — SQLite FTS5 başlatılamadı."
 
-        if mode == "keyword": return self._keyword_search(query, top_k, session_id)
+        if mode == "keyword":
+            return self._keyword_search(query, top_k, session_id)
 
-        has_vector = getattr(self, "_pgvector_available", False) or (self._chroma_available and self.collection)
+        has_vector = getattr(self, "_pgvector_available", False) or (
+            self._chroma_available and self.collection
+        )
         preferred_vector_backend = str(getattr(self, "_vector_backend", "") or "").strip().lower()
 
         # Yerel LLM + RAG birlikte çalışırken default olarak hibrid sorguyu kapatıp
         # tek motorlu akışla CPU/SQLite baskısını azalt.
-        if mode == "auto" and getattr(self, "_is_local_llm_provider", False) and not getattr(self, "_local_hybrid_enabled", False):
+        if (
+            mode == "auto"
+            and getattr(self, "_is_local_llm_provider", False)
+            and not getattr(self, "_local_hybrid_enabled", False)
+        ):
             if has_vector:
                 if getattr(self, "_pgvector_available", False):
                     return self._pgvector_search(query, top_k, session_id)
@@ -1511,40 +1706,58 @@ class DocumentStore:
                 return self._bm25_search(query, top_k, session_id)
             return self._keyword_search(query, top_k, session_id)
 
-        if mode == "auto" and preferred_vector_backend == "pgvector" and getattr(self, "_pgvector_available", False):
+        if (
+            mode == "auto"
+            and preferred_vector_backend == "pgvector"
+            and getattr(self, "_pgvector_available", False)
+        ):
             try:
                 return self._pgvector_search(query, top_k, session_id)
             except Exception as exc:
-                logger.warning("Tercih edilen pgvector araması hatası (fallback yapılıyor): %s", exc)
+                logger.warning(
+                    "Tercih edilen pgvector araması hatası (fallback yapılıyor): %s", exc
+                )
 
-        if mode == "auto" and preferred_vector_backend == "chroma" and self._chroma_available and self.collection:
+        if (
+            mode == "auto"
+            and preferred_vector_backend == "chroma"
+            and self._chroma_available
+            and self.collection
+        ):
             try:
                 return self._chroma_search(query, top_k, session_id)
             except Exception as exc:
                 logger.warning("Tercih edilen Chroma araması hatası (fallback yapılıyor): %s", exc)
 
         if has_vector and self._bm25_available:
-            try: return self._rrf_search(query, top_k, session_id)
-            except Exception as exc: logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
+            try:
+                return self._rrf_search(query, top_k, session_id)
+            except Exception as exc:
+                logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
 
         if getattr(self, "_pgvector_available", False):
-            try: return self._pgvector_search(query, top_k, session_id)
-            except Exception as exc: logger.warning("pgvector arama hatası (BM25'e düşülüyor): %s", exc)
+            try:
+                return self._pgvector_search(query, top_k, session_id)
+            except Exception as exc:
+                logger.warning("pgvector arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._chroma_available and self.collection:
-            try: return self._chroma_search(query, top_k, session_id)
-            except Exception as exc: logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
+            try:
+                return self._chroma_search(query, top_k, session_id)
+            except Exception as exc:
+                logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
-        if self._bm25_available: return self._bm25_search(query, top_k, session_id)
+        if self._bm25_available:
+            return self._bm25_search(query, top_k, session_id)
         return self._keyword_search(query, top_k, session_id)
 
     async def search(
         self,
         query: str,
-        top_k: Optional[int] = None,
+        top_k: int | None = None,
         mode: str = "auto",
         session_id: str = "global",
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         tracer = _otel_trace.get_tracer(__name__) if _otel_trace is not None else None
         if tracer is None:
             result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
@@ -1565,6 +1778,7 @@ class DocumentStore:
         """LLM-as-a-Judge değerlendirmesini arka planda zamanla."""
         try:
             from core.judge import get_llm_judge
+
             judge = get_llm_judge()
             if not judge.enabled:
                 return
@@ -1577,11 +1791,16 @@ class DocumentStore:
         except Exception as exc:
             logger.debug("Judge zamanlama hatası: %s", exc)
 
-    def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
-        vector_results = self._fetch_pgvector(query, top_k, session_id) if getattr(self, "_pgvector_available", False) else self._fetch_chroma(query, top_k, session_id)
+    def _rrf_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
+        vector_results = (
+            self._fetch_pgvector(query, top_k, session_id)
+            if getattr(self, "_pgvector_available", False)
+            else self._fetch_chroma(query, top_k, session_id)
+        )
         bm25_results = self._fetch_bm25(query, top_k, session_id)
 
-        if not vector_results and not bm25_results: return self._keyword_search(query, top_k, session_id)
+        if not vector_results and not bm25_results:
+            return self._keyword_search(query, top_k, session_id)
 
         k = 60
         rrf_scores, docs_map = {}, {}
@@ -1593,7 +1812,8 @@ class DocumentStore:
 
         for rank, res in enumerate(bm25_results):
             doc_id = res["id"]
-            if doc_id not in docs_map: docs_map[doc_id] = res
+            if doc_id not in docs_map:
+                docs_map[doc_id] = res
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
 
         ranked_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
@@ -1604,7 +1824,9 @@ class DocumentStore:
             final_results.append(doc_info)
 
         vector_name = "pgvector" if getattr(self, "_pgvector_available", False) else "ChromaDB"
-        return self._format_results_from_struct(final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)")
+        return self._format_results_from_struct(
+            final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)"
+        )
 
     def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list:
         if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
@@ -1626,7 +1848,10 @@ class DocumentStore:
                     {
                         "qvec": qvec,
                         "session_id": session_id,
-                        "lim": max(top_k * (2 if getattr(self, "_is_local_llm_provider", False) else 3), top_k),
+                        "lim": max(
+                            top_k * (2 if getattr(self, "_is_local_llm_provider", False) else 3),
+                            top_k,
+                        ),
                     },
                 ).fetchall()
 
@@ -1652,24 +1877,32 @@ class DocumentStore:
             logger.warning("pgvector arama hatası: %s", exc)
             return []
 
-    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         results = self._fetch_pgvector(query, top_k, session_id)
-        return self._format_results_from_struct(results, query, source_name="Vektör Arama (pgvector)")
+        return self._format_results_from_struct(
+            results, query, source_name="Vektör Arama (pgvector)"
+        )
 
     def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list:
-        try: collection_size = self.collection.count()
-        except Exception: collection_size = top_k * 2
+        try:
+            collection_size = self.collection.count()
+        except Exception:
+            collection_size = top_k * 2
 
-        local_multiplier = max(1, int(getattr(self.cfg, "RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER", 1) or 1))
+        local_multiplier = max(
+            1, int(getattr(self.cfg, "RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER", 1) or 1)
+        )
         default_multiplier = 2
-        multiplier = local_multiplier if getattr(self, "_is_local_llm_provider", False) else default_multiplier
+        multiplier = (
+            local_multiplier
+            if getattr(self, "_is_local_llm_provider", False)
+            else default_multiplier
+        )
         n_results = min(top_k * multiplier, max(collection_size, 1))
 
         # Filtreleme ChromaDB düzeyinde Where parametresiyle yapılıyor
         results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            where={"session_id": session_id}
+            query_texts=[query], n_results=n_results, where={"session_id": session_id}
         )
 
         ids = results.get("ids") or []
@@ -1692,20 +1925,24 @@ class DocumentStore:
             if parent_id in seen_parents and len(seen_parents) >= top_k:  # pragma: no cover
                 continue
             seen_parents.add(parent_id)
-            found_docs.append({
-                "id": parent_id,
-                "title": str(meta.get("title", "?") or "?"),
-                "source": str(meta.get("source", "") or ""),
-                "snippet": str(chunk_content or ""),
-                "score": 1.0,
-            })
+            found_docs.append(
+                {
+                    "id": parent_id,
+                    "title": str(meta.get("title", "?") or "?"),
+                    "source": str(meta.get("source", "") or ""),
+                    "snippet": str(chunk_content or ""),
+                    "score": 1.0,
+                }
+            )
             if len(found_docs) >= top_k:
                 break
         return found_docs
 
-    def _chroma_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+    def _chroma_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         results = self._fetch_chroma(query, top_k, session_id)
-        return self._format_results_from_struct(results, query, source_name="Vektör Arama (ChromaDB + Chunking)")
+        return self._format_results_from_struct(
+            results, query, source_name="Vektör Arama (ChromaDB + Chunking)"
+        )
 
     def _update_bm25_cache_on_add(self, doc_id: str, content: str) -> None:
         """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet.
@@ -1717,7 +1954,7 @@ class DocumentStore:
         self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
         self.fts_conn.execute(
             "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
-            (doc_id, session_id, content)
+            (doc_id, session_id, content),
         )
         self.fts_conn.commit()
 
@@ -1735,7 +1972,7 @@ class DocumentStore:
         if not self._bm25_available:
             return []
 
-        words = [w for w in query.replace('"', '').replace("'", "").split() if w.isalnum()]
+        words = [w for w in query.replace('"', "").replace("'", "").split() if w.isalnum()]
         if not words:
             return []
 
@@ -1764,7 +2001,6 @@ class DocumentStore:
             # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı). Bunu pozitife çeviriyoruz.
             score = abs(row["score"])
 
-
             meta = self._index.get(doc_id, {})
             doc_file = self.store_dir / f"{doc_id}.txt"
             try:
@@ -1772,50 +2008,71 @@ class DocumentStore:
             except FileNotFoundError:
                 content = ""
             snippet = self._extract_snippet(content, query)
-            results.append({
-                "id": doc_id, "title": meta.get("title", "?"),
-                "source": meta.get("source", ""), "snippet": snippet, "score": score
-            })
+            results.append(
+                {
+                    "id": doc_id,
+                    "title": meta.get("title", "?"),
+                    "source": meta.get("source", ""),
+                    "snippet": snippet,
+                    "score": score,
+                }
+            )
         return results
 
-    def _bm25_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+    def _bm25_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         results = self._fetch_bm25(query, top_k, session_id)
         return self._format_results_from_struct(results, query, source_name="BM25")
 
-    def _keyword_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+    def _keyword_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         keywords = query.lower().split()
         scored = []
 
         for doc_id, meta in list(self._index.items()):
-            if meta.get("session_id", "global") != session_id: continue
+            if meta.get("session_id", "global") != session_id:
+                continue
 
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try: text = doc_file.read_text(encoding="utf-8").lower()
-            except FileNotFoundError: text = ""
+            try:
+                text = doc_file.read_text(encoding="utf-8").lower()
+            except FileNotFoundError:
+                text = ""
 
             title_lower = meta["title"].lower()
             tags_lower = " ".join(meta.get("tags", [])).lower()
 
-            score = sum(text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3 for kw in keywords)
-            if score > 0: scored.append((doc_id, score))
+            score = sum(
+                text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3
+                for kw in keywords
+            )
+            if score > 0:
+                scored.append((doc_id, score))
 
         ranked = sorted(scored, key=lambda x: x[1], reverse=True)[:top_k]
 
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try: content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError: content = ""
+            try:
+                content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                content = ""
             meta = self._index.get(doc_id, {})
             snippet = self._extract_snippet(content, query)
-            results.append({
-                "id": doc_id, "title": meta.get("title", "?"),
-                "source": meta.get("source", ""), "snippet": snippet, "score": score
-            })
+            results.append(
+                {
+                    "id": doc_id,
+                    "title": meta.get("title", "?"),
+                    "source": meta.get("source", ""),
+                    "snippet": snippet,
+                    "score": score,
+                }
+            )
 
         return self._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi")
 
-    def _format_results_from_struct(self, results: list, query: str, source_name: str) -> Tuple[bool, str]:
+    def _format_results_from_struct(
+        self, results: list, query: str, source_name: str
+    ) -> tuple[bool, str]:
         """Ortak sonuç biçimlendirici."""
         if not results:
             return False, f"'{query}' için belge deposunda ilgili sonuç bulunamadı."
@@ -1823,11 +2080,11 @@ class DocumentStore:
         lines = [f"[RAG Arama: {query}] (Motor: {source_name})", ""]
         for res in results:
             lines.append(f"**[{res['id']}] {res['title']}**")
-            if res['source']:
+            if res["source"]:
                 lines.append(f"  Kaynak: {res['source']}")
 
             # Snippet uzunluğunu sınırla ve satır sonlarını temizle
-            snippet = res['snippet'].replace("\n", " ").strip()
+            snippet = res["snippet"].replace("\n", " ").strip()
             if len(snippet) > 400:
                 snippet = snippet[:400] + "..."
 
@@ -1863,7 +2120,7 @@ class DocumentStore:
         session_id: str,
         *,
         keep_recent_docs: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Oturumdaki eski RAG belgelerini özetleyip düşük değerli embedding'leri temizler."""
         normalized_session = str(session_id or "").strip() or "global"
         docs = [
@@ -1888,7 +2145,7 @@ class DocumentStore:
             ),
             reverse=True,
         )
-        removable: List[Tuple[str, Dict[str, Any]]] = []
+        removable: builtins.list[tuple[str, dict[str, Any]]] = []
         for doc_id, meta in sorted_docs[keep_count:]:
             tags = {str(tag).strip().lower() for tag in list(meta.get("tags", []) or [])}
             if "pinned" in tags or "memory-summary" in tags:
@@ -1938,8 +2195,12 @@ class DocumentStore:
             "summary_doc_id": summary_doc_id,
         }
 
-    def list_documents(self, session_id: Optional[str] = None) -> str:
-        docs = {k: v for k, v in self._index.items() if session_id is None or v.get("session_id", "global") == session_id}
+    def list_documents(self, session_id: str | None = None) -> str:
+        docs = {
+            k: v
+            for k, v in self._index.items()
+            if session_id is None or v.get("session_id", "global") == session_id
+        }
         if not docs:
             return "Belge deposu boş veya bu oturum için belge bulunamadı."
 
@@ -1948,7 +2209,9 @@ class DocumentStore:
             tags = ", ".join(meta.get("tags", [])) or "-"
             size_kb = meta.get("size", 0) / 1024
             lines.append(f"  [{doc_id}] {meta['title']}")
-            lines.append(f"    Kaynak: {meta.get('source', '-')} | Boyut: {size_kb:.1f} KB | Etiketler: {tags}")
+            lines.append(
+                f"    Kaynak: {meta.get('source', '-')} | Boyut: {size_kb:.1f} KB | Etiketler: {tags}"
+            )
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────

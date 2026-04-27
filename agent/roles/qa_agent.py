@@ -7,18 +7,17 @@ import configparser
 import json
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 from config import Config
 from core.ci_remediation import build_ci_remediation_payload
 from managers.code_manager import CodeManager
 from managers.security import SecurityManager
 
-from agent.base_agent import BaseAgent
-from agent.registry import AgentCatalog
 
-
-@AgentCatalog.register(capabilities=['test_generation', 'ci_remediation'], is_builtin=True)
+@AgentCatalog.register(capabilities=["test_generation", "ci_remediation"], is_builtin=True)
 class QAAgent(BaseAgent):
     """Coverage açığını analiz edip pytest tabanlı test taslağı üreten uzman ajan."""
 
@@ -36,9 +35,9 @@ class QAAgent(BaseAgent):
 
     def __init__(
         self,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         *,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="qa")
@@ -65,8 +64,12 @@ class QAAgent(BaseAgent):
         pattern = parts[0].strip() if parts else ""
         path = parts[1].strip() if len(parts) > 1 else "."
         file_glob = parts[2].strip() if len(parts) > 2 else "*"
-        context_lines = int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
-        _ok, out = await asyncio.to_thread(self.code.grep_files, pattern, path, file_glob, context_lines)
+        context_lines = (
+            int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
+        )
+        _ok, out = await asyncio.to_thread(
+            self.code.grep_files, pattern, path, file_glob, context_lines
+        )
         return out
 
     def _coverage_config_summary(self) -> dict[str, Any]:
@@ -100,7 +103,12 @@ class QAAgent(BaseAgent):
 
     async def _tool_ci_remediation(self, arg: str) -> str:
         payload = self._parse_json_payload(arg)
-        diagnosis = str(payload.pop("diagnosis", "Coverage açığı ve eksik testler için QA remediation planı hazırlanıyor.")).strip()
+        diagnosis = str(
+            payload.pop(
+                "diagnosis",
+                "Coverage açığı ve eksik testler için QA remediation planı hazırlanıyor.",
+            )
+        ).strip()
         remediation = build_ci_remediation_payload(payload, diagnosis)
         return json.dumps(remediation, ensure_ascii=False)
 
@@ -148,7 +156,6 @@ class QAAgent(BaseAgent):
         )
         return self._sanitize_llm_code(raw_output)
 
-
     async def _tool_write_file(self, arg: str) -> str:
         payload = self._parse_json_payload(arg)
         path = str(payload.get("path", "")).strip()
@@ -156,9 +163,13 @@ class QAAgent(BaseAgent):
         append = bool(payload.get("append", True))
 
         if not path:
-            return json.dumps({"success": False, "message": "'path' alanı zorunludur."}, ensure_ascii=False)
+            return json.dumps(
+                {"success": False, "message": "'path' alanı zorunludur."}, ensure_ascii=False
+            )
 
-        ok, msg = await asyncio.to_thread(self.code.write_generated_test, path, content, append=append)
+        ok, msg = await asyncio.to_thread(
+            self.code.write_generated_test, path, content, append=append
+        )
         return json.dumps({"success": ok, "message": msg, "path": path}, ensure_ascii=False)
 
     async def _tool_run_pytest(self, arg: str) -> str:
@@ -218,7 +229,9 @@ class QAAgent(BaseAgent):
             context = parts[2].strip() if len(parts) > 2 else ""
             generated = await self._generate_test_code(target_path.strip(), context.strip())
             test_path = self._suggest_test_path(target_path)
-            ok, msg = await asyncio.to_thread(self.code.write_generated_test, test_path, generated, append=True)
+            ok, msg = await asyncio.to_thread(
+                self.code.write_generated_test, test_path, generated, append=True
+            )
             return json.dumps(
                 {
                     "success": ok,
@@ -230,7 +243,18 @@ class QAAgent(BaseAgent):
                 ensure_ascii=False,
             )
 
-        if any(keyword in lower for keyword in ("coverage", "kapsama", "eksik test", "pytest", "test yaz", "test üret", "qa")):
+        if any(
+            keyword in lower
+            for keyword in (
+                "coverage",
+                "kapsama",
+                "eksik test",
+                "pytest",
+                "test yaz",
+                "test üret",
+                "qa",
+            )
+        ):
             return await self._build_coverage_plan(prompt)
 
         return await self._generate_test_code("", prompt)

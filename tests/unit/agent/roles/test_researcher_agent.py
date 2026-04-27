@@ -185,7 +185,9 @@ def test_docs_search_tool_handles_awaitable_result(researcher_module, fake_cfg):
     assert agent.docs.calls == [("embeddings", "auto", "global")]
 
 
-def test_docs_search_tool_returns_timeout_message_on_timeout_error(researcher_module, fake_cfg, monkeypatch):
+def test_docs_search_tool_returns_timeout_message_on_timeout_error(
+    researcher_module, fake_cfg, monkeypatch
+):
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=SyncDocStore)
 
     async def raise_timeout(*_args, **_kwargs):
@@ -198,7 +200,9 @@ def test_docs_search_tool_returns_timeout_message_on_timeout_error(researcher_mo
     assert result == "Doküman araması zaman aşımına uğradı."
 
 
-def test_docs_search_tool_returns_unavailable_message_on_unexpected_error(researcher_module, fake_cfg):
+def test_docs_search_tool_returns_unavailable_message_on_unexpected_error(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=ErrorDocStore)
 
     result = asyncio.run(agent._tool_docs_search("unexpected errors are handled"))
@@ -237,7 +241,9 @@ def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_mod
     assert set(agent.tools) == {"web_search", "fetch_url", "search_docs", "docs_search"}
 
 
-def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(researcher_module, fake_cfg):
+def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -263,7 +269,9 @@ def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fa
     assert result == "web:mlops trendleri"
 
 
-def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(researcher_module, fake_cfg):
+def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -276,7 +284,9 @@ def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(resea
     assert result == "web:uzun araştırma özeti hazırla"
 
 
-def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(researcher_module, fake_cfg):
+def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -308,7 +318,9 @@ def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(r
     ]
 
 
-def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(researcher_module, fake_cfg):
+def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg)
     llm_payloads = iter(
         [
@@ -327,7 +339,9 @@ def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
     assert result == "web:sync:first query:auto:global"
 
 
-def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(researcher_module, fake_cfg):
+def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
+    researcher_module, fake_cfg
+):
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):

@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 if "httpx" not in sys.modules:
     sys.modules["httpx"] = SimpleNamespace(AsyncClient=object)
 
@@ -115,7 +113,9 @@ def test_fetch_transcript_invalid_video_id_short_circuit():
 def test_fetch_transcript_uses_language_fallback_and_custom_timeout():
     responses = {
         "tr": _DummyResponse(404, {}),
-        "en": _DummyResponse(200, {"events": [{"tStartMs": 0, "dDurationMs": 1200, "segs": [{"utf8": "Hello"}]}]}),
+        "en": _DummyResponse(
+            200, {"events": [{"tStartMs": 0, "dDurationMs": 1200, "segs": [{"utf8": "Hello"}]}]}
+        ),
     }
     factory = _DummyClientFactory(responses)
     config = SimpleNamespace(YOUTUBE_TRANSCRIPT_TIMEOUT=33)
@@ -196,7 +196,10 @@ def test_analyze_video_file_success_flow(monkeypatch, tmp_path):
             self.config = config
 
         async def analyze(self, image_path, analysis_type):
-            return {"success": image_path.endswith("f1.jpg"), "analysis": f"analysis-{Path(image_path).stem}"}
+            return {
+                "success": image_path.endswith("f1.jpg"),
+                "analysis": f"analysis-{Path(image_path).stem}",
+            }
 
     def fake_context_builder(*, media_kind, transcript, frame_analyses, extra_notes):
         return {
@@ -257,20 +260,38 @@ def test_build_video_analysis_propagates_failure(monkeypatch):
     manager = YouTubeManager()
 
     async def fake_fetch(video_url, *, languages=None):
-        return {"success": False, "video_id": "x", "reason": "no transcript", "languages": languages}
+        return {
+            "success": False,
+            "video_id": "x",
+            "reason": "no transcript",
+            "languages": languages,
+        }
 
     async def fake_analyze(video_path, **kwargs):
-        return {"success": False, "reason": f"cannot analyze {video_path}", "transcript": kwargs.get("transcript")}
+        return {
+            "success": False,
+            "reason": f"cannot analyze {video_path}",
+            "transcript": kwargs.get("transcript"),
+        }
 
     monkeypatch.setattr(manager, "fetch_transcript", fake_fetch)
     monkeypatch.setattr(manager, "analyze_video_file", fake_analyze)
 
-    result = asyncio.run(manager.build_video_analysis(video_url="https://youtu.be/dQw4w9WgXcQ", video_path="/tmp/v.mp4"))
+    result = asyncio.run(
+        manager.build_video_analysis(
+            video_url="https://youtu.be/dQw4w9WgXcQ", video_path="/tmp/v.mp4"
+        )
+    )
 
     assert result == {
         "success": False,
         "reason": "cannot analyze /tmp/v.mp4",
-        "transcript": {"success": False, "video_id": "x", "reason": "no transcript", "languages": None},
+        "transcript": {
+            "success": False,
+            "video_id": "x",
+            "reason": "no transcript",
+            "languages": None,
+        },
     }
 
 
@@ -278,7 +299,13 @@ def test_build_video_analysis_success_adds_video_identity(monkeypatch):
     manager = YouTubeManager()
 
     async def fake_fetch(video_url, *, languages=None):
-        return {"success": True, "text": "ok", "language": "tr", "video_url": video_url, "languages": languages}
+        return {
+            "success": True,
+            "text": "ok",
+            "language": "tr",
+            "video_url": video_url,
+            "languages": languages,
+        }
 
     async def fake_analyze(video_path, **kwargs):
         return {

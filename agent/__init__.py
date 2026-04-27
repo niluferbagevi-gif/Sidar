@@ -2,6 +2,7 @@
 
 from importlib import import_module
 
+
 def __getattr__(name: str):
     """Ağır bağımlılıkları sadece gerektiğinde içe aktar."""
     if name == "SidarAgent":

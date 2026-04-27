@@ -57,7 +57,9 @@ def _extract_capabilities_from_role_file(role_file: Path) -> set[str]:
                         }
                         if values:
                             return values
-    raise AssertionError(f"No AgentCatalog.register(capabilities=...) decorator found in {role_file}")
+    raise AssertionError(
+        f"No AgentCatalog.register(capabilities=...) decorator found in {role_file}"
+    )
 
 
 def test_builtin_role_import_lists_are_consistent() -> None:
@@ -74,7 +76,11 @@ def test_builtin_role_capabilities_match_expected_contract() -> None:
         "researcher_agent.py": {"web_search", "rag_search", "summarization"},
         "reviewer_agent.py": {"code_review", "security_audit", "quality_check"},
         "qa_agent.py": {"test_generation", "ci_remediation"},
-        "coverage_agent.py": {"coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"},
+        "coverage_agent.py": {
+            "coverage_analysis",
+            "pytest_output_analysis",
+            "autonomous_test_generation",
+        },
         "poyraz_agent.py": {"marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"},
     }
 
@@ -142,7 +148,9 @@ class ExampleRole:
 """,
     ],
 )
-def test_extract_capabilities_raises_for_non_contract_decorators(tmp_path: Path, source: str) -> None:
+def test_extract_capabilities_raises_for_non_contract_decorators(
+    tmp_path: Path, source: str
+) -> None:
     role_file = tmp_path / "non_contract_role.py"
     role_file.write_text(source.strip(), encoding="utf-8")
 

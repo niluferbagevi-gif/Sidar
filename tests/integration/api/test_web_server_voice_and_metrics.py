@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 import pytest
 
-import sys
-
 # Bazı CI ortamlarında opentelemetry httpx enstrümantasyonu opsiyonel olabilir.
 if "opentelemetry.instrumentation.httpx" not in sys.modules:
-    fake_httpx_mod = SimpleNamespace(HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None))
+    fake_httpx_mod = SimpleNamespace(
+        HTTPXClientInstrumentor=SimpleNamespace(instrument=lambda *a, **k: None)
+    )
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 
@@ -60,7 +61,9 @@ class _FakeVoicePipeline:
     def create_duplex_state(self):
         return SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
 
-    def build_voice_state_payload(self, *, event: str, buffered_bytes: int, sequence: int, duplex_state):
+    def build_voice_state_payload(
+        self, *, event: str, buffered_bytes: int, sequence: int, duplex_state
+    ):
         return {
             "voice_state": event,
             "buffered_bytes": buffered_bytes,
@@ -101,8 +104,14 @@ def _install_voice_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
-    monkeypatch.setitem(__import__("sys").modules, "core.multimodal", SimpleNamespace(MultimodalPipeline=_FakeMultimodalPipeline))
-    monkeypatch.setitem(__import__("sys").modules, "core.voice", SimpleNamespace(VoicePipeline=_FakeVoicePipeline))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.multimodal",
+        SimpleNamespace(MultimodalPipeline=_FakeMultimodalPipeline),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules, "core.voice", SimpleNamespace(VoicePipeline=_FakeVoicePipeline)
+    )
 
 
 @pytest.mark.integration
@@ -129,7 +138,12 @@ def test_voice_websocket_transcription_error_path(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.integration
 def test_voice_websocket_happy_path_and_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_voice_mocks(monkeypatch)
-    _FakeMultimodalPipeline.next_result = {"success": True, "text": "merhaba", "language": "tr", "provider": "fake"}
+    _FakeMultimodalPipeline.next_result = {
+        "success": True,
+        "text": "merhaba",
+        "language": "tr",
+        "provider": "fake",
+    }
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws/voice") as websocket:
@@ -143,7 +157,10 @@ def test_voice_websocket_happy_path_and_cancel(monkeypatch: pytest.MonkeyPatch) 
             assert ready_state["voice_state"] == "ready"
 
             websocket.send_json({"action": "append_base64", "chunk": "%%%"})
-            assert websocket.receive_json() == {"error": "Geçersiz base64 ses parçası", "done": True}
+            assert websocket.receive_json() == {
+                "error": "Geçersiz base64 ses parçası",
+                "done": True,
+            }
 
             websocket.send_bytes(b"abc")
             assert websocket.receive_json()["buffered_bytes"] == 3

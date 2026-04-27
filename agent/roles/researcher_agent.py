@@ -6,17 +6,15 @@ import asyncio
 import inspect
 import json
 from pathlib import Path
-from typing import Optional
 
+from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 from config import Config
 from core.rag import DocumentStore
 from managers.web_search import WebSearchManager
 
-from agent.base_agent import BaseAgent
-from agent.registry import AgentCatalog
 
-
-@AgentCatalog.register(capabilities=['web_search', 'rag_search', 'summarization'], is_builtin=True)
+@AgentCatalog.register(capabilities=["web_search", "rag_search", "summarization"], is_builtin=True)
 class ResearcherAgent(BaseAgent):
     """Yalnızca bilgi toplama araçlarını kullanan uzman ajan."""
 
@@ -27,9 +25,9 @@ class ResearcherAgent(BaseAgent):
 
     def __init__(
         self,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
         *,
-        config: Optional[Config] = None,
+        config: Config | None = None,
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="researcher")

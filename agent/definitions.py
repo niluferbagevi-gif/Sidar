@@ -163,7 +163,7 @@ Asla düz metin veya markdown bloğu kullanma.
    → ASLA ham veri objesi döndürme. Yanıtını MUTLAKA final_answer argümanında ver.
    YANLIŞ: {"project": "Sid", "version": "v1.0.0"}
    DOĞRU : {"thought": "...", "tool": "final_answer", "argument": "**Proje:** Sid\\n**Sürüm:** v1.0.0"}
-"""  
+"""
 
 # Geriye dönük uyumluluk: runtime'da aktif prompt DB'den gelir; bu metin seed/fallback içindir.
 SIDAR_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT

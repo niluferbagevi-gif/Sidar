@@ -1,7 +1,7 @@
 """
 Sidar Project - Ultimate Launcher
 =================================
-Görsel olarak zenginleştirilmiş etkileşimli menüler ile 
+Görsel olarak zenginleştirilmiş etkileşimli menüler ile
 argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.
 Kullanım: python main.py
 Hızlı Kullanım: python main.py --quick web --provider ollama --level full
@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import List, Dict, Tuple
 
 # Terminal Renkleri (ANSI)
 CYAN = "\033[96m"
@@ -28,6 +27,7 @@ MAGENTA = "\033[95m"
 RED = "\033[91m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
 
 # Config yükleme denemesi (Eğer dosya yoksa varsayılan değerler oluşturulur)
 class DummyConfig:
@@ -44,11 +44,13 @@ class DummyConfig:
         """Gerçek Config ile arayüz uyumluluğu için no-op."""
         return None
 
+
 CONFIG_IMPORT_OK = True
 logger = logging.getLogger(__name__)
 
 try:
     from config import Config
+
     cfg = Config()
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
@@ -75,23 +77,23 @@ def print_banner() -> None:
     print(f"{GREEN}Hoş geldiniz! Lütfen Sidar'ı nasıl başlatmak istediğinizi seçin.{RESET}\n")
 
 
-def ask_choice(prompt: str, options: Dict[str, Tuple[str, str]], default_key: str) -> str:
+def ask_choice(prompt: str, options: dict[str, tuple[str, str]], default_key: str) -> str:
     """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
     print(f"{YELLOW}{BOLD}{prompt}{RESET}")
-    
+
     for key, (desc, value) in options.items():
         is_default = f" {GREEN}(Varsayılan){RESET}" if key == default_key else ""
         print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
-    
+
     while True:
         choice = input(f"\n{BOLD}Seçiminiz [{'/'.join(options.keys())}]: {RESET}").strip()
-        
+
         if not choice:
             return options[default_key][1]
-            
+
         if choice in options:
             return options[choice][1]
-        
+
         print(f"{MAGENTA}Geçersiz seçim. Lütfen tekrar deneyin.{RESET}")
 
 
@@ -195,6 +197,7 @@ def preflight(provider: str) -> None:
     if provider == "ollama":
         try:
             import httpx
+
             base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
             tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
             with httpx.Client(timeout=2) as client:
@@ -209,10 +212,14 @@ def preflight(provider: str) -> None:
             print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
         except Exception as exc:
             logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
-            print(f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}")
+            print(
+                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}"
+            )
 
 
-def build_command(mode: str, provider: str, level: str, log: str, extra_args: Dict[str, str]) -> List[str]:
+def build_command(
+    mode: str, provider: str, level: str, log: str, extra_args: dict[str, str]
+) -> list[str]:
     """Seçimlere göre çalıştırılacak terminal komutunu inşa eder."""
     valid_modes = {"web", "cli"}
     valid_providers = {"ollama", "gemini", "openai", "anthropic"}
@@ -230,16 +237,23 @@ def build_command(mode: str, provider: str, level: str, log: str, extra_args: Di
 
     target_script = "web_server.py" if mode == "web" else "cli.py"
     cmd = [sys.executable, target_script, "--provider", provider, "--level", level, "--log", log]
-    
+
     if mode == "cli" and provider == "ollama" and extra_args.get("model"):
         cmd.extend(["--model", extra_args["model"]])
     elif mode == "web":
-        cmd.extend(["--host", extra_args.get("host", "127.0.0.1"), "--port", extra_args.get("port", "8000")])
-        
+        cmd.extend(
+            [
+                "--host",
+                extra_args.get("host", "127.0.0.1"),
+                "--port",
+                extra_args.get("port", "8000"),
+            ]
+        )
+
     return cmd
 
 
-def _format_cmd(cmd: List[str]) -> str:
+def _format_cmd(cmd: list[str]) -> str:
     """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
     return " ".join(shlex.quote(part) for part in cmd)
 
@@ -255,7 +269,7 @@ def _stream_pipe(pipe, file_obj, prefix: str, color: str, mirror: bool) -> None:
     pipe.close()
 
 
-def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
+def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
     """Child process çıktısını canlı izleyerek (stdout/stderr) bellek dostu şekilde loglar."""
     process = subprocess.Popen(
         cmd,
@@ -325,7 +339,7 @@ def run_wizard() -> int:
 
     mode_options = {
         "1": ("Web Arayüzü Sunucusu (FastAPI + UI)", "web"),
-        "2": ("CLI Terminal Arayüzü", "cli")
+        "2": ("CLI Terminal Arayüzü", "cli"),
     }
     mode = ask_choice("1. Hangi arayüzle başlatmak istiyorsunuz?", mode_options, "1")
     print("-" * 50)
@@ -341,9 +355,11 @@ def run_wizard() -> int:
         "1": ("Ollama (Yerel LLM)", "ollama"),
         "2": ("Gemini (Bulut LLM)", "gemini"),
         "3": ("OpenAI (Bulut LLM)", "openai"),
-        "4": ("Anthropic Claude (Bulut LLM)", "anthropic")
+        "4": ("Anthropic Claude (Bulut LLM)", "anthropic"),
     }
-    provider = ask_choice("2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider)
+    provider = ask_choice(
+        "2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider
+    )
     print("-" * 50)
 
     default_level_val = _safe_choice(
@@ -351,11 +367,13 @@ def run_wizard() -> int:
         "full",
         {"restricted", "sandbox", "full"},
     )
-    default_level = "1" if default_level_val == "full" else "2" if default_level_val == "sandbox" else "3"
+    default_level = (
+        "1" if default_level_val == "full" else "2" if default_level_val == "sandbox" else "3"
+    )
     level_options = {
         "1": ("Full (Sınırsız Sistem Erişimi)", "full"),
         "2": ("Sandbox (Docker İzolasyonlu Sınırlandırılmış Erişim)", "sandbox"),
-        "3": ("Restricted (Sadece Okuma ve Sohbet)", "restricted")
+        "3": ("Restricted (Sadece Okuma ve Sohbet)", "restricted"),
     }
     level = ask_choice("3. Güvenlik/Yetki seviyesi ne olsun?", level_options, default_level)
     print("-" * 50)
@@ -363,7 +381,7 @@ def run_wizard() -> int:
     log_options = {
         "1": ("INFO (Standart)", "info"),
         "2": ("DEBUG (Detaylı Geliştirici Logları)", "debug"),
-        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "warning")
+        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "warning"),
     }
     log_level = ask_choice("4. Log seviyesini seçin:", log_options, "1")
 
@@ -402,7 +420,9 @@ def run_wizard() -> int:
     return execute_command(cmd)
 
 
-def execute_command(cmd: List[str], capture_output: bool = False, child_log_path: str | None = None) -> int:
+def execute_command(
+    cmd: list[str], capture_output: bool = False, child_log_path: str | None = None
+) -> int:
     """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
@@ -425,14 +445,25 @@ def execute_command(cmd: List[str], capture_output: bool = False, child_log_path
         print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
         return 1
 
+
 def main() -> None:
     if hasattr(cfg, "init_telemetry"):
         cfg.init_telemetry(service_name="sidar-launcher")
 
     parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
-    parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat")
-    parser.add_argument("--provider", choices=["ollama", "gemini", "openai", "anthropic"], help="Hızlı başlat için AI sağlayıcı")
-    parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim seviyesi")
+    parser.add_argument(
+        "--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat"
+    )
+    parser.add_argument(
+        "--provider",
+        choices=["ollama", "gemini", "openai", "anthropic"],
+        help="Hızlı başlat için AI sağlayıcı",
+    )
+    parser.add_argument(
+        "--level",
+        choices=["restricted", "sandbox", "full"],
+        help="Hızlı başlat için erişim seviyesi",
+    )
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
@@ -459,7 +490,9 @@ def main() -> None:
             if not (1 <= _port_val <= 65535):
                 raise ValueError
         except ValueError:
-            parser.error(f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})")
+            parser.error(
+                f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})"
+            )
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
     if not args.quick:
@@ -478,7 +511,8 @@ def main() -> None:
     )
 
     extra_args = {
-        "model": args.model or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
+        "model": args.model
+        or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
         "host": args.host or _safe_text(getattr(cfg, "WEB_HOST", "0.0.0.0"), "0.0.0.0"),
         "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }
@@ -489,7 +523,9 @@ def main() -> None:
         sys.exit(2)
 
     cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
-    sys.exit(execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log))
+    sys.exit(
+        execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log)
+    )
 
 
 if __name__ == "__main__":

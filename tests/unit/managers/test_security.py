@@ -53,14 +53,18 @@ def test_is_path_under_rejects_dangerous_and_outside_path(tmp_path: Path) -> Non
     assert not mgr.is_path_under(str(outside), tmp_path)
 
 
-def test_is_path_under_rejects_when_resolve_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_path_under_rejects_when_resolve_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
 
     assert not mgr.is_path_under("safe/file.txt", tmp_path)
 
 
-def test_resolve_safe_returns_none_on_resolution_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_safe_returns_none_on_resolution_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
 
     def boom(self):
@@ -132,7 +136,9 @@ def test_can_write_sandbox_allows_only_temp(tmp_path: Path) -> None:
     assert not mgr.can_write("   ")
 
 
-def test_can_write_rejects_when_resolution_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_can_write_rejects_when_resolution_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
 
@@ -289,7 +295,12 @@ def test_run_guardrails_engine_returns_empty_when_engine_missing(tmp_path: Path)
         (SimpleNamespace(validate=lambda **_kwargs: "not-a-dict"), []),
         (SimpleNamespace(validate=lambda **_kwargs: {"allowed": True, "reason": "ignored"}), []),
         (SimpleNamespace(validate=lambda **_kwargs: {"allowed": False}), ["guardrails_blocked"]),
-        (SimpleNamespace(validate=lambda **_kwargs: {"allowed": False, "reason": "blocked_by_policy"}), ["blocked_by_policy"]),
+        (
+            SimpleNamespace(
+                validate=lambda **_kwargs: {"allowed": False, "reason": "blocked_by_policy"}
+            ),
+            ["blocked_by_policy"],
+        ),
     ],
 )
 def test_run_guardrails_engine_external_engine_branches(
@@ -315,7 +326,9 @@ def test_is_safe_path_returns_false_on_unexpected_exception(
 
 
 @pytest.mark.parametrize("text_input", ["", "   ", None])
-def test_validate_prompt_text_allows_empty_or_none_text(tmp_path: Path, text_input: str | None) -> None:
+def test_validate_prompt_text_allows_empty_or_none_text(
+    tmp_path: Path, text_input: str | None
+) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
 
     result = mgr.validate_prompt_text(text_input)  # type: ignore[arg-type]

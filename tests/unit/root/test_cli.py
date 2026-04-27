@@ -376,7 +376,17 @@ def test_main_command_mode_runs_setup_and_response(monkeypatch, capsys):
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["cli.py", "--command", "hello", "--provider", "openai", "--level", "sandbox", "--model", "m1"],
+        [
+            "cli.py",
+            "--command",
+            "hello",
+            "--provider",
+            "openai",
+            "--level",
+            "sandbox",
+            "--model",
+            "m1",
+        ],
     )
     cli.main()
     out = capsys.readouterr().out

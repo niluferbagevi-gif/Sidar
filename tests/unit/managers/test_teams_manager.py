@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import Any
 import sys
 import types
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -93,7 +93,9 @@ def test_send_message_requires_webhook() -> None:
     assert "TEAMS_WEBHOOK_URL" in err
 
 
-def test_send_message_builds_payload_with_all_optional_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_message_builds_payload_with_all_optional_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="1"))
 
     def _factory(*args, **kwargs):
@@ -125,7 +127,9 @@ def test_send_message_builds_payload_with_all_optional_fields(monkeypatch: pytes
     assert '"potentialAction"' in call["content"]
 
 
-def test_send_message_omits_optional_fields_when_not_provided(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_message_omits_optional_fields_when_not_provided(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="1"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -188,7 +192,9 @@ def test_send_notification_status_and_link(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["actions"][0]["targets"][0]["uri"] == "https://example.test/detail"
 
 
-def test_send_notification_uses_default_color_for_unknown_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_notification_uses_default_color_for_unknown_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, Any] = {}
 
     async def _fake_send_message(**kwargs):

@@ -30,7 +30,9 @@ def test_normalize_selection_happy_path_defaults_and_trim():
         ("web", "openai", "full", "bad", "Geçersiz log_level: bad"),
     ],
 )
-def test_normalize_selection_invalid_values_raise(mode, provider, level, log_level, expected_message):
+def test_normalize_selection_invalid_values_raise(
+    mode, provider, level, log_level, expected_message
+):
     with pytest.raises(ValueError, match=expected_message):
         gui_launcher._normalize_selection(mode, provider, level, log_level)
 

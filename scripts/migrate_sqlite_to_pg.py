@@ -14,7 +14,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-
 TABLES_IN_ORDER = [
     "users",
     "auth_tokens",
@@ -82,7 +81,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SQLite verilerini PostgreSQL'e taşır.")
     parser.add_argument("--sqlite-path", required=True, help="Kaynak sqlite db dosya yolu")
     parser.add_argument("--postgres-dsn", required=True, help="Hedef PostgreSQL DSN")
-    parser.add_argument("--dry-run", action="store_true", help="Yalnızca okunacak satır sayılarını raporla")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Yalnızca okunacak satır sayılarını raporla"
+    )
     args = parser.parse_args()
 
     asyncio.run(migrate(Path(args.sqlite_path), args.postgres_dsn, dry_run=args.dry_run))

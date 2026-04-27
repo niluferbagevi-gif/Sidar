@@ -14,22 +14,23 @@ Kullanım:
     exporter = DatasetExporter(store)
     path = await exporter.export_jsonl("data/finetune/dataset.jsonl")
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 try:
-    from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text as sql_text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
     _SA_AVAILABLE = True
 except ImportError:
     _SA_AVAILABLE = False
@@ -64,6 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_ftfb_exported ON finetune_feedback(exported_at);
 # FeedbackStore
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class FeedbackStore:
     """
     Kullanıcı geri bildirimlerini SQLite/PostgreSQL'de saklar.
@@ -72,9 +74,11 @@ class FeedbackStore:
     correction: kullanıcı tarafından düzeltilmiş ideal yanıt (varsa)
     """
 
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///data/sidar.db", config=None) -> None:
+    def __init__(
+        self, database_url: str = "sqlite+aiosqlite:///data/sidar.db", config=None
+    ) -> None:
         self._db_url = database_url
-        self._engine: Optional[Any] = None
+        self._engine: Any | None = None
         cfg = config
         self.enabled: bool = bool(getattr(cfg, "ENABLE_ACTIVE_LEARNING", True))
         self.min_rating_for_train: int = int(getattr(cfg, "AL_MIN_RATING_FOR_TRAIN", 1))
@@ -100,7 +104,7 @@ class FeedbackStore:
         session_id: str = "",
         provider: str = "",
         model: str = "",
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
     ) -> bool:
         """Tek bir geri bildirim kaydı ekle. True = başarılı."""
         if not self.enabled or not self._engine:
@@ -116,10 +120,16 @@ class FeedbackStore:
                     " VALUES (:uid, :sid, :p, :r, :cor, :rat, :tags, :prov, :mdl, :now)"
                 ),
                 {
-                    "uid": user_id, "sid": session_id,
-                    "p": prompt, "r": response, "cor": correction,
-                    "rat": int(rating), "tags": tags_str,
-                    "prov": provider, "mdl": model, "now": now,
+                    "uid": user_id,
+                    "sid": session_id,
+                    "p": prompt,
+                    "r": response,
+                    "cor": correction,
+                    "rat": int(rating),
+                    "tags": tags_str,
+                    "prov": provider,
+                    "mdl": model,
+                    "now": now,
                 },
             )
         logger.debug("FeedbackStore.record: rating=%d uid=%s", rating, user_id)
@@ -136,7 +146,7 @@ class FeedbackStore:
         session_id: str = "judge:auto",
         provider: str = "",
         model: str = "",
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
     ) -> bool:
         """Düşük puanlı yanıtı Active Learning havuzuna yazar."""
         if not self.enabled:
@@ -169,7 +179,9 @@ class FeedbackStore:
             tags=merged_tags,
         )
 
-    async def get_pending_export(self, min_rating: Optional[int] = None, limit: int = 10000) -> List[Dict]:
+    async def get_pending_export(
+        self, min_rating: int | None = None, limit: int = 10000
+    ) -> list[dict]:
         """Henüz export edilmemiş kayıtları döner."""
         if not self.enabled or not self._engine:
             return []
@@ -186,7 +198,7 @@ class FeedbackStore:
             )
             return [dict(r._mapping) for r in rows.fetchall()]
 
-    async def get_pending_signals(self, limit: int = 10000) -> List[Dict]:
+    async def get_pending_signals(self, limit: int = 10000) -> list[dict]:
         """Sürekli öğrenme için henüz export edilmemiş tüm geri bildirim sinyallerini döner."""
         if not self.enabled or not self._engine:
             return []
@@ -205,12 +217,14 @@ class FeedbackStore:
         for item in items:
             raw_tags = item.get("tags", "[]")
             try:
-                item["tags"] = json.loads(raw_tags) if isinstance(raw_tags, str) else list(raw_tags or [])
+                item["tags"] = (
+                    json.loads(raw_tags) if isinstance(raw_tags, str) else list(raw_tags or [])
+                )
             except Exception:
                 item["tags"] = []
         return items
 
-    async def mark_exported(self, ids: List[int]) -> None:
+    async def mark_exported(self, ids: list[int]) -> None:
         """Verilen ID'leri export edildi olarak işaretle."""
         if not ids or not self._engine:
             return
@@ -231,15 +245,29 @@ class FeedbackStore:
                     params,
                 )
 
-    async def stats(self) -> Dict[str, int]:
+    async def stats(self) -> dict[str, int]:
         """Feedback istatistiklerini döner."""
         if not self.enabled or not self._engine:
             return {}
         async with self._engine.connect() as conn:
-            total = (await conn.execute(sql_text("SELECT COUNT(*) FROM finetune_feedback"))).scalar() or 0
-            pos = (await conn.execute(sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE rating > 0"))).scalar() or 0
-            neg = (await conn.execute(sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE rating < 0"))).scalar() or 0
-            pending = (await conn.execute(sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE exported_at IS NULL"))).scalar() or 0
+            total = (
+                await conn.execute(sql_text("SELECT COUNT(*) FROM finetune_feedback"))
+            ).scalar() or 0
+            pos = (
+                await conn.execute(
+                    sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE rating > 0")
+                )
+            ).scalar() or 0
+            neg = (
+                await conn.execute(
+                    sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE rating < 0")
+                )
+            ).scalar() or 0
+            pending = (
+                await conn.execute(
+                    sql_text("SELECT COUNT(*) FROM finetune_feedback WHERE exported_at IS NULL")
+                )
+            ).scalar() or 0
         return {"total": total, "positive": pos, "negative": neg, "pending_export": pending}
 
     async def close(self) -> None:
@@ -251,6 +279,7 @@ class FeedbackStore:
 # ──────────────────────────────────────────────────────────────────────────────
 # DatasetExporter
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class DatasetExporter:
     """
@@ -273,7 +302,7 @@ class DatasetExporter:
         fmt: str = "alpaca",
         min_rating: int = 1,
         mark_done: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Kayıtları belirtilen formata dönüştürüp dosyaya yazar.
         Döner: {"path": str, "count": int, "format": str}
@@ -292,7 +321,7 @@ class DatasetExporter:
         # Veriyi önce belleğe dönüştür, ardından asyncio.to_thread ile disk yazımı yap.
         # Bulgu D: async fonksiyon içinde senkron open/write event loop'u bloklar.
         ids = []
-        lines: List[str] = []
+        lines: list[str] = []
         for row in rows:
             completion = row["correction"] if row["correction"] else row["response"]
             prompt = row["prompt"]
@@ -340,7 +369,7 @@ class ContinuousLearningPipeline:
         self,
         store: FeedbackStore,
         *,
-        trainer: Optional["LoRATrainer"] = None,
+        trainer: LoRATrainer | None = None,
         config=None,
     ) -> None:
         self.store = store
@@ -351,13 +380,21 @@ class ContinuousLearningPipeline:
             getattr(config, "CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning")
             or "data/continuous_learning"
         )
-        self.min_sft_examples = int(getattr(config, "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20) or 20)
+        self.min_sft_examples = int(
+            getattr(config, "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20) or 20
+        )
         self.min_preference_examples = int(
             getattr(config, "CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10) or 10
         )
-        self.max_pending_signals = int(getattr(config, "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000) or 5000)
-        self.cooldown_seconds = int(getattr(config, "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600) or 3600)
-        self.sft_format = str(getattr(config, "CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca") or "alpaca").lower()
+        self.max_pending_signals = int(
+            getattr(config, "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000) or 5000
+        )
+        self.cooldown_seconds = int(
+            getattr(config, "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600) or 3600
+        )
+        self.sft_format = str(
+            getattr(config, "CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca") or "alpaca"
+        ).lower()
         self._last_run_at = 0.0
         self._run_lock = asyncio.Lock()
 
@@ -375,11 +412,11 @@ class ContinuousLearningPipeline:
         return []
 
     @staticmethod
-    def _is_judge_reasoning_signal(row: Dict[str, Any]) -> bool:
+    def _is_judge_reasoning_signal(row: dict[str, Any]) -> bool:
         tags = ContinuousLearningPipeline._normalize_tags(row.get("tags"))
         return "judge_reasoning" in tags and "weak_response" in tags
 
-    def _build_sft_examples(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_sft_examples(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         examples: list[dict[str, Any]] = []
         min_rating = int(getattr(self.store, "min_rating_for_train", 1))
         for row in rows:
@@ -407,7 +444,7 @@ class ContinuousLearningPipeline:
             )
         return examples
 
-    def _build_preference_examples(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_preference_examples(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         examples: list[dict[str, Any]] = []
         for row in rows:
             prompt = str(row.get("prompt", "") or "").strip()
@@ -432,7 +469,7 @@ class ContinuousLearningPipeline:
         return examples
 
     @staticmethod
-    def _serialize_sft_examples(rows: List[Dict[str, Any]], fmt: str) -> List[Dict[str, Any]]:
+    def _serialize_sft_examples(rows: list[dict[str, Any]], fmt: str) -> list[dict[str, Any]]:
         fmt = str(fmt or "alpaca").lower()
         if fmt not in DatasetExporter.SUPPORTED_FORMATS:
             raise ValueError(f"Desteklenmeyen continuous learning SFT formatı: {fmt}")
@@ -466,19 +503,29 @@ class ContinuousLearningPipeline:
         return serialized
 
     @staticmethod
-    def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
+    def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
             for row in rows:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    async def build_dataset_bundle(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
+    async def build_dataset_bundle(self, output_dir: str | None = None) -> dict[str, Any]:
         """Bekleyen sinyallerden SFT/DPO bundle üretir; eğitimi başlatmaz."""
         rows = await self.store.get_pending_signals(limit=self.max_pending_signals)
         sft_examples = self._build_sft_examples(rows)
         serialized_sft_examples = self._serialize_sft_examples(sft_examples, self.sft_format)
         preference_examples = self._build_preference_examples(rows)
-        triage_only = max(0, len(rows) - len({r.get("feedback_id") for r in sft_examples + preference_examples if r.get("feedback_id")}))
+        triage_only = max(
+            0,
+            len(rows)
+            - len(
+                {
+                    r.get("feedback_id")
+                    for r in sft_examples + preference_examples
+                    if r.get("feedback_id")
+                }
+            ),
+        )
 
         root = Path(output_dir or self.output_dir)
         timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
@@ -514,7 +561,7 @@ class ContinuousLearningPipeline:
         )
         return manifest
 
-    async def run_cycle(self, *, reason: str = "manual") -> Dict[str, Any]:
+    async def run_cycle(self, *, reason: str = "manual") -> dict[str, Any]:
         """Bundle üretir ve yeterli veri varsa LoRA/QLoRA eğitimini tetikler."""
         if not self.enabled:
             return {"success": False, "scheduled": False, "reason": "continuous_learning_disabled"}
@@ -548,7 +595,9 @@ class ContinuousLearningPipeline:
                 "success": False,
                 "reason": "trainer_disabled_or_insufficient_sft",
             }
-            if counts.get("sft_examples", 0) >= self.min_sft_examples and bool(getattr(self.trainer, "enabled", False)):
+            if counts.get("sft_examples", 0) >= self.min_sft_examples and bool(
+                getattr(self.trainer, "enabled", False)
+            ):
                 training_result = await asyncio.to_thread(self.trainer.train, manifest["sft_path"])
 
             self._last_run_at = now
@@ -585,6 +634,7 @@ class ContinuousLearningPipeline:
 # LoRA/QLoRA Trainer (PEFT — opsiyonel)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class LoRATrainer:
     """
     HuggingFace PEFT/LoRA ile yerel model fine-tuning tetikleyicisi.
@@ -602,25 +652,30 @@ class LoRATrainer:
         self.lora_rank: int = int(getattr(config, "LORA_RANK", 8) or 8)
         self.lora_alpha: int = int(getattr(config, "LORA_ALPHA", 16) or 16)
         self.lora_dropout: float = float(getattr(config, "LORA_DROPOUT", 0.05) or 0.05)
-        self.output_dir: str = str(getattr(config, "LORA_OUTPUT_DIR", "data/lora_adapters") or "data/lora_adapters")
+        self.output_dir: str = str(
+            getattr(config, "LORA_OUTPUT_DIR", "data/lora_adapters") or "data/lora_adapters"
+        )
         self.epochs: int = int(getattr(config, "LORA_EPOCHS", 3) or 3)
         self.batch_size: int = int(getattr(config, "LORA_BATCH_SIZE", 4) or 4)
         self.use_4bit: bool = bool(getattr(config, "LORA_USE_4BIT", True))  # QLoRA flag
-        self._peft_available: Optional[bool] = None
+        self._peft_available: bool | None = None
 
     def _check_peft(self) -> bool:
         if self._peft_available is None:
             try:
+                import datasets  # noqa: F401
                 import peft  # noqa: F401
                 import transformers  # noqa: F401
-                import datasets  # noqa: F401
+
                 self._peft_available = True
             except ImportError:
-                logger.warning("LoRATrainer: peft/transformers/datasets kurulu değil. Fine-tuning devre dışı.")
+                logger.warning(
+                    "LoRATrainer: peft/transformers/datasets kurulu değil. Fine-tuning devre dışı."
+                )
                 self._peft_available = False
         return self._peft_available
 
-    def train(self, dataset_path: str) -> Dict[str, Any]:
+    def train(self, dataset_path: str) -> dict[str, Any]:
         """
         Senkron fine-tuning başlatır.
         asyncio.to_thread(trainer.train, path) ile çağrılması önerilir.
@@ -638,14 +693,17 @@ class LoRATrainer:
             logger.error("LoRATrainer.train hatası: %s", exc, exc_info=True)
             return {"success": False, "reason": str(exc)}
 
-    def _run_training(self, dataset_path: str) -> Dict[str, Any]:
+    def _run_training(self, dataset_path: str) -> dict[str, Any]:
         """PEFT LoRA/QLoRA eğitim döngüsü."""
-        from peft import LoraConfig, get_peft_model, TaskType  # type: ignore
-        from transformers import (  # type: ignore
-            AutoModelForCausalLM, AutoTokenizer,
-            TrainingArguments, Trainer, DataCollatorForSeq2Seq,
-        )
         from datasets import load_dataset  # type: ignore
+        from peft import LoraConfig, TaskType, get_peft_model  # type: ignore
+        from transformers import (  # type: ignore
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            DataCollatorForSeq2Seq,
+            Trainer,
+            TrainingArguments,
+        )
 
         logger.info("LoRATrainer: Eğitim başlatılıyor — model=%s", self.base_model)
 
@@ -655,11 +713,12 @@ class LoRATrainer:
             tokenizer.pad_token = tokenizer.eos_token
 
         # Model yükleme (4-bit QLoRA veya normal)
-        model_kwargs: Dict[str, Any] = {"trust_remote_code": True}
+        model_kwargs: dict[str, Any] = {"trust_remote_code": True}
         if self.use_4bit:
             try:
-                from transformers import BitsAndBytesConfig  # type: ignore
                 import torch
+                from transformers import BitsAndBytesConfig  # type: ignore
+
                 bnb_config = BitsAndBytesConfig(
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
@@ -693,8 +752,16 @@ class LoRATrainer:
             if not prompt and not output:
                 conversations = example.get("conversations")
                 if isinstance(conversations, list):
-                    human_turns = [turn for turn in conversations if isinstance(turn, dict) and turn.get("from") == "human"]
-                    assistant_turns = [turn for turn in conversations if isinstance(turn, dict) and turn.get("from") == "gpt"]
+                    human_turns = [
+                        turn
+                        for turn in conversations
+                        if isinstance(turn, dict) and turn.get("from") == "human"
+                    ]
+                    assistant_turns = [
+                        turn
+                        for turn in conversations
+                        if isinstance(turn, dict) and turn.get("from") == "gpt"
+                    ]
                     if human_turns:
                         prompt = str(human_turns[0].get("value", "") or "")
                     if assistant_turns:
@@ -741,19 +808,20 @@ class LoRATrainer:
 # Yardımcı
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _chunked(lst: List, size: int):
+
+def _chunked(lst: list, size: int):
     for i in range(0, len(lst), size):
-        yield lst[i: i + size]
+        yield lst[i : i + size]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Singleton
 # ──────────────────────────────────────────────────────────────────────────────
 
-_feedback_store: Optional[FeedbackStore] = None
+_feedback_store: FeedbackStore | None = None
 _store_lock = threading.Lock()
 _pipeline_lock = threading.Lock()
-_continuous_learning_pipeline: Optional[ContinuousLearningPipeline] = None
+_continuous_learning_pipeline: ContinuousLearningPipeline | None = None
 
 
 def get_feedback_store(config=None) -> FeedbackStore:
@@ -761,6 +829,7 @@ def get_feedback_store(config=None) -> FeedbackStore:
     with _store_lock:
         if _feedback_store is None:
             from config import Config
+
             cfg = config or Config()
             db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
             _feedback_store = FeedbackStore(database_url=db_url, config=cfg)
@@ -804,7 +873,7 @@ async def flag_weak_response(
     session_id: str = "judge:auto",
     provider: str = "",
     model: str = "",
-    tags: Optional[List[str]] = None,
+    tags: list[str] | None = None,
 ) -> bool:
     """Singleton FeedbackStore üzerinden düşük kaliteli yanıtı kaydeder."""
     store = get_feedback_store(config)

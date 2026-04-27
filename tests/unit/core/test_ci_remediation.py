@@ -25,8 +25,12 @@ def test_is_allowed_validation_command(command: str, expected: bool) -> None:
     assert ci._is_allowed_validation_command(command) is expected
 
 
-def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ci.shlex, "split", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")))
+def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ci.shlex, "split", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom"))
+    )
     assert ci._is_allowed_validation_command("pytest -q tests/x.py") is False
     monkeypatch.setattr(ci.shlex, "split", lambda *_args, **_kwargs: [])
     assert ci._is_allowed_validation_command("pytest -q tests/x.py") is False
@@ -137,7 +141,11 @@ def test_generic_ci_context_requires_flag_or_ci_event() -> None:
             {"workflow_run": {"status": "completed", "conclusion": "failure"}},
             True,
         ),
-        ("workflow_run", {"workflow_run": {"status": "in_progress", "conclusion": "failure"}}, False),
+        (
+            "workflow_run",
+            {"workflow_run": {"status": "in_progress", "conclusion": "failure"}},
+            False,
+        ),
         ("check_run", {"check_run": {"conclusion": "cancelled"}}, True),
         ("check_suite", {"check_suite": {"conclusion": "success"}}, False),
         ("push", {}, False),
@@ -265,7 +273,10 @@ def test_build_self_heal_patch_prompt_limits_snapshots_and_embeds_data() -> None
     prompt = ci.build_self_heal_patch_prompt(
         _sample_context(),
         diagnosis="root cause\nmore",
-        remediation_loop={"scope_paths": ["tests/t1.py"], "validation_commands": ["pytest -q tests/t1.py"]},
+        remediation_loop={
+            "scope_paths": ["tests/t1.py"],
+            "validation_commands": ["pytest -q tests/t1.py"],
+        },
         file_snapshots=snapshots,
     )
     assert prompt.startswith("[SELF_HEAL_PLAN]")
@@ -350,7 +361,9 @@ def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
 
 
 def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
-    summary = ci.build_root_cause_summary(_sample_context(), "Root cause: flaky assertion\nsecond line")
+    summary = ci.build_root_cause_summary(
+        _sample_context(), "Root cause: flaky assertion\nsecond line"
+    )
     assert summary.startswith("Root cause")
 
 
@@ -398,7 +411,12 @@ def test_build_remediation_loop_high_risk_and_normal_modes() -> None:
     assert risky["max_auto_attempts"] == 1
     assert risky["steps"][0]["status"] == "completed"
 
-    safe_context = {"failure_summary": "minor", "log_excerpt": "", "suspected_targets": [], "failed_jobs": []}
+    safe_context = {
+        "failure_summary": "minor",
+        "log_excerpt": "",
+        "suspected_targets": [],
+        "failed_jobs": [],
+    }
     safe = ci.build_remediation_loop(safe_context, "")
     assert safe["needs_human_approval"] is False
     assert safe["mode"] == "self_heal"
@@ -472,7 +490,9 @@ def test_build_ci_failure_context_workflow_default_base_branch() -> None:
     assert ctx["base_branch"] == "trunk"
 
 
-def test_build_ci_remediation_payload_uses_pr_root_cause_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_ci_remediation_payload_uses_pr_root_cause_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     context = _sample_context()
 
     def fake_pr(_ctx, _diag):
@@ -498,7 +518,9 @@ def test_build_pr_proposal_uses_defaults_when_missing_fields() -> None:
 
 def test_extract_validation_commands_limits_to_five() -> None:
     context = {
-        "failure_summary": "\n".join(["pytest -q tests/a.py", "pytest -q tests/b.py", "pytest -q tests/c.py"]),
+        "failure_summary": "\n".join(
+            ["pytest -q tests/a.py", "pytest -q tests/b.py", "pytest -q tests/c.py"]
+        ),
         "log_excerpt": "\n".join(["python -m pytest", "bash run_tests.sh unit"]),
         "suspected_targets": [f"tests/t{i}.py" for i in range(10)],
     }
@@ -507,14 +529,22 @@ def test_extract_validation_commands_limits_to_five() -> None:
 
 
 def test_build_self_heal_patch_prompt_skips_empty_snapshot_entries() -> None:
-    snapshots = [{"path": "", "content": "x"}, {"path": "tests/a.py", "content": ""}, {"path": "tests/b.py", "content": "ok"}]
-    prompt = ci.build_self_heal_patch_prompt(_sample_context(), "d", {"scope_paths": [], "validation_commands": []}, snapshots)
+    snapshots = [
+        {"path": "", "content": "x"},
+        {"path": "tests/a.py", "content": ""},
+        {"path": "tests/b.py", "content": "ok"},
+    ]
+    prompt = ci.build_self_heal_patch_prompt(
+        _sample_context(), "d", {"scope_paths": [], "validation_commands": []}, snapshots
+    )
     assert prompt.count("[FILE]") == 1
 
 
 def test_normalize_self_heal_plan_strips_wrapping_and_handles_non_dict_operations() -> None:
     raw = '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x","replacement":"y"}]}'
-    normalized = ci.normalize_self_heal_plan(raw, scope_paths=["tests/a.py"], fallback_validation_commands=[])
+    normalized = ci.normalize_self_heal_plan(
+        raw, scope_paths=["tests/a.py"], fallback_validation_commands=[]
+    )
     assert normalized["operations"][0]["path"] == "tests/a.py"
 
 
@@ -525,6 +555,7 @@ def test_build_root_cause_summary_with_turkish_prefix() -> None:
 
 def test_build_root_cause_summary_ignores_empty_first_line_and_falls_back() -> None:
     info = {"log_excerpt": "AssertionError: boom", "failure_summary": "failed"}
+
     class WeirdDiagnosis:
         def __str__(self) -> str:
             class WeirdStr(str):

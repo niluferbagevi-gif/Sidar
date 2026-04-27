@@ -87,7 +87,9 @@ def _build_code_manager_mock(code_manager_cls):
 
 def _build_pkg_manager_mock(pkg_manager_cls):
     pkg_manager = create_autospec(pkg_manager_cls, instance=True, spec_set=True)
-    pkg_manager.pypi_info = AsyncMock(side_effect=lambda package_name: (True, f"pkg:{package_name}"))
+    pkg_manager.pypi_info = AsyncMock(
+        side_effect=lambda package_name: (True, f"pkg:{package_name}")
+    )
     return pkg_manager
 
 
@@ -99,23 +101,28 @@ def _build_todo_manager_mock(todo_manager_cls):
 
 def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
     CoderAgent = coder_module.CoderAgent
+
     def fake_base_init(self, cfg=None, *, role_name="base"):
         self.cfg = cfg
         self.role_name = role_name
         self.tools = {}
-        
+
         def _register_tool(name, func):
             self.tools[name] = func
 
         self.register_tool = _register_tool
 
     monkeypatch.setattr(coder_module.BaseAgent, "__init__", fake_base_init)
-    monkeypatch.setattr(coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level))
+    monkeypatch.setattr(
+        coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level)
+    )
     code_manager_mock = _build_code_manager_mock(coder_module.CodeManager)
     pkg_manager_mock = _build_pkg_manager_mock(coder_module.PackageInfoManager)
     todo_manager_mock = _build_todo_manager_mock(coder_module.TodoManager)
     monkeypatch.setattr(coder_module, "CodeManager", lambda *_args, **_kwargs: code_manager_mock)
-    monkeypatch.setattr(coder_module, "PackageInfoManager", lambda *_args, **_kwargs: pkg_manager_mock)
+    monkeypatch.setattr(
+        coder_module, "PackageInfoManager", lambda *_args, **_kwargs: pkg_manager_mock
+    )
     monkeypatch.setattr(coder_module, "TodoManager", lambda *_args, **_kwargs: todo_manager_mock)
 
     events = DummyEvents()
@@ -154,7 +161,7 @@ def test_parse_qa_feedback_variants(monkeypatch, coder_module):
 
     # startswith("{") dalında json.loads sözlük dışı bir tip döndürürse fallback'e düşmeli
     monkeypatch.setattr(coder_module.json, "loads", lambda _payload: ["forced", "list"])
-    forced_non_dict = CoderAgent._parse_qa_feedback("{\"decision\":\"approve\"}")
+    forced_non_dict = CoderAgent._parse_qa_feedback('{"decision":"approve"}')
     assert forced_non_dict == {"raw": '{"decision":"approve"}'}
 
     parsed = CoderAgent._parse_qa_feedback("decision=reject; summary=Fix tests; x=y")
@@ -163,7 +170,9 @@ def test_parse_qa_feedback_variants(monkeypatch, coder_module):
     assert parsed["x"] == "y"
 
     # "=" içermeyen parça atlanmalı ve sözlüğe eklenmemeli
-    parsed_with_noise = CoderAgent._parse_qa_feedback("decision=approve;note without equals;summary=ok")
+    parsed_with_noise = CoderAgent._parse_qa_feedback(
+        "decision=approve;note without equals;summary=ok"
+    )
     assert parsed_with_noise["decision"] == "approve"
     assert parsed_with_noise["summary"] == "ok"
     assert "note without equals" not in parsed_with_noise

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import statistics
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +90,13 @@ def main() -> int:
     failed = False
     if recent_entries:
         for metric_name, current in metrics.items():
-            med = statistics.median([float(item["metrics"][metric_name]) for item in recent_entries if metric_name in item["metrics"]])
+            med = statistics.median(
+                [
+                    float(item["metrics"][metric_name])
+                    for item in recent_entries
+                    if metric_name in item["metrics"]
+                ]
+            )
             if med <= 0:
                 continue
             pct_delta = ((current - med) / med) * 100.0
@@ -109,7 +115,7 @@ def main() -> int:
 
     entries.append(
         {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "metrics": metrics,
         }
     )

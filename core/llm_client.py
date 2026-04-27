@@ -5,30 +5,33 @@ Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP taban
 
 from __future__ import annotations
 
+import asyncio
 import codecs
 import inspect
-import asyncio
 import json
-import sys
 import logging
 import random
+import sys
 import time
-from contextlib import nullcontext
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import nullcontext
+from typing import Any
 
 import httpx
-from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
-from core.dlp import mask_messages as _dlp_mask_messages
-from core.router import CostAwareRouter, record_routing_cost
-from core.cache.semantic_cache import SemanticCacheManager
-from core.utils.json_repair import is_safe_literal_eval_candidate
-from core.utils.json_repair import repair_json_text
-from core.utils.json_repair import repair_json_text_async
-import core.utils.token_counter as token_counter
-from core.cache_metrics import record_cache_skip
-
 from opentelemetry import trace
+
+import core.utils.token_counter as token_counter
+from core.cache.semantic_cache import SemanticCacheManager
+from core.cache_metrics import record_cache_skip
+from core.dlp import mask_messages as _dlp_mask_messages
+from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
+from core.router import CostAwareRouter, record_routing_cost
+from core.utils.json_repair import (
+    is_safe_literal_eval_candidate,
+    repair_json_text,
+    repair_json_text_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,7 @@ logger = logging.getLogger(__name__)
 _repair_json_text = repair_json_text
 _is_safe_literal_eval_candidate = is_safe_literal_eval_candidate
 
-SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
+SIDAR_TOOL_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "thought": {"type": "string"},
@@ -48,7 +51,7 @@ SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
 }
 
 DEFAULT_COST_PER_TOKEN_USD = 2e-6
-MODEL_COSTS_PER_TOKEN_USD: Dict[str, float] = {
+MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
     "gpt-4o": 5e-6,
     "gpt-4o-mini": 2e-6,
     "claude-3-5-sonnet": 3e-6,
@@ -78,7 +81,7 @@ def _prepare_span_scope(config: Any, span_name: str, stream: bool):
     return tracer.start_as_current_span(span_name), None
 
 
-def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
+def build_provider_json_mode_config(provider: str) -> dict[str, Any]:
     """Sidar'ın tekil araç JSON formatını sağlayıcıya göre adapte eder."""
     provider = (provider or "").lower()
     if provider == "ollama":
@@ -98,21 +101,30 @@ def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
 class LLMAPIError(RuntimeError):
     """Sağlayıcı çağrılarında standart hata sözleşmesi."""
 
-    def __init__(self, provider: str, message: str, *, status_code: Optional[int] = None, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retryable: bool = False,
+    ) -> None:
         super().__init__(message)
         self.provider = provider
         self.status_code = status_code
         self.retryable = retryable
 
 
-def _is_retryable_exception(exc: Exception) -> tuple[bool, Optional[int]]:
+def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
     status_code = getattr(exc, "status_code", None)
     http_status_error = getattr(httpx, "HTTPStatusError", None)
     if http_status_error and isinstance(exc, http_status_error):
         status_code = exc.response.status_code
     if status_code == 429 or (status_code is not None and 500 <= int(status_code) < 600):
         return True, int(status_code)
-    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError, asyncio.TimeoutError)):
+    if isinstance(
+        exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError, asyncio.TimeoutError)
+    ):
         return True, status_code
     return False, status_code
 
@@ -130,10 +142,12 @@ async def _retry_with_backoff(provider: str, operation, *, config, retry_hint: s
             retryable, status_code = _is_retryable_exception(exc)
             if (not retryable) or attempt >= max_retries:
                 message = f"{retry_hint}: {exc}"
-                raise LLMAPIError(provider, message, status_code=status_code, retryable=retryable) from exc
+                raise LLMAPIError(
+                    provider, message, status_code=status_code, retryable=retryable
+                ) from exc
 
             jitter_cap = min(0.5, base_delay)
-            delay = min(max_delay, base_delay * (2 ** attempt)) + random.uniform(0, jitter_cap)
+            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0, jitter_cap)
             attempt += 1
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",
@@ -155,7 +169,9 @@ def _ensure_json_text(text: str, provider: str) -> str:
     except Exception:
         repaired = _repair_json_text(raw)
         if repaired is not None:
-            logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
+            logger.warning(
+                "%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider
+            )
             return repaired
         logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
@@ -177,7 +193,9 @@ async def _ensure_json_text_async(text: str, provider: str) -> str:
     except Exception:
         repaired = await repair_json_text_async(raw)
         if repaired is not None:
-            logger.warning("%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider)
+            logger.warning(
+                "%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider
+            )
             return repaired
         logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
@@ -224,12 +242,18 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
 
     if isinstance(usage, dict):
         prompt = int(
-            usage.get("prompt_token_count", usage.get("input_token_count", usage.get("prompt_tokens", 0))) or 0
+            usage.get(
+                "prompt_token_count", usage.get("input_token_count", usage.get("prompt_tokens", 0))
+            )
+            or 0
         )
         completion = int(
             usage.get(
                 "candidates_token_count",
-                usage.get("output_token_count", usage.get("completion_tokens", usage.get("output_tokens", 0))),
+                usage.get(
+                    "output_token_count",
+                    usage.get("completion_tokens", usage.get("output_tokens", 0)),
+                ),
             )
             or 0
         )
@@ -308,14 +332,16 @@ async def _track_stream_completion(
             yield chunk
         _record_llm_metric(provider=provider, model=model, started_at=started_at, success=True)
     except Exception as exc:
-        _record_llm_metric(provider=provider, model=model, started_at=started_at, success=False, error=str(exc))
+        _record_llm_metric(
+            provider=provider, model=model, started_at=started_at, success=False, error=str(exc)
+        )
         raise
 
 
 async def _track_stream_routing_cost(
     stream_iter: AsyncIterator[str],
     *,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     config: Any,
     model: str = "",
 ) -> AsyncIterator[str]:
@@ -328,7 +354,9 @@ async def _track_stream_routing_cost(
     finally:
         prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
         completion_text = "".join(response_parts)
-        est_tokens = token_counter.estimate_tokens(prompt_text, model=model) + token_counter.estimate_tokens(completion_text, model=model)
+        est_tokens = token_counter.estimate_tokens(
+            prompt_text, model=model
+        ) + token_counter.estimate_tokens(completion_text, model=model)
         if est_tokens <= 0:
             return
         cost_per_token = _resolve_cost_per_token_usd(config, model=model)
@@ -351,8 +379,6 @@ async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_a
             span.end()
 
 
-
-
 class BaseLLMClient(ABC):
     """LLM sağlayıcıları için soyut istemci arayüzü."""
 
@@ -360,17 +386,20 @@ class BaseLLMClient(ABC):
         self.config = config
 
     @abstractmethod
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         """json_mode=True çağrısında payload'a eklenecek sağlayıcıya özel ayarları döndürür."""
 
     @staticmethod
-    def _inject_json_instruction(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    def _inject_json_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
         """Mesaj listesindeki system mesajına JSON şema talimatını ekler (system yoksa başa ekler)."""
         result = list(messages)
         for i, msg in enumerate(result):
             if msg.get("role") == "system":
                 existing = (msg.get("content") or "").strip()
-                result[i] = {**msg, "content": f"{existing}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()}
+                result[i] = {
+                    **msg,
+                    "content": f"{existing}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip(),
+                }
                 return result
         return [{"role": "system", "content": SIDAR_TOOL_JSON_INSTRUCTION}] + result
 
@@ -395,12 +424,12 @@ class BaseLLMClient(ABC):
     @abstractmethod
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         """Sağlayıcıya özel chat çağrısı."""
 
 
@@ -409,17 +438,19 @@ class OllamaClient(BaseLLMClient):
 
     @property
     def base_url(self) -> str:
-        return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
+        return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
+            "/api"
+        )
 
     def _build_timeout(self) -> httpx.Timeout:
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         return {"format": SIDAR_TOOL_JSON_SCHEMA}
 
     @staticmethod
-    def _build_missing_model_guidance(target_model: str, error_text: str) -> Optional[str]:
+    def _build_missing_model_guidance(target_model: str, error_text: str) -> str | None:
         normalized = (error_text or "").lower()
         if ("model" in normalized) and ("not found" in normalized or "bulunamad" in normalized):
             return (
@@ -443,7 +474,7 @@ class OllamaClient(BaseLLMClient):
         response: httpx.Response,
         *,
         max_buffer_chars: int,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         buffer = ""
         utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         async for raw_bytes in response.aiter_bytes():
@@ -484,12 +515,12 @@ class OllamaClient(BaseLLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         target_model = str(model or _setting(self.config, "CODING_MODEL", "qwen2.5-coder:7b"))
         url = f"{self.base_url}/api/chat"
 
@@ -543,7 +574,9 @@ class OllamaClient(BaseLLMClient):
                         resp.raise_for_status()
                         return resp.json()
 
-                data = await _retry_with_backoff("ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız")
+                data = await _retry_with_backoff(
+                    "ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız"
+                )
                 content = data.get("message", {}).get("content", "")
                 if span is not None:
                     span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
@@ -585,6 +618,7 @@ class OllamaClient(BaseLLMClient):
         stream_cm = None
         resp = None
         try:
+
             async def _open_stream():
                 stream_client = httpx.AsyncClient(timeout=timeout)
                 cm = stream_client.stream("POST", url, json=payload)
@@ -598,11 +632,15 @@ class OllamaClient(BaseLLMClient):
                 config=self.config,
                 retry_hint="Ollama stream başlatma başarısız",
             )
-            max_buffer_chars = max(1024, int(_setting(self.config, "OLLAMA_STREAM_MAX_BUFFER_CHARS", 1_000_000)))
+            max_buffer_chars = max(
+                1024, int(_setting(self.config, "OLLAMA_STREAM_MAX_BUFFER_CHARS", 1_000_000))
+            )
             async for body in self._iter_ollama_json_lines(resp, max_buffer_chars=max_buffer_chars):
                 err = str(body.get("error", "") or "")
                 if err:
-                    guidance = self._build_missing_model_guidance(str(payload.get("model", "") or ""), err)
+                    guidance = self._build_missing_model_guidance(
+                        str(payload.get("model", "") or ""), err
+                    )
                     if guidance:
                         yield self._error_chunk(f"\n[HATA] {guidance}")
                         return
@@ -617,7 +655,7 @@ class OllamaClient(BaseLLMClient):
             if client is not None and hasattr(client, "aclose"):
                 await client.aclose()
 
-    async def list_models(self) -> List[str]:
+    async def list_models(self) -> list[str]:
         url = f"{self.base_url}/api/tags"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -641,23 +679,26 @@ class OllamaClient(BaseLLMClient):
 class GeminiClient(BaseLLMClient):
     """Gemini sağlayıcısı istemcisi."""
 
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         return {"generation_config": {"response_mime_type": "application/json"}}
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         genai_client = None
         genai_types = None
         try:
             from google import genai as google_genai  # type: ignore[import-not-found]
             from google.genai import types as google_genai_types  # type: ignore[import-not-found]
-            genai_client = google_genai.Client(api_key=str(_setting(self.config, "GEMINI_API_KEY", "")))
+
+            genai_client = google_genai.Client(
+                api_key=str(_setting(self.config, "GEMINI_API_KEY", ""))
+            )
             genai_types = google_genai_types
         except ImportError:
             genai_client = None
@@ -698,7 +739,10 @@ class GeminiClient(BaseLLMClient):
         if json_mode:
             gen_config.update(self.json_mode_config().get("generation_config", {}))
 
-        history = [{"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]} for m in chat_messages]
+        history = [
+            {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
+            for m in chat_messages
+        ]
 
         model_name = str(model or _setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
         span_scope, stream_span = _prepare_span_scope(self.config, "llm.gemini.chat", stream)
@@ -718,6 +762,7 @@ class GeminiClient(BaseLLMClient):
                 generate_config = genai_types.GenerateContentConfig(**config_kwargs)
                 contents = history or [{"role": "user", "parts": ["Merhaba"]}]
                 if stream:
+
                     async def _start_stream():
                         call = genai_client.aio.models.generate_content_stream(
                             model=model_name,
@@ -767,7 +812,13 @@ class GeminiClient(BaseLLMClient):
             except Exception as exc:
                 if stream and span is not None:
                     span.end()
-                _record_llm_metric(provider="gemini", model=model_name, started_at=started_at, success=False, error=str(exc))
+                _record_llm_metric(
+                    provider="gemini",
+                    model=model_name,
+                    started_at=started_at,
+                    success=False,
+                    error=str(exc),
+                )
                 logger.error("Gemini hata: %s", exc)
                 msg = json.dumps(
                     {
@@ -799,7 +850,7 @@ class GeminiClient(BaseLLMClient):
 class OpenAIClient(BaseLLMClient):
     """OpenAI Chat Completions istemcisi (opsiyonel sağlayıcı)."""
 
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         return {
             "response_format": {
                 "type": "json_schema",
@@ -813,12 +864,12 @@ class OpenAIClient(BaseLLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         api_key = getattr(self.config, "OPENAI_API_KEY", "")
         if not api_key:
             msg = json.dumps(
@@ -842,7 +893,9 @@ class OpenAIClient(BaseLLMClient):
             payload.update(self.json_mode_config())
 
         headers = {"Authorization": f"Bearer {api_key}"}
-        timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
+        timeout = httpx.Timeout(
+            max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0
+        )
 
         span_scope, stream_span = _prepare_span_scope(self.config, "llm.openai.chat", stream)
         with span_scope as scoped_span:
@@ -857,7 +910,13 @@ class OpenAIClient(BaseLLMClient):
                     payload["stream"] = True
                     payload["stream_options"] = {"include_usage": True}
                     stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
-                    return _trace_stream_metrics(_track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at), span, started_at)
+                    return _trace_stream_metrics(
+                        _track_stream_completion(
+                            stream_iter, provider="openai", model=model_name, started_at=started_at
+                        ),
+                        span,
+                        started_at,
+                    )
 
                 async def _do_request():
                     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -886,13 +945,11 @@ class OpenAIClient(BaseLLMClient):
                         resp.raise_for_status()
                         return resp.json()
 
-                data = await _retry_with_backoff("openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız")
-                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
+                data = await _retry_with_backoff(
+                    "openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız"
                 )
+                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 _record_llm_metric(
                     provider="openai",
                     model=model_name,
@@ -907,12 +964,24 @@ class OpenAIClient(BaseLLMClient):
             except LLMAPIError as exc:
                 if stream and span is not None:
                     span.end()
-                _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+                _record_llm_metric(
+                    provider="openai",
+                    model=model_name,
+                    started_at=started_at,
+                    success=False,
+                    error=str(exc),
+                )
                 raise
             except Exception as exc:
                 if stream and span is not None:
                     span.end()
-                _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+                _record_llm_metric(
+                    provider="openai",
+                    model=model_name,
+                    started_at=started_at,
+                    success=False,
+                    error=str(exc),
+                )
                 logger.error("OpenAI hata: %s", exc)
                 raise LLMAPIError("openai", f"OpenAI hata: {exc}", retryable=False) from exc
 
@@ -927,6 +996,7 @@ class OpenAIClient(BaseLLMClient):
         stream_cm = None
         resp = None
         try:
+
             async def _open_stream():
                 stream_client = httpx.AsyncClient(timeout=timeout)
                 cm = stream_client.stream(
@@ -974,10 +1044,10 @@ class OpenAIClient(BaseLLMClient):
 class LiteLLMClient(BaseLLMClient):
     """LiteLLM Gateway istemcisi (OpenAI uyumlu Chat Completions)."""
 
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         return {"response_format": {"type": "json_object"}}
 
-    def _candidate_models(self, requested_model: Optional[str]) -> List[str]:
+    def _candidate_models(self, requested_model: str | None) -> list[str]:
         primary = (
             requested_model
             or str(_setting(self.config, "LITELLM_MODEL", ""))
@@ -988,7 +1058,7 @@ class LiteLLMClient(BaseLLMClient):
             raw_fallbacks = []
         fallbacks = [str(m).strip() for m in raw_fallbacks if str(m).strip()]
         ordered = [primary] + fallbacks
-        dedup: List[str] = []
+        dedup: list[str] = []
         for m in ordered:
             if m and m not in dedup:
                 dedup.append(m)
@@ -996,12 +1066,12 @@ class LiteLLMClient(BaseLLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         base_url = str(_setting(self.config, "LITELLM_GATEWAY_URL", "")).strip().rstrip("/")
         api_key = str(_setting(self.config, "LITELLM_API_KEY", "")).strip()
         if not base_url:
@@ -1018,14 +1088,16 @@ class LiteLLMClient(BaseLLMClient):
         if json_mode:
             messages = self._inject_json_instruction(messages)
 
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        timeout = httpx.Timeout(max(10, int(getattr(self.config, "LITELLM_TIMEOUT", 60))), connect=10.0)
+        timeout = httpx.Timeout(
+            max(10, int(getattr(self.config, "LITELLM_TIMEOUT", 60))), connect=10.0
+        )
         models = self._candidate_models(model)
         started_at = time.monotonic()
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         span_scope, stream_span = _prepare_span_scope(self.config, "llm.litellm.chat", stream)
         with span_scope as scoped_span:
             span = scoped_span or stream_span
@@ -1035,7 +1107,7 @@ class LiteLLMClient(BaseLLMClient):
 
             try:
                 for idx, model_name in enumerate(models):
-                    payload: Dict[str, Any] = {
+                    payload: dict[str, Any] = {
                         "model": model_name,
                         "messages": messages,
                         "temperature": temperature,
@@ -1048,8 +1120,15 @@ class LiteLLMClient(BaseLLMClient):
                         if stream:
                             payload["stream"] = True
                             payload["stream_options"] = {"include_usage": True}
-                            stream_iter = self._stream_openai_compatible(endpoint, payload, headers, timeout, json_mode)
-                            return _track_stream_completion(stream_iter, provider="litellm", model=model_name, started_at=started_at)
+                            stream_iter = self._stream_openai_compatible(
+                                endpoint, payload, headers, timeout, json_mode
+                            )
+                            return _track_stream_completion(
+                                stream_iter,
+                                provider="litellm",
+                                model=model_name,
+                                started_at=started_at,
+                            )
 
                         async def _do_request():
                             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -1057,21 +1136,45 @@ class LiteLLMClient(BaseLLMClient):
                                 resp.raise_for_status()
                                 return resp.json()
 
-                        data = await _retry_with_backoff("litellm", _do_request, config=self.config, retry_hint="LiteLLM isteği başarısız")
+                        data = await _retry_with_backoff(
+                            "litellm",
+                            _do_request,
+                            config=self.config,
+                            retry_hint="LiteLLM isteği başarısız",
+                        )
                         prompt_tokens, completion_tokens = _extract_usage_tokens(data)
                         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        _record_llm_metric(provider="litellm", model=model_name, started_at=started_at, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, success=True)
+                        _record_llm_metric(
+                            provider="litellm",
+                            model=model_name,
+                            started_at=started_at,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            success=True,
+                        )
                         if span is not None:
                             span.set_attribute("sidar.llm.model", model_name)
-                            span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                        return await _ensure_json_text_async(content, "LiteLLM") if json_mode else content
+                            span.set_attribute(
+                                "sidar.llm.total_ms", (time.monotonic() - started_at) * 1000
+                            )
+                        return (
+                            await _ensure_json_text_async(content, "LiteLLM")
+                            if json_mode
+                            else content
+                        )
                     except Exception as exc:
                         last_error = exc
                         logger.warning("LiteLLM modeli başarısız oldu (%s): %s", model_name, exc)
                         if idx == len(models) - 1:
                             break
 
-                _record_llm_metric(provider="litellm", model=models[0] if models else "unknown", started_at=started_at, success=False, error=str(last_error or "unknown"))
+                _record_llm_metric(
+                    provider="litellm",
+                    model=models[0] if models else "unknown",
+                    started_at=started_at,
+                    success=False,
+                    error=str(last_error or "unknown"),
+                )
                 raise LLMAPIError("litellm", f"LiteLLM hata: {last_error}", retryable=False)
             except Exception:
                 if stream and span is not None:
@@ -1089,6 +1192,7 @@ class LiteLLMClient(BaseLLMClient):
         client = None
         stream_cm = None
         try:
+
             async def _open_stream():
                 stream_client = httpx.AsyncClient(timeout=timeout)
                 cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
@@ -1096,7 +1200,12 @@ class LiteLLMClient(BaseLLMClient):
                 response.raise_for_status()
                 return stream_client, cm, response
 
-            client, stream_cm, resp = await _retry_with_backoff("litellm", _open_stream, config=self.config, retry_hint="LiteLLM stream başlatma başarısız")
+            client, stream_cm, resp = await _retry_with_backoff(
+                "litellm",
+                _open_stream,
+                config=self.config,
+                retry_hint="LiteLLM stream başlatma başarısız",
+            )
             async for body in self._iter_openai_compatible_stream_lines(resp):
                 delta = body.get("choices", [{}])[0].get("delta", {})
                 text = delta.get("content", "")
@@ -1122,14 +1231,16 @@ class LiteLLMClient(BaseLLMClient):
 class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""
 
-    def json_mode_config(self) -> Dict[str, Any]:
+    def json_mode_config(self) -> dict[str, Any]:
         # Anthropic için yerel JSON modu bulunmaz; şema talimatı system prompt'a enjekte edilir
         return {}
 
     @staticmethod
-    def _split_system_and_messages(messages: List[Dict[str, str]]) -> tuple[str, List[Dict[str, str]]]:
-        system_parts: List[str] = []
-        conversation: List[Dict[str, str]] = []
+    def _split_system_and_messages(
+        messages: list[dict[str, str]],
+    ) -> tuple[str, list[dict[str, str]]]:
+        system_parts: list[str] = []
+        conversation: list[dict[str, str]] = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
@@ -1145,12 +1256,12 @@ class AnthropicClient(BaseLLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         api_key = str(_setting(self.config, "ANTHROPIC_API_KEY", ""))
         if not api_key:
             msg = json.dumps(
@@ -1174,7 +1285,9 @@ class AnthropicClient(BaseLLMClient):
             )
             return _fallback_stream(msg) if stream else msg
 
-        model_name = str(model or _setting(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"))
+        model_name = str(
+            model or _setting(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+        )
         if json_mode:
             messages = self._inject_json_instruction(messages)
         system_prompt, conversation = self._split_system_and_messages(messages)
@@ -1218,13 +1331,17 @@ class AnthropicClient(BaseLLMClient):
                         messages=conversation,
                     )
 
-                response = await _retry_with_backoff("anthropic", _do_request, config=self.config, retry_hint="Anthropic isteği başarısız")
+                response = await _retry_with_backoff(
+                    "anthropic",
+                    _do_request,
+                    config=self.config,
+                    retry_hint="Anthropic isteği başarısız",
+                )
                 usage = getattr(response, "usage", None)
                 prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
                 completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
                 text = "".join(
-                    getattr(block, "text", "")
-                    for block in getattr(response, "content", [])
+                    getattr(block, "text", "") for block in getattr(response, "content", [])
                 )
                 _record_llm_metric(
                     provider="anthropic",
@@ -1240,12 +1357,24 @@ class AnthropicClient(BaseLLMClient):
             except LLMAPIError as exc:
                 if stream and span is not None:
                     span.end()
-                _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
+                _record_llm_metric(
+                    provider="anthropic",
+                    model=model_name,
+                    started_at=started_at,
+                    success=False,
+                    error=str(exc),
+                )
                 raise
             except Exception as exc:
                 if stream and span is not None:
                     span.end()
-                _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
+                _record_llm_metric(
+                    provider="anthropic",
+                    model=model_name,
+                    started_at=started_at,
+                    success=False,
+                    error=str(exc),
+                )
                 logger.error("Anthropic hata: %s", exc)
                 raise LLMAPIError("anthropic", f"Anthropic hata: {exc}", retryable=False) from exc
 
@@ -1253,7 +1382,7 @@ class AnthropicClient(BaseLLMClient):
         self,
         client,
         model_name: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         system_prompt: str,
         temperature: float,
         json_mode: bool,
@@ -1261,6 +1390,7 @@ class AnthropicClient(BaseLLMClient):
         stream_cm = None
         stream = None
         try:
+
             async def _open_stream():
                 cm = client.messages.stream(
                     model=model_name,
@@ -1279,14 +1409,14 @@ class AnthropicClient(BaseLLMClient):
                 retry_hint="Anthropic stream başlatma başarısız",
             )
             async for event in stream:
-                    if getattr(event, "type", "") != "content_block_delta":
-                        continue
-                    delta = getattr(event, "delta", None)
-                    if getattr(delta, "type", "") != "text_delta":
-                        continue
-                    text = getattr(delta, "text", "")
-                    if text:
-                        yield text
+                if getattr(event, "type", "") != "content_block_delta":
+                    continue
+                delta = getattr(event, "delta", None)
+                if getattr(delta, "type", "") != "text_delta":
+                    continue
+                text = getattr(delta, "text", "")
+                if text:
+                    yield text
         except Exception as exc:
             msg = json.dumps(
                 {
@@ -1305,7 +1435,7 @@ class AnthropicClient(BaseLLMClient):
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
-    PROVIDER_REGISTRY: Dict[str, type[BaseLLMClient]] = {
+    PROVIDER_REGISTRY: dict[str, type[BaseLLMClient]] = {
         "ollama": OllamaClient,
         "gemini": GeminiClient,
         "openai": OpenAIClient,
@@ -1328,7 +1458,9 @@ class LLMClient:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
         if isinstance(self._client, OllamaClient):
             return self._client.base_url
-        return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
+        return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
+            "/api"
+        )
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
@@ -1337,13 +1469,15 @@ class LLMClient:
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
-    def _truncate_messages_for_local_model(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    def _truncate_messages_for_local_model(
+        self, messages: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
         """Yerel modellerde bağlam taşmasını azaltmak için mesajları karakter bazlı kırp."""
         max_chars = max(1200, int(_setting(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000)))
         if not messages:
             return messages
 
-        normalized: List[Dict[str, str]] = []
+        normalized: list[dict[str, str]] = []
         for msg in messages:
             role = msg.get("role", "user")
             content = str(msg.get("content") or "")
@@ -1353,7 +1487,7 @@ class LLMClient:
         if total <= max_chars:
             return normalized
 
-        def _is_rag_context_message(msg: Dict[str, str]) -> bool:
+        def _is_rag_context_message(msg: dict[str, str]) -> bool:
             role = str(msg.get("role", "")).lower()
             if role in {"tool", "context"}:
                 return True
@@ -1362,7 +1496,7 @@ class LLMClient:
 
         # Önce en son mesajı tam tutmaya çalış, ardından system mesajını sınırlı tut,
         # sonra geçmişi sondan başa doğru doldur.
-        result: List[Dict[str, str]] = []
+        result: list[dict[str, str]] = []
         used = 0
 
         last_msg = normalized[-1]
@@ -1380,7 +1514,14 @@ class LLMClient:
                 result.insert(0, {"role": "system", "content": system_content})
                 used += len(system_content)
 
-        rag_idx = next((i for i in range(len(normalized) - 2, -1, -1) if _is_rag_context_message(normalized[i])), None)
+        rag_idx = next(
+            (
+                i
+                for i in range(len(normalized) - 2, -1, -1)
+                if _is_rag_context_message(normalized[i])
+            ),
+            None,
+        )
         if rag_idx is not None and used < max_chars:
             rag_msg = normalized[rag_idx]
             remaining = max_chars - used
@@ -1407,27 +1548,28 @@ class LLMClient:
             if len(content) > remaining:
                 content = content[-remaining:]
             if content:
-                result.insert(1 if result and result[0]["role"] == "system" else 0, {"role": msg["role"], "content": content})
+                result.insert(
+                    1 if result and result[0]["role"] == "system" else 0,
+                    {"role": msg["role"], "content": content},
+                )
                 used += len(content)
 
         return result
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> str | AsyncIterator[str]:
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + list(messages)
 
         # Cost-Aware Routing: karmaşıklık + bütçeye göre provider/model seç
-        routed_provider, routed_model = self._router.select(
-            messages, self.provider, model
-        )
+        routed_provider, routed_model = self._router.select(messages, self.provider, model)
         if routed_provider != self.provider:
             # Farklı sağlayıcıya yönlendirme — geçici istemci oluştur
             try:
@@ -1441,7 +1583,11 @@ class LLMClient:
                     json_mode=json_mode,
                 )
             except Exception as exc:
-                logger.warning("CostRouter yönlendirme başarısız (%s): %s — varsayılana dönülüyor.", routed_provider, exc)
+                logger.warning(
+                    "CostRouter yönlendirme başarısız (%s): %s — varsayılana dönülüyor.",
+                    routed_provider,
+                    exc,
+                )
         else:
             model = routed_model or model
 
@@ -1483,9 +1629,9 @@ class LLMClient:
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
             _msg_text = "\n".join(m.get("content") or "" for m in messages)
-            _est_tokens = token_counter.estimate_tokens(_msg_text, model=str(model or "")) + token_counter.estimate_tokens(
-                response, model=str(model or "")
-            )
+            _est_tokens = token_counter.estimate_tokens(
+                _msg_text, model=str(model or "")
+            ) + token_counter.estimate_tokens(response, model=str(model or ""))
             _cost_per_token = _resolve_cost_per_token_usd(self.config, model=str(model or ""))
             record_routing_cost(_est_tokens * _cost_per_token)
 
@@ -1494,7 +1640,7 @@ class LLMClient:
 
         return response
 
-    async def list_ollama_models(self) -> List[str]:
+    async def list_ollama_models(self) -> list[str]:
         if isinstance(self._client, OllamaClient):
             return await self._client.list_models()
         return []

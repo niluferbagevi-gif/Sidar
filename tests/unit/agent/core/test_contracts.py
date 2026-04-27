@@ -60,8 +60,14 @@ def test_normalize_broker_protocol(value: object, expected: str) -> None:
 
 
 def test_derive_helpers_cover_fallback_paths() -> None:
-    assert derive_broker_routing_key(receiver="  QA ", intent=" Test ", namespace=" SIDAR ") == "sidar.qa.test"
-    assert derive_broker_routing_key(receiver="", intent="", namespace="") == "sidar.swarm.unknown.mixed"
+    assert (
+        derive_broker_routing_key(receiver="  QA ", intent=" Test ", namespace=" SIDAR ")
+        == "sidar.qa.test"
+    )
+    assert (
+        derive_broker_routing_key(receiver="", intent="", namespace="")
+        == "sidar.swarm.unknown.mixed"
+    )
     assert derive_correlation_id("", None, " id-42 ") == "id-42"
     assert derive_correlation_id(None, "", " ") == ""
 
@@ -147,7 +153,9 @@ def test_federation_task_result_conversion_and_prompt() -> None:
 
     assert result.protocol == FEDERATION_PROTOCOL_V1
     assert result.correlation_id == "corr-2"
-    assert task_result == TaskResult(task_id="fed-2", status="done", summary="ok", evidence=["e1"], next_actions=["n1"])
+    assert task_result == TaskResult(
+        task_id="fed-2", status="done", summary="ok", evidence=["e1"], next_actions=["n1"]
+    )
     assert "[FEDERATION RESULT]" in result.to_prompt()
 
 
@@ -192,7 +200,9 @@ def test_broker_task_envelope_keeps_existing_routing_key() -> None:
 
 
 def test_broker_task_result_post_init_from_to_and_prompt() -> None:
-    result = TaskResult(task_id="t-3", status="failed", summary="boom", evidence=["log"], next_actions=["retry"])
+    result = TaskResult(
+        task_id="t-3", status="failed", summary="boom", evidence=["log"], next_actions=["retry"]
+    )
 
     broker_result = BrokerTaskResult.from_task_result(
         result,
@@ -352,7 +362,9 @@ def test_type_guards_support_instances_and_duck_typing_variants() -> None:
     like_p2p.__class__.__name__ = "P2PMessage"
     assert is_p2p_message(like_p2p)
 
-    assert is_delegation_request(DelegationRequest(task_id="t", reply_to="a", target_agent="b", payload="p"))
+    assert is_delegation_request(
+        DelegationRequest(task_id="t", reply_to="a", target_agent="b", payload="p")
+    )
     assert is_delegation_request(_LikeDelegationRequest())
 
     assert is_external_trigger(ExternalTrigger(trigger_id="tr", source="s", event_name="e"))

@@ -44,8 +44,12 @@ async def test_init_registers_tools(mocker, tmp_path):
 
     security_cls = mocker.patch("managers.security.SecurityManager", autospec=True)
     code_cls = mocker.patch("managers.code_manager.CodeManager", autospec=True)
-    mocker.patch.object(_COVERAGE_MODULE.BaseAgent, "__init__", side_effect=fake_base_init, autospec=True)
-    mocker.patch.object(_COVERAGE_MODULE.BaseAgent, "register_tool", side_effect=fake_register_tool, autospec=True)
+    mocker.patch.object(
+        _COVERAGE_MODULE.BaseAgent, "__init__", side_effect=fake_base_init, autospec=True
+    )
+    mocker.patch.object(
+        _COVERAGE_MODULE.BaseAgent, "register_tool", side_effect=fake_register_tool, autospec=True
+    )
 
     created = CoverageAgent(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert created.role_name == "coverage"
@@ -191,8 +195,14 @@ agent/roles/ok.py                 100      0      0      0 100%
     assert term_data["total_findings"] == 1
     assert term_data["findings"][0]["target_path"] == "agent/roles/coverage_agent.py"
 
-    assert CoverageAgent._parse_terminal_coverage_output("")["summary"] == "Coverage terminal çıktısı boş."
-    assert CoverageAgent._parse_terminal_coverage_output("not parsable")["summary"] == "Coverage terminal çıktısı ayrıştırılamadı."
+    assert (
+        CoverageAgent._parse_terminal_coverage_output("")["summary"]
+        == "Coverage terminal çıktısı boş."
+    )
+    assert (
+        CoverageAgent._parse_terminal_coverage_output("not parsable")["summary"]
+        == "Coverage terminal çıktısı ayrıştırılamadı."
+    )
 
 
 async def test_build_dynamic_prompt():
@@ -261,7 +271,11 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
     gen_cov = await agent._tool_generate_missing_tests(
         json.dumps(
             {
-                "coverage_finding": {"target_path": "src/m.py", "missing_lines": [5], "missing_branches": []},
+                "coverage_finding": {
+                    "target_path": "src/m.py",
+                    "missing_lines": [5],
+                    "missing_branches": [],
+                },
                 "coveragerc": {"run": {"include": "src/*"}},
             }
         )
@@ -293,7 +307,9 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
 @pytest.mark.asyncio
 async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
-    mocker.patch.object(agent.code, "write_generated_test", return_value=(False, "Permission Denied"))
+    mocker.patch.object(
+        agent.code, "write_generated_test", return_value=(False, "Permission Denied")
+    )
 
     write_json = await agent._tool_write_missing_tests(
         '{"suggested_test_path":"tests/fail.py","generated_test":"print(1)","append":false}'
@@ -322,7 +338,9 @@ async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
 
 
 @pytest.mark.asyncio
-async def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+async def test_ensure_db_and_record_task(
+    tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -349,7 +367,9 @@ async def test_ensure_db_and_record_task(tmp_path, monkeypatch, fake_coverage_co
 
 
 @pytest.mark.asyncio
-async def test_ensure_db_when_lock_already_exists(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+async def test_ensure_db_when_lock_already_exists(
+    tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent._db_lock = asyncio.Lock()
     core_pkg = ModuleType("core")
@@ -382,7 +402,9 @@ async def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage
 
 
 @pytest.mark.asyncio
-async def test_ensure_db_concurrency(tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class):
+async def test_ensure_db_concurrency(
+    tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -452,7 +474,7 @@ async def test_clean_code_output_handles_multiple_and_nested_like_fences():
         "Açıklama\n"
         "```python\n"
         "def test_b():\n"
-        "    code = \"\"\"```not-a-fence```\"\"\"\n"
+        '    code = """```not-a-fence```"""\n'
         "    assert code\n"
         "```"
     )
@@ -523,7 +545,10 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
     # writing path with successful record
     agent.code.run_pytest_and_collect = lambda command, cwd: {
         "output": "OUT",
-        "analysis": {"summary": "HAS GAP", "findings": [{"target_path": "src/a.py", "summary": "gap"}]},
+        "analysis": {
+            "summary": "HAS GAP",
+            "findings": [{"target_path": "src/a.py", "summary": "gap"}],
+        },
     }
 
     async def fake_candidate(target_path, pytest_output, analysis):
@@ -556,7 +581,9 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
 
 
 @pytest.mark.asyncio
-async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tmp_path, fake_coverage_code_manager):
+async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(
+    tmp_path, fake_coverage_code_manager
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent.register_tool("analyze_coverage_report", agent._tool_analyze_coverage_report)
 
@@ -567,8 +594,7 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tm
         {
             "coverage_xml": str(invalid_xml),
             "coverage_output": (
-                "Name Stmts Miss Branch BrPart Cover Missing\n"
-                "src/app.py 10 2 0 0 80% 3-4\n"
+                "Name Stmts Miss Branch BrPart Cover Missing\n" "src/app.py 10 2 0 0 80% 3-4\n"
             ),
         }
     )
@@ -581,7 +607,9 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(tm
 
 
 @pytest.mark.asyncio
-async def test_coverage_agent_generate_candidate_with_fake_llm(tmp_path, fake_coverage_code_manager):
+async def test_coverage_agent_generate_candidate_with_fake_llm(
+    tmp_path, fake_coverage_code_manager
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def _coverage_llm(*_args, **_kwargs):
@@ -604,7 +632,9 @@ async def test_coverage_agent_generate_candidate_with_fake_llm(tmp_path, fake_co
 
 
 @pytest.mark.asyncio
-async def test_coverage_agent_run_task_marks_pending_approval(tmp_path, monkeypatch, fake_coverage_code_manager):
+async def test_coverage_agent_run_task_marks_pending_approval(
+    tmp_path, monkeypatch, fake_coverage_code_manager
+):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     monkeypatch.setattr(
         agent.code,
@@ -617,7 +647,11 @@ async def test_coverage_agent_run_task_marks_pending_approval(tmp_path, monkeypa
             "output": "pytest output",
         },
     )
-    monkeypatch.setattr(agent, "_generate_test_candidate", AsyncMock(return_value="def test_generated_coverage_case():\n    assert True\n"))
+    monkeypatch.setattr(
+        agent,
+        "_generate_test_candidate",
+        AsyncMock(return_value="def test_generated_coverage_case():\n    assert True\n"),
+    )
     monkeypatch.setattr(agent.code, "write_generated_test", lambda *_args, **_kwargs: (True, "ok"))
     monkeypatch.setattr(agent, "_record_task", AsyncMock(return_value=None))
 

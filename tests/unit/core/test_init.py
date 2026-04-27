@@ -19,7 +19,9 @@ def test_optional_import_returns_requested_attribute(monkeypatch: pytest.MonkeyP
     assert resolved is sentinel
 
 
-def test_optional_import_returns_proxy_when_dependency_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_optional_import_returns_proxy_when_dependency_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_import(_module_name: str):
         raise ImportError("dependency missing")
 
@@ -33,7 +35,9 @@ def test_optional_import_returns_proxy_when_dependency_missing(monkeypatch: pyte
 
 
 def test_optional_module_returns_none_when_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(core_init, "import_module", lambda _name: (_ for _ in ()).throw(ImportError("boom")))
+    monkeypatch.setattr(
+        core_init, "import_module", lambda _name: (_ for _ in ()).throw(ImportError("boom"))
+    )
 
     assert core_init._optional_module("core.fake_module") is None
 

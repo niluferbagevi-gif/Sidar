@@ -57,7 +57,9 @@ def test_init_client_requires_url_and_token():
 
 
 def test_init_client_uses_basic_auth_when_email_provided():
-    mgr = JiraManager(url="https://example.atlassian.net/", token=" token ", email=" user@example.com ")
+    mgr = JiraManager(
+        url="https://example.atlassian.net/", token=" token ", email=" user@example.com "
+    )
 
     assert mgr.is_available() is True
     assert mgr.url == "https://example.atlassian.net"
@@ -110,7 +112,9 @@ def test_request_success_with_json(monkeypatch):
 
 def test_request_success_without_content(monkeypatch):
     def _factory(**kwargs):
-        return _FakeClient(response=_FakeResponse(status_code=204, json_data=None, content=b""), **kwargs)
+        return _FakeClient(
+            response=_FakeResponse(status_code=204, json_data=None, content=b""), **kwargs
+        )
 
     monkeypatch.setattr("managers.jira_manager.httpx.AsyncClient", _factory)
     mgr = JiraManager(url="https://jira.local", token="abc")
@@ -126,7 +130,9 @@ def test_request_handles_http_error(monkeypatch):
     long_text = "x" * 500
 
     def _factory(**kwargs):
-        return _FakeClient(response=_FakeResponse(status_code=404, text=long_text, content=b"x"), **kwargs)
+        return _FakeClient(
+            response=_FakeResponse(status_code=404, text=long_text, content=b"x"), **kwargs
+        )
 
     monkeypatch.setattr("managers.jira_manager.httpx.AsyncClient", _factory)
     mgr = JiraManager(url="https://jira.local", token="abc")
@@ -333,10 +339,7 @@ def test_add_comment(monkeypatch):
     assert err == ""
     assert captured["method"] == "POST"
     assert captured["endpoint"] == "issue/PROJ-1/comment"
-    assert (
-        captured["kwargs"]["json"]["body"]["content"][0]["content"][0]["text"]
-        == "Merhaba"
-    )
+    assert captured["kwargs"]["json"]["body"]["content"][0]["content"][0]["text"] == "Merhaba"
 
 
 def test_add_comment_returns_empty_dict_when_data_none(monkeypatch):

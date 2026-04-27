@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 import core.cache.semantic_cache as semantic_cache_module
-from core.llm_client import LLMClient, OllamaClient
 from core.cache.semantic_cache import SemanticCacheManager
+from core.llm_client import LLMClient, OllamaClient
 
 
 def _cfg(**overrides: object) -> SimpleNamespace:
@@ -46,7 +46,9 @@ async def test_semantic_cache_hit_skips_llm_call(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_semantic_cache_miss_calls_llm_and_populates_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_semantic_cache_miss_calls_llm_and_populates_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cache_get = AsyncMock(return_value=None)
     cache_set = AsyncMock()
     llm_chat = AsyncMock(return_value="llm-response")
@@ -91,7 +93,9 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
 
 
 @pytest.mark.asyncio
-async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
     manager = SemanticCacheManager(cfg)
 
@@ -119,7 +123,9 @@ async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_get_redis_records_error_and_opens_circuit_on_from_url_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_redis_records_error_and_opens_circuit_on_from_url_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
     manager = SemanticCacheManager(cfg)
 
@@ -171,7 +177,9 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
     class _ShouldNotInitRedis:
         @staticmethod
         def from_url(*_args, **_kwargs):
-            raise AssertionError("Redis.from_url should not be called when circuit opens inside lock")
+            raise AssertionError(
+                "Redis.from_url should not be called when circuit opens inside lock"
+            )
 
     skips = {"count": 0}
     circuit_bypasses = {"count": 0}
@@ -196,7 +204,9 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
 
 
 @pytest.mark.asyncio
-async def test_get_redis_returns_existing_client_initialized_inside_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_redis_returns_existing_client_initialized_inside_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = SemanticCacheManager(_cfg())
     redis_client = object()
 
@@ -211,7 +221,9 @@ async def test_get_redis_returns_existing_client_initialized_inside_lock(monkeyp
     class _ShouldNotInitRedis:
         @staticmethod
         def from_url(*_args, **_kwargs):
-            raise AssertionError("Redis.from_url should not run when redis client already exists inside lock")
+            raise AssertionError(
+                "Redis.from_url should not run when redis client already exists inside lock"
+            )
 
     monkeypatch.setattr(manager, "_redis_init_lock", _InjectRedisLock())
     monkeypatch.setattr(semantic_cache_module, "Redis", _ShouldNotInitRedis)

@@ -10,19 +10,21 @@ Kullanım:
     style = await em.get(user_id="u1", key="coding_style")
     profile = await em.get_profile(user_id="u1")
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # SQLAlchemy async import (opsiyonel; yoksa noop stub kullanılır)
 try:
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
     from sqlalchemy import text as sql_text
+    from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
     _SA_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _SA_AVAILABLE = False
@@ -33,17 +35,19 @@ except ImportError:  # pragma: no cover
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Desteklenen yerleşik persona alanları (önerilir ama zorunlu değil)
-WELL_KNOWN_KEYS = frozenset([
-    "coding_style",       # "functional", "OOP", "procedural" …
-    "preferred_language", # "Python", "TypeScript", "Rust" …
-    "verbosity",          # "concise", "detailed", "medium"
-    "framework_pref",     # "FastAPI", "Django", "React" …
-    "test_style",         # "pytest", "unittest", "jest" …
-    "comment_language",   # "tr", "en"
-    "preferred_model",    # Tercih edilen LLM modeli
-    "timezone",           # "Europe/Istanbul"
-    "topics",             # JSON listesi: ["backend", "ml", "devops"]
-])
+WELL_KNOWN_KEYS = frozenset(
+    [
+        "coding_style",  # "functional", "OOP", "procedural" …
+        "preferred_language",  # "Python", "TypeScript", "Rust" …
+        "verbosity",  # "concise", "detailed", "medium"
+        "framework_pref",  # "FastAPI", "Django", "React" …
+        "test_style",  # "pytest", "unittest", "jest" …
+        "comment_language",  # "tr", "en"
+        "preferred_model",  # Tercih edilen LLM modeli
+        "timezone",  # "Europe/Istanbul"
+        "topics",  # JSON listesi: ["backend", "ml", "devops"]
+    ]
+)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS entity_memory (
@@ -64,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_entity_memory_user ON entity_memory(user_id);
 # EntityMemory
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class EntityMemory:
     """
     Kullanıcı başına anahtar/değer persona deposu.
@@ -79,11 +84,11 @@ class EntityMemory:
         self,
         database_url: str = "sqlite+aiosqlite:///data/sidar.db",
         config=None,
-        ttl_days: Optional[int] = None,
-        max_per_user: Optional[int] = None,
+        ttl_days: int | None = None,
+        max_per_user: int | None = None,
     ) -> None:
         self._db_url = database_url
-        self._engine: Optional[Any] = None
+        self._engine: Any | None = None
 
         cfg_ttl = int(getattr(config, "ENTITY_MEMORY_TTL_DAYS", 90) or 90)
         cfg_max = int(getattr(config, "ENTITY_MEMORY_MAX_PER_USER", 100) or 100)
@@ -119,7 +124,7 @@ class EntityMemory:
         user_id: str,
         key: str,
         value: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Belirtilen user_id + key için değeri ekle veya güncelle."""
         if not self.enabled or not self._engine:
@@ -168,7 +173,7 @@ class EntityMemory:
     #  OKUMA
     # ─────────────────────────────────────────────
 
-    async def get(self, user_id: str, key: str) -> Optional[str]:
+    async def get(self, user_id: str, key: str) -> str | None:
         """Belirtilen user_id + key için değeri döner; bulunamazsa None."""
         if not self.enabled or not self._engine:
             return None
@@ -184,7 +189,7 @@ class EntityMemory:
             result = row.fetchone()
         return result[0] if result else None
 
-    async def get_profile(self, user_id: str) -> Dict[str, str]:
+    async def get_profile(self, user_id: str) -> dict[str, str]:
         """Kullanıcının tüm persona anahtarlarını {key: value} sözlüğü olarak döner."""
         if not self.enabled or not self._engine:
             return {}
@@ -199,7 +204,7 @@ class EntityMemory:
             )
             return {r[0]: r[1] for r in rows.fetchall()}
 
-    async def list_users(self) -> List[str]:
+    async def list_users(self) -> list[str]:
         """Entity kaydı olan tüm user_id'leri döner."""
         if not self.enabled or not self._engine:
             return []
@@ -219,9 +224,7 @@ class EntityMemory:
             return False
         async with self._engine.begin() as conn:
             result = await conn.execute(
-                sql_text(
-                    "DELETE FROM entity_memory WHERE user_id = :uid AND key = :key"
-                ),
+                sql_text("DELETE FROM entity_memory WHERE user_id = :uid AND key = :key"),
                 {"uid": user_id, "key": key},
             )
         return (result.rowcount or 0) > 0
@@ -267,7 +270,7 @@ class EntityMemory:
 # Modül düzeyinde singleton yardımcıları
 # ──────────────────────────────────────────────────────────────────────────────
 
-_instance: Optional[EntityMemory] = None
+_instance: EntityMemory | None = None
 
 
 def get_entity_memory(config=None) -> EntityMemory:
@@ -275,6 +278,7 @@ def get_entity_memory(config=None) -> EntityMemory:
     global _instance
     if _instance is None or not isinstance(_instance, EntityMemory):
         from config import Config
+
         cfg = config or Config()
         db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
         _instance = EntityMemory(database_url=db_url, config=cfg)

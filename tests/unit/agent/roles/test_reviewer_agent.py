@@ -1,5 +1,5 @@
-import importlib.util
 import asyncio
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -55,8 +55,12 @@ def test_load_reviewer_agent_injects_httpx_and_redis_when_missing(monkeypatch):
     monkeypatch.delitem(sys.modules, "redis", raising=False)
     monkeypatch.delitem(sys.modules, "redis.asyncio", raising=False)
     monkeypatch.delitem(sys.modules, "redis.exceptions", raising=False)
-    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec)
-    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: ModuleType("reviewer_agent_under_test"))
+    monkeypatch.setattr(
+        importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: fake_spec
+    )
+    monkeypatch.setattr(
+        importlib.util, "module_from_spec", lambda _spec: ModuleType("reviewer_agent_under_test")
+    )
 
     loaded = _load_reviewer_agent()
     assert loaded is sentinel
@@ -129,7 +133,11 @@ class DummyDocs:
 
     def graph_impact_details(self, target, _depth):
         if self.ok:
-            return True, {"risk_level": "high", "review_targets": [target], "impacted_endpoints": ["/x"]}
+            return True, {
+                "risk_level": "high",
+                "review_targets": [target],
+                "impacted_endpoints": ["/x"],
+            }
         return False, "err"
 
     def analyze_graph_impact(self, target, _depth):
@@ -201,16 +209,27 @@ def test_graph_followups_and_summary():
     assert summary["risk"] == "orta"
     assert summary["high_risk_targets"] == ["x.py"]
 
-    empty = ReviewerAgent._summarize_graph_payload({"status": "none", "summary": "yok", "reports": []})
+    empty = ReviewerAgent._summarize_graph_payload(
+        {"status": "none", "summary": "yok", "reports": []}
+    )
     assert empty["risk"] == "düşük"
 
 
 def test_lsp_summary_variants_and_normalize_path():
     parsed = ReviewerAgent._summarize_lsp_diagnostics(
-        json.dumps({"summary": "s", "status": "issues-found", "risk": "orta", "decision": "APPROVE", "counts": {"2": 1}, "issues": []})
+        json.dumps(
+            {
+                "summary": "s",
+                "status": "issues-found",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {"2": 1},
+                "issues": [],
+            }
+        )
     )
     assert parsed["status"] == "issues-found"
-    assert ReviewerAgent._summarize_lsp_diagnostics("LSP diagnostics temiz") ["status"] == "clean"
+    assert ReviewerAgent._summarize_lsp_diagnostics("LSP diagnostics temiz")["status"] == "clean"
     assert ReviewerAgent._summarize_lsp_diagnostics("bildirimi dönmedi")["status"] == "no-signal"
     assert ReviewerAgent._summarize_lsp_diagnostics("hatası: boom")["status"] == "tool-error"
     issues = ReviewerAgent._summarize_lsp_diagnostics("x severity=1\ny severity=2\nz severity=3")
@@ -226,7 +245,9 @@ def test_combined_impact_and_recommendations():
         "issues": [{"path": "/workspace/Sidar/pkg/f.py", "message": "m"}],
     }
     graph_summary = {"risk": "orta", "followup_paths": ["pkg/f.py"], "high_risk_targets": ["t.py"]}
-    combined = ReviewerAgent._build_combined_impact_report(semantic, graph_summary, ["src/a.py"], ["src/a.py", "pkg/f.py"])
+    combined = ReviewerAgent._build_combined_impact_report(
+        semantic, graph_summary, ["src/a.py"], ["src/a.py", "pkg/f.py"]
+    )
     assert combined["impact_level"] == "critical"
     assert combined["indirect_breakage_paths"] == ["pkg/f.py"]
 
@@ -250,7 +271,9 @@ def test_combined_impact_and_recommendations():
     recs2 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload, combined2)
     assert recs2 and recs2[0]["reason"] == "graph"
 
-    recs3 = ReviewerAgent._build_fix_recommendations({"issues": [{"path": "x.py", "message": "e"}]}, {"reports": []}, combined2)
+    recs3 = ReviewerAgent._build_fix_recommendations(
+        {"issues": [{"path": "x.py", "message": "e"}]}, {"reports": []}, combined2
+    )
     assert recs3 and recs3[0]["reason"] == "semantic"
 
 
@@ -262,7 +285,14 @@ def test_parse_browser_and_remediation_helpers():
     p3 = ReviewerAgent._parse_review_payload("changes browser_session_id=s2")
     assert p3["browser_session_id"] == "s2"
 
-    summary = ReviewerAgent._summarize_browser_signals({"failed_actions": ["a"], "pending_actions": ["b"], "high_risk_actions": ["c"], "current_url": "u"})
+    summary = ReviewerAgent._summarize_browser_signals(
+        {
+            "failed_actions": ["a"],
+            "pending_actions": ["b"],
+            "high_risk_actions": ["c"],
+            "current_url": "u",
+        }
+    )
     assert summary["status"] == "no-signal"
     recs = ReviewerAgent._build_browser_fix_recommendations(summary)
     assert recs and recs[0]["reason"] == "browser-signal"
@@ -271,7 +301,13 @@ def test_parse_browser_and_remediation_helpers():
     remediation = ReviewerAgent._build_remediation_loop(
         {"counts": {"1": 1}, "summary": "s"},
         {"risk": "orta", "summary": "g"},
-        {"impact_level": "high", "direct_scope_paths": ["a.py"], "graph_followup_paths": ["b.py"], "issue_paths": ["c.py"], "indirect_breakage_paths": ["z.py"]},
+        {
+            "impact_level": "high",
+            "direct_scope_paths": ["a.py"],
+            "graph_followup_paths": ["b.py"],
+            "issue_paths": ["c.py"],
+            "indirect_breakage_paths": ["z.py"],
+        },
         [{"path": "d.py"}],
         ["pytest -q tests/a.py"],
     )
@@ -383,7 +419,16 @@ def test_run_task_main_paths(reviewer):
             "pr_diff": "diff",
             "list_issues": "issues",
             "run_tests": "[TEST:OK]",
-            "lsp_diagnostics": json.dumps({"summary": "temiz", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []}),
+            "lsp_diagnostics": json.dumps(
+                {
+                    "summary": "temiz",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            ),
             "graph_impact": json.dumps({"status": "ok", "summary": "g", "reports": []}),
             "browser_signals": json.dumps({"status": "ok", "risk": "düşük", "summary": "b"}),
         }
@@ -404,14 +449,23 @@ def test_run_task_main_paths(reviewer):
     assert "summary" in (asyncio.run(reviewer.run_task("lsp_diagnostics|a.py")))
     assert "status" in (asyncio.run(reviewer.run_task("graph_impact|a.py")))
 
-    result = asyncio.run(reviewer.run_task("review_code|{\"review_context\":\"src/a.py\"}"))
+    result = asyncio.run(reviewer.run_task('review_code|{"review_context":"src/a.py"}'))
     assert result.target_agent == "coder"
     assert result.meta["reason"] == "review_decision"
 
     # semantic reject branch
     async def fake_call_tool_reject(name, arg):
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "err", "status": "issues-found", "risk": "yüksek", "decision": "REJECT", "counts": {"1": 1}, "issues": [{"path": "x.py"}]})
+            return json.dumps(
+                {
+                    "summary": "err",
+                    "status": "issues-found",
+                    "risk": "yüksek",
+                    "decision": "REJECT",
+                    "counts": {"1": 1},
+                    "issues": [{"path": "x.py"}],
+                }
+            )
         if name == "browser_signals":
             return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
         if name == "graph_impact":
@@ -424,9 +478,20 @@ def test_run_task_main_paths(reviewer):
 
     async def fake_call_tool_browser_fail(name, arg):
         if name == "browser_signals":
-            return json.dumps({"status": "failed", "risk": "yüksek", "summary": "bf", "failed_actions": ["click"]})
+            return json.dumps(
+                {"status": "failed", "risk": "yüksek", "summary": "bf", "failed_actions": ["click"]}
+            )
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "ok", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+            return json.dumps(
+                {
+                    "summary": "ok",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
         if name == "graph_impact":
             return json.dumps({"status": "ok", "summary": "g", "reports": []})
         return "[TEST:OK]"
@@ -472,7 +537,7 @@ def test_run_task_conflicting_signals_prioritizes_fail_closed_decision(reviewer)
     reviewer.call_tool = fake_call_tool
     reviewer._run_dynamic_tests = fake_dynamic
 
-    result = asyncio.run(reviewer.run_task("review_code|{\"review_context\":\"src/a.py\"}"))
+    result = asyncio.run(reviewer.run_task('review_code|{"review_context":"src/a.py"}'))
     payload = json.loads(result.payload.split("qa_feedback|", 1)[1])
 
     assert payload["decision"] == "REJECT"
@@ -554,15 +619,29 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     assert ReviewerAgent._summarize_lsp_diagnostics('{"status":"x"}')["status"] == "clean"
     assert ReviewerAgent._summarize_lsp_diagnostics("random satir")["status"] == "clean"
 
-    semantic = {"counts": {"bad": 3}, "issues": [None, {"path": "/workspace/Sidar/a.py"}, {"path": "/workspace/Sidar/a.py"}]}
-    combined = ReviewerAgent._build_combined_impact_report(semantic, {"risk": "orta", "followup_paths": ["b.py"], "high_risk_targets": []}, ["a.py"], [])
+    semantic = {
+        "counts": {"bad": 3},
+        "issues": [None, {"path": "/workspace/Sidar/a.py"}, {"path": "/workspace/Sidar/a.py"}],
+    }
+    combined = ReviewerAgent._build_combined_impact_report(
+        semantic,
+        {"risk": "orta", "followup_paths": ["b.py"], "high_risk_targets": []},
+        ["a.py"],
+        [],
+    )
     assert combined["impact_level"] == "high"
 
     graph_payload = {"reports": [{"ok": False}, {"ok": True, "target": "a.py", "details": []}]}
-    recs = ReviewerAgent._build_fix_recommendations({"issues": [None, {"path": "", "message": "m"}]}, graph_payload, {"indirect_breakage_paths": []})
+    recs = ReviewerAgent._build_fix_recommendations(
+        {"issues": [None, {"path": "", "message": "m"}]},
+        graph_payload,
+        {"indirect_breakage_paths": []},
+    )
     assert recs == []
 
-    graph_payload_non_dict_details = {"reports": [{"ok": True, "target": "a.py", "details": "not-dict"}]}
+    graph_payload_non_dict_details = {
+        "reports": [{"ok": True, "target": "a.py", "details": "not-dict"}]
+    }
     recs_non_dict_details = ReviewerAgent._build_fix_recommendations(
         {"issues": [{"path": "dep.py", "message": "boom"}]},
         graph_payload_non_dict_details,
@@ -571,11 +650,19 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     assert recs_non_dict_details[0]["path"] == "dep.py"
     assert recs_non_dict_details[0]["related_endpoints"] == []
 
-    graph_payload2 = {"reports": [{"ok": True, "target": "a.py", "details": {"risk_level": "low", "review_targets": "x"}}]}
-    recs2 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload2, {"indirect_breakage_paths": []})
+    graph_payload2 = {
+        "reports": [
+            {"ok": True, "target": "a.py", "details": {"risk_level": "low", "review_targets": "x"}}
+        ]
+    }
+    recs2 = ReviewerAgent._build_fix_recommendations(
+        {"issues": []}, graph_payload2, {"indirect_breakage_paths": []}
+    )
     assert recs2 == []
 
-    graph_payload_skip_non_dict_details = {"reports": [{"ok": True, "target": "a.py", "details": "not-dict"}]}
+    graph_payload_skip_non_dict_details = {
+        "reports": [{"ok": True, "target": "a.py", "details": "not-dict"}]
+    }
     recs_skip_non_dict_details = ReviewerAgent._build_fix_recommendations(
         {"issues": []},
         graph_payload_skip_non_dict_details,
@@ -585,11 +672,25 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
 
     graph_payload3 = {
         "reports": [
-            {"ok": True, "target": "a.py", "details": {"risk_level": "high", "review_targets": [None, "a.py", "dep.py", "dep.py"], "caller_files": "x"}},
-            {"ok": True, "target": "b.py", "details": {"risk_level": "high", "direct_dependents": ["dep.py", "other.ts"]}},
+            {
+                "ok": True,
+                "target": "a.py",
+                "details": {
+                    "risk_level": "high",
+                    "review_targets": [None, "a.py", "dep.py", "dep.py"],
+                    "caller_files": "x",
+                },
+            },
+            {
+                "ok": True,
+                "target": "b.py",
+                "details": {"risk_level": "high", "direct_dependents": ["dep.py", "other.ts"]},
+            },
         ]
     }
-    recs3 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload3, {"indirect_breakage_paths": []})
+    recs3 = ReviewerAgent._build_fix_recommendations(
+        {"issues": []}, graph_payload3, {"indirect_breakage_paths": []}
+    )
     assert [item["path"] for item in recs3] == ["dep.py", "other.ts"]
 
     parsed = ReviewerAgent._parse_review_payload("[1,2,3]")
@@ -602,17 +703,24 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     module = sys.modules[ReviewerAgent.__module__]
     original_loads = module.json.loads
     monkeypatch.setattr(module.json, "loads", lambda *_a, **_k: [])
-    parsed_non_dict_payload = ReviewerAgent._parse_review_payload("{\"review_context\":\"x\"}")
-    assert parsed_non_dict_payload["review_context"] == "{\"review_context\":\"x\"}"
+    parsed_non_dict_payload = ReviewerAgent._parse_review_payload('{"review_context":"x"}')
+    assert parsed_non_dict_payload["review_context"] == '{"review_context":"x"}'
     monkeypatch.setattr(module.json, "loads", original_loads)
 
-    assert ReviewerAgent._extract_changed_paths("src/a/../b.py /abs/x.py foo.py") == ["abs/x.py", "foo.py"]
-    assert reviewer._build_regression_commands("tests/unit/test_a.py src/a.py")[0].startswith("pytest -q tests/unit/test_a.py")
+    assert ReviewerAgent._extract_changed_paths("src/a/../b.py /abs/x.py foo.py") == [
+        "abs/x.py",
+        "foo.py",
+    ]
+    assert reviewer._build_regression_commands("tests/unit/test_a.py src/a.py")[0].startswith(
+        "pytest -q tests/unit/test_a.py"
+    )
 
     # cover unlink exception branch
     original_unlink = Path.unlink
     reviewer.call_tool = lambda *_a, **_k: asyncio.sleep(0, result="x")
-    reviewer.call_llm = lambda *_a, **_k: asyncio.sleep(0, result="def test_ok():\n    assert True\n")
+    reviewer.call_llm = lambda *_a, **_k: asyncio.sleep(
+        0, result="def test_ok():\n    assert True\n"
+    )
 
     def bad_unlink(self, missing_ok=True):
         raise OSError("nope")
@@ -630,12 +738,38 @@ def test_run_task_decision_branches(reviewer):
         if name == "run_tests":
             return "[TEST:OK]"
         if name == "graph_impact":
-            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "low", "review_targets": [], "impacted_endpoints": []}}]})
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "summary": "g",
+                    "reports": [
+                        {
+                            "ok": True,
+                            "target": "x.py",
+                            "details": {
+                                "risk_level": "low",
+                                "review_targets": [],
+                                "impacted_endpoints": [],
+                            },
+                        }
+                    ],
+                }
+            )
         if name == "browser_signals":
             return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+            return json.dumps(
+                {
+                    "summary": "s",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
         return ""
+
     assert asyncio.run(call_tool_fail("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_fail
@@ -649,12 +783,38 @@ def test_run_task_decision_branches(reviewer):
         if name == "run_tests":
             return "[TEST:OK]"
         if name == "graph_impact":
-            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "high", "review_targets": ["b.py"], "impacted_endpoints": []}}]})
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "summary": "g",
+                    "reports": [
+                        {
+                            "ok": True,
+                            "target": "x.py",
+                            "details": {
+                                "risk_level": "high",
+                                "review_targets": ["b.py"],
+                                "impacted_endpoints": [],
+                            },
+                        }
+                    ],
+                }
+            )
         if name == "browser_signals":
             return json.dumps({"status": "ok", "risk": "orta", "summary": "b"})
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "s", "status": "clean", "risk": "orta", "decision": "APPROVE", "counts": {}, "issues": []})
+            return json.dumps(
+                {
+                    "summary": "s",
+                    "status": "clean",
+                    "risk": "orta",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
         return ""
+
     assert asyncio.run(call_tool_risk("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_risk
@@ -666,12 +826,38 @@ def test_run_task_decision_branches(reviewer):
         if name == "run_tests":
             return "[TEST:OK]"
         if name == "graph_impact":
-            return json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "x.py", "details": {"risk_level": "high", "review_targets": ["x.py"], "impacted_endpoints": []}}]})
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "summary": "g",
+                    "reports": [
+                        {
+                            "ok": True,
+                            "target": "x.py",
+                            "details": {
+                                "risk_level": "high",
+                                "review_targets": ["x.py"],
+                                "impacted_endpoints": [],
+                            },
+                        }
+                    ],
+                }
+            )
         if name == "browser_signals":
             return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+            return json.dumps(
+                {
+                    "summary": "s",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
         return ""
+
     assert asyncio.run(call_tool_graph_medium("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_graph_medium
@@ -687,8 +873,18 @@ def test_run_task_decision_branches(reviewer):
         if name == "browser_signals":
             return json.dumps({"status": "ok", "risk": "düşük", "summary": "b"})
         if name == "lsp_diagnostics":
-            return json.dumps({"summary": "s", "status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "issues": []})
+            return json.dumps(
+                {
+                    "summary": "s",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
         return ""
+
     assert asyncio.run(call_tool_low_signals("unknown", "")) == ""
 
     reviewer.call_tool = call_tool_low_signals

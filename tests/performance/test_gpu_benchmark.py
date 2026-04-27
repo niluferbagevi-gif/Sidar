@@ -21,9 +21,9 @@ import pytest
 
 pytest.importorskip("pytest_benchmark")
 
+import tests.smoke.test_gpu_inference as _gpu_smoke
 from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
-import tests.smoke.test_gpu_inference as _gpu_smoke
 
 # GPU donanımı yoksa tüm modül atlanır; bireysel testler ek olarak
 # RUN_GPU_STRESS=1 denetimi yapar (ikinci katman).
@@ -37,10 +37,14 @@ _TIMEOUT: int = _gpu_smoke._env_int("GPU_BENCH_TIMEOUT", 60, min_value=10, max_v
 _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1, max_value=16)
 _WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 5, min_value=1, max_value=8)
 _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 20, min_value=20, max_value=50)
-_LATENCY_BUDGET_S: int = _gpu_smoke._env_int("GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120)
+_LATENCY_BUDGET_S: int = _gpu_smoke._env_int(
+    "GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120
+)
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "10.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
-_PREWARM_REQUESTS: int = _gpu_smoke._env_int("GPU_BENCH_PREWARM_REQUESTS", 3, min_value=1, max_value=12)
+_PREWARM_REQUESTS: int = _gpu_smoke._env_int(
+    "GPU_BENCH_PREWARM_REQUESTS", 3, min_value=1, max_value=12
+)
 _PREWARM_CONCURRENCY: int = _gpu_smoke._env_int(
     "GPU_BENCH_PREWARM_CONCURRENCY",
     2,
@@ -127,7 +131,9 @@ async def _prepare_client(client: OllamaClient, http: httpx.AsyncClient) -> None
     if _MODEL not in await client.list_models():
         pytest.skip(f"{_MODEL} modeli yüklü değil.")
     warmup_prompt = "ısınma"
-    await client.chat(messages=[{"role": "user", "content": warmup_prompt}], model=_MODEL, json_mode=False)
+    await client.chat(
+        messages=[{"role": "user", "content": warmup_prompt}], model=_MODEL, json_mode=False
+    )
 
     # Tail latency'yi azaltmak için ek ön ısınma:
     # - ardışık çağrılar: model/runtime kod-path'i stabilize edilir
@@ -196,7 +202,7 @@ class _InferenceMetrics:
     """Ollama non-streaming yanıtından çekilen ham üretim metrikleri."""
 
     content: str
-    eval_count: int        # üretilen token sayısı
+    eval_count: int  # üretilen token sayısı
     eval_duration_ns: int  # token üretim süresi (nanosaniye)
 
     @property
@@ -297,9 +303,9 @@ def test_gpu_single_inference_latency(benchmark) -> None:
 
     assert isinstance(result, str) and result.strip(), "Benchmark yanıtı boş döndü."
     mean_s: float = benchmark.stats["mean"]
-    assert mean_s <= _LATENCY_BUDGET_S, (
-        f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
-    )
+    assert (
+        mean_s <= _LATENCY_BUDGET_S
+    ), f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
     stddev_s: float = benchmark.stats["stddev"]
     iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
     benchmark.extra_info["latency_stddev_ms"] = round(stddev_s * 1000, 3)
@@ -352,12 +358,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
         async def _concurrent_round() -> list[str]:
             return list(
-                await asyncio.gather(
-                    *[
-                        _chat_content(prompt, http)
-                        for _ in range(_CONCURRENCY)
-                    ]
-                )
+                await asyncio.gather(*[_chat_content(prompt, http) for _ in range(_CONCURRENCY)])
             )
 
         def _run() -> list[str]:
@@ -426,12 +427,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
 
             sampler = asyncio.create_task(_sample())
             try:
-                await asyncio.gather(
-                    *[
-                        _chat_content(prompt, http)
-                        for _ in range(_CONCURRENCY)
-                    ]
-                )
+                await asyncio.gather(*[_chat_content(prompt, http) for _ in range(_CONCURRENCY)])
             finally:
                 stop.set()
                 await sampler
@@ -525,8 +521,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     assert result.content.strip(), "Benchmark yanıtı boş döndü."
     assert result.eval_count > 0, (
-        "Ollama eval_count=0: token sayısı alınamadı. "
-        "Model veya Ollama sürümünü kontrol edin."
+        "Ollama eval_count=0: token sayısı alınamadı. " "Model veya Ollama sürümünü kontrol edin."
     )
     tps = result.tokens_per_second
     benchmark.extra_info["tokens_per_second"] = round(tps, 3)
@@ -537,9 +532,9 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     benchmark.extra_info["tps_iqr_ms"] = round(tps_iqr_s * 1000, 3)
     if tps_mean_s > 0:
         benchmark.extra_info["tps_cv_percent"] = round((tps_stddev_s / tps_mean_s) * 100, 3)
-    assert tps >= _MIN_TOKENS_PER_SEC, (
-        f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
-    )
+    assert (
+        tps >= _MIN_TOKENS_PER_SEC
+    ), f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
 
 
 @pytest.mark.benchmark
@@ -590,11 +585,9 @@ def test_gpu_time_to_first_token(benchmark) -> None:
         loop.close()
 
     assert result > 0.0, "TTFT sıfır döndü; streaming yanıt alınamadı."
-    assert result <= _TTFT_BUDGET_S, (
-        f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
-    )
+    assert result <= _TTFT_BUDGET_S, f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
     mean_ttft: float = benchmark.stats["mean"]
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
-    assert mean_ttft <= _TTFT_BUDGET_S, (
-        f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
-    )
+    assert (
+        mean_ttft <= _TTFT_BUDGET_S
+    ), f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"

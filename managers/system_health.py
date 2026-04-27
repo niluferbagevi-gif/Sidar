@@ -18,7 +18,6 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from config import Config
@@ -26,74 +25,72 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
-
-
-def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
+def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
     """LLM metrik snapshot'unu Prometheus text formatına çevirir."""
     lines: list[str] = [
-        '# HELP sidar_llm_calls_total Toplam LLM çağrı sayısı',
-        '# TYPE sidar_llm_calls_total counter',
-        '# HELP sidar_llm_cost_total_usd Toplam LLM maliyeti (USD)',
-        '# TYPE sidar_llm_cost_total_usd counter',
-        '# HELP sidar_llm_tokens_total Toplam LLM token sayısı',
-        '# TYPE sidar_llm_tokens_total counter',
-        '# HELP sidar_llm_failures_total Toplam başarısız LLM çağrısı',
-        '# TYPE sidar_llm_failures_total counter',
-        '# HELP sidar_semantic_cache_hits_total Semantic cache isabet sayısı',
-        '# TYPE sidar_semantic_cache_hits_total counter',
-        '# HELP sidar_semantic_cache_misses_total Semantic cache ıskalama sayısı',
-        '# TYPE sidar_semantic_cache_misses_total counter',
-        '# HELP sidar_semantic_cache_skips_total Semantic cache skip sayısı',
-        '# TYPE sidar_semantic_cache_skips_total counter',
-        '# HELP sidar_semantic_cache_evictions_total Semantic cache LRU eviction sayısı',
-        '# TYPE sidar_semantic_cache_evictions_total counter',
-        '# HELP sidar_semantic_cache_redis_errors_total Semantic cache Redis hata sayısı',
-        '# TYPE sidar_semantic_cache_redis_errors_total counter',
-        '# HELP sidar_semantic_cache_circuit_open_total Semantic cache circuit-open bypass sayısı',
-        '# TYPE sidar_semantic_cache_circuit_open_total counter',
-        '# HELP sidar_semantic_cache_hit_rate Semantic cache isabet oranı (0.0–1.0)',
-        '# TYPE sidar_semantic_cache_hit_rate gauge',
-        '# HELP sidar_semantic_cache_items Semantic cache içindeki aktif kayıt sayısı',
-        '# TYPE sidar_semantic_cache_items gauge',
-        '# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim gecikmesi (ms)',
-        '# TYPE sidar_semantic_cache_redis_latency_ms gauge',
-        '# HELP sidar_cache_hits_total Legacy alias for semantic cache isabet sayısı',
-        '# TYPE sidar_cache_hits_total counter',
-        '# HELP sidar_cache_misses_total Legacy alias for semantic cache ıskalama sayısı',
-        '# TYPE sidar_cache_misses_total counter',
-        '# HELP sidar_cache_skips_total Legacy alias for semantic cache skip sayısı',
-        '# TYPE sidar_cache_skips_total counter',
-        '# HELP sidar_cache_evictions_total Legacy alias for semantic cache LRU eviction sayısı',
-        '# TYPE sidar_cache_evictions_total counter',
-        '# HELP sidar_cache_redis_errors_total Legacy alias for semantic cache Redis hata sayısı',
-        '# TYPE sidar_cache_redis_errors_total counter',
-        '# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass sayısı',
-        '# TYPE sidar_cache_circuit_open_total counter',
-        '# HELP sidar_cache_hit_rate Legacy alias for semantic cache isabet oranı (0.0–1.0)',
-        '# TYPE sidar_cache_hit_rate gauge',
-        '# HELP sidar_cache_items Legacy alias for semantic cache içindeki aktif kayıt sayısı',
-        '# TYPE sidar_cache_items gauge',
-        '# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim gecikmesi (ms)',
-        '# TYPE sidar_cache_redis_latency_ms gauge',
+        "# HELP sidar_llm_calls_total Toplam LLM çağrı sayısı",
+        "# TYPE sidar_llm_calls_total counter",
+        "# HELP sidar_llm_cost_total_usd Toplam LLM maliyeti (USD)",
+        "# TYPE sidar_llm_cost_total_usd counter",
+        "# HELP sidar_llm_tokens_total Toplam LLM token sayısı",
+        "# TYPE sidar_llm_tokens_total counter",
+        "# HELP sidar_llm_failures_total Toplam başarısız LLM çağrısı",
+        "# TYPE sidar_llm_failures_total counter",
+        "# HELP sidar_semantic_cache_hits_total Semantic cache isabet sayısı",
+        "# TYPE sidar_semantic_cache_hits_total counter",
+        "# HELP sidar_semantic_cache_misses_total Semantic cache ıskalama sayısı",
+        "# TYPE sidar_semantic_cache_misses_total counter",
+        "# HELP sidar_semantic_cache_skips_total Semantic cache skip sayısı",
+        "# TYPE sidar_semantic_cache_skips_total counter",
+        "# HELP sidar_semantic_cache_evictions_total Semantic cache LRU eviction sayısı",
+        "# TYPE sidar_semantic_cache_evictions_total counter",
+        "# HELP sidar_semantic_cache_redis_errors_total Semantic cache Redis hata sayısı",
+        "# TYPE sidar_semantic_cache_redis_errors_total counter",
+        "# HELP sidar_semantic_cache_circuit_open_total Semantic cache circuit-open bypass sayısı",
+        "# TYPE sidar_semantic_cache_circuit_open_total counter",
+        "# HELP sidar_semantic_cache_hit_rate Semantic cache isabet oranı (0.0–1.0)",
+        "# TYPE sidar_semantic_cache_hit_rate gauge",
+        "# HELP sidar_semantic_cache_items Semantic cache içindeki aktif kayıt sayısı",
+        "# TYPE sidar_semantic_cache_items gauge",
+        "# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim gecikmesi (ms)",
+        "# TYPE sidar_semantic_cache_redis_latency_ms gauge",
+        "# HELP sidar_cache_hits_total Legacy alias for semantic cache isabet sayısı",
+        "# TYPE sidar_cache_hits_total counter",
+        "# HELP sidar_cache_misses_total Legacy alias for semantic cache ıskalama sayısı",
+        "# TYPE sidar_cache_misses_total counter",
+        "# HELP sidar_cache_skips_total Legacy alias for semantic cache skip sayısı",
+        "# TYPE sidar_cache_skips_total counter",
+        "# HELP sidar_cache_evictions_total Legacy alias for semantic cache LRU eviction sayısı",
+        "# TYPE sidar_cache_evictions_total counter",
+        "# HELP sidar_cache_redis_errors_total Legacy alias for semantic cache Redis hata sayısı",
+        "# TYPE sidar_cache_redis_errors_total counter",
+        "# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass sayısı",
+        "# TYPE sidar_cache_circuit_open_total counter",
+        "# HELP sidar_cache_hit_rate Legacy alias for semantic cache isabet oranı (0.0–1.0)",
+        "# TYPE sidar_cache_hit_rate gauge",
+        "# HELP sidar_cache_items Legacy alias for semantic cache içindeki aktif kayıt sayısı",
+        "# TYPE sidar_cache_items gauge",
+        "# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim gecikmesi (ms)",
+        "# TYPE sidar_cache_redis_latency_ms gauge",
     ]
 
-    totals = (snapshot or {}).get('totals', {}) if isinstance(snapshot, dict) else {}
+    totals = (snapshot or {}).get("totals", {}) if isinstance(snapshot, dict) else {}
     lines.append(f"sidar_llm_calls_total {int(totals.get('calls', 0) or 0)}")
     lines.append(f"sidar_llm_cost_total_usd {float(totals.get('cost_usd', 0.0) or 0.0)}")
     lines.append(f"sidar_llm_tokens_total {int(totals.get('total_tokens', 0) or 0)}")
     lines.append(f"sidar_llm_failures_total {int(totals.get('failures', 0) or 0)}")
 
     # Semantic cache metrikleri
-    cache = (snapshot or {}).get('cache', {}) if isinstance(snapshot, dict) else {}
-    hits = int(cache.get('hits', 0) or 0)
-    misses = int(cache.get('misses', 0) or 0)
-    skips = int(cache.get('skips', 0) or 0)
-    evictions = int(cache.get('evictions', 0) or 0)
-    redis_errors = int(cache.get('redis_errors', 0) or 0)
-    circuit_open_bypasses = int(cache.get('circuit_open_bypasses', 0) or 0)
-    hit_rate = float(cache.get('hit_rate', 0.0) or 0.0)
-    items = int(cache.get('items', 0) or 0)
-    redis_latency_ms = float(cache.get('redis_latency_ms', 0.0) or 0.0)
+    cache = (snapshot or {}).get("cache", {}) if isinstance(snapshot, dict) else {}
+    hits = int(cache.get("hits", 0) or 0)
+    misses = int(cache.get("misses", 0) or 0)
+    skips = int(cache.get("skips", 0) or 0)
+    evictions = int(cache.get("evictions", 0) or 0)
+    redis_errors = int(cache.get("redis_errors", 0) or 0)
+    circuit_open_bypasses = int(cache.get("circuit_open_bypasses", 0) or 0)
+    hit_rate = float(cache.get("hit_rate", 0.0) or 0.0)
+    items = int(cache.get("items", 0) or 0)
+    redis_latency_ms = float(cache.get("redis_latency_ms", 0.0) or 0.0)
 
     lines.append(f"sidar_semantic_cache_hits_total {hits}")
     lines.append(f"sidar_semantic_cache_misses_total {misses}")
@@ -116,23 +113,38 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     lines.append(f"sidar_cache_items {items}")
     lines.append(f"sidar_cache_redis_latency_ms {redis_latency_ms}")
 
-    by_provider = snapshot.get('by_provider', {}) if isinstance(snapshot, dict) else {}
+    by_provider = snapshot.get("by_provider", {}) if isinstance(snapshot, dict) else {}
     for provider, row in by_provider.items():
-        p = str(provider or 'unknown').replace('"', '\\"')
+        p = str(provider or "unknown").replace('"', '\\"')
         lines.append(f'sidar_llm_calls_total{{provider="{p}"}} {int(row.get("calls", 0) or 0)}')
-        lines.append(f'sidar_llm_cost_total_usd{{provider="{p}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
-        lines.append(f'sidar_llm_tokens_total{{provider="{p}"}} {int(row.get("total_tokens", 0) or 0)}')
-        lines.append(f'sidar_llm_failures_total{{provider="{p}"}} {int(row.get("failures", 0) or 0)}')
-        lines.append(f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}')
+        lines.append(
+            f'sidar_llm_cost_total_usd{{provider="{p}"}} {float(row.get("cost_usd", 0.0) or 0.0)}'
+        )
+        lines.append(
+            f'sidar_llm_tokens_total{{provider="{p}"}} {int(row.get("total_tokens", 0) or 0)}'
+        )
+        lines.append(
+            f'sidar_llm_failures_total{{provider="{p}"}} {int(row.get("failures", 0) or 0)}'
+        )
+        lines.append(
+            f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}'
+        )
 
-    by_user = snapshot.get('by_user', {}) if isinstance(snapshot, dict) else {}
+    by_user = snapshot.get("by_user", {}) if isinstance(snapshot, dict) else {}
     for user_id, row in by_user.items():
-        uid = str(user_id or 'anonymous').replace('"', '\\"')
-        lines.append(f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}')
-        lines.append(f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
-        lines.append(f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}')
+        uid = str(user_id or "anonymous").replace('"', '\\"')
+        lines.append(
+            f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}'
+        )
+        lines.append(
+            f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}'
+        )
+        lines.append(
+            f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}'
+        )
 
     return "\n".join(lines) + "\n"
+
 
 class SystemHealthManager:
     """
@@ -144,7 +156,7 @@ class SystemHealthManager:
         self,
         use_gpu: bool = True,
         cpu_sample_interval: float = 0.0,
-        cfg: Optional[Config] = None,
+        cfg: Config | None = None,
     ) -> None:
         self.cfg = cfg or Config()
         self.use_gpu = use_gpu
@@ -154,7 +166,7 @@ class SystemHealthManager:
         self.cpu_sample_interval = max(0.0, min(float(cpu_sample_interval), 2.0))
 
         # Bağımlılık kontrolleri
-        self._torch_available  = self._check_import("torch")
+        self._torch_available = self._check_import("torch")
         self._psutil_available = self._check_import("psutil")
         self._pynvml_available = self._check_import("pynvml")
 
@@ -169,7 +181,7 @@ class SystemHealthManager:
         atexit.register(self.close)
 
         # Prometheus gauge cache (opsiyonel; prometheus_client yoksa None kalır).
-        self._prometheus_gauges: Optional[Dict[str, object]] = None
+        self._prometheus_gauges: dict[str, object] | None = None
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ KONTROLLERI
@@ -178,6 +190,7 @@ class SystemHealthManager:
     @staticmethod
     def _check_import(module_name: str) -> bool:
         import importlib
+
         try:
             importlib.import_module(module_name)
             return True
@@ -189,6 +202,7 @@ class SystemHealthManager:
             return False
         try:
             import torch
+
             return torch.cuda.is_available()
         except Exception:
             return False
@@ -196,6 +210,7 @@ class SystemHealthManager:
     def _init_nvml(self) -> None:
         try:
             import pynvml
+
             pynvml.nvmlInit()
             self._nvml_initialized = True
             logger.debug("pynvml başlatıldı — GPU sıcaklık/kullanım izleme aktif.")
@@ -211,7 +226,8 @@ class SystemHealthManager:
                     "ℹ️  WSL2: pynvml başlatılamadı (beklenen davranış — "
                     "GPU access blocked by the operating system). "
                     "GPU sıcaklık/kullanım izleme kapalı; "
-                    "temel bilgiler için nvidia-smi kullanılacak. Hata: %s", exc
+                    "temel bilgiler için nvidia-smi kullanılacak. Hata: %s",
+                    exc,
                 )
             else:
                 logger.debug("pynvml başlatılamadı (opsiyonel): %s", exc)
@@ -220,7 +236,7 @@ class SystemHealthManager:
     #  CPU & RAM
     # ─────────────────────────────────────────────
 
-    def get_cpu_usage(self, interval: Optional[float] = None) -> Optional[float]:
+    def get_cpu_usage(self, interval: float | None = None) -> float | None:
         """
         CPU kullanım yüzdesini döndür.
 
@@ -230,23 +246,25 @@ class SystemHealthManager:
             return None
         try:
             import psutil
+
             sample_interval = self.cpu_sample_interval if interval is None else max(0.0, interval)
             return psutil.cpu_percent(interval=sample_interval)
         except Exception:
             return None
 
-    def get_memory_info(self) -> Dict[str, float]:
+    def get_memory_info(self) -> dict[str, float]:
         """RAM bilgisini GB cinsinden döndür."""
         if not self._psutil_available:
             return {}
         try:
             import psutil
+
             vm = psutil.virtual_memory()
             return {
-                "total_gb":     round(vm.total    / 1e9, 2),
-                "used_gb":      round(vm.used      / 1e9, 2),
+                "total_gb": round(vm.total / 1e9, 2),
+                "used_gb": round(vm.used / 1e9, 2),
                 "available_gb": round(vm.available / 1e9, 2),
-                "percent":      vm.percent,
+                "percent": vm.percent,
             }
         except Exception:
             return {}
@@ -255,7 +273,7 @@ class SystemHealthManager:
     #  GPU
     # ─────────────────────────────────────────────
 
-    def get_gpu_info(self) -> Dict:
+    def get_gpu_info(self) -> dict:
         """
         Detaylı GPU bilgisini döndür.
 
@@ -270,36 +288,36 @@ class SystemHealthManager:
 
         try:
             import torch
+
             device_count = torch.cuda.device_count()
-            devices: List[Dict] = []
+            devices: list[dict] = []
 
             for i in range(device_count):
-                props     = torch.cuda.get_device_properties(i)
+                props = torch.cuda.get_device_properties(i)
                 total_mem = props.total_memory / 1e9
                 alloc_mem = torch.cuda.memory_allocated(i) / 1e9
-                res_mem   = torch.cuda.memory_reserved(i)  / 1e9
+                res_mem = torch.cuda.memory_reserved(i) / 1e9
 
-                dev: Dict = {
-                    "id":                 i,
-                    "name":               props.name,
+                dev: dict = {
+                    "id": i,
+                    "name": props.name,
                     "compute_capability": f"{props.major}.{props.minor}",
-                    "total_vram_gb":      round(total_mem, 2),
-                    "allocated_gb":       round(alloc_mem, 2),
-                    "reserved_gb":        round(res_mem,   2),
-                    "free_gb":            round(total_mem - res_mem, 2),
+                    "total_vram_gb": round(total_mem, 2),
+                    "allocated_gb": round(alloc_mem, 2),
+                    "reserved_gb": round(res_mem, 2),
+                    "free_gb": round(total_mem - res_mem, 2),
                 }
 
                 # pynvml ek verisi
                 if self._nvml_initialized:  # pragma: no cover
                     try:
                         import pynvml
+
                         handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-                        temp   = pynvml.nvmlDeviceGetTemperature(
-                            handle, pynvml.NVML_TEMPERATURE_GPU
-                        )
-                        util   = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                        dev["temperature_c"]    = temp
-                        dev["utilization_pct"]  = util.gpu
+                        temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+                        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                        dev["temperature_c"] = temp
+                        dev["utilization_pct"] = util.gpu
                         dev["mem_utilization_pct"] = util.memory
                     except Exception as exc:
                         # pynvml hatası kritik değil; WSL2/sürücü sınırlaması olabilir
@@ -308,11 +326,11 @@ class SystemHealthManager:
                 devices.append(dev)
 
             return {
-                "available":      True,
-                "device_count":   device_count,
-                "cuda_version":   torch.version.cuda or "N/A",
+                "available": True,
+                "device_count": device_count,
+                "cuda_version": torch.version.cuda or "N/A",
                 "driver_version": self._get_driver_version(),
-                "devices":        devices,
+                "devices": devices,
             }
         except Exception as exc:
             return {"available": False, "error": str(exc)}
@@ -322,6 +340,7 @@ class SystemHealthManager:
         if self._nvml_initialized:
             try:
                 import pynvml
+
                 return pynvml.nvmlSystemGetDriverVersion()
             except Exception as exc:
                 logger.debug("pynvml sürücü sürümü alınamadı: %s", exc)
@@ -329,7 +348,9 @@ class SystemHealthManager:
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             version = result.stdout.strip().split("\n")[0]
             if version:
@@ -356,15 +377,16 @@ class SystemHealthManager:
             İnsan okunabilir boşaltma raporu.
         """
         freed_mb = 0.0
-        gpu_error: Optional[str] = None
+        gpu_error: str | None = None
 
         try:
             if self._gpu_available:
                 try:
                     import torch
-                    before   = torch.cuda.memory_reserved() / 1e6
+
+                    before = torch.cuda.memory_reserved() / 1e6
                     torch.cuda.empty_cache()
-                    after    = torch.cuda.memory_reserved() / 1e6
+                    after = torch.cuda.memory_reserved() / 1e6
                     freed_mb = max(before - after, 0.0)
                     logger.info("GPU bellek temizlendi: %.1f MB boşaltıldı.", freed_mb)
                 except Exception as exc:
@@ -384,6 +406,7 @@ class SystemHealthManager:
         """Ollama servisinin erişilebilirliğini timeout ile doğrula."""
         try:
             import requests
+
             base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
             timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))
             resp = requests.get(f"{base_url.rstrip('/')}/tags", timeout=timeout)
@@ -391,7 +414,7 @@ class SystemHealthManager:
         except Exception:
             return False
 
-    def update_prometheus_metrics(self, metrics_dict: Dict[str, float]) -> None:
+    def update_prometheus_metrics(self, metrics_dict: dict[str, float]) -> None:
         """SystemHealth verilerini mevcut Prometheus Gauge nesnelerine aktar."""
         if not metrics_dict:
             return
@@ -401,6 +424,7 @@ class SystemHealthManager:
                 return
             try:
                 from prometheus_client import Gauge
+
                 self._prometheus_gauges = {
                     "cpu_percent": Gauge(
                         "sidar_system_cpu_percent",
@@ -461,7 +485,9 @@ class SystemHealthManager:
         if getattr(self.cfg, "ENABLE_DEPENDENCY_HEALTHCHECKS", False):
             dependencies = self.get_dependency_health()
             summary["dependencies"] = dependencies
-            if any(item.get("healthy") is False for item in dependencies.values()):  # pragma: no cover
+            if any(
+                item.get("healthy") is False for item in dependencies.values()
+            ):  # pragma: no cover
                 summary["status"] = "degraded"
         return summary
 
@@ -505,7 +531,11 @@ class SystemHealthManager:
                 "kind": "database",
                 "mode": "sqlite",
                 "target": str(db_path),
-                **({} if exists or not db_path.name else {"error": "sqlite database file not found"}),
+                **(
+                    {}
+                    if exists or not db_path.name
+                    else {"error": "sqlite database file not found"}
+                ),
             }
         parsed = urlparse(raw)
         host = parsed.hostname or "localhost"
@@ -567,12 +597,14 @@ class SystemHealthManager:
         gpu_devices = gpu.get("devices", []) if isinstance(gpu, dict) else []
         gpu_temp = gpu_devices[0].get("temperature_c") if gpu_devices else None
         gpu_util = gpu_devices[0].get("utilization_pct") if gpu_devices else None
-        self.update_prometheus_metrics({
-            "cpu_percent": cpu if cpu is not None else 0.0,
-            "ram_percent": ram_percent if ram_percent is not None else 0.0,
-            "gpu_utilization_pct": gpu_util if gpu_util is not None else 0.0,
-            "gpu_temperature_c": gpu_temp if gpu_temp is not None else 0.0,
-        })
+        self.update_prometheus_metrics(
+            {
+                "cpu_percent": cpu if cpu is not None else 0.0,
+                "ram_percent": ram_percent if ram_percent is not None else 0.0,
+                "gpu_utilization_pct": gpu_util if gpu_util is not None else 0.0,
+                "gpu_temperature_c": gpu_temp if gpu_temp is not None else 0.0,
+            }
+        )
 
         return "\n".join(lines)
 
@@ -587,6 +619,7 @@ class SystemHealthManager:
                 return
             try:
                 import pynvml
+
                 pynvml.nvmlShutdown()
             except Exception:
                 pass
