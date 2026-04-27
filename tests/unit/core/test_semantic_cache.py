@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import core.cache.semantic_cache as semantic_cache_module
 from core.llm_client import LLMClient, OllamaClient
 from core.cache.semantic_cache import SemanticCacheManager
 
@@ -86,3 +87,40 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
     frozen_time.move_to("2026-04-01 12:10:00")
     miss = await manager.get("different prompt")
     assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
+    manager = SemanticCacheManager(cfg)
+
+    class _FailingRedisFactory:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            client = AsyncMock()
+            client.ping = AsyncMock(side_effect=TimeoutError("redis ping timeout"))
+            return client
+
+    errors = {"count": 0}
+    monkeypatch.setattr(semantic_cache_module, "Redis", _FailingRedisFactory)
+    monkeypatch.setattr(
+        semantic_cache_module,
+        "record_cache_redis_error",
+        lambda: errors.__setitem__("count", errors["count"] + 1),
+    )
+
+    redis = await manager._get_redis()
+
+    assert redis is None
+    assert errors["count"] == 1
+    assert manager._redis_failures == 1
+    assert manager._redis_circuit_open_until > 0.0
+
+
+def test_embed_prompt_returns_empty_vector_when_embedding_fn_raises() -> None:
+    def _failing_embedding(*_args, **_kwargs):
+        raise ValueError("Embedding model down")
+
+    manager = SemanticCacheManager(_cfg(), embedding_fn=_failing_embedding)
+
+    assert manager._embed_prompt("prompt") == []
