@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from agent.sidar_agent import SidarAgent
 from config import Config
-from core.ci_remediation import build_ci_remediation_payload
+from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
@@ -270,18 +270,18 @@ async def _run_heal_mode(
 
     suspected_targets = _extract_python_targets_from_log(log_text)
     diagnosis = "\n".join(log_text.splitlines()[:20]).strip()
-    ci_context = {
-        "ci_failure": True,
-        "pipeline_failed": True,
-        "workflow_name": "local_mypy_gate",
-        "failure_summary": "mypy static analysis failure",
-        "log_excerpt": log_text[:4000],
-        "logs": log_text[:4000],
-        "suspected_targets": suspected_targets,
-        "branch": os.getenv("GIT_BRANCH", "local"),
-        "base_branch": os.getenv("GIT_BASE_BRANCH", "main"),
-        "run_id": f"local-heal-{int(time.time())}",
-    }
+    ci_context = build_local_failure_context(
+        log_text,
+        failure_summary="mypy static analysis failure",
+        workflow_name="local_mypy_gate",
+        run_id=f"local-heal-{int(time.time())}",
+        branch=os.getenv("GIT_BRANCH", "local"),
+        base_branch=os.getenv("GIT_BASE_BRANCH", "main"),
+    ) or {}
+    merged_targets = list(
+        dict.fromkeys([*suspected_targets, *list(ci_context.get("suspected_targets") or [])])
+    )
+    ci_context["suspected_targets"] = merged_targets[:20]
     remediation = build_ci_remediation_payload(ci_context, diagnosis)
     await agent._attempt_autonomous_self_heal(
         ci_context=ci_context,
