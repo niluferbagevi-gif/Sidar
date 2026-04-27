@@ -7,6 +7,7 @@ import importlib
 import json
 import time
 import uuid
+from typing import Any, Literal, cast
 
 from agent.base_agent import BaseAgent
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
@@ -22,25 +23,27 @@ from agent.roles.reviewer_agent import ReviewerAgent
 from config import Config
 
 
-def _ensure_delegation_request_shape():
+def _ensure_delegation_request_shape() -> type[DelegationRequest]:
     contracts_mod = importlib.import_module("agent.core.contracts")
     req_cls = getattr(contracts_mod, "DelegationRequest", None)
-    if req_cls is not object:
-        return req_cls
+    if isinstance(req_cls, type) and req_cls is not object:
+        return cast(type[DelegationRequest], req_cls)
 
     class _CompatDelegationRequest:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs: object) -> None:
             self.task_id = kwargs.get("task_id", "")
             self.reply_to = kwargs.get("reply_to", "")
             self.target_agent = kwargs.get("target_agent", "")
             self.payload = kwargs.get("payload", "")
             self.intent = kwargs.get("intent", "mixed")
             self.parent_task_id = kwargs.get("parent_task_id")
-            self.handoff_depth = int(kwargs.get("handoff_depth", 0) or 0)
+            handoff_depth_raw = kwargs.get("handoff_depth", 0)
+            self.handoff_depth = int(handoff_depth_raw) if isinstance(handoff_depth_raw, int) else 0
             self.protocol = kwargs.get("protocol", "p2p.v1")
-            self.meta = dict(kwargs.get("meta", {}) or {})
+            meta_raw = kwargs.get("meta", {})
+            self.meta = dict(meta_raw) if isinstance(meta_raw, dict) else {}
 
-        def bumped(self):
+        def bumped(self) -> "_CompatDelegationRequest":
             return type(self)(
                 task_id=self.task_id,
                 reply_to=self.reply_to,
@@ -53,8 +56,8 @@ def _ensure_delegation_request_shape():
                 meta=dict(self.meta),
             )
 
-    contracts_mod.DelegationRequest = _CompatDelegationRequest
-    return _CompatDelegationRequest
+    setattr(contracts_mod, "DelegationRequest", _CompatDelegationRequest)
+    return cast(type[DelegationRequest], _CompatDelegationRequest)
 
 
 _ensure_delegation_request_shape()
@@ -64,25 +67,25 @@ try:
 
     _tracer = otel_trace.get_tracer("sidar.supervisor")
 except Exception:  # pragma: no cover
-    _tracer = None  # type: ignore[assignment]
+    _tracer = None
 
 try:
     from core.agent_metrics import get_agent_metrics_collector as _get_agent_metrics
 except Exception:  # pragma: no cover
-    _get_agent_metrics = None  # type: ignore[assignment]
+    _get_agent_metrics = None
 
 
 class _NullSpan:
     """OTel bağımlılığı yokken `with _tracer.start_as_current_span(...)` yerine kullanılır."""
 
-    def __enter__(self):
+    def __enter__(self) -> "_NullSpan":
         return self
 
-    def __exit__(self, *_args):
+    def __exit__(self, *_args: object) -> Literal[False]:
         return False
 
-    def set_attribute(self, *_args):
-        pass
+    def set_attribute(self, *_args: object) -> None:
+        return None
 
 
 class SupervisorAgent(BaseAgent):
@@ -98,7 +101,7 @@ class SupervisorAgent(BaseAgent):
         self.cfg = cfg or Config()
         self.role_name = "supervisor"
         self.llm = None
-        self.tools = {}
+        self.tools: dict[str, Any] = {}
         base_init_failed = False
         try:
             # `super()` zincirinin testlerde farklı bir BaseAgent referansına bağlı kalabildiği
@@ -228,6 +231,30 @@ class SupervisorAgent(BaseAgent):
             return str(parsed.get("decision", "")).strip().lower() == "reject"
         return "decision=reject" in body.lower()
 
+    @staticmethod
+    def _coerce_delegation_request(value: object) -> DelegationRequest | None:
+        if isinstance(value, DelegationRequest):
+            return value
+        if not is_delegation_request(value):
+            return None
+        bumped = getattr(value, "bumped", None)
+        if callable(bumped):
+            bumped_value = bumped()
+            if isinstance(bumped_value, DelegationRequest):
+                return bumped_value
+            value = bumped_value
+        return DelegationRequest(
+            task_id=str(getattr(value, "task_id", "") or ""),
+            reply_to=str(getattr(value, "reply_to", "") or ""),
+            target_agent=str(getattr(value, "target_agent", "") or ""),
+            payload=str(getattr(value, "payload", "") or ""),
+            intent=str(getattr(value, "intent", "mixed") or "mixed"),
+            parent_task_id=str(getattr(value, "parent_task_id", "") or "") or None,
+            handoff_depth=int(getattr(value, "handoff_depth", 0) or 0),
+            protocol=str(getattr(value, "protocol", "p2p.v1") or "p2p.v1"),
+            meta=dict(getattr(value, "meta", {}) or {}),
+        )
+
     async def _delegate(
         self,
         receiver: str,
@@ -338,10 +365,9 @@ class SupervisorAgent(BaseAgent):
                 ),
                 timeout=getattr(getattr(self, "cfg", None), "REACT_TIMEOUT", 60),
             )
-            if is_delegation_request(result.summary):
-                current = (
-                    result.summary.bumped() if hasattr(result.summary, "bumped") else result.summary
-                )
+            next_request = self._coerce_delegation_request(result.summary)
+            if next_request is not None:
+                current = next_request
                 continue
             return result
         stop_reason = (
@@ -368,9 +394,10 @@ class SupervisorAgent(BaseAgent):
             if not _consume_turn():
                 return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("researcher", task_prompt, "research")
-            if is_delegation_request(result.summary):
+            delegated = self._coerce_delegation_request(result.summary)
+            if delegated is not None:
                 result = await self._route_p2p(
-                    result.summary, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated, parent_task_id=result.task_id, max_turns=max_turns
                 )
             return str(result.summary)
 
@@ -379,9 +406,10 @@ class SupervisorAgent(BaseAgent):
             if not _consume_turn():
                 return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("reviewer", task_prompt, "review")
-            if is_delegation_request(result.summary):
+            delegated = self._coerce_delegation_request(result.summary)
+            if delegated is not None:
                 result = await self._route_p2p(
-                    result.summary, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated, parent_task_id=result.task_id, max_turns=max_turns
                 )
             return str(result.summary)
 
@@ -390,9 +418,10 @@ class SupervisorAgent(BaseAgent):
             if not _consume_turn():
                 return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate("poyraz", task_prompt, "marketing")
-            if is_delegation_request(result.summary):
+            delegated = self._coerce_delegation_request(result.summary)
+            if delegated is not None:
                 result = await self._route_p2p(
-                    result.summary, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated, parent_task_id=result.task_id, max_turns=max_turns
                 )
             return str(result.summary)
 
@@ -402,9 +431,10 @@ class SupervisorAgent(BaseAgent):
             if not _consume_turn():
                 return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate(receiver, task_prompt, "coverage")
-            if is_delegation_request(result.summary):
+            delegated = self._coerce_delegation_request(result.summary)
+            if delegated is not None:
                 result = await self._route_p2p(
-                    result.summary, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated, parent_task_id=result.task_id, max_turns=max_turns
                 )
             return str(result.summary)
 
@@ -414,9 +444,10 @@ class SupervisorAgent(BaseAgent):
                 f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             )
         code_result = await self._delegate("coder", task_prompt, "code")
-        if is_delegation_request(code_result.summary):
+        delegated = self._coerce_delegation_request(code_result.summary)
+        if delegated is not None:
             code_result = await self._route_p2p(
-                code_result.summary, parent_task_id=code_result.task_id, max_turns=max_turns
+                delegated, parent_task_id=code_result.task_id, max_turns=max_turns
             )
 
         code_summary = str(code_result.summary)
@@ -438,9 +469,10 @@ class SupervisorAgent(BaseAgent):
         review_result = await self._delegate(
             "reviewer", review_goal, "review", parent_task_id=code_result.task_id
         )
-        if is_delegation_request(review_result.summary):
+        delegated = self._coerce_delegation_request(review_result.summary)
+        if delegated is not None:
             review_result = await self._route_p2p(
-                review_result.summary, parent_task_id=review_result.task_id, max_turns=max_turns
+                delegated, parent_task_id=review_result.task_id, max_turns=max_turns
             )
 
         review_summary = str(review_result.summary)
@@ -476,9 +508,10 @@ class SupervisorAgent(BaseAgent):
             next_code = await self._delegate(
                 "coder", revise_prompt, "code", parent_task_id=review_result.task_id
             )
-            if is_delegation_request(next_code.summary):
+            delegated = self._coerce_delegation_request(next_code.summary)
+            if delegated is not None:
                 next_code = await self._route_p2p(
-                    next_code.summary, parent_task_id=next_code.task_id, max_turns=max_turns
+                    delegated, parent_task_id=next_code.task_id, max_turns=max_turns
                 )
 
             latest_code_summary = str(next_code.summary)
@@ -491,9 +524,10 @@ class SupervisorAgent(BaseAgent):
                 "review",
                 parent_task_id=next_code.task_id,
             )
-            if is_delegation_request(review_result.summary):
+            delegated = self._coerce_delegation_request(review_result.summary)
+            if delegated is not None:
                 review_result = await self._route_p2p(
-                    review_result.summary, parent_task_id=review_result.task_id, max_turns=max_turns
+                    delegated, parent_task_id=review_result.task_id, max_turns=max_turns
                 )
             review_summary = str(review_result.summary)
 
