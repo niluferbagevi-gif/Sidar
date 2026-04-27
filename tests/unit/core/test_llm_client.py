@@ -2893,8 +2893,11 @@ async def test_stream_gemini_generator_yields_fallback_when_iterator_raises_runt
 
     chunks = await _collect(client._stream_gemini_generator(_BrokenStream()))
     assert len(chunks) == 1
-    assert "Gemini akış hatası" in chunks[0]
-    assert "Network kesildi" in chunks[0]
+    payload = json.loads(chunks[0])
+    assert payload["tool"] == "final_answer"
+    assert "Gemini akış hatası" in payload["argument"]
+    assert "Network kesildi" in payload["argument"]
+    assert payload["thought"] == "Hata"
 
 
 @pytest.mark.asyncio
