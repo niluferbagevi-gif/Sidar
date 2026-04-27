@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import jwt
 import anyio
@@ -43,7 +43,7 @@ import anyio
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi import Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -79,7 +79,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
         action: str
         status: str
         result_summary: str
-        correlation_id: Optional[str] = None
+        correlation_id: str | None = None
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
 
     @dataclass
@@ -87,8 +87,8 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
         trigger_id: str
         event_type: str
         source: str
-        payload: Dict[str, Any]
-        correlation_id: Optional[str] = None
+        payload: dict[str, Any]
+        correlation_id: str | None = None
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
 
     @dataclass
@@ -97,7 +97,7 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
         source_role: str
         target_role: str
         prompt: str
-        correlation_id: Optional[str] = None
+        correlation_id: str | None = None
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
 
     @dataclass
@@ -107,10 +107,10 @@ except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğun
         target_role: str
         output: str
         status: str = "completed"
-        correlation_id: Optional[str] = None
+        correlation_id: str | None = None
         protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
 
-    def normalize_federation_protocol(protocol: Optional[str]) -> str:
+    def normalize_federation_protocol(protocol: str | None) -> str:
         return (protocol or LEGACY_FEDERATION_PROTOCOL_V1).strip() or LEGACY_FEDERATION_PROTOCOL_V1
 
     def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:
@@ -163,7 +163,7 @@ class _CollaborationParticipant:
         display_name: str,
         role: str = "user",
         can_write: bool = False,
-        write_scopes: List[str] | None = None,
+        write_scopes: list[str] | None = None,
         joined_at: str = "",
     ) -> None:
         normalized_role = _normalize_collaboration_role(role)
@@ -197,9 +197,9 @@ class _CollaborationRoom:
     def __init__(
         self,
         room_id: str,
-        participants: Dict[int, _CollaborationParticipant] | None = None,
-        messages: List[Dict[str, Any]] | None = None,
-        telemetry: List[Dict[str, Any]] | None = None,
+        participants: dict[int, _CollaborationParticipant] | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        telemetry: list[dict[str, Any]] | None = None,
         active_task: asyncio.Task | None = None,
     ) -> None:
         self.room_id = room_id
@@ -209,7 +209,7 @@ class _CollaborationRoom:
         self.active_task = active_task
 
 
-_collaboration_rooms: Dict[str, _CollaborationRoom] = {}
+_collaboration_rooms: dict[str, _CollaborationRoom] = {}
 _COLLAB_WRITE_INTENT_RE = re.compile(
     r"(?i)\b("
     r"write|edit|patch|modify|delete|remove|rename|commit|push|create file|save file|"
@@ -252,7 +252,7 @@ def _normalize_collaboration_role(role: str) -> str:
     return normalized if normalized in allowed_roles else "user"
 
 
-def _collaboration_write_scopes_for_role(role: str, room_id: str) -> List[str]:
+def _collaboration_write_scopes_for_role(role: str, room_id: str) -> list[str]:
     normalized_role = _normalize_collaboration_role(role)
     base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
     if normalized_role == "admin":
@@ -445,7 +445,7 @@ def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, co
     )
 
 
-def _iter_stream_chunks(text: str, *, size: int = 180) -> List[str]:
+def _iter_stream_chunks(text: str, *, size: int = 180) -> list[str]:
     clean = str(text or "")
     if not clean:
         return []
@@ -4000,14 +4000,14 @@ class _VisionAnalyzeRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 kodlu görüntü verisi")
     mime_type: str = Field("image/png", description="Görüntü MIME türü")
     analysis_type: str = Field("general", description="Analiz türü: general, ui, chart, document")
-    prompt: Optional[str] = Field(None, description="Özel analiz talimatı (opsiyonel)")
+    prompt: str | None = Field(None, description="Özel analiz talimatı (opsiyonel)")
 
 
 class _VisionMockupRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 kodlu mockup görüntüsü")
     mime_type: str = Field("image/png", description="Görüntü MIME türü")
     framework: str = Field("html", description="Hedef framework: html, react, vue")
-    prompt: Optional[str] = Field(None, description="Ek talimat (opsiyonel)")
+    prompt: str | None = Field(None, description="Ek talimat (opsiyonel)")
 
 
 @app.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])
@@ -4071,7 +4071,7 @@ class _EntityUpsertRequest(BaseModel):
     user_id: str = Field(..., description="Kullanıcı kimliği")
     key: str = Field(..., description="Bellek anahtarı")
     value: str = Field(..., description="Saklanacak değer")
-    ttl_days: Optional[int] = Field(None, description="Yaşam süresi (gün); None = kalıcı")
+    ttl_days: int | None = Field(None, description="Yaşam süresi (gün); None = kalıcı")
 
 
 _entity_memory_instance = None
@@ -4124,7 +4124,7 @@ class _FeedbackRecordRequest(BaseModel):
     prompt: str = Field(..., description="Kullanıcı girdisi")
     response: str = Field(..., description="Model çıktısı")
     rating: int = Field(..., ge=1, le=5, description="Değerlendirme puanı (1–5)")
-    note: Optional[str] = Field(None, description="Ek not")
+    note: str | None = Field(None, description="Ek not")
 
 
 _feedback_store_instance = None
@@ -4168,8 +4168,8 @@ async def api_feedback_stats():
 
 class _SlackSendRequest(BaseModel):
     text: str = Field(..., description="Gönderilecek mesaj metni")
-    channel: Optional[str] = Field(None, description="Hedef kanal (ör. #general)")
-    thread_ts: Optional[str] = Field(None, description="Thread zaman damgası")
+    channel: str | None = Field(None, description="Hedef kanal (ör. #general)")
+    thread_ts: str | None = Field(None, description="Thread zaman damgası")
 
 
 _slack_mgr_instance = None
@@ -4219,9 +4219,9 @@ async def api_slack_channels():
 class _JiraCreateRequest(BaseModel):
     project_key: str = Field(..., description="Jira proje anahtarı (ör. SIDAR)")
     summary: str = Field(..., description="Issue başlığı")
-    description: Optional[str] = Field(None, description="Issue açıklaması")
+    description: str | None = Field(None, description="Issue açıklaması")
     issue_type: str = Field("Task", description="Issue türü: Task, Bug, Story")
-    priority: Optional[str] = Field(None, description="Öncelik: Highest, High, Medium, Low")
+    priority: str | None = Field(None, description="Öncelik: Highest, High, Medium, Low")
 
 
 _jira_mgr_instance = None
@@ -4274,7 +4274,7 @@ async def api_jira_search_issues(jql: str = "", max_results: int = 20):
 
 class _TeamsSendRequest(BaseModel):
     text: str = Field(..., description="Gönderilecek mesaj metni")
-    title: Optional[str] = Field(None, description="Mesaj başlığı")
+    title: str | None = Field(None, description="Mesaj başlığı")
 
 
 class _OperationChecklistCreateRequest(BaseModel):
