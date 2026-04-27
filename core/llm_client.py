@@ -13,6 +13,7 @@ import sys
 import logging
 import random
 import time
+from contextlib import nullcontext
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
@@ -56,6 +57,15 @@ SIDAR_TOOL_JSON_INSTRUCTION: str = (
 
 def _setting(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
+
+
+def _prepare_span_scope(config: Any, span_name: str, stream: bool):
+    tracer = _get_tracer(config)
+    if tracer is None:
+        return nullcontext(None), None
+    if stream:
+        return nullcontext(None), tracer.start_span(span_name)
+    return tracer.start_as_current_span(span_name), None
 
 
 def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
@@ -460,71 +470,72 @@ class OllamaClient(BaseLLMClient):
             payload.update(self.json_mode_config())
 
         timeout = self._build_timeout()
-        tracer = _get_tracer(self.config)
-        span_cm = tracer.start_as_current_span("llm.ollama.chat") if (tracer and not stream) else None
-        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.ollama.chat") if tracer and stream else None)
-        started_at = time.monotonic()
-        if span is not None:
-            span.set_attribute("sidar.llm.provider", "ollama")
-            span.set_attribute("sidar.llm.model", target_model)
-            span.set_attribute("sidar.llm.stream", stream)
-        try:
-            if stream:
-                stream_iter = self._stream_response(url, payload, timeout=timeout)
-                return _trace_stream_metrics(stream_iter, span, started_at)
-
-            async def _do_request():
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(url, json=payload)
-
-                    if resp.is_error:
-                        detail = ""
-                        try:
-                            detail = str(resp.json().get("error", "")).strip()
-                        except Exception:
-                            detail = (resp.text or "").strip()
-
-                        if detail:
-                            retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
-                            raise LLMAPIError(
-                                "ollama",
-                                detail,
-                                status_code=resp.status_code,
-                                retryable=retryable,
-                            )
-
-                    resp.raise_for_status()
-                    return resp.json()
-
-            data = await _retry_with_backoff("ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız")
-            content = data.get("message", {}).get("content", "")
+        span_scope, stream_span = _prepare_span_scope(self.config, "llm.ollama.chat", stream)
+        with span_scope as scoped_span:
+            span = scoped_span or stream_span
+            started_at = time.monotonic()
             if span is not None:
-                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            return await _ensure_json_text_async(content, "Ollama") if json_mode else content
+                span.set_attribute("sidar.llm.provider", "ollama")
+                span.set_attribute("sidar.llm.model", target_model)
+                span.set_attribute("sidar.llm.stream", stream)
+            try:
+                if stream:
+                    stream_iter = self._stream_response(url, payload, timeout=timeout)
+                    return _trace_stream_metrics(stream_iter, span, started_at)
 
-        except LLMAPIError as exc:
-            guidance = None
-            if exc.status_code == 404:
+                async def _do_request():
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(url, json=payload)
+
+                        if resp.is_error:
+                            detail = ""
+                            try:
+                                detail = str(resp.json().get("error", "")).strip()
+                            except Exception:
+                                detail = (resp.text or "").strip()
+
+                            if detail:
+                                retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
+                                raise LLMAPIError(
+                                    "ollama",
+                                    detail,
+                                    status_code=resp.status_code,
+                                    retryable=retryable,
+                                )
+
+                        resp.raise_for_status()
+                        return resp.json()
+
+                data = await _retry_with_backoff("ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız")
+                content = data.get("message", {}).get("content", "")
+                if span is not None:
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                return await _ensure_json_text_async(content, "Ollama") if json_mode else content
+
+            except LLMAPIError as exc:
+                if stream and span is not None:
+                    span.end()
+                guidance = None
+                if exc.status_code == 404:
+                    guidance = self._build_missing_model_guidance(target_model, str(exc))
+                if guidance:
+                    message = f"{exc} {guidance}"
+                    raise LLMAPIError(
+                        "ollama",
+                        message,
+                        status_code=exc.status_code,
+                        retryable=exc.retryable,
+                    ) from exc
+                raise
+            except Exception as exc:
+                if stream and span is not None:
+                    span.end()
                 guidance = self._build_missing_model_guidance(target_model, str(exc))
-            if guidance:
-                message = f"{exc} {guidance}"
-                raise LLMAPIError(
-                    "ollama",
-                    message,
-                    status_code=exc.status_code,
-                    retryable=exc.retryable,
-                ) from exc
-            raise
-        except Exception as exc:
-            guidance = self._build_missing_model_guidance(target_model, str(exc))
-            if guidance:
-                logger.warning("Ollama eksik model: %s", guidance)
-                raise LLMAPIError("ollama", guidance, retryable=False) from exc
-            logger.error("Ollama hata: %s", exc)
-            raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
-        finally:
-            if span_cm:
-                span_cm.__exit__(*sys.exc_info())
+                if guidance:
+                    logger.warning("Ollama eksik model: %s", guidance)
+                    raise LLMAPIError("ollama", guidance, retryable=False) from exc
+                logger.error("Ollama hata: %s", exc)
+                raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
 
     async def _stream_response(
         self,
@@ -652,85 +663,83 @@ class GeminiClient(BaseLLMClient):
 
         history = [{"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]} for m in chat_messages]
 
-        tracer = _get_tracer(self.config)
-        span_cm = tracer.start_as_current_span("llm.gemini.chat") if (tracer and not stream) else None
-        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.gemini.chat") if tracer and stream else None)
-        started_at = time.monotonic()
-        if span is not None:
-            span.set_attribute("sidar.llm.provider", "gemini")
-            span.set_attribute("sidar.llm.model", model or str(_setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash")))
-            span.set_attribute("sidar.llm.stream", stream)
         model_name = str(model or _setting(self.config, "GEMINI_MODEL", "gemini-2.0-flash"))
+        span_scope, stream_span = _prepare_span_scope(self.config, "llm.gemini.chat", stream)
+        with span_scope as scoped_span:
+            span = scoped_span or stream_span
+            started_at = time.monotonic()
+            if span is not None:
+                span.set_attribute("sidar.llm.provider", "gemini")
+                span.set_attribute("sidar.llm.model", model_name)
+                span.set_attribute("sidar.llm.stream", stream)
+            try:
+                config_kwargs = {"temperature": 0.2 if json_mode else temperature}
+                if json_mode:
+                    config_kwargs["response_mime_type"] = "application/json"
+                if system_text:
+                    config_kwargs["system_instruction"] = system_text
+                generate_config = genai_types.GenerateContentConfig(**config_kwargs)
+                contents = history or [{"role": "user", "parts": ["Merhaba"]}]
+                if stream:
+                    async def _start_stream():
+                        call = genai_client.aio.models.generate_content_stream(
+                            model=model_name,
+                            contents=contents,
+                            config=generate_config,
+                        )
+                        return await call if inspect.isawaitable(call) else call
 
-        try:
-            config_kwargs = {"temperature": 0.2 if json_mode else temperature}
-            if json_mode:
-                config_kwargs["response_mime_type"] = "application/json"
-            if system_text:
-                config_kwargs["system_instruction"] = system_text
-            generate_config = genai_types.GenerateContentConfig(**config_kwargs)
-            contents = history or [{"role": "user", "parts": ["Merhaba"]}]
-            if stream:
-                async def _start_stream():
-                    call = genai_client.aio.models.generate_content_stream(
+                    response_stream = await _retry_with_backoff(
+                        "gemini",
+                        _start_stream,
+                        config=self.config,
+                        retry_hint="Gemini stream başlatma başarısız",
+                    )
+                    stream_iter = self._stream_gemini_generator(response_stream)
+                    return _trace_stream_metrics(stream_iter, span, started_at)
+
+                async def _send_non_stream():
+                    call = genai_client.aio.models.generate_content(
                         model=model_name,
                         contents=contents,
                         config=generate_config,
                     )
                     return await call if inspect.isawaitable(call) else call
 
-                response_stream = await _retry_with_backoff(
+                response = await _retry_with_backoff(
                     "gemini",
-                    _start_stream,
+                    _send_non_stream,
                     config=self.config,
-                    retry_hint="Gemini stream başlatma başarısız",
+                    retry_hint="Gemini yanıtı alınamadı",
                 )
-                stream_iter = self._stream_gemini_generator(response_stream)
-                return _trace_stream_metrics(stream_iter, span, started_at)
 
-            async def _send_non_stream():
-                call = genai_client.aio.models.generate_content(
+                text = getattr(response, "text", "") or ""
+                prompt_tokens, completion_tokens = _extract_gemini_usage_tokens(response)
+                _record_llm_metric(
+                    provider="gemini",
                     model=model_name,
-                    contents=contents,
-                    config=generate_config,
+                    started_at=started_at,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    success=True,
                 )
-                return await call if inspect.isawaitable(call) else call
+                if span is not None:
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                return await _ensure_json_text_async(text, "Gemini") if json_mode else text
 
-            response = await _retry_with_backoff(
-                "gemini",
-                _send_non_stream,
-                config=self.config,
-                retry_hint="Gemini yanıtı alınamadı",
-            )
-
-            text = getattr(response, "text", "") or ""
-            prompt_tokens, completion_tokens = _extract_gemini_usage_tokens(response)
-            _record_llm_metric(
-                provider="gemini",
-                model=model_name,
-                started_at=started_at,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                success=True,
-            )
-            if span is not None:
-                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            return await _ensure_json_text_async(text, "Gemini") if json_mode else text
-
-        except Exception as exc:
-            _record_llm_metric(provider="gemini", model=model_name, started_at=started_at, success=False, error=str(exc))
-            logger.error("Gemini hata: %s", exc)
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"[HATA] Gemini: {exc}",
-                    "thought": "Hata",
-                }
-            )
-            return _fallback_stream(msg) if stream else msg
-        finally:
-            if span_cm:
-                span_cm.__exit__(*sys.exc_info())
+            except Exception as exc:
+                if stream and span is not None:
+                    span.end()
+                _record_llm_metric(provider="gemini", model=model_name, started_at=started_at, success=False, error=str(exc))
+                logger.error("Gemini hata: %s", exc)
+                msg = json.dumps(
+                    {
+                        "tool": "final_answer",
+                        "argument": f"[HATA] Gemini: {exc}",
+                        "thought": "Hata",
+                    }
+                )
+                return _fallback_stream(msg) if stream else msg
 
     async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
         try:
@@ -796,80 +805,77 @@ class OpenAIClient(BaseLLMClient):
         headers = {"Authorization": f"Bearer {api_key}"}
         timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
 
-        started_at = time.monotonic()
-        tracer = _get_tracer(self.config)
-        span_cm = tracer.start_as_current_span("llm.openai.chat") if (tracer and not stream) else None
-        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.openai.chat") if tracer and stream else None)
-        if span is not None:
-            span.set_attribute("sidar.llm.provider", "openai")
-            span.set_attribute("sidar.llm.model", model_name)
-            span.set_attribute("sidar.llm.stream", stream)
-        try:
-            if stream:
-                payload["stream"] = True
-                payload["stream_options"] = {"include_usage": True}
-                stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
-                return _trace_stream_metrics(_track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at), span, started_at)
-
-            async def _do_request():
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(
-                        "https://api.openai.com/v1/chat/completions",
-                        json=payload,
-                        headers=headers,
-                    )
-                    if resp.is_error:
-                        detail = ""
-                        try:
-                            err = resp.json().get("error", {})
-                            detail = str(err.get("message") or "").strip()
-                        except Exception:
-                            detail = ""
-                        if not detail:
-                            detail = (resp.text or "").strip()
-                        if detail:
-                            retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
-                            raise LLMAPIError(
-                                "openai",
-                                detail,
-                                status_code=resp.status_code,
-                                retryable=retryable,
-                            )
-                    resp.raise_for_status()
-                    return resp.json()
-
-            data = await _retry_with_backoff("openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız")
-            prompt_tokens, completion_tokens = _extract_usage_tokens(data)
-            content = (
-                data.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-            )
-            _record_llm_metric(
-                provider="openai",
-                model=model_name,
-                started_at=started_at,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                success=True,
-            )
+        span_scope, stream_span = _prepare_span_scope(self.config, "llm.openai.chat", stream)
+        with span_scope as scoped_span:
+            span = scoped_span or stream_span
+            started_at = time.monotonic()
             if span is not None:
-                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            result = await _ensure_json_text_async(content, "OpenAI") if json_mode else content
-            if span_cm:
-                span_cm.__exit__(None, None, None)
-            return result
-        except LLMAPIError as exc:
-            _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
-            if span_cm:
-                span_cm.__exit__(*sys.exc_info())
-            raise
-        except Exception as exc:
-            _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
-            logger.error("OpenAI hata: %s", exc)
-            if span_cm:
-                span_cm.__exit__(*sys.exc_info())
-            raise LLMAPIError("openai", f"OpenAI hata: {exc}", retryable=False) from exc
+                span.set_attribute("sidar.llm.provider", "openai")
+                span.set_attribute("sidar.llm.model", model_name)
+                span.set_attribute("sidar.llm.stream", stream)
+            try:
+                if stream:
+                    payload["stream"] = True
+                    payload["stream_options"] = {"include_usage": True}
+                    stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
+                    return _trace_stream_metrics(_track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at), span, started_at)
+
+                async def _do_request():
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            json=payload,
+                            headers=headers,
+                        )
+                        if resp.is_error:
+                            detail = ""
+                            try:
+                                err = resp.json().get("error", {})
+                                detail = str(err.get("message") or "").strip()
+                            except Exception:
+                                detail = ""
+                            if not detail:
+                                detail = (resp.text or "").strip()
+                            if detail:
+                                retryable = resp.status_code == 429 or 500 <= resp.status_code < 600
+                                raise LLMAPIError(
+                                    "openai",
+                                    detail,
+                                    status_code=resp.status_code,
+                                    retryable=retryable,
+                                )
+                        resp.raise_for_status()
+                        return resp.json()
+
+                data = await _retry_with_backoff("openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız")
+                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
+                content = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+                _record_llm_metric(
+                    provider="openai",
+                    model=model_name,
+                    started_at=started_at,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    success=True,
+                )
+                if span is not None:
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                return await _ensure_json_text_async(content, "OpenAI") if json_mode else content
+            except LLMAPIError as exc:
+                if stream and span is not None:
+                    span.end()
+                _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+                raise
+            except Exception as exc:
+                if stream and span is not None:
+                    span.end()
+                _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+                logger.error("OpenAI hata: %s", exc)
+                raise LLMAPIError("openai", f"OpenAI hata: {exc}", retryable=False) from exc
 
     async def _stream_openai(
         self,
@@ -977,57 +983,57 @@ class LiteLLMClient(BaseLLMClient):
         models = self._candidate_models(model)
         started_at = time.monotonic()
         last_error: Optional[Exception] = None
-        tracer = _get_tracer(self.config)
-        span_cm = tracer.start_as_current_span("llm.litellm.chat") if (tracer and not stream) else None
-        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.litellm.chat") if tracer and stream else None)
-        if span is not None:
-            span.set_attribute("sidar.llm.provider", "litellm")
-            span.set_attribute("sidar.llm.stream", stream)
+        span_scope, stream_span = _prepare_span_scope(self.config, "llm.litellm.chat", stream)
+        with span_scope as scoped_span:
+            span = scoped_span or stream_span
+            if span is not None:
+                span.set_attribute("sidar.llm.provider", "litellm")
+                span.set_attribute("sidar.llm.stream", stream)
 
-        for idx, model_name in enumerate(models):
-            payload: Dict[str, Any] = {
-                "model": model_name,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if json_mode:
-                payload.update(self.json_mode_config())
-
-            endpoint = f"{base_url}/chat/completions"
             try:
-                if stream:
-                    payload["stream"] = True
-                    payload["stream_options"] = {"include_usage": True}
-                    stream_iter = self._stream_openai_compatible(endpoint, payload, headers, timeout, json_mode)
-                    return _track_stream_completion(stream_iter, provider="litellm", model=model_name, started_at=started_at)
+                for idx, model_name in enumerate(models):
+                    payload: Dict[str, Any] = {
+                        "model": model_name,
+                        "messages": messages,
+                        "temperature": temperature,
+                    }
+                    if json_mode:
+                        payload.update(self.json_mode_config())
 
-                async def _do_request():
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        resp = await client.post(endpoint, json=payload, headers=headers)
-                        resp.raise_for_status()
-                        return resp.json()
+                    endpoint = f"{base_url}/chat/completions"
+                    try:
+                        if stream:
+                            payload["stream"] = True
+                            payload["stream_options"] = {"include_usage": True}
+                            stream_iter = self._stream_openai_compatible(endpoint, payload, headers, timeout, json_mode)
+                            return _track_stream_completion(stream_iter, provider="litellm", model=model_name, started_at=started_at)
 
-                data = await _retry_with_backoff("litellm", _do_request, config=self.config, retry_hint="LiteLLM isteği başarısız")
-                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                _record_llm_metric(provider="litellm", model=model_name, started_at=started_at, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, success=True)
-                if span is not None:
-                    span.set_attribute("sidar.llm.model", model_name)
-                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                result = await _ensure_json_text_async(content, "LiteLLM") if json_mode else content
-                if span_cm:
-                    span_cm.__exit__(None, None, None)
-                return result
-            except Exception as exc:
-                last_error = exc
-                logger.warning("LiteLLM modeli başarısız oldu (%s): %s", model_name, exc)
-                if idx == len(models) - 1:
-                    break
+                        async def _do_request():
+                            async with httpx.AsyncClient(timeout=timeout) as client:
+                                resp = await client.post(endpoint, json=payload, headers=headers)
+                                resp.raise_for_status()
+                                return resp.json()
 
-        _record_llm_metric(provider="litellm", model=models[0] if models else "unknown", started_at=started_at, success=False, error=str(last_error or "unknown"))
-        if span_cm:
-            span_cm.__exit__(None, None, None)
-        raise LLMAPIError("litellm", f"LiteLLM hata: {last_error}", retryable=False)
+                        data = await _retry_with_backoff("litellm", _do_request, config=self.config, retry_hint="LiteLLM isteği başarısız")
+                        prompt_tokens, completion_tokens = _extract_usage_tokens(data)
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        _record_llm_metric(provider="litellm", model=model_name, started_at=started_at, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, success=True)
+                        if span is not None:
+                            span.set_attribute("sidar.llm.model", model_name)
+                            span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                        return await _ensure_json_text_async(content, "LiteLLM") if json_mode else content
+                    except Exception as exc:
+                        last_error = exc
+                        logger.warning("LiteLLM modeli başarısız oldu (%s): %s", model_name, exc)
+                        if idx == len(models) - 1:
+                            break
+
+                _record_llm_metric(provider="litellm", model=models[0] if models else "unknown", started_at=started_at, success=False, error=str(last_error or "unknown"))
+                raise LLMAPIError("litellm", f"LiteLLM hata: {last_error}", retryable=False)
+            except Exception:
+                if stream and span is not None:
+                    span.end()
+                raise
 
     async def _stream_openai_compatible(
         self,
@@ -1126,73 +1132,72 @@ class AnthropicClient(BaseLLMClient):
             conversation = [{"role": "user", "content": "Merhaba"}]
 
         client = AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
-        tracer = _get_tracer(self.config)
-        span_cm = tracer.start_as_current_span("llm.anthropic.chat") if (tracer and not stream) else None
-        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.anthropic.chat") if tracer and stream else None)
-        started_at = time.monotonic()
-        if span is not None:
-            span.set_attribute("sidar.llm.provider", "anthropic")
-            span.set_attribute("sidar.llm.model", model_name)
-            span.set_attribute("sidar.llm.stream", stream)
+        span_scope, stream_span = _prepare_span_scope(self.config, "llm.anthropic.chat", stream)
+        with span_scope as scoped_span:
+            span = scoped_span or stream_span
+            started_at = time.monotonic()
+            if span is not None:
+                span.set_attribute("sidar.llm.provider", "anthropic")
+                span.set_attribute("sidar.llm.model", model_name)
+                span.set_attribute("sidar.llm.stream", stream)
 
-        try:
-            if stream:
-                stream_iter = self._stream_anthropic(
-                    client=client,
-                    model_name=model_name,
-                    messages=conversation,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    json_mode=json_mode,
+            try:
+                if stream:
+                    stream_iter = self._stream_anthropic(
+                        client=client,
+                        model_name=model_name,
+                        messages=conversation,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        json_mode=json_mode,
+                    )
+                    stream_iter = _track_stream_completion(
+                        stream_iter,
+                        provider="anthropic",
+                        model=model_name,
+                        started_at=started_at,
+                    )
+                    return _trace_stream_metrics(stream_iter, span, started_at)
+
+                async def _do_request():
+                    return await client.messages.create(
+                        model=model_name,
+                        max_tokens=4096,
+                        temperature=temperature,
+                        system=system_prompt or None,
+                        messages=conversation,
+                    )
+
+                response = await _retry_with_backoff("anthropic", _do_request, config=self.config, retry_hint="Anthropic isteği başarısız")
+                usage = getattr(response, "usage", None)
+                prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+                completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+                text = "".join(
+                    getattr(block, "text", "")
+                    for block in getattr(response, "content", [])
                 )
-                stream_iter = _track_stream_completion(
-                    stream_iter,
+                _record_llm_metric(
                     provider="anthropic",
                     model=model_name,
                     started_at=started_at,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    success=True,
                 )
-                return _trace_stream_metrics(stream_iter, span, started_at)
-
-            async def _do_request():
-                return await client.messages.create(
-                    model=model_name,
-                    max_tokens=4096,
-                    temperature=temperature,
-                    system=system_prompt or None,
-                    messages=conversation,
-                )
-
-            response = await _retry_with_backoff("anthropic", _do_request, config=self.config, retry_hint="Anthropic isteği başarısız")
-            usage = getattr(response, "usage", None)
-            prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-            completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-            text = "".join(
-                getattr(block, "text", "")
-                for block in getattr(response, "content", [])
-            )
-            _record_llm_metric(
-                provider="anthropic",
-                model=model_name,
-                started_at=started_at,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                success=True,
-            )
-            if span is not None:
-                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                span.end()
-            return await _ensure_json_text_async(text, "Anthropic") if json_mode else text
-        except LLMAPIError as exc:
-            _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
-            if span is not None:
-                span.end()
-            raise
-        except Exception as exc:
-            _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
-            if span is not None:
-                span.end()
-            logger.error("Anthropic hata: %s", exc)
-            raise LLMAPIError("anthropic", f"Anthropic hata: {exc}", retryable=False) from exc
+                if span is not None:
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                return await _ensure_json_text_async(text, "Anthropic") if json_mode else text
+            except LLMAPIError as exc:
+                if stream and span is not None:
+                    span.end()
+                _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
+                raise
+            except Exception as exc:
+                if stream and span is not None:
+                    span.end()
+                _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
+                logger.error("Anthropic hata: %s", exc)
+                raise LLMAPIError("anthropic", f"Anthropic hata: {exc}", retryable=False) from exc
 
     async def _stream_anthropic(
         self,
