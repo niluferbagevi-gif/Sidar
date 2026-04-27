@@ -54,6 +54,7 @@ class SemanticCacheManager:
         self.index_key = "sidar:semantic_cache:index"
         self._embedding_fn = embedding_fn or _default_semantic_embedding_fn
         self._redis: Redis | None = None
+        self._redis_init_lock = asyncio.Lock()
         self._redis_failures = 0
         self._redis_circuit_open_until = 0.0
 
@@ -88,25 +89,33 @@ class SemanticCacheManager:
             return None
         if self._redis is not None:
             return self._redis
-        started = time.perf_counter()
-        try:
-            self._redis = Redis.from_url(
-                getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
-                encoding="utf-8",
-                decode_responses=True,
-                max_connections=max(1, int(_setting(self.config, "REDIS_MAX_CONNECTIONS", 50))),
-            )
-            ping_timeout = max(0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0)))
-            await asyncio.wait_for(self._redis.ping(), timeout=ping_timeout)
-            self._mark_redis_success()
-            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
-            return self._redis
-        except Exception as exc:
-            logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
-            record_cache_redis_error()
-            self._mark_redis_failure()
-            self._redis = None
-            return None
+        async with self._redis_init_lock:
+            if self._redis_circuit_open():
+                record_cache_skip()
+                return None
+            if self._redis is not None:
+                return self._redis
+
+            started = time.perf_counter()
+            try:
+                redis_client = Redis.from_url(
+                    getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
+                    encoding="utf-8",
+                    decode_responses=True,
+                    max_connections=max(1, int(_setting(self.config, "REDIS_MAX_CONNECTIONS", 50))),
+                )
+                ping_timeout = max(0.1, float(_setting(self.config, "SEMANTIC_CACHE_REDIS_PING_TIMEOUT", 1.0)))
+                await asyncio.wait_for(redis_client.ping(), timeout=ping_timeout)
+                self._redis = redis_client
+                self._mark_redis_success()
+                observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
+                return self._redis
+            except Exception as exc:
+                logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
+                record_cache_redis_error()
+                self._mark_redis_failure()
+                self._redis = None
+                return None
 
     @staticmethod
     def _cosine_similarity(a: List[float], b: List[float]) -> float:
