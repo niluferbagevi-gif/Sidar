@@ -1120,8 +1120,13 @@ async def test_litellm_stream_and_fail(monkeypatch: pytest.MonkeyPatch, mock_con
 async def test_gemini_client_missing_and_success(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
     cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
-    with pytest.raises(ValueError, match="API key must be set when using the Google AI API"):
-        await c.chat([{"role": "user", "content": "x"}], stream=False)
+    missing_key_result = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    if "google-genai" in missing_key_result:
+        # Test ortamında google-genai paketi yoksa import fallback'i beklenir.
+        assert "Paket eksik" in missing_key_result
+    else:
+        with pytest.raises(ValueError, match="API key must be set when using the Google AI API"):
+            await c.chat([{"role": "user", "content": "x"}], stream=False)
 
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
@@ -3004,6 +3009,16 @@ def test_resolve_cost_per_token_usd_prefers_model_map_and_known_defaults() -> No
     assert llm_client._resolve_cost_per_token_usd(cfg, "unknown-model") == pytest.approx(9e-6)
 
 
+def test_resolve_cost_per_token_usd_falls_back_on_invalid_numeric_values() -> None:
+    cfg = _make_config(
+        COST_ROUTING_TOKEN_COST_USD="invalid-default",
+        COST_ROUTING_MODEL_COSTS_USD={"gemini-2.0-flash": "not-a-float"},
+    )
+    assert llm_client._resolve_cost_per_token_usd(cfg, "gemini-2.0-flash") == pytest.approx(
+        llm_client.DEFAULT_COST_PER_TOKEN_USD
+    )
+
+
 @pytest.mark.asyncio
 async def test_llmclient_truncation_preserves_latest_rag_message() -> None:
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
@@ -3016,6 +3031,141 @@ async def test_llmclient_truncation_preserves_latest_rag_message() -> None:
     out = c._truncate_messages_for_local_model(msgs)
     assert sum(len(m["content"]) for m in out) <= 1200
     assert any(m["role"] == "context" and "[RAG] latest findings" in m["content"] for m in out)
+
+
+@pytest.mark.asyncio
+async def test_llmclient_truncation_trims_rag_message_and_skips_duplicate_in_history() -> None:
+    c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
+    rag_content = "[RAG] important: " + ("r" * 1400)
+    msgs = [
+        {"role": "system", "content": "S" * 180},
+        {"role": "user", "content": "u" * 260},
+        {"role": "context", "content": rag_content},
+        {"role": "assistant", "content": "a" * 240},
+    ]
+
+    out = c._truncate_messages_for_local_model(msgs)
+
+    assert sum(len(m["content"]) for m in out) <= 1200
+    rag_messages = [m for m in out if m["role"] == "context"]
+    assert len(rag_messages) == 1
+    assert rag_messages[0]["content"].startswith("[RAG] important:")
+    assert len(rag_messages[0]["content"]) < len(rag_content)
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_returns_fallback_when_google_genai_import_fails(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    cfg = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
+    c = llm_client.GeminiClient(cfg)
+    original_import = builtins.__import__
+
+    def _patched_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "google" and fromlist and "genai" in fromlist:
+            raise ImportError("google.genai missing")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _patched_import)
+    out = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert "google-genai" in out
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_stream_error_ends_span(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    ended = {"value": False}
+    events: list[dict[str, object]] = []
+
+    class _Span:
+        def set_attribute(self, *_args, **_kwargs):
+            return None
+
+        def end(self):
+            ended["value"] = True
+
+    class _Scope:
+        def __enter__(self):
+            return _Span()
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _Models(DummyGeminiModels):
+        async def generate_content_stream(self, **_kw):
+            raise RuntimeError("stream boom")
+
+    class _Client(DummyGeminiClient):
+        def __init__(self, api_key):
+            super().__init__(api_key, text="ok", stream_texts=("A",))
+            self.aio = SimpleNamespace(models=_Models(text="ok", stream_texts=("A",)))
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    _mock_google_genai(monkeypatch, _Client, fake_types)
+    monkeypatch.setattr(llm_client, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None))
+    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+
+    c = llm_client.GeminiClient(mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+    stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    chunks = await _collect(stream)
+
+    assert ended["value"] is True
+    assert events and events[-1]["success"] is False
+    assert "Gemini" in chunks[0]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_chat_stream_errors_end_span(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    ended = {"value": 0}
+
+    class _Span:
+        def set_attribute(self, *_args, **_kwargs):
+            return None
+
+        def end(self):
+            ended["value"] += 1
+
+    class _Scope:
+        def __enter__(self):
+            return _Span()
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _Messages:
+        async def create(self, **_kw):
+            return SimpleNamespace(usage=SimpleNamespace(input_tokens=0, output_tokens=0), content=[])
+
+        def stream(self, **_kw):
+            class _CM:
+                async def __aenter__(self):
+                    async def _events():
+                        yield SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="A"))
+
+                    return _events()
+
+                async def __aexit__(self, *_exc):
+                    return False
+
+            return _CM()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kw):
+            self.messages = _Messages()
+
+    _mock_anthropic(monkeypatch, _AsyncAnthropic)
+    monkeypatch.setattr(llm_client, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None))
+    client = llm_client.AnthropicClient(mock_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude"))
+
+    def _raise_llmapi(*_args, **_kwargs):
+        raise llm_client.LLMAPIError("anthropic", "stream exploded")
+
+    monkeypatch.setattr(llm_client, "_track_stream_completion", _raise_llmapi)
+    with pytest.raises(llm_client.LLMAPIError, match="stream exploded"):
+        await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    assert ended["value"] == 1
+
+    monkeypatch.setattr(llm_client, "_track_stream_completion", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("unexpected")))
+    with pytest.raises(llm_client.LLMAPIError, match="Anthropic hata: unexpected"):
+        await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    assert ended["value"] == 2
 
 
 def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:

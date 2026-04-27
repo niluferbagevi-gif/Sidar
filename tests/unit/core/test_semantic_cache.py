@@ -193,3 +193,29 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
     assert redis is None
     assert skips["count"] == 1
     assert circuit_bypasses["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_redis_returns_existing_client_initialized_inside_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = SemanticCacheManager(_cfg())
+    redis_client = object()
+
+    class _InjectRedisLock:
+        async def __aenter__(self):
+            manager._redis = redis_client
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _ShouldNotInitRedis:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            raise AssertionError("Redis.from_url should not run when redis client already exists inside lock")
+
+    monkeypatch.setattr(manager, "_redis_init_lock", _InjectRedisLock())
+    monkeypatch.setattr(semantic_cache_module, "Redis", _ShouldNotInitRedis)
+
+    redis = await manager._get_redis()
+
+    assert redis is redis_client
