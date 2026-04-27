@@ -357,10 +357,9 @@ async def _track_stream_routing_cost(
         est_tokens = token_counter.estimate_tokens(
             prompt_text, model=model
         ) + token_counter.estimate_tokens(completion_text, model=model)
-        if est_tokens <= 0:
-            return
-        cost_per_token = _resolve_cost_per_token_usd(config, model=model)
-        record_routing_cost(est_tokens * cost_per_token)
+        if est_tokens > 0:
+            cost_per_token = _resolve_cost_per_token_usd(config, model=model)
+            record_routing_cost(est_tokens * cost_per_token)
 
 
 async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_at: float):
