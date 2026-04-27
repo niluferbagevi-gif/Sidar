@@ -63,6 +63,14 @@ def test_repair_json_text_skips_first_invalid_brace_then_parses_later_json_objec
     assert repaired == '{"anahtar": "deger"}'
 
 
+def test_repair_json_text_skips_unicode_error_fence_then_parses_next_fence() -> None:
+    payload = '```json\n"\\ud800"\n```\n```json\n{"ok": true}\n```'
+
+    repaired = repair_json_text(payload)
+
+    assert repaired == '{"ok": true}'
+
+
 @pytest.mark.asyncio
 async def test_repair_json_text_async_returns_none_for_empty_text() -> None:
     assert await repair_json_text_async("   ") is None
@@ -137,6 +145,15 @@ async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_late
     repaired = await repair_json_text_async(payload)
 
     assert repaired == '{"anahtar": "deger"}'
+
+
+@pytest.mark.asyncio
+async def test_repair_json_text_async_skips_unicode_error_fence_then_parses_next_fence() -> None:
+    payload = '```json\n"\\ud800"\n```\n```json\n{"ok": true}\n```'
+
+    repaired = await repair_json_text_async(payload)
+
+    assert repaired == '{"ok": true}'
 
 
 @pytest.mark.asyncio

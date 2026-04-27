@@ -8,6 +8,8 @@ import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+STRICT_FENCE_PATTERN = r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```"
+LOOSE_FENCE_PATTERN = r"```(?:json)?\s*([\s\S]*?)\s*```"
 
 
 def is_safe_literal_eval_candidate(text: str, *, max_len: int = 20000, max_depth: int = 80) -> bool:
@@ -47,6 +49,53 @@ def is_safe_literal_eval_candidate(text: str, *, max_len: int = 20000, max_depth
     return True
 
 
+def _json_dumps_if_valid(raw: str) -> Optional[str]:
+    normalized = (raw or "").strip()
+    if not normalized:
+        return None
+    try:
+        obj = json.loads(normalized)
+        return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        pass
+
+    # En baştaki geçerli JSON nesnesini yakalamak için decoder tabanlı onarım.
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(normalized):
+        if ch not in "{[":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(normalized[i:])
+            return json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            continue
+    return None
+
+
+def _repair_json_candidate(candidate: str) -> Optional[str]:
+    parsed = _json_dumps_if_valid(candidate)
+    if parsed is not None:
+        return parsed
+
+    # Çoklu fenced markdown çıktılarında her bloğu sırayla dene.
+    for fenced in re.finditer(
+        STRICT_FENCE_PATTERN,
+        candidate,
+        flags=re.IGNORECASE,
+    ):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
+    # Satır sonu olmadan gelen fenced varyantları için gevşek fallback.
+    for fenced in re.finditer(LOOSE_FENCE_PATTERN, candidate, flags=re.IGNORECASE):
+        parsed = _json_dumps_if_valid(fenced.group(1))
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
 def repair_json_text(text: str) -> Optional[str]:
     """Modelin bozduğu JSON benzeri çıktıyı mümkünse JSON nesnesine onarır."""
     candidate = (text or "").strip()
@@ -57,47 +106,9 @@ def repair_json_text(text: str) -> Optional[str]:
         logger.debug("JSON onarımı atlandı: aday metin güvenli sınırları aşıyor.")
         return None
 
-    def _json_dumps_if_valid(raw: str) -> Optional[str]:
-        normalized = (raw or "").strip()
-        if not normalized:
-            return None
-        try:
-            obj = json.loads(normalized)
-            return json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-
-        # En baştaki geçerli JSON nesnesini yakalamak için decoder tabanlı onarım.
-        decoder = json.JSONDecoder()
-        for i, ch in enumerate(normalized):
-            if ch not in "{[":
-                continue
-            try:
-                obj, _ = decoder.raw_decode(normalized[i:])
-                return json.dumps(obj, ensure_ascii=False)
-            except Exception:
-                continue
-        return None
-
-    parsed = _json_dumps_if_valid(candidate)
+    parsed = _repair_json_candidate(candidate)
     if parsed is not None:
         return parsed
-
-    # Çoklu fenced markdown çıktılarında her bloğu sırayla dene.
-    for fenced in re.finditer(
-        r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```",
-        candidate,
-        flags=re.IGNORECASE,
-    ):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
-
-    # Satır sonu olmadan gelen fenced varyantları için gevşek fallback.
-    for fenced in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
 
     return _literal_eval_dict_fallback(candidate)
 
@@ -121,43 +132,8 @@ async def repair_json_text_async(text: str) -> Optional[str]:
         logger.debug("JSON onarımı atlandı: aday metin güvenli sınırları aşıyor.")
         return None
 
-    def _json_dumps_if_valid(raw: str) -> Optional[str]:
-        normalized = (raw or "").strip()
-        if not normalized:
-            return None
-        try:
-            obj = json.loads(normalized)
-            return json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-
-        decoder = json.JSONDecoder()
-        for i, ch in enumerate(normalized):
-            if ch not in "{[":
-                continue
-            try:
-                obj, _ = decoder.raw_decode(normalized[i:])
-                return json.dumps(obj, ensure_ascii=False)
-            except Exception:
-                continue
-        return None
-
-    parsed = _json_dumps_if_valid(candidate)
+    parsed = _repair_json_candidate(candidate)
     if parsed is not None:
         return parsed
-
-    for fenced in re.finditer(
-        r"(?ms)```(?:json)?[ \t]*\n(.*?)\n```",
-        candidate,
-        flags=re.IGNORECASE,
-    ):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
-
-    for fenced in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE):
-        parsed = _json_dumps_if_valid(fenced.group(1))
-        if parsed is not None:
-            return parsed
 
     return await asyncio.to_thread(_literal_eval_dict_fallback, candidate)
