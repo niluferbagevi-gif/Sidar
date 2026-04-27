@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.llm_client import LLMClient, OllamaClient, _SemanticCacheManager
+from core.llm_client import LLMClient, OllamaClient
+from core.cache.semantic_cache import SemanticCacheManager
 
 
 def _cfg(**overrides: object) -> SimpleNamespace:
@@ -29,8 +30,8 @@ async def test_semantic_cache_hit_skips_llm_call(monkeypatch: pytest.MonkeyPatch
     cache_set = AsyncMock()
     llm_chat = AsyncMock(return_value="llm-response")
 
-    monkeypatch.setattr(_SemanticCacheManager, "get", cache_get)
-    monkeypatch.setattr(_SemanticCacheManager, "set", cache_set)
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(SemanticCacheManager, "set", cache_set)
     monkeypatch.setattr(OllamaClient, "chat", llm_chat)
 
     client = LLMClient("ollama", _cfg())
@@ -48,8 +49,8 @@ async def test_semantic_cache_miss_calls_llm_and_populates_cache(monkeypatch: py
     cache_set = AsyncMock()
     llm_chat = AsyncMock(return_value="llm-response")
 
-    monkeypatch.setattr(_SemanticCacheManager, "get", cache_get)
-    monkeypatch.setattr(_SemanticCacheManager, "set", cache_set)
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(SemanticCacheManager, "set", cache_set)
     monkeypatch.setattr(OllamaClient, "chat", llm_chat)
 
     client = LLMClient("ollama", _cfg())
@@ -67,7 +68,7 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
     frozen_time,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    manager = _SemanticCacheManager(_cfg())
+    manager = SemanticCacheManager(_cfg())
     manager._get_redis = AsyncMock(return_value=fake_redis)
 
     embeddings = {

@@ -18,6 +18,8 @@ import pytest
 from redis import exceptions as redis_exceptions
 
 import core.llm_client as llm_client
+import core.utils.token_counter as token_counter
+from core.cache.semantic_cache import SemanticCacheManager
 from tests.helpers import collect_async_chunks as _collect
 from tests.helpers import make_test_config as _make_config
 
@@ -147,7 +149,7 @@ def _mock_anthropic(monkeypatch: pytest.MonkeyPatch, async_anthropic_cls: type) 
     monkeypatch.setattr(anthropic_mod, "AsyncAnthropic", async_anthropic_cls, raising=True)
 
 
-async def _cache_put(redis, manager: llm_client._SemanticCacheManager, key: str, embedding: list[float], response: str) -> None:
+async def _cache_put(redis, manager: SemanticCacheManager, key: str, embedding: list[float], response: str) -> None:
     await redis.hset(key, mapping={"embedding": json.dumps(embedding), "response": response})
     await redis.lpush(manager.index_key, key)
 
@@ -534,7 +536,7 @@ async def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_semantic_cache_cosine_similarity(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
     assert manager._cosine_similarity([], [1.0]) == 0.0
@@ -542,7 +544,7 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
 
 @pytest.mark.asyncio
 async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    llm_client._get_tiktoken_encoding.cache_clear()
+    token_counter.get_tiktoken_encoding.cache_clear()
     real_import = builtins.__import__
 
     def _guarded_import(name, *args, **kwargs):
@@ -551,11 +553,11 @@ async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(monkeypatch:
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", _guarded_import)
-    assert llm_client._estimate_tokens("1234567") == 2
+    assert token_counter.estimate_tokens("1234567") == 2
 
 
 def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    llm_client._get_tiktoken_encoding.cache_clear()
+    token_counter.get_tiktoken_encoding.cache_clear()
     tiktoken_stub = types.ModuleType("tiktoken")
     calls: list[str] = []
 
@@ -574,12 +576,12 @@ def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(monkeypatch: py
     tiktoken_stub.get_encoding = _get_encoding  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "tiktoken", tiktoken_stub)
 
-    assert llm_client._estimate_tokens("abcd", model="my-custom-model-xyz") == 4
+    assert token_counter.estimate_tokens("abcd", model="my-custom-model-xyz") == 4
     assert calls == ["cl100k_base"]
 
 
 def test_estimate_tokens_reuses_cached_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
-    llm_client._get_tiktoken_encoding.cache_clear()
+    token_counter.get_tiktoken_encoding.cache_clear()
     tiktoken_stub = types.ModuleType("tiktoken")
     calls = {"encoding_for_model": 0}
 
@@ -595,20 +597,20 @@ def test_estimate_tokens_reuses_cached_encoding(monkeypatch: pytest.MonkeyPatch)
     tiktoken_stub.get_encoding = lambda _name: _Encoding()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "tiktoken", tiktoken_stub)
 
-    assert llm_client._estimate_tokens("abcd", model="gpt-4o-mini") == 4
-    assert llm_client._estimate_tokens("efgh", model="gpt-4o-mini") == 4
+    assert token_counter.estimate_tokens("abcd", model="gpt-4o-mini") == 4
+    assert token_counter.estimate_tokens("efgh", model="gpt-4o-mini") == 4
     assert calls["encoding_for_model"] == 1
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_default_threshold_is_less_strict(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     assert manager.threshold == pytest.approx(0.90)
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "cached")
 
     async def _get_redis():
@@ -622,13 +624,13 @@ async def test_semantic_cache_get_hit(monkeypatch: pytest.MonkeyPatch, mock_conf
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     assert await manager.get("") is None
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+    manager = SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "cached")
     misses = {"n": 0}
 
@@ -644,7 +646,7 @@ async def test_semantic_cache_get_records_miss(monkeypatch: pytest.MonkeyPatch, 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     await fake_redis.lpush(manager.index_key, "old2")
     await fake_redis.lpush(manager.index_key, "old1")
     await fake_redis.hset("old1", mapping={"embedding": json.dumps([0.9, 0.1]), "response": "old"})
@@ -687,7 +689,7 @@ async def test_semantic_cache_set_records_item(monkeypatch: pytest.MonkeyPatch, 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
-    manager = llm_client._SemanticCacheManager(mock_config())
+    manager = SemanticCacheManager(mock_config())
     assert await manager.set("prompt", "") is None
 
 
@@ -779,7 +781,8 @@ async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
 async def test_track_stream_routing_cost_records_on_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
-    monkeypatch.setattr(llm_client, "_estimate_tokens", lambda text, model="": len(text))
+    monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
+    monkeypatch.setattr(llm_client, "estimate_tokens", token_counter.estimate_tokens)
 
     async def _broken_stream():
         yield "abc"
@@ -1265,11 +1268,11 @@ async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _make_config(ENABLE_SEMANTIC_CACHE=False)
-    manager = llm_client._SemanticCacheManager(cfg)
+    manager = SemanticCacheManager(cfg)
     assert await manager._get_redis() is None
 
     cfg2 = _make_config(ENABLE_SEMANTIC_CACHE=True)
-    manager2 = llm_client._SemanticCacheManager(cfg2)
+    manager2 = SemanticCacheManager(cfg2)
 
     class _R:
         @staticmethod
@@ -1292,7 +1295,7 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
                     raise RuntimeError("redis down")
             return _Inst()
 
-    manager3 = llm_client._SemanticCacheManager(cfg2)
+    manager3 = SemanticCacheManager(cfg2)
     monkeypatch.setattr(llm_client, "Redis", _RBoom)
     assert await manager3._get_redis() is None
 
@@ -1308,7 +1311,7 @@ async def test_semantic_cache_circuit_breaker_opens_after_threshold(monkeypatch:
         SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=2,
         SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS=30,
     )
-    manager = llm_client._SemanticCacheManager(cfg)
+    manager = SemanticCacheManager(cfg)
 
     attempts = {"n": 0}
     skipped = {"n": 0}
@@ -1339,7 +1342,7 @@ async def test_semantic_cache_circuit_breaker_opens_after_threshold(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_set_error_paths(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
 
     async def _redis():
         return fake_redis
@@ -1506,13 +1509,13 @@ async def test_retryable_exception_http_status_error_branch() -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_cosine_similarity_zero_norm() -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     assert manager._cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     fake_mod = types.SimpleNamespace(embed_texts_for_semantic_cache=lambda _texts, cfg=None: [[1, 2, 3]])
     _patch_imports(monkeypatch, {"core.embeddings": fake_mod})
     assert manager._embed_prompt("hello") == [1.0, 2.0, 3.0]
@@ -1526,14 +1529,14 @@ async def test_semantic_cache_embed_prompt_uses_injected_embedding_fn() -> None:
         calls.append(texts)
         return [[0.4, 0.6]]
 
-    manager = llm_client._SemanticCacheManager(_make_config(), embedding_fn=_embedding_fn)
+    manager = SemanticCacheManager(_make_config(), embedding_fn=_embedding_fn)
     assert manager._embed_prompt("hello") == [0.4, 0.6]
     assert calls == [["hello"]]
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
+    manager = SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
     await fake_redis.lpush(manager.index_key, "k3")
     await fake_redis.lpush(manager.index_key, "k2")
     await fake_redis.lpush(manager.index_key, "k1")
@@ -1553,7 +1556,7 @@ async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_handles_redis_exception(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     errors = {"n": 0}
 
     async def _redis():
@@ -1570,7 +1573,7 @@ async def test_semantic_cache_get_handles_redis_exception(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_semantic_cache_set_handles_write_exception(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     errors = {"n": 0}
 
     async def _redis():
@@ -1976,7 +1979,7 @@ async def test_llmclient_stream_gemini_generator_fallback_branch(monkeypatch: py
 
 @pytest.mark.asyncio
 async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     await _cache_put(fake_redis, manager, "k2", [1.0, 0.0], "r2")
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "r1")
 
@@ -1992,7 +1995,7 @@ async def test_semantic_cache_additional_branches(monkeypatch: pytest.MonkeyPatc
     assert await manager.get("hello") == "r1"
 
     # mevcut anahtar yeniden yazıldığında eviction artmamalı
-    manager2 = llm_client._SemanticCacheManager(_make_config())
+    manager2 = SemanticCacheManager(_make_config())
     key = "sidar:semantic_cache:item:" + hashlib.sha256("p".encode("utf-8")).hexdigest()
     await fake_redis.flushall()
     await fake_redis.lpush(manager2.index_key, key)
@@ -2172,7 +2175,7 @@ async def test_llmclient_truncation_remaining_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
     _patch_imports(monkeypatch, {"core.embeddings": types.SimpleNamespace(embed_texts_for_semantic_cache=lambda *_a, **_kw: [])})
     assert manager._embed_prompt("hello") == []
 
@@ -2404,7 +2407,7 @@ async def test_truncation_system_empty_and_empty_history_content() -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_set_return_none_when_redis_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = llm_client._SemanticCacheManager(_make_config())
+    manager = SemanticCacheManager(_make_config())
 
     async def no_redis():
         return None
@@ -2767,7 +2770,8 @@ async def test_track_stream_routing_cost_skips_record_when_no_tokens(monkeypatch
 async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
-    monkeypatch.setattr(llm_client, "_estimate_tokens", lambda text, model="": len(text))
+    monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
+    monkeypatch.setattr(llm_client, "estimate_tokens", token_counter.estimate_tokens)
 
     async def _stream():
         yield ""
@@ -2779,7 +2783,7 @@ async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_emp
 
 
 def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:
-    manager = llm_client._SemanticCacheManager(_make_config(ENABLE_SEMANTIC_CACHE=True))
+    manager = SemanticCacheManager(_make_config(ENABLE_SEMANTIC_CACHE=True))
     manager._redis_failures = 3
     manager._redis_circuit_open_until = time.monotonic() - 1
     assert manager._redis_circuit_open() is False
