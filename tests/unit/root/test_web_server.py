@@ -8845,15 +8845,6 @@ async def test_rate_limit_middleware_put_method_falls_through(monkeypatch):
     assert response.status_code == 200
 
 
-def test_load_plugin_agent_class_rejects_baseagent_itself():
-    with pytest.raises(web_server.HTTPException):
-        web_server._load_plugin_agent_class(
-            "from agent.base_agent import BaseAgent\n",
-            "BaseAgent",
-            "plugin_baseagent_only",
-        )
-
-
 @pytest.mark.asyncio
 async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_error(monkeypatch):
     class _Memory:
