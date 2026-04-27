@@ -251,9 +251,20 @@ def test_repair_json_text_loose_fenced_without_newline_before_closing_ticks() ->
     assert repaired == '{"tool": "final_answer", "argument": "loose", "thought": "t"}'
 
 
+def test_repair_json_text_skips_empty_fence_then_parses_next_valid_fence() -> None:
+    repaired = llm_client._repair_json_text(
+        "```json\n\n```\n```json {\"tool\":\"final_answer\",\"argument\":\"ok\",\"thought\":\"t\"}```"
+    )
+    assert repaired == '{"tool": "final_answer", "argument": "ok", "thought": "t"}'
+
+
 def test_repair_json_text_literal_eval_dict_fallback() -> None:
     repaired = llm_client._repair_json_text("{'single': 'quotes'}")
     assert repaired == '{"single": "quotes"}'
+
+
+def test_repair_json_text_returns_none_when_all_parse_paths_fail() -> None:
+    assert llm_client._repair_json_text("plain-text-without-json") is None
 
 
 @pytest.mark.asyncio
@@ -735,6 +746,54 @@ async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
     assert "sidar.llm.total_ms" in span.attrs
     assert "sidar.llm.ttft_ms" not in span.attrs
     assert span.ended is True
+
+
+@pytest.mark.asyncio
+async def test_track_stream_routing_cost_records_on_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[float] = []
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+    monkeypatch.setattr(llm_client, "_estimate_tokens", lambda text, model="": len(text))
+
+    async def _broken_stream():
+        yield "abc"
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        async for _chunk in llm_client._track_stream_routing_cost(
+            _broken_stream(),
+            messages=[{"content": "prompt"}],
+            config=_make_config(),
+        ):
+            pass
+
+    assert recorded and recorded[0] > 0
+
+
+@pytest.mark.asyncio
+async def test_trace_stream_metrics_ends_span_on_stream_error() -> None:
+    class Span:
+        def __init__(self):
+            self.attrs = {}
+            self.ended = False
+
+        def set_attribute(self, key, value):
+            self.attrs[key] = value
+
+        def end(self):
+            self.ended = True
+
+    span = Span()
+
+    async def _broken_stream():
+        yield "first"
+        raise RuntimeError("stream-error")
+
+    with pytest.raises(RuntimeError):
+        async for _chunk in llm_client._trace_stream_metrics(_broken_stream(), span, 0.0):
+            pass
+
+    assert span.ended is True
+    assert "sidar.llm.total_ms" not in span.attrs
 
 
 @pytest.mark.asyncio
