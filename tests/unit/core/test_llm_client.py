@@ -8,6 +8,7 @@ import importlib
 import json
 import pathlib
 import sys
+import time
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -2443,6 +2444,123 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(monkeypat
         client._stream_response("http://u", {"model": "x"}, llm_client.httpx.Timeout(10, connect=1))
     )
     assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_track_stream_routing_cost_skips_record_when_no_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[float] = []
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+
+    async def _empty_stream():
+        if False:  # pragma: no cover
+            yield ""
+
+    out = [chunk async for chunk in llm_client._track_stream_routing_cost(_empty_stream(), messages=[], config=_make_config())]
+    assert out == []
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[float] = []
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+
+    async def _stream():
+        yield ""
+        yield "abc"
+
+    out = [chunk async for chunk in llm_client._track_stream_routing_cost(_stream(), messages=[{"content": "prompt"}], config=_make_config())]
+    assert out == ["", "abc"]
+    assert recorded and recorded[0] > 0
+
+
+def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:
+    manager = llm_client._SemanticCacheManager(_make_config(ENABLE_SEMANTIC_CACHE=True))
+    manager._redis_failures = 3
+    manager._redis_circuit_open_until = time.monotonic() - 1
+    assert manager._redis_circuit_open() is False
+    assert manager._redis_failures == 0
+    assert manager._redis_circuit_open_until == 0.0
+
+
+@pytest.mark.asyncio
+async def test_iter_openai_compatible_stream_lines_stops_on_done() -> None:
+    class _Resp:
+        async def aiter_lines(self):
+            yield "event: ping"
+            yield "data: {\"choices\":[{\"delta\":{\"content\":\"one\"}}]}"
+            yield "data: [DONE]"
+            yield "data: {\"choices\":[{\"delta\":{\"content\":\"two\"}}]}"
+
+    out = [item async for item in _DummyClient._iter_openai_compatible_stream_lines(_Resp())]
+    assert len(out) == 1
+    assert out[0]["choices"][0]["delta"]["content"] == "one"
+
+
+@pytest.mark.asyncio
+async def test_iter_ollama_json_lines_handles_trim_and_non_dict_payloads() -> None:
+    client = llm_client.OllamaClient(_make_config())
+
+    class _Resp:
+        async def aiter_bytes(self):
+            yield b"x" * 64
+            yield b"\n[1,2,3]\n"
+            yield b'{"message":{"content":"ok"}}\n'
+            yield b"[9,8]"
+
+    out = [item async for item in client._iter_ollama_json_lines(_Resp(), max_buffer_chars=16)]
+    assert out == [{"message": {"content": "ok"}}]
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_returns_missing_package_error_when_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "google" and fromlist and "genai" in fromlist:
+            raise ImportError("google-genai missing")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _failing_import)
+    client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
+
+    text = await client.chat([{"role": "user", "content": "x"}], stream=False)
+    data = json.loads(text)
+    assert "google-genai" in data["argument"]
+
+
+@pytest.mark.asyncio
+async def test_litellm_chat_without_api_key_sends_request_without_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_headers: dict[str, str] = {}
+
+    class _Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"t"}'}}]}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _endpoint, json=None, headers=None):
+            captured_headers.update(headers or {})
+            return _Response()
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _Client())
+
+    client = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_API_KEY=""))
+    result = await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
+    assert json.loads(result)["argument"] == "ok"
+    assert "Authorization" not in captured_headers
 
 
 def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list[str]:
