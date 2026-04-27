@@ -424,7 +424,10 @@ fi
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
-  echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
+  echo "⚠️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
+  echo "⚠️ Performans regresyonlarının erken tespiti için CI/local pipeline'larda benchmark fazını düzenli çalıştırın."
+  echo "ℹ️ Öneri (lokal): RUN_BENCHMARKS=required bash run_tests.sh"
+  echo "ℹ️ Öneri (hedefli): uv run pytest -q ${PERFORMANCE_TEST_DIR} --benchmark-json=${BENCHMARK_JSON_OUTPUT}"
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
