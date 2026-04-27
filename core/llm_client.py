@@ -175,8 +175,17 @@ def _get_tracer(config):
 
 def _extract_usage_tokens(data: dict) -> tuple[int, int]:
     usage = data.get("usage", {}) if isinstance(data, dict) else {}
-    prompt = int(usage.get("prompt_tokens", 0) or 0)
-    completion = int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0)
+    if not isinstance(usage, dict):
+        return 0, 0
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    prompt = _safe_int(usage.get("prompt_tokens", 0))
+    completion = _safe_int(usage.get("completion_tokens", usage.get("output_tokens", 0)))
     return prompt, completion
 
 

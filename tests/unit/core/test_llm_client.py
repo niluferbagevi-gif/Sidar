@@ -272,6 +272,11 @@ def test_repair_json_text_skips_literal_eval_for_excessive_nesting() -> None:
     assert llm_client._repair_json_text(deeply_nested_list) is None
 
 
+def test_repair_json_text_returns_none_when_literal_eval_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ast, "literal_eval", lambda _text: (_ for _ in ()).throw(ValueError("boom")))
+    assert llm_client._repair_json_text("{'k': 'v'}") is None
+
+
 def test_is_safe_literal_eval_candidate_limits_depth_and_size() -> None:
     assert llm_client._is_safe_literal_eval_candidate("{'k': 'v'}") is True
     assert llm_client._is_safe_literal_eval_candidate("[" * 81 + "0" + "]" * 81, max_depth=80) is False
@@ -290,6 +295,8 @@ async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 12, "completion_tokens": 34}}) == (12, 34)
     assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": 1, "output_tokens": 3}}) == (1, 3)
     assert llm_client._extract_usage_tokens("invalid") == (0, 0)
+    assert llm_client._extract_usage_tokens({"usage": ["unexpected"]}) == (0, 0)
+    assert llm_client._extract_usage_tokens({"usage": {"prompt_tokens": "x", "completion_tokens": object()}}) == (0, 0)
 
 
 def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
@@ -1523,6 +1530,23 @@ async def test_semantic_cache_get_handles_invalid_records(monkeypatch: pytest.Mo
     monkeypatch.setattr(llm_client, "record_cache_miss", lambda: misses.__setitem__("n", misses["n"] + 1))
     assert await manager.get("hello") is None
     assert misses["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_get_handles_redis_exception(monkeypatch: pytest.MonkeyPatch, fake_redis) -> None:
+    manager = llm_client._SemanticCacheManager(_make_config())
+    errors = {"n": 0}
+
+    async def _redis():
+        return fake_redis
+
+    monkeypatch.setattr(manager, "_get_redis", _redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [1.0, 0.0])
+    monkeypatch.setattr(fake_redis, "lrange", AsyncMock(side_effect=redis_exceptions.ConnectionError("read failed")))
+    monkeypatch.setattr(llm_client, "record_cache_redis_error", lambda: errors.__setitem__("n", errors["n"] + 1))
+
+    assert await manager.get("hello") is None
+    assert errors["n"] == 1
 
 
 @pytest.mark.asyncio
