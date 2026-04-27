@@ -50,6 +50,8 @@ export default defineConfig({
     css: false,
     globals: true,
     pool: "forks",
+    include: ["src/**/*.{test,spec}.{js,jsx}"],
+    exclude: ["e2e/**", "dist/**", "node_modules/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
