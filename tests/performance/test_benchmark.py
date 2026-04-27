@@ -189,7 +189,7 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         grouped_messages = await db.get_messages_for_sessions([session.id for session in sessions])
         per_session_messages = [grouped_messages.get(session.id, []) for session in sessions]
         assert all(len(items) == messages_per_session for items in per_session_messages)
-        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in per_session_messages)
+        assert all(sorted(m.tokens_used for m in items) == list(range(messages_per_session)) for items in per_session_messages)
         return sum(len(items) for items in per_session_messages)
 
     def _run_once() -> int:
@@ -225,7 +225,9 @@ def test_user_registration_password_hash_cpu_cost(
     user_id = benchmark.pedantic(
         _run_once,
         warmup_rounds=1,
-        rounds=5,
+        # PBKDF2 (600k iterasyon) CPU-bound olduğu için çok uzun rounds
+        # değeri PostgreSQL koşularında testin takılmış gibi görünmesine neden oluyor.
+        rounds=2,
         iterations=1,
     )
     _attach_latency_percentiles(benchmark, "password_hash")

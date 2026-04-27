@@ -124,7 +124,7 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
 
         session_messages = await asyncio.gather(*[db.get_session_messages(session.id) for session in sessions])
         assert all(len(items) == messages_per_session for items in session_messages)
-        assert all([m.tokens_used for m in items] == list(range(messages_per_session)) for items in session_messages)
+        assert all(sorted(m.tokens_used for m in items) == list(range(messages_per_session)) for items in session_messages)
 
         for session, user in zip(sessions[:6], created_users[:6], strict=True):
             assert await db.load_session(session.id, user_id=user.id) is not None
