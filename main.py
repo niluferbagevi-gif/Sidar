@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any, TextIO
 
 # Terminal Renkleri (ANSI)
 CYAN = "\033[96m"
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import Config
 
-    cfg = Config()
+    cfg: Any = Config()
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
 except (ImportError, AttributeError):
@@ -254,7 +255,9 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _stream_pipe(pipe, file_obj, prefix: str, color: str, mirror: bool) -> None:
+def _stream_pipe(
+    pipe: TextIO, file_obj: TextIO | None, prefix: str, color: str, mirror: bool
+) -> None:
     """Child process pipe akışını satır satır okuyup belleği şişirmeden dosyaya yazar."""
     for line in iter(pipe.readline, ""):
         if file_obj:
