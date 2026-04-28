@@ -131,6 +131,14 @@ def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
     return False, status_code
 
 
+def _format_exception_message(exc: Exception) -> str:
+    """İstisna mesajı boş olduğunda hata tipini log/mesaja dahil et."""
+    detail = str(exc).strip()
+    if detail:
+        return detail
+    return exc.__class__.__name__
+
+
 async def _retry_with_backoff(
     provider: str,
     operation: Any,
@@ -148,8 +156,9 @@ async def _retry_with_backoff(
             return await operation()
         except Exception as exc:
             retryable, status_code = _is_retryable_exception(exc)
+            err_detail = _format_exception_message(exc)
             if (not retryable) or attempt >= max_retries:
-                message = f"{retry_hint}: {exc}"
+                message = f"{retry_hint}: {err_detail}"
                 raise LLMAPIError(
                     provider, message, status_code=status_code, retryable=retryable
                 ) from exc
@@ -160,7 +169,7 @@ async def _retry_with_backoff(
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",
                 provider,
-                exc,
+                err_detail,
                 attempt,
                 max_retries,
                 delay,
