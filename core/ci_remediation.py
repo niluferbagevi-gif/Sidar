@@ -69,7 +69,7 @@ def _is_allowed_validation_command(command: str) -> bool:
 
     def _is_allowed_pytest_arg(token: str) -> bool:
         return (
-            token == "."
+            token == "."  # nosec B105 - bu parola değil, pytest path argümanı doğrulamasıdır.
             or token.startswith("-")
             or token.startswith("tests/")
             or token.startswith("test/")
