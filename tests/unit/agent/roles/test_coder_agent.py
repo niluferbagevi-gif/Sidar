@@ -290,3 +290,43 @@ async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
     assert "[FAILED_TESTS]" in result
     failed_excerpt = result.split("[FAILED_TESTS] ", 1)[1]
     assert len(failed_excerpt) == 1500
+
+
+@pytest.mark.asyncio
+async def test_apply_self_heal_plan_applies_and_validates(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.code.read_file.side_effect = lambda path, *_args: (True, f"before:{path}")
+    agent.code.patch_file.side_effect = lambda path, target, replacement: (
+        True,
+        f"patched:{path}:{target}->{replacement}",
+    )
+    agent.code.run_shell_in_sandbox.side_effect = lambda command, cwd: (True, f"ok:{command}:{cwd}")
+
+    result = await agent.apply_self_heal_plan(
+        operations=[{"path": "core/a.py", "target": "x=1", "replacement": "x=2"}],
+        validation_commands=["pytest -q tests/unit/agent/roles/test_coder_agent.py"],
+    )
+
+    assert result["status"] == "applied"
+    assert result["applied_paths"] == ["core/a.py"]
+    assert len(result["validation_results"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_self_heal_plan_rolls_back_on_patch_error(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.code.read_file.side_effect = lambda path, *_args: (True, f"before:{path}")
+    agent.code.patch_file.side_effect = lambda *_args, **_kwargs: (False, "patch-failed")
+    writes = []
+    agent.code.write_file.side_effect = (
+        lambda path, content, validate=True: writes.append((path, content, validate))
+        or (True, "restored")
+    )
+
+    result = await agent.apply_self_heal_plan(
+        operations=[{"path": "core/a.py", "target": "x=1", "replacement": "x=2"}],
+        validation_commands=[],
+    )
+
+    assert result["status"] == "reverted"
+    assert writes == [("core/a.py", "before:core/a.py", False)]

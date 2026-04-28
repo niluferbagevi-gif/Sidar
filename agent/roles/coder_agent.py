@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus
@@ -137,6 +138,70 @@ class CoderAgent(BaseAgent):
             key, value = chunk.split("=", 1)
             result[key.strip().lower()] = value.strip()
         return result
+
+    async def apply_self_heal_plan(
+        self,
+        *,
+        operations: list[dict[str, Any]],
+        validation_commands: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Normalize edilmiş self-heal patch planını güvenli biçimde uygular."""
+        result: dict[str, Any] = {
+            "status": "skipped",
+            "summary": "Self-heal planı uygulanmadı.",
+            "applied_paths": [],
+            "validation_results": [],
+        }
+        if not operations:
+            result["summary"] = "Self-heal planı patch operasyonu içermiyor."
+            return result
+
+        backups: dict[str, str] = {}
+        applied_paths: list[str] = []
+        try:
+            for item in operations:
+                path = str(item.get("path") or "").strip()
+                target = str(item.get("target") or "")
+                replacement = str(item.get("replacement") or "")
+                if not path or not target:
+                    raise RuntimeError("Geçersiz patch operasyonu: path/target zorunludur.")
+                if path not in backups:
+                    ok, original = await asyncio.to_thread(self.code.read_file, path, False)
+                    if not ok:
+                        raise RuntimeError(f"Yedekleme başarısız: {original}")
+                    backups[path] = str(original)
+                ok, message = await asyncio.to_thread(self.code.patch_file, path, target, replacement)
+                if not ok:
+                    raise RuntimeError(f"{path} patch edilemedi: {message}")
+                if path not in applied_paths:
+                    applied_paths.append(path)
+
+            for command in list(validation_commands or []):
+                ok, output = await asyncio.to_thread(
+                    self.code.run_shell_in_sandbox,
+                    str(command),
+                    str(self.cfg.BASE_DIR),
+                )
+                result["validation_results"].append(
+                    {"command": str(command), "ok": bool(ok), "output": str(output)}
+                )
+                if not ok:
+                    raise RuntimeError(f"Doğrulama başarısız: {command}")
+
+            result["status"] = "applied"
+            result["applied_paths"] = applied_paths
+            result["summary"] = (
+                f"Self-heal uygulandı: {len(applied_paths)} dosyada patch, "
+                f"{len(result['validation_results'])} doğrulama komutu."
+            )
+            return result
+        except Exception as exc:
+            for path, content in backups.items():
+                await asyncio.to_thread(self.code.write_file, path, content, False)
+            result["status"] = "reverted"
+            result["summary"] = f"Self-heal başarısız oldu ve geri alındı: {exc}"
+            result["applied_paths"] = applied_paths
+            return result
 
     async def run_task(self, task_prompt: str) -> str:
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")

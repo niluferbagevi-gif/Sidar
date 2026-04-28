@@ -309,6 +309,37 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
     }
 
 
+def build_local_failure_context(
+    log_text: str,
+    *,
+    target: str = "local-check",
+    workflow_name: str = "local-self-heal",
+    repo: str = "local/repository",
+    branch: str = "local",
+) -> dict[str, Any]:
+    """Terminal log çıktısını generic CI failure bağlamına dönüştürür."""
+    normalized_target = str(target or "local-check").strip() or "local-check"
+    normalized_workflow = str(workflow_name or "local-self-heal").strip() or "local-self-heal"
+    excerpt = _trim_text(log_text or "", 1200)
+    summary = _extract_root_cause_line(excerpt) or f"{normalized_target} failed in local run"
+    payload = {
+        "ci_failure": True,
+        "repo": str(repo or "local/repository").strip() or "local/repository",
+        "workflow_name": normalized_workflow,
+        "failure_summary": _trim_text(summary, 220),
+        "log_excerpt": excerpt,
+        "branch": str(branch or "local").strip() or "local",
+        "base_branch": "main",
+        "conclusion": "failure",
+        "status": "completed",
+        "run_id": "local",
+        "run_number": "local",
+        "failed_jobs": [normalized_target],
+    }
+    context = _generic_ci_context("ci_failure_remediation", payload)
+    return context or payload
+
+
 def build_ci_failure_prompt(context: dict[str, Any]) -> str:
     info = dict(context or {})
     suspected_targets = ", ".join(info.get("suspected_targets") or [])

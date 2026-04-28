@@ -21,15 +21,23 @@ noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agent.sidar_agent import SidarAgent
 from config import Config
+from core.ci_remediation import (
+    build_local_failure_context,
+    build_remediation_loop,
+    build_self_heal_patch_prompt,
+    normalize_self_heal_plan,
+)
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
@@ -223,12 +231,96 @@ async def _ensure_cli_memory_user(agent: SidarAgent) -> None:
     await agent.memory.set_active_user(user.id, user.username)
 
 
+async def _run_heal_async(args: argparse.Namespace) -> int:
+    cfg = Config()
+    cfg.initialize_directories()
+    if not cfg.validate_critical_settings():
+        print("❌ Kritik yapılandırma doğrulaması başarısız. Self-heal durduruldu.")
+        return 1
+
+    log_path = Path(args.log_file)
+    if not log_path.exists():
+        print(f"❌ Log dosyası bulunamadı: {log_path}")
+        return 1
+
+    log_text = log_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not log_text:
+        print(f"❌ Log dosyası boş: {log_path}")
+        return 1
+
+    context = build_local_failure_context(
+        log_text,
+        target=args.target,
+        workflow_name=f"local-{args.target}",
+    )
+    remediation_loop = build_remediation_loop(context, diagnosis=log_text)
+    scope_paths = list(remediation_loop.get("scope_paths") or [])
+    if not scope_paths:
+        print("⚠️ Self-heal kapsamı boş; patch üretimi atlandı.")
+        return 1
+
+    from agent.roles.coder_agent import CoderAgent
+
+    coder = CoderAgent(cfg=cfg)
+    snapshots: list[dict[str, str]] = []
+    for path in scope_paths[:6]:
+        ok, content = await asyncio.to_thread(coder.code.read_file, str(path), False)
+        if ok:
+            snapshots.append({"path": str(path), "content": str(content)})
+
+    prompt = build_self_heal_patch_prompt(
+        context=context,
+        diagnosis=log_text,
+        remediation_loop=remediation_loop,
+        file_snapshots=snapshots,
+    )
+    raw_plan = await coder.call_llm(
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        json_mode=True,
+        model=getattr(cfg, "CODING_MODEL", None),
+    )
+    normalized_plan = normalize_self_heal_plan(
+        raw_plan,
+        scope_paths=scope_paths,
+        fallback_validation_commands=list(remediation_loop.get("validation_commands") or []),
+        max_operations=max(1, int(getattr(cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3)),
+    )
+    if not normalized_plan.get("operations"):
+        print("❌ Self-heal planı patch operasyonu üretemedi.")
+        return 1
+
+    result = await coder.apply_self_heal_plan(
+        operations=list(normalized_plan.get("operations") or []),
+        validation_commands=list(normalized_plan.get("validation_commands") or []),
+    )
+    print(json.dumps({"plan": normalized_plan, "execution": result}, ensure_ascii=False, indent=2))
+    return 0 if result.get("status") == "applied" else 1
+
+
+def _run_heal_cli(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Lokal log girdisi ile self-heal döngüsü çalıştır.")
+    parser.add_argument("--target", default="mypy", help="Onarılacak kalite kapısı/hedef adı.")
+    parser.add_argument("--log-file", required=True, help="Hata log dosyası yolu.")
+    parser.add_argument(
+        "--log",
+        default=getattr(Config(), "LOG_LEVEL", "INFO"),
+        help="Log seviyesi (DEBUG/INFO/WARNING)",
+    )
+    args = parser.parse_args(argv)
+    _setup_logging(args.log)
+    return asyncio.run(_run_heal_async(args))
+
+
 # ─────────────────────────────────────────────
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "heal":
+        raise SystemExit(_run_heal_cli(sys.argv[2:]))
+
     cfg_defaults = Config()
 
     parser = argparse.ArgumentParser(

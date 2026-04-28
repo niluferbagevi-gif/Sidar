@@ -264,9 +264,22 @@ run_static_analysis_gates() {
     BACKEND_EXIT_CODE=1
     return 1
   fi
-  if ! uv run mypy .; then
-    BACKEND_EXIT_CODE=1
-    return 1
+  local mypy_log_file="${MYPY_LOG_FILE:-mypy_errors.log}"
+  if ! uv run mypy . >"${mypy_log_file}" 2>&1; then
+    echo "⚠️ Mypy tip hataları tespit edildi. Otonom düzeltme (Self-Healing) başlatılıyor..."
+    if uv run python cli.py heal --target "mypy" --log-file "${mypy_log_file}"; then
+      echo "✅ Otonom düzeltme tamamlandı. Mypy kalite kapısı tekrar kontrol ediliyor..."
+      if ! uv run mypy .; then
+        echo "❌ Otonom düzeltme sonrası mypy hataları devam ediyor."
+        BACKEND_EXIT_CODE=1
+        return 1
+      fi
+    else
+      echo "❌ Otonom onarım başarısız oldu. Hata logu: ${mypy_log_file}"
+      cat "${mypy_log_file}"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
   fi
 }
 

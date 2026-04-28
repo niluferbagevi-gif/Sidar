@@ -490,3 +490,21 @@ def test_main_skips_overrides_when_args_are_none(monkeypatch):
     assert cfg.AI_PROVIDER == "ollama"
     assert cfg.CODING_MODEL == "qwen2.5-coder:7b"
     assert cfg.CLI_FAST_MODE is False
+
+
+def test_main_dispatches_heal_subcommand(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    called = {}
+
+    def _fake_run_heal(argv):
+        called["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(cli, "_run_heal_cli", _fake_run_heal)
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "heal", "--target", "mypy"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert called["argv"] == ["--target", "mypy"]

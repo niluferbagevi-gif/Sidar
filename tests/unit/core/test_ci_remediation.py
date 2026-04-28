@@ -237,6 +237,21 @@ def test_build_ci_failure_context_check_suite() -> None:
     assert ctx["html_url"] == "http://suite"
 
 
+def test_build_local_failure_context_wraps_terminal_logs() -> None:
+    ctx = ci.build_local_failure_context(
+        "core/ci_remediation.py:1: error: AssertionError sample",
+        target="mypy",
+        workflow_name="local-mypy",
+        repo="org/repo",
+        branch="feature/x",
+    )
+    assert ctx["kind"] == "generic_ci_failure"
+    assert ctx["workflow_name"] == "local-mypy"
+    assert ctx["repo"] == "org/repo"
+    assert ctx["failed_jobs"] == ["mypy"]
+    assert "core/ci_remediation.py" in ctx["suspected_targets"]
+
+
 def _sample_context() -> dict:
     return {
         "repo": "org/repo",
