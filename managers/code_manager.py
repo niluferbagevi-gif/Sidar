@@ -998,7 +998,7 @@ class CodeManager:
                 )
                 result = subprocess.run(
                     command,
-                    shell=True,
+                    shell=True,  # nosec B602 - FULL modda bilerek shell özellikleri (pipe/redirection) için etkin.
                     capture_output=True,
                     text=True,
                     timeout=60,
