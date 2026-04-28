@@ -413,6 +413,7 @@ prepare_test_database() {
   local test_db_password="${POSTGRES_PASSWORD:-sidar_test}"
   local test_db_host="${POSTGRES_HOST:-localhost}"
   local test_db_port="${POSTGRES_PORT:-5432}"
+  local reset_test_db="${RESET_TEST_DATABASE:-1}"
 
   if [ "${AUTO_PREPARE_TEST_DB:-1}" != "1" ]; then
     echo "ℹ️ AUTO_PREPARE_TEST_DB=0 verildi; test veritabanı hazırlığı atlanıyor."
@@ -425,18 +426,31 @@ prepare_test_database() {
   fi
 
   echo "🗄️ İzole test veritabanı hazırlanıyor: ${test_db_name}"
-  if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
-    -U "${test_db_user}" -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c "SELECT 1 FROM pg_database WHERE datname='${test_db_name}'" \
-    | tail -n +3 | head -n 1 | grep -q 1; then
+  if [ "${reset_test_db}" = "1" ]; then
+    echo "♻️ RESET_TEST_DATABASE=1; test veritabanı sıfırlanıyor: ${test_db_name}"
     if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
       -U "${test_db_user}" -d postgres \
       -v ON_ERROR_STOP=1 \
+      -c "DROP DATABASE IF EXISTS ${test_db_name} WITH (FORCE);" \
       -c "CREATE DATABASE ${test_db_name};"; then
-      echo "❌ Test veritabanı oluşturulamadı: ${test_db_name}"
+      echo "❌ Test veritabanı sıfırlanamadı: ${test_db_name}"
       BACKEND_EXIT_CODE=1
       return 1
+    fi
+  else
+    if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+      -U "${test_db_user}" -d postgres \
+      -v ON_ERROR_STOP=1 \
+      -c "SELECT 1 FROM pg_database WHERE datname='${test_db_name}'" \
+      | tail -n +3 | head -n 1 | grep -q 1; then
+      if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+        -U "${test_db_user}" -d postgres \
+        -v ON_ERROR_STOP=1 \
+        -c "CREATE DATABASE ${test_db_name};"; then
+        echo "❌ Test veritabanı oluşturulamadı: ${test_db_name}"
+        BACKEND_EXIT_CODE=1
+        return 1
+      fi
     fi
   fi
 
@@ -549,7 +563,7 @@ PY
   local phase1_exit=$?
 
   # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
-  local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-1}"
+  local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
   local phase2_cmd=("${base_pytest_cmd[@]}")
   local filtered_phase2_cmd=()
   local skip_next=0
@@ -564,7 +578,7 @@ PY
     fi
     filtered_phase2_cmd+=("${arg}")
   done
-  phase2_cmd=("${filtered_phase2_cmd[@]}" -n "${phase2_workers}" -m "integration" tests/integration tests/smoke tests/e2e)
+  phase2_cmd=("${filtered_phase2_cmd[@]}" -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
   echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
   "${phase2_cmd[@]}"
   local phase2_exit=$?
@@ -601,8 +615,7 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && run_static_analysis_gates && run_security_analysis_gates && ensure_test_services && prepare_test_database; then
-  sync_ollama_models
+if ensure_uv_available && run_static_analysis_gates && run_security_analysis_gates && ensure_test_services && sync_ollama_models && prepare_test_database; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
