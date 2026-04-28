@@ -615,10 +615,16 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && sync_ollama_models && ensure_test_services && prepare_test_database && run_static_analysis_gates && run_security_analysis_gates; then
+if ensure_uv_available && sync_ollama_models && ensure_test_services && prepare_test_database && run_static_analysis_gates; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
+  BACKEND_EXIT_CODE=1
+fi
+
+# Güvenlik kapıları pytest yürütümünü bloke etmez; sonuç final çıkışta değerlendirilir.
+if ! run_security_analysis_gates; then
+  echo "⚠️ Güvenlik analizi başarısız oldu; pytest sonuçları üretildi, final çıkış kodu başarısız olarak işaretlenecek."
   BACKEND_EXIT_CODE=1
 fi
 
