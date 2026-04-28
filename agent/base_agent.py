@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-import logging
 
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 from config import Config
