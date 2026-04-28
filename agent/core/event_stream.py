@@ -13,6 +13,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -54,29 +55,29 @@ class AgentEventBus:
         )
         self._dlq_persist_pending: list[dict[str, object]] = []
         self._dlq_persist_lock: asyncio.Lock | None = None
-        self._dlq_persist_flush_task: asyncio.Task | None = None
+        self._dlq_persist_flush_task: asyncio.Task[None] | None = None
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
         self._redis_connect_timeout = float(os.getenv("REDIS_CONNECT_TIMEOUT", "0.5") or "0.5")
         self._redis_socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.5") or "0.5")
         self._redis_client: Redis | None = None
-        self._redis_listener_task: asyncio.Task | None = None
-        self._redis_bootstrap_task: asyncio.Task | None = None
+        self._redis_listener_task: asyncio.Task[None] | None = None
+        self._redis_bootstrap_task: asyncio.Task[None] | None = None
         self._redis_available: bool | None = None
         self._redis_loop: asyncio.AbstractEventLoop | None = None
-        self._rabbit_bootstrap_task: asyncio.Task | None = None
-        self._rabbit_listener_task: asyncio.Task | None = None
+        self._rabbit_bootstrap_task: asyncio.Task[None] | None = None
+        self._rabbit_listener_task: asyncio.Task[None] | None = None
         self._rabbit_available: bool | None = None
-        self._rabbit_connection = None
-        self._rabbit_channel = None
-        self._rabbit_queue = None
+        self._rabbit_connection: Any | None = None
+        self._rabbit_channel: Any | None = None
+        self._rabbit_queue: Any | None = None
         self._rabbit_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
-        self._kafka_bootstrap_task: asyncio.Task | None = None
-        self._kafka_listener_task: asyncio.Task | None = None
+        self._kafka_bootstrap_task: asyncio.Task[None] | None = None
+        self._kafka_listener_task: asyncio.Task[None] | None = None
         self._kafka_available: bool | None = None
-        self._kafka_producer = None
-        self._kafka_consumer = None
+        self._kafka_producer: Any | None = None
+        self._kafka_consumer: Any | None = None
         self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
         self._kafka_group = os.getenv(
             "SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}"

@@ -106,8 +106,10 @@ class SocialMediaManager:
         )
         if not ok:
             return False, str(creation)
+        if not isinstance(creation, dict):
+            return False, "Instagram media container yanıtı beklenen formatta değil"
 
-        creation_id = str((creation or {}).get("id") or "")
+        creation_id = str(creation.get("id") or "")
         if not creation_id:
             return False, "Instagram media container oluşturulamadı"
 
@@ -117,7 +119,9 @@ class SocialMediaManager:
         )
         if not ok:
             return False, str(publish)
-        return True, str((publish or {}).get("id") or creation_id)
+        if not isinstance(publish, dict):
+            return True, creation_id
+        return True, str(publish.get("id") or creation_id)
 
     async def publish_facebook_post(self, *, message: str, link_url: str = "") -> tuple[bool, str]:
         if not self.facebook_page_id:
@@ -129,7 +133,9 @@ class SocialMediaManager:
         ok, response = await self._post(f"{self.facebook_page_id}/feed", payload)
         if not ok:
             return False, str(response)
-        return True, str((response or {}).get("id") or "")
+        if not isinstance(response, dict):
+            return False, "Facebook API yanıtı beklenen formatta değil"
+        return True, str(response.get("id") or "")
 
     async def send_whatsapp_message(
         self, *, to: str, text: str, preview_url: bool = False

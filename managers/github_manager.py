@@ -6,6 +6,8 @@ Sürüm: 2.7.0
 
 import logging
 import re
+from collections.abc import Callable
+from typing import Any
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
@@ -91,13 +93,13 @@ class GitHubManager:
     }
 
     @staticmethod
-    @retry(
+    @retry(  # type: ignore[untyped-decorator]
         reraise=True,
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=1, max=16),
         retry=retry_if_exception(_is_retryable_github_error),
     )
-    def _call_with_retry(func, *args, **kwargs):
+    def _call_with_retry(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         return func(*args, **kwargs)
 
     def __init__(self, token: str, repo_name: str = "", require_token: bool = False) -> None:
@@ -126,12 +128,14 @@ class GitHubManager:
             logger.warning("GitHub token ayarlanmamış. GitHub özellikleri devre dışı.")
             return
         try:
-            from github import Auth, Github  # type: ignore
+            from github import Auth, Github
 
             # PyGithub: login_or_token parametresi deprecated.
             # Yeni önerilen kullanım auth=Auth.Token(...).
             self._gh = Github(auth=Auth.Token(self.token))
             # Token doğrulama
+            if self._gh is None:
+                raise RuntimeError("GitHub istemcisi başlatılamadı.")
             _ = self._call_with_retry(self._gh.get_user).login
             self._available = True
             logger.info("GitHub bağlantısı kuruldu.")
@@ -517,16 +521,16 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR kapatma hatası: {exc}"
 
-    def list_issues(self, state: str = "open", limit: int = 10) -> tuple[bool, list]:
+    def list_issues(self, state: str = "open", limit: int = 10) -> tuple[bool, list[dict[str, Any]]]:
         """Depodaki Issue'ları listeler (PR'ları filtreler)."""
         if not self._repo:
-            return False, ["Aktif depo yok."]
+            return False, []
         try:
             valid_states = {"open", "closed", "all"}
             safe_state = state.lower() if state.lower() in valid_states else "open"
             safe_limit = max(1, min(int(limit), 100))
             issues = self._repo.get_issues(state=safe_state)
-            result = []
+            result: list[dict[str, Any]] = []
             for issue in issues[:safe_limit]:
                 # GitHub API'sinde PR'lar da birer Issue'dur, onları filtrele
                 if issue.pull_request is not None:
@@ -667,7 +671,7 @@ class GitHubManager:
         self,
         state: str = "open",
         limit: int = 50,
-    ) -> tuple[bool, list[dict], str]:
+    ) -> tuple[bool, list[dict[str, Any]], str]:
         """
         PR listesini yapısal dict listesi olarak döndürür.
 

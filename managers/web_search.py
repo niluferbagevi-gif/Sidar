@@ -9,7 +9,7 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 import asyncio
 import logging
 from html import unescape
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from bs4 import BeautifulSoup
@@ -32,7 +32,7 @@ class WebSearchManager:
 
     _NO_RESULTS_PREFIX = "[NO_RESULTS]"
 
-    def __init__(self, config=None) -> None:
+    def __init__(self, config: Any = None) -> None:
         self.cfg = config
         if config is not None:
             self.engine = getattr(config, "SEARCH_ENGINE", "auto").lower()
@@ -241,7 +241,7 @@ class WebSearchManager:
             if hasattr(duckduckgo_search, "AsyncDDGS"):
                 from duckduckgo_search import AsyncDDGS
 
-                async def _async_search():
+                async def _async_search() -> list[dict[str, Any]]:
                     async with AsyncDDGS() as ddgs:
                         # Bazı versiyonlarda liste, bazılarında async generator döner
                         res = await ddgs.text(query, max_results=n)
@@ -257,7 +257,7 @@ class WebSearchManager:
                 # AsyncDDGS yoksa (Örn: DDG SDK v8+), standart DDGS'i güvenli thread'de çalıştır
                 from duckduckgo_search import DDGS
 
-                def _sync_search():
+                def _sync_search() -> list[dict[str, Any]]:
                     with DDGS() as ddgs:
                         return list(ddgs.text(query, max_results=n))
 

@@ -60,7 +60,7 @@ class TeamsManager:
         title: str = "",
         subtitle: str = "",
         facts: list[dict[str, str]] | None = None,
-        actions: list[dict] | None = None,
+        actions: list[dict[str, Any]] | None = None,
         theme_color: str = "0078D4",
     ) -> tuple[bool, str]:
         """
@@ -88,7 +88,7 @@ class TeamsManager:
 
         return await self._post(card)
 
-    async def send_adaptive_card(self, card_body: dict) -> tuple[bool, str]:
+    async def send_adaptive_card(self, card_body: dict[str, Any]) -> tuple[bool, str]:
         """
         Adaptive Card v1.4 gönderir.
         card_body: Adaptive Card JSON (type, body, actions vb. içerir)
@@ -156,9 +156,9 @@ class TeamsManager:
         requester: str = "",
         approve_url: str = "",
         reject_url: str = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """HITL onay akışı için Adaptive Card şablonu."""
-        body: list[dict] = [
+        body: list[dict[str, Any]] = [
             {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
             {"type": "TextBlock", "text": description, "wrap": True},
         ]
@@ -201,9 +201,9 @@ class TeamsManager:
         title: str,
         metrics: list[dict[str, str]],
         description: str = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Metrik özeti için Adaptive Card şablonu."""
-        body: list[dict] = [
+        body: list[dict[str, Any]] = [
             {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
         ]
         if description:
@@ -226,7 +226,7 @@ class TeamsManager:
     #  ÖZEL HTTP POST
     # ─────────────────────────────────────────────
 
-    async def _post(self, payload: dict) -> tuple[bool, str]:
+    async def _post(self, payload: dict[str, Any]) -> tuple[bool, str]:
         """Webhook URL'ye JSON POST atar."""
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

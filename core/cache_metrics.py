@@ -99,7 +99,7 @@ def _get_prometheus_metric(metric_name: str, description: str, metric_type: str)
         )
         if existing is not None:
             _prometheus_metric_cache[metric_name] = existing
-            return existing
+            return _prometheus_metric_cache[metric_name]
 
         factory_name = "Counter" if metric_type == "counter" else "Gauge"
         factory = getattr(prometheus_client, factory_name, None)
@@ -108,7 +108,7 @@ def _get_prometheus_metric(metric_name: str, description: str, metric_type: str)
 
         metric = factory(metric_name, description)
         _prometheus_metric_cache[metric_name] = metric
-        return metric
+        return _prometheus_metric_cache[metric_name]
 
 
 def _inc_prometheus_counter(metric_name: str, description: str, count: int = 1) -> None:

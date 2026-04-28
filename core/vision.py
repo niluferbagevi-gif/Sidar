@@ -217,7 +217,7 @@ class VisionPipeline:
     config: Config nesnesi
     """
 
-    def __init__(self, llm_client, config=None) -> None:
+    def __init__(self, llm_client: Any, config: Any | None = None) -> None:
         self._llm = llm_client
         self._provider: str = getattr(llm_client, "provider", "openai")
         self.enabled: bool = bool(getattr(config, "ENABLE_VISION", True))

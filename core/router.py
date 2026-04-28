@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 try:
     from redis import Redis as SyncRedis
 except Exception:  # pragma: no cover - opsiyonel bağımlılık
-    SyncRedis = None  # type: ignore[assignment]
+    SyncRedis = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -178,7 +178,9 @@ class _DailyBudgetTracker:
         return self.daily_usage() >= limit_usd
 
 
-_budget_tracker = _DailyBudgetTracker()
+_budget_tracker: _DailyBudgetTracker | _SqliteDailyBudgetTracker | _RedisDailyBudgetTracker = (
+    _DailyBudgetTracker()
+)
 _TIKTOKEN_ENCODER = None
 
 
@@ -353,7 +355,7 @@ class CostAwareRouter:
     4. Aksi hâlde → bulut (config.COST_ROUTING_CLOUD_PROVIDER).
     """
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: object) -> None:
         self.config = config
         _configure_budget_tracker(config)
         self._analyzer = QueryComplexityAnalyzer()

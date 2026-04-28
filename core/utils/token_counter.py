@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from functools import lru_cache
+from typing import Any
 
 _MODEL_TOKEN_MULTIPLIERS: tuple[tuple[tuple[str, ...], float], ...] = (
     (("claude", "anthropic"), 1.20),
@@ -37,7 +38,7 @@ def estimate_tokens(text: str, *, model: str = "") -> int:
 
 
 @lru_cache(maxsize=64)
-def get_tiktoken_encoding(model: str = ""):
+def get_tiktoken_encoding(model: str = "") -> Any:
     import tiktoken  # type: ignore
 
     model_name = (model or "").strip()
