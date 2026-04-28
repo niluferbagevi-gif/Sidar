@@ -26,8 +26,9 @@ import os
 import random
 import re
 import time
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, Awaitable, cast
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
