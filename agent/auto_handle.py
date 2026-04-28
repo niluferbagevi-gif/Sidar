@@ -8,8 +8,8 @@ import inspect
 import re
 from pathlib import Path
 
-from core.memory import ConversationMemory
 from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
+from core.memory import ConversationMemory
 from core.rag import DocumentStore
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
