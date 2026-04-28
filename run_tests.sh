@@ -93,6 +93,9 @@ BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
+AUTO_REMEDIATION_ENABLED="${AUTO_REMEDIATION_ENABLED:-1}"
+AUTO_REMEDIATION_MAX_RETRIES="${AUTO_REMEDIATION_MAX_RETRIES:-1}"
+AUTO_REMEDIATION_LOG_DIR="${AUTO_REMEDIATION_LOG_DIR:-artifacts/remediation}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -254,20 +257,101 @@ ensure_uv_available() {
   return 0
 }
 
+trigger_autonomous_remediation() {
+  local stage="$1"
+  local failed_command="$2"
+  local log_file="$3"
+  local attempt="$4"
+  local max_attempts="$5"
+
+  if [ "${AUTO_REMEDIATION_ENABLED}" != "1" ]; then
+    echo "ℹ️ Otonom remediation kapalı (AUTO_REMEDIATION_ENABLED=${AUTO_REMEDIATION_ENABLED})."
+    return 0
+  fi
+
+  mkdir -p "${AUTO_REMEDIATION_LOG_DIR}"
+  local out_file="${AUTO_REMEDIATION_LOG_DIR}/${stage}_attempt_${attempt}_remediation.json"
+  echo "🤖 Otonom remediation tetikleniyor: stage=${stage}, attempt=${attempt}/${max_attempts}"
+
+  if ! uv run python - <<PY; then
+import asyncio
+import json
+from pathlib import Path
+
+from agent.auto_handle import run_local_remediation_loop
+from core.ci_remediation import (
+    build_ci_remediation_payload,
+    build_local_failure_context,
+)
+
+stage = ${stage@Q}
+failed_command = ${failed_command@Q}
+log_file = Path(${log_file@Q})
+attempt = int(${attempt@Q})
+max_attempts = int(${max_attempts@Q})
+out_file = Path(${out_file@Q})
+
+log_excerpt = ""
+if log_file.exists():
+    text = log_file.read_text(encoding="utf-8", errors="ignore")
+    log_excerpt = text[-12000:]
+
+context = build_local_failure_context(
+    stage=stage,
+    command=failed_command,
+    log_excerpt=log_excerpt,
+    attempt=attempt,
+    max_attempts=max_attempts,
+)
+diagnosis = context.get("root_cause_hint") or context.get("failure_summary") or "local failure"
+remediation_payload = build_ci_remediation_payload(context, diagnosis)
+result = asyncio.run(
+    run_local_remediation_loop(
+        context=context,
+        diagnosis=diagnosis,
+        remediation_payload=remediation_payload,
+        output_path=str(out_file),
+    )
+)
+print(json.dumps(result, ensure_ascii=False))
+PY
+    echo "⚠️ Otonom remediation adımı hata verdi; sonraki retry devam edecek."
+    return 0
+  fi
+  return 0
+}
+
 run_static_analysis_gates() {
   if [ "${RUN_STATIC_ANALYSIS}" != "1" ]; then
     echo "ℹ️ Statik analiz adımı atlandı (RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})."
     return 0
   fi
-  echo "🔍 Linter ve Type Checker çalıştırılıyor..."
-  if ! uv run ruff check .; then
-    BACKEND_EXIT_CODE=1
-    return 1
-  fi
-  if ! uv run mypy .; then
-    BACKEND_EXIT_CODE=1
-    return 1
-  fi
+  local max_attempts=$((AUTO_REMEDIATION_MAX_RETRIES + 1))
+  local attempt=1
+  local static_log="${AUTO_REMEDIATION_LOG_DIR}/static_analysis.log"
+  mkdir -p "${AUTO_REMEDIATION_LOG_DIR}"
+
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    : > "${static_log}"
+    echo "🔍 Linter ve Type Checker çalıştırılıyor... (deneme ${attempt}/${max_attempts})"
+    if ! uv run ruff check . 2>&1 | tee -a "${static_log}"; then
+      if [ "${attempt}" -lt "${max_attempts}" ]; then
+        trigger_autonomous_remediation "static_ruff" "uv run ruff check ." "${static_log}" "${attempt}" "${max_attempts}"
+      fi
+      attempt=$((attempt + 1))
+      continue
+    fi
+    if ! uv run mypy . 2>&1 | tee -a "${static_log}"; then
+      if [ "${attempt}" -lt "${max_attempts}" ]; then
+        trigger_autonomous_remediation "static_mypy" "uv run mypy ." "${static_log}" "${attempt}" "${max_attempts}"
+      fi
+      attempt=$((attempt + 1))
+      continue
+    fi
+    return 0
+  done
+  BACKEND_EXIT_CODE=1
+  return 1
 }
 
 ensure_test_services() {
@@ -440,9 +524,24 @@ PY
   pytest_cmd+=("${pytest_targets[@]}")
 
   echo "➡️ Çalıştırılan komut: ${pytest_cmd[*]}"
+  local max_attempts=$((AUTO_REMEDIATION_MAX_RETRIES + 1))
+  local attempt=1
+  local pytest_log="${AUTO_REMEDIATION_LOG_DIR}/pytest_coverage.log"
+  mkdir -p "${AUTO_REMEDIATION_LOG_DIR}"
 
-  "${pytest_cmd[@]}"
-  BACKEND_EXIT_CODE=$?
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    : > "${pytest_log}"
+    echo "🧪 Pytest denemesi ${attempt}/${max_attempts}"
+    "${pytest_cmd[@]}" 2>&1 | tee -a "${pytest_log}"
+    BACKEND_EXIT_CODE=${PIPESTATUS[0]}
+    if [ "${BACKEND_EXIT_CODE}" -eq 0 ]; then
+      break
+    fi
+    if [ "${attempt}" -lt "${max_attempts}" ]; then
+      trigger_autonomous_remediation "pytest_coverage" "${pytest_cmd[*]}" "${pytest_log}" "${attempt}" "${max_attempts}"
+    fi
+    attempt=$((attempt + 1))
+  done
 
   # xdist altında bazı koşullarda sadece .coverage.* shard'ları kalabilir.
   # Önce bunları birleştirmeyi dener, başarısızsa quality gate'i fail eder.

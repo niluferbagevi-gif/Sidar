@@ -607,3 +607,18 @@ def test_extract_validation_commands_skips_blank_lines() -> None:
     }
     commands = ci._extract_validation_commands(context, "\n")
     assert "pytest -q tests/a.py" in commands
+
+
+def test_build_local_failure_context_infers_targets_and_hint() -> None:
+    ctx = ci.build_local_failure_context(
+        stage="static_mypy",
+        command="uv run mypy .",
+        log_excerpt="tests/unit/core/test_ci_remediation.py:1: error: NameError",
+        attempt=2,
+        max_attempts=3,
+    )
+    assert ctx["kind"] == "local_test_failure"
+    assert ctx["workflow_name"] == "local/static_mypy"
+    assert "attempt=2/3" in ctx["failure_summary"]
+    assert "tests/unit/core/test_ci_remediation.py" in ctx["suspected_targets"]
+    assert "NameError" in ctx["root_cause_hint"]

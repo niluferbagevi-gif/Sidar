@@ -627,3 +627,24 @@ def test_auto_handle_try_web_search_isolated(monkeypatch):
 
     assert handled is True
     assert out == "search:sidar"
+
+
+def test_run_local_remediation_loop_import_error(monkeypatch):
+    mod = _load_auto_handle(monkeypatch)
+
+    real_import = __import__
+
+    def _boom(name, *args, **kwargs):
+        if name == "agent.sidar_agent":
+            raise ImportError("sidar boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _boom)
+    result = asyncio.run(
+        mod.run_local_remediation_loop(
+            context={},
+            diagnosis="d",
+        )
+    )
+    assert result["status"] == "failed"
+    assert "import_error" in result["summary"]

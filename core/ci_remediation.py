@@ -294,7 +294,7 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
         "base_branch": str(repo.get("default_branch", "") or "main"),
         "sha": str(suite.get("head_sha", "") or ""),
         "conclusion": str(suite.get("conclusion", "") or ""),
-        "status": str(suite.get("status", "") or ""),
+        "status": str(suite.get("status", "completed") or "completed"),
         "html_url": str(suite.get("url", "") or ""),
         "jobs_url": str(suite.get("url", "") or ""),
         "logs_url": str(suite.get("url", "") or ""),
@@ -303,11 +303,53 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
         "suspected_targets": suspected_targets,
         "failed_jobs": _extract_failed_job_names(suite),
         "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
-        "diagnostic_hints": _build_diagnostic_hints(
-            failure_summary, log_excerpt, suspected_targets
-        ),
+        "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
     }
 
+
+def build_local_failure_context(
+    *,
+    stage: str,
+    command: str,
+    log_excerpt: str,
+    attempt: int = 1,
+    max_attempts: int = 1,
+    repo: str = "local",
+    branch: str = "local",
+    base_branch: str = "main",
+) -> dict[str, Any]:
+    """Lokal test/static-analysis başarısızlıklarını remediation akışına normalize eder."""
+    safe_stage = str(stage or "local_validation").strip() or "local_validation"
+    safe_command = str(command or "").strip()
+    summary_parts = [f"{safe_stage} failed"]
+    if safe_command:
+        summary_parts.append(f"command={safe_command}")
+    summary_parts.append(f"attempt={attempt}/{max_attempts}")
+    failure_summary = " | ".join(summary_parts)
+    excerpt = _trim_text(log_excerpt, 1200)
+    suspected_targets = _extract_suspected_targets(excerpt, safe_command)
+    root_cause_hint = _extract_root_cause_line(excerpt, failure_summary)
+    return {
+        "kind": "local_test_failure",
+        "repo": str(repo or "local").strip(),
+        "workflow_name": f"local/{safe_stage}",
+        "run_id": f"local-{safe_stage}-{attempt}",
+        "run_number": str(attempt),
+        "branch": str(branch or "local").strip(),
+        "base_branch": str(base_branch or "main").strip(),
+        "sha": "",
+        "conclusion": "failure",
+        "status": "completed",
+        "html_url": "",
+        "jobs_url": "",
+        "logs_url": "",
+        "log_excerpt": excerpt,
+        "failure_summary": failure_summary,
+        "suspected_targets": suspected_targets,
+        "failed_jobs": [safe_stage],
+        "root_cause_hint": root_cause_hint,
+        "diagnostic_hints": _build_diagnostic_hints(failure_summary, excerpt, suspected_targets),
+    }
 
 def build_ci_failure_prompt(context: dict[str, Any]) -> str:
     info = dict(context or {})

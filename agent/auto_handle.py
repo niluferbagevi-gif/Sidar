@@ -5,6 +5,7 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 
 import asyncio
 import inspect
+import json
 import re
 
 from core.memory import ConversationMemory
@@ -631,3 +632,49 @@ class AutoHandle:
         """Metinden URL çıkar."""
         m = re.search(r'https?://[^\s"\'<>]+', text)
         return m.group(0) if m else None
+
+
+async def run_local_remediation_loop(
+    *,
+    context: dict,
+    diagnosis: str,
+    remediation_payload: dict | None = None,
+    output_path: str | None = None,
+) -> dict:
+    """Lokal test hataları için otonom self-healing döngüsünü tetikler."""
+    try:
+        from agent.sidar_agent import SidarAgent
+        from config import Config
+        from core.ci_remediation import build_ci_remediation_payload
+    except Exception as exc:
+        result = {"status": "failed", "summary": f"import_error: {exc}"}
+        if output_path:
+            with open(output_path, "w", encoding="utf-8") as fp:
+                json.dump(result, fp, ensure_ascii=False, indent=2)
+        return result
+
+    cfg = Config()
+    setattr(cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", True)
+    agent = SidarAgent(cfg=cfg)
+    remediation = remediation_payload or build_ci_remediation_payload(context, diagnosis)
+
+    try:
+        await agent.initialize()
+        execution = await agent._attempt_autonomous_self_heal(
+            ci_context=dict(context or {}),
+            diagnosis=str(diagnosis or ""),
+            remediation=remediation,
+        )
+        result = {
+            "status": "ok",
+            "summary": str(execution.get("summary", "") or ""),
+            "execution": execution,
+            "remediation_loop": dict(remediation.get("remediation_loop") or {}),
+        }
+    except Exception as exc:
+        result = {"status": "failed", "summary": f"runtime_error: {exc}"}
+
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as fp:
+            json.dump(result, fp, ensure_ascii=False, indent=2)
+    return result
