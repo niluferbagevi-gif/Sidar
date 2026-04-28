@@ -269,26 +269,44 @@ run_static_analysis_gates() {
   fi
 
   mkdir -p "$(dirname "${MYPY_ERROR_LOG}")"
+  local max_attempts="${MYPY_MAX_REMEDIATION_ATTEMPTS:-3}"
+  local attempt=1
+  local mypy_log_path=""
 
-  if ! uv run mypy . 2>&1 | tee "${MYPY_ERROR_LOG}"; then
-    echo "⚠️ mypy hataları kaydedildi: ${MYPY_ERROR_LOG}"
-
-    if [ -n "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
-      echo "🛠️ Otonom remediation ajanı tetikleniyor..."
-      if ! REMEDIATION_TRIGGER="mypy" REMEDIATION_INPUT_LOG="${MYPY_ERROR_LOG}" bash -lc "${AUTONOMOUS_REMEDIATION_CMD}"; then
-        echo "⚠️ Otonom remediation komutu hata döndürdü: ${AUTONOMOUS_REMEDIATION_CMD}"
-      fi
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    if [ "${attempt}" -eq 1 ]; then
+      mypy_log_path="${MYPY_ERROR_LOG}"
     else
-      echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
+      mypy_log_path="${MYPY_RECHECK_LOG}"
     fi
 
-    echo "🔁 Otonom remediation sonrası mypy yeniden doğrulanıyor..."
-    if ! uv run mypy . 2>&1 | tee "${MYPY_RECHECK_LOG}"; then
-      echo "❌ mypy ikinci kontrolde de başarısız: ${MYPY_RECHECK_LOG}"
+    echo "🔍 mypy tip kontrolü (deneme ${attempt}/${max_attempts})..."
+    if uv run mypy . 2>&1 | tee "${mypy_log_path}"; then
+      echo "✅ mypy kontrolleri başarıyla geçti."
+      return 0
+    fi
+
+    echo "⚠️ mypy hataları kaydedildi: ${mypy_log_path}"
+
+    if [ -z "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
+      echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
       BACKEND_EXIT_CODE=1
       return 1
     fi
-  fi
+
+    if [ "${attempt}" -eq "${max_attempts}" ]; then
+      echo "❌ mypy ${max_attempts} denemeden sonra hâlâ başarısız: ${mypy_log_path}"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+
+    echo "🛠️ Otonom remediation ajanı tetikleniyor..."
+    if ! REMEDIATION_TRIGGER="mypy" REMEDIATION_INPUT_LOG="${mypy_log_path}" bash -lc "${AUTONOMOUS_REMEDIATION_CMD}"; then
+      echo "⚠️ Otonom remediation komutu hata döndürdü: ${AUTONOMOUS_REMEDIATION_CMD}"
+    fi
+
+    attempt=$((attempt + 1))
+  done
 }
 
 ensure_test_services() {
