@@ -558,7 +558,7 @@ def _list_child_ollama_pids() -> list[int]:
             return []
 
     try:
-        raw = subprocess.check_output(
+        raw = subprocess.check_output(  # nosec B603 - sabit ps komutu, kullanıcı girdisi içermez.
             ["ps", "-eo", "pid=,ppid=,comm=,args="],
             stderr=subprocess.DEVNULL,
         )
@@ -4016,7 +4016,9 @@ async def file_content(path: str) -> Any:
 def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
     """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
     try:
-        return subprocess.check_output(cmd, cwd=cwd, stderr=stderr).decode().strip()
+        return subprocess.check_output(  # nosec B603 - git komutu whitelist/uygulama içi akıştan gelir.
+            cmd, cwd=cwd, stderr=stderr
+        ).decode().strip()
     except Exception:
         return ""
 

@@ -88,11 +88,13 @@ def _command_exists(name: str) -> bool:
 
 
 def _run_subprocess(command: Sequence[str]) -> None:
-    subprocess.run(command, check=True, capture_output=True)
+    subprocess.run(command, check=True, capture_output=True)  # nosec B603 - komut listesi iç kaynaklıdır.
 
 
 def _run_subprocess_capture(command: Sequence[str]) -> str:
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    result = subprocess.run(  # nosec B603 - komut listesi iç kaynaklıdır.
+        command, check=True, capture_output=True, text=True
+    )
     return str(result.stdout or "")
 
 

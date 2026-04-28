@@ -51,7 +51,7 @@ class Colors:
 def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, str]:
     """Komutu shell=False ile güvenli şekilde çalıştırır."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - args listesi sistem içi oluşturulur, shell kullanılmaz.
             args,
             shell=False,
             check=True,

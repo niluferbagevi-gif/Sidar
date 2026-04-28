@@ -14,6 +14,7 @@ import atexit
 import gc
 import logging
 import platform
+import shutil
 import socket
 import subprocess
 import threading
@@ -353,12 +354,15 @@ class SystemHealthManager:
                 logger.debug("pynvml sürücü sürümü alınamadı: %s", exc)
         # WSL2 fallback: nvidia-smi subprocess ile sürücü sürümünü al
         try:
+            nvidia_smi_bin = shutil.which("nvidia-smi")
+            if not nvidia_smi_bin:
+                return "N/A"
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+                [nvidia_smi_bin, "--query-gpu=driver_version", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-            )
+            )  # nosec B603 - sabit ve kullanıcı girdisi içermeyen komut.
             version = result.stdout.strip().split("\n")[0]
             if version:
                 return version

@@ -270,7 +270,7 @@ def _stream_pipe(
 
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
     """Child process çıktısını canlı izleyerek (stdout/stderr) bellek dostu şekilde loglar."""
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # nosec B603 - komut listesi launcher tarafından güvenli şekilde üretilir.
         cmd,
         cwd=os.path.dirname(__file__) or ".",
         stdout=subprocess.PIPE,
@@ -435,7 +435,9 @@ def execute_command(
                 print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
             return return_code
 
-        subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
+        subprocess.run(  # nosec B603 - komut listesi launcher tarafından güvenli şekilde üretilir.
+            cmd, check=True, cwd=os.path.dirname(__file__) or "."
+        )
         return 0
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
