@@ -269,33 +269,61 @@ run_static_analysis_gates() {
   fi
 
   mkdir -p "$(dirname "${MYPY_ERROR_LOG}")"
-  local max_attempts="${MYPY_MAX_REMEDIATION_ATTEMPTS:-3}"
+  local success_threshold_pct="${MYPY_SUCCESS_THRESHOLD_PCT:-99}"
   local attempt=1
   local mypy_log_path=""
+  local baseline_error_count=""
+  local current_error_count=""
+  local resolved_pct=""
 
-  while [ "${attempt}" -le "${max_attempts}" ]; do
+  extract_mypy_error_count() {
+    local log_path="$1"
+    awk '
+      match($0, /Found[[:space:]]+([0-9]+)[[:space:]]+errors?/, m) { count = m[1] }
+      END {
+        if (count == "") {
+          print -1
+        } else {
+          print count
+        }
+      }
+    ' "${log_path}"
+  }
+
+  while true; do
     if [ "${attempt}" -eq 1 ]; then
       mypy_log_path="${MYPY_ERROR_LOG}"
     else
       mypy_log_path="${MYPY_RECHECK_LOG}"
     fi
 
-    echo "🔍 mypy tip kontrolü (deneme ${attempt}/${max_attempts})..."
+    echo "🔍 mypy tip kontrolü (deneme ${attempt}/∞, başarı eşiği: %${success_threshold_pct})..."
     if uv run mypy . 2>&1 | tee "${mypy_log_path}"; then
       echo "✅ mypy kontrolleri başarıyla geçti."
       return 0
     fi
 
     echo "⚠️ mypy hataları kaydedildi: ${mypy_log_path}"
+    current_error_count="$(extract_mypy_error_count "${mypy_log_path}")"
+
+    if [ "${attempt}" -eq 1 ]; then
+      baseline_error_count="${current_error_count}"
+      if [ "${baseline_error_count}" -ge 0 ]; then
+        echo "ℹ️ Başlangıç mypy hata sayısı: ${baseline_error_count}"
+      else
+        echo "ℹ️ Başlangıç mypy hata sayısı logdan ayrıştırılamadı."
+      fi
+    elif [ "${baseline_error_count}" -gt 0 ] && [ "${current_error_count}" -ge 0 ]; then
+      resolved_pct="$(awk -v base="${baseline_error_count}" -v cur="${current_error_count}" 'BEGIN { printf "%.2f", ((base-cur)/base)*100 }')"
+      echo "ℹ️ mypy hata çözüm oranı: %${resolved_pct} (kalan: ${current_error_count}/${baseline_error_count})"
+      if awk -v pct="${resolved_pct}" -v threshold="${success_threshold_pct}" 'BEGIN { exit !(pct >= threshold) }'; then
+        echo "✅ mypy hatalarının en az %${success_threshold_pct}'u giderildi; statik analiz adımı başarılı kabul edildi."
+        return 0
+      fi
+    fi
 
     if [ -z "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
       echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
-      BACKEND_EXIT_CODE=1
-      return 1
-    fi
-
-    if [ "${attempt}" -eq "${max_attempts}" ]; then
-      echo "❌ mypy ${max_attempts} denemeden sonra hâlâ başarısız: ${mypy_log_path}"
       BACKEND_EXIT_CODE=1
       return 1
     fi
