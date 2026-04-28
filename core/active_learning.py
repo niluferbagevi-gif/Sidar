@@ -22,6 +22,7 @@ import json
 import logging
 import threading
 import time
+import typing
 from pathlib import Path
 from typing import Any  # Model/API çıktılarında heterojen tip desteği
 
@@ -746,7 +747,7 @@ class LoRATrainer:
         # Dataset
         dataset = load_dataset("json", data_files=dataset_path, split="train")
 
-        def _tokenize(example):
+        def _tokenize(example: dict[str, Any]) -> dict[str, Any]:
             prompt = str(example.get("instruction", example.get("prompt", "")) or "")
             output = str(example.get("output", example.get("completion", "")) or "")
             if not prompt and not output:
@@ -767,7 +768,9 @@ class LoRATrainer:
                     if assistant_turns:
                         output = str(assistant_turns[0].get("value", "") or "")
             full = f"{prompt}\n\n{output}".strip()
-            enc = tokenizer(full, truncation=True, max_length=512, padding="max_length")
+            enc: dict[str, Any] = dict(
+                tokenizer(full, truncation=True, max_length=512, padding="max_length")
+            )
             enc["labels"] = enc["input_ids"].copy()
             return enc
 
@@ -809,7 +812,7 @@ class LoRATrainer:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _chunked(lst: list[Any], size: int):
+def _chunked(lst: list[Any], size: int) -> typing.Iterator[list[Any]]:
     for i in range(0, len(lst), size):
         yield lst[i : i + size]
 
