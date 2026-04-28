@@ -18,7 +18,7 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from config import Config
@@ -75,14 +75,14 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_cache_redis_latency_ms gauge",
     ]
 
-    totals = (snapshot or {}).get("totals", {}) if isinstance(snapshot, dict) else {}
+    totals = cast(dict[str, Any], (snapshot or {}).get("totals", {}) if isinstance(snapshot, dict) else {})
     lines.append(f"sidar_llm_calls_total {int(totals.get('calls', 0) or 0)}")
     lines.append(f"sidar_llm_cost_total_usd {float(totals.get('cost_usd', 0.0) or 0.0)}")
     lines.append(f"sidar_llm_tokens_total {int(totals.get('total_tokens', 0) or 0)}")
     lines.append(f"sidar_llm_failures_total {int(totals.get('failures', 0) or 0)}")
 
     # Semantic cache metrikleri
-    cache = (snapshot or {}).get("cache", {}) if isinstance(snapshot, dict) else {}
+    cache = cast(dict[str, Any], (snapshot or {}).get("cache", {}) if isinstance(snapshot, dict) else {})
     hits = int(cache.get("hits", 0) or 0)
     misses = int(cache.get("misses", 0) or 0)
     skips = int(cache.get("skips", 0) or 0)
@@ -114,7 +114,10 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
     lines.append(f"sidar_cache_items {items}")
     lines.append(f"sidar_cache_redis_latency_ms {redis_latency_ms}")
 
-    by_provider = snapshot.get("by_provider", {}) if isinstance(snapshot, dict) else {}
+    by_provider = cast(
+        dict[str, dict[str, Any]],
+        snapshot.get("by_provider", {}) if isinstance(snapshot, dict) else {},
+    )
     for provider, row in by_provider.items():
         p = str(provider or "unknown").replace('"', '\\"')
         lines.append(f'sidar_llm_calls_total{{provider="{p}"}} {int(row.get("calls", 0) or 0)}')
@@ -131,7 +134,10 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
             f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}'
         )
 
-    by_user = snapshot.get("by_user", {}) if isinstance(snapshot, dict) else {}
+    by_user = cast(
+        dict[str, dict[str, Any]],
+        snapshot.get("by_user", {}) if isinstance(snapshot, dict) else {},
+    )
     for user_id, row in by_user.items():
         uid = str(user_id or "anonymous").replace('"', '\\"')
         lines.append(
@@ -202,15 +208,15 @@ class SystemHealthManager:
         if not self.use_gpu or not self._torch_available:
             return False
         try:
-            import torch
+            import torch  # type: ignore[import-not-found]
 
-            return torch.cuda.is_available()
+            return bool(torch.cuda.is_available())
         except Exception:
             return False
 
     def _init_nvml(self) -> None:
         try:
-            import pynvml
+            import pynvml  # type: ignore[import-not-found]
 
             pynvml.nvmlInit()
             self._nvml_initialized = True
@@ -249,7 +255,7 @@ class SystemHealthManager:
             import psutil
 
             sample_interval = self.cpu_sample_interval if interval is None else max(0.0, interval)
-            return psutil.cpu_percent(interval=sample_interval)
+            return float(psutil.cpu_percent(interval=sample_interval))
         except Exception:
             return None
 
@@ -274,7 +280,7 @@ class SystemHealthManager:
     #  GPU
     # ─────────────────────────────────────────────
 
-    def get_gpu_info(self) -> dict:
+    def get_gpu_info(self) -> dict[str, Any]:
         """
         Detaylı GPU bilgisini döndür.
 
@@ -291,7 +297,7 @@ class SystemHealthManager:
             import torch
 
             device_count = torch.cuda.device_count()
-            devices: list[dict] = []
+            devices: list[dict[str, Any]] = []
 
             for i in range(device_count):
                 props = torch.cuda.get_device_properties(i)
@@ -299,7 +305,7 @@ class SystemHealthManager:
                 alloc_mem = torch.cuda.memory_allocated(i) / 1e9
                 res_mem = torch.cuda.memory_reserved(i) / 1e9
 
-                dev: dict = {
+                dev: dict[str, Any] = {
                     "id": i,
                     "name": props.name,
                     "compute_capability": f"{props.major}.{props.minor}",
@@ -342,7 +348,7 @@ class SystemHealthManager:
             try:
                 import pynvml
 
-                return pynvml.nvmlSystemGetDriverVersion()
+                return str(pynvml.nvmlSystemGetDriverVersion())
             except Exception as exc:
                 logger.debug("pynvml sürücü sürümü alınamadı: %s", exc)
         # WSL2 fallback: nvidia-smi subprocess ile sürücü sürümünü al
@@ -406,12 +412,12 @@ class SystemHealthManager:
     def check_ollama(self) -> bool:
         """Ollama servisinin erişilebilirliğini timeout ile doğrula."""
         try:
-            import requests
+            import requests  # type: ignore[import-untyped]
 
             base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
             timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))
             resp = requests.get(f"{base_url.rstrip('/')}/tags", timeout=timeout)
-            return resp.status_code == 200
+            return bool(resp.status_code == 200)
         except Exception:
             return False
 
@@ -461,7 +467,7 @@ class SystemHealthManager:
             if val is None:
                 continue
             try:
-                self._prometheus_gauges[gauge_key].set(float(val))
+                cast(Any, self._prometheus_gauges[gauge_key]).set(float(val))
             except Exception:
                 continue
 

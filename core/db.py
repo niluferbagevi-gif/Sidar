@@ -12,6 +12,7 @@ import secrets
 import sqlite3
 import uuid
 from collections.abc import AsyncIterator
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -413,7 +414,7 @@ class Database:
 
         self._sqlite_conn = await asyncio.to_thread(_open)
 
-    async def _run_sqlite_op(self, operation, *, write: bool = True):
+    async def _run_sqlite_op(self, operation: Callable[[], Any], *, write: bool = True) -> Any:
         """SQLite işlemini çalıştırır.
 
         Varsayılan davranış yazma işlemlerini tek bir kilit ile sıralamaktır.
@@ -2273,7 +2274,7 @@ class Database:
                     SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
                     FROM marketing_campaigns WHERE id=?
                     """,
-                    (int(cur.lastrowid),),
+                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
                 )
             row = cur.fetchone()
             self._sqlite_conn.commit()
@@ -2443,7 +2444,7 @@ class Database:
                 SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
                 FROM content_assets WHERE id=?
                 """,
-                (int(cur.lastrowid),),
+                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
             ).fetchone()
             self._sqlite_conn.commit()
             assert row is not None
@@ -2614,7 +2615,7 @@ class Database:
                 SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
                 FROM operation_checklists WHERE id=?
                 """,
-                (int(cur.lastrowid),),
+                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
             ).fetchone()
             self._sqlite_conn.commit()
             assert row is not None
@@ -2785,7 +2786,7 @@ class Database:
                        target_path, suggested_test_path, review_payload_json, created_at, updated_at
                 FROM coverage_tasks WHERE id=?
                 """,
-                (int(cur.lastrowid),),
+                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
             ).fetchone()
             self._sqlite_conn.commit()
             assert row is not None
@@ -2872,7 +2873,7 @@ class Database:
                 SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
                 FROM coverage_findings WHERE id=?
                 """,
-                (int(cur.lastrowid),),
+                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
             ).fetchone()
             self._sqlite_conn.commit()
             assert row is not None
@@ -3274,7 +3275,7 @@ class Database:
                 (session_id, role, content, tokens, now),
             )
             self._sqlite_conn.commit()
-            return int(cur.lastrowid)
+            return int(cur.lastrowid) if cur.lastrowid is not None else 0
 
         msg_id = await self._run_sqlite_op(_run)
         return MessageRecord(
@@ -3293,7 +3294,19 @@ class Database:
             session_id = str(item.get("session_id", "") or "").strip()
             role = str(item.get("role", "") or "").strip() or "user"
             content = str(item.get("content", "") or "")
-            tokens = max(0, int(item.get("tokens_used", 0) or 0))
+            raw_tokens = item.get("tokens_used", 0)
+            if isinstance(raw_tokens, bool):
+                tokens = int(raw_tokens)
+            elif isinstance(raw_tokens, (int, float)):
+                tokens = int(raw_tokens)
+            elif isinstance(raw_tokens, str):
+                try:
+                    tokens = int(raw_tokens.strip() or "0")
+                except ValueError:
+                    tokens = 0
+            else:
+                tokens = 0
+            tokens = max(0, tokens)
             if not session_id:
                 continue
             now_dt = datetime.now(UTC)

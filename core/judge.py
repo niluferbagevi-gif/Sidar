@@ -19,16 +19,14 @@ Yapılandırma (.env):
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
 import random
 import re
 import time
-from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +243,7 @@ class LLMJudge:
         self,
         prompt: str,
         response: str,
-        context,
+        context: dict[str, Any] | list[Any] | str | None,
     ) -> ResponseEvaluation | None:
         """Bağımsız yanıtı 1–10 ölçeğinde puanlar ve gerekçe döndürür."""
         if not self.enabled or not prompt or not response:
@@ -474,10 +472,9 @@ def _record_judge_metrics(result: JudgeResult) -> None:
             out = collector._usage_sink(payload)
             if inspect.isawaitable(out):
                 try:
-                    asyncio.ensure_future(cast(Awaitable[Any], out))
+                    asyncio.ensure_future(out)
                 except RuntimeError:
-                    with contextlib.suppress(Exception):
-                        out.close()
+                    pass
     except Exception as exc:
         logger.debug("Judge metrik kaydı başarısız: %s", exc)
 

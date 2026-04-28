@@ -7,12 +7,12 @@ import logging
 import math
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 try:
     from redis.asyncio import Redis
 except ImportError:
-    Redis = None  # type: ignore[assignment]
+    Redis = None
 
 from core.cache_metrics import (
     observe_cache_redis_latency,
@@ -35,7 +35,7 @@ def _setting(config: Any, key: str, default: Any) -> Any:
 def _default_semantic_embedding_fn(texts: list[str], *, cfg: Any = None) -> list[list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache
 
-    return embed_texts_for_semantic_cache(texts, cfg=cfg)
+    return cast(list[list[float]], embed_texts_for_semantic_cache(texts, cfg=cfg))
 
 
 class SemanticCacheManager:
