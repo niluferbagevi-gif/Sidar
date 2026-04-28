@@ -19,14 +19,22 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from redis import Redis as SyncRedisClient
+else:  # pragma: no cover - yalnızca type-checking için
+    SyncRedisClient = Any
+
 try:
-    from redis import Redis as SyncRedis
+    from redis import Redis as _SyncRedisClass
 except Exception:  # pragma: no cover - opsiyonel bağımlılık
-    SyncRedis = None
+    _SyncRedisClass = None
+
+SyncRedis: type[SyncRedisClient] | None = _SyncRedisClass
 
 
 # ──────────────────────────────────────────────────────────────────────────────

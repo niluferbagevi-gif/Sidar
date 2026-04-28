@@ -7,12 +7,19 @@ import logging
 import math
 import time
 from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis as AsyncRedisClient
+else:  # pragma: no cover - yalnızca type-checking için
+    AsyncRedisClient = Any
 
 try:
-    from redis.asyncio import Redis
+    from redis.asyncio import Redis as _AsyncRedisClass
 except ImportError:
-    Redis = None
+    _AsyncRedisClass = None
+
+Redis: type[AsyncRedisClient] | None = _AsyncRedisClass
 
 from core.cache_metrics import (
     observe_cache_redis_latency,
@@ -59,7 +66,7 @@ class SemanticCacheManager:
         )
         self.index_key = "sidar:semantic_cache:index"
         self._embedding_fn = embedding_fn or _default_semantic_embedding_fn
-        self._redis: Redis | None = None
+        self._redis: AsyncRedisClient | None = None
         self._redis_init_lock = asyncio.Lock()
         self._redis_failures = 0
         self._redis_circuit_open_until = 0.0
@@ -89,7 +96,7 @@ class SemanticCacheManager:
         self._redis_failures = 0
         self._redis_circuit_open_until = 0.0
 
-    async def _get_redis(self) -> Redis | None:
+    async def _get_redis(self) -> AsyncRedisClient | None:
         if not self.enabled or Redis is None:
             return None
         if self._redis_circuit_open():
