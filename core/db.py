@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import jwt
 
@@ -24,6 +24,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
+_T = TypeVar("_T")
 
 
 @dataclass
@@ -254,7 +255,7 @@ def _new_entity_id() -> str:
         return str(uuid7_builtin())
 
     try:
-        from uuid6 import uuid7 as uuid7_external  # type: ignore[import-not-found]
+        from uuid6 import uuid7 as uuid7_external
 
         return str(uuid7_external())
     except Exception:
@@ -271,6 +272,10 @@ def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
         return int(match.group(1))
     except (TypeError, ValueError):
         return 0
+
+
+def _sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
+    return cast(sqlite3.Row | None, cursor.fetchone())
 
 
 class Database:
@@ -413,7 +418,7 @@ class Database:
 
         self._sqlite_conn = await asyncio.to_thread(_open)
 
-    async def _run_sqlite_op(self, operation: Callable[[], Any], *, write: bool = True) -> Any:
+    async def _run_sqlite_op(self, operation: Callable[[], _T], *, write: bool = True) -> _T:
         """SQLite işlemini çalıştırır.
 
         Varsayılan davranış yazma işlemlerini tek bir kilit ile sıralamaktır.
@@ -456,6 +461,7 @@ class Database:
                             "SQLite işlemi ve rollback başarısız oldu."
                         ) from rollback_exc
                     raise
+        raise RuntimeError("SQLite işlemi tamamlanamadı.")
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
@@ -1174,7 +1180,7 @@ class Database:
                 """,
                 (role,),
             )
-            return cur.fetchone()
+            return _sqlite_fetchone(cur)
 
         row = await self._run_sqlite_op(_run)
         if not row:
@@ -1243,7 +1249,7 @@ class Database:
                 "SELECT COALESCE(MAX(version), 0) AS v FROM prompt_registry WHERE role_name=?",
                 (role,),
             )
-            row = cur.fetchone()
+            row = _sqlite_fetchone(cur)
             new_version = int((row["v"] if row else 0) or 0) + 1
             if activate:
                 self._sqlite_conn.execute(
@@ -1265,7 +1271,7 @@ class Database:
                 """,
                 (role, new_version),
             )
-            fetched = out.fetchone()
+            fetched = _sqlite_fetchone(out)
             assert fetched is not None
             return fetched
 
@@ -1312,10 +1318,12 @@ class Database:
 
         def _run() -> str | None:
             assert self._sqlite_conn is not None
-            row = self._sqlite_conn.execute(
-                "SELECT role_name FROM prompt_registry WHERE id=?",
-                (target_id,),
-            ).fetchone()
+            row = _sqlite_fetchone(
+                self._sqlite_conn.execute(
+                    "SELECT role_name FROM prompt_registry WHERE id=?",
+                    (target_id,),
+                )
+            )
             if not row:
                 return None
             role = str(row["role_name"])
@@ -1345,7 +1353,7 @@ class Database:
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(f"SELECT MAX(version) AS v FROM {tbl}")
-            row = cur.fetchone()
+            row = _sqlite_fetchone(cur)
             current = int((row["v"] if row else 0) or 0)
             if current >= self.target_schema_version:
                 return
@@ -1407,7 +1415,7 @@ class Database:
                 "SELECT id, username, role, created_at, tenant_id FROM users WHERE username=?",
                 (username,),
             )
-            return cur.fetchone()
+            return _sqlite_fetchone(cur)
 
         row = await self._run_sqlite_op(_fetch)
         if row:
@@ -1506,7 +1514,7 @@ class Database:
                     "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=?",
                     (session_id,),
                 )
-            return cur.fetchone()
+            return _sqlite_fetchone(cur)
 
         row = await self._run_sqlite_op(_run)
         if not row:
@@ -1652,7 +1660,7 @@ class Database:
                 "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=?",
                 (username,),
             )
-            return cur.fetchone()
+            return _sqlite_fetchone(cur)
 
         row = await self._run_sqlite_op(_run)
         if not row or not row["password_hash"]:
@@ -1697,7 +1705,7 @@ class Database:
                 "SELECT id, username, role, created_at, tenant_id FROM users WHERE id=?",
                 (user_id,),
             )
-            return cur.fetchone()
+            return _sqlite_fetchone(cur)
 
         row = await self._run_sqlite_op(_run)
         if not row:
@@ -2275,7 +2283,7 @@ class Database:
                     """,
                     (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
                 )
-            row = cur.fetchone()
+            row = _sqlite_fetchone(cur)
             self._sqlite_conn.commit()
             if row is None:
                 raise ValueError("campaign not found")
@@ -2438,13 +2446,15 @@ class Database:
                     now,
                 ),
             )
-            row = self._sqlite_conn.execute(
-                """
-                SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
-                FROM content_assets WHERE id=?
-                """,
-                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-            ).fetchone()
+            row = _sqlite_fetchone(
+                self._sqlite_conn.execute(
+                    """
+                    SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                    FROM content_assets WHERE id=?
+                    """,
+                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
+                )
+            )
             self._sqlite_conn.commit()
             assert row is not None
             return row
@@ -2609,13 +2619,15 @@ class Database:
                     now,
                 ),
             )
-            row = self._sqlite_conn.execute(
-                """
-                SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
-                FROM operation_checklists WHERE id=?
-                """,
-                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-            ).fetchone()
+            row = _sqlite_fetchone(
+                self._sqlite_conn.execute(
+                    """
+                    SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                    FROM operation_checklists WHERE id=?
+                    """,
+                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
+                )
+            )
             self._sqlite_conn.commit()
             assert row is not None
             return row
@@ -2779,14 +2791,16 @@ class Database:
                     now,
                 ),
             )
-            row = self._sqlite_conn.execute(
-                """
-                SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                       target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                FROM coverage_tasks WHERE id=?
-                """,
-                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-            ).fetchone()
+            row = _sqlite_fetchone(
+                self._sqlite_conn.execute(
+                    """
+                    SELECT id, tenant_id, requester_role, command, pytest_output, status,
+                           target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                    FROM coverage_tasks WHERE id=?
+                    """,
+                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
+                )
+            )
             self._sqlite_conn.commit()
             assert row is not None
             return row
@@ -2867,13 +2881,15 @@ class Database:
                     now,
                 ),
             )
-            row = self._sqlite_conn.execute(
-                """
-                SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
-                FROM coverage_findings WHERE id=?
-                """,
-                (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-            ).fetchone()
+            row = _sqlite_fetchone(
+                self._sqlite_conn.execute(
+                    """
+                    SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
+                    FROM coverage_findings WHERE id=?
+                    """,
+                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
+                )
+            )
             self._sqlite_conn.commit()
             assert row is not None
             return row
@@ -3079,14 +3095,18 @@ class Database:
 
             def _run() -> tuple[sqlite3.Row | None, sqlite3.Row | None]:
                 assert self._sqlite_conn is not None
-                q = self._sqlite_conn.execute(
-                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
-                    (user_id,),
-                ).fetchone()
-                u = self._sqlite_conn.execute(
-                    "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
-                    (user_id, provider_name, today),
-                ).fetchone()
+                q = _sqlite_fetchone(
+                    self._sqlite_conn.execute(
+                        "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
+                        (user_id,),
+                    )
+                )
+                u = _sqlite_fetchone(
+                    self._sqlite_conn.execute(
+                        "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
+                        (user_id, provider_name, today),
+                    )
+                )
                 return q, u
 
             quota, usage = await self._run_sqlite_op(_run)
@@ -3178,14 +3198,16 @@ class Database:
 
             def _run_totals() -> sqlite3.Row:
                 assert self._sqlite_conn is not None
-                row = self._sqlite_conn.execute(
-                    """
-                    SELECT
-                        COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
-                        COALESCE(SUM(requests_used), 0) AS total_api_requests
-                    FROM provider_usage_daily
-                    """
-                ).fetchone()
+                row = _sqlite_fetchone(
+                    self._sqlite_conn.execute(
+                        """
+                        SELECT
+                            COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
+                            COALESCE(SUM(requests_used), 0) AS total_api_requests
+                        FROM provider_usage_daily
+                        """
+                    )
+                )
                 assert row is not None
                 return row
 

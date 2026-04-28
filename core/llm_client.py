@@ -16,7 +16,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from opentelemetry import trace
@@ -180,7 +180,7 @@ def _ensure_json_text(text: str, provider: str) -> str:
             logger.warning(
                 "%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider
             )
-            return repaired
+            return str(repaired)
         logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
             {
@@ -204,7 +204,7 @@ async def _ensure_json_text_async(text: str, provider: str) -> str:
             logger.warning(
                 "%s: JSON dışı yanıt alındı, onarım uygulanıp JSON'a çevrildi.", provider
             )
-            return repaired
+            return str(repaired)
         logger.warning("%s: JSON dışı yanıt alındı, fallback uygulanıyor.", provider)
         return json.dumps(
             {
@@ -391,7 +391,7 @@ async def _trace_stream_metrics(
 class BaseLLMClient(ABC):
     """LLM sağlayıcıları için soyut istemci arayüzü."""
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: Any) -> None:
         self.config = config
 
     @abstractmethod
@@ -581,7 +581,7 @@ class OllamaClient(BaseLLMClient):
                                 )
 
                         resp.raise_for_status()
-                        return resp.json()
+                        return cast(dict[str, Any], resp.json())
 
                 data = await _retry_with_backoff(
                     "ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız"
@@ -958,7 +958,7 @@ class OpenAIClient(BaseLLMClient):
                                     retryable=retryable,
                                 )
                         resp.raise_for_status()
-                        return resp.json()
+                        return cast(dict[str, Any], resp.json())
 
                 data = await _retry_with_backoff(
                     "openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız"
@@ -1153,7 +1153,7 @@ class LiteLLMClient(BaseLLMClient):
                             async with httpx.AsyncClient(timeout=timeout) as client:
                                 resp = await client.post(endpoint, json=payload, headers=headers)
                                 resp.raise_for_status()
-                                return resp.json()
+                                return cast(dict[str, Any], resp.json())
 
                         data = await _retry_with_backoff(
                             "litellm",
@@ -1629,7 +1629,7 @@ class LLMClient:
         if (not stream) and user_prompt:
             cached_response = await self._semantic_cache.get(user_prompt)
             if cached_response is not None:
-                return cached_response
+                return str(cached_response)
         elif stream:
             record_cache_skip()
 
