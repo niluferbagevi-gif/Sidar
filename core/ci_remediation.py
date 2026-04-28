@@ -7,6 +7,7 @@ teşhis/remediation prompt'u üretir ve PR taslağı oluşturur.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 from typing import Any
@@ -28,6 +29,13 @@ _ROOT_CAUSE_PATTERN = re.compile(
 _MYPY_ERROR_LINE_PATTERN = re.compile(
     r"^(?P<path>[\w./\\-]+\.py):(?P<line>\d+)(?::(?P<column>\d+))?:\s*error:\s*(?P<message>.+?)\s*(?:\[(?P<code>[^\]]+)\])?$"
 )
+_MISSING_MODULE_PATTERN = re.compile(
+    r"(?:ModuleNotFoundError:\s*No module named|No module named)\s+['\"](?P<module>[\w.:-]+)['\"]",
+    re.IGNORECASE,
+)
+_AUTO_INSTALL_PACKAGES: dict[str, str] = {
+    "psycopg2": "psycopg2-binary",
+}
 
 
 def _is_allowed_validation_command(command: str) -> bool:
@@ -60,6 +68,8 @@ def _is_allowed_validation_command(command: str) -> bool:
         return all(_is_allowed_pytest_arg(token) for token in parts[3:])
     if parts[:2] == ["bash", "run_tests.sh"]:
         return all(re.fullmatch(r"[\w./-]+", token) for token in parts[2:])
+    if parts[:3] == ["uv", "pip", "install"] and len(parts) >= 4:
+        return all(re.fullmatch(r"[A-Za-z0-9_.-]+", token) for token in parts[3:])
     return False
 
 
@@ -634,12 +644,29 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             ],
         )
     ).lower()
+    scope_hitl_threshold = max(
+        1,
+        int(os.getenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "50") or "50"),
+    )
     needs_human_approval = (
         any(keyword in combined_text for keyword in high_risk_keywords)
-        or len(suspected_targets) > 3
+        or len(suspected_targets) > scope_hitl_threshold
     )
+    missing_modules = sorted(
+        {
+            match.group("module").strip()
+            for match in _MISSING_MODULE_PATTERN.finditer(combined_text)
+            if match.group("module").strip()
+        }
+    )
+    bootstrap_commands: list[str] = []
+    for module_name in missing_modules:
+        package_name = _AUTO_INSTALL_PACKAGES.get(module_name)
+        if package_name:
+            bootstrap_commands.append(f"uv pip install {package_name}")
     mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
     status = "planned" if (diagnosis_text or suspected_targets) else "needs_diagnosis"
+    effective_validation_commands = list(dict.fromkeys(bootstrap_commands + validation_commands))
     return {
         "status": status,
         "mode": mode,
@@ -647,7 +674,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "max_auto_attempts": 1 if needs_human_approval else 2,
         "scope_paths": suspected_targets[:12],
         "failed_jobs": failed_jobs[:6],
-        "validation_commands": validation_commands,
+        "validation_commands": effective_validation_commands,
+        "bootstrap_commands": bootstrap_commands,
         "steps": [
             {
                 "name": "diagnose",
@@ -661,7 +689,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             },
             {
                 "name": "validate",
-                "status": "pending" if validation_commands else "blocked",
+                "status": "pending" if effective_validation_commands else "blocked",
                 "detail": "Hedefli testler ve tam regresyon komutları çalıştırılacak.",
             },
             {
@@ -676,7 +704,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         ],
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets[:12])} dosya, "
-            f"doğrulama={len(validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
+            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
         ),
     }
 

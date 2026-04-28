@@ -360,6 +360,15 @@ def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
     assert normalized["validation_commands"] == ["pytest -q tests/unit/core/test_ci_remediation.py"]
 
 
+def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None:
+    normalized = ci.normalize_self_heal_plan(
+        {"operations": [], "validation_commands": ["uv pip install psycopg2-binary"]},
+        scope_paths=[],
+        fallback_validation_commands=[],
+    )
+    assert normalized["validation_commands"] == ["uv pip install psycopg2-binary"]
+
+
 def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
     summary = ci.build_root_cause_summary(
         _sample_context(), "Root cause: flaky assertion\nsecond line"
@@ -579,9 +588,35 @@ def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
         "log_excerpt": "",
     }
     result = ci.build_remediation_loop(context, "ok")
-    assert result["needs_human_approval"] is True
+    assert result["needs_human_approval"] is False
     assert len(result["scope_paths"]) == 5
     assert len(result["failed_jobs"]) == 6
+
+
+def test_build_remediation_loop_large_scope_respects_env_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "3")
+    context = {
+        "suspected_targets": [f"tests/t{i}.py" for i in range(4)],
+        "failed_jobs": ["j1"],
+        "failure_summary": "minor",
+        "log_excerpt": "",
+    }
+    result = ci.build_remediation_loop(context, "ok")
+    assert result["needs_human_approval"] is True
+
+
+def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() -> None:
+    context = {
+        "suspected_targets": ["core/rag.py"],
+        "failed_jobs": [],
+        "failure_summary": "pgvector başlatma hatası: No module named 'psycopg2'",
+        "log_excerpt": "",
+    }
+    result = ci.build_remediation_loop(context, "ModuleNotFoundError: No module named 'psycopg2'")
+    assert "uv pip install psycopg2-binary" in result["bootstrap_commands"]
+    assert "uv pip install psycopg2-binary" in result["validation_commands"]
 
 
 def test_ci_failure_prompt_handles_missing_optional_fields() -> None:
