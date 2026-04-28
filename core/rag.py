@@ -1429,12 +1429,12 @@ class DocumentStore:
         for item in results:
             lines.append(f"- {item['id']} (score={item['score']})")
             neighbors_raw = item.get("neighbors") or []
-            neighbors_iter = neighbors_raw if isinstance(neighbors_raw, (list, tuple, set)) else []
+            neighbors_iter = neighbors_raw if isinstance(neighbors_raw, list | tuple | set) else []
             neighbors = [str(n) for n in neighbors_iter]
             if neighbors:
                 lines.append(f"  Komşular: {', '.join(neighbors)}")
             reverse_raw = item.get("reverse_neighbors") or []
-            reverse_iter = reverse_raw if isinstance(reverse_raw, (list, tuple, set)) else []
+            reverse_iter = reverse_raw if isinstance(reverse_raw, list | tuple | set) else []
             reverse_neighbors = [str(n) for n in reverse_iter]
             if reverse_neighbors:
                 lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
