@@ -711,10 +711,10 @@ class GeminiClient(BaseLLMClient):
         genai_client = None
         genai_types = None
         try:
-            import google.genai as google_genai
-            from google.genai import (
-                types as google_genai_types,
-            )
+            import importlib
+
+            google_genai = importlib.import_module("google.genai")
+            google_genai_types = importlib.import_module("google.genai.types")
 
             genai_client = google_genai.Client(
                 api_key=str(_setting(self.config, "GEMINI_API_KEY", ""))

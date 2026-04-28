@@ -659,10 +659,10 @@ class DocumentStore:
         self._chroma_available = self._check_import("chromadb")
         self._pgvector_available = False
 
-        self.chroma_client = None
-        self.collection = None
-        self.pg_engine = None
-        self._pg_embedding_model = None
+        self.chroma_client: Any | None = None
+        self.collection: Any | None = None
+        self.pg_engine: Any | None = None
+        self._pg_embedding_model: Any | None = None
         self._pg_table = str(
             getattr(self.cfg, "PGVECTOR_TABLE", "rag_embeddings") or "rag_embeddings"
         )

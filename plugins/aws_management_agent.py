@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 from collections.abc import Iterable
+from typing import Any
 
 from agent.base_agent import BaseAgent
 
@@ -94,7 +95,7 @@ class AWSManagementAgent(BaseAgent):
             preview = ", ".join(names[:8]) if names else "bucket bulunamadı"
             return f"S3 bucket envanteri: {preview}"
 
-        reservations: Iterable[dict] = payload.get("Reservations", []) or []
+        reservations: Iterable[dict[str, Any]] = payload.get("Reservations", []) or []
         instances: list[str] = []
         for reservation in reservations:
             for instance in reservation.get("Instances", []) or []:
