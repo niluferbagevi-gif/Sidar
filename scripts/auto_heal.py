@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,15 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Self-heal için coding model override değeri. "
             "Verilmezse mypy işlerinde 3B model algılanırsa otomatik 7B'ye yükseltilir."
+        ),
+    )
+    parser.add_argument(
+        "--cloud-fallback-threshold",
+        type=int,
+        default=10,
+        help=(
+            "Mypy hata satırı bu eşiği aşarsa cost-aware router ile bulut modele geçiş "
+            "denenir (varsayılan: 10, <=0 ise devre dışı)."
         ),
     )
     parser.add_argument(
@@ -68,6 +78,65 @@ def _select_auto_heal_model(current_model: str, source: str, requested_model: st
     if normalized_source == "mypy" and ":3b" in model_name.lower():
         return model_name.lower().replace(":3b", ":7b")
     return model_name
+
+
+_MYPY_ERROR_PATTERN = re.compile(r"^[^:\n]+:\d+:\s+error:\s+", re.IGNORECASE)
+
+
+def _count_error_lines(log_text: str, source: str) -> int:
+    normalized_source = str(source or "").strip().lower()
+    if normalized_source != "mypy":
+        return 0
+    return sum(1 for line in str(log_text or "").splitlines() if _MYPY_ERROR_PATTERN.match(line.strip()))
+
+
+def _select_cloud_fallback(
+    cfg: Any,
+    *,
+    source: str,
+    error_count: int,
+    diagnosis: str,
+    threshold: int,
+) -> tuple[str, str | None]:
+    normalized_source = str(source or "").strip().lower()
+    if normalized_source != "mypy" or int(threshold or 0) <= 0 or error_count <= int(threshold):
+        return "", None
+
+    from core.router import CostAwareRouter
+
+    current_provider = str(getattr(cfg, "AI_PROVIDER", "") or "").strip() or "ollama"
+    local_provider = str(getattr(cfg, "COST_ROUTING_LOCAL_PROVIDER", "") or "").strip() or current_provider
+    cloud_provider = str(getattr(cfg, "COST_ROUTING_CLOUD_PROVIDER", "") or "").strip()
+    cloud_model = str(getattr(cfg, "COST_ROUTING_CLOUD_MODEL", "") or "").strip()
+    if not cloud_provider:
+        if str(getattr(cfg, "OPENAI_API_KEY", "") or "").strip():
+            cloud_provider = "openai"
+            cloud_model = cloud_model or str(getattr(cfg, "OPENAI_MODEL", "") or "").strip()
+        elif str(getattr(cfg, "ANTHROPIC_API_KEY", "") or "").strip():
+            cloud_provider = "anthropic"
+            cloud_model = cloud_model or str(getattr(cfg, "ANTHROPIC_MODEL", "") or "").strip()
+        else:
+            return "", None
+
+    cfg.ENABLE_COST_ROUTING = True
+    cfg.COST_ROUTING_LOCAL_PROVIDER = local_provider
+    cfg.COST_ROUTING_LOCAL_MODEL = str(getattr(cfg, "CODING_MODEL", "") or "").strip()
+    cfg.COST_ROUTING_CLOUD_PROVIDER = cloud_provider
+    cfg.COST_ROUTING_CLOUD_MODEL = cloud_model
+    cfg.COST_ROUTING_COMPLEXITY_THRESHOLD = 0.10
+    router = CostAwareRouter(cfg)
+    prompt = (
+        "Mypy self-heal: çoklu dosya refactor ve yapısal patch planı gerekiyor. "
+        f"Hata satırı={error_count}. Kök neden: {diagnosis or '-'}"
+    )
+    provider, model = router.select(
+        [{"role": "user", "content": prompt}],
+        current_provider,
+        str(getattr(cfg, "CODING_MODEL", "") or "").strip() or None,
+    )
+    if provider == cloud_provider:
+        return provider, model or cloud_model or None
+    return "", None
 
 
 def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> list[list[str]]:
@@ -126,10 +195,22 @@ async def _run(args: argparse.Namespace) -> int:
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
     context = build_local_failure_context(log_text, source=args.source, log_path=str(log_path))
     diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
+    error_count = _count_error_lines(log_text, args.source)
 
     cfg = Config()
     cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
+    selected_provider, selected_model = _select_cloud_fallback(
+        cfg,
+        source=args.source,
+        error_count=error_count,
+        diagnosis=diagnosis,
+        threshold=args.cloud_fallback_threshold,
+    )
+    if selected_provider:
+        cfg.AI_PROVIDER = selected_provider
+    if selected_model:
+        cfg.CODING_MODEL = selected_model
     agent = SidarAgent(config=cfg)
     await agent.initialize()
 
@@ -171,6 +252,8 @@ async def _run(args: argparse.Namespace) -> int:
             {
                 "status": final_status,
                 "model": cfg.CODING_MODEL,
+                "provider": str(getattr(cfg, "AI_PROVIDER", "") or ""),
+                "error_count": error_count,
                 "queue_size": len(queue),
                 "executions": executions,
                 "context": context,
