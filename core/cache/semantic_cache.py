@@ -9,6 +9,17 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from core.cache_metrics import (
+    observe_cache_redis_latency,
+    record_cache_circuit_open_bypass,
+    record_cache_eviction,
+    record_cache_hit,
+    record_cache_miss,
+    record_cache_redis_error,
+    record_cache_skip,
+    set_cache_items,
+)
+
 if TYPE_CHECKING:
     from redis.asyncio import Redis as AsyncRedisClient
 else:  # pragma: no cover - yalnızca type-checking için
@@ -20,17 +31,6 @@ except ImportError:
     _AsyncRedisClass = None
 
 Redis: type[AsyncRedisClient] | None = _AsyncRedisClass
-
-from core.cache_metrics import (
-    observe_cache_redis_latency,
-    record_cache_circuit_open_bypass,
-    record_cache_eviction,
-    record_cache_hit,
-    record_cache_miss,
-    record_cache_redis_error,
-    record_cache_skip,
-    set_cache_items,
-)
 
 logger = logging.getLogger(__name__)
 
