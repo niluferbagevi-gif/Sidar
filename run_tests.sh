@@ -12,8 +12,8 @@ run_precommit_autofix() {
     return 0
   fi
 
-  echo "🧹 Pre-commit autofix: ruff check --fix ."
-  if ! ruff check --fix .; then
+  echo "🧹 Pre-commit autofix: ruff check --fix --unsafe-fixes ."
+  if ! ruff check --fix --unsafe-fixes .; then
     echo "❌ Ruff autofix sonrası lint kontrolleri başarısız. Testler durduruldu."
     return 1
   fi
