@@ -22,7 +22,11 @@ class YouTubeManager:
     DEFAULT_LANGUAGES = ("tr", "en")
 
     def __init__(
-        self, llm_client=None, config=None, *, http_client_factory: Callable[..., Any] | None = None
+        self,
+        llm_client: Any | None = None,
+        config: Any | None = None,
+        *,
+        http_client_factory: Callable[..., Any] | None = None,
     ) -> None:
         self.llm_client = llm_client
         self.config = config

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
 import inspect
 import logging
 import random
@@ -255,11 +256,14 @@ def _new_entity_id() -> str:
         return str(uuid7_builtin())
 
     try:
-        from uuid6 import uuid7 as uuid7_external
-
-        return str(uuid7_external())
+        uuid6_module = importlib.import_module("uuid6")
+        uuid7_external = getattr(uuid6_module, "uuid7", None)
+        if callable(uuid7_external):
+            return str(uuid7_external())
     except Exception:
-        return str(uuid.uuid4())
+        pass
+
+    return str(uuid.uuid4())
 
 
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:

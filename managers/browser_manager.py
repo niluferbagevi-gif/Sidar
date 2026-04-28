@@ -176,11 +176,13 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
     def start_session(
         self, manager: BrowserManager, browser_name: str, headless: bool
     ) -> BrowserSession:
-        from selenium import webdriver
+        from selenium import webdriver  # type: ignore[import-not-found]
+        from selenium.webdriver.remote.webdriver import WebDriver  # type: ignore[import-not-found]
 
         if browser_name not in {"chrome", "chromium", "firefox"}:
             raise ValueError(f"Selenium browser tipi desteklenmiyor: {browser_name}")
 
+        driver: WebDriver
         if browser_name in {"chrome", "chromium"}:
             chrome_options = webdriver.ChromeOptions()
             if headless:
@@ -208,8 +210,8 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         session.driver.get(url)
 
     def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
-        from selenium.webdriver.common.by import By
-
+        by_module = importlib.import_module("selenium.webdriver.common.by")
+        By = getattr(by_module, "By")
         session.driver.find_element(By.CSS_SELECTOR, selector).click()
 
     def fill(
@@ -221,8 +223,8 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         *,
         clear: bool,
     ) -> None:
-        from selenium.webdriver.common.by import By
-
+        by_module = importlib.import_module("selenium.webdriver.common.by")
+        By = getattr(by_module, "By")
         element = session.driver.find_element(By.CSS_SELECTOR, selector)
         if clear:
             element.clear()
@@ -231,9 +233,10 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
     def select(
         self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
     ) -> None:
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.select import Select
-
+        by_module = importlib.import_module("selenium.webdriver.common.by")
+        select_module = importlib.import_module("selenium.webdriver.support.select")
+        By = getattr(by_module, "By")
+        Select = getattr(select_module, "Select")
         Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
 
     def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
