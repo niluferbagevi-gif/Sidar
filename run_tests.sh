@@ -95,6 +95,7 @@ BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 MYPY_ERROR_LOG="${MYPY_ERROR_LOG:-artifacts/remediation/mypy_errors.log}"
 MYPY_RECHECK_LOG="${MYPY_RECHECK_LOG:-artifacts/remediation/mypy_recheck.log}"
+MYPY_MAX_REMEDIATION_ATTEMPTS="${MYPY_MAX_REMEDIATION_ATTEMPTS:-3}"
 AUTONOMOUS_REMEDIATION_CMD="${AUTONOMOUS_REMEDIATION_CMD:-uv run python cli.py --heal \"${MYPY_ERROR_LOG}\"}"
 
 BACKEND_EXIT_CODE=0
@@ -270,25 +271,51 @@ run_static_analysis_gates() {
 
   mkdir -p "$(dirname "${MYPY_ERROR_LOG}")"
 
-  if ! uv run mypy . 2>&1 | tee "${MYPY_ERROR_LOG}"; then
-    echo "⚠️ mypy hataları kaydedildi: ${MYPY_ERROR_LOG}"
+  if ! [[ "${MYPY_MAX_REMEDIATION_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "⚠️ Geçersiz MYPY_MAX_REMEDIATION_ATTEMPTS='${MYPY_MAX_REMEDIATION_ATTEMPTS}'. Varsayılan 3 kullanılacak."
+    MYPY_MAX_REMEDIATION_ATTEMPTS=3
+  fi
 
-    if [ -n "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
-      echo "🛠️ Otonom remediation ajanı tetikleniyor..."
-      if ! REMEDIATION_TRIGGER="mypy" REMEDIATION_INPUT_LOG="${MYPY_ERROR_LOG}" bash -lc "${AUTONOMOUS_REMEDIATION_CMD}"; then
-        echo "⚠️ Otonom remediation komutu hata döndürdü: ${AUTONOMOUS_REMEDIATION_CMD}"
-      fi
+  local max_attempts="${MYPY_MAX_REMEDIATION_ATTEMPTS}"
+  local attempt=1
+  local mypy_log_path
+
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    if [ "${attempt}" -eq 1 ]; then
+      mypy_log_path="${MYPY_ERROR_LOG}"
     else
-      echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
+      mypy_log_path="${MYPY_RECHECK_LOG%.log}_attempt_${attempt}.log"
     fi
 
-    echo "🔁 Otonom remediation sonrası mypy yeniden doğrulanıyor..."
-    if ! uv run mypy . 2>&1 | tee "${MYPY_RECHECK_LOG}"; then
-      echo "❌ mypy ikinci kontrolde de başarısız: ${MYPY_RECHECK_LOG}"
+    echo "🔍 mypy tip kontrolü (deneme ${attempt}/${max_attempts})..."
+    if uv run mypy . 2>&1 | tee "${mypy_log_path}"; then
+      echo "✅ mypy kontrolleri başarıyla geçti."
+      return 0
+    fi
+
+    echo "⚠️ mypy hataları kaydedildi (deneme ${attempt}): ${mypy_log_path}"
+
+    if [ -z "${AUTONOMOUS_REMEDIATION_CMD}" ]; then
+      echo "ℹ️ AUTONOMOUS_REMEDIATION_CMD tanımlı değil; otonom remediation adımı atlandı."
       BACKEND_EXIT_CODE=1
       return 1
     fi
-  fi
+
+    if [ "${attempt}" -ge "${max_attempts}" ]; then
+      break
+    fi
+
+    echo "🛠️ Otonom remediation ajanı tetikleniyor..."
+    if ! REMEDIATION_TRIGGER="mypy" REMEDIATION_INPUT_LOG="${mypy_log_path}" bash -lc "${AUTONOMOUS_REMEDIATION_CMD}"; then
+      echo "⚠️ Otonom remediation komutu hata döndürdü: ${AUTONOMOUS_REMEDIATION_CMD}"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "❌ mypy ${max_attempts} denemeden sonra hâlâ başarısız."
+  BACKEND_EXIT_CODE=1
+  return 1
 }
 
 ensure_test_services() {
