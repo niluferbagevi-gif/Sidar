@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path, PosixPath, PureWindowsPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
 
 try:
@@ -56,6 +56,14 @@ def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
             return PureWindowsPath(normalized_path)
         return PureWindowsPath(normalized_path)
     return PosixPath(raw_path)
+
+
+def _to_int(value: object, default: int) -> int:
+    """object tipindeki potansiyel sayısal değerleri güvenle int'e çevirir."""
+    try:
+        return int(cast("int | float | str | bytes | bytearray", value))
+    except (TypeError, ValueError):
+        return default
 
 
 def _encode_lsp_message(payload: dict[str, Any]) -> bytes:
@@ -132,7 +140,7 @@ class CodeManager:
             getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000"))
             or 1000000000
         )
-        self.docker_image = (
+        self.docker_image: str = str(
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
             or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
@@ -163,7 +171,7 @@ class CodeManager:
 
         # Docker İstemcisi Bağlantısı
         self.docker_available = False
-        self.docker_client = None
+        self.docker_client: Any | None = None
         self._init_docker()
 
     def _resolve_runtime(self) -> str:
@@ -197,8 +205,8 @@ class CodeManager:
             cfg_limits.get("memory") or self.docker_mem_limit or limits.get("memory") or "256m"
         ).strip()
         cpus = str(limits.get("cpus") or "0.5").strip()
-        pids_limit = int(limits.get("pids_limit", 64))
-        timeout = int(limits.get("timeout", self.docker_exec_timeout or 10))
+        pids_limit = _to_int(limits.get("pids_limit", 64), 64)
+        timeout = _to_int(limits.get("timeout", self.docker_exec_timeout or 10), 10)
         network_mode = str(limits.get("network") or "none").strip().lower()
 
         nano_cpus = self.docker_nano_cpus
@@ -252,7 +260,7 @@ class CodeManager:
             docker_cmd,
             capture_output=True,
             text=True,
-            timeout=int(limits["timeout"]),
+            timeout=_to_int(limits["timeout"], 10),
             cwd=str(self.base_dir),
         )
         output = (result.stdout + result.stderr).strip()
@@ -317,13 +325,16 @@ class CodeManager:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
         self.docker_available = False
         self.docker_client = None
-        docker_module = sys.modules.get("docker")
+        docker_module: Any | None = sys.modules.get("docker")
         try:
             if docker_module is None:
-                import docker as docker_module
+                import docker
 
-            self.docker_client = docker_module.from_env()
-            self.docker_client.ping()
+                docker_module = docker
+
+            client = docker_module.from_env()
+            client.ping()
+            self.docker_client = client
             self.docker_available = True
             logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
         except ImportError:
@@ -566,7 +577,7 @@ class CodeManager:
             return self.execute_code_local(code)
 
         try:
-            import docker
+            import docker  # noqa: F401
 
             # Kodu konteynere komut satırı argümanı olarak gönderiyoruz
             # 'python -c "kod"' formatında çalışacak
@@ -591,10 +602,12 @@ class CodeManager:
             if selected_runtime:
                 run_kwargs["runtime"] = selected_runtime
 
+            if self.docker_client is None:
+                return False, "Docker istemcisi başlatılamadı."
             container = self.docker_client.containers.run(**run_kwargs)
 
             # Zaman aşımı takibi (Config'den okunur, varsayılan 10 sn)
-            timeout = int(sandbox_limits["timeout"])
+            timeout = _to_int(sandbox_limits["timeout"], 10)
             start_time = time.time()
 
             while True:
@@ -779,7 +792,7 @@ class CodeManager:
                 docker_cmd,
                 capture_output=True,
                 text=True,
-                timeout=int(limits["timeout"]),
+                    timeout=_to_int(limits["timeout"], 10),
                 cwd=str(self.base_dir),
             )
         except FileNotFoundError:
@@ -1500,7 +1513,7 @@ class CodeManager:
             if not self.security.can_write(str(target)):
                 return False, f"[OpenClaw] LSP rename yazma yetkisi yok: {target}"
 
-            content = target.read_text(encoding="utf-8", errors="replace")
+            content = Path(str(target)).read_text(encoding="utf-8", errors="replace")
             lines = content.splitlines(keepends=True)
             line_offsets = [0]
             running_offset = 0
