@@ -80,7 +80,9 @@ class JiraManager:
     #  YARDIMCI HTTP
     # ─────────────────────────────────────────────
 
-    async def _request(self, method: str, endpoint: str, **kwargs) -> tuple[bool, Any, str]:
+    async def _request(
+        self, method: str, endpoint: str, **kwargs: Any
+    ) -> tuple[bool, Any, str]:
         if not self._available:
             return False, None, "Jira bağlantısı mevcut değil"
         url = f"{self.url}/rest/api/3/{endpoint.lstrip('/')}"
