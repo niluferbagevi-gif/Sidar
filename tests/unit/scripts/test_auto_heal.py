@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import scripts.auto_heal as auto_heal
@@ -22,14 +21,14 @@ def test_auto_heal_returns_0_on_success(monkeypatch, tmp_path: Path):
     )
     output_file = tmp_path / "heal_out.json"
 
-    async def _fake_run_local_remediation_loop(**kwargs):
-        Path(kwargs["output_path"]).write_text(
-            json.dumps({"status": "ok", "execution": {"status": "applied"}}),
-            encoding="utf-8",
-        )
-        return {"status": "ok", "execution": {"status": "applied"}}
+    class _FakeSidarAgent:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    monkeypatch.setattr(auto_heal, "run_local_remediation_loop", _fake_run_local_remediation_loop)
+        async def respond(self, *_args, **_kwargs):
+            yield "✅ Heal tamamlandı. Uygulanan dosyalar: core/x.py"
+
+    monkeypatch.setattr(auto_heal, "SidarAgent", _FakeSidarAgent)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -43,5 +42,25 @@ def test_auto_heal_returns_0_on_success(monkeypatch, tmp_path: Path):
             "--output",
             str(output_file),
         ],
+    )
+    assert auto_heal.main() == 0
+
+
+def test_auto_heal_falls_back_to_remediation_loop(monkeypatch, tmp_path: Path):
+    log_file = tmp_path / "mypy_errors.log"
+    log_file.write_text("core/x.py:1: error: Missing type parameters", encoding="utf-8")
+
+    class _BrokenSidarAgent:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("agent init failed")
+
+    async def _fake_run_local_remediation_loop(**kwargs):
+        return {"status": "ok", "execution": {"status": "applied"}, "summary": "fallback-ok"}
+
+    monkeypatch.setattr(auto_heal, "SidarAgent", _BrokenSidarAgent)
+    monkeypatch.setattr(auto_heal, "run_local_remediation_loop", _fake_run_local_remediation_loop)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["auto_heal.py", "--log-file", str(log_file)],
     )
     assert auto_heal.main() == 0

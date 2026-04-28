@@ -234,7 +234,10 @@ class AutoHandle:
             stage="local_heal",
             command=f".heal {log_path}",
         )
-        diagnosis = context.get("root_cause_hint") or context.get("failure_summary") or "local failure"
+        diagnosis = (
+            "Bu logları oku, hataları analiz et ve dosyaları düzelt. "
+            + str(context.get("root_cause_hint") or context.get("failure_summary") or "local failure")
+        )
         remediation_loop = build_remediation_loop(context, diagnosis)
         scope_paths = [
             str(item).strip() for item in list(remediation_loop.get("scope_paths") or []) if str(item).strip()
