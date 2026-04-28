@@ -213,6 +213,10 @@ dev = [
   "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
 ]
 
+
+[tool.bandit]
+exclude_dirs = ["tests", "web_ui_react", "node_modules", ".venv"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

@@ -311,7 +311,7 @@ run_security_analysis_gates() {
   fi
 
   echo "🛡️ Hızlı SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
-  if ! uv run bandit -q -r . -x tests,web_ui_react,node_modules,.venv; then
+  if ! uv run bandit -c pyproject.toml -q -r .; then
     echo "❌ Bandit güvenlik taraması başarısız."
     BACKEND_EXIT_CODE=1
     return 1
