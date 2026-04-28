@@ -489,16 +489,15 @@ PY
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
   # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
-  local pytest_cmd=(uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
-  local pytest_targets=("tests")
+  local base_pytest_cmd=(uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
-    pytest_cmd+=(-m "not gpu")
+    base_pytest_cmd+=(-m "not gpu")
   else
     if ! command -v nvidia-smi >/dev/null 2>&1 && ! command -v nvidia-smi.exe >/dev/null 2>&1; then
       echo "⚠️ ENABLE_GPU_TESTS=1 verildi ancak nvidia-smi bulunamadı. GPU testleri güvenli fallback ile atlanıyor."
-      pytest_cmd+=(-m "not gpu")
+      base_pytest_cmd+=(-m "not gpu")
     else
       echo "🔥 GPU testleri de dahil ediliyor!"
       if [ "${RUN_GPU_STRESS:-0}" != "1" ]; then
@@ -509,22 +508,48 @@ PY
   fi
 
   if python -c "import xdist" >/dev/null 2>&1; then
-    pytest_cmd+=(-n "${PYTEST_WORKERS}")
+    base_pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
 
   # Benchmark ölçümlerinin doğruluğu için performans testleri bu aşamada
   # özellikle hariç tutulur ve aşağıda tek çekirdekli ayrı fazda çalıştırılır.
-  pytest_cmd+=(--ignore=tests/performance)
+  base_pytest_cmd+=(--ignore=tests/performance)
   if [ "${PERFORMANCE_TEST_DIR}" != "tests/performance" ] && [ -d "${PERFORMANCE_TEST_DIR}" ]; then
-    pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
+    base_pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
-  pytest_cmd+=("${pytest_targets[@]}")
+  # Aşama 1: Unit testler (yüksek paralellik)
+  local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
+  echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
+  "${phase1_cmd[@]}"
+  local phase1_exit=$?
 
-  echo "➡️ Çalıştırılan komut: ${pytest_cmd[*]}"
+  # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
+  local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-1}"
+  local phase2_cmd=("${base_pytest_cmd[@]}")
+  local filtered_phase2_cmd=()
+  local skip_next=0
+  for arg in "${phase2_cmd[@]}"; do
+    if [ "${skip_next}" -eq 1 ]; then
+      skip_next=0
+      continue
+    fi
+    if [ "${arg}" = "-n" ]; then
+      skip_next=1
+      continue
+    fi
+    filtered_phase2_cmd+=("${arg}")
+  done
+  phase2_cmd=("${filtered_phase2_cmd[@]}" -n "${phase2_workers}" -m "integration" tests/integration tests/smoke tests/e2e)
+  echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
+  "${phase2_cmd[@]}"
+  local phase2_exit=$?
 
-  "${pytest_cmd[@]}"
-  BACKEND_EXIT_CODE=$?
+  if [ "${phase1_exit}" -ne 0 ] || [ "${phase2_exit}" -ne 0 ]; then
+    BACKEND_EXIT_CODE=1
+  else
+    BACKEND_EXIT_CODE=0
+  fi
 
   # xdist altında bazı koşullarda sadece .coverage.* shard'ları kalabilir.
   # Önce bunları birleştirmeyi dener, başarısızsa quality gate'i fail eder.
