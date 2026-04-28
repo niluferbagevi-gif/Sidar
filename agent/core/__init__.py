@@ -3,8 +3,9 @@
 Döngüsel importları önlemek için paket düzeyindeki tüm ağır importlar lazy yapılır.
 """
 
-from .contracts import TaskEnvelope, TaskResult
 from typing import Any
+
+from .contracts import TaskEnvelope, TaskResult
 
 __all__ = ["TaskEnvelope", "TaskResult", "MemoryHub", "AgentRegistry", "SupervisorAgent"]
 

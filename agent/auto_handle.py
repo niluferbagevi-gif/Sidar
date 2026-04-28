@@ -6,8 +6,9 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 import asyncio
 import inspect
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 from core.memory import ConversationMemory
