@@ -6,12 +6,12 @@ teşhis/remediation prompt'u üretir ve PR taslağı oluşturur.
 
 from __future__ import annotations
 
+import ast
+import contextlib
 import json
 import os
 import re
 import shlex
-import ast
-import contextlib
 from typing import Any
 
 _CI_FAILURE_CONCLUSIONS = {
