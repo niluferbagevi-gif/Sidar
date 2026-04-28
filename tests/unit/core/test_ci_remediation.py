@@ -607,3 +607,25 @@ def test_extract_validation_commands_skips_blank_lines() -> None:
     }
     commands = ci._extract_validation_commands(context, "\n")
     assert "pytest -q tests/a.py" in commands
+
+
+def test_build_local_failure_context_parses_mypy_log() -> None:
+    log_text = "\n".join(
+        [
+            "core/service.py:10: error: Incompatible types in assignment [assignment]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+        ]
+    )
+    ctx = ci.build_local_failure_context(log_text, source="mypy", log_path="artifacts/mypy.log")
+    assert ctx["kind"] == "local_failure"
+    assert ctx["workflow_name"] == "local_mypy"
+    assert ctx["logs_url"] == "artifacts/mypy.log"
+    assert "core/service.py" in ctx["suspected_targets"]
+    assert "agent/auto_handle.py" in ctx["suspected_targets"]
+    assert ctx["failed_jobs"] == ["local:mypy"]
+
+
+def test_build_local_failure_context_fallbacks_when_log_has_no_structured_error() -> None:
+    ctx = ci.build_local_failure_context("mypy: failed with unknown issue", source="mypy")
+    assert ctx["root_cause_hint"]
+    assert ctx["failure_summary"].startswith("mypy yerel kalite kapısında hata bulundu")

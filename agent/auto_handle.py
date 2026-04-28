@@ -6,8 +6,10 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 import asyncio
 import inspect
 import re
+from pathlib import Path
 
 from core.memory import ConversationMemory
+from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 from core.rag import DocumentStore
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
@@ -58,7 +60,7 @@ class AutoHandle:
         re.IGNORECASE | re.DOTALL,
     )
 
-    _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu)\b", re.IGNORECASE)
+    _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu|heal)\b", re.IGNORECASE)
 
     async def handle(self, text: str) -> tuple[bool, str]:
         """
@@ -200,7 +202,36 @@ class AutoHandle:
             return await self._try_audit(".audit")
         if cmd == "gpu":
             return await self._try_gpu_optimize(".gpu")
+        if cmd == "heal":
+            return await self._try_heal_local(raw)
         return False, ""
+
+    async def _try_heal_local(self, raw: str) -> tuple[bool, str]:
+        """Yerel kalite kapısı log dosyasını parse edip self-heal planı üretir."""
+        m = re.search(r"^\s*\.heal\s+([^\s]+)", raw.strip(), re.IGNORECASE)
+        if not m:
+            return True, "⚠ Kullanım: .heal <log_dosyası>"
+        log_path = m.group(1).strip().strip("'\"")
+        candidate = Path(log_path)
+        if not candidate.exists():
+            return True, f"⚠ Log dosyası bulunamadı: {log_path}"
+        try:
+            log_text = await asyncio.to_thread(candidate.read_text, encoding="utf-8")
+        except Exception as exc:
+            return True, f"⚠ Log dosyası okunamadı: {exc}"
+
+        context = build_local_failure_context(log_text, source="mypy", log_path=str(candidate))
+        diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
+        remediation = build_ci_remediation_payload(context, diagnosis)
+        loop = dict(remediation.get("remediation_loop") or {})
+        summary = (
+            "🩺 Yerel self-heal analizi hazır.\n"
+            f"- Kapsam: {', '.join(loop.get('scope_paths') or []) or '-'}\n"
+            f"- Doğrulama: {', '.join(loop.get('validation_commands') or []) or '-'}\n"
+            f"- Mod: {loop.get('mode', 'self_heal')}\n"
+            f"- Kök neden: {remediation.get('root_cause_summary', '-')}"
+        )
+        return True, summary
 
     async def _run_blocking(self, func, *args):
         """Senkron manager çağrılarını event-loop'u bloklamadan çalıştır."""

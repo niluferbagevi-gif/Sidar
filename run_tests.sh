@@ -93,6 +93,9 @@ BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
+AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-1}"
+AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-1}"
+AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -264,10 +267,25 @@ run_static_analysis_gates() {
     BACKEND_EXIT_CODE=1
     return 1
   fi
-  if ! uv run mypy .; then
-    BACKEND_EXIT_CODE=1
-    return 1
-  fi
+  mkdir -p "$(dirname "${AUTO_HEAL_LOG_PATH}")"
+  local attempt=0
+  while [ "${attempt}" -le "${AUTO_HEAL_MAX_ATTEMPTS}" ]; do
+    if uv run mypy . 2>&1 | tee "${AUTO_HEAL_LOG_PATH}"; then
+      return 0
+    fi
+    if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    echo "⚠️ Mypy hataları tespit edildi. Otonom iyileştirme döngüsü başlatılıyor... (deneme $((attempt + 1))/${AUTO_HEAL_MAX_ATTEMPTS})"
+    if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy; then
+      echo "❌ Otonom ajan düzeltme planını uygulayamadı."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    echo "✅ Otonom iyileştirme tamamlandı. Mypy yeniden çalıştırılıyor..."
+    attempt=$((attempt + 1))
+  done
 }
 
 ensure_test_services() {

@@ -22,8 +22,11 @@ _TARGET_PATTERN = re.compile(
     r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
 )
 _ROOT_CAUSE_PATTERN = re.compile(
-    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed).*)""",
+    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
     re.IGNORECASE,
+)
+_MYPY_ERROR_LINE_PATTERN = re.compile(
+    r"^(?P<path>[\w./\\-]+\.py):(?P<line>\d+)(?::(?P<column>\d+))?:\s*error:\s*(?P<message>.+?)\s*(?:\[(?P<code>[^\]]+)\])?$"
 )
 
 
@@ -305,6 +308,70 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
         "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
         "diagnostic_hints": _build_diagnostic_hints(
             failure_summary, log_excerpt, suspected_targets
+        ),
+    }
+
+
+def build_local_failure_context(
+    log_text: str,
+    *,
+    source: str = "mypy",
+    log_path: str = "",
+) -> dict[str, Any]:
+    """Yerel araç log'larından CI-remediation uyumlu context üretir."""
+    text = str(log_text or "")
+    normalized_source = str(source or "local").strip().lower() or "local"
+    suspected_targets: list[str] = []
+    root_cause_hint = ""
+    failure_lines: list[str] = []
+    seen_paths: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _MYPY_ERROR_LINE_PATTERN.match(line)
+        if match:
+            path = str(match.group("path") or "").strip().lstrip("./")
+            if path and path not in seen_paths:
+                seen_paths.add(path)
+                suspected_targets.append(path)
+            code = str(match.group("code") or "").strip()
+            message = str(match.group("message") or "").strip()
+            failure_lines.append(f"{path}:{match.group('line')} {message} [{code or 'mypy'}]")
+            continue
+        if _ROOT_CAUSE_PATTERN.match(line) and not root_cause_hint:
+            root_cause_hint = _trim_text(line, 220)
+
+    failure_summary = (
+        f"{normalized_source} yerel kalite kapısında hata bulundu "
+        f"({len(failure_lines)} kayıt, {len(suspected_targets)} dosya)."
+    )
+    log_excerpt = _trim_text(text, 1200)
+    if not root_cause_hint and failure_lines:
+        root_cause_hint = _trim_text(failure_lines[0], 220)
+    return {
+        "kind": "local_failure",
+        "repo": "",
+        "workflow_name": f"local_{normalized_source}",
+        "run_id": "local",
+        "run_number": "",
+        "branch": "",
+        "base_branch": "main",
+        "sha": "",
+        "conclusion": "failure",
+        "status": "completed",
+        "html_url": "",
+        "jobs_url": "",
+        "logs_url": str(log_path or "").strip(),
+        "log_excerpt": log_excerpt,
+        "failure_summary": _trim_text(failure_summary, 220),
+        "suspected_targets": suspected_targets[:12],
+        "failed_jobs": [f"local:{normalized_source}"],
+        "root_cause_hint": root_cause_hint,
+        "diagnostic_hints": _build_diagnostic_hints(
+            failure_summary,
+            "\n".join(failure_lines) or log_excerpt,
+            suspected_targets[:12],
         ),
     }
 

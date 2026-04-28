@@ -271,6 +271,28 @@ def test_try_list_directory_extracts_default_and_explicit_path(monkeypatch):
     assert (handled, response) == (True, "listed:/tmp/demo")
 
 
+def test_dot_heal_command_parses_local_log(monkeypatch, tmp_path):
+    h = _build_handler(monkeypatch)
+    log_file = tmp_path / "mypy.log"
+    log_file.write_text(
+        "core/x.py:7: error: Incompatible types in assignment [assignment]\n",
+        encoding="utf-8",
+    )
+
+    handled, response = asyncio.run(h.handle(f".heal {log_file}"))
+
+    assert handled is True
+    assert "Yerel self-heal analizi hazır" in response
+    assert "core/x.py" in response
+
+
+def test_dot_heal_command_requires_existing_file(monkeypatch):
+    h = _build_handler(monkeypatch)
+    handled, response = asyncio.run(h.handle(".heal /tmp/does-not-exist.log"))
+    assert handled is True
+    assert "bulunamadı" in response
+
+
 def test_try_validate_file_paths_and_extensions(monkeypatch):
     memory = FakeMemory()
     memory.set_last_file("app.py")
