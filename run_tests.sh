@@ -273,48 +273,13 @@ trigger_autonomous_remediation() {
   local out_file="${AUTO_REMEDIATION_LOG_DIR}/${stage}_attempt_${attempt}_remediation.json"
   echo "🤖 Otonom remediation tetikleniyor: stage=${stage}, attempt=${attempt}/${max_attempts}"
 
-  if ! uv run python - <<PY; then
-import asyncio
-import json
-from pathlib import Path
-
-from agent.auto_handle import run_local_remediation_loop
-from core.ci_remediation import (
-    build_ci_remediation_payload,
-    build_local_failure_context,
-)
-
-stage = ${stage@Q}
-failed_command = ${failed_command@Q}
-log_file = Path(${log_file@Q})
-attempt = int(${attempt@Q})
-max_attempts = int(${max_attempts@Q})
-out_file = Path(${out_file@Q})
-
-log_excerpt = ""
-if log_file.exists():
-    text = log_file.read_text(encoding="utf-8", errors="ignore")
-    log_excerpt = text[-12000:]
-
-context = build_local_failure_context(
-    log_text=log_excerpt,
-    stage=stage,
-    command=failed_command,
-    attempt=attempt,
-    max_attempts=max_attempts,
-)
-diagnosis = context.get("root_cause_hint") or context.get("failure_summary") or "local failure"
-remediation_payload = build_ci_remediation_payload(context, diagnosis)
-result = asyncio.run(
-    run_local_remediation_loop(
-        context=context,
-        diagnosis=diagnosis,
-        remediation_payload=remediation_payload,
-        output_path=str(out_file),
-    )
-)
-print(json.dumps(result, ensure_ascii=False))
-PY
+  if ! uv run python scripts/auto_heal.py \
+    --log-file "${log_file}" \
+    --stage "${stage}" \
+    --command "${failed_command}" \
+    --attempt "${attempt}" \
+    --max-attempts "${max_attempts}" \
+    --output "${out_file}"; then
     echo "⚠️ Otonom remediation adımı hata verdi; sonraki retry devam edecek."
     return 0
   fi
