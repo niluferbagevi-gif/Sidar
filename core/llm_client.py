@@ -711,7 +711,7 @@ class GeminiClient(BaseLLMClient):
         genai_client = None
         genai_types = None
         try:
-            import google.genai as google_genai  # type: ignore[import-untyped]
+            import google.genai as google_genai
             from google.genai import (
                 types as google_genai_types,
             )
@@ -1300,7 +1300,7 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         try:
-            from anthropic import AsyncAnthropic  # type: ignore[import-not-found]
+            from anthropic import AsyncAnthropic
         except ImportError as exc:
             msg = json.dumps(
                 {

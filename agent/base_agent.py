@@ -43,7 +43,7 @@ class BaseAgent(ABC):
 
     async def call_llm(
         self,
-        messages,
+        messages: list[dict[str, str]],
         *,
         system_prompt: str | None = None,
         temperature: float = 0.3,
@@ -87,7 +87,7 @@ class BaseAgent(ABC):
 
     @staticmethod
     def is_delegation_message(result: object) -> bool:
-        return is_delegation_request(result)
+        return bool(is_delegation_request(result))
 
     async def handle(self, envelope: TaskEnvelope) -> TaskResult:
         """TaskEnvelope taşıyıcılarını ortak biçimde işler.
@@ -96,7 +96,7 @@ class BaseAgent(ABC):
         varsayılan davranış burada tutulur.
         """
         summary = await self.run_task(envelope.goal)
-        if is_delegation_request(summary):
+        if isinstance(summary, DelegationRequest):
             if not getattr(summary, "task_id", ""):
                 summary.task_id = envelope.task_id
             if not getattr(summary, "parent_task_id", None):

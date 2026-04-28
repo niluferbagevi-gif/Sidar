@@ -45,5 +45,5 @@ class CryptoPriceAgent(BaseAgent):
     @staticmethod
     def _extract_symbol(task_prompt: str) -> str:
         lower = (task_prompt or "").lower()
-        matches = re.findall(r"[a-z]{3,10}", lower)
-        return matches[0] if matches else "btc"
+        matches: list[str] = re.findall(r"[a-z]{3,10}", lower)
+        return str(matches[0]) if matches else "btc"

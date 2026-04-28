@@ -461,15 +461,23 @@ def _record_judge_metrics(result: JudgeResult) -> None:
         if collector._usage_sink is not None:
             import inspect
 
-            payload = {
-                "type": "judge",
-                "judge_score": result.relevance_score,
-                "hallucination_risk": result.hallucination_risk,
-                "model": result.model,
-                "provider": result.provider,
-                "evaluated_at": result.evaluated_at,
-            }
-            out = collector._usage_sink(payload)
+            from core.llm_metrics import LLMMetricEvent
+
+            event = LLMMetricEvent(
+                timestamp=result.evaluated_at,
+                provider=result.provider,
+                model=result.model,
+                latency_ms=0.0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                cost_usd=0.0,
+                success=True,
+                rate_limited=False,
+                judge_score=result.relevance_score,
+                hallucination_risk=result.hallucination_risk,
+            )
+            out = collector._usage_sink(event)
             if inspect.isawaitable(out):
                 try:
                     asyncio.ensure_future(out)
