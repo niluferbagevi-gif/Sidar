@@ -18,7 +18,22 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sidar local self-heal CLI")
     parser.add_argument("--log", required=True, help="Analiz log dosyası (örn: artifacts/mypy_errors.log)")
     parser.add_argument("--source", default="mypy", help="Hata kaynağı etiketi (varsayılan: mypy)")
+    parser.add_argument(
+        "--hitl-approve",
+        choices=("yes", "no"),
+        help="Riskli self-heal planı için insan onayı (yes/no). Verilmezse etkileşimli sorulur.",
+    )
     return parser.parse_args()
+
+
+def _prompt_hitl_approval() -> bool:
+    while True:
+        answer = input("⚠ Riskli self-heal planı bulundu. Uygulansın mı? (evet/hayır): ").strip().lower()
+        if answer in {"e", "evet", "y", "yes"}:
+            return True
+        if answer in {"h", "hayır", "hayir", "n", "no"}:
+            return False
+        print("Lütfen sadece 'evet' veya 'hayır' yazın.")
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -42,6 +57,17 @@ async def _run(args: argparse.Namespace) -> int:
         diagnosis=diagnosis,
         remediation=remediation,
     )
+    if str(execution.get("status") or "") == "awaiting_hitl":
+        decision = args.hitl_approve
+        approved = (
+            decision == "yes" if decision in {"yes", "no"} else _prompt_hitl_approval()
+        )
+        execution = await agent._attempt_autonomous_self_heal(  # noqa: SLF001
+            ci_context=context,
+            diagnosis=diagnosis,
+            remediation=remediation,
+            human_approval=approved,
+        )
     print(json.dumps({"execution": execution, "context": context}, ensure_ascii=False, indent=2))
     return 0 if str(execution.get("status") or "") == "applied" else 1
 

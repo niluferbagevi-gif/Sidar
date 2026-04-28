@@ -582,6 +582,7 @@ class SidarAgent:
         ci_context: dict[str, Any],
         diagnosis: str,
         remediation: dict[str, Any],
+        human_approval: bool | None = None,
     ) -> dict[str, Any]:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
@@ -593,19 +594,43 @@ class SidarAgent:
             remediation["self_heal_execution"] = execution
             return execution
         if bool(remediation_loop.get("needs_human_approval")):
-            self._update_remediation_step(
-                remediation_loop,
-                "handoff",
-                status="awaiting_hitl",
-                detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
-            )
-            execution = {
-                "status": "awaiting_hitl",
-                "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
-            }
-            remediation["remediation_loop"] = remediation_loop
-            remediation["self_heal_execution"] = execution
-            return execution
+            if human_approval is False:
+                remediation_loop["status"] = "rejected"
+                self._update_remediation_step(
+                    remediation_loop,
+                    "handoff",
+                    status="rejected",
+                    detail="HITL onayı reddedildi; self-heal uygulanmadı.",
+                )
+                execution = {
+                    "status": "rejected",
+                    "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
+                }
+                remediation["remediation_loop"] = remediation_loop
+                remediation["self_heal_execution"] = execution
+                return execution
+            if human_approval is True:
+                remediation_loop["needs_human_approval"] = False
+                self._update_remediation_step(
+                    remediation_loop,
+                    "handoff",
+                    status="running",
+                    detail="HITL onayı alındı; otonom self-heal devam ediyor.",
+                )
+            else:
+                self._update_remediation_step(
+                    remediation_loop,
+                    "handoff",
+                    status="awaiting_hitl",
+                    detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
+                )
+                execution = {
+                    "status": "awaiting_hitl",
+                    "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
+                }
+                remediation["remediation_loop"] = remediation_loop
+                remediation["self_heal_execution"] = execution
+                return execution
         if not hasattr(self, "code") or not hasattr(self, "llm"):
             execution = {
                 "status": "blocked",

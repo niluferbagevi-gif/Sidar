@@ -799,6 +799,50 @@ async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(
     assert awaiting["status"] == "awaiting_hitl"
     assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
 
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "needs_human_approval": True,
+            "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
+        }
+    }
+    rejected = await agent._attempt_autonomous_self_heal(
+        ci_context={},
+        diagnosis="x",
+        remediation=remediation,
+        human_approval=False,
+    )
+    assert rejected["status"] == "rejected"
+    assert remediation["remediation_loop"]["steps"][0]["status"] == "rejected"
+
+
+async def test_attempt_autonomous_self_heal_continues_after_human_approval(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
+    agent._execute_self_heal_plan = AsyncMock(
+        return_value={"status": "applied", "summary": "ok", "operations_applied": ["a.py"]}
+    )
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "needs_human_approval": True,
+            "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
+        }
+    }
+    applied = await agent._attempt_autonomous_self_heal(
+        ci_context={},
+        diagnosis="x",
+        remediation=remediation,
+        human_approval=True,
+    )
+    assert applied["status"] == "applied"
+    assert remediation["remediation_loop"]["needs_human_approval"] is False
+
 
 async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(
