@@ -181,7 +181,7 @@ class FeedbackStore:
 
     async def get_pending_export(
         self, min_rating: int | None = None, limit: int = 10000
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Henüz export edilmemiş kayıtları döner."""
         if not self.enabled or not self._engine:
             return []
@@ -198,7 +198,7 @@ class FeedbackStore:
             )
             return [dict(r._mapping) for r in rows.fetchall()]
 
-    async def get_pending_signals(self, limit: int = 10000) -> list[dict]:
+    async def get_pending_signals(self, limit: int = 10000) -> list[dict[str, Any]]:
         """Sürekli öğrenme için henüz export edilmemiş tüm geri bildirim sinyallerini döner."""
         if not self.enabled or not self._engine:
             return []
@@ -809,7 +809,7 @@ class LoRATrainer:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _chunked(lst: list, size: int):
+def _chunked(lst: list[Any], size: int):
     for i in range(0, len(lst), size):
         yield lst[i : i + size]
 

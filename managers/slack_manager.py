@@ -127,7 +127,7 @@ class SlackManager:
         self,
         text: str,
         channel: str | None = None,
-        blocks: list[dict] | None = None,
+        blocks: list[dict[str, Any]] | None = None,
         thread_ts: str | None = None,
     ) -> tuple[bool, str]:
         """
@@ -169,8 +169,8 @@ class SlackManager:
     async def send_webhook(
         self,
         text: str = "",
-        blocks: list[dict] | None = None,
-        attachments: list[dict] | None = None,
+        blocks: list[dict[str, Any]] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> tuple[bool, str]:
         """Incoming Webhook URL'ye POST gönderir."""
         if not self.webhook_url:
@@ -204,7 +204,7 @@ class SlackManager:
     #  KANAL LİSTESİ
     # ─────────────────────────────────────────────
 
-    async def list_channels(self, limit: int = 50) -> tuple[bool, list[dict], str]:
+    async def list_channels(self, limit: int = 50) -> tuple[bool, list[dict[str, Any]], str]:
         """Workspace kanallarını listeler (SDK gerekli)."""
         if not self._client or self._webhook_only:
             return False, [], "Kanal listesi için slack-sdk ve bot token gerekli"
@@ -236,10 +236,10 @@ class SlackManager:
         body: str,
         status: str = "info",
         fields: list[dict[str, str]] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Zengin bildirim için Block Kit JSON üretir."""
         emoji = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(status, "ℹ️")
-        blocks: list[dict] = [
+        blocks: list[dict[str, Any]] = [
             {
                 "type": "header",
                 "text": {"type": "plain_text", "text": f"{emoji} {title}", "emoji": True},

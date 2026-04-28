@@ -8,6 +8,7 @@ Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import Any
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -40,7 +41,7 @@ class PackageInfoManager:
 
         cache_ttl_seconds = self.CACHE_TTL_SECONDS
         self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))
-        self._cache: dict[str, tuple[dict, datetime]] = {}
+        self._cache: dict[str, tuple[dict[str, Any], datetime]] = {}
 
         self.TIMEOUT = float(self.TIMEOUT)
         timeout_seconds = self.TIMEOUT
@@ -64,7 +65,7 @@ class PackageInfoManager:
     #  YARDIMCILAR (CACHE + HTTP)
     # ─────────────────────────────────────────────
 
-    def _cache_get(self, key: str) -> tuple[bool, dict]:
+    def _cache_get(self, key: str) -> tuple[bool, dict[str, Any]]:
         cached = self._cache.get(key)
         if not cached:
             return False, {}
@@ -74,10 +75,10 @@ class PackageInfoManager:
         self._cache.pop(key, None)
         return False, {}
 
-    def _cache_set(self, key: str, value: dict) -> None:
+    def _cache_set(self, key: str, value: dict[str, Any]) -> None:
         self._cache[key] = (value, datetime.now())
 
-    async def _get_json(self, url: str, cache_key: str = "") -> tuple[bool, dict, str]:
+    async def _get_json(self, url: str, cache_key: str = "") -> tuple[bool, dict[str, Any], str]:
         if cache_key:
             hit, data = self._cache_get(cache_key)
             if hit:
@@ -109,7 +110,7 @@ class PackageInfoManager:
     #  PyPI (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def _fetch_pypi_json(self, package: str) -> tuple[bool, dict, str]:
+    async def _fetch_pypi_json(self, package: str) -> tuple[bool, dict[str, Any], str]:
         """PyPI JSON verisini ham olarak döndürür."""
         url = f"https://pypi.org/pypi/{package}/json"
         ok, data, err = await self._get_json(url, cache_key=f"pypi:{package.lower()}")

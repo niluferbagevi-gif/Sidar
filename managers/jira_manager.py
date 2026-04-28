@@ -125,7 +125,7 @@ class JiraManager:
         priority: str = "Medium",
         labels: list[str] | None = None,
         assignee_account_id: str | None = None,
-    ) -> tuple[bool, dict, str]:
+    ) -> tuple[bool, dict[str, Any], str]:
         """Yeni Jira issue oluşturur. Döner: (success, issue_dict, error)"""
         proj = project or self.default_project
         if not proj:
@@ -156,7 +156,7 @@ class JiraManager:
         ok, data, err = await self._request("POST", "issue", json={"fields": fields})
         return ok, data or {}, err
 
-    async def get_issue(self, issue_key: str) -> tuple[bool, dict, str]:
+    async def get_issue(self, issue_key: str) -> tuple[bool, dict[str, Any], str]:
         """Issue detaylarını döner."""
         ok, data, err = await self._request("GET", f"issue/{issue_key}")
         return ok, data or {}, err
@@ -191,7 +191,7 @@ class JiraManager:
         )
         return ok, err
 
-    async def add_comment(self, issue_key: str, comment: str) -> tuple[bool, dict, str]:
+    async def add_comment(self, issue_key: str, comment: str) -> tuple[bool, dict[str, Any], str]:
         """Issue'ya yorum ekler."""
         payload = {
             "body": {
@@ -213,7 +213,7 @@ class JiraManager:
         jql: str,
         fields: list[str] | None = None,
         max_results: int = 50,
-    ) -> tuple[bool, list[dict], str]:
+    ) -> tuple[bool, list[dict[str, Any]], str]:
         """JQL sorgusuyla issue arar."""
         params: dict[str, Any] = {
             "jql": jql,
@@ -243,7 +243,7 @@ class JiraManager:
     #  PROJE BİLGİSİ
     # ─────────────────────────────────────────────
 
-    async def list_projects(self) -> tuple[bool, list[dict], str]:
+    async def list_projects(self) -> tuple[bool, list[dict[str, Any]], str]:
         """Erişilebilir projeleri listeler."""
         ok, data, err = await self._request("GET", "project")
         if not ok:
