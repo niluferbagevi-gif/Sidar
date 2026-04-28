@@ -60,7 +60,7 @@ class SlackManager:
         """SDK istemcisini hazırlar; token doğrulaması initialize() ile asenkron yapılır."""
         if self.token:
             try:
-                from slack_sdk import WebClient  # type: ignore
+                from slack_sdk import WebClient
 
                 self._client = WebClient(token=self.token)
                 # Bulgu O-8: auth_test() burada çağrılmıyor — event loop'u bloklar.
