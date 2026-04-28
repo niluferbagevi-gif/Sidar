@@ -7,7 +7,7 @@ Sürüm: 2.7.0
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
