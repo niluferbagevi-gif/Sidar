@@ -839,8 +839,7 @@ class DocumentStore:
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                conn.execute(  # nosec B608
-                    text(f"""  # nosec B608
+                create_table_sql = f"""
                     CREATE TABLE IF NOT EXISTS {self._pg_table} (
                         doc_id TEXT NOT NULL,
                         parent_id TEXT NOT NULL,
@@ -852,8 +851,8 @@ class DocumentStore:
                         embedding vector({self._pg_embedding_dim}),
                         PRIMARY KEY (doc_id, chunk_index)
                     )
-                """)
-                )
+                """
+                conn.execute(text(create_table_sql))  # nosec B608
                 conn.execute(
                     text(
                         f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"
