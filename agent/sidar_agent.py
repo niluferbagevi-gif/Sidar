@@ -482,21 +482,46 @@ class SidarAgent:
                 "validation_commands": list(remediation_loop.get("validation_commands") or []),
             }
 
-        snapshots = await self._collect_self_heal_snapshots(scope_paths)
-        prompt = build_self_heal_patch_prompt(ci_context, diagnosis, remediation_loop, snapshots)
-        raw_plan = await self.llm.chat(
-            messages=[{"role": "user", "content": prompt}],
-            model=getattr(self.cfg, "CODING_MODEL", None),
-            temperature=0.1,
-            stream=False,
-            json_mode=True,
-        )
-        return normalize_self_heal_plan(
-            raw_plan,
-            scope_paths=scope_paths,
-            fallback_validation_commands=list(remediation_loop.get("validation_commands") or []),
-            max_operations=max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3)),
-        )
+        max_operations = max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3))
+        fallback_validation_commands = list(remediation_loop.get("validation_commands") or [])
+
+        async def _generate_plan_for_scope(paths: list[str]) -> dict[str, Any]:
+            snapshots = await self._collect_self_heal_snapshots(paths)
+            scope_loop = dict(remediation_loop)
+            scope_loop["scope_paths"] = paths
+            prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
+            raw_plan = await self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                model=getattr(self.cfg, "CODING_MODEL", None),
+                temperature=0.1,
+                stream=False,
+                json_mode=True,
+            )
+            return normalize_self_heal_plan(
+                raw_plan,
+                scope_paths=paths,
+                fallback_validation_commands=fallback_validation_commands,
+                max_operations=max_operations,
+            )
+
+        initial_plan = await _generate_plan_for_scope(scope_paths)
+        if list(initial_plan.get("operations") or []):
+            return initial_plan
+
+        batch_size = max(1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
+        for index in range(0, len(scope_paths), batch_size):
+            chunk = scope_paths[index : index + batch_size]
+            batch_plan = await _generate_plan_for_scope(chunk)
+            if list(batch_plan.get("operations") or []):
+                summary = str(batch_plan.get("summary") or "").strip()
+                batch_plan["summary"] = (
+                    f"{summary} (batch fallback: {len(chunk)}/{len(scope_paths)} dosya)"
+                    if summary
+                    else f"Batch fallback ile plan üretildi: {len(chunk)}/{len(scope_paths)} dosya."
+                )
+                return batch_plan
+
+        return initial_plan
 
     async def _restore_self_heal_backups(self, backups: dict[str, str]) -> None:
         for path, content in backups.items():
