@@ -2102,7 +2102,7 @@ class Database:
 
         assert self._sqlite_conn is not None
 
-        def _run():
+        def _run() -> list[sqlite3.Row]:
             assert self._sqlite_conn is not None
             if normalized_user is not None:
                 cur = self._sqlite_conn.execute(

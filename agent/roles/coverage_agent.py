@@ -48,7 +48,7 @@ class CoverageAgent(BaseAgent):
 
         self.security = SecurityManager(cfg=self.cfg)
         self.code = CodeManager(self.security, base_dir=self.cfg.BASE_DIR)
-        self._db = None
+        self._db: Any | None = None
         self._db_lock: asyncio.Lock | None = None
         self.register_tool("run_pytest", self._tool_run_pytest)
         self.register_tool("analyze_pytest_output", self._tool_analyze_pytest_output)
@@ -56,7 +56,7 @@ class CoverageAgent(BaseAgent):
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
         self.register_tool("write_missing_tests", self._tool_write_missing_tests)
 
-    async def _ensure_db(self):
+    async def _ensure_db(self) -> Any:
         if self._db is not None:
             return self._db
         if self._db_lock is None:
@@ -513,7 +513,7 @@ class CoverageAgent(BaseAgent):
                 details=dict(finding),
             )
 
-    async def run_task(self, task_prompt: str):
+    async def run_task(self, task_prompt: str) -> Any:
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş coverage görevi verildi."

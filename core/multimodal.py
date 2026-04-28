@@ -639,7 +639,7 @@ def render_multimodal_document(
 
 
 async def ingest_multimodal_analysis(
-    document_store,
+    document_store: Any,
     analysis: dict[str, Any],
     *,
     source: str,
@@ -663,7 +663,7 @@ async def ingest_multimodal_analysis(
 class MultimodalPipeline:
     """Video/ses/görsel dosyalarını ortak bir LLM bağlamına dönüştürür."""
 
-    def __init__(self, llm_client, config=None) -> None:
+    def __init__(self, llm_client: Any, config: Any = None) -> None:
         self._llm = llm_client
         self._config = config
         self.enabled = bool(getattr(config, "ENABLE_MULTIMODAL", True))
@@ -841,7 +841,7 @@ class MultimodalPipeline:
         frame_interval_seconds: float = 5.0,
         max_frames: int = 6,
         language: str | None = None,
-        ingest_document_store=None,
+        ingest_document_store: Any = None,
         ingest_session_id: str = "marketing",
         ingest_title: str = "",
         ingest_tags: list[str] | None = None,

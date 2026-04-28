@@ -313,7 +313,7 @@ class CodeManager:
         )
         return True
 
-    def _init_docker(self):
+    def _init_docker(self) -> None:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
         self.docker_available = False
         self.docker_client = None

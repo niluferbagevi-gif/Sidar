@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime
+from typing import Sequence
 
 from config import Config
 
@@ -47,7 +48,7 @@ class Colors:
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
-def run_command(args, show_output=True):
+def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, str]:
     """Komutu shell=False ile güvenli şekilde çalıştırır."""
     try:
         result = subprocess.run(
@@ -128,7 +129,7 @@ def is_forbidden_path(path: str) -> bool:
     )
 
 
-def get_file_content(path: str):
+def get_file_content(path: str) -> str | None:
     """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
     if is_forbidden_path(path):
         return None
@@ -140,7 +141,7 @@ def get_file_content(path: str):
         return None
 
 
-def get_deleted_files():
+def get_deleted_files() -> list[str]:
     """Sistemden silinmiş ama Git'in geçmişte takip ettiği dosyaları bulur."""
     success, output = run_command(["git", "ls-files", "-d"], show_output=False)
     if not success or not output:
@@ -149,7 +150,7 @@ def get_deleted_files():
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
-def collect_safe_files(deleted_files_list=None):
+def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[list[str], list[str]]:
     """Yalnızca güvenli dosyaları stage listesine alır."""
     if deleted_files_list is None:
         deleted_files_list = []
@@ -202,7 +203,7 @@ def collect_safe_files(deleted_files_list=None):
     return safe_files, blocked_files
 
 
-def stage_files(file_paths):
+def stage_files(file_paths: list[str]) -> tuple[bool, str]:
     """Dosyaları git'e literal pathspec ile güvenli biçimde ekler."""
     if not file_paths:
         return True, ""
@@ -214,7 +215,7 @@ def stage_files(file_paths):
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
-def main():
+def main() -> None:
     target_branch = None
     rollback_steps = 0
 
