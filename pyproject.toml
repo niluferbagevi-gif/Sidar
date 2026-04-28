@@ -240,6 +240,7 @@ exclude_dirs = [
 ]
 skips = [
   "B101", # Assertions kullanımı
+  "B608", # Dinamik SQL ifadeleri için kontrollü kullanım (whitelist + parametreli değerler)
 ]
 
 [tool.pytest.ini_options]
