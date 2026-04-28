@@ -261,13 +261,11 @@ class _SqliteDailyBudgetTracker:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"
-                # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
+                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
             ).fetchone()
             if row is None or int(row[0]) != day_epoch:
                 conn.execute(
-                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"
-                    # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
+                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"  # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
                     " ON CONFLICT(id) DO UPDATE SET day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
                     (day_epoch, increment),
                 )
@@ -286,8 +284,7 @@ class _SqliteDailyBudgetTracker:
         self._upsert_usage(delta=0.0)
         with self._connect() as conn:
             row = conn.execute(
-                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"
-                # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
+                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608 - _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
             ).fetchone()
             return float(row[0]) if row else 0.0
 

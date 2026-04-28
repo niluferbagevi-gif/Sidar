@@ -376,7 +376,7 @@ class Database:
                     FROM messages
                     WHERE session_id = ANY($1::text[])
                     ORDER BY session_id ASC, created_at ASC, id ASC
-                    """,
+                    """,  # nosec B608 - columns sabit whitelist'ten üretilir.
                     normalized_ids,
                 )
             return list(rows)
@@ -392,7 +392,7 @@ class Database:
                 FROM messages
                 WHERE session_id IN ({placeholders})
                 ORDER BY session_id ASC, created_at ASC, id ASC
-                """,
+                """,  # nosec B608 - columns/placeholders iç kaynaklıdır.
                 normalized_ids,
             )
             return cur.fetchall()
@@ -1356,7 +1356,9 @@ class Database:
             self._sqlite_conn.execute(
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
-            cur = self._sqlite_conn.execute(f"SELECT MAX(version) AS v FROM {tbl}")
+            cur = self._sqlite_conn.execute(
+                f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
+            )
             row = _sqlite_fetchone(cur)
             current = int((row["v"] if row else 0) or 0)
             if current >= self.target_schema_version:
@@ -1377,7 +1379,9 @@ class Database:
             await conn.execute(
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
             )
-            current = await conn.fetchval(f"SELECT COALESCE(MAX(version), 0) FROM {tbl}")
+            current = await conn.fetchval(
+                f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
+            )
             current = int(current or 0)
             if current >= self.target_schema_version:
                 return

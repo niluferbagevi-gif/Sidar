@@ -29,9 +29,16 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
     conn = sqlite3.connect(str(sqlite_path))
     try:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM {table}"  # nosec B608 - tablo adı kontrollü TABLES listesinden gelir.
+        ).fetchall()
         if not rows:
-            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            cols = [
+                r[1]
+                for r in conn.execute(
+                    f"PRAGMA table_info({table})"  # nosec B608 - tablo adı kontrollü TABLES listesinden gelir.
+                ).fetchall()
+            ]
             return cols, []
         cols = list(rows[0].keys())
         return cols, [tuple(row[col] for col in cols) for row in rows]
