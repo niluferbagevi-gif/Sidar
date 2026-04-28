@@ -36,11 +36,11 @@ class JiraManager:
     def __init__(
         self,
         url: str = "",
-        token: str = "",
+        token: str = "",  # nosec B107
         email: str = "",
         default_project: str = "",
         base_url: str = "",
-        api_token: str = "",
+        api_token: str = "",  # nosec B107
     ) -> None:
         resolved_url = url or base_url
         resolved_token = token or api_token

@@ -40,8 +40,8 @@ class SlackManager:
 
     def __init__(
         self,
-        token: str = "",
-        webhook_url: str = "",
+        token: str = "",  # nosec B107
+        webhook_url: str = "",  # nosec B107
         default_channel: str = "",
     ) -> None:
         self.token = (token or "").strip()
