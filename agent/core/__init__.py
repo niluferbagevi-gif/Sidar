@@ -4,11 +4,12 @@ Döngüsel importları önlemek için paket düzeyindeki tüm ağır importlar l
 """
 
 from .contracts import TaskEnvelope, TaskResult
+from typing import Any
 
 __all__ = ["TaskEnvelope", "TaskResult", "MemoryHub", "AgentRegistry", "SupervisorAgent"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "MemoryHub":
         from .memory_hub import MemoryHub
 

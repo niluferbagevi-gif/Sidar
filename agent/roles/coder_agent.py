@@ -122,7 +122,7 @@ class CoderAgent(BaseAgent):
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
     @staticmethod
-    def _parse_qa_feedback(raw_feedback: str) -> dict:
+    def _parse_qa_feedback(raw_feedback: str) -> dict[str, Any]:
         payload = (raw_feedback or "").strip()
         if not payload:
             return {}
@@ -190,8 +190,10 @@ class CoderAgent(BaseAgent):
 
         if lower.startswith("request_review|"):
             payload = prompt.split("|", 1)[1].strip()
-            return self.delegate_to(
+            return str(
+                self.delegate_to(
                 "reviewer", f"review_code|{payload}", reason="coder_request_review"
+                )
             )
 
         # Basit doğal dil eşleme: "X isimli bir dosyaya 'Y' yaz"

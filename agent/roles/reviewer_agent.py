@@ -50,7 +50,7 @@ class ReviewerAgent(BaseAgent):
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="reviewer")
         self.config = self.cfg
-        github_token = getattr(self.config, "GITHUB_TOKEN", None)
+        github_token = str(getattr(self.config, "GITHUB_TOKEN", "") or "")
         github_repo = getattr(self.config, "GITHUB_REPO", None)
         assert github_repo is not None, "github_repo cannot be None"
         self.github = GitHubManager(github_token, str(github_repo))

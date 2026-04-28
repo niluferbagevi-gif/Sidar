@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, ValidationError
 try:
     from opentelemetry import trace
 except Exception:  # OpenTelemetry opsiyoneldir
-    trace = None
+    trace = None  # type: ignore[assignment]
 
 from config import Config
 from core.ci_remediation import (
@@ -55,7 +55,7 @@ else:
     ExternalTriggerType = Any
 
 
-def get_agent_metrics_collector():
+def get_agent_metrics_collector() -> Any:
     from core.agent_metrics import get_agent_metrics_collector as _get_agent_metrics_collector
 
     return _get_agent_metrics_collector()
@@ -75,7 +75,7 @@ derive_correlation_id = getattr(
 
 
 class _FallbackFederationTaskEnvelope:
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.task_id = str(kwargs.get("task_id", ""))
         self.source_system = str(kwargs.get("source_system", ""))
         self.source_agent = str(kwargs.get("source_agent", ""))
@@ -111,7 +111,7 @@ class _FallbackFederationTaskEnvelope:
 
 
 class _FallbackActionFeedback:
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.feedback_id = str(kwargs.get("feedback_id", ""))
         self.source_system = str(kwargs.get("source_system", ""))
         self.source_agent = str(kwargs.get("source_agent", ""))
@@ -327,7 +327,7 @@ class SidarAgent:
         sentinel = object()
 
         def _is_mock_like(value: Any) -> bool:
-            return value.__class__.__module__.startswith("unittest.mock")
+            return bool(value.__class__.__module__.startswith("unittest.mock"))
 
         default_keys = [key for key in dir(defaults) if key.isupper()]
         for key in default_keys:
@@ -1152,7 +1152,9 @@ class SidarAgent:
             keep_recent_docs = max(
                 1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
             )
-            for session_id in list(memory_report.get("session_ids", []) or []):
+            raw_session_ids = memory_report.get("session_ids", [])
+            session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
+            for session_id in session_ids:
                 report = await asyncio.to_thread(
                     self.docs.consolidate_session_documents,
                     str(session_id),
@@ -1161,6 +1163,14 @@ class SidarAgent:
                 rag_reports.append(report)
 
             removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
+            raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
+            sessions_compacted = (
+                raw_sessions_compacted
+                if isinstance(raw_sessions_compacted, int)
+                else int(raw_sessions_compacted)
+                if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
+                else 0
+            )
             result = {
                 "status": "completed",
                 "reason": reason,
@@ -1168,7 +1178,7 @@ class SidarAgent:
                 "memory_report": memory_report,
                 "entity_report": entity_report,
                 "rag_reports": rag_reports,
-                "sessions_compacted": int(memory_report.get("sessions_compacted", 0) or 0),
+                "sessions_compacted": sessions_compacted,
                 "rag_docs_pruned": removed_docs,
             }
             self._last_nightly_maintenance_ts = time.time()
@@ -1246,7 +1256,8 @@ class SidarAgent:
                 supervisor_mod = importlib.reload(supervisor_mod)
             SupervisorAgent = supervisor_mod.SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)
-            self._supervisor.llm = self.llm
+            if self._supervisor is not None:
+                self._supervisor.llm = self.llm
 
             # Supervisor altında açılan role-agent'ların, üst ajanın paylaşılan
             # kaynak yöneticilerini (özellikle web arama yöneticisini) kullanmasını sağla.
@@ -1265,6 +1276,8 @@ class SidarAgent:
                 if role_agent is not None and hasattr(role_agent, "llm"):
                     role_agent.llm = self.llm
 
+        if self._supervisor is None:
+            return "⚠ Supervisor başlatılamadı."
         result = await self._supervisor.run_task(user_input)
         if not isinstance(result, str) or not result.strip():
             return "⚠ Supervisor geçerli bir çıktı üretemedi."
@@ -1296,7 +1309,10 @@ class SidarAgent:
 
         try:
             # Alaka eşiği uygulayabilmek için distances dahil explicit query kullanılır.
-            results = self.docs.collection.query(
+            collection = self.docs.collection
+            if collection is None:
+                return ""
+            results = collection.query(
                 query_texts=[user_input],
                 n_results=min(top_k * 3, 20),
                 where={"source": "memory_archive"},
@@ -1307,7 +1323,7 @@ class SidarAgent:
             return ""
 
         docs: list[str] = results.get("documents", [[]])[0] if results else []
-        metas: list[dict] = results.get("metadatas", [[]])[0] if results else []
+        metas: list[dict[str, Any]] = results.get("metadatas", [[]])[0] if results else []
         distances = results.get("distances", [[]])[0] if results else []
 
         selected: list[str] = []
@@ -1464,7 +1480,7 @@ class SidarAgent:
         """
         root = Path(self.cfg.BASE_DIR)
         instruction_names = ("SIDAR.md", "CLAUDE.md")
-        found_files = []
+        found_files: list[Path] = []
 
         for name in instruction_names:
             found_files.extend(root.rglob(name))
@@ -1472,10 +1488,7 @@ class SidarAgent:
         # Aynı dosya iki kez gelmesin, deterministik sırada olsun
         normalized_files = []
         for candidate in found_files:
-            if isinstance(candidate, str):
-                path_obj: Any = Path(candidate)
-            else:
-                path_obj = candidate
+            path_obj = candidate if isinstance(candidate, Path) else Path(candidate)
             try:
                 if not hasattr(path_obj, "is_file") or not path_obj.is_file():
                     continue
@@ -1494,7 +1507,7 @@ class SidarAgent:
             except Exception:
                 pass
 
-        lock_cm = (
+        lock_cm: Any = (
             self._instructions_lock
             if hasattr(self._instructions_lock, "__enter__")
             and hasattr(self._instructions_lock, "__exit__")

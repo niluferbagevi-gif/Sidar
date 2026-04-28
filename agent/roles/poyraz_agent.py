@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
         def __getattr__(self, _name: str) -> str:
             return ""
 
-    def parse_tool_argument(_tool_name: str, raw_arg: str) -> Any:
+    def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
         return _FallbackPayload(json.loads(raw_arg))
 
 

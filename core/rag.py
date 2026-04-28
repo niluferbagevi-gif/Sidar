@@ -883,7 +883,10 @@ class DocumentStore:
             return []
         try:
             vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
-            return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+            if hasattr(vectors, "tolist"):
+                raw_vectors = vectors.tolist()
+                return [list(map(float, row)) for row in raw_vectors]
+            return [list(map(float, v)) for v in vectors]
         except Exception as exc:
             logger.warning("pgvector embedding üretilemedi: %s", exc)
             return []

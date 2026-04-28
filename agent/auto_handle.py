@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import re
 from pathlib import Path
+from typing import Any, Callable
 
 from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 from core.memory import ConversationMemory
@@ -35,7 +36,7 @@ class AutoHandle:
         web: WebSearchManager,
         pkg: PackageInfoManager,
         docs: DocumentStore,
-        cfg=None,
+        cfg: Any = None,
     ) -> None:
         self.code = code
         self.health = health
@@ -233,7 +234,7 @@ class AutoHandle:
         )
         return True, summary
 
-    async def _run_blocking(self, func, *args):
+    async def _run_blocking(self, func: Callable[..., Any], *args: object) -> Any:
         """Senkron manager çağrılarını event-loop'u bloklamadan çalıştır."""
         return await asyncio.wait_for(
             asyncio.to_thread(func, *args),

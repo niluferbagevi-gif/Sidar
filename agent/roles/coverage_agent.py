@@ -442,9 +442,8 @@ class CoverageAgent(BaseAgent):
             if isinstance(payload.get("coverage_finding"), dict)
             else None
         )
-        coveragerc = (
-            payload.get("coveragerc") if isinstance(payload.get("coveragerc"), dict) else {}
-        )
+        coveragerc_raw = payload.get("coveragerc")
+        coveragerc: dict[str, Any] = coveragerc_raw if isinstance(coveragerc_raw, dict) else {}
         if coverage_finding and not target_path:
             target_path = str(coverage_finding.get("target_path", "") or "")
         if coverage_finding:

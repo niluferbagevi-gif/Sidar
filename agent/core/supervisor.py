@@ -7,6 +7,7 @@ import importlib
 import json
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from agent.base_agent import BaseAgent
@@ -56,7 +57,7 @@ def _ensure_delegation_request_shape() -> type[DelegationRequest]:
                 meta=dict(self.meta),
             )
 
-    contracts_mod.DelegationRequest = _CompatDelegationRequest
+    setattr(contracts_mod, "DelegationRequest", _CompatDelegationRequest)
     return cast(type[DelegationRequest], _CompatDelegationRequest)
 
 
@@ -65,12 +66,14 @@ _ensure_delegation_request_shape()
 try:
     from opentelemetry import trace as otel_trace
 
-    _tracer = otel_trace.get_tracer("sidar.supervisor")
+    _tracer: Any | None = otel_trace.get_tracer("sidar.supervisor")
 except Exception:  # pragma: no cover
     _tracer = None
 
 try:
-    from core.agent_metrics import get_agent_metrics_collector as _get_agent_metrics
+    from core.agent_metrics import get_agent_metrics_collector as _loaded_get_agent_metrics
+
+    _get_agent_metrics: Callable[[], Any] | None = _loaded_get_agent_metrics
 except Exception:  # pragma: no cover
     _get_agent_metrics = None
 
@@ -100,7 +103,7 @@ class SupervisorAgent(BaseAgent):
     def __init__(self, cfg: Config | None = None) -> None:
         self.cfg = cfg or Config()
         self.role_name = "supervisor"
-        self.llm = None
+        self.llm = cast(Any, None)
         self.tools: dict[str, Any] = {}
         base_init_failed = False
         try:

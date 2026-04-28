@@ -1300,7 +1300,7 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         try:
-            from anthropic import AsyncAnthropic
+            from anthropic import AsyncAnthropic  # type: ignore[import-not-found]
         except ImportError as exc:
             msg = json.dumps(
                 {

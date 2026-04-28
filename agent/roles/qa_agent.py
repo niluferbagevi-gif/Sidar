@@ -68,7 +68,7 @@ class QAAgent(BaseAgent):
             int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
         )
         _ok, out = await asyncio.to_thread(
-            self.code.grep_files, pattern, path, file_glob, context_lines
+            self.code.grep_files, pattern, path, file_glob, True, context_lines
         )
         return out
 
