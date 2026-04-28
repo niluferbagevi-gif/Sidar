@@ -918,7 +918,7 @@ class DocumentStore:
             with engine.begin() as conn:
                 conn.execute(
                     text(
-                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608 - tablo adı sistem içi sabittir.
+                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
                     ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
@@ -936,7 +936,7 @@ class DocumentStore:
                     for idx, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False))
                 ]
                 conn.execute(
-                    text(f"""  # nosec B608 - tablo adı sistem içi sabittir.
+                    text(f"""  # nosec B608
                         INSERT INTO {self._pg_table}
                         (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
                         VALUES
@@ -1868,7 +1868,7 @@ class DocumentStore:
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 rows = conn.execute(
-                    text(f"""  # nosec B608 - tablo adı sistem içi sabittir.
+                    text(f"""  # nosec B608
                         SELECT doc_id, parent_id, title, source, chunk_content,
                                (embedding <=> CAST(:qvec AS vector)) AS distance
                         FROM {self._pg_table}

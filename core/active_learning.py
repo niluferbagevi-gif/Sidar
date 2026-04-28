@@ -650,6 +650,7 @@ class LoRATrainer:
     def __init__(self, config: Any | None = None) -> None:
         self.enabled: bool = bool(getattr(config, "ENABLE_LORA_TRAINING", False))
         self.base_model: str = str(getattr(config, "LORA_BASE_MODEL", "") or "")
+        self.model_revision: str = str(getattr(config, "LORA_MODEL_REVISION", "") or "").strip()
         self.lora_rank: int = int(getattr(config, "LORA_RANK", 8) or 8)
         self.lora_alpha: int = int(getattr(config, "LORA_ALPHA", 16) or 16)
         self.lora_dropout: float = float(getattr(config, "LORA_DROPOUT", 0.05) or 0.05)
@@ -687,6 +688,11 @@ class LoRATrainer:
             return {"success": False, "reason": "peft/transformers kurulu değil"}
         if not self.base_model:
             return {"success": False, "reason": "LORA_BASE_MODEL ayarlanmamış"}
+        if not self.model_revision:
+            return {
+                "success": False,
+                "reason": "LORA_MODEL_REVISION ayarlanmamış (güvenli sabit commit hash gerekli)",
+            }
 
         try:
             return self._run_training(dataset_path)
@@ -709,12 +715,19 @@ class LoRATrainer:
         logger.info("LoRATrainer: Eğitim başlatılıyor — model=%s", self.base_model)
 
         # Tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.base_model, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.base_model,
+            trust_remote_code=False,
+            revision=self.model_revision,
+        )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
         # Model yükleme (4-bit QLoRA veya normal)
-        model_kwargs: dict[str, Any] = {"trust_remote_code": True}
+        model_kwargs: dict[str, Any] = {
+            "trust_remote_code": False,
+            "revision": self.model_revision,
+        }
         if self.use_4bit:
             try:
                 import torch

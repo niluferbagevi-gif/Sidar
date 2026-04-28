@@ -23,9 +23,17 @@ TABLES_IN_ORDER = [
     "messages",
     "schema_versions",
 ]
+TABLES_ALLOWLIST = frozenset(TABLES_IN_ORDER)
+
+
+def _safe_table_name(table: str) -> str:
+    if table not in TABLES_ALLOWLIST:
+        raise ValueError(f"Geçersiz tablo adı: {table}")
+    return table
 
 
 def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+    table = _safe_table_name(table)
     conn = sqlite3.connect(str(sqlite_path))
     try:
         conn.row_factory = sqlite3.Row
@@ -47,19 +55,20 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
 
 
 async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -> int:
+    table = _safe_table_name(table)
     columns, rows = _load_rows(sqlite_path, table)
     if not columns:
         return 0
 
     placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
     col_list = ", ".join(columns)
-    query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+    query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608
 
     if dry_run:
         return len(rows)
 
     async with conn.transaction():
-        await conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+        await conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")  # nosec B608
         for row in rows:
             await conn.execute(query, *row)
     return len(rows)

@@ -1368,7 +1368,7 @@ class Database:
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 self._sqlite_conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608
                     (v, _utc_now_iso(), f"baseline migration v{v}"),
                 )
             self._sqlite_conn.commit()
@@ -1390,7 +1390,7 @@ class Database:
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 await conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608
                     v,
                     datetime.now(UTC),
                     f"baseline migration v{v}",
