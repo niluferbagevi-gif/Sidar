@@ -1870,7 +1870,7 @@ def _load_plugin_agent_class(
 
     namespace = {"__name__": module_label}
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)
+        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102 - plugin mekanizması için kontrollü/deliberate dinamik yükleme.
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
