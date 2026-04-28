@@ -83,7 +83,7 @@ class LLMClientSettings(BaseSettings):
     LITELLM_MODEL: str = ""
     LITELLM_TIMEOUT: int = 60
     OLLAMA_URL: str = "http://localhost:11434/api"
-    OLLAMA_TIMEOUT: int = 180
+    OLLAMA_TIMEOUT: int = 600
     OLLAMA_CONTEXT_MAX_CHARS: int = 12000
     OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
     CODING_MODEL: str = "qwen2.5-coder:7b"
