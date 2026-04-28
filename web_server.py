@@ -79,6 +79,7 @@ from core.llm_metrics import (
     reset_current_metrics_user_id,
     set_current_metrics_user_id,
 )
+from core.db import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
 from managers.system_health import render_llm_metrics_prometheus
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
@@ -1784,7 +1785,7 @@ def _serialize_swarm_result(record: Any) -> dict[str, Any]:
     }
 
 
-def _serialize_campaign(record) -> dict[str, Any]:
+def _serialize_campaign(record: MarketingCampaignRecord) -> dict[str, Any]:
     return {
         "id": int(getattr(record, "id", 0) or 0),
         "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
@@ -1800,7 +1801,7 @@ def _serialize_campaign(record) -> dict[str, Any]:
     }
 
 
-def _serialize_content_asset(record) -> dict[str, Any]:
+def _serialize_content_asset(record: ContentAssetRecord) -> dict[str, Any]:
     return {
         "id": int(getattr(record, "id", 0) or 0),
         "campaign_id": int(getattr(record, "campaign_id", 0) or 0),
@@ -1815,7 +1816,7 @@ def _serialize_content_asset(record) -> dict[str, Any]:
     }
 
 
-def _serialize_operation_checklist(record) -> dict[str, Any]:
+def _serialize_operation_checklist(record: OperationChecklistRecord) -> dict[str, Any]:
     campaign_id = getattr(record, "campaign_id", None)
     return {
         "id": int(getattr(record, "id", 0) or 0),
@@ -2238,7 +2239,7 @@ async def admin_activate_prompt(
 @app.get("/admin/policies/{user_id}")
 async def admin_list_policies(
     user_id: str, tenant_id: str = "", _user=Depends(_require_admin_user)
-):
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     records = await agent.memory.db.list_access_policies(
         user_id=user_id, tenant_id=tenant_id.strip() or None
@@ -2874,7 +2875,7 @@ async def websocket_chat(websocket: WebSocket) -> Any:
         await websocket.accept()
 
     agent = await _resolve_agent_instance()
-    active_task: asyncio.Task | None = None
+    active_task: asyncio.Task[Any] | None = None
     ws_user_id = ""
     ws_username = ""
     ws_user_role = "user"
@@ -3313,7 +3314,7 @@ async def websocket_voice(websocket: WebSocket) -> Any:
     session_language: str | None = None
     session_prompt = ""
     voice_sequence = 0
-    active_response_task: asyncio.Task | None = None
+    active_response_task: asyncio.Task[Any] | None = None
     websocket._sidar_voice_pipeline = voice_pipeline  # type: ignore[attr-defined, unused-ignore]
     duplex_state = (
         voice_pipeline.create_duplex_state()
@@ -4770,7 +4771,7 @@ async def api_operations_list_campaigns(
     status: str = "",
     limit: int = 50,
     _user=Depends(_get_request_user),
-):
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     campaigns = await agent.memory.db.list_marketing_campaigns(
         tenant_id=_get_user_tenant(_user),
@@ -4786,7 +4787,7 @@ async def api_operations_list_campaigns(
 async def api_operations_create_campaign(
     req: _CampaignCreateRequest,
     _user=Depends(_get_request_user),
-):
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     db = agent.memory.db
     campaign = await db.upsert_marketing_campaign(
@@ -4987,7 +4988,7 @@ async def autonomy_webhook(
     source: str,
     request: Request,
     x_sidar_signature: str = Header(default=""),
-):
+) -> JSONResponse:
     """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
     if not bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
         raise HTTPException(status_code=503, detail="Event webhook özelliği devre dışı.")

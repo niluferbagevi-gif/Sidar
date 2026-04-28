@@ -8,6 +8,8 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Sequence
+from typing import Any
 
 from config import Config
 
@@ -15,7 +17,7 @@ try:
     from config import get_config as _config_get_config
 except ImportError:  # pragma: no cover - test doubles may only expose Config
     _config_get_config = None
-from core.db import Database
+from core.db import Database, MessageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +126,7 @@ class ConversationMemory:
             if not self._initialized:
                 await self.initialize()
 
-    async def get_all_sessions(self) -> list[dict]:
+    async def get_all_sessions(self) -> list[dict[str, Any]]:
         await self._ensure_initialized()
         user_id = self._require_active_user()
         rows = await self.db.list_sessions(user_id)
@@ -197,21 +199,22 @@ class ConversationMemory:
             self.active_title = new_title
         await self.db.update_session_title(self.active_session_id, new_title)
 
-    async def add(self, role: str, content: str) -> None:
+    async def add(self, role: str, content: str | None) -> None:
         await self._ensure_initialized()
         self._require_active_user()
         if not self.active_session_id:
             await self.create_session("Yeni Sohbet")
 
+        resolved_content = content if content is not None else ""
         now = time.time()
         with self._lock:
-            self._turns.append({"role": role, "content": content, "timestamp": now})
+            self._turns.append({"role": role, "content": resolved_content, "timestamp": now})
             if len(self._turns) > self.max_turns * 2:
                 self._turns = self._turns[-(self.max_turns * 2) :]
-        await self.db.add_message(self.active_session_id, role, content, tokens_used=0)
+        await self.db.add_message(self.active_session_id, role, resolved_content, tokens_used=0)
         self._dirty = False
 
-    async def get_history(self, n_last: int | None = None) -> list[dict]:
+    async def get_history(self, n_last: int | None = None) -> list[dict[str, Any]]:
         await self._ensure_initialized()
         with self._lock:
             turns = list(self._turns)
@@ -311,7 +314,7 @@ class ConversationMemory:
             return 0.0
 
     @staticmethod
-    def _build_compaction_summary(title: str, messages: list[object]) -> str:
+    def _build_compaction_summary(title: str, messages: Sequence[MessageRecord]) -> str:
         user_points: list[str] = []
         assistant_points: list[str] = []
         code_refs = 0

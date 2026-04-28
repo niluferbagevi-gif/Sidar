@@ -222,7 +222,9 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Depo bilgisi alınamadı: {exc}"
 
-    def list_commits(self, limit: int = 30, branch: str | None = None) -> tuple[bool, str]:
+    def list_commits(
+        self, limit: int = 30, branch: str | None = None, n: int | None = None
+    ) -> tuple[bool, str]:
         """Son commit'leri limitli şekilde listele."""
         if not self._repo:
             return False, "Aktif depo yok."
@@ -230,7 +232,7 @@ class GitHubManager:
             kwargs = {}
             if branch:
                 kwargs["sha"] = branch
-            requested_limit = int(limit)
+            requested_limit = int(n if n is not None else limit)
             actual_limit = max(1, min(requested_limit, 100))
             commits = list(self._call_with_retry(self._repo.get_commits, **kwargs)[:actual_limit])
 

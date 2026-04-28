@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
@@ -71,7 +72,9 @@ class CoverageAgent(BaseAgent):
             return self._db
 
     @staticmethod
-    async def _call_maybe_async(func, *args, **kwargs):
+    async def _call_maybe_async(
+        func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
         """Hem senkron hem async tool yardımcılarını güvenli şekilde çalıştır."""
         result = func(*args, **kwargs)
         if inspect.isawaitable(result):

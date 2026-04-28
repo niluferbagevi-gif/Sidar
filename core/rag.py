@@ -685,6 +685,18 @@ class DocumentStore:
         self._bm25_available = True
         self._init_fts()
 
+    def _require_pg_engine(self) -> Any:
+        engine = getattr(self, "pg_engine", None)
+        if engine is None:
+            raise RuntimeError("pgvector engine başlatılmamış.")
+        return engine
+
+    def _require_chroma_collection(self) -> Any:
+        collection = getattr(self, "collection", None)
+        if collection is None:
+            raise RuntimeError("Chroma collection başlatılmamış.")
+        return collection
+
     def _apply_hf_runtime_env(self) -> None:
         """HF model yükleme davranışını Config üzerinden ortama uygula."""
         hf_token = getattr(self.cfg, "HF_TOKEN", "")
@@ -818,7 +830,8 @@ class DocumentStore:
 
             self._apply_hf_runtime_env()
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
-            with self.pg_engine.begin() as conn:
+            engine = self._require_pg_engine()
+            with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 conn.execute(
                     text(f"""
@@ -896,7 +909,8 @@ class DocumentStore:
             if not vectors:
                 return
 
-            with self.pg_engine.begin() as conn:
+            engine = self._require_pg_engine()
+            with engine.begin() as conn:
                 conn.execute(
                     text(
                         f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
@@ -942,7 +956,8 @@ class DocumentStore:
         try:
             from sqlalchemy import text
 
-            with self.pg_engine.begin() as conn:
+            engine = self._require_pg_engine()
+            with engine.begin() as conn:
                 conn.execute(
                     text(
                         f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
@@ -1835,7 +1850,8 @@ class DocumentStore:
             from sqlalchemy import text
 
             qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
-            with self.pg_engine.begin() as conn:
+            engine = self._require_pg_engine()
+            with engine.begin() as conn:
                 rows = conn.execute(
                     text(f"""
                         SELECT doc_id, parent_id, title, source, chunk_content,
@@ -1884,8 +1900,9 @@ class DocumentStore:
         )
 
     def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list:
+        collection = self._require_chroma_collection()
         try:
-            collection_size = self.collection.count()
+            collection_size = collection.count()
         except Exception:
             collection_size = top_k * 2
 
@@ -1901,7 +1918,7 @@ class DocumentStore:
         n_results = min(top_k * multiplier, max(collection_size, 1))
 
         # Filtreleme ChromaDB düzeyinde Where parametresiyle yapılıyor
-        results = self.collection.query(
+        results = collection.query(
             query_texts=[query], n_results=n_results, where={"session_id": session_id}
         )
 

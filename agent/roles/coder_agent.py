@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
+from collections.abc import Callable
+from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus
@@ -103,7 +106,7 @@ class CoderAgent(BaseAgent):
             int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 2
         )
         _ok, out = await asyncio.to_thread(
-            self.code.grep_files, pattern, path, file_glob, context_lines
+            self.code.grep_files, pattern, path, file_glob, True, context_lines
         )
         return out
 
@@ -203,3 +206,11 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("write_file", f"{path}|{content}")
 
         return f"[LEGACY_FALLBACK] coder_unhandled task={prompt}"
+    @staticmethod
+    async def _call_maybe_async(
+        func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
+        result = func(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result

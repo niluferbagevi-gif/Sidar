@@ -362,7 +362,9 @@ async def _track_stream_routing_cost(
             record_routing_cost(est_tokens * cost_per_token)
 
 
-async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_at: float):
+async def _trace_stream_metrics(
+    stream_iter: AsyncIterator[str], span: Any, started_at: float
+) -> AsyncGenerator[str, None]:
     first_token_at = None
     try:
         async for chunk in stream_iter:
@@ -550,7 +552,7 @@ class OllamaClient(BaseLLMClient):
                     stream_iter = self._stream_response(url, payload, req_timeout=timeout)
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
-                async def _do_request():
+                async def _do_request() -> dict[str, Any]:
                     async with httpx.AsyncClient(timeout=timeout) as client:
                         resp = await client.post(url, json=payload)
 
@@ -618,7 +620,7 @@ class OllamaClient(BaseLLMClient):
         resp = None
         try:
 
-            async def _open_stream():
+            async def _open_stream() -> tuple[httpx.AsyncClient, Any, httpx.Response]:
                 stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", url, json=payload)
                 response = await cm.__aenter__()
@@ -692,8 +694,8 @@ class GeminiClient(BaseLLMClient):
         genai_client = None
         genai_types = None
         try:
-            from google import genai as google_genai  # type: ignore[import-not-found]
-            from google.genai import types as google_genai_types  # type: ignore[import-not-found]
+            from google import genai as google_genai  # type: ignore[import-not-found,import-untyped]
+            from google.genai import types as google_genai_types  # type: ignore[import-not-found,import-untyped]
 
             genai_client = google_genai.Client(
                 api_key=str(_setting(self.config, "GEMINI_API_KEY", ""))
@@ -917,7 +919,7 @@ class OpenAIClient(BaseLLMClient):
                         started_at,
                     )
 
-                async def _do_request():
+                async def _do_request() -> dict[str, Any]:
                     async with httpx.AsyncClient(timeout=timeout) as client:
                         resp = await client.post(
                             "https://api.openai.com/v1/chat/completions",
@@ -996,7 +998,7 @@ class OpenAIClient(BaseLLMClient):
         resp = None
         try:
 
-            async def _open_stream():
+            async def _open_stream() -> tuple[httpx.AsyncClient, Any, httpx.Response]:
                 stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream(
                     "POST",
@@ -1133,7 +1135,7 @@ class LiteLLMClient(BaseLLMClient):
                             *,
                             endpoint: str = endpoint,
                             payload: dict[str, Any] = payload,
-                        ):
+                        ) -> dict[str, Any]:
                             async with httpx.AsyncClient(timeout=timeout) as client:
                                 resp = await client.post(endpoint, json=payload, headers=headers)
                                 resp.raise_for_status()
@@ -1196,7 +1198,7 @@ class LiteLLMClient(BaseLLMClient):
         stream_cm = None
         try:
 
-            async def _open_stream():
+            async def _open_stream() -> tuple[httpx.AsyncClient, Any, httpx.Response]:
                 stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
                 response = await cm.__aenter__()
@@ -1325,7 +1327,7 @@ class AnthropicClient(BaseLLMClient):
                     )
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
-                async def _do_request():
+                async def _do_request() -> Any:
                     return await client.messages.create(
                         model=model_name,
                         max_tokens=4096,
@@ -1394,7 +1396,7 @@ class AnthropicClient(BaseLLMClient):
         stream = None
         try:
 
-            async def _open_stream():
+            async def _open_stream() -> tuple[Any, Any]:
                 cm = client.messages.stream(
                     model=model_name,
                     max_tokens=4096,
