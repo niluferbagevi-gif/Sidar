@@ -605,6 +605,8 @@ class DocumentStore:
     - USE_GPU=true ise GPU hızlandırmalı embedding fonksiyonu kullanılır.
     - GPU_MIXED_PRECISION=true ise FP16 ile VRAM tasarrufu sağlanır.
     """
+    _hf_env_lock = threading.Lock()
+    _hf_env_applied = False
 
     def __init__(
         self,
@@ -705,14 +707,37 @@ class DocumentStore:
 
     def _apply_hf_runtime_env(self) -> None:
         """HF model yükleme davranışını Config üzerinden ortama uygula."""
-        hf_token = getattr(self.cfg, "HF_TOKEN", "")
-        if hf_token:
-            os.environ["HF_TOKEN"] = hf_token
-            os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+        with self._hf_env_lock:
+            if self._hf_env_applied:
+                return
 
-        if getattr(self.cfg, "HF_HUB_OFFLINE", False):
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            hf_token = getattr(self.cfg, "HF_TOKEN", "")
+            if hf_token:
+                os.environ["HF_TOKEN"] = hf_token
+                os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+
+            if getattr(self.cfg, "HF_HUB_OFFLINE", False):
+                os.environ["HF_HUB_OFFLINE"] = "1"
+                os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+            type(self)._hf_env_applied = True
+
+    def close(self) -> None:
+        """Ağır kaynakları serbest bırak."""
+        self._pg_embedding_model = None
+        if getattr(self, "pg_engine", None) is not None:
+            try:
+                self.pg_engine.dispose()
+            except Exception:
+                logger.debug("pg_engine dispose edilemedi.", exc_info=True)
+            finally:
+                self.pg_engine = None
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            self.close()
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ & AYARLAR
