@@ -385,6 +385,54 @@ wait_for_test_services_ready() {
   return 1
 }
 
+prepare_test_database() {
+  local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
+  local test_db_user="${POSTGRES_USER:-sidar}"
+  local test_db_password="${POSTGRES_PASSWORD:-sidar_test}"
+  local test_db_host="${POSTGRES_HOST:-localhost}"
+  local test_db_port="${POSTGRES_PORT:-5432}"
+
+  if [ "${AUTO_PREPARE_TEST_DB:-1}" != "1" ]; then
+    echo "ℹ️ AUTO_PREPARE_TEST_DB=0 verildi; test veritabanı hazırlığı atlanıyor."
+    return 0
+  fi
+
+  if [ "${#DOCKER_COMPOSE_CMD[@]}" -eq 0 ] && ! resolve_docker_compose_cmd; then
+    echo "⚠️ Docker Compose bulunamadı; test veritabanı hazırlığı atlanıyor."
+    return 0
+  fi
+
+  echo "🗄️ İzole test veritabanı hazırlanıyor: ${test_db_name}"
+  if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+    -U "${test_db_user}" -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c "SELECT 1 FROM pg_database WHERE datname='${test_db_name}'" \
+    | tail -n +3 | head -n 1 | grep -q 1; then
+    if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+      -U "${test_db_user}" -d postgres \
+      -v ON_ERROR_STOP=1 \
+      -c "CREATE DATABASE ${test_db_name};"; then
+      echo "❌ Test veritabanı oluşturulamadı: ${test_db_name}"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+  fi
+
+  export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
+  export TEST_DATABASE_URL="${DATABASE_URL}"
+  echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"
+
+  echo "📦 Alembic migrasyonları uygulanıyor (upgrade head)..."
+  if ! uv run alembic upgrade head; then
+    echo "❌ Alembic migrasyonu başarısız oldu."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  echo "✅ Test veritabanı ve migrasyon hazırlığı tamamlandı."
+  return 0
+}
+
 cleanup_test_services() {
   if [ "${DOCKER_TEST_SERVICES_STARTED}" -ne 1 ]; then
     return 0
@@ -504,7 +552,7 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && run_static_analysis_gates && ensure_test_services; then
+if ensure_uv_available && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
   sync_ollama_models
   run_pytest_coverage_report
 else
