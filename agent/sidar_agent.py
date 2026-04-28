@@ -549,7 +549,7 @@ class SidarAgent:
                     ),
                     timeout=plan_timeout_seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "Self-heal plan generation timeout: scope=%s timeout=%ss",
                     ",".join(paths[:6]),
