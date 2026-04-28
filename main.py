@@ -34,7 +34,7 @@ RESET = "\033[0m"
 class DummyConfig:
     AI_PROVIDER = "ollama"
     ACCESS_LEVEL = "full"
-    WEB_HOST = "0.0.0.0"
+    WEB_HOST = "0.0.0.0"  # nosec B104 - geliştirme/Docker erişimi için bilinçli varsayılan.
     WEB_PORT = 7860
     CODING_MODEL = "qwen2.5-coder:7b"
     GEMINI_API_KEY = ""
@@ -393,7 +393,10 @@ def run_wizard() -> int:
     elif mode == "web":
         extra_args["host"] = ask_text(
             "\nWeb Sunucu Host IP'si",
-            _safe_text(getattr(cfg, "WEB_HOST", "0.0.0.0"), "0.0.0.0"),
+            _safe_text(
+                getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104 - networkte servis için bilinçli fallback.
+                "0.0.0.0",  # nosec B104 - networkte servis için bilinçli fallback.
+            ),
         )
         extra_args["port"] = ask_text(
             "Web Sunucu Portu",
@@ -512,7 +515,11 @@ def main() -> None:
     extra_args = {
         "model": args.model
         or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
-        "host": args.host or _safe_text(getattr(cfg, "WEB_HOST", "0.0.0.0"), "0.0.0.0"),
+        "host": args.host
+        or _safe_text(
+            getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104 - networkte servis için bilinçli fallback.
+            "0.0.0.0",  # nosec B104 - networkte servis için bilinçli fallback.
+        ),
         "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }
 

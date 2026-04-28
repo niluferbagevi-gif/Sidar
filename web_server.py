@@ -5416,7 +5416,7 @@ def main() -> None:
         )
         _agent = None
 
-    display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
+    display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host  # nosec B104
     agent_version = getattr(_agent, "VERSION", "") if _agent is not None else ""
     version_label = f"v{agent_version}" if agent_version else f"v{getattr(cfg, 'VERSION', '?')}"
 

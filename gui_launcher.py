@@ -8,7 +8,10 @@ from typing import Any
 from main import build_command, execute_command, preflight
 
 DEFAULT_LOG_LEVEL = "info"
-DEFAULT_WEB_ARGS = {"host": "0.0.0.0", "port": "7860"}
+DEFAULT_WEB_ARGS = {
+    "host": "0.0.0.0",  # nosec B104 - GUI launcher'ın ağdan erişilebilir web modu için varsayılan.
+    "port": "7860",
+}
 
 
 def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -> dict[str, str]:
