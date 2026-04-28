@@ -290,7 +290,11 @@ class CodeManager:
             try:
                 candidate = docker_module.DockerClient(base_url=socket_path)
                 candidate.ping()
-            except Exception:
+            except (
+                getattr(getattr(docker_module, "errors", OSError), "DockerException", OSError),
+                OSError,
+                ValueError,
+            ):
                 continue
             self.docker_client = candidate
             self.docker_available = True
@@ -1169,7 +1173,7 @@ class CodeManager:
             for fp in sorted(files_to_search):
                 try:
                     lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     continue
 
                 file_matches: list[str] = []
