@@ -241,7 +241,7 @@ class FeedbackStore:
                 await conn.execute(
                     sql_text(
                         "UPDATE finetune_feedback"
-                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"  # nosec B608 - placeholder listesi sadece kodda üretilir.
+                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"  # nosec B608
                     ),
                     params,
                 )
@@ -745,7 +745,7 @@ class LoRATrainer:
 
         model = AutoModelForCausalLM.from_pretrained(
             self.base_model, **model_kwargs
-        )  # nosec B615 - revision pin'i model_kwargs içinde zorunlu geçiliyor.
+        )  # nosec B615
 
         # LoRA adaptörü
         lora_config = LoraConfig(
@@ -762,7 +762,7 @@ class LoRATrainer:
         # Dataset
         dataset = load_dataset(
             "json", data_files=dataset_path, split="train"
-        )  # nosec B615 - yerel JSON dataset dosyası yükleniyor.
+        )  # nosec B615
 
         def _tokenize(example: dict[str, Any]) -> dict[str, Any]:
             prompt = str(example.get("instruction", example.get("prompt", "")) or "")

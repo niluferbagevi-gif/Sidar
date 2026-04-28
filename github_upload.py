@@ -11,7 +11,7 @@ Kullanım:
 
 import os
 import re
-import subprocess  # nosec B404 - süreç çağrıları kontrollü argüman listeleriyle yapılır.
+import subprocess  # nosec B404
 import sys
 from collections.abc import Sequence
 from datetime import datetime

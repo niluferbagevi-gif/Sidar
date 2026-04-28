@@ -16,7 +16,7 @@ import logging
 import platform
 import shutil
 import socket
-import subprocess  # nosec B404 - sistem sağlık kontrolleri için sabit/denetimli komutlar kullanılır.
+import subprocess  # nosec B404
 import threading
 from pathlib import Path
 from typing import Any, cast

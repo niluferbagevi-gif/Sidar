@@ -172,7 +172,7 @@ class GraphIndex:
             if hostname and hostname not in {
                 "localhost",
                 "127.0.0.1",
-                "0.0.0.0",  # nosec B104 - yalnızca local bind adresi whitelist'inin parçası.
+                "0.0.0.0",  # nosec B104
             }:
                 return None
             value = parsed.path or "/"
@@ -839,7 +839,7 @@ class DocumentStore:
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                conn.execute(  # nosec B608 - tablo adı kullanıcı girdisi değil, sabit whitelist kaynağından.
+                conn.execute(  # nosec B608
                     text(f"""  # nosec B608
                     CREATE TABLE IF NOT EXISTS {self._pg_table} (
                         doc_id TEXT NOT NULL,
@@ -969,7 +969,7 @@ class DocumentStore:
             with engine.begin() as conn:
                 conn.execute(
                     text(
-                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608 - tablo adı sistem içi sabittir.
+                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
                     ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
@@ -1872,7 +1872,7 @@ class DocumentStore:
             qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
             engine = self._require_pg_engine()
             with engine.begin() as conn:
-                rows = conn.execute(  # nosec B608 - tablo adı sistem içinde belirlenen güvenli kaynaktan gelir.
+                rows = conn.execute(  # nosec B608
                     text(f"""
                         SELECT doc_id, parent_id, title, source, chunk_content,
                                (embedding <=> CAST(:qvec AS vector)) AS distance

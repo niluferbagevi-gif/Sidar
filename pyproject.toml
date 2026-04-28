@@ -229,6 +229,7 @@ dev = [
 
 [tool.bandit]
 exclude_dirs = [
+  ".git",
   ".venv",
   "tests",
   "web_ui_react",
