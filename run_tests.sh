@@ -269,6 +269,7 @@ run_static_analysis_gates() {
   fi
   mkdir -p "$(dirname "${AUTO_HEAL_LOG_PATH}")"
   local attempt=0
+  local auto_heal_prompt_done=0
   while [ "${attempt}" -le "${AUTO_HEAL_MAX_ATTEMPTS}" ]; do
     if uv run mypy . 2>&1 | tee "${AUTO_HEAL_LOG_PATH}"; then
       return 0
@@ -276,6 +277,21 @@ run_static_analysis_gates() {
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
       BACKEND_EXIT_CODE=1
       return 1
+    fi
+    if [ "${IS_CI_ENV}" -ne 1 ] && [ "${auto_heal_prompt_done}" -eq 0 ]; then
+      local confirm_auto_heal
+      read -r -p "⚠️ Mypy hataları bulundu. Otonom iyileştirme döngüsü başlatılsın mı? (e/H): " confirm_auto_heal
+      case "${confirm_auto_heal}" in
+        [eE]|[eE][vV][eE][tT]|[yY]|[yY][eE][sS])
+          echo "ℹ️ Kullanıcı onayı alındı, otonom iyileştirme döngüsü başlatılıyor."
+          ;;
+        *)
+          echo "ℹ️ Kullanıcı otonom iyileştirme döngüsünü reddetti. Statik analiz adımı başarısız sayılıyor."
+          BACKEND_EXIT_CODE=1
+          return 1
+          ;;
+      esac
+      auto_heal_prompt_done=1
     fi
     echo "⚠️ Mypy hataları tespit edildi. Otonom iyileştirme döngüsü başlatılıyor... (deneme $((attempt + 1))/${AUTO_HEAL_MAX_ATTEMPTS})"
     if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy; then
