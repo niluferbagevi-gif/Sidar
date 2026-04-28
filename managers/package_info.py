@@ -23,14 +23,14 @@ class PackageInfoManager:
     """
 
     # Varsayılan değerler (Config verilmezse kullanılır)
-    TIMEOUT = 12  # saniye
+    TIMEOUT = 12.0  # saniye
     CACHE_TTL_SECONDS = 1800  # 30 dakika
 
-    def __init__(self, config=None) -> None:
+    def __init__(self, config: Any = None) -> None:
         self.cfg = config
 
         # Instance defaultlarını init başında kesinleştir.
-        self.TIMEOUT = 12
+        self.TIMEOUT = 12.0
         self.CACHE_TTL_SECONDS = 1800
 
         if config is not None:
@@ -78,7 +78,7 @@ class PackageInfoManager:
     def _cache_set(self, key: str, value: dict[str, Any]) -> None:
         self._cache[key] = (value, datetime.now())
 
-    async def _get_json(self, url: str, cache_key: str = "") -> tuple[bool, dict[str, Any], str]:
+    async def _get_json(self, url: str, cache_key: str = "") -> tuple[bool, Any, str]:
         if cache_key:
             hit, data = self._cache_get(cache_key)
             if hit:
@@ -274,7 +274,7 @@ class PackageInfoManager:
                 return False, f"[HATA] GitHub API zaman aşımı: {repo}"
             return False, f"[HATA] GitHub Releases: {err}"
 
-        releases = data[:limit] if isinstance(data, list) else []
+        releases: list[dict[str, Any]] = data[:limit] if isinstance(data, list) else []
 
         if not releases:
             return True, f"[GitHub Releases: {repo}]\n  Henüz release yok."

@@ -19,22 +19,23 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from redis import Redis as SyncRedisClient
+    from redis import Redis as _SyncRedisClient
 else:  # pragma: no cover - yalnızca type-checking için
-    SyncRedisClient = Any
+    _SyncRedisClient = Any
 
+_SyncRedisClass: Any
 try:
     from redis import Redis as _SyncRedisClass
 except Exception:  # pragma: no cover - opsiyonel bağımlılık
     _SyncRedisClass = None
 
-SyncRedis: type[SyncRedisClient] | None = _SyncRedisClass
+SyncRedis: type[_SyncRedisClient] | None = cast(type[_SyncRedisClient] | None, _SyncRedisClass)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -319,7 +320,7 @@ class _RedisDailyBudgetTracker:
             with self._redis.pipeline(transaction=True) as pipe:
                 pipe.incrbyfloat(key, value)
                 pipe.expireat(key, expire_at)
-                pipe.execute()
+                _ = pipe.execute()  # type: ignore[no-untyped-call]
             return
         except Exception as exc:
             logger.debug("Redis budget tracker yazımı başarısız, in-memory fallback: %s", exc)
@@ -331,7 +332,7 @@ class _RedisDailyBudgetTracker:
             raw = self._redis.get(key)
             if raw is None:
                 return 0.0
-            value = float(raw)
+            value = float(cast(Any, raw))
             self._redis.expireat(key, expire_at)
             return max(0.0, value)
         except Exception as exc:

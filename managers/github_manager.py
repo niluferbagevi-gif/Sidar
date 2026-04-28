@@ -7,11 +7,15 @@ Sürüm: 2.7.0
 import logging
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from github import Github
+    from github.Repository import Repository
 
 # Güvenli dal adı kalıbı: yalnızca harf, rakam, /, _, -, . izinli
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9/_.\-]+$")
@@ -26,7 +30,7 @@ def _is_not_found_error(exc: Exception) -> bool:
     return "404" in message or "not found" in message
 
 
-def _is_retryable_github_error(exc: Exception) -> bool:
+def _is_retryable_github_error(exc: BaseException) -> bool:
     """Rate-limit ve geçici ağ/API hataları için retry kararı."""
     status = getattr(exc, "status", None)
     message = str(exc).lower()
@@ -93,7 +97,7 @@ class GitHubManager:
     }
 
     @staticmethod
-    @retry(  # type: ignore[untyped-decorator]
+    @retry(
         reraise=True,
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=1, max=16),
@@ -109,8 +113,8 @@ class GitHubManager:
         self.token = self.token.encode("ascii", "ignore").decode("ascii")
         self.repo_name = repo_name
         self.require_token = require_token
-        self._gh = None
-        self._repo = None
+        self._gh: Github | None = None
+        self._repo: Repository | None = None
         self._available = False
         self._init_client()
 
@@ -233,7 +237,7 @@ class GitHubManager:
         if not self._repo:
             return False, "Aktif depo yok."
         try:
-            kwargs = {}
+            kwargs: dict[str, Any] = {}
             if branch:
                 kwargs["sha"] = branch
             requested_limit = int(n if n is not None else limit)
@@ -263,7 +267,7 @@ class GitHubManager:
         if not self._repo:
             return False, "Aktif depo yok."
         try:
-            kwargs = {}
+            kwargs: dict[str, Any] = {}
             if ref:
                 kwargs["ref"] = ref
 
@@ -358,34 +362,51 @@ class GitHubManager:
         if not self._repo:
             return False, "Aktif depo yok."
         try:
-            kwargs = {}
-            if branch:
-                kwargs["branch"] = branch
-
             try:
-                existing = self._repo.get_contents(file_path, **kwargs)
+                existing = (
+                    self._repo.get_contents(file_path, ref=branch)
+                    if branch
+                    else self._repo.get_contents(file_path)
+                )
             except Exception as exc:
                 if _is_not_found_error(exc):
                     existing = None
                 else:
                     return False, f"GitHub dosya okuma hatası: {exc}"
+            if isinstance(existing, list):
+                existing = existing[0] if existing else None
 
             if existing is not None:
-                self._repo.update_file(
+                if branch:
+                    self._repo.update_file(
+                        path=file_path,
+                        message=message,
+                        content=content,
+                        sha=existing.sha,
+                        branch=branch,
+                    )
+                else:
+                    self._repo.update_file(
+                        path=file_path,
+                        message=message,
+                        content=content,
+                        sha=existing.sha,
+                    )
+                return True, f"✓ Dosya güncellendi: {file_path}"
+
+            if branch:
+                self._repo.create_file(
                     path=file_path,
                     message=message,
                     content=content,
-                    sha=existing.sha,
-                    **kwargs,
+                    branch=branch,
                 )
-                return True, f"✓ Dosya güncellendi: {file_path}"
-
-            self._repo.create_file(
-                path=file_path,
-                message=message,
-                content=content,
-                **kwargs,
-            )
+            else:
+                self._repo.create_file(
+                    path=file_path,
+                    message=message,
+                    content=content,
+                )
             return True, f"✓ Dosya oluşturuldu: {file_path}"
         except Exception as exc:
             return False, f"GitHub dosya yazma hatası: {exc}"
@@ -489,7 +510,7 @@ class GitHubManager:
                 f"  Yazar    : {pr.user.login}\n"
                 f"  Branch   : {pr.head.ref} → {pr.base.ref}\n"
                 f"  Oluşturma: {pr.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-                f"  Güncelleme:{pr.updated_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"  Güncelleme:{(pr.updated_at or pr.created_at).strftime('%Y-%m-%d %H:%M')}\n"
                 f"  Değişiklik: +{pr.additions} / -{pr.deletions} ({pr.changed_files} dosya)\n"
                 f"  Yorumlar : {pr.comments}\n"
                 f"  URL      : {pr.html_url}\n\n"
@@ -547,7 +568,7 @@ class GitHubManager:
             return True, result
         except Exception as exc:
             logger.error("Issue listeleme hatası: %s", exc)
-            return False, [f"Hata: {exc}"]
+            return False, []
 
     def create_issue(self, title: str, body: str) -> tuple[bool, str]:
         """Yeni bir Issue oluşturur."""

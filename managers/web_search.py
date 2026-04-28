@@ -9,7 +9,8 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 import asyncio
 import logging
 from html import unescape
-from typing import TYPE_CHECKING, Any
+from inspect import isawaitable
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from bs4 import BeautifulSoup
@@ -244,7 +245,8 @@ class WebSearchManager:
                 async def _async_search() -> list[dict[str, Any]]:
                     async with AsyncDDGS() as ddgs:
                         # Bazı versiyonlarda liste, bazılarında async generator döner
-                        res = await ddgs.text(query, max_results=n)
+                        maybe_res = ddgs.text(query, max_results=n)
+                        res = await maybe_res if isawaitable(maybe_res) else maybe_res
                         # Eğer dönen nesne async generator ise
                         if hasattr(res, "__aiter__"):
                             return [r async for r in res]
@@ -348,7 +350,7 @@ class WebSearchManager:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
-        clean = soup.get_text(separator=" ", strip=True)
+        clean = cast(str, soup.get_text(separator=" ", strip=True))
         clean = unescape(clean)
         clean = " ".join(clean.split())
         return clean.strip()
