@@ -779,7 +779,47 @@ async def test_build_self_heal_plan_falls_back_to_batch_scope(
 
     assert seen_scopes == [["a.py", "b.py", "c.py"], ["a.py", "b.py"]]
     assert plan["operations"][0]["path"] == "a.py"
-    assert "batch fallback" in plan["summary"]
+    assert "batch plan" in plan["summary"]
+
+
+async def test_build_self_heal_plan_skips_full_scope_when_scope_large(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.code = fake_coverage_code_manager
+    fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+    agent.llm = AsyncMock()
+    agent.llm.chat = AsyncMock(return_value={"raw": "first"})
+
+    seen_scopes: list[list[str]] = []
+
+    def _normalize(raw_plan: dict[str, str], **kwargs: Any) -> dict[str, Any]:
+        del raw_plan
+        scope = list(kwargs.get("scope_paths") or [])
+        seen_scopes.append(scope)
+        return {
+            "summary": "ok",
+            "operations": [{"path": scope[0]}],
+            "validation_commands": ["pytest -q"],
+        }
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", _normalize)
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={
+            "scope_paths": ["a.py", "b.py", "c.py", "d.py", "e.py", "f.py"],
+            "validation_commands": ["pytest"],
+        },
+    )
+
+    assert seen_scopes == [["a.py", "b.py"]]
+    assert plan["operations"][0]["path"] == "a.py"
 
 
 async def test_resolve_self_heal_scope_batches_prefers_autonomous_batches(
@@ -812,7 +852,7 @@ async def test_build_self_heal_plan_uses_autonomous_batch_order(
     fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
     _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
     agent.llm = AsyncMock()
-    agent.llm.chat = AsyncMock(side_effect=[{"raw": "first"}, {"raw": "second"}])
+    agent.llm.chat = AsyncMock(return_value={"raw": "first"})
 
     seen_scopes: list[list[str]] = []
 
@@ -840,7 +880,7 @@ async def test_build_self_heal_plan_uses_autonomous_batch_order(
             "validation_commands": ["pytest"],
         },
     )
-    assert seen_scopes == [["a.py", "b.py", "c.py"], ["c.py"]]
+    assert seen_scopes == [["c.py"]]
     assert plan["operations"][0]["path"] == "c.py"
 
 

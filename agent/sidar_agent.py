@@ -524,19 +524,54 @@ class SidarAgent:
 
         max_operations = max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3))
         fallback_validation_commands = list(remediation_loop.get("validation_commands") or [])
+        plan_timeout_seconds = max(
+            30,
+            int(getattr(self.cfg, "SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180) or 180),
+        )
+        skip_full_scope_min_files = max(
+            1,
+            int(getattr(self.cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6),
+        )
 
         async def _generate_plan_for_scope(paths: list[str]) -> dict[str, Any]:
             snapshots = await self._collect_self_heal_snapshots(paths)
             scope_loop = dict(remediation_loop)
             scope_loop["scope_paths"] = paths
             prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
-            raw_plan = await self.llm.chat(
-                messages=[{"role": "user", "content": prompt}],
-                model=getattr(self.cfg, "CODING_MODEL", None),
-                temperature=0.1,
-                stream=False,
-                json_mode=True,
-            )
+            try:
+                raw_plan = await asyncio.wait_for(
+                    self.llm.chat(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=getattr(self.cfg, "CODING_MODEL", None),
+                        temperature=0.1,
+                        stream=False,
+                        json_mode=True,
+                    ),
+                    timeout=plan_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Self-heal plan generation timeout: scope=%s timeout=%ss",
+                    ",".join(paths[:6]),
+                    plan_timeout_seconds,
+                )
+                return {
+                    "summary": (
+                        "Self-heal planı zaman aşımına uğradı; "
+                        "daha küçük batch ile yeniden denenecek."
+                    ),
+                    "confidence": "unknown",
+                    "operations": [],
+                    "validation_commands": fallback_validation_commands,
+                }
+            except Exception as exc:
+                logger.warning("Self-heal plan generation failed for scope %s: %s", paths, exc)
+                return {
+                    "summary": f"Self-heal planı üretilemedi: {exc}",
+                    "confidence": "unknown",
+                    "operations": [],
+                    "validation_commands": fallback_validation_commands,
+                }
             return normalize_self_heal_plan(
                 raw_plan,
                 scope_paths=paths,
@@ -544,22 +579,37 @@ class SidarAgent:
                 max_operations=max_operations,
             )
 
-        initial_plan = await _generate_plan_for_scope(scope_paths)
-        if list(initial_plan.get("operations") or []):
-            return initial_plan
+        should_attempt_full_scope = (
+            len(scope_paths) < skip_full_scope_min_files
+            and not list(remediation_loop.get("autonomous_batches") or [])
+        )
+        fallback_plan: dict[str, Any] | None = None
+        if should_attempt_full_scope:
+            initial_plan = await _generate_plan_for_scope(scope_paths)
+            if list(initial_plan.get("operations") or []):
+                return initial_plan
+            fallback_plan = initial_plan
 
         for chunk in self._resolve_self_heal_scope_batches(scope_paths, remediation_loop):
             batch_plan = await _generate_plan_for_scope(chunk)
             if list(batch_plan.get("operations") or []):
                 summary = str(batch_plan.get("summary") or "").strip()
                 batch_plan["summary"] = (
-                    f"{summary} (batch fallback: {len(chunk)}/{len(scope_paths)} dosya)"
+                    f"{summary} (batch plan: {len(chunk)}/{len(scope_paths)} dosya)"
                     if summary
-                    else f"Batch fallback ile plan üretildi: {len(chunk)}/{len(scope_paths)} dosya."
+                    else f"Batch plan ile patch üretildi: {len(chunk)}/{len(scope_paths)} dosya."
                 )
                 return batch_plan
+            fallback_plan = batch_plan
 
-        return initial_plan
+        if fallback_plan is not None:
+            return fallback_plan
+        return {
+            "summary": "Self-heal planı üretilemedi.",
+            "confidence": "unknown",
+            "operations": [],
+            "validation_commands": fallback_validation_commands,
+        }
 
     async def _restore_self_heal_backups(self, backups: dict[str, str]) -> None:
         for path, content in backups.items():
