@@ -165,6 +165,24 @@ def test_build_ci_failure_context_prefers_generic() -> None:
     assert ctx["kind"] == "generic_ci_failure"
 
 
+def test_build_local_failure_context_wraps_terminal_log() -> None:
+    ctx = ci.build_local_failure_context(
+        "core/ci_remediation.py:10: error: Name 'x' is not defined",
+        failure_summary="mypy failed",
+        workflow_name="local-mypy",
+        run_id="local-1",
+    )
+    assert ctx is not None
+    assert ctx["kind"] == "generic_ci_failure"
+    assert ctx["workflow_name"] == "local-mypy"
+    assert ctx["run_id"] == "local-1"
+    assert "core/ci_remediation.py" in ctx["suspected_targets"]
+
+
+def test_build_local_failure_context_returns_none_for_empty_log() -> None:
+    assert ci.build_local_failure_context("   \n  ") is None
+
+
 def test_build_ci_failure_context_workflow_run() -> None:
     payload = {
         "repository": {"full_name": "org/repo", "default_branch": "main"},

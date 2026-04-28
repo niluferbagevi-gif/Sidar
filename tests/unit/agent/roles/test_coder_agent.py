@@ -145,6 +145,7 @@ def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
         "audit_project",
         "get_package_info",
         "scan_project_todos",
+        "run_self_heal",
     }
 
 
@@ -216,6 +217,29 @@ async def test_tool_methods_are_routed_correctly(coder_module):
     assert await agent._tool_scan_project_todos("") == "todos:/tmp/base"
     assert await agent._tool_scan_project_todos("src") == "todos:src"
 
+    raw_plan = {
+        "summary": "patch apply",
+        "operations": [
+            {"action": "patch", "path": "a.py", "target": "old", "replacement": "new"},
+            {"action": "patch", "path": "b.py", "target": "x", "replacement": "y"},
+        ],
+        "validation_commands": ["pytest -q tests/unit/agent/roles/test_coder_agent.py"],
+    }
+    result = await agent.execute_self_heal_plan(raw_plan, scope_paths=["a.py"])
+    assert result["status"] == "applied"
+    assert [item["path"] for item in result["applied_operations"]] == ["a.py"]
+    assert result["failed_operations"] == []
+    assert result["validation_commands"] == ["pytest -q tests/unit/agent/roles/test_coder_agent.py"]
+
+    empty = await agent.execute_self_heal_plan({"operations": []})
+    assert empty["status"] == "skipped"
+
+    run_self_heal = await agent._tool_run_self_heal(
+        '{"plan":{"operations":[{"action":"patch","path":"a.py","target":"old","replacement":"new"}]},"scope_paths":["a.py"]}'
+    )
+    parsed = coder_module.json.loads(run_self_heal)
+    assert parsed["status"] == "applied"
+
 
 @pytest.mark.asyncio
 async def test_run_task_paths(monkeypatch, coder_module):
@@ -236,6 +260,7 @@ async def test_run_task_paths(monkeypatch, coder_module):
     assert await agent.run_task("WRITE_FILE|a.py|x") == "tool:write_file:a.py|x"
     assert await agent.run_task("patch_file|a.py|x|y") == "tool:patch_file:a.py|x|y"
     assert await agent.run_task("execute_code|pytest -q") == "tool:execute_code:pytest -q"
+    assert await agent.run_task("self_heal|{\"plan\":{}}") == "tool:run_self_heal:{\"plan\":{}}"
 
     approve = await agent.run_task("qa_feedback|decision=approve;summary=looks good")
     assert approve == "[CODER:APPROVED] Reviewer onayı alındı: looks good"

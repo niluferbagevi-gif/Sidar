@@ -7,8 +7,8 @@ import contextlib
 import json
 import re
 import uuid
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus

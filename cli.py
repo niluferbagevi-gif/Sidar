@@ -21,15 +21,19 @@ noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
+import time
+from pathlib import Path
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agent.sidar_agent import SidarAgent
 from config import Config
+from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
@@ -223,6 +227,86 @@ async def _ensure_cli_memory_user(agent: SidarAgent) -> None:
     await agent.memory.set_active_user(user.id, user.username)
 
 
+def _extract_python_targets_from_log(log_text: str) -> list[str]:
+    """mypy çıktısından aday python dosya yollarını çıkarır."""
+    targets: list[str] = []
+    seen: set[str] = set()
+    for line in str(log_text or "").splitlines():
+        candidate = line.split(":", 1)[0].strip()
+        if not candidate or not candidate.endswith(".py"):
+            continue
+        path = Path(candidate)
+        if not path.exists() or not path.is_file():
+            continue
+        normalized = path.as_posix()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        targets.append(normalized)
+    return targets[:20]
+
+
+async def _run_heal_mode(
+    agent: SidarAgent,
+    *,
+    log_path: str,
+    output_path: str,
+) -> int:
+    """Log girdisinden self-heal remediation döngüsünü çalıştırır."""
+    log_file = Path(log_path)
+    if not log_file.exists():
+        print(f"Sidar > ✗ Heal log dosyası bulunamadı: {log_file}")
+        return 1
+
+    log_text = log_file.read_text(encoding="utf-8", errors="replace").strip()
+    if not log_text:
+        print(f"Sidar > ✗ Heal log dosyası boş: {log_file}")
+        return 1
+
+    await agent.initialize()
+    await _ensure_cli_memory_user(agent)
+    if not bool(getattr(agent.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+
+    suspected_targets = _extract_python_targets_from_log(log_text)
+    diagnosis = "\n".join(log_text.splitlines()[:20]).strip()
+    ci_context = build_local_failure_context(
+        log_text,
+        failure_summary="mypy static analysis failure",
+        workflow_name="local_mypy_gate",
+        run_id=f"local-heal-{int(time.time())}",
+        branch=os.getenv("GIT_BRANCH", "local"),
+        base_branch=os.getenv("GIT_BASE_BRANCH", "main"),
+    ) or {}
+    merged_targets = list(
+        dict.fromkeys([*suspected_targets, *list(ci_context.get("suspected_targets") or [])])
+    )
+    ci_context["suspected_targets"] = merged_targets[:20]
+    remediation = build_ci_remediation_payload(ci_context, diagnosis)
+    await agent._attempt_autonomous_self_heal(
+        ci_context=ci_context,
+        diagnosis=diagnosis,
+        remediation=remediation,
+    )
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(
+        json.dumps(remediation, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    execution = dict(remediation.get("self_heal_execution") or {})
+    status = str(execution.get("status") or "unknown").strip().lower()
+    operations = list((remediation.get("self_heal_plan") or {}).get("operations") or [])
+    print(
+        "Sidar > Heal sonucu:"
+        f" status={status}, hedef_dosya={len(suspected_targets)}, patch_op={len(operations)}"
+    )
+    print(f"Sidar > Heal raporu: {output_file}")
+    return 0 if status == "applied" else 1
+
+
 # ─────────────────────────────────────────────
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
@@ -236,6 +320,16 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-c", "--command", help="Tek komut çalıştır ve çık")
+    parser.add_argument(
+        "--heal",
+        metavar="LOG_PATH",
+        help="mypy/CI hata logundan otonom self-heal döngüsünü tetikle",
+    )
+    parser.add_argument(
+        "--heal-output",
+        default="artifacts/remediation/heal_result.json",
+        help="Heal çıktısının JSON olarak yazılacağı dosya",
+    )
     parser.add_argument("--status", action="store_true", help="Sistem durumunu göster ve çık")
     parser.add_argument(
         "--level",
@@ -278,8 +372,14 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
     if args.command:
         cfg.CLI_FAST_MODE = True
+    if args.heal:
+        cfg.CLI_FAST_MODE = True
 
     agent = SidarAgent(cfg)
+
+    if args.heal:
+        code = asyncio.run(_run_heal_mode(agent, log_path=args.heal, output_path=args.heal_output))
+        raise SystemExit(code)
 
     if args.status:
         asyncio.run(agent.initialize())

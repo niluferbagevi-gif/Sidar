@@ -309,6 +309,36 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
     }
 
 
+def build_local_failure_context(
+    log_text: str,
+    *,
+    failure_summary: str = "Local static analysis failure",
+    workflow_name: str = "local-static-analysis",
+    run_id: str = "local-manual",
+    branch: str = "local",
+    base_branch: str = "main",
+) -> dict[str, Any] | None:
+    """Terminal çıktısını generic CI failure bağlamı olarak normalize eder."""
+    excerpt = _trim_text(log_text, 4000)
+    if not excerpt:
+        return None
+    payload = {
+        "ci_failure": True,
+        "repo": "local/repo",
+        "workflow_name": workflow_name,
+        "run_id": run_id,
+        "branch": branch,
+        "base_branch": base_branch,
+        "conclusion": "failure",
+        "status": "completed",
+        "failure_summary": failure_summary,
+        "logs": excerpt,
+        "log_excerpt": excerpt,
+        "failed_jobs": ["local-static-analysis"],
+    }
+    return _generic_ci_context("ci_pipeline_failed", payload)
+
+
 def build_ci_failure_prompt(context: dict[str, Any]) -> str:
     info = dict(context or {})
     suspected_targets = ", ".join(info.get("suspected_targets") or [])
