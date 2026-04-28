@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -20,6 +21,7 @@ from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
 from managers.security import SecurityManager
 
+logger = logging.getLogger(__name__)
 
 @AgentCatalog.register(
     capabilities=["code_review", "security_audit", "quality_check"], is_builtin=True
@@ -144,8 +146,8 @@ class ReviewerAgent(BaseAgent):
         finally:
             try:
                 dynamic_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Temporary dynamic test file cleanup skipped: %s", exc)
 
     @staticmethod
     def _extract_changed_paths(code_context: str) -> list[str]:

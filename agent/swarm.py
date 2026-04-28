@@ -285,8 +285,8 @@ def _looks_like_delegation_request(value: object) -> bool:
         try:
             if checker(value):
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Delegation request checker failed, fallback to attribute check: %s", exc)
     return all(hasattr(value, attr) for attr in ("target_agent", "payload", "reply_to"))
 
 

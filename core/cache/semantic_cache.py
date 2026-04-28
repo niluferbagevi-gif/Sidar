@@ -185,7 +185,8 @@ class SemanticCacheManager:
                     continue
                 try:
                     emb = json.loads(raw.get("embedding", "[]"))
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Semantic cache entry skipped due to invalid embedding: %s", exc)
                     continue
                 sim = self._cosine_similarity(query_vector, emb)
                 if sim > best_sim:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 import time
 import uuid
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
 from config import Config
 
+logger = logging.getLogger(__name__)
 
 def _ensure_delegation_request_shape() -> type[DelegationRequest]:
     contracts_mod = importlib.import_module("agent.core.contracts")
@@ -308,8 +310,8 @@ class SupervisorAgent(BaseAgent):
             if _get_agent_metrics is not None:
                 try:
                     _get_agent_metrics().record(receiver, intent, status, duration_s)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Agent metrics record skipped: %s", exc)
 
         self.memory_hub.add_role_note(receiver, str(summary))
         return TaskResult(task_id=task_id, status=status, summary=summary)

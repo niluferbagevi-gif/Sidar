@@ -14,7 +14,7 @@ import re
 import shlex
 import shutil
 import stat
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tempfile
 import threading

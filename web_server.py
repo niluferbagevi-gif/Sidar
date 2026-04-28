@@ -558,8 +558,9 @@ def _list_child_ollama_pids() -> list[int]:
             return []
 
     try:
+        ps_binary = shutil.which("ps") or "/bin/ps"
         raw = subprocess.check_output(  # nosec B603 - sabit ps komutu, kullanıcı girdisi içermez.
-            ["ps", "-eo", "pid=,ppid=,comm=,args="],
+            [ps_binary, "-eo", "pid=,ppid=,comm=,args="],  # nosec B607
             stderr=subprocess.DEVNULL,
         )
     except Exception:

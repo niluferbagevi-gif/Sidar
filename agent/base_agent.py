@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+import logging
 
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 from config import Config
 from core.llm_client import LLMClient
 
 ToolFunc = Callable[[str], Awaitable[str]]
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -25,7 +27,8 @@ class BaseAgent(ABC):
                     continue
                 try:
                     setattr(resolved_cfg, attr, getattr(Config, attr))
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Config attribute propagation skipped for %s: %s", attr, exc)
                     continue
 
         self.cfg = resolved_cfg

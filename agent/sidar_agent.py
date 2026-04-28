@@ -158,7 +158,7 @@ CONTEXT_GEMINI_MODEL_LABEL = "Gemini Modeli"
 CONTEXT_GITHUB_CONNECTED_PREFIX = "Bağlı — "
 CONTEXT_TASK_LIST_HEADER = "[Aktif Görev Listesi]"
 SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
-GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."
+GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."  # nosec B105
 GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
 GITHUB_SMART_PR_NO_CHANGES_MESSAGE = "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
 GITHUB_SMART_PR_CREATE_FAILED_PREFIX = "✗ PR oluşturulamadı:"
@@ -1494,7 +1494,8 @@ class SidarAgent:
                     continue
                 resolved = path_obj.resolve() if hasattr(path_obj, "resolve") else path_obj
                 normalized_files.append(resolved)
-            except Exception:
+            except Exception as exc:
+                logger.debug("Instruction file normalization skipped for %s: %s", candidate, exc)
                 continue
 
         unique_files = sorted(set(normalized_files), key=lambda p: str(p))
@@ -1504,8 +1505,8 @@ class SidarAgent:
         for path in unique_files:
             try:
                 current_mtimes[str(path)] = path.stat().st_mtime
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Instruction file mtime read skipped for %s: %s", path, exc)
 
         lock_cm: Any = (
             self._instructions_lock
@@ -1530,7 +1531,8 @@ class SidarAgent:
                 try:
                     rel = path.relative_to(root)
                     content = path.read_text(encoding="utf-8", errors="replace").strip()
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Instruction file read skipped for %s: %s", path, exc)
                     continue
                 if not content:
                     continue
