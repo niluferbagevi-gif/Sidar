@@ -611,9 +611,9 @@ def test_extract_validation_commands_skips_blank_lines() -> None:
 
 def test_build_local_failure_context_infers_targets_and_hint() -> None:
     ctx = ci.build_local_failure_context(
+        log_text="tests/unit/core/test_ci_remediation.py:1: error: NameError",
         stage="static_mypy",
         command="uv run mypy .",
-        log_excerpt="tests/unit/core/test_ci_remediation.py:1: error: NameError",
         attempt=2,
         max_attempts=3,
     )
@@ -622,3 +622,19 @@ def test_build_local_failure_context_infers_targets_and_hint() -> None:
     assert "attempt=2/3" in ctx["failure_summary"]
     assert "tests/unit/core/test_ci_remediation.py" in ctx["suspected_targets"]
     assert "NameError" in ctx["root_cause_hint"]
+
+
+def test_extract_mypy_failures_parses_error_lines() -> None:
+    failures = ci._extract_mypy_failures(
+        "core/x.py:42: error: Incompatible types in assignment [assignment]\nnoise"
+    )
+    assert failures[0]["path"] == "core/x.py"
+    assert failures[0]["line"] == "42"
+    assert "Incompatible types" in failures[0]["message"]
+    assert failures[0]["code"] == "assignment"
+
+
+def test_root_cause_pattern_includes_static_typing_signals() -> None:
+    assert ci._extract_root_cause_line("Incompatible types in assignment") != ""
+    assert ci._extract_root_cause_line("Missing type parameters for generic type") != ""
+    assert ci._extract_root_cause_line("Function is missing a type annotation  [no-untyped-def]") != ""

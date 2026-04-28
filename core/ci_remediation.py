@@ -22,7 +22,11 @@ _TARGET_PATTERN = re.compile(
     r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
 )
 _ROOT_CAUSE_PATTERN = re.compile(
-    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed).*)""",
+    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed|Incompatible types|Missing type parameters|no-untyped-def).*)""",
+    re.IGNORECASE,
+)
+_MYPY_LINE_PATTERN = re.compile(
+    r"(?P<path>[\w./\\-]+\.py):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s+\[(?P<code>[a-z0-9-]+)\])?$",
     re.IGNORECASE,
 )
 
@@ -103,6 +107,28 @@ def _extract_failed_job_names(data: dict[str, Any]) -> list[str]:
         if name and name not in names:
             names.append(name)
     return names[:6]
+
+
+def _extract_mypy_failures(log_text: Any, limit: int = 12) -> list[dict[str, str]]:
+    failures: list[dict[str, str]] = []
+    for raw_line in str(log_text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _MYPY_LINE_PATTERN.search(line)
+        if not match:
+            continue
+        failures.append(
+            {
+                "path": str(match.group("path") or "").replace("\\", "/"),
+                "line": str(match.group("line") or ""),
+                "message": _trim_text(match.group("message") or "", 220),
+                "code": str(match.group("code") or "").strip().lower(),
+            }
+        )
+        if len(failures) >= limit:
+            break
+    return failures
 
 
 def _generic_ci_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -308,10 +334,10 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
 
 
 def build_local_failure_context(
+    log_text: str,
     *,
-    stage: str,
-    command: str,
-    log_excerpt: str,
+    stage: str = "local_validation",
+    command: str = "",
     attempt: int = 1,
     max_attempts: int = 1,
     repo: str = "local",
@@ -321,13 +347,20 @@ def build_local_failure_context(
     """Lokal test/static-analysis başarısızlıklarını remediation akışına normalize eder."""
     safe_stage = str(stage or "local_validation").strip() or "local_validation"
     safe_command = str(command or "").strip()
+    parsed_mypy_failures = _extract_mypy_failures(log_text)
+    primary_mypy = parsed_mypy_failures[0] if parsed_mypy_failures else {}
+    primary_mypy_message = str(primary_mypy.get("message") or "").strip()
     summary_parts = [f"{safe_stage} failed"]
     if safe_command:
         summary_parts.append(f"command={safe_command}")
+    if primary_mypy_message:
+        summary_parts.append(f"mypy={primary_mypy_message}")
     summary_parts.append(f"attempt={attempt}/{max_attempts}")
     failure_summary = " | ".join(summary_parts)
-    excerpt = _trim_text(log_excerpt, 1200)
+    excerpt = _trim_text(log_text, 1200)
     suspected_targets = _extract_suspected_targets(excerpt, safe_command)
+    if primary_mypy.get("path") and primary_mypy["path"] not in suspected_targets:
+        suspected_targets = [primary_mypy["path"], *suspected_targets]
     root_cause_hint = _extract_root_cause_line(excerpt, failure_summary)
     return {
         "kind": "local_test_failure",
@@ -349,6 +382,7 @@ def build_local_failure_context(
         "failed_jobs": [safe_stage],
         "root_cause_hint": root_cause_hint,
         "diagnostic_hints": _build_diagnostic_hints(failure_summary, excerpt, suspected_targets),
+        "mypy_failures": parsed_mypy_failures,
     }
 
 def build_ci_failure_prompt(context: dict[str, Any]) -> str:

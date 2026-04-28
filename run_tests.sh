@@ -297,9 +297,9 @@ if log_file.exists():
     log_excerpt = text[-12000:]
 
 context = build_local_failure_context(
+    log_text=log_excerpt,
     stage=stage,
     command=failed_command,
-    log_excerpt=log_excerpt,
     attempt=attempt,
     max_attempts=max_attempts,
 )
