@@ -55,8 +55,8 @@ def _json_dumps_if_valid(raw: str) -> str | None:
     try:
         obj = json.loads(normalized)
         return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Geçerli JSON doğrudan parse edilemedi: %s", exc)
 
     # En baştaki geçerli JSON nesnesini yakalamak için decoder tabanlı onarım.
     decoder = json.JSONDecoder()
@@ -66,7 +66,8 @@ def _json_dumps_if_valid(raw: str) -> str | None:
         try:
             obj, _ = decoder.raw_decode(normalized[i:])
             return json.dumps(obj, ensure_ascii=False)
-        except Exception:
+        except Exception as exc:
+            logger.debug("JSON raw_decode denemesi başarısız (offset=%s): %s", i, exc)
             continue
     return None
 

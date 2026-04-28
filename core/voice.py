@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import logging
 import re
 import tempfile
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pyttsx3
+
+logger = logging.getLogger(__name__)
 
 
 class _BaseTTSAdapter:
@@ -71,8 +74,8 @@ class _Pyttsx3Adapter(_BaseTTSAdapter):
             audio_bytes = output.read_bytes() if output.exists() else b""
         try:
             engine.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("pyttsx3 engine.stop başarısız: %s", exc)
         return {
             "success": bool(audio_bytes),
             "audio_bytes": audio_bytes,

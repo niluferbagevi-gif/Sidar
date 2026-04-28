@@ -468,7 +468,8 @@ class SystemHealthManager:
                 continue
             try:
                 cast(Any, self._prometheus_gauges[gauge_key]).set(float(val))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Prometheus gauge set edilemedi (%s): %s", gauge_key, exc)
                 continue
 
     # ─────────────────────────────────────────────
@@ -628,8 +629,8 @@ class SystemHealthManager:
                 import pynvml
 
                 pynvml.nvmlShutdown()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("NVML shutdown başarısız: %s", exc)
             finally:
                 self._nvml_initialized = False
 

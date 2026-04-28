@@ -74,8 +74,8 @@ def _inc_prometheus(metric_name: str, value: float) -> None:
             gauge = Gauge(metric_name, metric_name.replace("_", " "))
             _prometheus_gauges[metric_name] = gauge
         gauge.set(value)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Prometheus metriği güncellenemedi: %s", exc)
 
 
 # ─── JudgeResult ─────────────────────────────────────────────────────────────

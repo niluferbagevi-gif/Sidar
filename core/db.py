@@ -260,8 +260,8 @@ def _new_entity_id() -> str:
         uuid7_external = getattr(uuid6_module, "uuid7", None)
         if callable(uuid7_external):
             return str(uuid7_external())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("uuid6 modülü kullanılamadı, uuid4 fallback kullanılacak: %s", exc)
 
     return str(uuid.uuid4())
 

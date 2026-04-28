@@ -463,14 +463,15 @@ class ConversationMemory:
             from datetime import datetime
 
             return datetime.fromisoformat(str(iso_text).replace("Z", "+00:00")).timestamp()
-        except Exception:
+        except Exception as exc:
+            logger.debug("ISO zaman parse edilemedi, current time kullanılacak: %s", exc)
             return time.time()
 
     def __del__(self) -> None:
         try:
             self.force_save()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Memory force_save çağrısı __del__ içinde başarısız: %s", exc)
 
     def __len__(self) -> int:
         with self._lock:

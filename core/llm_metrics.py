@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import inspect
+import logging
 import os
 import threading
 import time
@@ -12,6 +13,8 @@ from collections import deque
 from collections.abc import Callable, Coroutine
 from dataclasses import asdict, dataclass
 from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -151,12 +154,12 @@ class LLMMetricsCollector:
                     try:
                         loop = asyncio.get_running_loop()
                         loop.create_task(cast(Coroutine[Any, Any, Any], result))
-                    except RuntimeError:
+                    except RuntimeError as exc:
                         if hasattr(result, "close"):
                             result.close()
-                        pass
-            except Exception:
-                pass
+                        logger.debug("Awaitable usage_sink görevlenemedi, sonuç kapatıldı: %s", exc)
+            except Exception as exc:
+                logger.warning("usage_sink çağrısında beklenmeyen hata: %s", exc)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:

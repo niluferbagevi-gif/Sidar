@@ -325,7 +325,8 @@ class GraphIndex:
             source_id = self._normalize_node_id(scan_root, file_path)
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except Exception as exc:
+                logger.debug("Dosya okunamadı, dependency extraction atlandı (%s): %s", file_path, exc)
                 continue
             dep_paths, endpoint_defs, endpoint_calls = self._extract_dependencies(
                 file_path, content
@@ -796,8 +797,8 @@ class DocumentStore:
                                 "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
                                 (doc_id, session_id, content),
                             )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Doküman FTS'e migrate edilemedi (%s): %s", doc_id, exc)
                 self.fts_conn.commit()
             logger.info("SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.")
         except Exception as exc:

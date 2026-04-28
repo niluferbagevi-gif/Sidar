@@ -468,8 +468,8 @@ class TodoManager:
                             ):
                                 rel_path = file_path.relative_to(self.base_dir)
                                 found_items.append(f"[{rel_path} : Satır {i}] {line.strip()}")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("TODO/FIXME taramasında dosya okunamadı (%s): %s", file_path, exc)
 
             if not found_items:
                 return (

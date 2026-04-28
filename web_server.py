@@ -318,8 +318,8 @@ def _mask_collaboration_text(text: str) -> str:
         mask_pii = getattr(dlp_module, "mask_pii", None)
         if callable(mask_pii):
             return str(mask_pii(str(text or "")))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("DLP maskeleme uygulanamadı, ham metin döndürüldü: %s", exc)
     return str(text or "")
 
 
@@ -2958,14 +2958,14 @@ async def websocket_chat(websocket: WebSocket) -> Any:
                         "done": True,
                     }
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("WebSocket LLM hata mesajı gönderilemedi: %s", exc)
         except Exception as exc:
             logger.exception("Agent respond hatası: %s", exc)
             try:
                 await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("WebSocket sistem hata mesajı gönderilemedi: %s", exc)
         finally:
             stop_status.set()
             if status_task is not None:
@@ -3823,8 +3823,8 @@ async def llm_prometheus_metrics(
         from core.agent_metrics import get_agent_metrics_collector
 
         delegation_part = get_agent_metrics_collector().render_prometheus()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Delegation metrikleri render edilemedi: %s", exc)
 
     return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
 
@@ -4323,13 +4323,13 @@ async def upload_rag_file(file: UploadFile = File(...)) -> Any:
     finally:
         try:
             await file.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Yüklenen dosya kapatılamadı: %s", exc)
         if temp_dir is not None:
             try:
                 shutil.rmtree(temp_dir)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Geçici dizin silinemedi (%s): %s", temp_dir, exc)
 
 
 @app.get(
