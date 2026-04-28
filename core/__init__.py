@@ -8,11 +8,13 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 """
 
 from importlib import import_module
+from types import ModuleType
+from typing import Any
 
 __version__ = "2.7.0"
 
 
-def _optional_import(module_name: str, attr_name: str):
+def _optional_import(module_name: str, attr_name: str) -> Any:
     """Opsiyonel bağımlılık eksik olsa da çekirdek paketin import edilebilmesini sağlar."""
     try:
         module = import_module(module_name)
@@ -22,7 +24,7 @@ def _optional_import(module_name: str, attr_name: str):
         class _MissingDependencyProxy:  # pragma: no cover - yalnızca bağımlılık eksikse çalışır
             __name__ = attr_name
 
-            def __init__(self, *args, **kwargs):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
                 raise RuntimeError(
                     f"'{attr_name}' kullanımı için opsiyonel bağımlılıklar yüklü olmalıdır."
                 )
@@ -30,7 +32,7 @@ def _optional_import(module_name: str, attr_name: str):
         return _MissingDependencyProxy
 
 
-def _optional_module(module_name: str):
+def _optional_module(module_name: str) -> ModuleType | None:
     """Alt modül import'u başarısız olsa da çekirdek paketinin yüklenmesini engellemez."""
     try:
         return import_module(module_name)

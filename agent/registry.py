@@ -96,7 +96,7 @@ class AgentCatalog:
         return list(cls._registry.values())
 
     @classmethod
-    def create(cls, role_name: str, **kwargs) -> object:
+    def create(cls, role_name: str, **kwargs: Any) -> object:
         spec = cls.get(role_name)
         if spec is None:
             available = list(cls._registry.keys())

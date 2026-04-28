@@ -9,6 +9,8 @@ Gerektiğinde `from managers import CodeManager` benzeri erişimler __getattr__
 from __future__ import annotations
 
 from importlib import import_module
+from types import ModuleType
+from typing import Any
 
 _MANAGER_IMPORT_MAP = {
     "BrowserManager": "managers.browser_manager",
@@ -30,7 +32,7 @@ _MANAGER_IMPORT_MAP = {
 __all__ = list(_MANAGER_IMPORT_MAP.keys())
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     # 1. Sınıf isimleri için (Örn: CodeManager)
     module_path = _MANAGER_IMPORT_MAP.get(name)
     if module_path is not None:
@@ -42,8 +44,8 @@ def __getattr__(name: str):
     # 2. Pytest monkeypatch ve doğrudan modül erişimleri için (Örn: managers.package_info)
     for path in _MANAGER_IMPORT_MAP.values():
         if path.endswith(f".{name}"):
-            module = import_module(path)
-            globals()[name] = module
-            return module
+            imported_module: ModuleType = import_module(path)
+            globals()[name] = imported_module
+            return imported_module
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

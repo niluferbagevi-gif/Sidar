@@ -27,7 +27,7 @@ import os
 import time
 import uuid
 from collections import deque
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
@@ -142,10 +142,10 @@ def get_hitl_store() -> _HITLStore:
 
 # ─── Broadcast hook (WebSocket bildirim) ─────────────────────────────────────
 
-_broadcast_hook: Callable[[dict[str, Any]], Coroutine] | None = None
+_broadcast_hook: Callable[[dict[str, Any]], Awaitable[None]] | None = None
 
 
-def set_hitl_broadcast_hook(hook: Callable[[dict[str, Any]], Coroutine]) -> None:
+def set_hitl_broadcast_hook(hook: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
     """
     WebSocket yayın fonksiyonunu kaydet.
     web_server.py başlangıcında çağrılır:

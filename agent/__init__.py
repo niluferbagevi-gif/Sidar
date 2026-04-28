@@ -1,9 +1,10 @@
 """Sidar Project - Agent Modülleri"""
 
 from importlib import import_module
+from typing import Any
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Ağır bağımlılıkları sadece gerektiğinde içe aktar."""
     if name == "SidarAgent":
         from .sidar_agent import SidarAgent

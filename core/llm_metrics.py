@@ -10,7 +10,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Callable, Coroutine, cast
 
 
 @dataclass
@@ -65,11 +65,11 @@ _CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 
 
-def set_current_metrics_user_id(user_id: str):
+def set_current_metrics_user_id(user_id: str) -> contextvars.Token[str]:
     return _CURRENT_USER_ID.set((user_id or "").strip())
 
 
-def reset_current_metrics_user_id(token) -> None:
+def reset_current_metrics_user_id(token: contextvars.Token[str]) -> None:
     _CURRENT_USER_ID.reset(token)
 
 
@@ -81,9 +81,9 @@ class LLMMetricsCollector:
     def __init__(self, max_events: int = 200) -> None:
         self._lock = threading.Lock()
         self._events: deque[LLMMetricEvent] = deque(maxlen=max_events)
-        self._usage_sink = None
+        self._usage_sink: Callable[[LLMMetricEvent], Any] | None = None
 
-    def set_usage_sink(self, sink) -> None:
+    def set_usage_sink(self, sink: Callable[[LLMMetricEvent], Any] | None) -> None:
         self._usage_sink = sink
 
     @staticmethod
@@ -149,7 +149,7 @@ class LLMMetricsCollector:
                 if inspect.isawaitable(result):
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(result)
+                        loop.create_task(cast(Coroutine[Any, Any, Any], result))
                     except RuntimeError:
                         if hasattr(result, "close"):
                             result.close()

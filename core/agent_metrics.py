@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import threading
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Histogram bucket sınırları (saniye cinsinden)
@@ -35,7 +36,7 @@ class _DelegationHistogram:
                 if duration_s <= bound:
                     self._counts[i] += 1
 
-    def snapshot(self) -> dict:
+    def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "counts": list(self._counts),
@@ -50,13 +51,13 @@ class AgentMetricsCollector:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # key: (receiver, intent, status) → _DelegationHistogram
-        self._histograms: dict[tuple, _DelegationHistogram] = {}
+        self._histograms: dict[tuple[str, str, str], _DelegationHistogram] = {}
         # key: (receiver, intent, status) → int
-        self._counters: dict[tuple, int] = {}
+        self._counters: dict[tuple[str, str, str], int] = {}
         # key: (agent, step, target, status) → _DelegationHistogram
-        self._step_histograms: dict[tuple, _DelegationHistogram] = {}
+        self._step_histograms: dict[tuple[str, str, str, str], _DelegationHistogram] = {}
         # key: (agent, step, target, status) → int
-        self._step_counters: dict[tuple, int] = {}
+        self._step_counters: dict[tuple[str, str, str, str], int] = {}
 
     def record(self, receiver: str, intent: str, status: str, duration_s: float) -> None:
         """Delegasyon sonucunu kaydet."""

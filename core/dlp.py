@@ -24,7 +24,9 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +181,7 @@ class DLPEngine:
     # ── İç yardımcılar ──────────────────────────────────────────────────────
 
     def _sub(
-        self, pattern: re.Pattern, text: str, group_idx: int = 0, name: str = ""
+        self, pattern: re.Pattern[str], text: str, group_idx: int = 0, name: str = ""
     ) -> tuple[str, list[DLPDetection]]:
         """
         Örüntü eşleşmesini maskeleme değeriyle değiştirir.
@@ -187,7 +189,7 @@ class DLPEngine:
         """
         detections: list[DLPDetection] = []
 
-        def _replace(m: re.Match) -> str:
+        def _replace(m: re.Match[str]) -> str:
             original = m.group(group_idx)
             start, end = m.span(group_idx)
             detections.append(
@@ -201,7 +203,7 @@ class DLPEngine:
             if group_idx == 0:
                 return self.replacement
             # Prefix/suffix korunur; sadece yakalanan grup değiştirilir
-            full = m.group(0)
+            full = str(m.group(0))
             gstart, gend = m.span(group_idx)
             offset = m.start()
             return full[: gstart - offset] + self.replacement + full[gend - offset :]
@@ -223,7 +225,7 @@ class DLPEngine:
 
         all_detections: list[DLPDetection] = []
 
-        def _apply(cond: bool, pattern: re.Pattern, group_idx: int, name: str) -> None:
+        def _apply(cond: bool, pattern: re.Pattern[str], group_idx: int, name: str) -> None:
             nonlocal text
             if not cond:
                 return
@@ -246,12 +248,12 @@ class DLPEngine:
         # Kişisel veriler
         if self.mask_tckn:
 
-            def _tckn_replace(m: re.Match) -> str:
+            def _tckn_replace(m: re.Match[str]) -> str:
                 val = m.group(1)
                 if _is_valid_tckn(val):
                     all_detections.append(DLPDetection("tckn", m.start(1), m.end(1), val[:3] + "…"))
                     return self.replacement
-                return m.group(0)
+                return str(m.group(0))
 
             text = _RE_TCKN.sub(_tckn_replace, text)
 
@@ -271,12 +273,14 @@ class DLPEngine:
 
         return text, all_detections
 
-    def mask_messages(self, messages: list[dict]) -> tuple[list[dict], list[DLPDetection]]:
+    def mask_messages(
+        self, messages: list[Mapping[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[DLPDetection]]:
         """
         LLM mesaj listesinin `content` alanlarını maskeler.
         Orijinal listede değişiklik yapmaz; yeni bir liste döndürür.
         """
-        result = []
+        result: list[dict[str, Any]] = []
         all_dets: list[DLPDetection] = []
         for msg in messages:
             content = msg.get("content") or ""
@@ -286,9 +290,9 @@ class DLPEngine:
                     result.append({**msg, "content": masked})
                     all_dets.extend(dets)
                 else:
-                    result.append(msg)
+                    result.append(dict(msg))
             else:
-                result.append(msg)
+                result.append(dict(msg))
         return result, all_dets
 
 
@@ -338,7 +342,7 @@ def mask_pii(text: str) -> str:
     return masked
 
 
-def mask_messages(messages: list[dict]) -> list[dict]:
+def mask_messages(messages: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Kolaylık fonksiyonu: LLM mesaj listesini maskeler, yeni listeyi döndürür."""
     masked, _ = get_dlp_engine().mask_messages(messages)
     return masked
