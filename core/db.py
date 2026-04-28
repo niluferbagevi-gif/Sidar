@@ -11,8 +11,7 @@ import re
 import secrets
 import sqlite3
 import uuid
-from collections.abc import AsyncIterator
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
