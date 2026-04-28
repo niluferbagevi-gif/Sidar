@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from config import Config
 
@@ -167,7 +168,7 @@ class TodoManager:
             )
         return f"✅ Görev eklendi (#{task_id}): {content}"
 
-    def set_tasks(self, tasks_data: list) -> str:
+    def set_tasks(self, tasks_data: list[dict[str, Any]]) -> str:
         """
         Görev listesini toplu olarak ayarla (Claude Code TodoWrite gibi).
 
@@ -346,7 +347,7 @@ class TodoManager:
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
 
-    def get_tasks(self, status: str | None = None, limit: int = 50) -> list:
+    def get_tasks(self, status: str | None = None, limit: int = 50) -> list[dict[str, int | str]]:
         """
         Görev listesini dict listesi olarak döndürür.
         REST endpoint ve UI entegrasyonu için kullanılır.

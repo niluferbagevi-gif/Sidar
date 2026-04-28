@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from config import Config
 
+_config_get_config: Callable[[], Config] | None
 try:
     from config import get_config as _config_get_config
 except ImportError:  # pragma: no cover - test doubles may only expose Config

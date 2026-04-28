@@ -252,7 +252,7 @@ class SystemHealthManager:
         if not self._psutil_available:
             return None
         try:
-            import psutil
+            import psutil  # type: ignore[import-untyped]
 
             sample_interval = self.cpu_sample_interval if interval is None else max(0.0, interval)
             return float(psutil.cpu_percent(interval=sample_interval))
