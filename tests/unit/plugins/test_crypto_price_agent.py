@@ -54,12 +54,28 @@ def test_run_task_returns_error_for_unsupported_symbol() -> None:
 def test_run_task_returns_price_when_payload_has_usd(monkeypatch) -> None:
     agent = _agent()
 
-    def _fake_urlopen(url: str, timeout: int = 0):
-        assert "ethereum" in url
-        assert timeout == 8
-        return _FakeResponse(b'{"ethereum": {"usd": 3210}}')
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
 
-    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+        def json(self):
+            return {"ethereum": {"usd": 3210}}
+
+    class _Client:
+        def __init__(self, timeout: int):
+            assert timeout == 8
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url: str):
+            assert "ethereum" in url
+            return _Resp()
+
+    monkeypatch.setattr("httpx.AsyncClient", _Client)
 
     result = asyncio.run(agent.run_task("ethereum"))
 
@@ -69,10 +85,27 @@ def test_run_task_returns_price_when_payload_has_usd(monkeypatch) -> None:
 def test_run_task_returns_missing_data_message_when_usd_missing(monkeypatch) -> None:
     agent = _agent()
 
-    monkeypatch.setattr(
-        "urllib.request.urlopen",
-        lambda _url, timeout=0: _FakeResponse(b'{"solana": {}}'),
-    )
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return {"solana": {}}
+
+    class _Client:
+        def __init__(self, timeout: int):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, _url: str):
+            return _Resp()
+
+    monkeypatch.setattr("httpx.AsyncClient", _Client)
 
     result = asyncio.run(agent.run_task("sol"))
 
@@ -82,10 +115,20 @@ def test_run_task_returns_missing_data_message_when_usd_missing(monkeypatch) -> 
 def test_run_task_returns_exception_text_when_request_fails(monkeypatch) -> None:
     agent = _agent()
 
-    def _boom(_url: str, timeout: int = 0):
-        raise RuntimeError("network down")
+    class _Client:
+        def __init__(self, timeout: int):
+            pass
 
-    monkeypatch.setattr("urllib.request.urlopen", _boom)
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, _url: str):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr("httpx.AsyncClient", _Client)
 
     result = asyncio.run(agent.run_task("btc"))
 
