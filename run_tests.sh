@@ -473,6 +473,8 @@ trap cleanup_test_services EXIT
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  local test_dotenv_file="${DOTENV_FILE:-.env.test}"
+  echo "ℹ️ Test ortam değişken dosyası: DOTENV_FILE=${test_dotenv_file}"
   if ! python - <<'PY' >/dev/null 2>&1
 import tomllib
 from pathlib import Path
@@ -511,7 +513,7 @@ PY
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
   # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
-  local base_pytest_cmd=(uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
@@ -615,9 +617,10 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Öneri (hedefli): uv run pytest -q ${PERFORMANCE_TEST_DIR} --benchmark-json=${BENCHMARK_JSON_OUTPUT}"
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
+  benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
   benchmark_cmd=(
-    uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
+    env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
     --benchmark-save="${BENCHMARK_BASELINE_NAME}"
     --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
   )
