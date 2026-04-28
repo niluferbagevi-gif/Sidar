@@ -176,13 +176,12 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
     def start_session(
         self, manager: BrowserManager, browser_name: str, headless: bool
     ) -> BrowserSession:
-        from selenium import webdriver  # type: ignore[import-not-found]
-        from selenium.webdriver.remote.webdriver import WebDriver  # type: ignore[import-not-found]
+        webdriver = cast(Any, importlib.import_module("selenium.webdriver"))
 
         if browser_name not in {"chrome", "chromium", "firefox"}:
             raise ValueError(f"Selenium browser tipi desteklenmiyor: {browser_name}")
 
-        driver: WebDriver
+        driver: Any
         if browser_name in {"chrome", "chromium"}:
             chrome_options = webdriver.ChromeOptions()
             if headless:
@@ -757,9 +756,7 @@ class BrowserManager:
 
                     return True
                 if candidate == "selenium":  # pragma: no cover
-                    import selenium  # noqa: F401
-
-                    return True
+                    return importlib.util.find_spec("selenium") is not None
             except Exception:
                 continue
         return False
