@@ -304,6 +304,28 @@ run_static_analysis_gates() {
   done
 }
 
+run_security_analysis_gates() {
+  if [ "${RUN_SECURITY_ANALYSIS:-1}" != "1" ]; then
+    echo "ℹ️ Güvenlik analizi adımı atlandı (RUN_SECURITY_ANALYSIS=${RUN_SECURITY_ANALYSIS:-1})."
+    return 0
+  fi
+
+  echo "🛡️ Hızlı SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
+  if ! uv run bandit -q -r . -x tests,web_ui_react,node_modules,.venv; then
+    echo "❌ Bandit güvenlik taraması başarısız."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! uv run pip-audit; then
+    echo "❌ pip-audit güvenlik taraması başarısız."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  return 0
+}
+
 ensure_test_services() {
   if [ "${AUTO_DOCKER_TEST_SERVICES:-1}" != "1" ]; then
     echo "ℹ️ AUTO_DOCKER_TEST_SERVICES=0 verildi, Redis/PostgreSQL otomatik başlatma adımı atlanıyor."
@@ -577,7 +599,7 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
+if ensure_uv_available && run_static_analysis_gates && run_security_analysis_gates && ensure_test_services && prepare_test_database; then
   sync_ollama_models
   run_pytest_coverage_report
 else
