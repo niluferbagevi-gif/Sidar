@@ -792,11 +792,11 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "mode": mode,
         "needs_human_approval": needs_human_approval,
         "max_auto_attempts": 1 if needs_human_approval else 2,
-        "scope_paths": suspected_targets[:12],
+        "scope_paths": suspected_targets,
         "failed_jobs": failed_jobs[:6],
         "validation_commands": effective_validation_commands,
         "bootstrap_commands": bootstrap_commands,
-        "autonomous_batches": autonomous_batches[:12],
+        "autonomous_batches": autonomous_batches,
         "steps": [
             {
                 "name": "diagnose",
@@ -824,7 +824,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             },
         ],
         "summary": (
-            f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets[:12])} dosya, "
+            f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets)} dosya, "
             f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
         ),
         "operator_guidance": (
