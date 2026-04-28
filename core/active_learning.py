@@ -695,9 +695,9 @@ class LoRATrainer:
 
     def _run_training(self, dataset_path: str) -> dict[str, Any]:
         """PEFT LoRA/QLoRA eğitim döngüsü."""
-        from datasets import load_dataset  # type: ignore
-        from peft import LoraConfig, TaskType, get_peft_model  # type: ignore
-        from transformers import (  # type: ignore
+        from datasets import load_dataset
+        from peft import LoraConfig, TaskType, get_peft_model
+        from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
             DataCollatorForSeq2Seq,
@@ -717,7 +717,7 @@ class LoRATrainer:
         if self.use_4bit:
             try:
                 import torch
-                from transformers import BitsAndBytesConfig  # type: ignore
+                from transformers import BitsAndBytesConfig
 
                 bnb_config = BitsAndBytesConfig(
                     load_in_4bit=True,
