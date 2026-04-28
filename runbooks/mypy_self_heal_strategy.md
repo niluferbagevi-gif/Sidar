@@ -38,6 +38,26 @@ Coverage oranı bir **kalite kapısı** olmalıdır; birincil döngü kontrolü 
 Coverage düşüşü çoğu zaman eksik testten gelir; tip hatası fixlerini bozmak yerine
 QA/Coverage ajanı ile hedefli test üretimi daha güvenli sonuç verir.
 
+## Kodda uygulanan güçlendirmeler (scripts/auto_heal.py)
+
+Nisan 2026 güncellemesiyle CLI katmanında aşağıdaki iyileştirmeler eklendi:
+
+1. **Batch retry desteği (`--batch-retries`)**
+   - Her batch, ilk denemeye ek olarak konfigüre edilebilir sayıda tekrar denenir.
+   - Amaç: geçici LLM planlama/formatlama sapmalarında ilk hatada akışı sonlandırmamak.
+
+2. **Scope-odaklı log sıkıştırma (`--scope-log-lines`)**
+   - Prompt’a tüm log yerine, sadece ilgili dosya yollarını içeren ve tip hatası sinyali taşıyan satırlar verilir.
+   - Amaç: bağlam gürültüsünü düşürmek, parse edilebilir JSON plan üretim olasılığını artırmak.
+
+3. **Attempt-aware diagnosis üretimi**
+   - Her retry’da teşhis metnine "yalnız patch action, scope dışına çıkma, birebir target" kuralları tekrar enjekte edilir.
+   - Amaç: normalize filtrelerine takılan serbest/metinsel çıktıyı azaltmak.
+
+4. **Batch seviyesinde deneme telemetrisi**
+   - Sonuç JSON’una `attempts[]` listesi eklenir (`attempt`, `status`, `summary`).
+   - Amaç: `blocked` kök nedenini gözlenebilir kılmak (ilk deneme vs retry davranışı).
+
 ## Neden `blocked` durumuna düşer? (ci_remediation.py ile hizalı kontrol listesi)
 
 Otonom döngünün `blocked` üretmesinin en sık kök nedenleri:
