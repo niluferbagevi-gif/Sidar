@@ -646,7 +646,11 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
     ).lower()
     scope_hitl_threshold = max(
         1,
-        int(os.getenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "50") or "50"),
+        int(os.getenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "3") or "3"),
+    )
+    auto_batch_size = max(
+        1,
+        int(os.getenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "5") or "5"),
     )
     needs_human_approval = (
         any(keyword in combined_text for keyword in high_risk_keywords)
@@ -664,7 +668,30 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         package_name = _AUTO_INSTALL_PACKAGES.get(module_name)
         if package_name:
             bootstrap_commands.append(f"uv pip install {package_name}")
-    mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
+    batched_scope = len(suspected_targets) > scope_hitl_threshold
+    autonomous_batches: list[dict[str, Any]] = []
+    if batched_scope:
+        for index in range(0, len(suspected_targets), auto_batch_size):
+            chunk = suspected_targets[index : index + auto_batch_size]
+            module_hint = str(chunk[0]).split("/", 1)[0] if chunk else "module"
+            autonomous_batches.append(
+                {
+                    "batch_id": f"batch-{(index // auto_batch_size) + 1}",
+                    "module_hint": module_hint,
+                    "scope_paths": chunk,
+                    "suggested_prompt": (
+                        f"Sadece {module_hint}/ kapsamındaki no-untyped-def ve argüman tipi hatalarını düzelt. "
+                        f"Hedef dosyalar: {', '.join(chunk[:5])}"
+                    ),
+                }
+            )
+    mode = (
+        "self_heal_with_hitl_batched"
+        if needs_human_approval and batched_scope
+        else "self_heal_with_hitl"
+        if needs_human_approval
+        else "self_heal"
+    )
     status = "planned" if (diagnosis_text or suspected_targets) else "needs_diagnosis"
     effective_validation_commands = list(dict.fromkeys(bootstrap_commands + validation_commands))
     return {
@@ -676,6 +703,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "failed_jobs": failed_jobs[:6],
         "validation_commands": effective_validation_commands,
         "bootstrap_commands": bootstrap_commands,
+        "autonomous_batches": autonomous_batches[:12],
         "steps": [
             {
                 "name": "diagnose",
@@ -705,6 +733,11 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets[:12])} dosya, "
             f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
+        ),
+        "operator_guidance": (
+            "Bekleyen HITL kaydını reject/cancel ederek remediation'ı modül bazlı batch'lerle yeniden başlatın."
+            if needs_human_approval and batched_scope
+            else ""
         ),
     }
 

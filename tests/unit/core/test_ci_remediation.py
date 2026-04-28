@@ -588,7 +588,10 @@ def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
         "log_excerpt": "",
     }
     result = ci.build_remediation_loop(context, "ok")
-    assert result["needs_human_approval"] is False
+    assert result["needs_human_approval"] is True
+    assert result["mode"] == "self_heal_with_hitl_batched"
+    assert result["operator_guidance"]
+    assert result["autonomous_batches"]
     assert len(result["scope_paths"]) == 5
     assert len(result["failed_jobs"]) == 6
 
@@ -617,6 +620,21 @@ def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() ->
     result = ci.build_remediation_loop(context, "ModuleNotFoundError: No module named 'psycopg2'")
     assert "uv pip install psycopg2-binary" in result["bootstrap_commands"]
     assert "uv pip install psycopg2-binary" in result["validation_commands"]
+
+
+def test_build_remediation_loop_batches_follow_configured_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "2")
+    context = {
+        "suspected_targets": [f"core/t{i}.py" for i in range(5)],
+        "failed_jobs": [],
+        "failure_summary": "",
+        "log_excerpt": "",
+    }
+    result = ci.build_remediation_loop(context, "mypy failures")
+    assert [len(item["scope_paths"]) for item in result["autonomous_batches"]] == [2, 2, 1]
+    assert result["autonomous_batches"][0]["module_hint"] == "core"
 
 
 def test_ci_failure_prompt_handles_missing_optional_fields() -> None:
