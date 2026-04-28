@@ -317,7 +317,7 @@ run_security_analysis_gates() {
     return 1
   fi
 
-  if ! uv run pip-audit; then
+  if ! uv run --with pip-audit pip-audit; then
     echo "❌ pip-audit güvenlik taraması başarısız."
     BACKEND_EXIT_CODE=1
     return 1
