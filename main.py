@@ -13,7 +13,7 @@ import argparse
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404 - launcher kontrollü komut listeleri üretir, shell injection engellenir.
 import sys
 import threading
 from pathlib import Path
@@ -279,8 +279,8 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
         bufsize=1,
     )
 
-    assert process.stdout is not None
-    assert process.stderr is not None
+    if process.stdout is None or process.stderr is None:
+        raise RuntimeError("Child process stdout/stderr pipe oluşturulamadı.")
 
     f = None
     log_path = None

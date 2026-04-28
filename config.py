@@ -367,8 +367,11 @@ def check_hardware() -> HardwareInfo:
         pynvml.nvmlInit()
         info.driver_version = pynvml.nvmlSystemGetDriverVersion()
         pynvml.nvmlShutdown()
-    except Exception:
-        pass  # opsiyonel bağımlılık; WSL2'de NVML erişimi kısıtlı olabilir
+    except Exception as exc:
+        logger.debug(
+            "NVML driver version okunamadı (opsiyonel bağımlılık/ortam kısıtı olabilir): %s",
+            exc,
+        )
 
     return info
 
@@ -595,7 +598,9 @@ class Config:
     MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
-    WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")
+    WEB_HOST: str = os.getenv(
+        "WEB_HOST", "0.0.0.0"
+    )  # nosec B104 - Docker/LAN erişimi için bilinçli varsayılan.
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 

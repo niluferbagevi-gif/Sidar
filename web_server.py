@@ -27,7 +27,7 @@ import re
 import secrets
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 - subprocess çağrıları whitelist edilmiş iş akışlarıyla sınırlandırılır.
 import tempfile
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable

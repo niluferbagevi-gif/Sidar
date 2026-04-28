@@ -169,7 +169,11 @@ class GraphIndex:
         if value.startswith(("ws://", "wss://", "http://", "https://")):
             parsed = urllib.parse.urlparse(value)
             hostname = (parsed.hostname or "").lower()
-            if hostname and hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            if hostname and hostname not in {
+                "localhost",
+                "127.0.0.1",
+                "0.0.0.0",  # nosec B104 - yalnızca local bind adresi whitelist'inin parçası.
+            }:
                 return None
             value = parsed.path or "/"
         if not value.startswith("/"):
@@ -835,8 +839,8 @@ class DocumentStore:
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                conn.execute(
-                    text(f"""
+                conn.execute(  # nosec B608 - tablo adı kullanıcı girdisi değil, sabit whitelist kaynağından.
+                    text(f"""  # nosec B608
                     CREATE TABLE IF NOT EXISTS {self._pg_table} (
                         doc_id TEXT NOT NULL,
                         parent_id TEXT NOT NULL,
@@ -1467,7 +1471,8 @@ class DocumentStore:
         if not ok:
             return False, str(analysis)
 
-        assert isinstance(analysis, dict)
+        if not isinstance(analysis, dict):
+            return False, "Graph impact analizi beklenen formatta dönmedi."
         lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
         impacted_endpoints = analysis.get("impacted_endpoints") or []
         impacted_endpoint_handlers = analysis.get("impacted_endpoint_handlers") or []
@@ -1867,8 +1872,8 @@ class DocumentStore:
             qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
             engine = self._require_pg_engine()
             with engine.begin() as conn:
-                rows = conn.execute(
-                    text(f"""  # nosec B608
+                rows = conn.execute(  # nosec B608 - tablo adı sistem içinde belirlenen güvenli kaynaktan gelir.
+                    text(f"""
                         SELECT doc_id, parent_id, title, source, chunk_content,
                                (embedding <=> CAST(:qvec AS vector)) AS distance
                         FROM {self._pg_table}
