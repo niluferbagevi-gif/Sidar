@@ -1,0 +1,141 @@
+{
+  "context": {
+    "kind": "generic_ci_failure",
+    "repo": "local/repo",
+    "workflow_name": "local_mypy_gate",
+    "run_id": "local-heal-1777335677",
+    "run_number": "",
+    "branch": "local",
+    "base_branch": "main",
+    "sha": "",
+    "conclusion": "failure",
+    "status": "completed",
+    "html_url": "",
+    "jobs_url": "",
+    "logs_url": "",
+    "log_excerpt": "core/__init__.py:15: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_import(module_name: str, attr_name: str):\n    ^\ncore/__init__.py:25: error: Function is missing a type annotation \n[no-untyped-def]\n                def __init__(self, *args, **kwargs):\n                ^\ncore/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_module(module_name: str):\n    ^\nmanagers/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def __getattr__(name: str):\n    ^\ncore/cache_metrics.py:102: error: Returning Any from function declared to\nreturn \"object | None\"  [no-any-return]\n                return existing\n                ^~~~~~~~~~~~~~~\ncore/cache_metrics.py:111: error: Returning Any from function declared to\nreturn \"object | None\"  [no-any-return]\n            return metric\n            ^~~~~~~~~~~~~\ncore/agent_metrics.py:38: error: Missing type parameters for generic type\n\"dict\"  [type-arg]\n        def snapshot(self) -> dict:\n                              ^\ncore/agent_metrics.py:53: error: Missing type parameters for generic type\n\"tuple\"  [type-arg]\n            sel …[truncated]",
+    "failure_summary": "mypy static analysis failure",
+    "suspected_targets": [
+      "core/__init__.py",
+      "managers/__init__.py",
+      "core/cache_metrics.py",
+      "core/agent_metrics.py",
+      "core/dlp.py",
+      "agent/registry.py",
+      "scripts/migrate_sqlite_to_pg.py",
+      "core/voice.py",
+      "core/vision.py",
+      "core/llm_metrics.py",
+      "core/hitl.py",
+      "core/utils/token_counter.py",
+      "core/router.py",
+      "agent/core/event_stream.py",
+      "managers/github_manager.py",
+      "agent/core/event_backends/redis_backend.py",
+      "agent/core/event_backends/rabbitmq_backend.py",
+      "agent/core/event_backends/kafka_backend.py",
+      "managers/web_search.py",
+      "managers/teams_manager.py"
+    ],
+    "failed_jobs": [
+      "local-static-analysis"
+    ],
+    "root_cause_hint": "",
+    "diagnostic_hints": [
+      "İlk inceleme hedefleri: core/__init__.py, managers/__init__.py, core/cache_metrics.py, core/agent_metrics.py",
+      "Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli."
+    ]
+  },
+  "prompt": "[CI_REMEDIATION]\nAşağıdaki CI başarısızlığını proaktif remediation akışı olarak ele al.\n1. Kök nedeni teşhis et.\n2. Minimal ve güvenli patch öner.\n3. Çalıştırılması gereken testleri belirt.\n4. PR başlığı ve PR gövdesi taslağı üret.\n5. Log/URL'lerden emin olamadığın noktaları açıkça varsayım olarak işaretle.\n\nrepo=local/repo\nkind=generic_ci_failure\nworkflow_name=local_mypy_gate\nrun_id=local-heal-1777335677\nrun_number=\nbranch=local\nbase_branch=main\nsha=\nstatus=completed\nconclusion=failure\nhtml_url=\njobs_url=\nlogs_url=\nfailure_summary=mypy static analysis failure\nlog_excerpt=core/__init__.py:15: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_import(module_name: str, attr_name: str):\n    ^\ncore/__init__.py:25: error: Function is missing a type annotation \n[no-untyped-def]\n                def __init__(self, *args, **kwargs):\n                ^\ncore/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_module(module_name: str):\n    ^\nmanagers/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def __getattr__(name: str):\n    ^\ncore/cache_metrics.py:102: error: Returning Any from function declared to\nreturn \"object | None\"  [no-any-return]\n                return existing\n                ^~~~~~~~~~~~~~~\ncore/cache_metrics.py:111: error: Returning Any from function declared to\nreturn \"object | None\"  [no-any-return]\n            return metric\n            ^~~~~~~~~~~~~\ncore/agent_metrics.py:38: error: Missing type parameters for generic type\n\"dict\"  [type-arg]\n        def snapshot(self) -> dict:\n                              ^\ncore/agent_metrics.py:53: error: Missing type parameters for generic type\n\"tuple\"  [type-arg]\n            sel …[truncated]\nfailed_jobs=local-static-analysis\nroot_cause_hint=\nsuspected_targets=core/__init__.py, managers/__init__.py, core/cache_metrics.py, core/agent_metrics.py, core/dlp.py, agent/registry.py, scripts/migrate_sqlite_to_pg.py, core/voice.py, core/vision.py, core/llm_metrics.py, core/hitl.py, core/utils/token_counter.py, core/router.py, agent/core/event_stream.py, managers/github_manager.py, agent/core/event_backends/redis_backend.py, agent/core/event_backends/rabbitmq_backend.py, agent/core/event_backends/kafka_backend.py, managers/web_search.py, managers/teams_manager.py\ndiagnostic_hints=İlk inceleme hedefleri: core/__init__.py, managers/__init__.py, core/cache_metrics.py, core/agent_metrics.py | Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli.\n",
+  "suspected_targets": [
+    "core/__init__.py",
+    "managers/__init__.py",
+    "core/cache_metrics.py",
+    "core/agent_metrics.py",
+    "core/dlp.py",
+    "agent/registry.py",
+    "scripts/migrate_sqlite_to_pg.py",
+    "core/voice.py",
+    "core/vision.py",
+    "core/llm_metrics.py",
+    "core/hitl.py",
+    "core/utils/token_counter.py",
+    "core/router.py",
+    "agent/core/event_stream.py",
+    "managers/github_manager.py",
+    "agent/core/event_backends/redis_backend.py",
+    "agent/core/event_backends/rabbitmq_backend.py",
+    "agent/core/event_backends/kafka_backend.py",
+    "managers/web_search.py",
+    "managers/teams_manager.py"
+  ],
+  "diagnostic_hints": [
+    "İlk inceleme hedefleri: core/__init__.py, managers/__init__.py, core/cache_metrics.py, core/agent_metrics.py",
+    "Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli."
+  ],
+  "failed_jobs": [
+    "local-static-analysis"
+  ],
+  "root_cause_summary": "mypy static analysis failure",
+  "remediation_loop": {
+    "status": "planned",
+    "mode": "self_heal_with_hitl",
+    "needs_human_approval": true,
+    "max_auto_attempts": 1,
+    "scope_paths": [
+      "core/__init__.py",
+      "managers/__init__.py",
+      "core/cache_metrics.py",
+      "core/agent_metrics.py",
+      "core/dlp.py",
+      "agent/registry.py",
+      "scripts/migrate_sqlite_to_pg.py",
+      "core/voice.py",
+      "core/vision.py",
+      "core/llm_metrics.py",
+      "core/hitl.py",
+      "core/utils/token_counter.py"
+    ],
+    "failed_jobs": [
+      "local-static-analysis"
+    ],
+    "validation_commands": [
+      "python -m pytest"
+    ],
+    "steps": [
+      {
+        "name": "diagnose",
+        "status": "completed",
+        "detail": "mypy static analysis failure"
+      },
+      {
+        "name": "patch",
+        "status": "pending",
+        "detail": "Şüpheli dosyalar için minimal ve kontrollü patch hazırlanacak."
+      },
+      {
+        "name": "validate",
+        "status": "pending",
+        "detail": "Hedefli testler ve tam regresyon komutları çalıştırılacak."
+      },
+      {
+        "name": "handoff",
+        "status": "awaiting_hitl",
+        "detail": "Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor."
+      }
+    ],
+    "summary": "Remediation loop hazır: mod=self_heal_with_hitl, hedef=12 dosya, doğrulama=1 komut, failed_jobs=1."
+  },
+  "pr_proposal": {
+    "title": "CI remediation: stabilize local_mypy_gate",
+    "body": "## Context\n- Repository: local/repo\n- Workflow: local_mypy_gate\n- Run ID: local-heal-1777335677\n- Base branch: main\n- Source branch: local\n- SHA: \n- HTML URL: \n- Logs URL: \n\n## Failure Summary\nmypy static analysis failure\n\n## Root Cause Hypothesis\nmypy static analysis failure\n\n## Suspected Targets\ncore/__init__.py, managers/__init__.py, core/cache_metrics.py, core/agent_metrics.py, core/dlp.py, agent/registry.py, scripts/migrate_sqlite_to_pg.py, core/voice.py, core/vision.py, core/llm_metrics.py, core/hitl.py, core/utils/token_counter.py, core/router.py, agent/core/event_stream.py, managers/github_manager.py, agent/core/event_backends/redis_backend.py, agent/core/event_backends/rabbitmq_backend.py, agent/core/event_backends/kafka_backend.py, managers/web_search.py, managers/teams_manager.py\n\n## Failed Jobs\nlocal-static-analysis\n\n## Diagnosis and Proposed Patch\ncore/__init__.py:15: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_import(module_name: str, attr_name: str):\n    ^\ncore/__init__.py:25: error: Function is missing a type annotation \n[no-untyped-def]\n                def __init__(self, *args, **kwargs):\n                ^\ncore/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def _optional_module(module_name: str):\n    ^\nmanagers/__init__.py:33: error: Function is missing a return type annotation \n[no-untyped-def]\n    def __getattr__(name: str):\n    ^\ncore/cache_metrics.py:102: error: Returning Any from function declared to\nreturn \"object | None\"  [no-any-return]\n                return existing\n                ^~~~~~~~~~~~~~~\n",
+    "base_branch": "main",
+    "head_branch_suggestion": "ci-remediation/local-heal-1777335677",
+    "root_cause_summary": "mypy static analysis failure",
+    "auto_create_ready": true
+  },
+  "self_heal_execution": {
+    "status": "awaiting_hitl",
+    "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı."
+  }
+}

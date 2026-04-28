@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentCatalog
 from config import Config
+from core.ci_remediation import normalize_self_heal_plan
 from managers.code_manager import CodeManager
 from managers.package_info import PackageInfoManager
 from managers.security import SecurityManager
@@ -56,6 +58,7 @@ class CoderAgent(BaseAgent):
         self.register_tool("audit_project", self._tool_audit_project)
         self.register_tool("get_package_info", self._tool_get_package_info)
         self.register_tool("scan_project_todos", self._tool_scan_project_todos)
+        self.register_tool("run_self_heal", self._tool_run_self_heal)
 
     async def _tool_read_file(self, arg: str) -> str:
         _ok, out = await asyncio.to_thread(self.code.read_file, arg)
@@ -118,6 +121,79 @@ class CoderAgent(BaseAgent):
         directory = arg.strip() or str(self.cfg.BASE_DIR)
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
+    async def execute_self_heal_plan(
+        self,
+        raw_plan: Any,
+        *,
+        scope_paths: list[str] | None = None,
+        fallback_validation_commands: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Self-heal planındaki patch operasyonlarını fiziksel dosyalara uygular."""
+        normalized = normalize_self_heal_plan(
+            raw_plan,
+            scope_paths=list(scope_paths or []),
+            fallback_validation_commands=list(fallback_validation_commands or []),
+        )
+        operations = list(normalized.get("operations") or [])
+        if not operations:
+            return {
+                "status": "skipped",
+                "summary": "Uygulanacak patch operasyonu bulunamadı.",
+                "applied_operations": [],
+                "failed_operations": [],
+                "normalized_plan": normalized,
+            }
+
+        applied_operations: list[dict[str, str]] = []
+        failed_operations: list[dict[str, str]] = []
+        for operation in operations:
+            path = str(operation.get("path") or "").strip()
+            target = str(operation.get("target") or "")
+            replacement = str(operation.get("replacement") or "")
+            ok, out = await asyncio.to_thread(self.code.patch_file, path, target, replacement)
+            result_item = {
+                "path": path,
+                "message": str(out or ""),
+            }
+            if ok:
+                applied_operations.append(result_item)
+            else:
+                failed_operations.append(result_item)
+
+        status = "applied" if applied_operations and not failed_operations else "failed"
+        if applied_operations and failed_operations:
+            status = "partial"
+
+        return {
+            "status": status,
+            "summary": normalized.get("summary") or "Self-heal patch planı uygulandı.",
+            "applied_operations": applied_operations,
+            "failed_operations": failed_operations,
+            "validation_commands": list(normalized.get("validation_commands") or []),
+            "normalized_plan": normalized,
+        }
+
+    async def _tool_run_self_heal(self, arg: str) -> str:
+        payload_raw = (arg or "").strip()
+        payload: Any
+        if payload_raw.startswith("{"):
+            try:
+                payload = json.loads(payload_raw)
+            except json.JSONDecodeError:
+                payload = payload_raw
+        else:
+            payload = payload_raw
+
+        if isinstance(payload, dict):
+            result = await self.execute_self_heal_plan(
+                payload.get("plan"),
+                scope_paths=list(payload.get("scope_paths") or []),
+                fallback_validation_commands=list(payload.get("fallback_validation_commands") or []),
+            )
+        else:
+            result = await self.execute_self_heal_plan(payload)
+        return json.dumps(result, ensure_ascii=False)
+
     @staticmethod
     def _parse_qa_feedback(raw_feedback: str) -> dict:
         payload = (raw_feedback or "").strip()
@@ -153,6 +229,8 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("patch_file", prompt.split("|", 1)[1])
         if lower.startswith("execute_code|"):
             return await self.call_tool("execute_code", prompt.split("|", 1)[1])
+        if lower.startswith("self_heal|"):
+            return await self.call_tool("run_self_heal", prompt.split("|", 1)[1])
 
         if lower.startswith("qa_feedback|"):
             feedback = prompt.split("|", 1)[1].strip()

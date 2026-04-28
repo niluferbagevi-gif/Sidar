@@ -1,4 +1,5 @@
 import importlib
+import json
 import logging
 import sys
 import types
@@ -148,6 +149,20 @@ class _MainFlowAgent:
     async def respond(self, prompt):
         self.command_prompts.append(prompt)
         yield "OK"
+
+
+class _HealAgent(_MainFlowAgent):
+    def __init__(self, cfg, status="applied"):
+        super().__init__(cfg)
+        self.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = False
+        self.status = status
+        self.heal_calls = []
+
+    async def _attempt_autonomous_self_heal(self, **kwargs):
+        self.heal_calls.append(kwargs)
+        remediation = kwargs["remediation"]
+        remediation["self_heal_plan"] = {"operations": [{"path": "core/example.py"}]}
+        remediation["self_heal_execution"] = {"status": self.status}
 
 
 def test_cli_main_status_mode_boots_agent(monkeypatch, capsys):
@@ -473,6 +488,8 @@ def test_main_skips_overrides_when_args_are_none(monkeypatch):
 
     parsed = SimpleNamespace(
         command=None,
+        heal=None,
+        heal_output="artifacts/remediation/heal_result.json",
         status=True,
         level=None,
         provider=None,
@@ -490,3 +507,62 @@ def test_main_skips_overrides_when_args_are_none(monkeypatch):
     assert cfg.AI_PROVIDER == "ollama"
     assert cfg.CODING_MODEL == "qwen2.5-coder:7b"
     assert cfg.CLI_FAST_MODE is False
+
+
+def test_main_heal_mode_returns_zero_on_applied(monkeypatch, tmp_path):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    log_file = tmp_path / "mypy_errors.log"
+    log_file.write_text("cli.py:10: error: Incompatible types", encoding="utf-8")
+    output_file = tmp_path / "heal_result.json"
+    created = {}
+
+    def _agent_factory(cfg):
+        agent = _HealAgent(cfg, status="applied")
+        created["agent"] = agent
+        return agent
+
+    monkeypatch.setattr(cli, "Config", _FakeConfig)
+    monkeypatch.setattr(cli, "SidarAgent", _agent_factory)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["cli.py", "--heal", str(log_file), "--heal-output", str(output_file)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["self_heal_execution"]["status"] == "applied"
+    assert created["agent"].cfg.ENABLE_AUTONOMOUS_SELF_HEAL is True
+    assert created["agent"].heal_calls[0]["ci_context"]["suspected_targets"] == ["cli.py"]
+
+
+def test_main_heal_mode_returns_one_when_not_applied(monkeypatch, tmp_path):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    log_file = tmp_path / "mypy_errors.log"
+    log_file.write_text("cli.py:10: error: name not defined", encoding="utf-8")
+
+    monkeypatch.setattr(cli, "Config", _FakeConfig)
+    monkeypatch.setattr(cli, "SidarAgent", lambda cfg: _HealAgent(cfg, status="failed"))
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "--heal", str(log_file)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_heal_mode_fails_for_missing_log(monkeypatch, tmp_path, capsys):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    agent = _HealAgent(_FakeConfig(), status="applied")
+    code = await cli._run_heal_mode(
+        agent,
+        log_path=str(tmp_path / "missing.log"),
+        output_path=str(tmp_path / "heal_result.json"),
+    )
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "bulunamadı" in output
