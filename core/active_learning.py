@@ -75,7 +75,7 @@ class FeedbackStore:
     """
 
     def __init__(
-        self, database_url: str = "sqlite+aiosqlite:///data/sidar.db", config=None
+        self, database_url: str = "sqlite+aiosqlite:///data/sidar.db", config: Any | None = None
     ) -> None:
         self._db_url = database_url
         self._engine: Any | None = None
@@ -370,7 +370,7 @@ class ContinuousLearningPipeline:
         store: FeedbackStore,
         *,
         trainer: LoRATrainer | None = None,
-        config=None,
+        config: Any | None = None,
     ) -> None:
         self.store = store
         self.config = config
@@ -646,7 +646,7 @@ class LoRATrainer:
     asyncio.to_thread() ile çağrılmalıdır.
     """
 
-    def __init__(self, config=None) -> None:
+    def __init__(self, config: Any | None = None) -> None:
         self.enabled: bool = bool(getattr(config, "ENABLE_LORA_TRAINING", False))
         self.base_model: str = str(getattr(config, "LORA_BASE_MODEL", "") or "")
         self.lora_rank: int = int(getattr(config, "LORA_RANK", 8) or 8)
@@ -824,7 +824,7 @@ _pipeline_lock = threading.Lock()
 _continuous_learning_pipeline: ContinuousLearningPipeline | None = None
 
 
-def get_feedback_store(config=None) -> FeedbackStore:
+def get_feedback_store(config: Any | None = None) -> FeedbackStore:
     global _feedback_store
     with _store_lock:
         if _feedback_store is None:
@@ -836,7 +836,7 @@ def get_feedback_store(config=None) -> FeedbackStore:
     return _feedback_store
 
 
-def get_continuous_learning_pipeline(config=None) -> ContinuousLearningPipeline:
+def get_continuous_learning_pipeline(config: Any | None = None) -> ContinuousLearningPipeline:
     """Süreç-geneli sürekli öğrenme pipeline singleton'ını döndürür."""
     global _continuous_learning_pipeline
     if _continuous_learning_pipeline is not None:
@@ -856,7 +856,9 @@ def get_continuous_learning_pipeline(config=None) -> ContinuousLearningPipeline:
     return _continuous_learning_pipeline
 
 
-def schedule_continuous_learning_cycle(*, config=None, reason: str = "background") -> bool:
+def schedule_continuous_learning_cycle(
+    *, config: Any | None = None, reason: str = "background"
+) -> bool:
     """Uygunsa sürekli öğrenme döngüsünü arka planda planlar."""
     pipeline = get_continuous_learning_pipeline(config)
     return pipeline.schedule_cycle(reason=reason)
@@ -868,7 +870,7 @@ async def flag_weak_response(
     score: int,
     reasoning: str,
     *,
-    config=None,
+    config: Any | None = None,
     user_id: str = "",
     session_id: str = "judge:auto",
     provider: str = "",
