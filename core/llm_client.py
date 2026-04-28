@@ -1302,7 +1302,7 @@ class AnthropicClient(BaseLLMClient):
 
         try:
             anthropic_module = importlib.import_module("anthropic")
-            AsyncAnthropic = getattr(anthropic_module, "AsyncAnthropic")
+            AsyncAnthropic = anthropic_module.AsyncAnthropic
         except ImportError as exc:
             msg = json.dumps(
                 {
