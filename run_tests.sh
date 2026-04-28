@@ -4,6 +4,31 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+AUTO_FIX="${AUTO_FIX:-0}"
+AUTO_FIX_MAX_RETRIES="${AUTO_FIX_MAX_RETRIES:-3}"
+
+for arg in "$@"; do
+  case "${arg}" in
+    --auto-fix)
+      AUTO_FIX=1
+      ;;
+    --auto-fix-max-retries=*)
+      AUTO_FIX_MAX_RETRIES="${arg#*=}"
+      ;;
+    --help|-h)
+      echo "Kullanım: ./run_tests.sh [--auto-fix] [--auto-fix-max-retries=N]"
+      echo "  --auto-fix                 Mypy hatalarında otonom remediation döngüsünü tetikler."
+      echo "  --auto-fix-max-retries=N   Otonom remediation için maksimum deneme sayısı (varsayılan: 3)."
+      exit 0
+      ;;
+  esac
+done
+
+if ! [[ "${AUTO_FIX_MAX_RETRIES}" =~ ^[0-9]+$ ]] || [ "${AUTO_FIX_MAX_RETRIES}" -lt 1 ]; then
+  echo "⚠️ Geçersiz AUTO_FIX_MAX_RETRIES='${AUTO_FIX_MAX_RETRIES}'. Varsayılan 3 kullanılacak."
+  AUTO_FIX_MAX_RETRIES=3
+fi
+
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 run_precommit_autofix() {
@@ -265,8 +290,24 @@ run_static_analysis_gates() {
     return 1
   fi
   if ! uv run mypy .; then
-    BACKEND_EXIT_CODE=1
-    return 1
+    if [ "${AUTO_FIX}" = "1" ]; then
+      echo "⚠️ Mypy hatası bulundu. Otonom self-healing döngüsü tetikleniyor..."
+      if ! uv run python scripts/auto_remediate_tests.py --max-retries "${AUTO_FIX_MAX_RETRIES}"; then
+        echo "❌ Otonom remediation başarısız oldu."
+        BACKEND_EXIT_CODE=1
+        return 1
+      fi
+      echo "🔁 Remediation sonrası mypy yeniden doğrulanıyor..."
+      if ! uv run mypy .; then
+        echo "❌ Otonom remediation sonrası mypy halen başarısız."
+        BACKEND_EXIT_CODE=1
+        return 1
+      fi
+    else
+      echo "❌ Mypy hataları mevcut. Otonom düzeltme için: ./run_tests.sh --auto-fix"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
   fi
 }
 
