@@ -39,7 +39,7 @@ def estimate_tokens(text: str, *, model: str = "") -> int:
 
 @lru_cache(maxsize=64)
 def get_tiktoken_encoding(model: str = "") -> Any:
-    import tiktoken  # type: ignore[import-not-found]
+    import tiktoken
 
     model_name = (model or "").strip()
     try:

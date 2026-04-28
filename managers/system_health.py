@@ -208,7 +208,7 @@ class SystemHealthManager:
         if not self.use_gpu or not self._torch_available:
             return False
         try:
-            import torch  # type: ignore[import-not-found]
+            import torch
 
             return bool(torch.cuda.is_available())
         except Exception:
@@ -216,7 +216,7 @@ class SystemHealthManager:
 
     def _init_nvml(self) -> None:
         try:
-            import pynvml  # type: ignore[import-not-found]
+            import pynvml
 
             pynvml.nvmlInit()
             self._nvml_initialized = True
