@@ -33,8 +33,22 @@ _MISSING_MODULE_PATTERN = re.compile(
     r"(?:ModuleNotFoundError:\s*No module named|No module named)\s+['\"](?P<module>[\w.:-]+)['\"]",
     re.IGNORECASE,
 )
+_MYPY_IMPORT_UNTYPED_MODULE_PATTERN = re.compile(
+    r"(?:Library stubs not installed for|Cannot find implementation or library stub for module named)\s+['\"](?P<module>[\w.:-]+)['\"]",
+    re.IGNORECASE,
+)
+_MYPY_STUB_INSTALL_HINT_PATTERN = re.compile(
+    r"(?:uv\s+pip\s+install|python(?:3)?\s+-m\s+pip\s+install|pip\s+install)\s+(?P<pkg>types-[A-Za-z0-9_.-]+)",
+    re.IGNORECASE,
+)
 _AUTO_INSTALL_PACKAGES: dict[str, str] = {
     "psycopg2": "psycopg2-binary",
+}
+_AUTO_INSTALL_TYPE_STUBS: dict[str, str] = {
+    "psutil": "types-psutil",
+    "yaml": "types-PyYAML",
+    "dateutil": "types-python-dateutil",
+    "requests": "types-requests",
 }
 
 
@@ -668,11 +682,31 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             if match.group("module").strip()
         }
     )
+    import_untyped_modules = sorted(
+        {
+            match.group("module").strip().split(".", 1)[0]
+            for match in _MYPY_IMPORT_UNTYPED_MODULE_PATTERN.finditer(combined_text)
+            if match.group("module").strip()
+        }
+    )
+    hinted_stub_packages = sorted(
+        {
+            match.group("pkg").strip()
+            for match in _MYPY_STUB_INSTALL_HINT_PATTERN.finditer(combined_text)
+            if match.group("pkg").strip()
+        }
+    )
     bootstrap_commands: list[str] = []
     for module_name in missing_modules:
         package_name = _AUTO_INSTALL_PACKAGES.get(module_name)
         if package_name:
             bootstrap_commands.append(f"uv pip install {package_name}")
+    for module_name in import_untyped_modules:
+        package_name = _AUTO_INSTALL_TYPE_STUBS.get(module_name)
+        if package_name:
+            bootstrap_commands.append(f"uv pip install {package_name}")
+    for package_name in hinted_stub_packages:
+        bootstrap_commands.append(f"uv pip install {package_name}")
     batched_scope = len(suspected_targets) > scope_hitl_threshold
     autonomous_batches: list[dict[str, Any]] = []
     if batched_scope:

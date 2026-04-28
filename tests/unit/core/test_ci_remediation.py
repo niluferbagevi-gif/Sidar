@@ -622,6 +622,29 @@ def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() ->
     assert "uv pip install psycopg2-binary" in result["validation_commands"]
 
 
+def test_build_remediation_loop_adds_stub_install_for_import_untyped() -> None:
+    context = {
+        "suspected_targets": ["core/system_health.py"],
+        "failed_jobs": [],
+        "failure_summary": 'error: Library stubs not installed for "psutil"  [import-untyped]',
+        "log_excerpt": 'Hint: "python3 -m pip install types-psutil"',
+    }
+    result = ci.build_remediation_loop(context, 'Library stubs not installed for "psutil"')
+    assert "uv pip install types-psutil" in result["bootstrap_commands"]
+    assert "uv pip install types-psutil" in result["validation_commands"]
+
+
+def test_build_remediation_loop_adds_stub_install_from_hint_only() -> None:
+    context = {
+        "suspected_targets": ["core/a.py"],
+        "failed_jobs": [],
+        "failure_summary": "mypy import-untyped failures",
+        "log_excerpt": "Hint: pip install types-requests",
+    }
+    result = ci.build_remediation_loop(context, "import-untyped")
+    assert "uv pip install types-requests" in result["bootstrap_commands"]
+
+
 def test_build_remediation_loop_batches_follow_configured_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
