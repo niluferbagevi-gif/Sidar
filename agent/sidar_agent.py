@@ -528,56 +528,95 @@ class SidarAgent:
             30,
             int(getattr(self.cfg, "SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180) or 180),
         )
+        plan_max_retries = max(
+            1,
+            int(getattr(self.cfg, "SELF_HEAL_PLAN_MAX_RETRIES", 3) or 3),
+        )
         skip_full_scope_min_files = max(
             1,
             int(getattr(self.cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6),
         )
 
         async def _generate_plan_for_scope(paths: list[str]) -> dict[str, Any]:
-            snapshots = await self._collect_self_heal_snapshots(paths)
-            scope_loop = dict(remediation_loop)
-            scope_loop["scope_paths"] = paths
-            prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
-            try:
-                raw_plan = await asyncio.wait_for(
-                    self.llm.chat(
-                        messages=[{"role": "user", "content": prompt}],
-                        model=getattr(self.cfg, "CODING_MODEL", None),
-                        temperature=0.1,
-                        stream=False,
-                        json_mode=True,
-                    ),
-                    timeout=plan_timeout_seconds,
+            last_plan: dict[str, Any] | None = None
+            for attempt in range(1, plan_max_retries + 1):
+                snapshots = await self._collect_self_heal_snapshots(paths)
+                scope_loop = dict(remediation_loop)
+                scope_loop["scope_paths"] = paths
+                scope_loop["plan_retry"] = {"attempt": attempt, "max_retries": plan_max_retries}
+                prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
+                try:
+                    raw_plan = await asyncio.wait_for(
+                        self.llm.chat(
+                            messages=[{"role": "user", "content": prompt}],
+                            model=getattr(self.cfg, "CODING_MODEL", None),
+                            temperature=0.1,
+                            stream=False,
+                            json_mode=True,
+                        ),
+                        timeout=plan_timeout_seconds,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "Self-heal plan generation timeout: scope=%s timeout=%ss attempt=%s/%s",
+                        ",".join(paths[:6]),
+                        plan_timeout_seconds,
+                        attempt,
+                        plan_max_retries,
+                    )
+                    last_plan = {
+                        "summary": (
+                            "Self-heal planı zaman aşımına uğradı; "
+                            "daha küçük batch ile yeniden denenecek."
+                        ),
+                        "confidence": "unknown",
+                        "operations": [],
+                        "validation_commands": fallback_validation_commands,
+                    }
+                    continue
+                except Exception as exc:
+                    logger.warning(
+                        "Self-heal plan generation failed for scope %s at attempt %s/%s: %s",
+                        paths,
+                        attempt,
+                        plan_max_retries,
+                        exc,
+                    )
+                    last_plan = {
+                        "summary": f"Self-heal planı üretilemedi: {exc}",
+                        "confidence": "unknown",
+                        "operations": [],
+                        "validation_commands": fallback_validation_commands,
+                    }
+                    continue
+
+                normalized = normalize_self_heal_plan(
+                    raw_plan,
+                    scope_paths=paths,
+                    fallback_validation_commands=fallback_validation_commands,
+                    max_operations=max_operations,
                 )
-            except TimeoutError:
-                logger.warning(
-                    "Self-heal plan generation timeout: scope=%s timeout=%ss",
-                    ",".join(paths[:6]),
-                    plan_timeout_seconds,
-                )
-                return {
-                    "summary": (
-                        "Self-heal planı zaman aşımına uğradı; "
-                        "daha küçük batch ile yeniden denenecek."
-                    ),
-                    "confidence": "unknown",
-                    "operations": [],
-                    "validation_commands": fallback_validation_commands,
-                }
-            except Exception as exc:
-                logger.warning("Self-heal plan generation failed for scope %s: %s", paths, exc)
-                return {
-                    "summary": f"Self-heal planı üretilemedi: {exc}",
-                    "confidence": "unknown",
-                    "operations": [],
-                    "validation_commands": fallback_validation_commands,
-                }
-            return normalize_self_heal_plan(
-                raw_plan,
-                scope_paths=paths,
-                fallback_validation_commands=fallback_validation_commands,
-                max_operations=max_operations,
-            )
+                normalized["plan_attempt"] = attempt
+                normalized["plan_max_retries"] = plan_max_retries
+                if list(normalized.get("operations") or []):
+                    return normalized
+                last_plan = normalized
+
+            if last_plan is not None:
+                summary = str(last_plan.get("summary") or "").strip()
+                attempts_info = f" (attempts: {plan_max_retries}/{plan_max_retries})"
+                last_plan["summary"] = f"{summary}{attempts_info}" if summary else attempts_info.strip()
+                last_plan["plan_attempt"] = plan_max_retries
+                last_plan["plan_max_retries"] = plan_max_retries
+                return last_plan
+            return {
+                "summary": "Self-heal planı üretilemedi.",
+                "confidence": "unknown",
+                "operations": [],
+                "validation_commands": fallback_validation_commands,
+                "plan_attempt": plan_max_retries,
+                "plan_max_retries": plan_max_retries,
+            }
 
         should_attempt_full_scope = (
             len(scope_paths) < skip_full_scope_min_files
@@ -760,6 +799,17 @@ class SidarAgent:
         remediation["self_heal_plan"] = plan
         if not list(plan.get("operations") or []):
             execution = {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
+            if int(plan.get("plan_attempt") or 0) >= int(plan.get("plan_max_retries") or 0) > 0:
+                remediation_loop["needs_human_intervention"] = True
+                self._update_remediation_step(
+                    remediation_loop,
+                    "handoff",
+                    status="pending",
+                    detail=(
+                        "Maksimum self-heal plan retry limiti aşıldı; "
+                        "insan müdahalesi gerekiyor."
+                    ),
+                )
             self._update_remediation_step(
                 remediation_loop,
                 "patch",

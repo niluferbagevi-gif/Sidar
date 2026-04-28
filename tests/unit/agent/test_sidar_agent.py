@@ -884,6 +884,47 @@ async def test_build_self_heal_plan_uses_autonomous_batch_order(
     assert plan["operations"][0]["path"] == "c.py"
 
 
+async def test_build_self_heal_plan_retries_until_operation(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.code = fake_coverage_code_manager
+    fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_PLAN_MAX_RETRIES=3)
+
+    llm = AsyncMock()
+    llm.chat = AsyncMock(side_effect=[{"raw": "1"}, {"raw": "2"}])
+    agent.llm = llm
+
+    normalize_calls = {"n": 0}
+
+    def _normalize(_raw_plan: dict[str, str], **_kwargs: Any) -> dict[str, Any]:
+        normalize_calls["n"] += 1
+        if normalize_calls["n"] == 1:
+            return {"summary": "empty", "operations": [], "validation_commands": ["pytest -q"]}
+        return {
+            "summary": "ok",
+            "operations": [{"path": "a.py"}],
+            "validation_commands": ["pytest -q"],
+        }
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", _normalize)
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={"scope_paths": ["a.py"], "validation_commands": ["pytest"]},
+    )
+
+    assert llm.chat.await_count == 2
+    assert plan["operations"][0]["path"] == "a.py"
+    assert plan["plan_attempt"] == 2
+    assert plan["plan_max_retries"] == 3
+
+
 async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
@@ -910,6 +951,31 @@ async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_fact
     )
     assert applied["status"] == "applied"
     assert remediation["remediation_loop"]["status"] == "applied"
+
+
+async def test_attempt_autonomous_self_heal_marks_human_intervention_after_retry_exhaustion(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    agent._build_self_heal_plan = AsyncMock(
+        return_value={"operations": [], "plan_attempt": 3, "plan_max_retries": 3}
+    )
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [{"name": "patch"}, {"name": "handoff"}],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == "blocked"
+    assert remediation["remediation_loop"]["needs_human_intervention"] is True
 
 
 async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(
