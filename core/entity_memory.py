@@ -83,7 +83,7 @@ class EntityMemory:
     def __init__(
         self,
         database_url: str = "sqlite+aiosqlite:///data/sidar.db",
-        config=None,
+        config: Any | None = None,
         ttl_days: int | None = None,
         max_per_user: int | None = None,
     ) -> None:
@@ -273,7 +273,7 @@ class EntityMemory:
 _instance: EntityMemory | None = None
 
 
-def get_entity_memory(config=None) -> EntityMemory:
+def get_entity_memory(config: Any | None = None) -> EntityMemory:
     """Process-içi tekil EntityMemory örneğini döner; ilk çağrıda oluşturur."""
     global _instance
     if _instance is None or not isinstance(_instance, EntityMemory):

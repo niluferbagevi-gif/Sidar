@@ -16,7 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from config import Config
@@ -150,7 +150,8 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
         session.page.select_option(selector, value=value, timeout=manager.timeout_ms)
 
     def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
-        return session.page.locator(selector).inner_html(timeout=manager.timeout_ms)
+        html = session.page.locator(selector).inner_html(timeout=manager.timeout_ms)
+        return str(html)
 
     def capture_screenshot(
         self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
@@ -181,17 +182,17 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
             raise ValueError(f"Selenium browser tipi desteklenmiyor: {browser_name}")
 
         if browser_name in {"chrome", "chromium"}:
-            options = webdriver.ChromeOptions()
+            chrome_options = webdriver.ChromeOptions()
             if headless:
-                options.add_argument("--headless=new")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--no-sandbox")
-            driver = webdriver.Chrome(options=options)
+                chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--no-sandbox")
+            driver = webdriver.Chrome(options=chrome_options)
         else:
-            options = webdriver.FirefoxOptions()
+            firefox_options = webdriver.FirefoxOptions()
             if headless:
-                options.add_argument("-headless")
-            driver = webdriver.Firefox(options=options)
+                firefox_options.add_argument("-headless")
+            driver = webdriver.Firefox(options=firefox_options)
 
         driver.set_page_load_timeout(max(5, manager.timeout_ms // 1000))
         return BrowserSession(
@@ -496,11 +497,12 @@ class BrowserManager:
             return {"success": False, "reason": "LLM istemcisi bağlı değil"}
         multimodal_module = importlib.import_module("core.multimodal")
         pipeline = multimodal_module.MultimodalPipeline(self._llm, self.cfg)
-        return await pipeline.analyze_media(
+        result = await pipeline.analyze_media(
             media_path=image_path,
             mime_type="image/png",
             prompt=prompt,
         )
+        return cast(dict[str, Any], result)
 
     @staticmethod
     def _hash_file(path: Path) -> str:
