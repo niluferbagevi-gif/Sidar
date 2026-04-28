@@ -9,9 +9,9 @@ import json
 import logging
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog

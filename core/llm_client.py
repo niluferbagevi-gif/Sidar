@@ -694,8 +694,12 @@ class GeminiClient(BaseLLMClient):
         genai_client = None
         genai_types = None
         try:
-            from google import genai as google_genai  # type: ignore[import-not-found,import-untyped]
-            from google.genai import types as google_genai_types  # type: ignore[import-not-found,import-untyped]
+            from google import (
+                genai as google_genai,  # type: ignore[import-not-found,import-untyped]
+            )
+            from google.genai import (
+                types as google_genai_types,  # type: ignore[import-not-found,import-untyped]
+            )
 
             genai_client = google_genai.Client(
                 api_key=str(_setting(self.config, "GEMINI_API_KEY", ""))

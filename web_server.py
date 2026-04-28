@@ -72,6 +72,7 @@ from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from config import Config
 from core.ci_remediation import build_ci_failure_context
+from core.db import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
 from core.llm_metrics import (
@@ -79,7 +80,6 @@ from core.llm_metrics import (
     reset_current_metrics_user_id,
     set_current_metrics_user_id,
 )
-from core.db import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
 from managers.system_health import render_llm_metrics_prometheus
 
 _ANYIO_CLOSED = anyio.ClosedResourceError

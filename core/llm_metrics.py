@@ -9,8 +9,9 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Coroutine
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Coroutine, cast
+from typing import Any, cast
 
 
 @dataclass

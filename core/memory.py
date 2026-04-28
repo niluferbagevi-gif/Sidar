@@ -6,9 +6,9 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Any
 
 from config import Config
