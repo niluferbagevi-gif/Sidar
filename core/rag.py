@@ -1088,7 +1088,9 @@ class DocumentStore:
         session_id: str = "global",
     ) -> str:
         doc_id = uuid.uuid4().hex[:12]
-        parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
+        parent_id = hashlib.md5(
+            f"{title}{source}".encode(), usedforsecurity=False
+        ).hexdigest()[:12]
         tags = tags or []
         now = time.time()
 
