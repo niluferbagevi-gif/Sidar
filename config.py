@@ -512,7 +512,7 @@ class Config:
     ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
-    TRUSTED_PROXIES: frozenset = frozenset(get_list_env("TRUSTED_PROXIES", ["127.0.0.1"]))
+    TRUSTED_PROXIES: frozenset[str] = frozenset(get_list_env("TRUSTED_PROXIES", ["127.0.0.1"]))
     TRUSTED_PROXIES_LIST: list[str] = sorted(TRUSTED_PROXIES)
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
@@ -598,12 +598,6 @@ class Config:
     WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
-
-    # ─── JWT Kimlik Doğrulama ────────────────────────────────
-    # JWT_SECRET_KEY boş bırakılırsa sunucu başlangıcında CRITICAL uyarısı verilir.
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
-    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
 
     # ─── Observability Bağlantı Noktaları ───────────────────
     # GRAFANA_URL ayarlanmazsa varsayılan olarak yerel kurulum portu kullanılır.
@@ -1019,15 +1013,15 @@ class Config:
         cls,
         *,
         service_name: str | None = None,
-        fastapi_app=None,
+        fastapi_app: Any | None = None,
         logger_obj: logging.Logger | None = None,
-        trace_module=_DEPENDENCY_AUTO,
-        otlp_exporter_cls=_DEPENDENCY_AUTO,
-        tracer_provider_cls=_DEPENDENCY_AUTO,
-        resource_cls=_DEPENDENCY_AUTO,
-        batch_span_processor_cls=_DEPENDENCY_AUTO,
-        fastapi_instrumentor_cls=_DEPENDENCY_AUTO,
-        httpx_instrumentor_cls=_DEPENDENCY_AUTO,
+        trace_module: Any = _DEPENDENCY_AUTO,
+        otlp_exporter_cls: Any = _DEPENDENCY_AUTO,
+        tracer_provider_cls: Any = _DEPENDENCY_AUTO,
+        resource_cls: Any = _DEPENDENCY_AUTO,
+        batch_span_processor_cls: Any = _DEPENDENCY_AUTO,
+        fastapi_instrumentor_cls: Any = _DEPENDENCY_AUTO,
+        httpx_instrumentor_cls: Any = _DEPENDENCY_AUTO,
     ) -> bool:
         """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
         log = logger_obj or logger
@@ -1046,19 +1040,29 @@ class Config:
 
         try:
             if trace_module is _DEPENDENCY_AUTO:
-                from opentelemetry import trace as trace_module
+                from opentelemetry import trace as imported_trace_module
+
+                trace_module = imported_trace_module
             if otlp_exporter_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter as otlp_exporter_cls,
+                    OTLPSpanExporter as imported_otlp_exporter_cls,
                 )
+
+                otlp_exporter_cls = imported_otlp_exporter_cls
             if tracer_provider_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace import TracerProvider as tracer_provider_cls
+                from opentelemetry.sdk.trace import TracerProvider as imported_tracer_provider_cls
+
+                tracer_provider_cls = imported_tracer_provider_cls
             if resource_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.resources import Resource as resource_cls
+                from opentelemetry.sdk.resources import Resource as imported_resource_cls
+
+                resource_cls = imported_resource_cls
             if batch_span_processor_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.trace.export import (
-                    BatchSpanProcessor as batch_span_processor_cls,
+                    BatchSpanProcessor as imported_batch_span_processor_cls,
                 )
+
+                batch_span_processor_cls = imported_batch_span_processor_cls
         except Exception:
             log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
             return False
@@ -1074,16 +1078,18 @@ class Config:
             if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
                 if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
                     from opentelemetry.instrumentation.fastapi import (
-                        FastAPIInstrumentor as fastapi_instrumentor_cls,
+                        FastAPIInstrumentor as imported_fastapi_instrumentor_cls,
                     )
+                    fastapi_instrumentor_cls = imported_fastapi_instrumentor_cls
                 fastapi_instrumentor_cls.instrument_app(fastapi_app)
 
             if cls.OTEL_INSTRUMENT_HTTPX:
                 if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
                     try:
                         from opentelemetry.instrumentation.httpx import (
-                            HTTPXClientInstrumentor as httpx_instrumentor_cls,
+                            HTTPXClientInstrumentor as imported_httpx_instrumentor_cls,
                         )
+                        httpx_instrumentor_cls = imported_httpx_instrumentor_cls
                     except Exception:
                         httpx_instrumentor_cls = None
                 if httpx_instrumentor_cls is not None:
