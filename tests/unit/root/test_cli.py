@@ -3,7 +3,6 @@ import json
 import logging
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
