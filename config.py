@@ -368,7 +368,7 @@ def check_hardware() -> HardwareInfo:
         info.driver_version = pynvml.nvmlSystemGetDriverVersion()
         pynvml.nvmlShutdown()
     except Exception:
-        pass  # opsiyonel bağımlılık; WSL2'de NVML erişimi kısıtlı olabilir
+        pass  # nosec B110 - opsiyonel bağımlılık; WSL2'de NVML erişimi kısıtlı olabilir
 
     return info
 
@@ -595,7 +595,7 @@ class Config:
     MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
-    WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")
+    WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")  # nosec B104 - geliştirme/Docker erişimi için bilinçli varsayılan.
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 

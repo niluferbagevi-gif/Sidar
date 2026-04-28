@@ -169,7 +169,7 @@ class GraphIndex:
         if value.startswith(("ws://", "wss://", "http://", "https://")):
             parsed = urllib.parse.urlparse(value)
             hostname = (parsed.hostname or "").lower()
-            if hostname and hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            if hostname and hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}:  # nosec B104
                 return None
             value = parsed.path or "/"
         if not value.startswith("/"):
