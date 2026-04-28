@@ -11,6 +11,20 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
+MYPY_SELF_HEAL_REFERENCE = """\
+Mypy quick-fix referansı:
+- [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici olarak dar kapsamlı
+  `# type: ignore[import-untyped]` kullan ve mümkünse satıra kısa gerekçe ekle.
+- [misc]: Genel kural; gerçek kök nedeni logdan teyit et. Sadece deterministic false-positive durumlarında
+  dar kapsamlı `# type: ignore[misc]` uygula.
+- [valid-type]: Geçersiz type ifadesi; import edilen sembolün gerçekten type olduğundan emin ol. Gerekirse
+  `typing.TypeAlias`, `from __future__ import annotations` veya doğru jenerik formu kullan.
+Kurallar:
+1) `type: ignore` her zaman spesifik kodla kullanılmalı (`ignore[...]`), çıplak ignore yasak.
+2) Ignore sadece lokal satır/ifade kapsamına uygulanmalı; dosya geneline yayma.
+3) Önce doğru type düzeltmesini dene, ignore son çare olmalı.
+"""
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sidar local self-heal CLI")
@@ -151,6 +165,7 @@ def _build_attempt_diagnosis(
     if scope_error_lines:
         diagnosis_lines.append("Hedef hata satırları:")
         diagnosis_lines.extend(f"- {line}" for line in scope_error_lines[:40])
+    diagnosis_lines.append(MYPY_SELF_HEAL_REFERENCE)
     return "\n".join(diagnosis_lines)
 
 

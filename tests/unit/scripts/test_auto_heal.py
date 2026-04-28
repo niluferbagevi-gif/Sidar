@@ -1,4 +1,10 @@
-from scripts.auto_heal import _build_scope_queue, _parse_approval_value, _select_auto_heal_model
+from scripts.auto_heal import (
+    MYPY_SELF_HEAL_REFERENCE,
+    _build_attempt_diagnosis,
+    _build_scope_queue,
+    _parse_approval_value,
+    _select_auto_heal_model,
+)
 
 
 def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
@@ -37,3 +43,15 @@ def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
         batch_size=2,
     )
     assert queue == [["a.py", "b.py"], ["c.py", "d.py"]]
+
+
+def test_build_attempt_diagnosis_includes_mypy_reference() -> None:
+    diagnosis = _build_attempt_diagnosis(
+        base_diagnosis="root cause",
+        scope_paths=["pkg/a.py"],
+        scope_error_lines=["pkg/a.py:10: error: Library stubs not installed  [import-untyped]"],
+        attempt=1,
+        total_attempts=3,
+    )
+    assert "ignore[import-untyped]" in diagnosis
+    assert MYPY_SELF_HEAL_REFERENCE in diagnosis
