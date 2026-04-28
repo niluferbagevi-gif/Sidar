@@ -290,11 +290,7 @@ class CodeManager:
             try:
                 candidate = docker_module.DockerClient(base_url=socket_path)
                 candidate.ping()
-            except (
-                getattr(getattr(docker_module, "errors", OSError), "DockerException", OSError),
-                OSError,
-                ValueError,
-            ):
+            except self._docker_exception_types(docker_module):
                 continue
             self.docker_client = candidate
             self.docker_available = True
@@ -327,6 +323,15 @@ class CodeManager:
             "Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi."
         )
         return True
+
+    @staticmethod
+    def _docker_exception_types(docker_module: Any) -> tuple[type[BaseException], ...]:
+        """Docker bağlantı denemelerinde yakalanacak güvenli exception tiplerini döndürür."""
+        docker_errors = getattr(docker_module, "errors", None)
+        docker_exception = getattr(docker_errors, "DockerException", None)
+        if isinstance(docker_exception, type) and issubclass(docker_exception, BaseException):
+            return (docker_exception, OSError, ValueError)
+        return (OSError, ValueError)
 
     def _init_docker(self) -> None:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""

@@ -412,7 +412,7 @@ class SystemHealthManager:
     def check_ollama(self) -> bool:
         """Ollama servisinin erişilebilirliğini timeout ile doğrula."""
         try:
-            import requests  # type: ignore[import-untyped]
+            import requests
 
             base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
             timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))

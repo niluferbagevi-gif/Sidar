@@ -10,7 +10,7 @@ import asyncio
 import logging
 from html import unescape
 from inspect import isawaitable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from bs4 import BeautifulSoup
@@ -350,7 +350,7 @@ class WebSearchManager:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
-        clean = cast(str, soup.get_text(separator=" ", strip=True))
+        clean = soup.get_text(separator=" ", strip=True)
         clean = unescape(clean)
         clean = " ".join(clean.split())
         return clean.strip()
