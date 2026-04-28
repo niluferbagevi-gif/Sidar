@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from defusedxml import ElementTree as ET
 
 
 def _load_json(path: Path, default: Any) -> Any:

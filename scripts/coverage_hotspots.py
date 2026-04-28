@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import argparse
 import os
-import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+from defusedxml import ElementTree as ET
 
 
 @dataclass
