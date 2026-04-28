@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from config import Config
+from core.db import Database, MessageRecord
 
 _config_get_config: Callable[[], Config] | None
 try:
     from config import get_config as _config_get_config
 except ImportError:  # pragma: no cover - test doubles may only expose Config
     _config_get_config = None
-from core.db import Database, MessageRecord
 
 logger = logging.getLogger(__name__)
 
