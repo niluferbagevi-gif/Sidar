@@ -22,7 +22,7 @@ import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -706,7 +706,10 @@ class MultimodalPipeline:
         if media_kind == "image":
             vision_module = importlib.import_module("core.vision")
             pipeline = vision_module.VisionPipeline(self._llm, self._config)
-            return await pipeline.analyze(image_path=str(source))
+            analysis_result = await pipeline.analyze(image_path=str(source))
+            if not isinstance(analysis_result, dict):
+                return {"success": False, "reason": "VisionPipeline unexpected response type"}
+            return cast(dict[str, Any], analysis_result)
 
         transcript: dict[str, Any] | None = transcript_override
         frame_analyses: list[dict[str, Any]] = []
