@@ -106,3 +106,33 @@ Yüksek hacimli tip hatalarında `blocked` oranı yalnızca JSON şema ihlalleri
 - **Signal compression**: Prompt’a tüm logu değil, batch ile ilgili ilk 20-40 kritik mypy satırını verin.
 - **Success metric**: “normalize sonrası kalan operasyon sayısı / üretilen operasyon sayısı”
   ve “uygulanabilen patch oranı” metriklerini batch bazında izleyin.
+
+## Yüksek risk bayrağı ve onay sonrası başarısızlık ayrımı
+
+`build_remediation_loop(...)` aşağıdaki durumlarda süreci high-risk kabul eder ve
+`needs_human_approval=true` üretir:
+
+- Hata metninde `syntaxerror`, `importerror`, `typeerror` vb. anahtar kelimeler varsa.
+- `suspected_targets` sayısı eşik değeri (varsayılan: `SELF_HEAL_HITL_SCOPE_THRESHOLD=3`) üstündeyse.
+
+Bu yüzden operatör onayı (`e`/evet) alınması, patch’in otomatik uygulanacağı anlamına gelmez.
+Onay yalnızca akışın bir sonraki aşamaya geçmesine izin verir.
+
+### Kritik ayrım: normalize red mi, uygulama red mi?
+
+- **Normalize aşaması** (`normalize_self_heal_plan`):
+  - JSON parse, aksiyon türü, path güvenliği, scope uyumu, boş `target` gibi yapısal filtreler çalışır.
+  - Burada `target` için “dosyada birebir bulundu mu?” kontrolü yapılmaz; yalnızca boş olmaması aranır.
+
+- **Patch uygulama aşaması**:
+  - `target` metninin dosya içeriği ile birebir eşleşmesi pratikte bu aşamada kritik hale gelir.
+  - Model yanlış/eksik `target` üretirse normalize geçmiş olsa bile patch uygulanamaz ve döngü tekrar tıkanır.
+
+### Onay karmaşasını azaltmak için öneri
+
+- HITL ekranında onaydan önce iki ayrı gösterge sunun:
+  1. **Normalize geçiş oranı** (kaç operasyon filtrelerden geçti),
+  2. **Dry-run apply oranı** (kaç operasyon dosyada birebir eşleşip uygulanabildi).
+- `target` stabilitesini artırmak için modele daha kısa ve atomik patch talimatı verin
+  (tek fonksiyon/tek blok değişikliği).
+- Onay sonrası ilk adımda “dry-run patch” zorunlu kılın; başarısızsa doğrudan batch’i küçültün.
