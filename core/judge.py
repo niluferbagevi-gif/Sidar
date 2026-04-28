@@ -156,7 +156,7 @@ class LLMJudge:
 
     def _should_evaluate(self) -> bool:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
-        return self.enabled and random.random() < self.sample_rate
+        return self.enabled and random.random() < self.sample_rate  # nosec B311 - güvenlik değil örnekleme oranı amaçlıdır.
 
     def should_evaluate(self) -> bool:
         """Dış çağrılar için public örnekleme kararı."""
