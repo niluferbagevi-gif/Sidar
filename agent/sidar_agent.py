@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -49,6 +49,10 @@ agent_definitions = sys.modules.get("agent.definitions") or import_module("agent
 
 SIDAR_SYSTEM_PROMPT = agent_definitions.SIDAR_SYSTEM_PROMPT
 ExternalTrigger = agent_contracts.ExternalTrigger
+if TYPE_CHECKING:
+    from agent.core.contracts import ExternalTrigger as ExternalTriggerType
+else:
+    ExternalTriggerType = Any
 
 
 def get_agent_metrics_collector():
@@ -242,7 +246,7 @@ class SidarAgent:
 
     def __init__(
         self,
-        cfg: Config = None,
+        cfg: Config | None = None,
         *,
         config: Config | None = None,
         deps: AgentDependencies | None = None,
@@ -764,7 +768,7 @@ class SidarAgent:
 
     @staticmethod
     def _build_trigger_prompt(
-        trigger: ExternalTrigger, payload_dict: dict[str, Any], ci_context: dict[str, Any] | None
+        trigger: ExternalTriggerType, payload_dict: dict[str, Any], ci_context: dict[str, Any] | None
     ) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
@@ -811,7 +815,7 @@ class SidarAgent:
 
     def _build_trigger_correlation(
         self,
-        trigger: ExternalTrigger,
+        trigger: ExternalTriggerType,
         payload_dict: dict[str, Any],
     ) -> dict[str, Any]:
         self._ensure_autonomy_runtime_state()
@@ -881,7 +885,7 @@ class SidarAgent:
         }
 
     async def handle_external_trigger(
-        self, trigger: ExternalTrigger | dict[str, Any]
+        self, trigger: ExternalTriggerType | dict[str, Any]
     ) -> dict[str, Any]:
         """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
         await self.initialize()
@@ -1396,7 +1400,8 @@ class SidarAgent:
         try:
             result_obj = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
             if asyncio.iscoroutine(result_obj):
-                result_obj = await result_obj
+                resolved_result = await result_obj
+                result_obj = resolved_result
         except TimeoutError:
             return "✗ Doküman araması zaman aşımına uğradı."
         except Exception as exc:

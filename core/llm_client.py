@@ -1193,8 +1193,8 @@ class LiteLLMClient(BaseLLMClient):
     async def _stream_openai_compatible(
         self,
         endpoint: str,
-        payload: dict,
-        headers: dict,
+        payload: dict[str, Any],
+        headers: dict[str, str],
         req_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
@@ -1332,13 +1332,15 @@ class AnthropicClient(BaseLLMClient):
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
                 async def _do_request() -> Any:
-                    return await client.messages.create(
-                        model=model_name,
-                        max_tokens=4096,
-                        temperature=temperature,
-                        system=system_prompt or None,
-                        messages=conversation,
-                    )
+                    request_kwargs: dict[str, Any] = {
+                        "model": model_name,
+                        "max_tokens": 4096,
+                        "temperature": temperature,
+                        "messages": conversation,
+                    }
+                    if (system_prompt or "").strip():
+                        request_kwargs["system"] = system_prompt
+                    return await client.messages.create(**request_kwargs)
 
                 response = await _retry_with_backoff(
                     "anthropic",
@@ -1401,13 +1403,15 @@ class AnthropicClient(BaseLLMClient):
         try:
 
             async def _open_stream() -> tuple[Any, Any]:
-                cm = client.messages.stream(
-                    model=model_name,
-                    max_tokens=4096,
-                    temperature=temperature,
-                    system=system_prompt or None,
-                    messages=messages,
-                )
+                stream_kwargs: dict[str, Any] = {
+                    "model": model_name,
+                    "max_tokens": 4096,
+                    "temperature": temperature,
+                    "messages": messages,
+                }
+                if (system_prompt or "").strip():
+                    stream_kwargs["system"] = system_prompt
+                cm = client.messages.stream(**stream_kwargs)
                 opened = await cm.__aenter__()
                 return cm, opened
 

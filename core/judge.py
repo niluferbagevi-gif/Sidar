@@ -27,6 +27,7 @@ import random
 import re
 import time
 from dataclasses import dataclass
+from typing import Any, Awaitable, cast
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ _RESPONSE_REVIEW_SYSTEM = (
 
 # Bulgu D: Her çağrıda yeni Gauge() oluşturmak "Duplicated timeseries" hatasına yol açar.
 # Çözüm: Modül düzeyi önbellek — her metrik adı yalnızca bir kez kaydedilir.
-_prometheus_gauges: dict = {}
+_prometheus_gauges: dict[str, Any] = {}
 
 
 def _inc_prometheus(metric_name: str, value: float) -> None:
@@ -274,7 +275,7 @@ class LLMJudge:
             raw_score = parsed.get("score", 5)
             reasoning = str(parsed.get("reasoning", "") or "").strip()
             try:
-                score = int(round(float(raw_score)))
+                score = int(round(float(str(raw_score))))
             except Exception:
                 match = re.search(r"\b([1-9]|10)\b", str(raw_score))
                 score = int(match.group(1)) if match else 5
@@ -472,8 +473,7 @@ def _record_judge_metrics(result: JudgeResult) -> None:
             out = collector._usage_sink(payload)
             if inspect.isawaitable(out):
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(out)
+                    asyncio.ensure_future(cast(Awaitable[Any], out))
                 except RuntimeError:
                     with contextlib.suppress(Exception):
                         out.close()

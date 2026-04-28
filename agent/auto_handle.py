@@ -587,7 +587,8 @@ class AutoHandle:
                 query = query_raw
             result_obj = await asyncio.to_thread(self.docs.search, query, None, mode)
             if inspect.isawaitable(result_obj):
-                result_obj = await result_obj
+                resolved_result = await result_obj
+                result_obj = resolved_result
             _, result = result_obj
             return True, result
         return False, ""
