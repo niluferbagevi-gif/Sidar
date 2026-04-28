@@ -591,7 +591,7 @@ class CodeManager:
                 "command": command,
                 "detach": True,
                 "remove": False,
-                "working_dir": "/tmp",
+                "working_dir": "/tmp",  # nosec B108 - Docker konteyner içi geçici çalışma dizini.
                 "mem_limit": sandbox_limits["memory"],
                 "nano_cpus": sandbox_limits["nano_cpus"],
                 "pids_limit": sandbox_limits["pids_limit"],
