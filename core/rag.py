@@ -157,7 +157,8 @@ class GraphIndex:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value.strip()
         if isinstance(node, ast.Str):
-            return node.s.strip()
+            raw_value = node.s
+            return raw_value.strip() if isinstance(raw_value, str) else None
         return None
 
     @staticmethod
@@ -537,7 +538,7 @@ def embed_texts_for_semantic_cache(
 
 def _build_embedding_function(
     use_gpu: bool = False, gpu_device: int = 0, mixed_precision: bool = False
-):
+) -> Any:
     """
     ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
 
@@ -568,7 +569,7 @@ def _build_embedding_function(
             if hasattr(torch, "autocast"):
                 _orig_call = ef.__call__
 
-                def _fp16_call(input):
+                def _fp16_call(input: Any) -> Any:
                     with torch.autocast(device_type="cuda", dtype=torch.float16):
                         return _orig_call(input)
 
@@ -635,7 +636,7 @@ class DocumentStore:
         self._write_lock = threading.Lock()
 
         # Meta verileri yükle
-        self._index: dict[str, dict] = self._load_index()
+        self._index: dict[str, dict[str, Any]] = self._load_index()
 
         self._vector_backend = (
             str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
@@ -746,7 +747,7 @@ class DocumentStore:
                 mixed_precision=self._mixed_precision,
             )
 
-            create_kwargs: dict = {"metadata": {"hnsw:space": "cosine"}}
+            create_kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
             if embedding_fn is not None:
                 create_kwargs["embedding_function"] = embedding_fn
 
@@ -967,10 +968,11 @@ class DocumentStore:
         except Exception as exc:
             logger.error("pgvector silme hatası: %s", exc)
 
-    def _load_index(self) -> dict[str, dict]:
+    def _load_index(self) -> dict[str, dict[str, Any]]:
         if self.index_file.exists():
             try:
-                return json.loads(self.index_file.read_text(encoding="utf-8"))
+                loaded = json.loads(self.index_file.read_text(encoding="utf-8"))
+                return loaded if isinstance(loaded, dict) else {}
             except Exception as exc:
                 logger.warning("RAG index okunamadı: %s", exc)
         return {}
@@ -1296,7 +1298,7 @@ class DocumentStore:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
             return False, f"[HATA] Dosya eklenemedi: {exc}"
 
-    def get_index_info(self, session_id: str | None = None) -> builtins.list[dict]:
+    def get_index_info(self, session_id: str | None = None) -> builtins.list[dict[str, Any]]:
         return [
             {
                 "id": doc_id,
@@ -1426,10 +1428,14 @@ class DocumentStore:
         lines = [f"[GraphRAG: {query}]", ""]
         for item in results:
             lines.append(f"- {item['id']} (score={item['score']})")
-            neighbors = item.get("neighbors") or []
+            neighbors_raw = item.get("neighbors") or []
+            neighbors_iter = neighbors_raw if isinstance(neighbors_raw, (list, tuple, set)) else []
+            neighbors = [str(n) for n in neighbors_iter]
             if neighbors:
                 lines.append(f"  Komşular: {', '.join(neighbors)}")
-            reverse_neighbors = item.get("reverse_neighbors") or []
+            reverse_raw = item.get("reverse_neighbors") or []
+            reverse_iter = reverse_raw if isinstance(reverse_raw, (list, tuple, set)) else []
+            reverse_neighbors = [str(n) for n in reverse_iter]
             if reverse_neighbors:
                 lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
         return True, "\n".join(lines)
@@ -1818,7 +1824,8 @@ class DocumentStore:
             return self._keyword_search(query, top_k, session_id)
 
         k = 60
-        rrf_scores, docs_map = {}, {}
+        rrf_scores: dict[str, float] = {}
+        docs_map: dict[str, dict[str, Any]] = {}
 
         for rank, res in enumerate(vector_results):
             doc_id = res["id"]
@@ -1843,7 +1850,9 @@ class DocumentStore:
             final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)"
         )
 
-    def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list:
+    def _fetch_pgvector(
+        self, query: str, top_k: int, session_id: str
+    ) -> list[dict[str, Any]]:
         if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
             return []
         try:
@@ -1899,7 +1908,7 @@ class DocumentStore:
             results, query, source_name="Vektör Arama (pgvector)"
         )
 
-    def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list:
+    def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
         collection = self._require_chroma_collection()
         try:
             collection_size = collection.count()
@@ -1932,7 +1941,8 @@ class DocumentStore:
         doc_chunks = documents[0] if documents else []
         doc_metas = metadatas[0] if metadatas else []
 
-        found_docs, seen_parents = [], set()
+        found_docs: list[dict[str, Any]] = []
+        seen_parents: set[str] = set()
         for i, chunk_content in enumerate(doc_chunks):
             raw_meta = doc_metas[i] if i < len(doc_metas) else {}
             meta = raw_meta if isinstance(raw_meta, dict) else {}
@@ -1984,7 +1994,7 @@ class DocumentStore:
         self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
         self.fts_conn.commit()
 
-    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list:
+    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
         """Diskteki FTS5 veritabanından milisaniyelik BM25 araması yap."""
         if not self._bm25_available:
             return []
@@ -2088,7 +2098,7 @@ class DocumentStore:
         return self._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi")
 
     def _format_results_from_struct(
-        self, results: list, query: str, source_name: str
+        self, results: list[dict[str, Any]], query: str, source_name: str
     ) -> tuple[bool, str]:
         """Ortak sonuç biçimlendirici."""
         if not results:

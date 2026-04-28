@@ -72,7 +72,9 @@ def _setting(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
 
 
-def _prepare_span_scope(config: Any, span_name: str, stream: bool):
+def _prepare_span_scope(
+    config: Any, span_name: str, stream: bool
+) -> tuple[Any, Any | None]:
     tracer = _get_tracer(config)
     if tracer is None:
         return nullcontext(None), None
@@ -129,7 +131,13 @@ def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
     return False, status_code
 
 
-async def _retry_with_backoff(provider: str, operation, *, config, retry_hint: str) -> Any:
+async def _retry_with_backoff(
+    provider: str,
+    operation: Any,
+    *,
+    config: Any,
+    retry_hint: str,
+) -> Any:
     max_retries = max(0, int(getattr(config, "LLM_MAX_RETRIES", 2) or 0))
     base_delay = max(0.05, float(getattr(config, "LLM_RETRY_BASE_DELAY", 0.4) or 0.4))
     max_delay = max(base_delay, float(getattr(config, "LLM_RETRY_MAX_DELAY", 4.0) or 4.0))
@@ -213,13 +221,13 @@ async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
     yield msg
 
 
-def _get_tracer(config):
+def _get_tracer(config: Any) -> Any:
     if getattr(config, "ENABLE_TRACING", False):
         return trace.get_tracer(__name__)
     return None
 
 
-def _extract_usage_tokens(data: dict) -> tuple[int, int]:
+def _extract_usage_tokens(data: dict[str, Any]) -> tuple[int, int]:
     usage = data.get("usage", {}) if isinstance(data, dict) else {}
     if not isinstance(usage, dict):
         return 0, 0
@@ -525,7 +533,7 @@ class OllamaClient(BaseLLMClient):
         target_model = str(model or _setting(self.config, "CODING_MODEL", "qwen2.5-coder:7b"))
         url = f"{self.base_url}/api/chat"
 
-        options: dict = {"temperature": temperature}
+        options: dict[str, Any] = {"temperature": temperature}
         if bool(_setting(self.config, "USE_GPU", False)):
             options["num_gpu"] = -1
 
@@ -611,7 +619,7 @@ class OllamaClient(BaseLLMClient):
     async def _stream_response(
         self,
         url: str,
-        payload: dict,
+        payload: dict[str, Any],
         req_timeout: httpx.Timeout,
     ) -> AsyncGenerator[str, None]:
         """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
@@ -768,7 +776,7 @@ class GeminiClient(BaseLLMClient):
                 contents = history or [{"role": "user", "parts": ["Merhaba"]}]
                 if stream:
 
-                    async def _start_stream():
+                    async def _start_stream() -> Any:
                         call = genai_client.aio.models.generate_content_stream(
                             model=model_name,
                             contents=contents,
@@ -785,7 +793,7 @@ class GeminiClient(BaseLLMClient):
                     stream_iter = self._stream_gemini_generator(response_stream)
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
-                async def _send_non_stream():
+                async def _send_non_stream() -> Any:
                     call = genai_client.aio.models.generate_content(
                         model=model_name,
                         contents=contents,
@@ -835,7 +843,9 @@ class GeminiClient(BaseLLMClient):
                 )
                 return _fallback_stream(msg) if stream else msg
 
-    async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
+    async def _stream_gemini_generator(
+        self, response_stream: AsyncIterator[Any]
+    ) -> AsyncGenerator[str, None]:
         try:
             async for chunk in response_stream:
                 text = getattr(chunk, "text", "")
@@ -957,7 +967,7 @@ class OpenAIClient(BaseLLMClient):
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 _record_llm_metric(
                     provider="openai",
-                    model=model_name,
+                    model=str(model_name or ""),
                     started_at=started_at,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
@@ -971,7 +981,7 @@ class OpenAIClient(BaseLLMClient):
                     span.end()
                 _record_llm_metric(
                     provider="openai",
-                    model=model_name,
+                    model=str(model_name or ""),
                     started_at=started_at,
                     success=False,
                     error=str(exc),
@@ -982,7 +992,7 @@ class OpenAIClient(BaseLLMClient):
                     span.end()
                 _record_llm_metric(
                     provider="openai",
-                    model=model_name,
+                    model=str(model_name or ""),
                     started_at=started_at,
                     success=False,
                     error=str(exc),
@@ -992,8 +1002,8 @@ class OpenAIClient(BaseLLMClient):
 
     async def _stream_openai(
         self,
-        payload: dict,
-        headers: dict,
+        payload: dict[str, Any],
+        headers: dict[str, str],
         req_timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
@@ -1323,7 +1333,7 @@ class AnthropicClient(BaseLLMClient):
                         temperature=temperature,
                         json_mode=json_mode,
                     )
-                    stream_iter = _track_stream_completion(
+                    stream_iter: AsyncIterator[str] = _track_stream_completion(
                         stream_iter,
                         provider="anthropic",
                         model=model_name,
@@ -1391,7 +1401,7 @@ class AnthropicClient(BaseLLMClient):
 
     async def _stream_anthropic(
         self,
-        client,
+        client: Any,
         model_name: str,
         messages: list[dict[str, str]],
         system_prompt: str,
@@ -1456,7 +1466,7 @@ class LLMClient:
         "litellm": LiteLLMClient,
     }
 
-    def __init__(self, provider: str, config) -> None:
+    def __init__(self, provider: str, config: Any) -> None:
         self.provider = provider.lower()
         self.config = config
         self._semantic_cache = SemanticCacheManager(config)
@@ -1663,7 +1673,9 @@ class LLMClient:
             return await self._client.is_available()
         return False
 
-    async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
+    async def _stream_gemini_generator(
+        self, response_stream: AsyncIterator[Any]
+    ) -> AsyncGenerator[str, None]:
         """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
         if isinstance(self._client, GeminiClient):
             async for chunk in self._client._stream_gemini_generator(response_stream):
