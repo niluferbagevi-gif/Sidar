@@ -462,6 +462,42 @@ class SidarAgent:
             snapshots.append({"path": normalized, "content": str(content)})
         return snapshots
 
+    def _resolve_self_heal_scope_batches(
+        self, scope_paths: list[str], remediation_loop: dict[str, Any]
+    ) -> list[list[str]]:
+        configured_batch_size = max(
+            1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
+        )
+        candidate_batches: list[list[str]] = []
+        for item in list(remediation_loop.get("autonomous_batches") or []):
+            if not isinstance(item, dict):
+                continue
+            batch_scope = [
+                str(path).strip()
+                for path in list(item.get("scope_paths") or [])
+                if str(path).strip()
+            ]
+            if batch_scope:
+                candidate_batches.append(batch_scope)
+        if not candidate_batches:
+            candidate_batches = [
+                scope_paths[index : index + configured_batch_size]
+                for index in range(0, len(scope_paths), configured_batch_size)
+            ]
+
+        normalized: list[list[str]] = []
+        seen_keys: set[tuple[str, ...]] = set()
+        for batch_scope in candidate_batches:
+            chunk = [path for path in batch_scope if path in scope_paths]
+            if not chunk:
+                continue
+            key = tuple(chunk)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            normalized.append(chunk)
+        return normalized
+
     async def _build_self_heal_plan(
         self,
         *,
@@ -508,9 +544,7 @@ class SidarAgent:
         if list(initial_plan.get("operations") or []):
             return initial_plan
 
-        batch_size = max(1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
-        for index in range(0, len(scope_paths), batch_size):
-            chunk = scope_paths[index : index + batch_size]
+        for chunk in self._resolve_self_heal_scope_batches(scope_paths, remediation_loop):
             batch_plan = await _generate_plan_for_scope(chunk)
             if list(batch_plan.get("operations") or []):
                 summary = str(batch_plan.get("summary") or "").strip()

@@ -3,6 +3,7 @@ import builtins
 import importlib
 import types
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, call, create_autospec, patch
 
 import pytest
@@ -779,6 +780,68 @@ async def test_build_self_heal_plan_falls_back_to_batch_scope(
     assert seen_scopes == [["a.py", "b.py", "c.py"], ["a.py", "b.py"]]
     assert plan["operations"][0]["path"] == "a.py"
     assert "batch fallback" in plan["summary"]
+
+
+async def test_resolve_self_heal_scope_batches_prefers_autonomous_batches(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+
+    batches = agent._resolve_self_heal_scope_batches(
+        ["a.py", "b.py", "c.py", "d.py"],
+        {
+            "autonomous_batches": [
+                {"scope_paths": ["c.py", "d.py"]},
+                {"scope_paths": ["a.py", "b.py"]},
+                {"scope_paths": ["a.py", "b.py"]},
+                {"scope_paths": ["x.py"]},
+            ]
+        },
+    )
+    assert batches == [["c.py", "d.py"], ["a.py", "b.py"]]
+
+
+async def test_build_self_heal_plan_uses_autonomous_batch_order(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.code = fake_coverage_code_manager
+    fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+    agent.llm = AsyncMock()
+    agent.llm.chat = AsyncMock(side_effect=[{"raw": "first"}, {"raw": "second"}])
+
+    seen_scopes: list[list[str]] = []
+
+    def _normalize(raw_plan: dict[str, str], **kwargs: Any) -> dict[str, Any]:
+        del raw_plan
+        scope = list(kwargs.get("scope_paths") or [])
+        seen_scopes.append(scope)
+        if len(seen_scopes) == 1:
+            return {"summary": "empty", "operations": [], "validation_commands": ["pytest -q"]}
+        return {
+            "summary": "ok",
+            "operations": [{"path": scope[0]}],
+            "validation_commands": ["pytest -q"],
+        }
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", _normalize)
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={
+            "scope_paths": ["a.py", "b.py", "c.py"],
+            "autonomous_batches": [{"scope_paths": ["c.py"]}, {"scope_paths": ["a.py", "b.py"]}],
+            "validation_commands": ["pytest"],
+        },
+    )
+    assert seen_scopes == [["a.py", "b.py", "c.py"], ["c.py"]]
+    assert plan["operations"][0]["path"] == "c.py"
 
 
 async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory) -> None:
