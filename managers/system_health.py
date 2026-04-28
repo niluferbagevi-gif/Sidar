@@ -18,6 +18,7 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from config import Config
@@ -468,7 +469,7 @@ class SystemHealthManager:
     #  TAM RAPOR
     # ─────────────────────────────────────────────
 
-    def get_health_summary(self) -> dict:
+    def get_health_summary(self) -> dict[str, Any]:
         """Kubernetes / Docker monitör sistemleri için yapısal (JSON) sağlık özeti."""
         cpu = self.get_cpu_usage()
         mem = self.get_memory_info()
@@ -491,14 +492,14 @@ class SystemHealthManager:
                 summary["status"] = "degraded"
         return summary
 
-    def get_dependency_health(self) -> dict:
+    def get_dependency_health(self) -> dict[str, dict[str, Any]]:
         """Redis/PostgreSQL gibi dış bağımlılıklar için hafif readiness kontrolü."""
         return {
             "redis": self.check_redis(),
             "database": self.check_database(),
         }
 
-    def _tcp_dependency_health(self, host: str, port: int, *, label: str) -> dict:
+    def _tcp_dependency_health(self, host: str, port: int, *, label: str) -> dict[str, Any]:
         timeout_ms = max(50, int(getattr(self.cfg, "HEALTHCHECK_CONNECT_TIMEOUT_MS", 250) or 250))
         try:
             with socket.create_connection((host, port), timeout=timeout_ms / 1000.0):
@@ -506,7 +507,7 @@ class SystemHealthManager:
         except Exception as exc:
             return {"healthy": False, "target": f"{host}:{port}", "kind": label, "error": str(exc)}
 
-    def check_redis(self) -> dict:
+    def check_redis(self) -> dict[str, Any]:
         raw = str(getattr(self.cfg, "REDIS_URL", "") or "").strip()
         if not raw:
             return {"healthy": True, "kind": "redis", "mode": "disabled"}
@@ -517,7 +518,7 @@ class SystemHealthManager:
         status["mode"] = "tcp"
         return status
 
-    def check_database(self) -> dict:
+    def check_database(self) -> dict[str, Any]:
         raw = str(getattr(self.cfg, "DATABASE_URL", "") or "").strip()
         if not raw:
             return {"healthy": True, "kind": "database", "mode": "disabled"}
