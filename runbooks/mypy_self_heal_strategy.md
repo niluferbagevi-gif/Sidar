@@ -136,3 +136,42 @@ Onay yalnızca akışın bir sonraki aşamaya geçmesine izin verir.
 - `target` stabilitesini artırmak için modele daha kısa ve atomik patch talimatı verin
   (tek fonksiyon/tek blok değişikliği).
 - Onay sonrası ilk adımda “dry-run patch” zorunlu kılın; başarısızsa doğrudan batch’i küçültün.
+
+## Teşhis (diagnosis) yetersizliği ve planlamanın takılması
+
+Pratikte bazı olaylarda `root_cause_hint` aşırı genel kalabilir (örn.
+`one or more arguments [no-untyped-def]`). Bu, operatöre yön gösterse de
+patch üretimi için yeterli deterministik bağlam sağlamaz.
+
+`build_remediation_loop(...)` akışında:
+
+- `diagnosis_text` ve `suspected_targets` birlikte zayıfsa döngü **`needs_diagnosis`**
+  statüsünde kalabilir.
+- `suspected_targets` boşsa `patch` adımı `blocked` olur; planlama bir sonraki adıma
+  sağlıklı geçemez.
+- Yetersiz teşhis metni, LLM’in kapsamı yanlış genişletmesine ve düşük kaliteli
+  JSON plan üretmesine yol açabilir.
+
+### Yetersiz teşhisi güçlendirme önerileri
+
+1. **Hint’i spesifikleştirin**
+   `no-untyped-def` gibi genel kodu tek başına bırakmayın; mümkünse
+   `dosya:satır:kural` formatında ilk 10-20 kritik hatayı çıkarın.
+
+2. **Hedef çıkarımını zorlayın**
+   Log ayrıştırma adımında `suspected_targets` üretimi başarısızsa,
+   planlama öncesi ek bir “target extraction” alt-adımı çalıştırın.
+
+3. **Diagnosis gate ekleyin**
+   Plan üretmeden önce minimum kalite eşiği tanımlayın:
+   - en az 1 somut dosya yolu,
+   - en az 1 uygulanabilir validation komutu,
+   - en az 1 açık kök neden cümlesi.
+
+4. **İki aşamalı prompting kullanın**
+   Aşama-1: sadece teşhis/target çıkarımı,
+   Aşama-2: sadece patch planı (JSON şeması).
+
+5. **Fallback stratejisi**
+   `needs_diagnosis` durumunda otomatik patch denemek yerine
+   küçük batch ile “diagnosis refresh” çalıştırıp sonra planlamaya dönün.
