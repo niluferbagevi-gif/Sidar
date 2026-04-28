@@ -10,6 +10,8 @@ import json
 import os
 import re
 import shlex
+import ast
+import contextlib
 from typing import Any
 
 _CI_FAILURE_CONCLUSIONS = {
@@ -495,6 +497,13 @@ def normalize_self_heal_plan(
     max_operations: int = 3,
 ) -> dict[str, Any]:
     """LLM çıktısını güvenli, kapsam kısıtlı self-heal planına dönüştürür."""
+    def _coerce_payload(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, list):
+            return {"operations": value}
+        return {}
+
     if isinstance(raw_plan, str):
         text = raw_plan.strip()
         if text.startswith("```"):
@@ -506,23 +515,68 @@ def normalize_self_heal_plan(
         if start != -1 and end != -1 and end > start:
             text = text[start : end + 1]
         try:
-            payload = json.loads(text)
+            payload = _coerce_payload(json.loads(text))
         except Exception:
             payload = {}
-    elif isinstance(raw_plan, dict):
-        payload = dict(raw_plan)
     else:
-        payload = {}
+        payload = _coerce_payload(raw_plan)
+
+    if not payload and isinstance(raw_plan, str):
+        # Bazı küçük/yerel modeller JSON yerine python-benzeri liste döndürebilir.
+        alt_start = raw_plan.find("[")
+        alt_end = raw_plan.rfind("]")
+        if alt_start != -1 and alt_end != -1 and alt_end > alt_start:
+            candidate = raw_plan[alt_start : alt_end + 1]
+            with contextlib.suppress(Exception):
+                parsed = ast.literal_eval(candidate)
+                payload = _coerce_payload(parsed)
 
     allowed_paths = {str(path).strip().lstrip("./") for path in scope_paths if str(path).strip()}
+    raw_operations = (
+        payload.get("operations")
+        or payload.get("patches")
+        or payload.get("edits")
+        or payload.get("changes")
+        or []
+    )
+    if isinstance(raw_operations, dict):
+        raw_operations = [raw_operations]
+    if not raw_operations and isinstance(payload.get("operation"), dict):
+        raw_operations = [payload.get("operation")]
+    if not raw_operations and any(
+        key in payload for key in ("target", "replacement", "before", "after")
+    ):
+        raw_operations = [payload]
+
     operations = []
-    for item in list(payload.get("operations") or [])[:max_operations]:
+    for item in list(raw_operations or [])[:max_operations]:
         if not isinstance(item, dict):
             continue
-        action = str(item.get("action") or "").strip().lower()
-        path = str(item.get("path") or "").strip().lstrip("./")
-        target = str(item.get("target") or "")
-        replacement = str(item.get("replacement") or "")
+        action = str(item.get("action") or item.get("op") or item.get("type") or "").strip().lower()
+        path = str(
+            item.get("path")
+            or item.get("file")
+            or item.get("target_path")
+            or item.get("file_path")
+            or ""
+        ).strip().lstrip("./")
+        target = str(
+            item.get("target")
+            or item.get("find")
+            or item.get("search")
+            or item.get("before")
+            or item.get("old")
+            or ""
+        )
+        replacement = str(
+            item.get("replacement")
+            or item.get("replace")
+            or item.get("after")
+            or item.get("new")
+            or ""
+        )
+        if not action and target:
+            action = "patch"
         if action != "patch" or not path or not target or path.startswith("/") or ".." in path:
             continue
         if allowed_paths and path not in allowed_paths:

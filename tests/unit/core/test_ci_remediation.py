@@ -360,6 +360,52 @@ def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
     assert normalized["validation_commands"] == ["pytest -q tests/unit/core/test_ci_remediation.py"]
 
 
+def test_normalize_self_heal_plan_accepts_operation_aliases() -> None:
+    normalized = ci.normalize_self_heal_plan(
+        {
+            "patches": [
+                {
+                    "op": "patch",
+                    "file": "tests/unit/core/test_ci_remediation.py",
+                    "before": "a",
+                    "after": "b",
+                }
+            ]
+        },
+        scope_paths=["tests/unit/core/test_ci_remediation.py"],
+        fallback_validation_commands=[],
+    )
+    assert normalized["operations"] == [
+        {
+            "action": "patch",
+            "path": "tests/unit/core/test_ci_remediation.py",
+            "target": "a",
+            "replacement": "b",
+        }
+    ]
+
+
+def test_normalize_self_heal_plan_parses_python_list_like_response() -> None:
+    raw = (
+        "PLAN:\\n"
+        "[{'op': 'patch', 'file': 'tests/unit/core/test_ci_remediation.py', "
+        "'before': 'x', 'after': 'y'}]"
+    )
+    normalized = ci.normalize_self_heal_plan(
+        raw,
+        scope_paths=["tests/unit/core/test_ci_remediation.py"],
+        fallback_validation_commands=[],
+    )
+    assert normalized["operations"] == [
+        {
+            "action": "patch",
+            "path": "tests/unit/core/test_ci_remediation.py",
+            "target": "x",
+            "replacement": "y",
+        }
+    ]
+
+
 def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None:
     normalized = ci.normalize_self_heal_plan(
         {"operations": [], "validation_commands": ["uv pip install psycopg2-binary"]},
