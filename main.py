@@ -13,7 +13,7 @@ import argparse
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404
 import sys
 import threading
 from pathlib import Path

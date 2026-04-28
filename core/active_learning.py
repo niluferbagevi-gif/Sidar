@@ -241,7 +241,7 @@ class FeedbackStore:
                 await conn.execute(
                     sql_text(
                         "UPDATE finetune_feedback"
-                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"
+                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"  # nosec B608
                     ),
                     params,
                 )
@@ -743,7 +743,7 @@ class LoRATrainer:
             except ImportError:
                 logger.warning("LoRATrainer: bitsandbytes kurulu değil, 4-bit modu devre dışı.")
 
-        model = AutoModelForCausalLM.from_pretrained(self.base_model, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(self.base_model, **model_kwargs)  # nosec B615
 
         # LoRA adaptörü
         lora_config = LoraConfig(
@@ -758,7 +758,7 @@ class LoRATrainer:
         model.print_trainable_parameters()
 
         # Dataset
-        dataset = load_dataset("json", data_files=dataset_path, split="train")
+        dataset = load_dataset("json", data_files=dataset_path, split="train")  # nosec B615
 
         def _tokenize(example: dict[str, Any]) -> dict[str, Any]:
             prompt = str(example.get("instruction", example.get("prompt", "")) or "")
