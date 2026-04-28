@@ -58,6 +58,7 @@ class FakeCode:
     def __init__(self, read_map=None):
         self.read_map = read_map or {}
         self.security = types.SimpleNamespace(status_report=lambda: "security")
+        self.patches = []
 
     def list_directory(self, path):
         return True, f"listed:{path}"
@@ -73,6 +74,13 @@ class FakeCode:
 
     def audit_project(self, path):
         return "audit-ok"
+
+    def patch_file(self, path, target, replacement):
+        self.patches.append((path, target, replacement))
+        return True, "patched"
+
+    def run_shell_in_sandbox(self, command, cwd=None):
+        return True, f"ran:{command}"
 
 
 class FakeHealth:
@@ -648,3 +656,44 @@ def test_run_local_remediation_loop_import_error(monkeypatch):
     )
     assert result["status"] == "failed"
     assert "import_error" in result["summary"]
+
+
+def test_try_heal_local_applies_patch_and_validates(monkeypatch):
+    mod = _load_auto_handle(monkeypatch)
+    h = _build_handler(monkeypatch)
+    h.code = FakeCode(
+        read_map={
+            "artifacts/mypy_errors.log": (
+                True,
+                "core/x.py:3: error: Incompatible types in assignment [assignment]",
+            ),
+            "core/x.py": (True, "a=1"),
+        }
+    )
+
+    fake_llm_mod = types.ModuleType("core.llm_client")
+
+    class _FakeLLM:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def chat(self, *args, **kwargs):
+            return {
+                "operations": [
+                    {
+                        "action": "patch",
+                        "path": "core/x.py",
+                        "target": "a=1",
+                        "replacement": "a=2",
+                    }
+                ],
+                "validation_commands": ["uv run mypy ."],
+            }
+
+    fake_llm_mod.LLMClient = _FakeLLM
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_llm_mod)
+
+    handled, response = asyncio.run(h._try_heal_local(".heal artifacts/mypy_errors.log"))
+    assert handled is True
+    assert "Heal tamamlandı" in response
+    assert h.code.patches[0][0] == "core/x.py"

@@ -60,6 +60,7 @@ class AutoHandle:
     )
 
     _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu)\b", re.IGNORECASE)
+    _HEAL_CMD_RE = re.compile(r"^\s*\.heal\s+(?P<log_path>[\w./\\-]+)\s*$", re.IGNORECASE)
 
     async def handle(self, text: str) -> tuple[bool, str]:
         """
@@ -77,6 +78,10 @@ class AutoHandle:
 
         # Nokta önekli kısayol komutları (CLI standardı): .status, .health, .clear vb.
         result = await self._try_dot_command(text, t)
+        if result[0]:
+            return result
+
+        result = await self._try_heal_local(text)
         if result[0]:
             return result
 
@@ -202,6 +207,96 @@ class AutoHandle:
         if cmd == "gpu":
             return await self._try_gpu_optimize(".gpu")
         return False, ""
+
+    async def _try_heal_local(self, raw: str) -> tuple[bool, str]:
+        """`.heal <log_path>` komutunu işleyerek lokal self-heal döngüsü çalıştırır."""
+        match = self._HEAL_CMD_RE.match(raw.strip())
+        if not match:
+            return False, ""
+
+        log_path = match.group("log_path").strip()
+        ok, log_text = self.code.read_file(log_path)
+        if not ok:
+            return True, f"⚠ Heal log dosyası okunamadı: {log_text}"
+        if not str(log_text).strip():
+            return True, "⚠ Heal için log dosyası boş."
+
+        from core.ci_remediation import (
+            build_local_failure_context,
+            build_remediation_loop,
+            build_self_heal_patch_prompt,
+            normalize_self_heal_plan,
+        )
+        from core.llm_client import LLMClient
+
+        context = build_local_failure_context(
+            log_text=str(log_text),
+            stage="local_heal",
+            command=f".heal {log_path}",
+        )
+        diagnosis = context.get("root_cause_hint") or context.get("failure_summary") or "local failure"
+        remediation_loop = build_remediation_loop(context, diagnosis)
+        scope_paths = [
+            str(item).strip() for item in list(remediation_loop.get("scope_paths") or []) if str(item).strip()
+        ]
+        snapshots: list[dict[str, str]] = []
+        for path in scope_paths[:6]:
+            read_ok, content = self.code.read_file(path)
+            if read_ok:
+                snapshots.append({"path": path, "content": str(content)})
+
+        prompt = build_self_heal_patch_prompt(context, str(diagnosis), remediation_loop, snapshots)
+        provider = str(getattr(self.cfg, "AI_PROVIDER", "ollama") or "ollama")
+        llm = LLMClient(provider=provider, config=self.cfg)
+        raw_plan = await llm.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=getattr(self.cfg, "CODING_MODEL", None),
+            json_mode=True,
+            temperature=0.1,
+            stream=False,
+        )
+        plan = normalize_self_heal_plan(
+            raw_plan,
+            scope_paths=scope_paths,
+            fallback_validation_commands=list(remediation_loop.get("validation_commands") or []),
+        )
+
+        operations = list(plan.get("operations") or [])
+        if not operations:
+            return True, "⚠ Heal planı üretildi ancak uygulanabilir patch operasyonu yok."
+
+        applied: list[str] = []
+        for op in operations:
+            path = str(op.get("path") or "").strip()
+            target = str(op.get("target") or "")
+            replacement = str(op.get("replacement") or "")
+            if not path or not target:
+                continue
+            patch_ok, patch_msg = self.code.patch_file(path, target, replacement)
+            if not patch_ok:
+                return True, f"⚠ Heal patch başarısız ({path}): {patch_msg}"
+            applied.append(path)
+
+        validations = list(plan.get("validation_commands") or [])
+        if not validations and context.get("mypy_failures"):
+            validations = ["uv run mypy ."]
+
+        validation_results: list[str] = []
+        for command in validations[:5]:
+            run_ok, output = self.code.run_shell_in_sandbox(command)
+            status = "ok" if run_ok else "fail"
+            validation_results.append(f"{status}: {command}\n{output}")
+            if not run_ok:
+                return True, (
+                    f"⚠ Heal patch uygulandı ancak doğrulama başarısız.\n"
+                    f"Uygulanan dosyalar: {', '.join(applied)}\n\n"
+                    + "\n\n".join(validation_results)
+                )
+
+        return True, (
+            f"✅ Heal tamamlandı. Uygulanan dosyalar: {', '.join(applied)}\n"
+            + ("\n\n".join(validation_results) if validation_results else "ℹ️ Doğrulama komutu bulunamadı.")
+        )
 
     async def _run_blocking(self, func, *args):
         """Senkron manager çağrılarını event-loop'u bloklamadan çalıştır."""

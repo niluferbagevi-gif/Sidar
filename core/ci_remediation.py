@@ -55,12 +55,27 @@ def _is_allowed_validation_command(command: str) -> bool:
             or "/" in token
         )
 
+    def _is_allowed_mypy_arg(token: str) -> bool:
+        return (
+            token == "."
+            or token.startswith("-")
+            or token.startswith("./")
+            or token.endswith(".py")
+            or "/" in token
+        )
+
     if parts[0] == "pytest":
         return all(_is_allowed_pytest_arg(token) for token in parts[1:])
     if parts[:3] == ["python", "-m", "pytest"]:
         return all(_is_allowed_pytest_arg(token) for token in parts[3:])
     if parts[:2] == ["bash", "run_tests.sh"]:
         return all(re.fullmatch(r"[\w./-]+", token) for token in parts[2:])
+    if parts[0] == "mypy":
+        return all(_is_allowed_mypy_arg(token) for token in parts[1:])
+    if parts[:3] == ["python", "-m", "mypy"]:
+        return all(_is_allowed_mypy_arg(token) for token in parts[3:])
+    if parts[:2] == ["uv", "run"] and len(parts) >= 3 and parts[2] == "mypy":
+        return all(_is_allowed_mypy_arg(token) for token in parts[3:])
     return False
 
 
