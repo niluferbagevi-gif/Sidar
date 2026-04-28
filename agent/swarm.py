@@ -125,11 +125,11 @@ def _ensure_contract_aliases() -> None:
         TaskResult, \
         is_delegation_request
     module = _contracts_module()
-    BrokerTaskEnvelope = module.BrokerTaskEnvelope
-    BrokerTaskResult = module.BrokerTaskResult
-    DelegationRequest = module.DelegationRequest
-    TaskEnvelope = module.TaskEnvelope
-    TaskResult = module.TaskResult
+    BrokerTaskEnvelope = module.BrokerTaskEnvelope  # type: ignore[misc]
+    BrokerTaskResult = module.BrokerTaskResult  # type: ignore[misc]
+    DelegationRequest = module.DelegationRequest  # type: ignore[misc]
+    TaskEnvelope = module.TaskEnvelope  # type: ignore[misc]
+    TaskResult = module.TaskResult  # type: ignore[misc]
     is_delegation_request = module.is_delegation_request
 
 
@@ -262,7 +262,7 @@ class TaskRouter:
             # Fallback: herhangi bir kayıtlı ajan
             all_agents = catalog.list_all()
             return all_agents[0] if all_agents else None
-        return candidates[0]
+        return cast(AgentSpec, candidates[0])
 
     def route_by_role(self, role_name: str) -> AgentSpec | None:
         """Doğrudan rol adıyla ajan seç."""
@@ -832,7 +832,7 @@ class SwarmOrchestrator:
                 bumped = delegation.bumped() if hasattr(delegation, "bumped") else delegation
                 return await self._direct_handoff(
                     task,
-                    bumped,
+                    cast(DelegationRequest, bumped),
                     session_id=session_id,
                     hop=_hop + 1,
                     route_trace=next_trace,

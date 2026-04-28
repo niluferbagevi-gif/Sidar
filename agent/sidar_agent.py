@@ -817,8 +817,41 @@ class SidarAgent:
         return execution
 
     @staticmethod
+    def _trigger_attr(trigger: ExternalTriggerType | dict[str, Any], name: str, default: Any = "") -> Any:
+        if isinstance(trigger, dict):
+            return trigger.get(name, default)
+        return getattr(trigger, name, default)
+
+    @staticmethod
+    def _trigger_payload(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
+        raw_payload = SidarAgent._trigger_attr(trigger, "payload", {})
+        return dict(raw_payload or {}) if isinstance(raw_payload, dict) else {}
+
+    @staticmethod
+    def _trigger_meta(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
+        raw_meta = SidarAgent._trigger_attr(trigger, "meta", {})
+        return dict(raw_meta or {}) if isinstance(raw_meta, dict) else {}
+
+    @staticmethod
+    def _trigger_to_prompt(trigger: ExternalTriggerType | dict[str, Any]) -> str:
+        if isinstance(trigger, dict):
+            event_name = str(trigger.get("event_name", "event"))
+            payload = dict(trigger.get("payload", {}) or {})
+            source = str(trigger.get("source", "external"))
+            return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+        to_prompt = getattr(trigger, "to_prompt", None)
+        if callable(to_prompt):
+            return str(to_prompt())
+        event_name = str(getattr(trigger, "event_name", "event"))
+        source = str(getattr(trigger, "source", "external"))
+        payload = SidarAgent._trigger_payload(trigger)
+        return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+
+    @staticmethod
     def _build_trigger_prompt(
-        trigger: ExternalTriggerType, payload_dict: dict[str, Any], ci_context: dict[str, Any] | None
+        trigger: ExternalTriggerType | dict[str, Any],
+        payload_dict: dict[str, Any],
+        ci_context: dict[str, Any] | None,
     ) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
@@ -828,8 +861,8 @@ class SidarAgent:
             if payload_dict.get("federation_prompt"):
                 return str(payload_dict.get("federation_prompt"))
             return FederationTaskEnvelope(
-                task_id=str(federation_payload.get("task_id") or trigger.trigger_id),
-                source_system=str(federation_payload.get("source_system") or trigger.source),
+                task_id=str(federation_payload.get("task_id") or SidarAgent._trigger_attr(trigger, "trigger_id", "")),
+                source_system=str(federation_payload.get("source_system") or SidarAgent._trigger_attr(trigger, "source", "external")),
                 source_agent=str(federation_payload.get("source_agent") or "external"),
                 target_system=str(federation_payload.get("target_system") or "sidar"),
                 target_agent=str(federation_payload.get("target_agent") or "supervisor"),
@@ -840,16 +873,18 @@ class SidarAgent:
                 inputs=list(federation_payload.get("inputs") or []),
                 meta=dict(federation_payload.get("meta") or {}),
                 correlation_id=str(
-                    federation_payload.get("correlation_id") or trigger.correlation_id
+                    federation_payload.get("correlation_id")
+                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
                 ),
             ).to_prompt()
 
-        if payload_dict.get("kind") == "action_feedback" or trigger.event_name == "action_feedback":
+        event_name = str(SidarAgent._trigger_attr(trigger, "event_name", "event"))
+        if payload_dict.get("kind") == "action_feedback" or event_name == "action_feedback":
             return ActionFeedback(
-                feedback_id=str(payload_dict.get("feedback_id") or trigger.trigger_id),
-                source_system=str(payload_dict.get("source_system") or trigger.source),
+                feedback_id=str(payload_dict.get("feedback_id") or SidarAgent._trigger_attr(trigger, "trigger_id", "")),
+                source_system=str(payload_dict.get("source_system") or SidarAgent._trigger_attr(trigger, "source", "external")),
                 source_agent=str(payload_dict.get("source_agent") or "external"),
-                action_name=str(payload_dict.get("action_name") or trigger.event_name),
+                action_name=str(payload_dict.get("action_name") or event_name),
                 status=str(payload_dict.get("status") or "received"),
                 summary=str(
                     payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."
@@ -857,25 +892,29 @@ class SidarAgent:
                 related_task_id=str(payload_dict.get("related_task_id") or ""),
                 related_trigger_id=str(payload_dict.get("related_trigger_id") or ""),
                 details=dict(payload_dict.get("details") or {}),
-                meta=dict(payload_dict.get("meta") or trigger.meta or {}),
-                correlation_id=str(payload_dict.get("correlation_id") or trigger.correlation_id),
+                meta=dict(payload_dict.get("meta") or SidarAgent._trigger_meta(trigger) or {}),
+                correlation_id=str(
+                    payload_dict.get("correlation_id")
+                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
+                ),
             ).to_prompt()
 
-        return trigger.to_prompt()
+        return SidarAgent._trigger_to_prompt(trigger)
 
     def _build_trigger_correlation(
         self,
-        trigger: ExternalTriggerType,
+        trigger: ExternalTriggerType | dict[str, Any],
         payload_dict: dict[str, Any],
     ) -> dict[str, Any]:
         self._ensure_autonomy_runtime_state()
+        trigger_meta = SidarAgent._trigger_meta(trigger)
         correlation_id = derive_correlation_id(
-            getattr(trigger, "correlation_id", ""),
-            trigger.meta.get("correlation_id", ""),
+            SidarAgent._trigger_attr(trigger, "correlation_id", ""),
+            trigger_meta.get("correlation_id", ""),
             payload_dict.get("correlation_id", ""),
             payload_dict.get("related_task_id", ""),
             payload_dict.get("task_id", ""),
-            trigger.trigger_id,
+            SidarAgent._trigger_attr(trigger, "trigger_id", ""),
         )
         related_trigger_id = str(payload_dict.get("related_trigger_id") or "").strip()
         related_task_id = str(
@@ -951,12 +990,13 @@ class SidarAgent:
                 meta=dict(trigger.get("meta", {}) or {}),
             )
 
-        payload_dict = dict(trigger.payload or {})
+        payload_dict = self._trigger_payload(trigger)
+        event_name = str(self._trigger_attr(trigger, "event_name", "event"))
         ci_context = (
             payload_dict
             if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"}
             and payload_dict.get("workflow_name")
-            else build_ci_failure_context(trigger.event_name, payload_dict)
+            else build_ci_failure_context(event_name, payload_dict)
         )
         correlation = self._build_trigger_correlation(trigger, payload_dict)
         prompt = self._build_trigger_prompt(trigger, payload_dict, ci_context)
@@ -987,13 +1027,13 @@ class SidarAgent:
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
 
         record = {
-            "trigger_id": trigger.trigger_id,
-            "source": trigger.source,
-            "event_name": trigger.event_name,
+            "trigger_id": str(self._trigger_attr(trigger, "trigger_id", "")),
+            "source": str(self._trigger_attr(trigger, "source", "external")),
+            "event_name": event_name,
             "status": status,
             "summary": summary,
-            "payload": dict(trigger.payload or {}),
-            "meta": dict(trigger.meta or {}),
+            "payload": payload_dict,
+            "meta": self._trigger_meta(trigger),
             "correlation": correlation,
             "prompt": prompt,
             "created_at": started_at,
@@ -1449,18 +1489,16 @@ class SidarAgent:
         session_id = "global"
         try:
             result_obj = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
-            if asyncio.iscoroutine(result_obj):
-                resolved_result = await result_obj
-                result_obj = resolved_result
+            resolved_result = await result_obj if asyncio.iscoroutine(result_obj) else result_obj
         except TimeoutError:
             return "✗ Doküman araması zaman aşımına uğradı."
         except Exception as exc:
             return f"✗ Doküman araması başarısız: {exc}"
 
-        if not isinstance(result_obj, tuple) or len(result_obj) != 2:
+        if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
             return "✗ Doküman araması geçersiz yanıt döndürdü."
 
-        _ok, result = result_obj
+        _ok, result = resolved_result
         text = str(result or "").strip()
         if not text:
             return "ℹ Doküman araması boş yanıt döndürdü."

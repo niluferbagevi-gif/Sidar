@@ -56,7 +56,7 @@ def _ensure_delegation_request_shape() -> type[DelegationRequest]:
                 meta=dict(self.meta),
             )
 
-    contracts_mod.DelegationRequest = _CompatDelegationRequest
+    setattr(contracts_mod, "DelegationRequest", _CompatDelegationRequest)
     return cast(type[DelegationRequest], _CompatDelegationRequest)
 
 

@@ -586,10 +586,10 @@ class AutoHandle:
                 mode = "auto"
                 query = query_raw
             result_obj = await asyncio.to_thread(self.docs.search, query, None, mode)
-            if inspect.isawaitable(result_obj):
-                resolved_result = await result_obj
-                result_obj = resolved_result
-            _, result = result_obj
+            resolved_result = await result_obj if inspect.isawaitable(result_obj) else result_obj
+            if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
+                return True, "✗ Belge araması geçersiz yanıt döndürdü."
+            _, result = resolved_result
             return True, result
         return False, ""
 

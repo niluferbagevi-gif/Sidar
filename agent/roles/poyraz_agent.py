@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import importlib
 import json
 from pathlib import Path
@@ -37,7 +38,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
         def __getattr__(self, _name: str) -> str:
             return ""
 
-    def parse_tool_argument(_tool_name: str, raw_arg: str) -> _FallbackPayload:
+    def parse_tool_argument(_tool_name: str, raw_arg: str) -> Any:
         return _FallbackPayload(json.loads(raw_arg))
 
 
@@ -122,11 +123,10 @@ class PoyrazAgent(BaseAgent):
         return str(result)
 
     async def _tool_search_docs(self, arg: str) -> str:
-        result_obj = self.docs.search(arg, None, "auto", "marketing")
-        if hasattr(result_obj, "__await__"):
-            resolved_result = await result_obj
-        else:
-            resolved_result = result_obj
+        result_obj: Any = self.docs.search(arg, None, "auto", "marketing")
+        resolved_result: Any = await result_obj if inspect.isawaitable(result_obj) else result_obj
+        if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
+            return "[DOCS:ERROR] reason=invalid_search_response"
         _ok, result = resolved_result
         return str(result)
 
