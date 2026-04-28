@@ -211,7 +211,7 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
 
     def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
         by_module = importlib.import_module("selenium.webdriver.common.by")
-        By = getattr(by_module, "By")
+        By = by_module.By
         session.driver.find_element(By.CSS_SELECTOR, selector).click()
 
     def fill(
@@ -224,7 +224,7 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         clear: bool,
     ) -> None:
         by_module = importlib.import_module("selenium.webdriver.common.by")
-        By = getattr(by_module, "By")
+        By = by_module.By
         element = session.driver.find_element(By.CSS_SELECTOR, selector)
         if clear:
             element.clear()
@@ -235,8 +235,8 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
     ) -> None:
         by_module = importlib.import_module("selenium.webdriver.common.by")
         select_module = importlib.import_module("selenium.webdriver.support.select")
-        By = getattr(by_module, "By")
-        Select = getattr(select_module, "Select")
+        By = by_module.By
+        Select = select_module.Select
         Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
 
     def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
