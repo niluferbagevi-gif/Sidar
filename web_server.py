@@ -2180,26 +2180,26 @@ async def login_user(payload: _LoginRequest) -> Any:
 
 
 @app.get("/auth/me")
-async def auth_me(request: Request, user=Depends(_get_request_user)) -> Any:
+async def auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
     return JSONResponse({"id": user.id, "username": user.username, "role": user.role})
 
 
 @app.get("/admin/stats")
-async def admin_stats(_user=Depends(_require_admin_user)) -> Any:
+async def admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     stats = await agent.memory.db.get_admin_stats()
     return JSONResponse(stats)
 
 
 @app.get("/admin/prompts")
-async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)) -> Any:
+async def admin_list_prompts(role_name: str = "", _user: Any = Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
     return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
 
 
 @app.get("/admin/prompts/active")
-async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)) -> Any:
+async def admin_active_prompt(role_name: str = "system", _user: Any = Depends(_require_admin_user)) -> Any:
     agent = await _resolve_agent_instance()
     active = await agent.memory.db.get_active_prompt(role_name)
     if not active:
@@ -2208,7 +2208,9 @@ async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_
 
 
 @app.post("/admin/prompts")
-async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_require_admin_user)) -> Any:
+async def admin_upsert_prompt(
+    payload: _PromptUpsertRequest, _user: Any = Depends(_require_admin_user)
+) -> Any:
     role_name = (payload.role_name or "").strip().lower()
     prompt_text = (payload.prompt_text or "").strip()
     if not role_name or not prompt_text:
@@ -2225,8 +2227,8 @@ async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_requ
 
 @app.post("/admin/prompts/activate")
 async def admin_activate_prompt(
-    payload: _PromptActivateRequest, _user=Depends(_require_admin_user)
-):
+    payload: _PromptActivateRequest, _user: Any = Depends(_require_admin_user)
+) -> Any:
     agent = await _await_if_needed(_resolve_agent_instance())
     active = await agent.memory.db.activate_prompt(payload.prompt_id)
     if not active:
@@ -2238,7 +2240,7 @@ async def admin_activate_prompt(
 
 @app.get("/admin/policies/{user_id}")
 async def admin_list_policies(
-    user_id: str, tenant_id: str = "", _user=Depends(_require_admin_user)
+    user_id: str, tenant_id: str = "", _user: Any = Depends(_require_admin_user)
 ) -> JSONResponse:
     agent = await _resolve_agent_instance()
     records = await agent.memory.db.list_access_policies(
@@ -2248,7 +2250,9 @@ async def admin_list_policies(
 
 
 @app.post("/admin/policies")
-async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)) -> Any:
+async def admin_upsert_policy(
+    payload: _PolicyUpsertRequest, _user: Any = Depends(_require_admin_user)
+) -> Any:
     agent = await _resolve_agent_instance()
     await agent.memory.db.upsert_access_policy(
         user_id=payload.user_id.strip(),
@@ -2266,8 +2270,8 @@ async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_requ
 
 @app.post("/api/agents/register")
 async def register_agent_plugin(
-    payload: _AgentPluginRegisterRequest, _user=Depends(_require_admin_user)
-):
+    payload: _AgentPluginRegisterRequest, _user: Any = Depends(_require_admin_user)
+) -> Any:
     result = _register_plugin_agent(
         role_name=payload.role_name,
         source_code=payload.source_code,
@@ -2287,8 +2291,8 @@ async def register_agent_plugin_file(
     capabilities: str = "",
     description: str = "",
     version: str = "1.0.0",
-    _user=Depends(_require_admin_user),
-):
+    _user: Any = Depends(_require_admin_user),
+) -> Any:
     data = await file.read()
     await file.close()
     if not data:
@@ -2316,7 +2320,7 @@ async def register_agent_plugin_file(
 
 
 @app.get("/api/plugin-marketplace/catalog")
-async def plugin_marketplace_catalog(_user=Depends(_require_admin_user)) -> Any:
+async def plugin_marketplace_catalog(_user: Any = Depends(_require_admin_user)) -> Any:
     state = _read_plugin_marketplace_state()
     items = [
         _serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {}))
@@ -2328,26 +2332,28 @@ async def plugin_marketplace_catalog(_user=Depends(_require_admin_user)) -> Any:
 @app.post("/api/plugin-marketplace/install")
 async def install_plugin_marketplace_item(
     payload: _PluginMarketplaceInstallRequest,
-    _user=Depends(_require_admin_user),
-):
+    _user: Any = Depends(_require_admin_user),
+) -> Any:
     return JSONResponse(_install_marketplace_plugin(payload.plugin_id))
 
 
 @app.post("/api/plugin-marketplace/reload")
 async def reload_plugin_marketplace_item(
     payload: _PluginMarketplaceInstallRequest,
-    _user=Depends(_require_admin_user),
-):
+    _user: Any = Depends(_require_admin_user),
+) -> Any:
     return JSONResponse(_install_marketplace_plugin(payload.plugin_id))
 
 
 @app.delete("/api/plugin-marketplace/install/{plugin_id}")
-async def uninstall_plugin_marketplace_item(plugin_id: str, _user=Depends(_require_admin_user)) -> Any:
+async def uninstall_plugin_marketplace_item(
+    plugin_id: str, _user: Any = Depends(_require_admin_user)
+) -> Any:
     return JSONResponse(_uninstall_marketplace_plugin(plugin_id))
 
 
 @app.post("/api/swarm/execute")
-async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request_user)) -> Any:
+async def execute_swarm(payload: _SwarmExecuteRequest, user: Any = Depends(_get_request_user)) -> Any:
     agent = await _resolve_agent_instance()
     orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
     session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
@@ -2396,7 +2402,7 @@ class _HITLRespondRequest(BaseModel):
 
 
 @app.get("/api/hitl/pending")
-async def hitl_pending(user=Depends(_get_request_user)) -> Any:
+async def hitl_pending(user: Any = Depends(_get_request_user)) -> Any:
     """Bekleyen HITL onay isteklerini listeler."""
     store = get_hitl_store()
     pending = await store.pending()
@@ -2435,8 +2441,8 @@ async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(_get_
 
 @app.post("/api/hitl/respond/{request_id}")
 async def hitl_respond(
-    request_id: str, payload: _HITLRespondRequest, user=Depends(_get_request_user)
-):
+    request_id: str, payload: _HITLRespondRequest, user: Any = Depends(_get_request_user)
+) -> Any:
     """Bir HITL isteğini onayla veya reddet."""
     gate = get_hitl_gate()
     decided_by = payload.decided_by or getattr(user, "username", "operator")
@@ -3844,7 +3850,7 @@ async def llm_budget_metrics(
     description="Kayıtlı sohbet oturumları listesini ve aktif oturum kimliğini döndürür.",
     responses={200: {"description": "Oturum listesi başarıyla alındı"}},
 )
-async def get_sessions(request: Request, user=Depends(_get_request_user)) -> Any:
+async def get_sessions(request: Request, user: Any = Depends(_get_request_user)) -> Any:
     """Yalnızca oturum sahibine ait sohbetleri döndürür."""
     agent = await _resolve_agent_instance()
     sessions = await agent.memory.db.list_sessions(user.id)
@@ -3865,7 +3871,9 @@ async def get_sessions(request: Request, user=Depends(_get_request_user)) -> Any
 
 
 @app.get("/sessions/{session_id}")
-async def load_session(session_id: str, request: Request, user=Depends(_get_request_user)) -> Any:
+async def load_session(
+    session_id: str, request: Request, user: Any = Depends(_get_request_user)
+) -> Any:
     """Belirli bir oturumu kullanıcı kimliğiyle doğrulayarak yükler."""
     agent = await _resolve_agent_instance()
     session = await agent.memory.db.load_session(session_id, user.id)
@@ -3885,7 +3893,7 @@ async def load_session(session_id: str, request: Request, user=Depends(_get_requ
 
 
 @app.post("/sessions/new")
-async def new_session(request: Request, user=Depends(_get_request_user)) -> Any:
+async def new_session(request: Request, user: Any = Depends(_get_request_user)) -> Any:
     """Aktif kullanıcı için yeni bir oturum oluşturur."""
     agent = await _resolve_agent_instance()
     session = await agent.memory.db.create_session(user.id, "Yeni Sohbet")
@@ -3893,7 +3901,9 @@ async def new_session(request: Request, user=Depends(_get_request_user)) -> Any:
 
 
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, request: Request, user=Depends(_get_request_user)) -> Any:
+async def delete_session(
+    session_id: str, request: Request, user: Any = Depends(_get_request_user)
+) -> Any:
     """Kullanıcıya ait belirli bir oturumu siler."""
     agent = await _resolve_agent_instance()
     deleted = await agent.memory.db.delete_session(session_id, user.id)
@@ -4386,7 +4396,7 @@ async def clear() -> Any:
     ),
     responses={200: {"description": "Seviye başarıyla değiştirildi"}},
 )
-async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user)) -> Any:
+async def set_level_endpoint(request: Request, _user: Any = Depends(_require_admin_user)) -> Any:
     """Güvenlik seviyesini çalışma zamanında değiştirir (yalnızca admin)."""
     body = await request.json()
     new_level = body.get("level", "").strip()
@@ -4770,7 +4780,7 @@ async def api_teams_send(req: _TeamsSendRequest) -> Any:
 async def api_operations_list_campaigns(
     status: str = "",
     limit: int = 50,
-    _user=Depends(_get_request_user),
+    _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     agent = await _resolve_agent_instance()
     campaigns = await agent.memory.db.list_marketing_campaigns(
@@ -4786,7 +4796,7 @@ async def api_operations_list_campaigns(
 @app.post("/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"])
 async def api_operations_create_campaign(
     req: _CampaignCreateRequest,
-    _user=Depends(_get_request_user),
+    _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     agent = await _resolve_agent_instance()
     db = agent.memory.db
@@ -4843,8 +4853,8 @@ async def api_operations_create_campaign(
 async def api_operations_list_assets(
     campaign_id: int,
     limit: int = 100,
-    _user=Depends(_get_request_user),
-):
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     assets = await agent.memory.db.list_content_assets(
         tenant_id=_get_user_tenant(_user),
@@ -4864,8 +4874,8 @@ async def api_operations_list_assets(
 async def api_operations_add_asset(
     campaign_id: int,
     req: _ContentAssetCreateRequest,
-    _user=Depends(_get_request_user),
-):
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     asset = await agent.memory.db.add_content_asset(
         campaign_id=campaign_id,
@@ -4887,8 +4897,8 @@ async def api_operations_add_asset(
 async def api_operations_list_checklists(
     campaign_id: int,
     limit: int = 100,
-    _user=Depends(_get_request_user),
-):
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     checklists = await agent.memory.db.list_operation_checklists(
         tenant_id=_get_user_tenant(_user),
@@ -4911,8 +4921,8 @@ async def api_operations_list_checklists(
 async def api_operations_add_checklist(
     campaign_id: int,
     req: _OperationChecklistCreateRequest,
-    _user=Depends(_get_request_user),
-):
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
     agent = await _resolve_agent_instance()
     checklist = await agent.memory.db.add_operation_checklist(
         campaign_id=campaign_id,
@@ -5083,7 +5093,7 @@ async def autonomy_activity(limit: int = 20) -> Any:
 async def swarm_federation_execute(
     req: _FederationTaskRequest,
     x_sidar_signature: str = Header(default=""),
-):
+) -> Any:
     """Federasyon görevlerini Sidar içinde çalıştırıp yapısal sonuç döndürür."""
     if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
         raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
@@ -5160,7 +5170,7 @@ async def swarm_federation_execute(
 async def swarm_federation_feedback(
     req: _FederationFeedbackRequest,
     x_sidar_signature: str = Header(default=""),
-):
+) -> Any:
     if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
         raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
 
@@ -5226,7 +5236,7 @@ async def github_webhook(
     request: Request,
     x_github_event: str = Header(default=""),
     x_hub_signature_256: str = Header(default=""),
-):
+) -> Any:
     """GitHub'dan gelen webhook tetiklemelerini karşılar."""
     payload_body = await request.body()
     secret = getattr(cfg, "GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
