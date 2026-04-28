@@ -14,7 +14,7 @@ import random
 import sys
 import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import nullcontext
 from typing import Any, cast
 
@@ -711,11 +711,9 @@ class GeminiClient(BaseLLMClient):
         genai_client = None
         genai_types = None
         try:
-            from google import (
-                genai as google_genai,  # type: ignore[import-not-found,import-untyped]
-            )
+            import google.genai as google_genai  # type: ignore[import-untyped]
             from google.genai import (
-                types as google_genai_types,  # type: ignore[import-not-found,import-untyped]
+                types as google_genai_types,
             )
 
             genai_client = google_genai.Client(
@@ -776,7 +774,7 @@ class GeminiClient(BaseLLMClient):
                 span.set_attribute("sidar.llm.model", model_name)
                 span.set_attribute("sidar.llm.stream", stream)
             try:
-                config_kwargs = {"temperature": 0.2 if json_mode else temperature}
+                config_kwargs: dict[str, Any] = {"temperature": 0.2 if json_mode else temperature}
                 if json_mode:
                     config_kwargs["response_mime_type"] = "application/json"
                 if system_text:
@@ -905,7 +903,7 @@ class OpenAIClient(BaseLLMClient):
             )
             return _fallback_stream(msg) if stream else msg
 
-        model_name = model or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini")
+        model_name = str(model or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini"))
         if json_mode:
             messages = self._inject_json_instruction(messages)
         payload = {
@@ -1302,7 +1300,7 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         try:
-            from anthropic import AsyncAnthropic
+            from anthropic import AsyncAnthropic  # type: ignore[import-not-found]
         except ImportError as exc:
             msg = json.dumps(
                 {
@@ -1342,13 +1340,13 @@ class AnthropicClient(BaseLLMClient):
                         temperature=temperature,
                         json_mode=json_mode,
                     )
-                    stream_iter: AsyncIterator[str] = _track_stream_completion(
+                    tracked_stream: AsyncIterator[str] = _track_stream_completion(
                         stream_iter,
                         provider="anthropic",
                         model=model_name,
                         started_at=started_at,
                     )
-                    return _trace_stream_metrics(stream_iter, span, started_at)
+                    return _trace_stream_metrics(tracked_stream, span, started_at)
 
                 async def _do_request() -> Any:
                     request_kwargs: dict[str, Any] = {
@@ -1627,7 +1625,11 @@ class LLMClient:
             messages = self._truncate_messages_for_local_model(messages)
 
         # DLP: hassas verileri API çağrısından önce maskele
-        messages = _dlp_mask_messages(messages)
+        masked_messages = _dlp_mask_messages(cast(list[Mapping[str, Any]], messages))
+        messages = [
+            {"role": str(message.get("role", "")), "content": str(message.get("content", ""))}
+            for message in masked_messages
+        ]
 
         user_prompt = ""
         for message in reversed(messages):
@@ -1651,7 +1653,9 @@ class LLMClient:
         )
 
         if stream and self.provider != "ollama":
-            return _track_stream_routing_cost(  # type: ignore[arg-type]
+            if isinstance(response, str):
+                return _fallback_stream(response)
+            return _track_stream_routing_cost(
                 response,
                 messages=messages,
                 config=self.config,
