@@ -268,12 +268,11 @@ async def _run(args: argparse.Namespace) -> int:
         execution["scope_paths"] = list(scope_paths)
         execution["attempts"] = attempt_logs
         executions.append(execution)
-        if str(execution.get("status") or "") != "applied":
-            break
 
-    final_status = "applied" if executions and all(
-        str(item.get("status") or "") == "applied" for item in executions
-    ) else "partial_or_failed"
+    status_values = [str(item.get("status") or "") for item in executions]
+    any_applied = any(status == "applied" for status in status_values)
+    all_applied = bool(status_values) and all(status == "applied" for status in status_values)
+    final_status = "applied" if all_applied else ("partial" if any_applied else "failed")
     print(
         json.dumps(
             {
@@ -287,7 +286,7 @@ async def _run(args: argparse.Namespace) -> int:
             indent=2,
         )
     )
-    return 0 if final_status == "applied" else 1
+    return 0 if final_status in {"applied", "partial"} else 1
 
 
 def main() -> int:
