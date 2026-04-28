@@ -6,13 +6,14 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from config import Config
 
+_config_get_config: Callable[[], Config] | None
 try:
     from config import get_config as _config_get_config
 except ImportError:  # pragma: no cover - test doubles may only expose Config
@@ -94,7 +95,7 @@ class ConversationMemory:
         self.active_title: str = "Yeni Sohbet"
         self.active_user_id: str | None = None
         self.active_username: str | None = None
-        self._turns: list[dict] = []
+        self._turns: list[dict[str, Any]] = []
         self._last_file: str | None = None
 
         self._dirty = False
@@ -211,7 +212,10 @@ class ConversationMemory:
             self._turns.append({"role": role, "content": resolved_content, "timestamp": now})
             if len(self._turns) > self.max_turns * 2:
                 self._turns = self._turns[-(self.max_turns * 2) :]
-        await self.db.add_message(self.active_session_id, role, resolved_content, tokens_used=0)
+        session_id = self.active_session_id
+        if not session_id:
+            return
+        await self.db.add_message(session_id, role, resolved_content, tokens_used=0)
         self._dirty = False
 
     async def get_history(self, n_last: int | None = None) -> list[dict[str, Any]]:
@@ -370,11 +374,13 @@ class ConversationMemory:
         keep_count = self.keep_last if keep_last is None else max(0, int(keep_last))
         kept_messages = messages[-keep_count:] if keep_count > 0 else []
         summary_text = self._build_compaction_summary(session.title, messages)
-        compact_turns = [
+        compact_turns: list[dict[str, object]] = [
             {"role": "user", "content": "[GECE DÖNGÜSÜ] Önceki konuşmalar sıkıştırıldı."},
             {"role": "assistant", "content": f"[GECE KONSOLİDASYON ÖZETİ]\n{summary_text}"},
-            *[{"role": str(item.role), "content": str(item.content)} for item in kept_messages],
         ]
+        compact_turns.extend(
+            {"role": str(item.role), "content": str(item.content)} for item in kept_messages
+        )
         written = await self.db.replace_session_messages(session_id, compact_turns)
 
         if self.active_user_id == user_id and self.active_session_id == session_id:
