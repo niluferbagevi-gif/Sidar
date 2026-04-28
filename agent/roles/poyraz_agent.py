@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import importlib
+import inspect
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
