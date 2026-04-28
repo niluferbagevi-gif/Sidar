@@ -586,13 +586,13 @@ async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
 
 
 def test_format_exception_message_falls_back_to_exception_type_for_blank_messages() -> None:
-    assert llm_client._format_exception_message(asyncio.TimeoutError()) == "TimeoutError"
+    assert llm_client._format_exception_message(TimeoutError()) == "TimeoutError"
 
 
 @pytest.mark.asyncio
 async def test_retry_with_backoff_uses_exception_type_when_error_message_is_blank(mock_config) -> None:
     async def op():
-        raise asyncio.TimeoutError()
+        raise TimeoutError()
 
     with pytest.raises(llm_client.LLMAPIError, match="TimeoutError") as exc:
         await llm_client._retry_with_backoff("ollama", op, config=mock_config(LLM_MAX_RETRIES=0), retry_hint="retry")
