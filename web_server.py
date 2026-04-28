@@ -36,7 +36,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import anyio
 import jwt
@@ -771,9 +771,7 @@ async def _dispatch_autonomy_trigger(
     meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
-    agent = _await_if_needed(_resolve_agent_instance())
-    if inspect.isawaitable(agent):
-        agent = await agent
+    agent = await _resolve_agent_instance()
     trigger = ExternalTrigger(
         trigger_id=f"trigger-{secrets.token_hex(6)}",
         source=trigger_source,
@@ -1523,11 +1521,11 @@ async def basic_auth_middleware(
     if not auth_header.startswith("Bearer "):
         return JSONResponse({"error": "Yetkisiz erişim"}, status_code=401)
 
-    token = auth_header[7:].strip()
-    if not token:
+    access_token = auth_header[7:].strip()
+    if not access_token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
 
-    user = await _resolve_user_from_token(None, token)
+    user = await _resolve_user_from_token(None, access_token)
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
@@ -1536,11 +1534,11 @@ async def basic_auth_middleware(
     set_active_user = getattr(agent.memory, "set_active_user", None)
     if callable(set_active_user):
         await set_active_user(user.id, user.username)
-    token = set_current_metrics_user_id(user.id)
+    metrics_token = set_current_metrics_user_id(user.id)
     try:
         return await call_next(request)
     finally:
-        reset_current_metrics_user_id(token)
+        reset_current_metrics_user_id(metrics_token)
 
 
 # ─────────────────────────────────────────────
@@ -1756,6 +1754,7 @@ class _SwarmExecuteRequest(BaseModel):
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:
     prompt_id = getattr(record, "id", 0)
+    serialized_id: int | str
     try:
         serialized_id = int(prompt_id)
     except (TypeError, ValueError):
@@ -1890,7 +1889,7 @@ def _load_plugin_agent_class(
     discovered: list[type[BaseAgent]] = []
     for obj in namespace.values():
         if _is_baseagent_derived(obj):
-            discovered.append(obj)
+            discovered.append(cast(type[BaseAgent], obj))
 
     if not discovered:
         raise HTTPException(
@@ -3148,9 +3147,9 @@ async def websocket_chat(websocket: WebSocket) -> Any:
                 continue
 
             if action == "cancel" and joined_room_id:
-                room = _collaboration_rooms.get(joined_room_id)
-                if room and room.active_task and not room.active_task.done():
-                    room.active_task.cancel()
+                existing_room = _collaboration_rooms.get(joined_room_id)
+                if existing_room and existing_room.active_task and not existing_room.active_task.done():
+                    existing_room.active_task.cancel()
                 continue
 
             if not user_message:
@@ -3170,9 +3169,9 @@ async def websocket_chat(websocket: WebSocket) -> Any:
                 active_task.cancel()
 
             if joined_room_id:
-                room = _collaboration_rooms.get(joined_room_id)
-                if room is None:
-                    room = await _join_collaboration_room(
+                room_entry = _collaboration_rooms.get(joined_room_id)
+                if room_entry is None:
+                    room_entry = await _join_collaboration_room(
                         websocket,
                         room_id=joined_room_id,
                         user_id=ws_user_id,
@@ -3180,6 +3179,7 @@ async def websocket_chat(websocket: WebSocket) -> Any:
                         display_name=ws_username or ws_user_id,
                         user_role=ws_user_role,
                     )
+                room = room_entry
                 display_name = (
                     str(payload.get("display_name", "") or ws_username or ws_user_id).strip()
                     or ws_username
@@ -4013,7 +4013,7 @@ async def file_content(path: str) -> Any:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-def _git_run(cmd: list, cwd: str, stderr=subprocess.DEVNULL) -> str:
+def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
     """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
     try:
         return subprocess.check_output(cmd, cwd=cwd, stderr=stderr).decode().strip()
@@ -4351,9 +4351,13 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3) -> Any:
     if asyncio.iscoroutinefunction(search_call):
         ok, result = await search_call(q.strip(), min(top_k, 10), mode, session_id)
     else:
-        ok, result = await asyncio.to_thread(
+        maybe_result = await asyncio.to_thread(
             search_call, q.strip(), min(top_k, 10), mode, session_id
         )
+        if inspect.isawaitable(maybe_result):
+            ok, result = await maybe_result
+        else:
+            ok, result = maybe_result
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -4811,27 +4815,27 @@ async def api_operations_create_campaign(
         metadata=dict(req.metadata or {}),
     )
     assets = []
-    for item in req.initial_assets:
+    for asset_item in req.initial_assets:
         assets.append(
             await db.add_content_asset(
                 campaign_id=int(campaign.id),
                 tenant_id=_get_user_tenant(_user),
-                asset_type=item.asset_type,
-                title=item.title,
-                content=item.content,
-                channel=item.channel,
-                metadata=dict(item.metadata or {}),
+                asset_type=asset_item.asset_type,
+                title=asset_item.title,
+                content=asset_item.content,
+                channel=asset_item.channel,
+                metadata=dict(asset_item.metadata or {}),
             )
         )
     checklists = []
-    for item in req.initial_checklists:
+    for checklist_item in req.initial_checklists:
         checklists.append(
             await db.add_operation_checklist(
                 campaign_id=int(campaign.id),
                 tenant_id=_get_user_tenant(_user),
-                title=item.title,
-                items=list(item.items or []),
-                status=item.status,
+                title=checklist_item.title,
+                items=list(checklist_item.items or []),
+                status=checklist_item.status,
                 owner_user_id=str(getattr(_user, "id", "") or ""),
             )
         )
@@ -5260,9 +5264,7 @@ async def github_webhook(
     except json.JSONDecodeError:
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
-    agent = _await_if_needed(_resolve_agent_instance())
-    if inspect.isawaitable(agent):
-        agent = await agent
+    agent = await _resolve_agent_instance()
     msg = ""
 
     if x_github_event == "push":
@@ -5406,7 +5408,7 @@ def main() -> None:
         initialize_result = getattr(_agent, "initialize", None)
         if callable(initialize_result):
             maybe_coro = initialize_result()
-            if inspect.isawaitable(maybe_coro):
+            if inspect.iscoroutine(maybe_coro):
                 asyncio.run(maybe_coro)
     except Exception as exc:
         logger.warning(

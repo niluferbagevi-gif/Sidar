@@ -9,7 +9,7 @@ import asyncio
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _parse_args() -> argparse.Namespace:
@@ -168,7 +168,7 @@ async def _run_self_heal_attempt(
         remediation=remediation,
     )
     if str(execution.get("status") or "") != "awaiting_hitl":
-        return execution
+        return cast(dict[str, Any], execution)
 
     approved = _parse_approval_value(args.hitl_approve)
     if approved is None and args.hitl_approve is not None:
@@ -177,11 +177,14 @@ async def _run_self_heal_attempt(
             "Kabul edilenler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0."
         )
     approved = approved if approved is not None else _prompt_hitl_approval()
-    return await agent._attempt_autonomous_self_heal(  # noqa: SLF001
+    return cast(
+        dict[str, Any],
+        await agent._attempt_autonomous_self_heal(  # noqa: SLF001
         ci_context=context,
         diagnosis=diagnosis,
         remediation=remediation,
         human_approval=approved,
+        ),
     )
 
 

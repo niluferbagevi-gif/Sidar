@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import importlib
 import inspect
 import json
 import logging
@@ -1300,7 +1301,8 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         try:
-            from anthropic import AsyncAnthropic  # type: ignore[import-not-found]
+            anthropic_module = importlib.import_module("anthropic")
+            AsyncAnthropic = getattr(anthropic_module, "AsyncAnthropic")
         except ImportError as exc:
             msg = json.dumps(
                 {
