@@ -175,3 +175,33 @@ patch üretimi için yeterli deterministik bağlam sağlamaz.
 5. **Fallback stratejisi**
    `needs_diagnosis` durumunda otomatik patch denemek yerine
    küçük batch ile “diagnosis refresh” çalıştırıp sonra planlamaya dönün.
+
+## Ölçek baskısı: 275 hata / 38 dosya senaryosunda pratik karar ağacı
+
+Bu ölçekte bir mypy çıktısında modelin aynı turda hem teşhis hem patch planı üretmesi
+zorlaşır. Tipik sonuç:
+
+- Model geçerli JSON şemasını üretemez (plan normalize aşamasında boşalır), veya
+- Üretilen patch’lerin `target` metni dosya içeriğiyle birebir örtüşmez
+  (uygulama/dry-run aşamasında başarısızlık artar).
+
+### Önerilen müdahale sırası
+
+1. **Kapsamı daraltın (öncelik)**
+   - Tek seferde 38 dosya yerine dizin bazlı ilerleyin (örn. önce sadece `core/`).
+   - Her batch için küçük ve homojen hata sınıfı seçin
+     (örn. sadece `no-untyped-def` + aynı modül).
+
+2. **Model kapasitesini yükseltin (gerekirse)**
+   - Aynı prompt/akış korunarak daha yüksek kapasiteli model deneyin
+     (örn. `qwen2.5-coder:7b` veya `qwen2.5-coder:14b`).
+   - Özellikle çok dosyalı tip propagasyonu ve karmaşık generic hatalarında başarı artar.
+
+3. **Başarı kriterini batch bazında ölçün**
+   - JSON parse/normalize başarı oranı,
+   - dry-run apply oranı,
+   - batch başına kapanan mypy hata sayısı.
+
+4. **Erken durdurma kuralı**
+   - İki batch üst üste düşük apply oranı görülürse akışı durdurup
+     ya batch’i küçültün ya da model kapasitesini artırın.
