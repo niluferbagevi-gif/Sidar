@@ -3296,7 +3296,7 @@ class Database:
             raw_tokens = item.get("tokens_used", 0)
             if isinstance(raw_tokens, bool):
                 tokens = int(raw_tokens)
-            elif isinstance(raw_tokens, (int, float)):
+            elif isinstance(raw_tokens, int | float):
                 tokens = int(raw_tokens)
             elif isinstance(raw_tokens, str):
                 try:
