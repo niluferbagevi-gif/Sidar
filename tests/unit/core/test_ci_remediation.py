@@ -682,3 +682,19 @@ def test_build_local_failure_context_fallbacks_when_log_has_no_structured_error(
     ctx = ci.build_local_failure_context("mypy: failed with unknown issue", source="mypy")
     assert ctx["root_cause_hint"]
     assert ctx["failure_summary"].startswith("mypy yerel kalite kapısında hata bulundu")
+
+
+def test_build_local_failure_context_respects_local_scope_limit_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SELF_HEAL_LOCAL_SCOPE_LIMIT", "3")
+    log_text = "\n".join(
+        [
+            "core/a.py:1: error: err [assignment]",
+            "core/b.py:2: error: err [assignment]",
+            "core/c.py:3: error: err [assignment]",
+            "core/d.py:4: error: err [assignment]",
+        ]
+    )
+    ctx = ci.build_local_failure_context(log_text, source="mypy")
+    assert ctx["suspected_targets"] == ["core/a.py", "core/b.py", "core/c.py"]

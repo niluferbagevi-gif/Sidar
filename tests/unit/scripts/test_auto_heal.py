@@ -1,4 +1,4 @@
-from scripts.auto_heal import _parse_approval_value
+from scripts.auto_heal import _build_scope_queue, _parse_approval_value, _select_auto_heal_model
 
 
 def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
@@ -21,3 +21,19 @@ def test_parse_approval_value_returns_none_for_unknown() -> None:
     assert _parse_approval_value(None) is None
     assert _parse_approval_value("") is None
     assert _parse_approval_value("maybe") is None
+
+
+def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
+    assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", None) == "qwen2.5-coder:7b"
+
+
+def test_select_auto_heal_model_honors_requested_model() -> None:
+    assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b") == "qwen2.5-coder:14b"
+
+
+def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
+    queue = _build_scope_queue(
+        {"scope_paths": ["a.py", "b.py", "c.py", "d.py"]},
+        batch_size=2,
+    )
+    assert queue == [["a.py", "b.py"], ["c.py", "d.py"]]

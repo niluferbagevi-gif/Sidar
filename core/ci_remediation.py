@@ -356,6 +356,11 @@ def build_local_failure_context(
         f"{normalized_source} yerel kalite kapısında hata bulundu "
         f"({len(failure_lines)} kayıt, {len(suspected_targets)} dosya)."
     )
+    local_scope_limit = max(
+        1,
+        int(os.getenv("SELF_HEAL_LOCAL_SCOPE_LIMIT", "200") or "200"),
+    )
+    effective_targets = suspected_targets[:local_scope_limit]
     log_excerpt = _trim_text(text, 1200)
     if not root_cause_hint and failure_lines:
         root_cause_hint = _trim_text(failure_lines[0], 220)
@@ -375,13 +380,13 @@ def build_local_failure_context(
         "logs_url": str(log_path or "").strip(),
         "log_excerpt": log_excerpt,
         "failure_summary": _trim_text(failure_summary, 220),
-        "suspected_targets": suspected_targets[:12],
+        "suspected_targets": effective_targets,
         "failed_jobs": [f"local:{normalized_source}"],
         "root_cause_hint": root_cause_hint,
         "diagnostic_hints": _build_diagnostic_hints(
             failure_summary,
             "\n".join(failure_lines) or log_excerpt,
-            suspected_targets[:12],
+            effective_targets,
         ),
     }
 
