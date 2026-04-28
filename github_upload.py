@@ -13,8 +13,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Sequence
 
 from config import Config
 
