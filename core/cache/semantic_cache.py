@@ -26,11 +26,13 @@ else:  # pragma: no cover - yalnızca type-checking için
     AsyncRedisClient = Any
 
 try:
-    from redis.asyncio import Redis as _AsyncRedisClass
+    from redis.asyncio import Redis as _AsyncRedisImported
 except ImportError:
-    _AsyncRedisClass = None
+    _ASYNC_REDIS_CLASS: type[AsyncRedisClient] | None = None
+else:
+    _ASYNC_REDIS_CLASS = cast(type[AsyncRedisClient], _AsyncRedisImported)
 
-Redis: type[AsyncRedisClient] | None = _AsyncRedisClass
+Redis: type[AsyncRedisClient] | None = _ASYNC_REDIS_CLASS
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ def _setting(config: Any, key: str, default: Any) -> Any:
 def _default_semantic_embedding_fn(texts: list[str], *, cfg: Any = None) -> list[list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache
 
-    return cast(list[list[float]], embed_texts_for_semantic_cache(texts, cfg=cfg))
+    return embed_texts_for_semantic_cache(texts, cfg=cfg)
 
 
 class SemanticCacheManager:
@@ -160,6 +162,7 @@ class SemanticCacheManager:
         redis = await self._get_redis()
         if redis is None or not prompt:
             return None
+        redis_client = cast(Any, redis)
 
         query_vector = self._embed_prompt(prompt)
         if not query_vector:
@@ -167,7 +170,7 @@ class SemanticCacheManager:
 
         started = time.perf_counter()
         try:
-            keys = await redis.lrange(self.index_key, 0, -1)
+            keys = await redis_client.lrange(self.index_key, 0, -1)
             if not keys:
                 set_cache_items(0)
                 observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
@@ -177,7 +180,7 @@ class SemanticCacheManager:
             best_sim = -1.0
             best_response: str | None = None
             for key in keys:
-                raw = await redis.hgetall(key)
+                raw = await redis_client.hgetall(key)
                 if not raw:
                     continue
                 try:
@@ -211,6 +214,7 @@ class SemanticCacheManager:
         redis = await self._get_redis()
         if redis is None or not prompt or not response:
             return
+        redis_client = cast(Any, redis)
 
         vector = self._embed_prompt(prompt)
         if not vector:
@@ -225,16 +229,16 @@ class SemanticCacheManager:
         }
         started = time.perf_counter()
         try:
-            keys_before = await redis.lrange(self.index_key, 0, self.max_items - 1)
+            keys_before = await redis_client.lrange(self.index_key, 0, self.max_items - 1)
             had_existing = item_key in keys_before
-            async with redis.pipeline(transaction=True) as pipe:
+            async with redis_client.pipeline(transaction=True) as pipe:
                 pipe.hset(item_key, mapping=payload)
                 pipe.expire(item_key, self.ttl)
                 pipe.lrem(self.index_key, 0, item_key)
                 pipe.lpush(self.index_key, item_key)
                 pipe.ltrim(self.index_key, 0, self.max_items - 1)
                 await pipe.execute()
-            current_items = await redis.llen(self.index_key)
+            current_items = await redis_client.llen(self.index_key)
             set_cache_items(current_items)
             if not had_existing and len(keys_before) >= self.max_items:
                 record_cache_eviction()
