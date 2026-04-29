@@ -1278,7 +1278,9 @@ class SidarAgent:
 
         if self._supervisor is None:
             return "⚠ Supervisor başlatılamadı."
-        result = await self._supervisor.run_task(user_input)
+        result = self._supervisor.run_task(user_input)
+        if inspect.isawaitable(result):
+            result = await result
         if not isinstance(result, str) or not result.strip():
             return "⚠ Supervisor geçerli bir çıktı üretemedi."
         return result
