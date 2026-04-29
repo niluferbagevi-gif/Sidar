@@ -9,7 +9,7 @@ from main import build_command, execute_command, preflight
 
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_WEB_ARGS = {
-    "host": "0.0.0.0",  # nosec B104 - GUI launcher'ın ağdan erişilebilir web modu için varsayılan.
+    "host": "127.0.0.1",
     "port": "7860",
 }
 

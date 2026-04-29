@@ -598,9 +598,7 @@ class Config:
     MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
-    WEB_HOST: str = os.getenv(
-        "WEB_HOST", "0.0.0.0"
-    )  # nosec B104
+    WEB_HOST: str = os.getenv("WEB_HOST", "127.0.0.1")
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
