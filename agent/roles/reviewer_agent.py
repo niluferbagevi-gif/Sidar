@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from agent.base_agent import BaseAgent
+from agent.core.contracts import DelegationRequest
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentCatalog
 from config import Config
@@ -916,7 +917,7 @@ class ReviewerAgent(BaseAgent):
         )
         return json.dumps(signal, ensure_ascii=False)
 
-    async def run_task(self, task_prompt: str) -> str | object:
+    async def run_task(self, task_prompt: str) -> str | DelegationRequest:
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:

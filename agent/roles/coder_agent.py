@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent.base_agent import BaseAgent
+from agent.core.contracts import DelegationRequest
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentCatalog
 from config import Config
@@ -141,7 +142,7 @@ class CoderAgent(BaseAgent):
             result[key.strip().lower()] = value.strip()
         return result
 
-    async def run_task(self, task_prompt: str) -> str | object:
+    async def run_task(self, task_prompt: str) -> str | DelegationRequest:
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
