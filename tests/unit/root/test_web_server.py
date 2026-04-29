@@ -688,7 +688,7 @@ async def test_get_agent_instance_and_resolve_agent_instance_with_sync_overrides
     monkeypatch.setattr(web_server, "get_agent", lambda: fake_agent)
     assert await web_server._get_agent_instance() is fake_agent
 
-    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: fake_agent)
+    monkeypatch.setattr(web_server, "_get_agent_instance", AsyncMock(return_value=fake_agent))
     assert await web_server._resolve_agent_instance() is fake_agent
 
 
