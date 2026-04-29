@@ -77,9 +77,11 @@ def _build_code_manager_mock(code_manager_cls):
     code_manager.execute_code.side_effect = lambda command: (True, f"exec:{command}")
     code_manager.list_directory.side_effect = lambda path: (True, f"list:{path}")
     code_manager.glob_search.side_effect = lambda pattern, base: (True, f"glob:{pattern}:{base}")
-    code_manager.grep_files.side_effect = lambda pattern, path, file_glob, context_lines: (
-        True,
-        f"grep:{pattern}:{path}:{file_glob}:{context_lines}",
+    code_manager.grep_files.side_effect = (
+        lambda pattern, path=".", file_glob="*", case_sensitive=True, context_lines=0, max_results=100, *_args, **_kwargs: (
+            True,
+            f"grep:{pattern}:{path}:{file_glob}:{context_lines}",
+        )
     )
     code_manager.audit_project.side_effect = lambda path: f"audit:{path}"
     return code_manager
