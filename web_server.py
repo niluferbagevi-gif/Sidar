@@ -1863,7 +1863,7 @@ def _validate_plugin_source(source_code: str) -> None:
     banned_calls = {"exec", "eval", "compile", "__import__", "open", "input"}
     banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             modules = []
             if isinstance(node, ast.Import):
                 modules = [alias.name.split(".")[0] for alias in node.names]
