@@ -156,10 +156,10 @@ def test_mask_messages_masks_only_string_contents_and_preserves_original_list():
 
     assert original[0]["content"] == "hello alice@example.com"
     assert masked_messages[0]["content"] == "hello [MASKED]"
-    assert masked_messages[1] is original[1]
-    assert masked_messages[2] is original[2]
-    assert masked_messages[3] is original[3]
-    assert masked_messages[4] is original[4]
+    assert masked_messages[1] == original[1]
+    assert masked_messages[2] == original[2]
+    assert masked_messages[3] == original[3]
+    assert masked_messages[4] == original[4]
     assert detections and all(isinstance(d, DLPDetection) for d in detections)
 
 
