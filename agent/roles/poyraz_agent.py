@@ -27,6 +27,32 @@ try:
 except Exception:  # pragma: no cover - test/stub ortamlarda opsiyonel olabilir
     MultimodalPipelineRuntime = None
 
+
+def _resolve_multimodal_pipeline_class() -> type[Any] | None:
+    """Multimodal pipeline sınıfını opsiyonel ve güvenli şekilde çöz."""
+    if MultimodalPipelineRuntime is not None:
+        return MultimodalPipelineRuntime
+
+    try:
+        multimodal_module = importlib.import_module("core.multimodal")
+    except Exception:
+        multimodal_module = None
+
+    if multimodal_module is not None:
+        candidate = getattr(multimodal_module, "MultimodalPipeline", None)
+        if candidate is not None:
+            return cast(type[Any], candidate)
+
+    try:
+        core_module = importlib.import_module("core")
+    except Exception:
+        return None
+
+    candidate = getattr(core_module, "MultimodalPipeline", None)
+    if candidate is None:
+        return None
+    return cast(type[Any], candidate)
+
 try:
     from agent.tooling import parse_tool_argument
 except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabilir
@@ -315,12 +341,7 @@ class PoyrazAgent(BaseAgent):
         return output
 
     async def _tool_ingest_video_insights(self, arg: str) -> str:
-        runtime_pipeline_cls = MultimodalPipelineRuntime
-        if runtime_pipeline_cls is None:
-            try:
-                runtime_pipeline_cls = importlib.import_module("core.multimodal").MultimodalPipeline
-            except Exception:
-                runtime_pipeline_cls = None
+        runtime_pipeline_cls = _resolve_multimodal_pipeline_class()
 
         if runtime_pipeline_cls is None:
             return "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"

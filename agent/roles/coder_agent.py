@@ -141,7 +141,7 @@ class CoderAgent(BaseAgent):
             result[key.strip().lower()] = value.strip()
         return result
 
-    async def run_task(self, task_prompt: str) -> str:
+    async def run_task(self, task_prompt: str) -> str | object:
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
@@ -190,10 +190,8 @@ class CoderAgent(BaseAgent):
 
         if lower.startswith("request_review|"):
             payload = prompt.split("|", 1)[1].strip()
-            return str(
-                self.delegate_to(
+            return self.delegate_to(
                 "reviewer", f"review_code|{payload}", reason="coder_request_review"
-                )
             )
 
         # Basit doğal dil eşleme: "X isimli bir dosyaya 'Y' yaz"

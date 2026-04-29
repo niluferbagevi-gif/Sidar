@@ -5354,14 +5354,14 @@ async def github_webhook(
 async def spa_fallback(full_path: str) -> Any:
     normalized = (full_path or "").strip()
     if not normalized:
-        maybe_response = await index()
+        maybe_response = await _await_if_needed(index())
         return maybe_response
     first_segment = normalized.split("/", 1)[0].lower()
     if first_segment in {"api", "vendor", "static", "assets", "ws", "webhook"}:
         return Response(status_code=404)
     if "." in Path(normalized).name:
         return Response(status_code=404)
-    maybe_response = await index()
+    maybe_response = await _await_if_needed(index())
     response = maybe_response
     if getattr(response, "status_code", None) == 500:
         return HTMLResponse(
