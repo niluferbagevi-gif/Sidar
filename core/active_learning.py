@@ -757,7 +757,9 @@ class LoRATrainer:
             target_modules=["q_proj", "v_proj"],
         )
         model = typing.cast(Any, get_peft_model(model, lora_config))
-        model.print_trainable_parameters()
+        print_trainable_parameters = typing.cast(Any, getattr(model, "print_trainable_parameters", None))
+        if callable(print_trainable_parameters):
+            print_trainable_parameters()
 
         # Dataset
         dataset = load_dataset(
