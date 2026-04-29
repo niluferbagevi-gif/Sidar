@@ -6,6 +6,7 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 import asyncio
 import contextlib
 import importlib
+import inspect
 import json
 import logging
 import sys
