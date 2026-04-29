@@ -615,7 +615,9 @@ PY
 }
 
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && sync_ollama_models && ensure_test_services && prepare_test_database && run_static_analysis_gates; then
+# Sıralama mantığı: ucuz/hızlı kapılar önce (lint/type check), pahalı altyapı sonra.
+# Statik analiz Docker/DB gerektirmez; erken başarısız olursa servis başlatma maliyetinden kaçınılır.
+if ensure_uv_available && run_static_analysis_gates && sync_ollama_models && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
