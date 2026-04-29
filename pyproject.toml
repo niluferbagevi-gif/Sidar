@@ -65,7 +65,7 @@ dependencies = [
   "pyttsx3~=2.98",
   "chromadb~=0.5.5",
   "langchain-core>=0.3.84",
-  "langchain-community>=0.3.84",
+  "langchain-community>=0.3.0,<0.3.84",
   "posthog<6.0.0",
   "sentence-transformers~=3.0.1",
   # ── Geliştirme ve test araçları (standart kurulum akışına dahil) ─────
