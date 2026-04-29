@@ -96,6 +96,47 @@ def _trim_text(value: Any, limit: int = 1200) -> str:
     return text[:limit].rstrip() + " …[truncated]"
 
 
+def _summarize_mypy_log(log_excerpt: str, *, max_lines: int = 40) -> dict[str, Any]:
+    """mypy logundan düşük gürültülü, modele beslenebilir özet üretir."""
+    grouped: dict[str, list[str]] = {}
+    total_errors = 0
+    unique_codes: set[str] = set()
+
+    for raw_line in str(log_excerpt or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _MYPY_ERROR_LINE_PATTERN.match(line)
+        if not match:
+            continue
+        total_errors += 1
+        path = str(match.group("path") or "").replace("\\", "/").lstrip("./")
+        code = str(match.group("code") or "unknown").strip()
+        message = str(match.group("message") or "").strip()
+        if code:
+            unique_codes.add(code)
+        grouped.setdefault(path, [])
+        if len(grouped[path]) < 3:
+            grouped[path].append(f"{path}:{match.group('line')}: {message} [{code}]")
+
+    top_files = sorted(grouped.items(), key=lambda item: len(item[1]), reverse=True)
+    sample_lines: list[str] = []
+    for _path, lines in top_files:
+        for line in lines:
+            sample_lines.append(line)
+            if len(sample_lines) >= max_lines:
+                break
+        if len(sample_lines) >= max_lines:
+            break
+
+    return {
+        "total_errors": total_errors,
+        "top_paths": [path for path, _ in top_files[:8]],
+        "error_codes": sorted(unique_codes)[:12],
+        "sample_lines": sample_lines,
+    }
+
+
 def _extract_suspected_targets(*values: Any) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
@@ -466,6 +507,11 @@ def build_self_heal_patch_prompt(
         if not path or not content:
             continue
         snapshot_lines.append(f"[FILE] {path}\n{content}")
+    mypy_summary = _summarize_mypy_log(info.get("log_excerpt") or "")
+    mypy_lines = list(mypy_summary.get("sample_lines") or [])
+    mypy_modes = "mypy" in str(info.get("workflow_name") or "").lower() or "mypy" in str(
+        info.get("failure_summary") or ""
+    ).lower()
 
     return (
         "[SELF_HEAL_PLAN]\n"
@@ -479,12 +525,25 @@ def build_self_heal_patch_prompt(
         "- `target` mevcut dosyada birebir bulunmalı; minimal diff üret.\n"
         "- Patch öncesi/sonrası deterministik olmalı.\n"
         "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash run_tests.sh dışına çıkma.\n\n"
+        "Mypy odaklı ek kurallar:\n"
+        "- Eğer hata türü mypy ise, öncelik sırası: parse edilebilir hata satırı -> ilgili dosya snapshotı -> diagnosis.\n"
+        "- Eksik bağlam varsayımı yapma; satır ve hata kodu verilmemişse bunu açıkça confidence düşürerek belirt.\n"
+        "- Tek turda maksimum 1-3 patch operasyonu üret ve aynı kök nedeni hedefle.\n\n"
         f"repo={info.get('repo', '')}\n"
         f"workflow_name={info.get('workflow_name', '')}\n"
         f"failure_summary={info.get('failure_summary', '')}\n"
         f"root_cause_hint={info.get('root_cause_hint', '')}\n"
         f"diagnosis={_trim_text(diagnosis, 5000)}\n"
         f"validation_commands={', '.join(validation_commands) or '-'}\n\n"
+        f"mypy_mode={str(mypy_modes).lower()}\n"
+        f"mypy_error_total={mypy_summary.get('total_errors', 0)}\n"
+        f"mypy_top_paths={', '.join(mypy_summary.get('top_paths') or []) or '-'}\n"
+        f"mypy_error_codes={', '.join(mypy_summary.get('error_codes') or []) or '-'}\n"
+        + (
+            "[MYPY_SAMPLE_LINES]\n" + "\n".join(mypy_lines) + "\n\n"
+            if mypy_lines
+            else "[MYPY_SAMPLE_LINES]\n-\n\n"
+        )
         + "\n\n".join(snapshot_lines)
     )
 

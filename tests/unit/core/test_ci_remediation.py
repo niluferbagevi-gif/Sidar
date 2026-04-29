@@ -767,3 +767,35 @@ def test_build_local_failure_context_respects_local_scope_limit_env(
     )
     ctx = ci.build_local_failure_context(log_text, source="mypy")
     assert ctx["suspected_targets"] == ["core/a.py", "core/b.py", "core/c.py"]
+
+
+def test_summarize_mypy_log_returns_structured_signal() -> None:
+    log_text = "\n".join(
+        [
+            "core/service.py:10: error: Incompatible types in assignment [assignment]",
+            "core/service.py:11: error: Returning Any from function declared to return int [no-any-return]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+        ]
+    )
+    summary = ci._summarize_mypy_log(log_text, max_lines=5)
+    assert summary["total_errors"] == 3
+    assert "core/service.py" in summary["top_paths"]
+    assert "assignment" in summary["error_codes"]
+    assert summary["sample_lines"]
+
+
+def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
+    context = {
+        "workflow_name": "local_mypy",
+        "failure_summary": "mypy failures",
+        "log_excerpt": "core/a.py:9: error: Incompatible types in assignment [assignment]",
+    }
+    prompt = ci.build_self_heal_patch_prompt(
+        context,
+        "Type mismatch",
+        {"scope_paths": ["core/a.py"], "validation_commands": ["pytest -q tests/unit/core"]},
+        [{"path": "core/a.py", "content": "value: int = 'x'"}],
+    )
+    assert "mypy_mode=true" in prompt
+    assert "mypy_error_total=1" in prompt
+    assert "[MYPY_SAMPLE_LINES]" in prompt
