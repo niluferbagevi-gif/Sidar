@@ -410,7 +410,7 @@ wait_for_test_services_ready() {
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
   local test_db_user="${POSTGRES_USER:-sidar}"
-  local test_db_password="${POSTGRES_PASSWORD:-sidar_test}"
+  local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar}}"
   local test_db_host="${POSTGRES_HOST:-localhost}"
   local test_db_port="${POSTGRES_PORT:-5432}"
   local reset_test_db="${RESET_TEST_DATABASE:-1}"
