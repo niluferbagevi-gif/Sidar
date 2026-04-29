@@ -913,8 +913,35 @@ class CodeManager:
         command: str = "pytest -q",
         cwd: str | None = None,
     ) -> dict[str, Any]:
-        normalized = (command or "").strip() or "pytest -q"
-        if "pytest" not in normalized:
+        raw_command = (command or "").strip()
+        if not raw_command:
+            raw_command = "pytest -q"
+
+        # LLM/yorum kaynaklı çok satırlı girdilerde yalnızca gerçek pytest satırını seç.
+        # Örn: "Test in comment: ...", markdown bullet'ları veya açıklama metinleri
+        # pytest'e positional argüman olarak gitmemelidir.
+        normalized = ""
+        for line in raw_command.splitlines():
+            candidate = line.strip()
+            if not candidate:
+                continue
+            if candidate.startswith(("-", "*")):
+                candidate = candidate[1:].strip()
+            if candidate.lower().startswith("pytest ") or candidate.lower() == "pytest":
+                normalized = candidate
+                break
+            if candidate.lower().startswith("python -m pytest"):
+                normalized = candidate
+                break
+
+        if not normalized:
+            normalized = raw_command
+
+        # Inline yorumları temizle (tırnak içine gömülü # hariç, basit güvenli yaklaşım).
+        if " #" in normalized:
+            normalized = normalized.split(" #", 1)[0].rstrip()
+
+        if not re.match(r"^(pytest|python\s+-m\s+pytest)\b", normalized, re.IGNORECASE):
             return {
                 "success": False,
                 "command": normalized,
