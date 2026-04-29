@@ -79,7 +79,7 @@ def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
         DB_POOL_SIZE=max(1, benchmark_pool_size),
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )

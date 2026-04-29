@@ -1205,7 +1205,7 @@ class CodeManager:
             for fp in sorted(files_to_search):
                 try:
                     lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-                except (OSError, UnicodeDecodeError):
+                except Exception:
                     continue
 
                 file_matches: list[str] = []

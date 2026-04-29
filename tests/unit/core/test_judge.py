@@ -488,11 +488,17 @@ async def test_record_judge_metrics_variants(monkeypatch):
     def sink(payload):
         sink_calls.append(payload)
 
+    class _Event:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
     metrics_mod = types.ModuleType("core.llm_metrics")
     metrics_mod.get_llm_metrics_collector = lambda: Collector(sink)
+    metrics_mod.LLMMetricEvent = _Event
     monkeypatch.setitem(sys.modules, "core.llm_metrics", metrics_mod)
     judge._record_judge_metrics(result)
-    assert sink_calls and sink_calls[0]["type"] == "judge"
+    assert sink_calls and getattr(sink_calls[0], "judge_score", None) == result.relevance_score
 
     async def async_sink(payload):
         return None
@@ -530,8 +536,14 @@ async def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
             coro.close()
             return None
 
+    class _Event:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
     metrics_mod = types.ModuleType("core.llm_metrics")
     metrics_mod.get_llm_metrics_collector = lambda: Collector(async_sink)
+    metrics_mod.LLMMetricEvent = _Event
     monkeypatch.setitem(sys.modules, "core.llm_metrics", metrics_mod)
     monkeypatch.setattr(judge.asyncio, "get_running_loop", lambda: _Loop())
     judge._record_judge_metrics(result)

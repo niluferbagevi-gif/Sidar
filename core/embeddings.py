@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import cast
 
 from config import Config
 
@@ -30,7 +31,8 @@ def embed_texts_for_semantic_cache(
 
         model = SentenceTransformer(model_name)
         vectors = model.encode(texts, normalize_embeddings=True)
-        return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+        raw = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+        return cast("list[list[float]]", raw)
     except Exception as exc:
         logger.debug("Semantic cache embedding üretilemedi: %s", exc)
         return []

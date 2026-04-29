@@ -70,7 +70,7 @@ class DummyCode:
         self.calls.append(("list_directory", arg))
         return True, f"LIST:{arg}"
 
-    def grep_files(self, pattern, path, file_glob, context_lines):
+    def grep_files(self, pattern, path, file_glob, case_sensitive=True, context_lines=0, max_results=100):
         self.calls.append(("grep_files", pattern, path, file_glob, context_lines))
         return True, f"GREP:{pattern}:{path}:{file_glob}:{context_lines}"
 

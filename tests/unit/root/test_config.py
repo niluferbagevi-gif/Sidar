@@ -18,10 +18,10 @@ def test_get_bool_env_truthy_and_default(monkeypatch):
     assert config.get_bool_env("FLAG_C", True) is True
 
 
-def test_llm_client_settings_default_ollama_timeout_is_180(monkeypatch):
+def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
     monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
     settings = config.LLMClientSettings()
-    assert settings.OLLAMA_TIMEOUT == 180
+    assert settings.OLLAMA_TIMEOUT == 600
 
 
 def test_get_int_float_and_list_env_parsing(monkeypatch):

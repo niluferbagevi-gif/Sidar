@@ -589,6 +589,7 @@ def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(
     fake_mm_mod.MultimodalPipeline = FallbackPipeline
     monkeypatch.setitem(sys.modules, "core.multimodal", fake_mm_mod)
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipelineRuntime", None)
 
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(
@@ -604,6 +605,7 @@ def test_ingest_video_insights_returns_error_when_pipeline_unavailable(
     poyraz_module, fake_cfg, monkeypatch
 ):
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipelineRuntime", None)
     monkeypatch.setattr(
         poyraz_module.importlib,
         "import_module",

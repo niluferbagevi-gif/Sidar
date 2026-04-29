@@ -480,9 +480,10 @@ def _record_judge_metrics(result: JudgeResult) -> None:
             out = collector._usage_sink(event)
             if inspect.isawaitable(out):
                 try:
-                    asyncio.ensure_future(out)
+                    asyncio.get_running_loop().create_task(out)
                 except RuntimeError:
-                    pass
+                    if hasattr(out, "close"):
+                        out.close()
     except Exception as exc:
         logger.debug("Judge metrik kaydı başarısız: %s", exc)
 

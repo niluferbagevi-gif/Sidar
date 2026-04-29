@@ -66,7 +66,7 @@ async def test_schema_version_migration_is_idempotent_under_concurrency(tmp_path
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=4,
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )
@@ -99,7 +99,7 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )

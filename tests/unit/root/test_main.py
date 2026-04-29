@@ -3827,9 +3827,11 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
             self.calls.append((role, content))
 
     memory = _Memory()
-    monkeypatch.setattr(
-        web_server, "_resolve_agent_instance", lambda: SimpleNamespace(memory=memory)
-    )
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=memory)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
 
     dispatched = {"count": 0}
@@ -3859,7 +3861,11 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
             return None
 
     agent = SimpleNamespace(memory=_Memory())
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
     async def _dispatch_sync_helper(**_kwargs):
@@ -8330,7 +8336,10 @@ async def test_dispatch_autonomy_trigger_non_awaitable_agent_and_ci_fallback_edg
         async def respond(self, _prompt):
             yield "non-awaitable"
 
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: _Agent())
+    async def _resolve_agent():
+        return _Agent()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda maybe: maybe)
 
     result = await web_server._dispatch_autonomy_trigger(
@@ -8695,7 +8704,7 @@ async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_syst
             self.role_name = role_name
             self.prompt_text = "kept"
             self.is_active = True
-            self.created_at = web_server.datetime.now(web_server.timezone.utc)
+            self.created_at = web_server.datetime.now(web_server.UTC)
             self.updated_at = self.created_at
 
     class _Db:

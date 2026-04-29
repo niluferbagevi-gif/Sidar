@@ -1491,8 +1491,8 @@ class SidarAgent:
         # Aynı dosya iki kez gelmesin, deterministik sırada olsun
         normalized_files = []
         for candidate in found_files:
-            path_obj = candidate if isinstance(candidate, Path) else Path(candidate)
             try:
+                path_obj = candidate if isinstance(candidate, Path) else Path(candidate)
                 if not hasattr(path_obj, "is_file") or not path_obj.is_file():
                     continue
                 resolved = path_obj.resolve() if hasattr(path_obj, "resolve") else path_obj

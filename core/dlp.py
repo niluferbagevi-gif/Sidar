@@ -290,9 +290,9 @@ class DLPEngine:
                     result.append({**msg, "content": masked})
                     all_dets.extend(dets)
                 else:
-                    result.append(dict(msg))
+                    result.append(msg)  # type: ignore[arg-type]
             else:
-                result.append(dict(msg))
+                result.append(msg)  # type: ignore[arg-type]
         return result, all_dets
 
 

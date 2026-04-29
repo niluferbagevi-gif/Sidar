@@ -243,7 +243,7 @@ async def fake_db_session(tmp_path: Path) -> AsyncGenerator[Any, None]:
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )
@@ -278,7 +278,7 @@ async def sqlite_db(tmp_path) -> AsyncGenerator[Database, None]:
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )
@@ -320,7 +320,7 @@ async def pg_schema_initialized(pg_container: PostgresContainer) -> str:
         DB_POOL_SIZE=2,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=_resolve_db_schema_target_version(),
-        JWT_SECRET_KEY="test-secret",
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
         JWT_ALGORITHM="HS256",
         JWT_TTL_DAYS=3,
     )

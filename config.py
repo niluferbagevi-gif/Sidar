@@ -54,6 +54,14 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
+# 4. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
+#    (örn: test ortamında DOTENV_FILE=.env.test)
+_explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
+if _explicit_dotenv:
+    _explicit_dotenv_path = BASE_DIR / _explicit_dotenv
+    if _explicit_dotenv_path.exists():
+        load_dotenv(dotenv_path=_explicit_dotenv_path, override=True)
+
 ENV_PATH = base_env_path
 
 

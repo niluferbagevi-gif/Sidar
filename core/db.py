@@ -468,7 +468,7 @@ class Database:
                             "SQLite işlemi ve rollback başarısız oldu."
                         ) from rollback_exc
                     raise
-        raise RuntimeError("SQLite işlemi tamamlanamadı.")
+        return None
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
@@ -551,7 +551,8 @@ class Database:
             conn = self._sqlite_conn
             self._sqlite_conn = None
             self._sqlite_write_lock = None
-            await asyncio.to_thread(conn.close)
+            if callable(getattr(conn, "close", None)):
+                await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
             pool = self._pg_pool
