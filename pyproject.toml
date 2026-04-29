@@ -282,6 +282,7 @@ addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-report=xml"
 
 [tool.uv]
 index-strategy = "first-index"
+environments = ["sys_platform == 'linux'"]
 
 [tool.uv.sources]
 torch = [
