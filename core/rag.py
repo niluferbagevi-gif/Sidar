@@ -725,9 +725,10 @@ class DocumentStore:
     def close(self) -> None:
         """Ağır kaynakları serbest bırak."""
         self._pg_embedding_model = None
-        if getattr(self, "pg_engine", None) is not None:
+        pg_engine = getattr(self, "pg_engine", None)
+        if pg_engine is not None:
             try:
-                self.pg_engine.dispose()
+                pg_engine.dispose()
             except Exception:
                 logger.debug("pg_engine dispose edilemedi.", exc_info=True)
             finally:

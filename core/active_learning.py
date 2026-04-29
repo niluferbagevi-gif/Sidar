@@ -715,7 +715,7 @@ class LoRATrainer:
         logger.info("LoRATrainer: Eğitim başlatılıyor — model=%s", self.base_model)
 
         # Tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = typing.cast(Any, AutoTokenizer).from_pretrained(
             self.base_model,
             trust_remote_code=False,
             revision=self.model_revision,
@@ -733,7 +733,7 @@ class LoRATrainer:
                 import torch
                 from transformers import BitsAndBytesConfig
 
-                bnb_config = BitsAndBytesConfig(
+                bnb_config = typing.cast(Any, BitsAndBytesConfig)(
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=torch.float16,
@@ -756,7 +756,7 @@ class LoRATrainer:
             bias="none",
             target_modules=["q_proj", "v_proj"],
         )
-        model = get_peft_model(model, lora_config)
+        model = typing.cast(Any, get_peft_model(model, lora_config))
         model.print_trainable_parameters()
 
         # Dataset
