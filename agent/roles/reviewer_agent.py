@@ -916,7 +916,7 @@ class ReviewerAgent(BaseAgent):
         )
         return json.dumps(signal, ensure_ascii=False)
 
-    async def run_task(self, task_prompt: str) -> str:
+    async def run_task(self, task_prompt: str) -> str | object:
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
@@ -1073,10 +1073,8 @@ class ReviewerAgent(BaseAgent):
                 },
                 ensure_ascii=False,
             )
-            return str(
-                self.delegate_to(
+            return self.delegate_to(
                 "coder", f"qa_feedback|{feedback_payload}", reason="review_decision"
-                )
             )
 
         if any(k in lower for k in ("review", "incele", "regresyon", "test")):

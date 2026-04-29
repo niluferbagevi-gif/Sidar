@@ -26,6 +26,11 @@ from tests.helpers import collect_async_chunks as _collect
 from tests.helpers import make_test_config as _make_config
 
 
+@pytest.fixture(autouse=True)
+def _set_dummy_gemini_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key")
+
+
 def test_semantic_cache_sets_redis_none_when_redis_asyncio_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
