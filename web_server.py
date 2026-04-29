@@ -559,7 +559,7 @@ def _list_child_ollama_pids() -> list[int]:
 
     try:
         ps_binary = shutil.which("ps") or "/bin/ps"
-        raw = subprocess.check_output(  # nosec B603 - sabit ps komutu, kullanıcı girdisi içermez.
+        raw = subprocess.check_output(  # nosec B603
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],  # nosec B607
             stderr=subprocess.DEVNULL,
         )
@@ -1871,7 +1871,7 @@ def _load_plugin_agent_class(
 
     namespace = {"__name__": module_label}
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102 - plugin mekanizması için kontrollü/deliberate dinamik yükleme.
+        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
@@ -4017,7 +4017,7 @@ async def file_content(path: str) -> Any:
 def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
     """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
     try:
-        return subprocess.check_output(  # nosec B603 - git komutu whitelist/uygulama içi akıştan gelir.
+        return subprocess.check_output(  # nosec B603
             cmd, cwd=cwd, stderr=stderr
         ).decode().strip()
     except Exception:

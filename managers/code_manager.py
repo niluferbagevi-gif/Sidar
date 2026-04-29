@@ -256,7 +256,7 @@ class CodeManager:
     ) -> tuple[bool, str]:
         """Docker SDK başarısız olursa docker CLI ile çalıştırmayı dener."""
         docker_cmd = self._build_docker_cli_command(code, limits)
-        result = subprocess.run(  # nosec B603 - docker komutu iç kaynaklı argümanlarla oluşturulur.
+        result = subprocess.run(  # nosec B603
             docker_cmd,
             capture_output=True,
             text=True,
@@ -304,7 +304,7 @@ class CodeManager:
         if not docker_bin:
             return False
         try:
-            result = subprocess.run(  # nosec B603 - docker info çağrısı iç kaynaklıdır.
+            result = subprocess.run(  # nosec B603
                 [docker_bin, "info"],
                 capture_output=True,
                 text=True,
@@ -487,7 +487,7 @@ class CodeManager:
         if not ruff_bin:
             return
         try:
-            subprocess.run(  # nosec B603 - ruff format komutu iç kaynaklıdır.
+            subprocess.run(  # nosec B603
                 [ruff_bin, "format", str(target)],
                 cwd=str(self.base_dir),
                 check=False,
@@ -603,7 +603,7 @@ class CodeManager:
                 "command": command,
                 "detach": True,
                 "remove": False,
-                "working_dir": "/tmp",  # nosec B108 - Docker konteyner içi geçici çalışma dizini.
+                "working_dir": "/tmp",  # nosec B108
                 "mem_limit": sandbox_limits["memory"],
                 "nano_cpus": sandbox_limits["nano_cpus"],
                 "pids_limit": sandbox_limits["pids_limit"],
@@ -717,7 +717,7 @@ class CodeManager:
             python_bin = (
                 sys.executable or shutil.which("python3") or shutil.which("python") or "python"
             )
-            result = subprocess.run(  # nosec B603 - geçici dosya python ile iç kaynaklı çağrılır.
+            result = subprocess.run(  # nosec B603
                 [python_bin, tmp_path],
                 capture_output=True,
                 text=True,
@@ -800,7 +800,7 @@ class CodeManager:
         docker_cmd.extend([self.docker_image, "sh", "-lc", command])
 
         try:
-            result = subprocess.run(  # nosec B603 - docker sandbox komutu iç kaynaklı argümanlarla oluşturulur.
+            result = subprocess.run(  # nosec B603
                 docker_cmd,
                 capture_output=True,
                 text=True,
@@ -1008,9 +1008,9 @@ class CodeManager:
                     "Komut (ilk 200 kar): %.200s",
                     command,
                 )
-                result = subprocess.run(  # nosec B603 - shell=True çağrısı için B602 ayrı yönetiliyor; komut güvenilir kaynakta.
+                result = subprocess.run(  # nosec B603
                     command,
-                    shell=True,  # nosec B602 - FULL modda bilerek shell özellikleri (pipe/redirection) için etkin.
+                    shell=True,  # nosec B602
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -1019,7 +1019,7 @@ class CodeManager:
                 )
             else:
                 args = shlex.split(command)
-                result = subprocess.run(  # nosec B603 - shell=False ile ayrıştırılmış argümanlar kullanılır.
+                result = subprocess.run(  # nosec B603
                     args,
                     shell=False,
                     capture_output=True,
@@ -1391,7 +1391,7 @@ class CodeManager:
 
         payload = b"".join(_encode_lsp_message(msg) for msg in messages)
         try:
-            proc = subprocess.Popen(  # nosec B603 - LSP binary/argümanları sistem içi konfigürasyondan gelir.
+            proc = subprocess.Popen(  # nosec B603
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
