@@ -737,8 +737,8 @@ class DocumentStore:
     def __del__(self) -> None:  # pragma: no cover
         try:
             self.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("RAG kaynakları kapatılırken hata oluştu: %s", exc, exc_info=True)
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ & AYARLAR
