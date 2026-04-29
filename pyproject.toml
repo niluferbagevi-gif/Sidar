@@ -56,7 +56,7 @@ dependencies = [
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.12.3",
   "bleach~=6.1.0",
-  "nemoguardrails~=0.11.0",
+  "nemoguardrails>=0.12.0,<0.13.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
