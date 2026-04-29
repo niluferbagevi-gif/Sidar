@@ -2294,6 +2294,8 @@ install_python_deps() {
     # uv lock komutuna desteklenmeyen --extra argümanı enjekte edilebilir.
     # Lock adımını extras env değişkenlerinden izole ederek deterministik çalıştır.
     if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade "${LOCK_ARGS[@]}"; then
+        warn "uv lock başarısız oldu. Çoğu durumda neden, pyproject.toml içindeki sürüm aralıklarının birbiriyle çakışmasıdır."
+        warn "Özellikle nemoguardrails ve langchain-community sürümlerini birlikte kontrol edin."
         fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
     fi
 
