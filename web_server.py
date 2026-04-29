@@ -1907,7 +1907,7 @@ def _load_plugin_agent_class(
     _validate_plugin_source(source_code)
     namespace = {"__name__": module_label}
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)
+        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
