@@ -614,8 +614,11 @@ PY
   fi
 }
 
-# 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
-if ensure_uv_available && sync_ollama_models && ensure_test_services && prepare_test_database && run_static_analysis_gates; then
+# 1) Backend kalite akışı (3 faz):
+#    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
+#    Faz-2: Statik analiz + otonom iyileştirme
+#    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
+if ensure_uv_available && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
