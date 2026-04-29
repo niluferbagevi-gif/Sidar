@@ -603,7 +603,7 @@ class CodeManager:
                 "command": command,
                 "detach": True,
                 "remove": False,
-                "working_dir": "/tmp",  # nosec B108
+                "working_dir": tempfile.gettempdir(),
                 "mem_limit": sandbox_limits["memory"],
                 "nano_cpus": sandbox_limits["nano_cpus"],
                 "pids_limit": sandbox_limits["pids_limit"],

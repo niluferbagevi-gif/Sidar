@@ -10,6 +10,7 @@ Başlatmak için:
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import atexit
 import base64
@@ -1852,6 +1853,40 @@ def _plugin_source_filename(module_label: str) -> str:
     return f"<sidar-plugin:{safe_label}>"
 
 
+def _validate_plugin_source(source_code: str) -> None:
+    """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
+    try:
+        tree = ast.parse(source_code, mode="exec")
+    except SyntaxError as exc:
+        raise HTTPException(status_code=400, detail=f"Plugin söz dizimi hatası: {exc}") from exc
+
+    banned_calls = {"exec", "eval", "compile", "__import__", "open", "input"}
+    banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            modules = []
+            if isinstance(node, ast.Import):
+                modules = [alias.name.split(".")[0] for alias in node.names]
+            else:
+                modules = [(node.module or "").split(".")[0]]
+            if any(mod in banned_import_roots for mod in modules if mod):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
+                )
+        if isinstance(node, ast.Call):
+            fn_name = ""
+            if isinstance(node.func, ast.Name):
+                fn_name = node.func.id
+            elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                fn_name = f"{node.func.value.id}.{node.func.attr}"
+            if fn_name in banned_calls or fn_name.endswith(".exec") or fn_name.endswith(".eval"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Plugin güvenlik politikası: dinamik kod çalıştırma çağrısı engellendi.",
+                )
+
+
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
@@ -1869,9 +1904,10 @@ def _load_plugin_agent_class(
             getattr(base, "__name__", "") == "BaseAgent" for base in inspect.getmro(candidate)[1:]
         )
 
+    _validate_plugin_source(source_code)
     namespace = {"__name__": module_label}
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
+        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
