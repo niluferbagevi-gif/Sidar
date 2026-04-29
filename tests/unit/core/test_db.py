@@ -37,7 +37,7 @@ class DummyCfg:
     DB_POOL_SIZE: int = 2
     DB_SCHEMA_VERSION_TABLE: str = "schema_versions"
     DB_SCHEMA_TARGET_VERSION: int = 2
-    JWT_SECRET_KEY: str = "test-secret"
+    JWT_SECRET_KEY: str = "test-secret-key-32-bytes-minimum!!"
     JWT_ALGORITHM: str = "HS256"
     JWT_TTL_DAYS: int = 3
     SQLITE_MAX_CONCURRENT_OPS: int = 4

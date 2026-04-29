@@ -832,12 +832,12 @@ def test_get_jwt_secret_fallback_logs_critical(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
-    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t-key-32-bytes-minimum-value")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
     encoded = jwt.encode(
         {"sub": "42", "username": "lin", "role": "admin", "tenant_id": "t1"},
-        "s3cr3t",
+        "s3cr3t-key-32-bytes-minimum-value",
         algorithm="HS256",
     )
     user = await web_server._resolve_user_from_token(None, encoded)
@@ -860,13 +860,13 @@ async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
-    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "token-secret")
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "token-secret-key-32-bytes-minimum")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(web_server.cfg, "JWT_TTL_DAYS", 3)
     user = SimpleNamespace(id="7", username="ada", role="editor", tenant_id="team-1")
 
     token = await web_server._issue_auth_token(None, user)
-    payload = jwt.decode(token, "token-secret", algorithms=["HS256"])
+    payload = jwt.decode(token, "token-secret-key-32-bytes-minimum", algorithms=["HS256"])
 
     assert payload["sub"] == "7"
     assert payload["username"] == "ada"
@@ -877,7 +877,7 @@ async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_user_from_token_invalid_jwt_without_db_returns_none(monkeypatch):
-    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t")
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t-key-32-bytes-minimum-value")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
     user = await web_server._resolve_user_from_token(None, "not-a-jwt-token")
