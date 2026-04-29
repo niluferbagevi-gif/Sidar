@@ -597,9 +597,9 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
 > Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
 > ile sabitler.
-> Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=0` olduğu için benchmark fazı
-> atlanır; LLM endpoint/semantic cache/cost-router gibi gecikme hassas akışlar için
-> periyodik olarak `RUN_BENCHMARKS=required bash run_tests.sh` veya
+> Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
+> benchmark fazı quality gate olarak zorunlu çalışır. Gecikme hassas akışlar için
+> periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.
 > GPU benchmarkları için `Nightly GPU Performance` hattında TTFT/TPS/VRAM metrikleri
