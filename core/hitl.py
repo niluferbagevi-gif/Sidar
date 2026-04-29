@@ -29,7 +29,7 @@ import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ _MAX_QUEUE_SIZE = 200  # bellekte tutulan maks. istek
 # ─── Veri modelleri ───────────────────────────────────────────────────────────
 
 
-class HITLDecision(str, Enum):
+class HITLDecision(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
