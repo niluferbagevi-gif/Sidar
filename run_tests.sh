@@ -424,7 +424,7 @@ prepare_test_database() {
   local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar}}"
   local test_db_host="${POSTGRES_HOST:-localhost}"
-  local admin_db_user="${POSTGRES_ADMIN_USER:-postgres}"
+  local admin_db_user="${POSTGRES_ADMIN_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_port="${POSTGRES_PORT:-5432}"
   local reset_test_db="${RESET_TEST_DATABASE:-1}"
 
