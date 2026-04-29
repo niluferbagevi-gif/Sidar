@@ -35,7 +35,7 @@ def _resolve_multimodal_pipeline_class() -> type[Any] | None:
     """Multimodal pipeline sınıfını opsiyonel ve güvenli şekilde çöz."""
     # Öncelik: testlerde monkeypatch edilen modül değişkeni
     if MultimodalPipeline is not None:
-        return cast(type[Any], MultimodalPipeline)
+        return MultimodalPipeline
 
     if MultimodalPipelineRuntime is not None:
         return MultimodalPipelineRuntime
