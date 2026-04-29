@@ -421,9 +421,10 @@ wait_for_test_services_ready() {
 
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
-  local test_db_user="${POSTGRES_USER:-sidar}"
+  local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar}}"
   local test_db_host="${POSTGRES_HOST:-localhost}"
+  local admin_db_user="${POSTGRES_ADMIN_USER:-postgres}"
   local test_db_port="${POSTGRES_PORT:-5432}"
   local reset_test_db="${RESET_TEST_DATABASE:-1}"
 
@@ -438,6 +439,16 @@ prepare_test_database() {
   fi
 
   echo "🗄️ İzole test veritabanı hazırlanıyor: ${test_db_name}"
+  echo "🔐 Test rolü doğrulanıyor: ${test_db_user}"
+  if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+    -U "${admin_db_user}" -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${test_db_user}') THEN CREATE ROLE ${test_db_user} LOGIN PASSWORD '${test_db_password}'; ELSE ALTER ROLE ${test_db_user} WITH LOGIN PASSWORD '${test_db_password}'; END IF; END \$\$;"; then
+    echo "❌ Test rolü oluşturma/güncelleme başarısız oldu: ${test_db_user}"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
   if [ "${reset_test_db}" = "1" ]; then
     echo "♻️ RESET_TEST_DATABASE=1; test veritabanı sıfırlanıyor: ${test_db_name}"
     if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
@@ -464,6 +475,15 @@ prepare_test_database() {
         return 1
       fi
     fi
+  fi
+
+  if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+    -U "${admin_db_user}" -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c "GRANT ALL PRIVILEGES ON DATABASE ${test_db_name} TO ${test_db_user};"; then
+    echo "❌ Test veritabanı yetkileri atanamadı: ${test_db_name} -> ${test_db_user}"
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
