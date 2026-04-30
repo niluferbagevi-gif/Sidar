@@ -493,7 +493,13 @@ class SidarAgent:
         normalized: list[list[str]] = []
         seen_keys: set[tuple[str, ...]] = set()
         for batch_scope in candidate_batches:
-            chunk = [path for path in batch_scope if path in scope_paths]
+            chunk: list[str] = []
+            seen_in_chunk: set[str] = set()
+            for path in batch_scope:
+                if path not in scope_paths or path in seen_in_chunk:
+                    continue
+                seen_in_chunk.add(path)
+                chunk.append(path)
             if not chunk:
                 continue
             key = tuple(chunk)
