@@ -1205,7 +1205,8 @@ class CodeManager:
             for fp in sorted(files_to_search):
                 try:
                     lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-                except Exception:
+                except Exception as exc:
+                    logger.warning("Dosya okunamadı, atlanıyor: %s (%s)", fp, exc)
                     continue
 
                 file_matches: list[str] = []
