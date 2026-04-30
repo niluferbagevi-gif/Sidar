@@ -1553,6 +1553,7 @@ async def test_try_multi_agent_imports_supervisor_when_missing(
     supervisor_instance.run_task.return_value = "ok:hello"
     supervisor_cls.return_value = supervisor_instance
     monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
+    monkeypatch.setattr(sidar_agent.importlib, "reload", lambda module: module)
 
     result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
