@@ -1271,15 +1271,22 @@ async def test_litellm_stream_and_fail(
 async def test_gemini_client_missing_and_success(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    original_import_module = llm_client.importlib.import_module
+
+    def _missing_google_genai(name: str):
+        if name.startswith("google.genai"):
+            raise ImportError("google.genai missing")
+        return original_import_module(name)
+
+    monkeypatch.setattr(llm_client.importlib, "import_module", _missing_google_genai)
+
     cfg = mock_config(GEMINI_API_KEY="", GEMINI_MODEL="g")
     c = llm_client.GeminiClient(cfg)
-    missing_key_result = await c.chat([{"role": "user", "content": "x"}], stream=False)
-    if "google-genai" in missing_key_result:
-        # Test ortamında google-genai paketi yoksa import fallback'i beklenir.
-        assert "Paket eksik" in missing_key_result
-    else:
-        with pytest.raises(ValueError, match="API key must be set when using the Google AI API"):
-            await c.chat([{"role": "user", "content": "x"}], stream=False)
+    missing_pkg_result = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert "google-genai" in missing_pkg_result
+    assert "Paket eksik" in missing_pkg_result
+
+    monkeypatch.setattr(llm_client.importlib, "import_module", original_import_module)
 
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
@@ -1287,6 +1294,9 @@ async def test_gemini_client_missing_and_success(
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
+    missing_key_result = await c.chat([{"role": "user", "content": "x"}], stream=False)
+    assert "GEMINI_API_KEY" in missing_key_result
+
     cfg2 = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c2 = llm_client.GeminiClient(cfg2)
     assert (
