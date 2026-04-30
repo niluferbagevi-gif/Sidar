@@ -562,7 +562,8 @@ def test_execute_task_handles_empty_retry_iteration(monkeypatch):
 
     result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
     assert result.status == "failed"
-    assert "NoneType" in result.summary
+    assert "Görev başarısız" in result.summary
+    assert "geçerli TaskResult döndürmedi" in result.summary
 
 
 def test_execute_task_fallback_success_failure_and_feedback_coroutine(monkeypatch):
