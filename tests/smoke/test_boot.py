@@ -178,6 +178,12 @@ async def test_boot_postgresql_connection_select_1() -> None:
     if database_url.startswith("postgresql+asyncpg://"):
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
+    if not database_url.startswith(("postgresql://", "postgres://")):
+        pytest.skip(
+            "PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. "
+            f"Mevcut DATABASE_URL={database_url!r}"
+        )
+
     conn = await asyncpg.connect(dsn=database_url, timeout=3)
     try:
         result = await conn.fetchval("SELECT 1")
