@@ -480,7 +480,10 @@ def _record_judge_metrics(result: JudgeResult) -> None:
             out = collector._usage_sink(event)
             if inspect.isawaitable(out):
                 try:
-                    asyncio.get_running_loop().create_task(out)
+                    if inspect.iscoroutine(out):
+                        asyncio.get_running_loop().create_task(out)
+                    else:
+                        asyncio.ensure_future(out)
                 except RuntimeError:
                     if hasattr(out, "close"):
                         out.close()
