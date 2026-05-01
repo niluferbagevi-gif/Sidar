@@ -3578,14 +3578,14 @@ async def test_gemini_chat_returns_fallback_when_google_genai_import_fails(
 ) -> None:
     cfg = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c = llm_client.GeminiClient(cfg)
-    original_import = builtins.__import__
+    original_import_module = llm_client.importlib.import_module
 
-    def _patched_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "google" and fromlist and "genai" in fromlist:
+    def _missing_google_genai(name: str):
+        if name.startswith("google.genai"):
             raise ImportError("google.genai missing")
-        return original_import(name, globals, locals, fromlist, level)
+        return original_import_module(name)
 
-    monkeypatch.setattr(builtins, "__import__", _patched_import)
+    monkeypatch.setattr(llm_client.importlib, "import_module", _missing_google_genai)
     out = await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert "google-genai" in out
 
