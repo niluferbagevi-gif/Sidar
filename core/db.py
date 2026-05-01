@@ -468,7 +468,7 @@ class Database:
                             "SQLite işlemi ve rollback başarısız oldu."
                         ) from rollback_exc
                     raise
-        raise RuntimeError("SQLite işlemi beklenmeyen şekilde sonuç üretmedi.")
+        raise sqlite3.OperationalError("SQLite işlemi deneme sınırına ulaştı ve tamamlanamadı.")
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:

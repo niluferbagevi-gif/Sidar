@@ -567,7 +567,8 @@ async def test_run_sqlite_op_covers_empty_retry_range_exit(
     sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(core_db, "range", lambda *_args, **_kwargs: [], raising=False)
-    assert await sqlite_db._run_sqlite_op(lambda: 99) is None
+    with pytest.raises(sqlite3.OperationalError, match="deneme sınırına ulaştı"):
+        await sqlite_db._run_sqlite_op(lambda: 99)
 
 
 @pytest.mark.asyncio
