@@ -76,7 +76,7 @@ def test_launch_from_gui_success(monkeypatch):
         "openai",
         "sandbox",
         "debug",
-        {"host": "0.0.0.0", "port": "7860"},
+        {"host": "127.0.0.1", "port": "7860"},
     )
     assert captured["cmd"] == ["python", "main.py"]
 
