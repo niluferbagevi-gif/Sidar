@@ -454,3 +454,34 @@ def test_chat_websocket_llm_api_error_payload(monkeypatch: pytest.MonkeyPatch) -
             event = websocket.receive_json()
             assert event["done"] is True
             assert "LLM Hatası" in event["chunk"]
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_end_to_end_auth_session_and_chat_history_flow(web_api_client) -> None:
+    client, _sqlite_db, _fake_agent = web_api_client
+
+    register = await client.post(
+        "/auth/register",
+        json={"username": "flow-user", "password": "secret123", "tenant_id": "default"},
+    )
+    assert register.status_code == 200
+    token = register.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    me = await client.get("/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["username"] == "flow-user"
+
+    new_session = await client.post("/sessions/new", headers=headers)
+    assert new_session.status_code == 200
+    session_id = new_session.json()["session_id"]
+
+    history = await client.get(f"/sessions/{session_id}", headers=headers)
+    assert history.status_code == 200
+    payload = history.json()
+    assert payload["session_id"] == session_id
+    assert isinstance(payload.get("messages", []), list)
+
+    delete = await client.delete(f"/sessions/{session_id}", headers=headers)
+    assert delete.status_code == 200
+    assert delete.json()["success"] is True
