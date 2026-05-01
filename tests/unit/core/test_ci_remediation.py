@@ -799,3 +799,42 @@ def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
     assert "mypy_mode=true" in prompt
     assert "mypy_error_total=1" in prompt
     assert "[MYPY_SAMPLE_LINES]" in prompt
+
+
+def test_summarize_mypy_log_limits_samples_per_file_and_ignores_noise() -> None:
+    log_text = "\n".join(
+        [
+            "noise that should be ignored",
+            "core/service.py:10: error: msg1 [assignment]",
+            "core/service.py:11: error: msg2 [assignment]",
+            "core/service.py:12: error: msg3 [assignment]",
+            "core/service.py:13: error: msg4 [assignment]",
+            "agent/a.py:1: error: other [no-untyped-def]",
+        ]
+    )
+
+    summary = ci._summarize_mypy_log(log_text, max_lines=10)
+
+    assert summary["total_errors"] == 5
+    # per-file sampling should cap at 3 for the same file
+    core_samples = [line for line in summary["sample_lines"] if line.startswith("core/service.py:")]
+    assert len(core_samples) == 3
+    assert "no-untyped-def" in summary["error_codes"]
+
+
+def test_build_local_failure_context_preserves_first_root_cause_hint_only() -> None:
+    log_text = "\n".join(
+        [
+            "ROOT CAUSE: first failure reason",
+            "ROOT CAUSE: second reason should be ignored",
+            "mypy: unexpected summary line",
+            "core/a.py:7: error: bad type [assignment]",
+            "core/a.py:8: error: another bad type [assignment]",
+        ]
+    )
+
+    ctx = ci.build_local_failure_context(log_text, source="mypy")
+
+    assert ctx["root_cause_hint"] == "ROOT CAUSE: first failure reason"
+    assert ctx["suspected_targets"] == ["core/a.py"]
+    assert "(2 kayıt, 1 dosya)" in ctx["failure_summary"]
