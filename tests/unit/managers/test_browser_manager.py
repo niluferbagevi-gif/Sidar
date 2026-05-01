@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import sys
 import types
 from pathlib import Path
@@ -367,6 +368,11 @@ def test_is_available_status_and_start_session(
     for key in [k for k in list(sys.modules) if k.startswith("playwright")]:
         monkeypatch.delitem(sys.modules, key, raising=False)
     _register_fake_selenium(monkeypatch)
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: object() if name.startswith("selenium") else None,
+    )
     manager.provider = "selenium"
     assert manager.is_available() is True
 
@@ -378,6 +384,7 @@ def test_is_available_status_and_start_session(
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", _failing_import)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
     manager.provider = "auto"
     assert manager.is_available() is False
 

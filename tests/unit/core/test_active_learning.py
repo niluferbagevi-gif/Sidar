@@ -586,6 +586,7 @@ def test_lora_trainer_check_and_train_paths(monkeypatch):
     assert trainer.train("d")["reason"] == "LORA_BASE_MODEL ayarlanmamış"
 
     trainer.base_model = "m"
+    trainer.model_revision = "rev-1"
     monkeypatch.setattr(trainer, "_run_training", lambda _: {"success": True})
     assert trainer.train("d")["success"] is True
 

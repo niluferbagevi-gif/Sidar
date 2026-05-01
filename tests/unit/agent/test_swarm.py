@@ -624,7 +624,11 @@ def test_execute_task_fallback_success_failure_and_feedback_coroutine(monkeypatc
     async def _waited(**_kwargs):
         marker["awaited"] = True
 
-    monkeypatch.setattr(orch3, "_schedule_autonomous_feedback", lambda **_kwargs: _waited())
+    monkeypatch.setattr(
+        orch3,
+        "_schedule_autonomous_feedback",
+        lambda **_kwargs: __import__("asyncio").create_task(_waited()),
+    )
     ok = __import__("asyncio").run(orch3._execute_task(SwarmTask(goal="x", intent="code")))
     assert ok.status == "success"
     assert marker["awaited"] is True
