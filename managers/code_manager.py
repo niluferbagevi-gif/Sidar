@@ -290,6 +290,9 @@ class CodeManager:
             try:
                 candidate = docker_module.DockerClient(base_url=socket_path)
                 candidate.ping()
+            except RuntimeError as exc:
+                logger.warning("WSL2 socket ping başarısız (%s): %s", socket_path, exc)
+                continue
             except self._docker_exception_types(docker_module):
                 continue
             self.docker_client = candidate
