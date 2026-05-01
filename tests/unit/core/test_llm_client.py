@@ -3762,14 +3762,14 @@ async def test_iter_ollama_json_lines_handles_trim_and_non_dict_payloads() -> No
 async def test_gemini_chat_returns_missing_package_error_when_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_import = builtins.__import__
+    original_import_module = importlib.import_module
 
-    def _failing_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "google" and fromlist and "genai" in fromlist:
+    def _failing_import_module(name: str, package: str | None = None):
+        if name in {"google.genai", "google.genai.types"}:
             raise ImportError("google-genai missing")
-        return original_import(name, globals, locals, fromlist, level)
+        return original_import_module(name, package)
 
-    monkeypatch.setattr(builtins, "__import__", _failing_import)
+    monkeypatch.setattr(importlib, "import_module", _failing_import_module)
     client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
 
     text = await client.chat([{"role": "user", "content": "x"}], stream=False)
