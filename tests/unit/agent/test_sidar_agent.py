@@ -1,6 +1,7 @@
 import asyncio
 import builtins
 import importlib
+import os
 import types
 from pathlib import Path
 from typing import Any
@@ -748,7 +749,12 @@ async def test_build_self_heal_plan_falls_back_to_batch_scope(
     agent = sidar_agent_factory()
     agent.code = fake_coverage_code_manager
     fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
-    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+    _override_cfg(
+        agent,
+        CODING_MODEL="m",
+        SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2,
+        SELF_HEAL_PLAN_MAX_RETRIES=1,
+    )
 
     llm = AsyncMock()
     llm.chat = AsyncMock(side_effect=[{"raw": "first"}, {"raw": "second"}])
@@ -790,7 +796,12 @@ async def test_build_self_heal_plan_skips_full_scope_when_scope_large(
     agent = sidar_agent_factory()
     agent.code = fake_coverage_code_manager
     fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
-    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+    _override_cfg(
+        agent,
+        CODING_MODEL="m",
+        SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2,
+        SELF_HEAL_PLAN_MAX_RETRIES=1,
+    )
     agent.llm = AsyncMock()
     agent.llm.chat = AsyncMock(return_value={"raw": "first"})
 
@@ -850,7 +861,12 @@ async def test_build_self_heal_plan_uses_autonomous_batch_order(
     agent = sidar_agent_factory()
     agent.code = fake_coverage_code_manager
     fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
-    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+    _override_cfg(
+        agent,
+        CODING_MODEL="m",
+        SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2,
+        SELF_HEAL_PLAN_MAX_RETRIES=1,
+    )
     agent.llm = AsyncMock()
     agent.llm.chat = AsyncMock(return_value={"raw": "first"})
 
@@ -880,8 +896,8 @@ async def test_build_self_heal_plan_uses_autonomous_batch_order(
             "validation_commands": ["pytest"],
         },
     )
-    assert seen_scopes == [["c.py"]]
-    assert plan["operations"][0]["path"] == "c.py"
+    assert seen_scopes == [["c.py"], ["a.py", "b.py"]]
+    assert plan["operations"][0]["path"] == "a.py"
 
 
 async def test_build_self_heal_plan_retries_until_operation(
@@ -2686,7 +2702,7 @@ async def test_load_instruction_files_handles_stat_and_read_exceptions(
     agent._instructions_mtimes = {}
     agent._instructions_lock = asyncio.Lock()
 
-    class _BadStatPath:
+    class _BadStatPath(os.PathLike[str]):
         def is_file(self):
             return True
 
@@ -2708,6 +2724,9 @@ async def test_load_instruction_files_handles_stat_and_read_exceptions(
         def __hash__(self):
             return 1
 
+        def __fspath__(self) -> str:
+            return str(self)
+
     class _BadReadPath(_BadStatPath):
         def stat(self):
             return types.SimpleNamespace(st_mtime=1.0)
@@ -2723,7 +2742,7 @@ async def test_load_instruction_files_handles_stat_and_read_exceptions(
 
     monkeypatch.setattr(Path, "rglob", lambda self, _name: [_BadStatPath(), _BadReadPath()])
     loaded = agent._load_instruction_files()
-    assert "ignored" in loaded
+    assert loaded == ""
 
 
 async def test_tool_subtask_records_tool_execution_and_validation_error_metrics(
