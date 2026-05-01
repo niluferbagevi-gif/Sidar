@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'linux'",
@@ -3443,6 +3443,7 @@ dependencies = [
     { name = "langchain-community", marker = "sys_platform == 'linux'" },
     { name = "langchain-core", marker = "sys_platform == 'linux'" },
     { name = "langchain-text-splitters", marker = "sys_platform == 'linux'" },
+    { name = "litellm", marker = "sys_platform == 'linux'" },
     { name = "mypy", marker = "sys_platform == 'linux'" },
     { name = "nemoguardrails", marker = "sys_platform == 'linux'" },
     { name = "opentelemetry-api", marker = "sys_platform == 'linux'" },
@@ -3700,6 +3701,7 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.3.0,<2.0.0" },
     { name = "langchain-core", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-text-splitters", specifier = ">=1.1.2,<2.0.0" },
+    { name = "litellm", specifier = ">=1.83.7" },
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.83.7,<2.0.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.36.0,<2.0.0" },
     { name = "mypy", specifier = "~=1.11.2" },
