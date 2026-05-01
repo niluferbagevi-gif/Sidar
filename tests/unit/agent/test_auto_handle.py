@@ -649,3 +649,44 @@ def test_auto_handle_try_web_search_isolated(monkeypatch):
 
     assert handled is True
     assert out == "search:sidar"
+
+
+def test_try_heal_local_usage_and_read_error_paths(monkeypatch, tmp_path):
+    h = _build_handler(monkeypatch)
+
+    handled, msg = asyncio.run(h._try_heal_local(".heal"))
+    assert handled is True
+    assert "Kullanım: .heal <log_dosyası>" in msg
+
+    bad_path = tmp_path / "missing.log"
+    handled, msg = asyncio.run(h._try_heal_local(f".heal {bad_path}"))
+    assert handled is True
+    assert "Log dosyası bulunamadı" in msg
+
+    unreadable = tmp_path / "err.log"
+    unreadable.write_text("x", encoding="utf-8")
+
+    async def _raise_to_thread(func, *args, **kwargs):
+        raise OSError("permission denied")
+
+    mod = sys.modules["agent.auto_handle"]
+    monkeypatch.setattr(mod.asyncio, "to_thread", _raise_to_thread)
+    handled, msg = asyncio.run(h._try_heal_local(f".heal {unreadable}"))
+    assert handled is True
+    assert "Log dosyası okunamadı" in msg
+
+
+def test_try_docs_search_invalid_backend_response_returns_error(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    class BrokenDocs(FakeDocs):
+        def search(self, query, _unused=None, mode="auto"):
+            return "invalid-response"
+
+    h.docs = BrokenDocs()
+    handled, msg = asyncio.run(
+        h._try_docs_search("depoda ara indexing mode:vector", "depoda ara indexing mode:vector")
+    )
+
+    assert handled is True
+    assert msg == "✗ Belge araması geçersiz yanıt döndürdü."
