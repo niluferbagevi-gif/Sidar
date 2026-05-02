@@ -4747,6 +4747,35 @@ launch_ide() {
     fi
 }
 
+prompt_github_upload() {
+    local upload_choice="H"
+    local upload_prompt="uv.lock ve ilgili değişiklikler GitHub'a yüklensin mi? (github_upload.py) [e/H] "
+
+    if [[ ! -f "$SCRIPT_DIR/github_upload.py" ]]; then
+        warn "github_upload.py bulunamadı; otomatik GitHub yükleme adımı atlandı."
+        return
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: GitHub yükleme adımı varsayılan olarak atlandı."
+        return
+    fi
+
+    upload_choice=$(prompt_yes_no_with_timeout_default_no "$upload_prompt")
+    case "${upload_choice:-H}" in
+        [EeYy]*)
+            info "github_upload.py çalıştırılıyor..."
+            (
+                cd "$SCRIPT_DIR"
+                python github_upload.py
+            ) || warn "github_upload.py hata ile sonlandı. Lütfen logları kontrol edin."
+            ;;
+        *)
+            info "GitHub yükleme adımı kullanıcı onayıyla atlandı."
+            ;;
+    esac
+}
+
 cleanup_bootstrap_script_copy() {
     if [[ "$ORIGINAL_SCRIPT_DIR" == "$TARGET_DIR" ]]; then
         return
@@ -4884,6 +4913,7 @@ main() {
         info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
     fi
     print_summary
+    prompt_github_upload
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
     prompt_post_install_sidar_env_mode
