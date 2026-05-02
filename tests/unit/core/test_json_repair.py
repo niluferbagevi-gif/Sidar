@@ -81,6 +81,14 @@ def test_repair_json_text_continues_after_malformed_brace_prefix_then_parses_val
     assert repaired == '{"thought": "test", "tool": "x", "argument": "y"}'
 
 
+
+
+def test_repair_json_text_returns_none_for_irreparable_malformed_json() -> None:
+    payload = "prefix ```json {broken: [1,2,} ``` middle {still not valid"
+
+    assert repair_json_text(payload) is None
+
+
 def test_repair_json_text_skips_unicode_error_fence_then_parses_next_fence() -> None:
     payload = '```json\n"\\ud800"\n```\n```json\n{"ok": true}\n```'
 
