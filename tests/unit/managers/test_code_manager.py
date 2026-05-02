@@ -1796,3 +1796,45 @@ def test_init_docker_exception_fallback_module_none_import_error(manager, monkey
     assert manager.docker_available is False
     assert manager.docker_client is None
     assert warning_called["flag"], "logger.warning çağrılmış olmalı"
+
+
+def test_to_int_returns_default_on_invalid_values() -> None:
+    assert cm._to_int(object(), 7) == 7
+
+
+def test_try_wsl_socket_fallback_continues_on_docker_exception(manager, monkeypatch):
+    class _DockerErr(Exception):
+        pass
+
+    class _DockerModule:
+        class errors:
+            DockerException = _DockerErr
+
+        class DockerClient:
+            def __init__(self, base_url: str):
+                self.base_url = base_url
+
+            def ping(self):
+                raise _DockerErr("socket-fail")
+
+    monkeypatch.setattr(cm.os, "stat", lambda _p: SimpleNamespace(st_mode=stat.S_IFSOCK))
+    assert manager._try_wsl_socket_fallback(_DockerModule()) is False
+
+
+def test_execute_code_returns_error_when_docker_client_missing(manager):
+    manager.docker_available = True
+    manager.docker_client = None
+
+    ok, msg = manager.execute_code("print('x')")
+
+    assert ok is False
+    assert "Docker istemcisi başlatılamadı" in msg
+
+
+def test_run_pytest_and_collect_skips_blank_lines_before_pytest(manager, monkeypatch):
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
+
+    result = manager.run_pytest_and_collect("\n\n  \n- pytest -q tests/unit/managers\n")
+
+    assert result["success"] is True
+    assert result["command"] == "pytest -q tests/unit/managers"
