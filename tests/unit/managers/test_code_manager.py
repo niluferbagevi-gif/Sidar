@@ -294,6 +294,34 @@ foo.py:10: in test_fail
     assert ok_result["success"] is True
 
 
+def test_docker_exception_types_handles_missing_or_invalid_docker_error_type() -> None:
+    no_errors_module = SimpleNamespace()
+    types1 = cm.CodeManager._docker_exception_types(no_errors_module)
+    assert OSError in types1 and ValueError in types1
+
+    invalid_error_module = SimpleNamespace(errors=SimpleNamespace(DockerException="not-a-type"))
+    types2 = cm.CodeManager._docker_exception_types(invalid_error_module)
+    assert OSError in types2 and ValueError in types2
+
+
+def test_run_pytest_and_collect_normalizes_multiline_and_inline_comment(manager, monkeypatch):
+    sample = "ok"
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, sample))
+
+    result = manager.run_pytest_and_collect(
+        "Intro text\\n- pytest -q tests/unit # explanatory comment\\nignored trailing"
+    )
+    assert result["success"] is True
+    assert result["command"] == "pytest -q tests/unit"
+
+
+def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeypatch):
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
+    result = manager.run_pytest_and_collect("   ")
+    assert result["success"] is True
+    assert result["command"] == "pytest -q"
+
+
 def test_run_shell_paths(manager, monkeypatch, tmp_path):
     manager.security.shell_ok = False
     ok, _ = manager.run_shell("echo 1")
