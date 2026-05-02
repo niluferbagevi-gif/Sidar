@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import types
 from pathlib import Path
 
 import pytest
@@ -177,3 +178,107 @@ def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("scripts.auto_heal.asyncio.run", _fake_asyncio_run)
 
     assert main() == 17
+
+
+def test_run_returns_partial_when_later_retry_applies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:3b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        def __init__(self, config):
+            self.config = config
+            self.calls = 0
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            self.calls += 1
+            return {"status": "failed" if self.calls == 1 else "applied", "summary": "ok"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve="yes",
+        batch_retries=1,
+        scope_log_lines=10,
+    )
+
+    rc = asyncio.run(_run(args))
+    assert rc == 0
+
+
+def test_run_returns_1_when_all_batches_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            return {"status": "failed", "summary": "still failing"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py", "pkg/b.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=2,
+        model="qwen2.5-coder:14b",
+        hitl_approve="no",
+        batch_retries=0,
+        scope_log_lines=5,
+    )
+
+    rc = asyncio.run(_run(args))
+    assert rc == 1
