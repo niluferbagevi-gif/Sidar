@@ -941,6 +941,72 @@ async def test_build_self_heal_plan_retries_until_operation(
     assert plan["plan_max_retries"] == 3
 
 
+async def test_build_self_heal_plan_timeout_returns_fallback_summary(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.code = fake_coverage_code_manager
+    fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_PLAN_MAX_RETRIES=1)
+
+    llm = AsyncMock()
+    llm.chat = AsyncMock(side_effect=TimeoutError)
+    agent.llm = llm
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(
+        sidar_agent,
+        "normalize_self_heal_plan",
+        lambda *_a, **_k: {"summary": "unused", "operations": [], "validation_commands": []},
+    )
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={"scope_paths": ["a.py"], "validation_commands": ["pytest -q"]},
+    )
+
+    assert "zaman aşımına uğradı" in plan["summary"]
+    assert "(attempts: 1/1)" in plan["summary"]
+    assert plan["operations"] == []
+    assert plan["validation_commands"] == ["pytest -q"]
+
+
+async def test_build_self_heal_plan_exception_returns_retry_exhausted_summary(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_coverage_code_manager,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.code = fake_coverage_code_manager
+    fake_coverage_code_manager.read_file = Mock(return_value=(True, "C"))
+    _override_cfg(agent, CODING_MODEL="m", SELF_HEAL_PLAN_MAX_RETRIES=2)
+
+    llm = AsyncMock()
+    llm.chat = AsyncMock(side_effect=RuntimeError("rate limited"))
+    agent.llm = llm
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(
+        sidar_agent,
+        "normalize_self_heal_plan",
+        lambda *_a, **_k: {"summary": "unused", "operations": [], "validation_commands": []},
+    )
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={"scope_paths": ["a.py"], "validation_commands": ["pytest -q"]},
+    )
+
+    assert "Self-heal planı üretilemedi: rate limited" in plan["summary"]
+    assert "(attempts: 2/2)" in plan["summary"]
+    assert plan["plan_attempt"] == 2
+    assert plan["plan_max_retries"] == 2
+
+
 async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
