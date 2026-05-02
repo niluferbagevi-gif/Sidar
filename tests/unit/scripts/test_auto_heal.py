@@ -1,14 +1,18 @@
 import argparse
 import asyncio
+from pathlib import Path
 
+import pytest
 from scripts.auto_heal import (
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
     _build_scope_queue,
     _extract_scope_error_lines,
     _parse_approval_value,
+    _run,
     _run_self_heal_attempt,
     _select_auto_heal_model,
+    main,
 )
 
 
@@ -133,3 +137,29 @@ def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatc
 
     assert result["status"] == "blocked"
     assert agent.calls[1]["human_approval"] is False
+
+
+def test_run_returns_1_when_log_file_missing(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    args = argparse.Namespace(
+        log=str(tmp_path / "missing.log"),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=2,
+        scope_log_lines=30,
+    )
+
+    rc = asyncio.run(_run(args))
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "Log dosyası bulunamadı" in out
+
+
+def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    parsed = argparse.Namespace(log="x.log", source="mypy", batch_size=1, model=None, hitl_approve=None, batch_retries=2, scope_log_lines=30)
+    monkeypatch.setattr("scripts.auto_heal._parse_args", lambda: parsed)
+    monkeypatch.setattr("scripts.auto_heal.asyncio.run", lambda coro: 17)
+
+    assert main() == 17
