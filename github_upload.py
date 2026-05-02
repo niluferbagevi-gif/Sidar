@@ -374,11 +374,6 @@ def main() -> None:
                 ["git", "reset", "--hard", "ORIG_HEAD"], show_output=False
             )
             if not reset_success:
-                # ORIG_HEAD bazı edge-case durumlarda mevcut olmayabilir; reflog tabanlı fallback uygula.
-                reset_success, reset_err = run_command(
-                    ["git", "reset", "--hard", "HEAD@{1}"], show_output=False
-                )
-            if not reset_success:
                 print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
                 sys.exit(1)
 
