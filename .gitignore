@@ -26,12 +26,17 @@ env/
 .env.local
 .env.development
 .env.development.local
+.env.test
 .env.test.local
 .env.production.local
 
 # Secrets & credentials
 secrets/
 credentials/
+
+# Backups & build artifacts
+backups/
+artifacts/
 
 # Logs
 logs/
@@ -51,10 +56,13 @@ data/*
 
 # Database
 *.db
-sidar_memory.db
-sidar_memory.db-shm
-sidar_memory.db-wal
+*.db-shm
+*.db-wal
+*.db-journal
 *.sqlite3
+:memory:
+:memory:-shm
+:memory:-wal
 
 # Sessions (sensitive user data)
 sessions/
@@ -94,6 +102,7 @@ Thumbs.db
 # Test coverage
 .coverage
 .coverage.*
+.coverage-baseline
 htmlcov/
 .pytest_cache/
 coverage.xml
