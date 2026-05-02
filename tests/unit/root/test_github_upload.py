@@ -211,7 +211,7 @@ def test_main_rollback_yes_push_fail(monkeypatch):
         ],
         inputs=["evet"],
     )
-    assert run_main_and_exit_code() == 0
+    assert run_main_and_exit_code() == 1
 
 
 def test_main_rollback_cancel(monkeypatch):

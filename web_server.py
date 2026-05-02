@@ -2628,8 +2628,8 @@ async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
 
 
 async def _is_rate_limited(key: str, limit: int, window_sec: int = 60) -> bool:
-    """Testler ve doğrudan çağrılar için yerel hız sınırlayıcıya basit erişim noktası."""
-    return await _local_is_rate_limited(key, limit, window_sec)
+    """Geriye dönük uyumluluk için Redis destekli hız sınırlama sarmalayıcısı."""
+    return await _redis_is_rate_limited("default", key, limit, window_sec)
 
 
 async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_sec: int) -> bool:
