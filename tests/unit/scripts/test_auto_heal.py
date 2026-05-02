@@ -1,8 +1,13 @@
+import argparse
+import asyncio
+
 from scripts.auto_heal import (
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
     _build_scope_queue,
+    _extract_scope_error_lines,
     _parse_approval_value,
+    _run_self_heal_attempt,
     _select_auto_heal_model,
 )
 
@@ -55,3 +60,75 @@ def test_build_attempt_diagnosis_includes_mypy_reference() -> None:
     )
     assert "ignore[import-untyped]" in diagnosis
     assert MYPY_SELF_HEAL_REFERENCE in diagnosis
+
+
+def test_extract_scope_error_lines_filters_deduplicates_and_limits() -> None:
+    log_text = """pkg/a.py:10: error: incompatible types
+pkg/a.py:10: error: incompatible types
+pkg/a.py:11: note: revealed type is str
+pkg/b.py:3: error: mypy failure
+other/c.py:2: error: should be ignored
+"""
+    lines = _extract_scope_error_lines(
+        log_text,
+        scope_paths=["pkg/a.py", "pkg/b.py"],
+        limit=2,
+    )
+
+    assert len(lines) == 2
+    assert "pkg/a.py:10: error: incompatible types" in lines
+    assert "pkg/b.py:3: error: mypy failure" in lines
+
+
+class _FakeAgent:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    async def _attempt_autonomous_self_heal(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._responses.pop(0)
+
+
+def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
+    agent = _FakeAgent([
+        {"status": "awaiting_hitl", "summary": "needs approval"},
+        {"status": "applied", "summary": "done"},
+    ])
+    args = argparse.Namespace(hitl_approve="yes")
+
+    result = asyncio.run(
+        _run_self_heal_attempt(
+            agent=agent,
+            context={"k": "v"},
+            diagnosis="diag",
+            remediation={"x": 1},
+            args=args,
+        )
+    )
+
+    assert result["status"] == "applied"
+    assert len(agent.calls) == 2
+    assert agent.calls[1]["human_approval"] is True
+
+
+def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatch) -> None:
+    agent = _FakeAgent([
+        {"status": "awaiting_hitl", "summary": "needs approval"},
+        {"status": "blocked", "summary": "cancelled"},
+    ])
+    args = argparse.Namespace(hitl_approve="unknown")
+    monkeypatch.setattr("scripts.auto_heal._prompt_hitl_approval", lambda: False)
+
+    result = asyncio.run(
+        _run_self_heal_attempt(
+            agent=agent,
+            context={},
+            diagnosis="diag",
+            remediation={},
+            args=args,
+        )
+    )
+
+    assert result["status"] == "blocked"
+    assert agent.calls[1]["human_approval"] is False
