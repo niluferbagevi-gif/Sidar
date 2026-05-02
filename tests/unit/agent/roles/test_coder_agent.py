@@ -290,3 +290,18 @@ async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
     assert "[FAILED_TESTS]" in result
     failed_excerpt = result.split("[FAILED_TESTS] ", 1)[1]
     assert len(failed_excerpt) == 1500
+
+
+@pytest.mark.asyncio
+async def test_call_maybe_async_with_sync_callable(coder_module):
+    result = await coder_module.CoderAgent._call_maybe_async(lambda x, y: x + y, 2, 3)
+    assert result == 5
+
+
+@pytest.mark.asyncio
+async def test_call_maybe_async_with_async_callable(coder_module):
+    async def _async_sum(x, y):
+        return x + y
+
+    result = await coder_module.CoderAgent._call_maybe_async(_async_sum, 4, 6)
+    assert result == 10
