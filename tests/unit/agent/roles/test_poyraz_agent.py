@@ -302,6 +302,31 @@ def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
     assert asyncio.run(agent2._tool_search_docs("k2")) == "adocs:k2:auto:marketing"
 
 
+def test_search_docs_returns_error_on_invalid_search_response_shape(poyraz_module, fake_cfg):
+    class BrokenDocStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def search(self, query, _filters, mode, session):
+            _ = (query, mode, session)
+            return {"unexpected": "shape"}
+
+    agent = _agent(poyraz_module, fake_cfg, docstore=BrokenDocStore)
+    assert asyncio.run(agent._tool_search_docs("k")) == "[DOCS:ERROR] reason=invalid_search_response"
+
+
+def test_resolve_multimodal_pipeline_prefers_runtime_when_explicit_pipeline_missing(
+    poyraz_module, monkeypatch
+):
+    class RuntimePipeline(DummyMultimodalPipeline):
+        pass
+
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipelineRuntime", RuntimePipeline)
+
+    assert poyraz_module._resolve_multimodal_pipeline_class() is RuntimePipeline
+
+
 def test_publish_tools_variants(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
 
@@ -616,6 +641,34 @@ def test_ingest_video_insights_returns_error_when_pipeline_unavailable(
     result = asyncio.run(agent._tool_ingest_video_insights("https://video|||prompt"))
 
     assert result == "[VIDEO:ERROR] source=unknown reason=multimodal_pipeline_unavailable"
+
+
+def test_resolve_multimodal_pipeline_uses_core_module_fallback_and_none_path(
+    poyraz_module, monkeypatch
+):
+    class CorePipeline(DummyMultimodalPipeline):
+        pass
+
+    def _import_module_ok(name: str):
+        if name == "core.multimodal":
+            raise ImportError("mm missing")
+        if name == "core":
+            core_mod = types.ModuleType("core")
+            core_mod.MultimodalPipeline = CorePipeline
+            return core_mod
+        raise ImportError(name)
+
+    monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
+    monkeypatch.setattr(poyraz_module, "MultimodalPipelineRuntime", None)
+    monkeypatch.setattr(poyraz_module.importlib, "import_module", _import_module_ok)
+    assert poyraz_module._resolve_multimodal_pipeline_class() is CorePipeline
+
+    monkeypatch.setattr(
+        poyraz_module.importlib,
+        "import_module",
+        lambda _: types.SimpleNamespace(),
+    )
+    assert poyraz_module._resolve_multimodal_pipeline_class() is None
 
 
 def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkeypatch):
