@@ -910,3 +910,41 @@ def test_reviewer_generate_candidate_with_fake_llm(reviewer, fake_llm_response):
     reviewer.call_llm = _reviewer_llm
     dynamic_test = asyncio.run(reviewer._build_dynamic_test_content("diff --git a/x.py b/x.py"))
     assert "def test_generated_reviewer_case" in dynamic_test
+
+
+def test_scalar_coercion_helpers_cover_remaining_branches():
+    assert ReviewerAgent._to_int(True, default=9) == 1
+    assert ReviewerAgent._to_int(3.9, default=9) == 3
+    assert ReviewerAgent._to_int("7", default=9) == 7
+    assert ReviewerAgent._to_int("not-int", default=9) == 9
+    assert ReviewerAgent._as_str_list("not-a-list") == []
+
+
+def test_run_task_ignores_non_mapping_graph_and_browser_payloads(reviewer):
+    async def fake_call_tool(name, _arg):
+        if name == "run_tests":
+            return "[TEST:OK]"
+        if name == "graph_impact":
+            return '["not","dict"]'
+        if name == "browser_signals":
+            return '["not","dict"]'
+        if name == "lsp_diagnostics":
+            return json.dumps(
+                {
+                    "summary": "temiz",
+                    "status": "clean",
+                    "risk": "düşük",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                }
+            )
+        return ""
+
+    reviewer.call_tool = fake_call_tool
+    reviewer._run_dynamic_tests = lambda _ctx: asyncio.sleep(0, result="[TEST:OK]")
+
+    result = asyncio.run(reviewer.run_task("review_code|ctx"))
+    payload = json.loads(result.payload.split("qa_feedback|", 1)[1])
+    assert payload["risk"] == "düşük"
+    assert "GraphRAG çıktısı çözümlenemedi." in payload["graph_impact_report"]["summary"]
