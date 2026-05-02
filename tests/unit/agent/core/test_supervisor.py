@@ -1097,3 +1097,30 @@ def test_coerce_delegation_request_returns_bumped_request_instance() -> None:
     monkeypatch.undo()
 
     assert req is bumped
+
+
+def test_coerce_delegation_request_keeps_flow_when_bumped_returns_non_request_scalar() -> None:
+    class _CompatRequest:
+        def __init__(self) -> None:
+            self.task_id = "t-raw"
+            self.reply_to = "qa"
+            self.target_agent = "reviewer"
+            self.payload = "payload"
+            self.intent = "mixed"
+            self.parent_task_id = None
+            self.handoff_depth = 0
+            self.protocol = "p2p.v1"
+            self.meta = {"m": 1}
+
+        def bumped(self) -> object:
+            return "not-a-request"
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(supervisor_mod, "is_delegation_request", lambda _value: True)
+    req = SupervisorAgent._coerce_delegation_request(_CompatRequest())
+    monkeypatch.undo()
+
+    assert isinstance(req, DelegationRequest)
+    assert req.task_id == ""
+    assert req.reply_to == ""
+    assert req.target_agent == ""
