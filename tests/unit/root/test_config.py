@@ -146,6 +146,22 @@ def test_get_config_returns_singleton(monkeypatch):
     assert first is second
 
 
+def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def _fake_load_dotenv(*, dotenv_path=None, override=False):
+        calls.append({"dotenv_path": dotenv_path, "override": override})
+        return True
+
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", _fake_load_dotenv)
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.ENV_PATH == reloaded.BASE_DIR / ".env"
+    assert all(call.get("override") is False for call in calls)
+
+
 def test_is_test_env_returns_true_when_sidar_env_is_testing(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "testing")
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
