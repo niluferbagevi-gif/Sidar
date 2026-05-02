@@ -159,8 +159,21 @@ def test_run_returns_1_when_log_file_missing(capsys: pytest.CaptureFixture[str],
 
 
 def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    parsed = argparse.Namespace(log="x.log", source="mypy", batch_size=1, model=None, hitl_approve=None, batch_retries=2, scope_log_lines=30)
+    parsed = argparse.Namespace(
+        log="x.log",
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=2,
+        scope_log_lines=30,
+    )
     monkeypatch.setattr("scripts.auto_heal._parse_args", lambda: parsed)
-    monkeypatch.setattr("scripts.auto_heal.asyncio.run", lambda coro: 17)
+
+    def _fake_asyncio_run(coro):
+        coro.close()
+        return 17
+
+    monkeypatch.setattr("scripts.auto_heal.asyncio.run", _fake_asyncio_run)
 
     assert main() == 17
