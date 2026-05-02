@@ -315,6 +315,16 @@ def test_run_pytest_and_collect_normalizes_multiline_and_inline_comment(manager,
     assert result["command"] == "pytest -q tests/unit"
 
 
+def test_run_pytest_and_collect_extracts_pytest_from_prefixed_sentence(manager, monkeypatch):
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
+
+    result = manager.run_pytest_and_collect(
+        "Please run this command: python -m pytest tests/unit/managers -q # quick check"
+    )
+    assert result["success"] is True
+    assert result["command"] == "python -m pytest tests/unit/managers -q"
+
+
 def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeypatch):
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
     result = manager.run_pytest_and_collect("   ")
