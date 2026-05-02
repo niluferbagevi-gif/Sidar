@@ -182,6 +182,46 @@ def test_main_prints_ranked_table_and_returns_0(
     assert "b.py" not in out
 
 
+
+
+def test_normalize_path_keeps_relative_path_unchanged() -> None:
+    """Relative file paths should pass through unchanged."""
+    rel = _normalize_path("pkg/module.py", "/tmp/repo")
+
+    assert rel == "pkg/module.py"
+
+
+def test_parse_coverage_xml_handles_missing_lines_and_default_hits(tmp_path: Path) -> None:
+    """Parser should treat missing hits as 0 and classes without lines as zero totals."""
+    xml_path = tmp_path / "coverage_sparse.xml"
+    xml_path.write_text(
+        """<?xml version="1.0" ?>
+<coverage>
+  <packages>
+    <package name="pkg">
+      <classes>
+        <class filename="sparse.py">
+          <lines>
+            <line number="1"/>
+            <line number="2" hits="2"/>
+          </lines>
+        </class>
+        <class filename="nolines.py"/>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+        encoding="utf-8",
+    )
+
+    rows = parse_coverage_xml(str(xml_path), root=str(tmp_path))
+    by_path = {row.path: row for row in rows}
+
+    assert by_path["sparse.py"].covered == 1
+    assert by_path["sparse.py"].missed == 1
+    assert by_path["nolines.py"].covered == 0
+    assert by_path["nolines.py"].missed == 0
 def test_module_main_guard_raises_system_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
