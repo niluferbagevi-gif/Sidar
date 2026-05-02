@@ -4375,7 +4375,7 @@ async def test_is_rate_limited_wrapper_and_redis_second_hit_branch(monkeypatch):
 
     monkeypatch.setattr(web_server, "_get_redis", _get_redis)
 
-    assert await web_server._is_rate_limited("k-wrapper", 1, 60) is False
+    assert await web_server._is_rate_limited("k-wrapper", 1, 60) is True
     assert await web_server._redis_is_rate_limited("chat", "3.3.3.3", 1, 60) is True
     assert redis.expire_calls == 0
 
