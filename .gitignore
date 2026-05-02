@@ -119,6 +119,9 @@ coverage.xml
 .ruff_cache/
 .cache/
 
+# Benchmark artifacts
+.benchmarks/
+
 # React / Node (web_ui_react)
 web_ui_react/node_modules/
 web_ui_react/dist/
