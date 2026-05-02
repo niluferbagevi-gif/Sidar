@@ -505,7 +505,11 @@ def test_main_rollback_reset_fail(monkeypatch):
         ],
         inputs=["yes"],
     )
-    assert run_main_and_exit_code() == 1
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.main()
+
+    assert exc_info.value.code == 1
 
 
 def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
