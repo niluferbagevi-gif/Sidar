@@ -4,7 +4,13 @@ import runpy
 
 import pytest
 
-from scripts.coverage_hotspots import FileCoverage, format_table, main, parse_coverage_xml, rank_hotspots
+from scripts.coverage_hotspots import (
+    FileCoverage,
+    format_table,
+    main,
+    parse_coverage_xml,
+    rank_hotspots,
+)
 
 
 def test_parse_and_rank_end_to_end(tmp_path):
@@ -53,4 +59,3 @@ def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
 def test_format_table_layout():
     table = format_table([FileCoverage(path="x.py", covered=0, missed=2)])
     assert table.splitlines()[0] == "| File | Coverage | Missed | Covered |"
-    
