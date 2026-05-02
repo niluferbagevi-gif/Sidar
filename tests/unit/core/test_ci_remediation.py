@@ -801,6 +801,23 @@ def test_summarize_mypy_log_skips_noise_and_honors_max_lines() -> None:
     assert summary["sample_lines"][0].startswith("core/a.py:1:")
 
 
+@pytest.mark.parametrize(
+    ("log_line", "expected_codes"),
+    [
+        ("core/no_code.py:4: error: message without code", []),
+        ("core/has_code.py:5: error: message with code [assignment]", ["assignment"]),
+    ],
+)
+def test_summarize_mypy_log_handles_optional_error_code(
+    log_line: str,
+    expected_codes: list[str],
+) -> None:
+    summary = ci._summarize_mypy_log(log_line, max_lines=5)
+
+    assert summary["total_errors"] == 1
+    assert summary["error_codes"] == expected_codes
+
+
 def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause() -> None:
     log_text = "\n".join(
         [
@@ -816,6 +833,20 @@ def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause
     assert ctx["suspected_targets"] == ["core/sample.py"]
     assert "Root cause:" in ctx["root_cause_hint"]
     assert "(1 kayıt, 1 dosya)" in ctx["failure_summary"]
+
+
+def test_build_local_failure_context_deduplicates_suspected_targets() -> None:
+    log_text = "\n".join(
+        [
+            "core/dup.py:9: error: first issue [assignment]",
+            "core/dup.py:10: error: second issue [return-value]",
+        ]
+    )
+
+    ctx = ci.build_local_failure_context(log_text, source="mypy")
+
+    assert ctx["suspected_targets"] == ["core/dup.py"]
+    assert "(2 kayıt, 1 dosya)" in ctx["failure_summary"]
 
 
 def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
