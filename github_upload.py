@@ -397,7 +397,7 @@ def main() -> None:
                     f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force push'u engelliyor olabilir.{Colors.ENDC}"
                 )
 
-            sys.exit(0)  # Geri alma bitti, programdan çık
+            sys.exit(0 if push_success else 1)  # Geri alma bitti, başarı durumuna göre çık
         else:
             print(
                 f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız güvende.{Colors.ENDC}"
