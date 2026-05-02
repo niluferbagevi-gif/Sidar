@@ -7842,6 +7842,45 @@ async def test_get_agent_lock_guard_skips_reinitialize_when_agent_set_inside_loc
     assert create_calls["count"] == 0
 
 
+@pytest.mark.asyncio
+async def test_get_agent_creates_lock_when_missing(monkeypatch):
+    class _Agent:
+        def __init__(self, _cfg):
+            self.initialized = False
+
+        async def initialize(self):
+            self.initialized = True
+
+    monkeypatch.setattr(web_server, "_agent", None)
+    monkeypatch.setattr(web_server, "_agent_lock", None)
+    monkeypatch.setattr(web_server, "SidarAgent", _Agent)
+    monkeypatch.setattr(web_server, "_bind_llm_usage_sink", lambda _agent: None)
+
+    created = await web_server.get_agent()
+
+    assert isinstance(web_server._agent_lock, asyncio.Lock)
+    assert created.initialized is True
+
+
+@pytest.mark.asyncio
+async def test_rag_search_handles_awaitable_returned_from_sync_search(monkeypatch):
+    async def _async_result():
+        return True, {"mode": "awaitable"}
+
+    class _Docs:
+        def search(self, *_args, **_kwargs):
+            return _async_result()
+
+    agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id=None))
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+    monkeypatch.setattr(web_server.asyncio, "to_thread", lambda fn, *args: fn(*args))
+
+    response = await web_server.rag_search("hello")
+    payload = _decode_json_response(response)
+    assert payload["success"] is True
+    assert payload["result"]["mode"] == "awaitable"
+
+
 def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch):
     monkeypatch.setattr(
         web_server,

@@ -3877,3 +3877,51 @@ def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list
 def test_test_module_has_no_duplicate_test_function_names() -> None:
     duplicates = _list_duplicate_test_function_names_in_file(pathlib.Path(__file__))
     assert duplicates == []
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CM:
+        async def __aenter__(self):
+            return []
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Messages:
+        def stream(self, **kwargs):
+            captured.update(kwargs)
+            return _CM()
+
+    class _Client:
+        messages = _Messages()
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: _Client())
+
+    chunks = [c async for c in client.chat([{"role": "user", "content": "x"}], system_prompt="")]
+    assert chunks == []
+    assert "system" not in captured
+
+
+@pytest.mark.asyncio
+async def test_llm_client_chat_stream_non_ollama_string_uses_fallback_stream(monkeypatch) -> None:
+    client = llm_client.LLMClient("openai", _make_config(OPENAI_API_KEY="k"))
+
+    class _Backend:
+        async def chat(self, **_kwargs):
+            return "plain text response"
+
+    monkeypatch.setattr(client, "_client", _Backend())
+
+    stream = await client.chat([{"role": "user", "content": "hello"}], stream=True)
+    assert hasattr(stream, "__aiter__")
+    chunks = [chunk async for chunk in stream]
+    assert chunks == ["plain text response"]
