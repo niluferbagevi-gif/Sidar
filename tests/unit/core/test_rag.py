@@ -2562,6 +2562,67 @@ async def test_rag_final_remaining_branches(
     assert store._fetch_pgvector("q", 2, "s1") == []
 
 
+async def test_document_store_init_with_vector_initialization_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    init_calls: list[str] = []
+    monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
+    monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: init_calls.append("fts"))
+    monkeypatch.setattr(rag.DocumentStore, "_init_chroma", lambda self: init_calls.append("chroma"))
+    monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: True)
+
+    cfg = SimpleNamespace(
+        RAG_TOP_K=1,
+        RAG_CHUNK_SIZE=8,
+        RAG_CHUNK_OVERLAP=2,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=False,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=1,
+    )
+    store = rag.DocumentStore(tmp_path / "no_vector_init", cfg=cfg, initialize_vector=False)
+
+    assert store._chroma_available is False
+    assert init_calls == ["fts"]
+
+
+async def test_add_document_from_file_uses_filename_when_title_empty(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    captured: dict[str, str] = {}
+
+    def _add(title: str, content: str, **_kwargs: object) -> str:
+        captured["title"] = title
+        captured["content"] = content
+        return "doc-file"
+
+    store._add_document_sync = _add  # type: ignore[method-assign]
+    path = tmp_path / "notes.txt"
+    path.write_text("hello world", encoding="utf-8")
+    ok, msg = store.add_document_from_file(str(path), title="", session_id="s-file")
+
+    assert ok is True
+    assert "doc-file" in msg
+    assert captured["title"] == "notes.txt"
+
+
+async def test_rrf_search_merges_bm25_only_ids_into_docs_map(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = False
+    store._fetch_chroma = lambda *_a, **_k: [{"id": "v1", "content": "vector"}]  # type: ignore[method-assign]
+    store._fetch_bm25 = lambda *_a, **_k: [{"id": "b1", "content": "bm25"}]  # type: ignore[method-assign]
+    store._keyword_search = lambda *_a, **_k: (False, "kw")  # type: ignore[method-assign]
+    store._format_results_from_struct = lambda final, *_a, **_k: (  # type: ignore[method-assign]
+        True,
+        ",".join(item["id"] for item in final),
+    )
+
+    ok, text = store._rrf_search("query", 5, "s1")
+    assert ok is True
+    assert "v1" in text and "b1" in text
+
+
 async def test_rag_almost_final_branches_for_parser_impact_and_fts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
