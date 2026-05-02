@@ -612,9 +612,14 @@ PY
       skip_next=1
       continue
     fi
+    if [[ "${arg}" == --cov-fail-under=* ]]; then
+      continue
+    fi
     filtered_phase2_cmd+=("${arg}")
   done
-  phase2_cmd=("${filtered_phase2_cmd[@]}" -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
+  # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
+  # tek başına fail-under kalite barajına tabi tutulmaz.
+  phase2_cmd=("${filtered_phase2_cmd[@]}" --cov-append -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
   echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
   "${phase2_cmd[@]}"
   local phase2_exit=$?
