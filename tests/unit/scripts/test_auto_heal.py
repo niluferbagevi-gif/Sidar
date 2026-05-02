@@ -72,11 +72,12 @@ other/c.py:2: error: should be ignored
     lines = _extract_scope_error_lines(
         log_text,
         scope_paths=["pkg/a.py", "pkg/b.py"],
-        limit=2,
+        limit=3,
     )
 
-    assert len(lines) == 2
+    assert len(lines) == 3
     assert "pkg/a.py:10: error: incompatible types" in lines
+    assert "pkg/a.py:11: note: revealed type is str" in lines
     assert "pkg/b.py:3: error: mypy failure" in lines
 
 
