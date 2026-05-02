@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import runpy
 
 import pytest
 
@@ -179,3 +180,17 @@ def test_main_prints_ranked_table_and_returns_0(
     assert "| File | Coverage | Missed | Covered |" in out
     assert "a.py" in out
     assert "b.py" not in out
+
+
+def test_module_main_guard_raises_system_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Running module as a script should execute main() via __main__ guard."""
+    xml_path = tmp_path / "coverage.xml"
+    xml_path.write_text('<?xml version="1.0" ?><coverage></coverage>', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml_path)])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("scripts.coverage_hotspots", run_name="__main__")
+
+    assert exc.value.code == 1
