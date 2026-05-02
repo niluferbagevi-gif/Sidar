@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
 from scripts.auto_heal import (
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
