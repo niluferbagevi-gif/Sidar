@@ -1072,3 +1072,28 @@ def test_coerce_delegation_request_uses_bumped_payload_object() -> None:
     assert req.handoff_depth == 3
     assert req.protocol == "p2p.v2"
     assert req.meta == {"source": "review"}
+
+
+def test_coerce_delegation_request_returns_bumped_request_instance() -> None:
+    bumped = DelegationRequest(
+        task_id="t-9",
+        reply_to="qa",
+        target_agent="coder",
+        payload="ship",
+        intent="p2p",
+        parent_task_id="p-1",
+        handoff_depth=5,
+        protocol="p2p.v3",
+        meta={"source": "coverage"},
+    )
+
+    class _CompatRequest:
+        def bumped(self) -> DelegationRequest:
+            return bumped
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(supervisor_mod, "is_delegation_request", lambda _value: True)
+    req = SupervisorAgent._coerce_delegation_request(_CompatRequest())
+    monkeypatch.undo()
+
+    assert req is bumped
