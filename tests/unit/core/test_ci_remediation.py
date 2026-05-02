@@ -784,6 +784,40 @@ def test_summarize_mypy_log_returns_structured_signal() -> None:
     assert summary["sample_lines"]
 
 
+def test_summarize_mypy_log_skips_noise_and_honors_max_lines() -> None:
+    log_text = "\n".join(
+        [
+            "",
+            "not-a-mypy-line",
+            "core/a.py:1: error: bad assign [assignment]",
+            "core/a.py:2: error: bad return [return-value]",
+            "core/b.py:3: error: missing anno [no-untyped-def]",
+        ]
+    )
+    summary = ci._summarize_mypy_log(log_text, max_lines=1)
+
+    assert summary["total_errors"] == 3
+    assert len(summary["sample_lines"]) == 1
+    assert summary["sample_lines"][0].startswith("core/a.py:1:")
+
+
+def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause() -> None:
+    log_text = "\n".join(
+        [
+            "",
+            "   ",
+            "Root cause: mypy found incompatible assignment in module.",
+            "",
+            "core/sample.py:9: error: Incompatible types in assignment [assignment]",
+        ]
+    )
+    ctx = ci.build_local_failure_context(log_text, source="mypy")
+
+    assert ctx["suspected_targets"] == ["core/sample.py"]
+    assert "Root cause:" in ctx["root_cause_hint"]
+    assert "(1 kayıt, 1 dosya)" in ctx["failure_summary"]
+
+
 def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
     context = {
         "workflow_name": "local_mypy",
