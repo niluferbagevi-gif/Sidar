@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import main
 from main import _safe_choice, _safe_port, _safe_text, build_command
 
 
@@ -54,3 +55,49 @@ def test_build_command_rejects_invalid_mode() -> None:
             log="info",
             extra_args={},
         )
+
+
+def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "--quick", "cli", "--provider", "ollama", "--level", "full"],
+    )
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+
+    seen: dict[str, object] = {}
+
+    def fake_execute(cmd: list[str], capture_output: bool = False, child_log_path: str | None = None) -> int:
+        seen["cmd"] = cmd
+        seen["capture"] = capture_output
+        seen["child_log"] = child_log_path
+        return 0
+
+    monkeypatch.setattr(main, "execute_command", fake_execute)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 0
+    assert isinstance(seen["cmd"], list)
+    assert "cli.py" in seen["cmd"]
+    assert seen["capture"] is False
+    assert seen["child_log"] is None
+
+
+def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--port", "70000"])
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
+
+
+def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--provider", "openai"])
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (False, "runtime error"))
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
