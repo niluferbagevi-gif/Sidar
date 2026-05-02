@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 import main
@@ -145,3 +147,74 @@ def test_main_without_quick_runs_wizard_exit_code(monkeypatch: pytest.MonkeyPatc
         main.main()
 
     assert exc.value.code == 5
+
+
+def test_validate_runtime_dependencies_reflects_config_import_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "CONFIG_IMPORT_OK", True)
+    assert main.validate_runtime_dependencies("web") == (True, None)
+
+    monkeypatch.setattr(main, "CONFIG_IMPORT_OK", False)
+    ok, message = main.validate_runtime_dependencies("cli")
+    assert ok is False
+    assert "cli.py" in str(message)
+
+
+def test_preflight_warns_when_env_missing_and_provider_keys_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = SimpleNamespace(
+        BASE_DIR=str(tmp_path),
+        DATABASE_URL="",
+        GEMINI_API_KEY="",
+        OPENAI_API_KEY="",
+        ANTHROPIC_API_KEY="",
+    )
+    monkeypatch.setattr(main, "cfg", cfg)
+
+    main.preflight("gemini")
+    gemini_out = capsys.readouterr().out
+    assert ".env bulunamadı" in gemini_out
+    assert "GEMINI_API_KEY boş" in gemini_out
+
+    main.preflight("openai")
+    openai_out = capsys.readouterr().out
+    assert "OPENAI_API_KEY boş" in openai_out
+
+    main.preflight("anthropic")
+    anthropic_out = capsys.readouterr().out
+    assert "ANTHROPIC_API_KEY boş" in anthropic_out
+
+
+def test_execute_command_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main.subprocess, "run", _raise)
+    assert main.execute_command(["python", "cli.py"]) == 0
+
+
+def test_execute_command_handles_unexpected_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(main.subprocess, "run", _raise)
+    assert main.execute_command(["python", "cli.py"]) == 1
+
+
+def test_main_exits_when_critical_settings_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_cfg = SimpleNamespace(
+        validate_critical_settings=lambda: False,
+        init_telemetry=lambda **_kwargs: None,
+        AI_PROVIDER="ollama",
+        ACCESS_LEVEL="full",
+        CODING_MODEL="qwen2.5-coder:7b",
+        WEB_HOST="0.0.0.0",
+        WEB_PORT=7860,
+    )
+    monkeypatch.setattr(main, "cfg", fake_cfg)
+    monkeypatch.setattr("sys.argv", ["main.py", "--quick", "cli"])
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
