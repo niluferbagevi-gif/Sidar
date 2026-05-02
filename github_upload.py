@@ -117,23 +117,17 @@ def resolve_github_token() -> str:
 
 
 
-def build_authenticated_remote_arg(remotes_output: str, token: str) -> str:
-    """origin remote'u HTTPS ise token gömülü URL döndürür; aksi halde 'origin'."""
+def build_authenticated_remote_arg(remote_url: str, token: str) -> str:
+    """origin HTTPS URL'si için token gömülü URL döndürür; aksi halde 'origin'."""
     if not token:
         return "origin"
 
-    match = re.search(r"^origin\s+(\S+)\s+\(push\)$", remotes_output or "", flags=re.MULTILINE)
-    if not match:
-        match = re.search(r"^origin\s+(\S+)\s+\(fetch\)$", remotes_output or "", flags=re.MULTILINE)
-    if not match:
-        return "origin"
-
-    remote_url = match.group(1).strip()
-    if not remote_url.startswith("https://"):
+    normalized = (remote_url or "").strip()
+    if not normalized.startswith("https://"):
         return "origin"
 
     auth_prefix = "https://x-access-token:"
-    return remote_url.replace("https://", f"{auth_prefix}{token}@", 1)
+    return normalized.replace("https://", f"{auth_prefix}{token}@", 1)
 
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
@@ -308,7 +302,8 @@ def main() -> None:
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    authenticated_remote = build_authenticated_remote_arg(remotes, github_token)
+    _, origin_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    authenticated_remote = build_authenticated_remote_arg(origin_url, github_token)
 
     _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
     current_branch = branch_out.strip() if branch_out else "main"
