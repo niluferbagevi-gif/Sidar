@@ -585,6 +585,14 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
 > kullanıyorsanız komutları doğrudan `python -m pytest ...` ile çalıştırın.
 >
+> Hızlı sorun giderme (pytest başlangıç hataları):
+> - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
+>   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutlardan birini çalıştırın:
+>   - `uv sync --all-extras` (önerilen)
+>   - `python -m pip install -e ".[dev]"` (minimum test/tooling kurulumu)
+> - Kurulum sonrası doğrulama için:
+>   - `python -m pytest -q tests/unit/agent/test_registry.py`
+>
 > Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
 > `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
 > Deterministiklik/flakiness taraması için ise gece çalışan `Nightly Flaky Scan`
