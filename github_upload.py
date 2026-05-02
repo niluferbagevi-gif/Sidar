@@ -366,10 +366,7 @@ def main() -> None:
 
             # 1. Yerel dosyaları merge/pull öncesi referansa sert şekilde geri al.
             # ORIG_HEAD son tehlikeli hareket öncesini işaret eder; FF merge dahil tek adımda güvenli geri dönüş sağlar.
-            _, current_head = run_command(["git", "rev-parse", "--short", "HEAD"], show_output=False)
-            print(
-                f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch} | HEAD: {current_head.strip() if current_head else 'bilinmiyor'}{Colors.ENDC}"
-            )
+            print(f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch}{Colors.ENDC}")
             reset_success, reset_err = run_command(
                 ["git", "reset", "--hard", "ORIG_HEAD"], show_output=False
             )
