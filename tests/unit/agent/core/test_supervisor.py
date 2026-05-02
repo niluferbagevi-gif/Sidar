@@ -1124,3 +1124,29 @@ def test_coerce_delegation_request_keeps_flow_when_bumped_returns_non_request_sc
     assert req.task_id == ""
     assert req.reply_to == ""
     assert req.target_agent == ""
+
+
+def test_coerce_delegation_request_handles_noncallable_bumped_attribute() -> None:
+    class _CompatRequest:
+        def __init__(self) -> None:
+            self.task_id = "t-nc"
+            self.reply_to = "reviewer"
+            self.target_agent = "coder"
+            self.payload = "patch"
+            self.intent = "p2p"
+            self.parent_task_id = "parent-nc"
+            self.handoff_depth = 4
+            self.protocol = "p2p.v1"
+            self.meta = {"source": "manual"}
+            self.bumped = "not-callable"
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(supervisor_mod, "is_delegation_request", lambda _value: True)
+    req = SupervisorAgent._coerce_delegation_request(_CompatRequest())
+    monkeypatch.undo()
+
+    assert isinstance(req, DelegationRequest)
+    assert req.task_id == "t-nc"
+    assert req.reply_to == "reviewer"
+    assert req.target_agent == "coder"
+    assert req.payload == "patch"
