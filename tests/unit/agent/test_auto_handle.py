@@ -464,6 +464,39 @@ def test_docs_handlers_and_helper_extractors(monkeypatch):
     assert h._extract_url("bak https://example.com/test?a=1") == "https://example.com/test?a=1"
 
 
+def test_try_heal_local_usage_and_read_error_branches(monkeypatch, tmp_path):
+    h = _build_handler(monkeypatch)
+
+    handled, response = asyncio.run(h._try_heal_local('.heal'))
+    assert handled is True
+    assert response == '⚠ Kullanım: .heal <log_dosyası>'
+
+    bad_path = tmp_path / 'bad.log'
+    bad_path.write_text('x', encoding='utf-8')
+
+    def _raise(*_args, **_kwargs):
+        raise OSError('permission denied')
+
+    monkeypatch.setattr(type(bad_path), 'read_text', _raise)
+    handled, response = asyncio.run(h._try_heal_local(f'.heal {bad_path}'))
+    assert handled is True
+    assert response.startswith('⚠ Log dosyası okunamadı:')
+
+
+def test_try_docs_search_invalid_result_shape(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    class InvalidDocs(FakeDocs):
+        def search(self, query, _unused=None, mode='auto'):
+            return {'query': query, 'mode': mode}
+
+    h.docs = InvalidDocs()
+    assert asyncio.run(h._try_docs_search('depoda ara indeksleme', 'depoda ara indeksleme')) == (
+        True,
+        '✗ Belge araması geçersiz yanıt döndürdü.',
+    )
+
+
 def test_handle_full_fallback_and_dot_routes(monkeypatch):
     h = _build_handler(monkeypatch)
     assert asyncio.run(h.handle("anlamsız bir ifade")) == (False, "")
