@@ -53,3 +53,4 @@ def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
 def test_format_table_layout():
     table = format_table([FileCoverage(path="x.py", covered=0, missed=2)])
     assert table.splitlines()[0] == "| File | Coverage | Missed | Covered |"
+    
