@@ -1019,3 +1019,56 @@ def test_run_task_circuit_breaker_before_second_reviewer() -> None:
     result = asyncio.run(sup.run_task("kod yaz"))
 
     assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+
+
+def test_supervisor_init_registers_and_gets_coverage_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Coverage:
+        def __init__(self, _cfg=None) -> None:
+            self.ready = True
+
+    monkeypatch.setattr(supervisor_mod, "CoverageAgent", _Coverage)
+
+    sup = SupervisorAgent()
+
+    assert sup.coverage is not None
+    assert getattr(sup.coverage, "ready", False) is True
+
+
+def test_coerce_delegation_request_uses_bumped_payload_object() -> None:
+    class _CompatRequest:
+        def __init__(self) -> None:
+            self.task_id = "t-1"
+            self.reply_to = "reviewer"
+            self.target_agent = "coder"
+            self.payload = "fix"
+            self.intent = "p2p"
+            self.parent_task_id = "parent"
+            self.handoff_depth = 2
+            self.protocol = "p2p.v1"
+            self.meta = {"source": "qa"}
+
+        def bumped(self) -> object:
+            return types.SimpleNamespace(
+                task_id="t-2",
+                reply_to="reviewer",
+                target_agent="coder",
+                payload="revise",
+                intent="p2p",
+                parent_task_id="parent",
+                handoff_depth=3,
+                protocol="p2p.v2",
+                meta={"source": "review"},
+            )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(supervisor_mod, "is_delegation_request", lambda _value: True)
+    req = SupervisorAgent._coerce_delegation_request(_CompatRequest())
+    monkeypatch.undo()
+
+    assert isinstance(req, DelegationRequest)
+    assert req.task_id == "t-2"
+    assert req.handoff_depth == 3
+    assert req.protocol == "p2p.v2"
+    assert req.meta == {"source": "review"}
