@@ -135,6 +135,32 @@ def build_authenticated_remote_arg(remotes_output: str, token: str) -> str:
     auth_prefix = "https://x-access-token:"
     return remote_url.replace("https://", f"{auth_prefix}{token}@", 1)
 
+
+def classify_push_error(err_msg: str) -> str:
+    """Push hatasını sınıflandırır ve kullanıcıya daha net yönlendirme sağlar."""
+    normalized = (err_msg or "").lower()
+
+    permission_patterns = [
+        "permission to",
+        "the requested url returned error: 403",
+        "authentication failed",
+        "could not read username",
+    ]
+    if any(pattern in normalized for pattern in permission_patterns):
+        return "auth"
+
+    if (
+        "rejected" in normalized
+        or "fetch first" in normalized
+        or "non-fast-forward" in normalized
+    ):
+        return "non_fast_forward"
+
+    if "rule violations" in normalized or "push protection" in normalized:
+        return "push_protection"
+
+    return "unknown"
+
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
@@ -565,7 +591,10 @@ def main() -> None:
             f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
         )
         print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
+    else:
+        error_type = classify_push_error(err_msg)
+
+    if not push_success and error_type == "non_fast_forward":
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
         confirm = (
             input(
@@ -629,7 +658,16 @@ def main() -> None:
                 "Veri kaybını önlemek için push durduruldu."
                 f"{Colors.ENDC}"
             )
-    else:
+    elif not push_success and error_type == "auth":
+        print(f"{Colors.FAIL}❌ GitHub yetkilendirme hatası (403/Authentication Failed).{Colors.ENDC}")
+        print(
+            f"{Colors.WARNING}Olası neden: GITHUB_TOKEN geçersiz, süresi dolmuş, repo yetkisi yok veya remote yanlış hesap/repoya işaret ediyor.{Colors.ENDC}"
+        )
+        print(
+            f"{Colors.OKBLUE}Öneri: 'git remote -v' ile origin URL'ini doğrulayın, ardından repo erişimi olan yeni bir PAT/GITHUB_TOKEN tanımlayın.{Colors.ENDC}"
+        )
+        print(f"{Colors.WARNING}Ham hata:\n{err_msg}{Colors.ENDC}")
+    elif not push_success:
         print(
             f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}"
         )

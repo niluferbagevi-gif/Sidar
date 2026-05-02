@@ -58,6 +58,14 @@ def test_build_authenticated_remote_arg():
     assert gu.build_authenticated_remote_arg(remotes, "abc") == "https://x-access-token:abc@github.com/org/repo.git"
     assert gu.build_authenticated_remote_arg("origin git@github.com:org/repo.git (push)", "abc") == "origin"
     assert gu.build_authenticated_remote_arg("", "abc") == "origin"
+
+
+def test_classify_push_error():
+    assert gu.classify_push_error("remote: Permission to owner/repo.git denied") == "auth"
+    assert gu.classify_push_error("fatal: Authentication failed") == "auth"
+    assert gu.classify_push_error("error: failed to push some refs (non-fast-forward)") == "non_fast_forward"
+    assert gu.classify_push_error("push blocked due to rule violations") == "push_protection"
+    assert gu.classify_push_error("random unknown") == "unknown"
 def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     text_file = tmp_path / "a.py"
     text_file.write_text("print('x')", encoding="utf-8")
