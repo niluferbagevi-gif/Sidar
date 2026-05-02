@@ -101,3 +101,47 @@ def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPat
         main.main()
 
     assert exc.value.code == 2
+
+
+def test_run_wizard_returns_2_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "print_banner", lambda: None)
+    choices = iter(["web", "openai", "full", "info"])
+    monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
+    monkeypatch.setattr(main, "ask_text", lambda *args, **kwargs: "7860")
+    monkeypatch.setattr(main, "preflight", lambda _provider: None)
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (False, "runtime boom"))
+
+    rc = main.run_wizard()
+
+    assert rc == 2
+
+
+def test_execute_command_capture_output_nonzero(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr(main, "_run_with_streaming", lambda _cmd, _log: 7)
+
+    rc = main.execute_command(["python", "cli.py"], capture_output=True)
+    out = capsys.readouterr().out
+
+    assert rc == 7
+    assert "Program hata ile sonlandı (Çıkış Kodu: 7)" in out
+
+
+def test_execute_command_handles_called_process_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(*_args, **_kwargs):
+        raise main.subprocess.CalledProcessError(returncode=9, cmd=["python", "cli.py"])
+
+    monkeypatch.setattr(main.subprocess, "run", _raise)
+
+    rc = main.execute_command(["python", "cli.py"])
+
+    assert rc == 9
+
+
+def test_main_without_quick_runs_wizard_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py"])
+    monkeypatch.setattr(main, "run_wizard", lambda: 5)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 5
