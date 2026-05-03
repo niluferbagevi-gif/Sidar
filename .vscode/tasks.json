@@ -2,37 +2,18 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Sidar: Otonom Test Başlatıcı",
+            "label": "Sidar Autonomous Test & Upload Loop",
             "type": "shell",
-            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
-            "options": {
-                "cwd": "${workspaceFolder}"
+            "command": "./autonomous_loop.sh",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
             },
             "runOptions": {
                 "runOn": "folderOpen"
             },
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared",
-                "clear": true
-            }
-        },
-        {
-            "label": "Sidar: Testleri Manuel Çalıştır",
-            "type": "shell",
-            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared",
-                "clear": true
-            },
-            "group": {
-                "kind": "test",
-                "isDefault": true
-            }
+            "problemMatcher": []
         }
     ]
 }
