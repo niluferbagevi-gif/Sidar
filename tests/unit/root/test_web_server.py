@@ -7875,7 +7875,11 @@ async def test_rag_search_handles_awaitable_returned_from_sync_search(monkeypatc
             return _async_result()
 
     agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id=None))
-    monkeypatch.setattr(web_server, "_resolve_agent_instance", lambda: agent)
+
+    async def _resolve_agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server.asyncio, "to_thread", lambda fn, *args: fn(*args))
 
     response = await web_server.rag_search("hello")
