@@ -48,9 +48,13 @@ def test_main_success_output(monkeypatch, capsys):
 
 
 def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
+    import sys
+
     xml = tmp_path / "empty.xml"
     xml.write_text("<?xml version='1.0'?><coverage/>", encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml)])
+    # Modül zaten import edilmiş olabilir; runpy.run_module'un temiz çalışması için önce kaldır.
+    monkeypatch.delitem(sys.modules, "scripts.coverage_hotspots", raising=False)
 
     with pytest.raises(SystemExit) as exc:
         runpy.run_module("scripts.coverage_hotspots", run_name="__main__")
