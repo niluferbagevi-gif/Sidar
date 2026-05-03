@@ -2,37 +2,18 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Sidar: Otonom Döngü Başlatıcı",
+            "label": "Sidar Autonomous Test & Upload Loop",
             "type": "shell",
             "command": "./autonomous_loop.sh",
-            "options": {
-                "cwd": "${workspaceFolder}"
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
             },
             "runOptions": {
                 "runOn": "folderOpen"
             },
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared",
-                "clear": true
-            }
-        },
-        {
-            "label": "Sidar: Otonom Döngüyü Manuel Çalıştır",
-            "type": "shell",
-            "command": "./autonomous_loop.sh",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared",
-                "clear": true
-            },
-            "group": {
-                "kind": "test",
-                "isDefault": true
-            }
+            "problemMatcher": []
         }
     ]
 }
