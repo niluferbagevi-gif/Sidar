@@ -4,7 +4,7 @@
         {
             "label": "Sidar: Otonom Test Başlatıcı",
             "type": "shell",
-            "command": "source .venv/bin/activate && ./run_tests.sh",
+            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -20,7 +20,7 @@
         {
             "label": "Sidar: Testleri Manuel Çalıştır",
             "type": "shell",
-            "command": "source .venv/bin/activate && ./run_tests.sh",
+            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
