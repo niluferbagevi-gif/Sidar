@@ -585,6 +585,11 @@ PY
     base_pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
 
+  # Coverage raporlarını XML/JSON olarak dışa aktararak otomatik araçların
+  # (ör. coverage hotspot analizi ve otonom test üretim döngüsü) makinece
+  # okunabilir artefaktlardan beslenmesini garanti ederiz.
+  base_pytest_cmd+=(--cov-report=json)
+
   # Benchmark ölçümlerinin doğruluğu için performans testleri bu aşamada
   # özellikle hariç tutulur ve aşağıda tek çekirdekli ayrı fazda çalıştırılır.
   base_pytest_cmd+=(--ignore=tests/performance)
