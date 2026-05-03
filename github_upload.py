@@ -115,20 +115,6 @@ def resolve_github_token() -> str:
     return ""
 
 
-
-
-def build_authenticated_remote_arg(remote_url: str, token: str) -> str:
-    """origin HTTPS URL'si için token gömülü URL döndürür; aksi halde 'origin'."""
-    if not token:
-        return "origin"
-
-    normalized = (remote_url or "").strip()
-    if not normalized.startswith("https://"):
-        return "origin"
-
-    auth_prefix = "https://x-access-token:"
-    return normalized.replace("https://", f"{auth_prefix}{token}@", 1)
-
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
@@ -302,9 +288,6 @@ def main() -> None:
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    _, origin_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
-    authenticated_remote = build_authenticated_remote_arg(origin_url, github_token)
-
     _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
     current_branch = branch_out.strip() if branch_out else "main"
 
@@ -394,7 +377,7 @@ def main() -> None:
             # 2. GitHub'ı zorla (force) güncelle
             print(f"{Colors.WARNING}⏳ GitHub deposu zorla (force) güncelleniyor...{Colors.ENDC}")
             push_success, push_err = run_command(
-                ["git", "push", "--force", authenticated_remote, current_branch], show_output=False
+                ["git", "push", "--force", "origin", current_branch], show_output=False
             )
 
             if push_success:
@@ -430,7 +413,7 @@ def main() -> None:
         pull_cmd = [
             "git",
             "pull",
-            authenticated_remote,
+            "origin",
             target_branch,
             "--no-rebase",
             "--allow-unrelated-histories",
@@ -551,7 +534,7 @@ def main() -> None:
     )
 
     push_success, err_msg = run_command(
-        ["git", "push", "-u", authenticated_remote, current_branch], show_output=False
+        ["git", "push", "-u", "origin", current_branch], show_output=False
     )
 
     if push_success:
@@ -578,7 +561,7 @@ def main() -> None:
             pull_cmd = [
                 "git",
                 "pull",
-                authenticated_remote,
+                "origin",
                 current_branch,
                 "--rebase=false",
                 "--allow-unrelated-histories",
@@ -594,7 +577,7 @@ def main() -> None:
                 )
 
                 retry_success, retry_err = run_command(
-                    ["git", "push", "-u", authenticated_remote, current_branch], show_output=False
+                    ["git", "push", "-u", "origin", current_branch], show_output=False
                 )
 
                 if retry_success:
