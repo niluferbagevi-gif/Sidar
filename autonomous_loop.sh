@@ -26,11 +26,7 @@ run_recovery_block() {
   fi
 
   echo "[RECOVERY] Otonom self-heal adımı kontrol ediliyor..."
-  if [ -f "artifacts/mypy_errors.log" ]; then
-    uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
-  else
-    echo "[RECOVERY] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
-  fi
+  echo "[RECOVERY] Mypy auto-heal run_tests.sh içinde yönetiliyor; bu katmanda tekrar edilmiyor."
 }
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
