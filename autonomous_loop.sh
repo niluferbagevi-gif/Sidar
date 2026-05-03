@@ -3,6 +3,7 @@ set -u
 
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
+RECOVERY_WAIT_SECONDS="${AUTONOMOUS_LOOP_RECOVERY_WAIT_SECONDS:-15}"
 
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
@@ -16,26 +17,45 @@ if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [ "$ITERATIONS" -lt 1 ]; then
   echo "[HATA] AUTONOMOUS_LOOP_ITERATIONS pozitif bir tamsayı olmalı. Verilen: $ITERATIONS"
   exit 2
 fi
-
-if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
+if ! [[ "$RECOVERY_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
+  RECOVERY_WAIT_SECONDS=15
 fi
 
+wait_for_recovery_updates() {
+  local before_state="$1"
+  local waited=0
+
+  while [ "$waited" -lt "$RECOVERY_WAIT_SECONDS" ]; do
+    local current_state
+    current_state="$(git status --porcelain 2>/dev/null || true)"
+    if [ "$current_state" != "$before_state" ]; then
+      echo "[RECOVERY] Çalışma alanında değişiklik algılandı; testler yeniden başlatılıyor."
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  echo "[RECOVERY] ${RECOVERY_WAIT_SECONDS}s içinde yeni değişiklik algılanmadı; testler mevcut durumla yeniden çalıştırılacak."
+  return 0
+}
+
 run_recovery_block() {
+  local before_state
+  before_state="$(git status --porcelain 2>/dev/null || true)"
   echo "[RECOVERY] Coverage hotspot analizi başlatılıyor..."
   if [ -f "coverage.xml" ]; then
-    python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+    if uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root .; then
+      wait_for_recovery_updates "$before_state"
+    else
+      echo "[RECOVERY] coverage_hotspots.py başarısız oldu; bekleme adımı atlandı."
+    fi
   else
     echo "[RECOVERY] coverage.xml bulunamadı; hotspot adımı atlandı."
   fi
 
   echo "[RECOVERY] Otonom self-heal adımı kontrol ediliyor..."
-  if [ -f "artifacts/mypy_errors.log" ]; then
-    python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
-  else
-    echo "[RECOVERY] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
-  fi
+  echo "[RECOVERY] Mypy auto-heal run_tests.sh içinde yönetiliyor; bu katmanda tekrar edilmiyor."
 }
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
@@ -44,8 +64,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
 
-  echo "[1/3] Upload: python github_upload.py"
-  python github_upload.py
+  echo "[1/3] Upload: uv run python github_upload.py"
+  uv run python github_upload.py
   upload_exit=$?
   if [ "$upload_exit" -ne 0 ]; then
     echo "[HATA] Upload adımı başarısız oldu (exit code: $upload_exit). Döngü durduruluyor."
