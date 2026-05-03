@@ -675,6 +675,14 @@ PY
   else
     echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
   fi
+
+  if [ "${BACKEND_EXIT_CODE}" -eq 0 ] && [ -f ".coverage" ]; then
+    if python -m coverage json -o coverage.json; then
+      echo "✅ Coverage JSON raporu oluşturuldu: coverage.json"
+    else
+      echo "⚠️ Coverage JSON raporu üretilemedi."
+    fi
+  fi
 }
 
 # 1) Backend kalite akışı (3 faz):
