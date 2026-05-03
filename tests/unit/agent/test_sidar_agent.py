@@ -856,6 +856,19 @@ async def test_resolve_self_heal_scope_batches_prefers_autonomous_batches(
     assert batches == [["c.py", "d.py"], ["a.py", "b.py"]]
 
 
+async def test_resolve_self_heal_scope_batches_returns_empty_when_scope_is_empty(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2)
+
+    batches = agent._resolve_self_heal_scope_batches(
+        [],
+        {"autonomous_batches": [{"scope_paths": ["a.py"]}]},
+    )
+    assert batches == []
+
+
 async def test_build_self_heal_plan_uses_autonomous_batch_order(
     sidar_agent_factory,
     monkeypatch: pytest.MonkeyPatch,
@@ -942,6 +955,31 @@ async def test_build_self_heal_plan_retries_until_operation(
     assert plan["operations"][0]["path"] == "a.py"
     assert plan["plan_attempt"] == 2
     assert plan["plan_max_retries"] == 3
+
+
+async def test_build_self_heal_plan_returns_default_when_batches_empty_and_full_scope_skipped(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES=1,
+        SELF_HEAL_AUTONOMOUS_BATCH_SIZE=2,
+    )
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={
+            "scope_paths": ["a.py"],
+            "autonomous_batches": [{"scope_paths": []}, {"scope_paths": ["x.py"]}],
+            "validation_commands": ["pytest -q"],
+        },
+    )
+
+    assert plan["operations"] == []
+    assert plan["confidence"] == "unknown"
+    assert plan["validation_commands"] == ["pytest -q"]
 
 
 async def test_build_self_heal_plan_timeout_returns_fallback_summary(

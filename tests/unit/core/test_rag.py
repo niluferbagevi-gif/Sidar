@@ -1701,6 +1701,27 @@ async def test_document_store_judge_and_vector_fetch_error_paths(
     assert store._fetch_pgvector("q", 2, "s1") == []
 
 
+async def test_document_store_pgvector_search_handles_pool_drop_and_empty_results(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = True
+
+    class _EngineBoom:
+        def begin(self):
+            raise RuntimeError("connection pool dropped")
+
+    store.pg_engine = _EngineBoom()
+    monkeypatch.setitem(__import__("sys").modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+    store._pgvector_embed_texts = lambda _texts: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+
+    assert store._fetch_pgvector("q", 2, "s1") == []
+
+    ok, msg = store._pgvector_search("q", 2, "s1")
+    assert ok is False
+    assert "ilgili sonuç bulunamadı" in msg
+
+
 async def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Path) -> None:
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=1)

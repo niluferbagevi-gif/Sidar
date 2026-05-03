@@ -406,6 +406,24 @@ def test_normalize_self_heal_plan_parses_python_list_like_response() -> None:
     ]
 
 
+def test_normalize_self_heal_plan_handles_literal_eval_syntax_error_gracefully(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci.ast, "literal_eval", lambda _value: (_ for _ in ()).throw(SyntaxError()))
+    raw = (
+        "PLAN:\\n"
+        "[{'op': 'patch', 'file': 'tests/unit/core/test_ci_remediation.py', "
+        "'before': 'x', 'after': 'y'}]"
+    )
+    normalized = ci.normalize_self_heal_plan(
+        raw,
+        scope_paths=["tests/unit/core/test_ci_remediation.py"],
+        fallback_validation_commands=["pytest -q"],
+    )
+    assert normalized["operations"] == []
+    assert normalized["validation_commands"] == ["pytest -q"]
+
+
 def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None:
     normalized = ci.normalize_self_heal_plan(
         {"operations": [], "validation_commands": ["uv pip install psycopg2-binary"]},
