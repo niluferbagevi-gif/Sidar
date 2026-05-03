@@ -240,7 +240,9 @@ async def test_run_task_paths(monkeypatch, coder_module):
     assert await agent.run_task("patch_file|a.py|x|y") == "tool:patch_file:a.py|x|y"
     assert await agent.run_task("execute_code|pytest -q") == "tool:execute_code:pytest -q"
     assert (
-        await agent.run_task("read_test_artifacts|coverage_json=coverage.json;junit_xml=test_results.xml")
+        await agent.run_task(
+            "read_test_artifacts|coverage_json=coverage.json;junit_xml=test_results.xml"
+        )
         == "tool:read_test_artifacts:coverage_json=coverage.json;junit_xml=test_results.xml"
     )
 
