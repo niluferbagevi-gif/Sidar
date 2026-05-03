@@ -3934,3 +3934,31 @@ async def test_llm_client_chat_stream_non_ollama_string_uses_fallback_stream(mon
     assert hasattr(stream, "__aiter__")
     chunks = [chunk async for chunk in stream]
     assert chunks == ["plain text response"]
+
+
+@pytest.mark.asyncio
+async def test_llm_client_chat_stream_awaits_coroutine_response_before_iterating(monkeypatch) -> None:
+    client = llm_client.LLMClient("openai", _make_config(OPENAI_API_KEY="k"))
+
+    class _Backend:
+        async def chat(self, **_kwargs):
+            async def _stream():
+                yield "chunk-1"
+                yield "chunk-2"
+
+            return _stream()
+
+    monkeypatch.setattr(client, "_client", _Backend())
+
+    original_track = llm_client._track_stream_routing_cost
+
+    async def _safe_track(stream_iter, *, messages, config, model):
+        assert hasattr(stream_iter, "__aiter__")
+        async for item in original_track(stream_iter, messages=messages, config=config, model=model):
+            yield item
+
+    monkeypatch.setattr(llm_client, "_track_stream_routing_cost", _safe_track)
+
+    stream = await client.chat([{"role": "user", "content": "hello"}], stream=True)
+    chunks = [chunk async for chunk in stream]
+    assert chunks == ["chunk-1", "chunk-2"]

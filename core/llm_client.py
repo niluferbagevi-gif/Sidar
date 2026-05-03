@@ -1660,6 +1660,8 @@ class LLMClient:
         )
 
         if stream and self.provider != "ollama":
+            if asyncio.iscoroutine(response):
+                response = await response
             if isinstance(response, str):
                 return _fallback_stream(response)
             return _track_stream_routing_cost(
