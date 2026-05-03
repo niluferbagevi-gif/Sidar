@@ -1281,6 +1281,13 @@ class AnthropicClient(BaseLLMClient):
     def _build_timeout(self) -> int:
         return max(10, int(_setting(self.config, "ANTHROPIC_TIMEOUT", 60)))
 
+    def _get_client(self) -> Any:
+        """Geriye dönük uyumluluk: testler/mocking için tek noktadan client üretimi."""
+        anthropic_module = importlib.import_module("anthropic")
+        AsyncAnthropic = anthropic_module.AsyncAnthropic
+        api_key = str(_setting(self.config, "ANTHROPIC_API_KEY", ""))
+        return AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
+
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -1301,8 +1308,7 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         try:
-            anthropic_module = importlib.import_module("anthropic")
-            AsyncAnthropic = anthropic_module.AsyncAnthropic
+            client = self._get_client()
         except ImportError as exc:
             msg = json.dumps(
                 {
@@ -1322,7 +1328,6 @@ class AnthropicClient(BaseLLMClient):
         if not conversation:
             conversation = [{"role": "user", "content": "Merhaba"}]
 
-        client = AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
         span_scope, stream_span = _prepare_span_scope(self.config, "llm.anthropic.chat", stream)
         with span_scope as scoped_span:
             span = scoped_span or stream_span

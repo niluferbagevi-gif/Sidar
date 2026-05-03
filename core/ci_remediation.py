@@ -111,13 +111,14 @@ def _summarize_mypy_log(log_excerpt: str, *, max_lines: int = 40) -> dict[str, A
             continue
         total_errors += 1
         path = str(match.group("path") or "").replace("\\", "/").lstrip("./")
-        code = str(match.group("code") or "unknown").strip()
+        code = str(match.group("code") or "").strip()
         message = str(match.group("message") or "").strip()
         if code:
             unique_codes.add(code)
         grouped.setdefault(path, [])
         if len(grouped[path]) < 3:
-            grouped[path].append(f"{path}:{match.group('line')}: {message} [{code}]")
+            suffix = f" [{code}]" if code else ""
+            grouped[path].append(f"{path}:{match.group('line')}: {message}{suffix}")
 
     top_files = sorted(grouped.items(), key=lambda item: len(item[1]), reverse=True)
     sample_lines: list[str] = []
