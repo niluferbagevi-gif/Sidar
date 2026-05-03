@@ -774,9 +774,9 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_EXIT_CODE=$?
       fi
 
-      for report in coverage/lcov-report/index.html coverage/index.html; do
-        open_artifact "$PWD/$report"
-      done
+      # coverage/lcov-report/index.html CI araçları (ör. SonarQube) için korunur,
+      # ancak tarayıcıda mükerrer rapor açılmasını önlemek için sadece ana HTML raporu açılır.
+      open_artifact "$PWD/coverage/index.html"
 
       popd > /dev/null || true
     else
