@@ -147,6 +147,7 @@ def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
         "audit_project",
         "get_package_info",
         "scan_project_todos",
+        "read_test_artifacts",
     }
 
 
@@ -238,6 +239,10 @@ async def test_run_task_paths(monkeypatch, coder_module):
     assert await agent.run_task("WRITE_FILE|a.py|x") == "tool:write_file:a.py|x"
     assert await agent.run_task("patch_file|a.py|x|y") == "tool:patch_file:a.py|x|y"
     assert await agent.run_task("execute_code|pytest -q") == "tool:execute_code:pytest -q"
+    assert (
+        await agent.run_task("read_test_artifacts|coverage_json=coverage.json;junit_xml=test_results.xml")
+        == "tool:read_test_artifacts:coverage_json=coverage.json;junit_xml=test_results.xml"
+    )
 
     approve = await agent.run_task("qa_feedback|decision=approve;summary=looks good")
     assert approve == "[CODER:APPROVED] Reviewer onayı alındı: looks good"

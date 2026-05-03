@@ -60,6 +60,7 @@ async def test_init_registers_tools(mocker, tmp_path):
         "run_pytest",
         "analyze_pytest_output",
         "analyze_coverage_report",
+        "analyze_test_artifacts",
         "generate_missing_tests",
         "write_missing_tests",
     ]
@@ -534,6 +535,7 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
     assert await agent.run_task("run_pytest|{}") == "TOOL:run_pytest:{}"
     assert await agent.run_task("analyze_pytest_output|X") == "TOOL:analyze_pytest_output:X"
     assert await agent.run_task("analyze_coverage_report|Y") == "TOOL:analyze_coverage_report:Y"
+    assert await agent.run_task("analyze_test_artifacts|K") == "TOOL:analyze_test_artifacts:K"
     assert await agent.run_task("generate_missing_tests|Z") == "TOOL:generate_missing_tests:Z"
     assert await agent.run_task("write_missing_tests|W") == "TOOL:write_missing_tests:W"
 

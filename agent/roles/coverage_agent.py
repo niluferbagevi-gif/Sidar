@@ -54,6 +54,7 @@ class CoverageAgent(BaseAgent):
         self.register_tool("run_pytest", self._tool_run_pytest)
         self.register_tool("analyze_pytest_output", self._tool_analyze_pytest_output)
         self.register_tool("analyze_coverage_report", self._tool_analyze_coverage_report)
+        self.register_tool("analyze_test_artifacts", self._tool_analyze_test_artifacts)
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
         self.register_tool("write_missing_tests", self._tool_write_missing_tests)
 
@@ -343,6 +344,48 @@ class CoverageAgent(BaseAgent):
         }
 
     @staticmethod
+    def _parse_coverage_json(coverage_json_path: str) -> dict[str, Any]:
+        path = Path((coverage_json_path or "coverage.json").strip() or "coverage.json")
+        if not path.exists():
+            return {"path": str(path), "exists": False, "summary": "coverage.json bulunamadı."}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {"path": str(path), "exists": True, "summary": "coverage.json ayrıştırılamadı."}
+        totals = payload.get("totals", {}) if isinstance(payload, dict) else {}
+        percent = totals.get("percent_covered", totals.get("percent_covered_display"))
+        return {
+            "path": str(path),
+            "exists": True,
+            "summary": "coverage.json okundu.",
+            "totals": totals,
+            "percent_covered": float(percent) if percent is not None else None,
+        }
+
+    @staticmethod
+    def _parse_junit_xml(junit_xml_path: str) -> dict[str, Any]:
+        path = Path((junit_xml_path or "test_results.xml").strip() or "test_results.xml")
+        if not path.exists():
+            return {"path": str(path), "exists": False, "summary": "test_results.xml bulunamadı."}
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            return {"path": str(path), "exists": True, "summary": "test_results.xml ayrıştırılamadı."}
+        suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+        tests = sum(int(s.attrib.get("tests", 0) or 0) for s in suites)
+        failures = sum(
+            int(s.attrib.get("failures", 0) or 0) + int(s.attrib.get("errors", 0) or 0)
+            for s in suites
+        )
+        return {
+            "path": str(path),
+            "exists": True,
+            "summary": "test_results.xml okundu.",
+            "tests": tests,
+            "failures": failures,
+        }
+
+    @staticmethod
     def _build_dynamic_pytest_prompt(*, finding: dict[str, Any], coveragerc: dict[str, Any]) -> str:
         target = str(finding.get("target_path", "") or "")
         missing_lines = (
@@ -409,6 +452,17 @@ class CoverageAgent(BaseAgent):
             ensure_ascii=False,
         )
 
+    async def _tool_analyze_test_artifacts(self, arg: str) -> str:
+        payload = self._parse_payload(arg)
+        coverage_json_path = str(payload.get("coverage_json", "coverage.json") or "coverage.json")
+        junit_xml_path = str(payload.get("junit_xml", "test_results.xml") or "test_results.xml")
+        return json.dumps(
+            {
+                "coverage_json": self._parse_coverage_json(coverage_json_path),
+                "test_results_xml": self._parse_junit_xml(junit_xml_path),
+            },
+            ensure_ascii=False,
+        )
     async def _generate_test_candidate(
         self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]
     ) -> str:
@@ -523,6 +577,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("analyze_pytest_output", prompt.split("|", 1)[1].strip())
         if lower.startswith("analyze_coverage_report|"):
             return await self.call_tool("analyze_coverage_report", prompt.split("|", 1)[1].strip())
+        if lower.startswith("analyze_test_artifacts|"):
+            return await self.call_tool("analyze_test_artifacts", prompt.split("|", 1)[1].strip())
         if lower.startswith("generate_missing_tests|"):
             return await self.call_tool("generate_missing_tests", prompt.split("|", 1)[1].strip())
         if lower.startswith("write_missing_tests|"):
