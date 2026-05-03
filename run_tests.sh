@@ -96,6 +96,9 @@ BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-1}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-12}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
+COVERAGE_AUTO_HEAL_ON_FAILURE="${COVERAGE_AUTO_HEAL_ON_FAILURE:-1}"
+COVERAGE_AUTO_HEAL_MAX_ATTEMPTS="${COVERAGE_AUTO_HEAL_MAX_ATTEMPTS:-2}"
+COVERAGE_AUTO_HEAL_LOG_PATH="${COVERAGE_AUTO_HEAL_LOG_PATH:-tests/pytest.log}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -592,37 +595,56 @@ PY
     base_pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
-  # Aşama 1: Unit testler (yüksek paralellik)
-  local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
-  echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
-  "${phase1_cmd[@]}"
-  local phase1_exit=$?
+  local coverage_heal_attempt=0
+  local phase1_exit=1
+  local phase2_exit=1
+  while :; do
+    # Aşama 1: Unit testler (yüksek paralellik)
+    local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
+    echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
+    "${phase1_cmd[@]}" 2>&1 | tee "${COVERAGE_AUTO_HEAL_LOG_PATH}"
+    phase1_exit=$?
 
-  # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
-  local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
-  local phase2_cmd=("${base_pytest_cmd[@]}")
-  local filtered_phase2_cmd=()
-  local skip_next=0
-  for arg in "${phase2_cmd[@]}"; do
-    if [ "${skip_next}" -eq 1 ]; then
-      skip_next=0
-      continue
+    # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
+    local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
+    local phase2_cmd=("${base_pytest_cmd[@]}")
+    local filtered_phase2_cmd=()
+    local skip_next=0
+    for arg in "${phase2_cmd[@]}"; do
+      if [ "${skip_next}" -eq 1 ]; then
+        skip_next=0
+        continue
+      fi
+      if [ "${arg}" = "-n" ]; then
+        skip_next=1
+        continue
+      fi
+      if [[ "${arg}" == --cov-fail-under=* ]]; then
+        continue
+      fi
+      filtered_phase2_cmd+=("${arg}")
+    done
+    # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
+    # tek başına fail-under kalite barajına tabi tutulmaz.
+    phase2_cmd=("${filtered_phase2_cmd[@]}" --cov-append -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
+    echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
+    "${phase2_cmd[@]}" 2>&1 | tee -a "${COVERAGE_AUTO_HEAL_LOG_PATH}"
+    phase2_exit=$?
+
+    if [ "${phase1_exit}" -eq 0 ] && [ "${phase2_exit}" -eq 0 ]; then
+      break
     fi
-    if [ "${arg}" = "-n" ]; then
-      skip_next=1
-      continue
+    if [ "${COVERAGE_AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${coverage_heal_attempt}" -ge "${COVERAGE_AUTO_HEAL_MAX_ATTEMPTS}" ]; then
+      break
     fi
-    if [[ "${arg}" == --cov-fail-under=* ]]; then
-      continue
+    coverage_heal_attempt=$((coverage_heal_attempt + 1))
+    echo "⚠️ Coverage/test kalite kapısı başarısız. Otonom coverage iyileştirme tetikleniyor... (deneme ${coverage_heal_attempt}/${COVERAGE_AUTO_HEAL_MAX_ATTEMPTS})"
+    if ! uv run python -m scripts.auto_heal --log "${COVERAGE_AUTO_HEAL_LOG_PATH}" --source coverage; then
+      echo "❌ Coverage auto-heal adımı başarısız oldu."
+      break
     fi
-    filtered_phase2_cmd+=("${arg}")
+    echo "✅ Coverage auto-heal tamamlandı, pytest aşamaları yeniden çalıştırılıyor..."
   done
-  # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
-  # tek başına fail-under kalite barajına tabi tutulmaz.
-  phase2_cmd=("${filtered_phase2_cmd[@]}" --cov-append -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
-  echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
-  "${phase2_cmd[@]}"
-  local phase2_exit=$?
 
   if [ "${phase1_exit}" -ne 0 ] || [ "${phase2_exit}" -ne 0 ]; then
     BACKEND_EXIT_CODE=1
@@ -652,6 +674,14 @@ PY
     open_artifact "htmlcov/index.html"
   else
     echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
+  fi
+
+  if [ "${BACKEND_EXIT_CODE}" -eq 0 ] && [ -f ".coverage" ]; then
+    if python -m coverage json -o coverage.json; then
+      echo "✅ Coverage JSON raporu oluşturuldu: coverage.json"
+    else
+      echo "⚠️ Coverage JSON raporu üretilemedi."
+    fi
   fi
 }
 
