@@ -94,4 +94,4 @@ jobs:
 
       - name: Verify Swarm + Active Learning production cutover slice
         run: |
-          pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py tests/test_migration_ci_guards.py
+          pytest -q tests/unit/agent/test_swarm.py tests/unit/core/test_active_learning.py tests/integration/db/test_db_migrations_integration.py
