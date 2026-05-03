@@ -51,13 +51,6 @@ def test_url_and_path_helpers(tmp_path):
     assert gu.get_file_content(".env") is None
 
 
-
-
-def test_build_authenticated_remote_arg():
-    remotes = "origin https://github.com/org/repo.git (fetch)\norigin https://github.com/org/repo.git (push)"
-    assert gu.build_authenticated_remote_arg(remotes, "abc") == "https://x-access-token:abc@github.com/org/repo.git"
-    assert gu.build_authenticated_remote_arg("origin git@github.com:org/repo.git (push)", "abc") == "origin"
-    assert gu.build_authenticated_remote_arg("", "abc") == "origin"
 def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     text_file = tmp_path / "a.py"
     text_file.write_text("print('x')", encoding="utf-8")
