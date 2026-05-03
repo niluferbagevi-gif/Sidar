@@ -52,13 +52,13 @@ jobs:
 
       - name: Alembic upgrade/downgrade/upgrade chain (PostgreSQL)
         run: |
-          alembic -x database_url="$DATABASE_URL" upgrade head
-          alembic -x database_url="$DATABASE_URL" downgrade base
-          alembic -x database_url="$DATABASE_URL" upgrade head
+          uv run alembic -x database_url="$DATABASE_URL" upgrade head
+          uv run alembic -x database_url="$DATABASE_URL" downgrade base
+          uv run alembic -x database_url="$DATABASE_URL" upgrade head
 
       - name: Create SQLite fixture for dry-run migration rehearsal
         run: |
-          python - <<'PY'
+          uv run python - <<'PY'
           import sqlite3
           from pathlib import Path
           p = Path('temp/migration_dry_run.db')
@@ -85,18 +85,18 @@ jobs:
 
       - name: Run SQLite -> PostgreSQL dry-run rehearsal
         run: |
-          python scripts/migrate_sqlite_to_pg.py \
+          uv run python scripts/migrate_sqlite_to_pg.py \
             --sqlite-path temp/migration_dry_run.db \
             --postgres-dsn "$DATABASE_URL" \
             --dry-run
 
       - name: Run PostgreSQL pool load smoke (50 concurrent)
         run: |
-          python scripts/load_test_db_pool.py \
+          uv run python scripts/load_test_db_pool.py \
             --database-url "$DATABASE_URL" \
             --concurrency 50 \
             --requests 300
 
       - name: Verify Swarm + Active Learning production cutover slice
         run: |
-          pytest -q tests/unit/agent/test_swarm.py tests/unit/core/test_active_learning.py tests/integration/db/test_db_migrations_integration.py
+          uv run pytest -q tests/unit/agent/test_swarm.py tests/unit/core/test_active_learning.py tests/integration/db/test_db_migrations_integration.py

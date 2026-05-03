@@ -11,7 +11,6 @@ export class PanelErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error) {
-    // eslint-disable-next-line no-console
     console.error("Panel render error:", error);
   }
 
