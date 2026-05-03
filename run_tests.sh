@@ -774,6 +774,11 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_EXIT_CODE=$?
       fi
 
+      if [ -f "coverage/base.css" ]; then
+        echo "Frontend test raporuna karanlık mod (dark mode) uygulanıyor..."
+        echo 'html { filter: invert(95%) hue-rotate(180deg); background-color: #121212; }' >> coverage/base.css
+      fi
+
       # coverage/lcov-report/index.html CI araçları (ör. SonarQube) için korunur,
       # ancak tarayıcıda mükerrer rapor açılmasını önlemek için sadece ana HTML raporu açılır.
       open_artifact "$PWD/coverage/index.html"
