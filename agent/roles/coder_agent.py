@@ -60,6 +60,7 @@ class CoderAgent(BaseAgent):
         self.register_tool("audit_project", self._tool_audit_project)
         self.register_tool("get_package_info", self._tool_get_package_info)
         self.register_tool("scan_project_todos", self._tool_scan_project_todos)
+        self.register_tool("read_test_artifacts", self._tool_read_test_artifacts)
 
     async def _tool_read_file(self, arg: str) -> str:
         _ok, out = await asyncio.to_thread(self.code.read_file, arg)
@@ -122,6 +123,26 @@ class CoderAgent(BaseAgent):
         directory = arg.strip() or str(self.cfg.BASE_DIR)
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
+    async def _tool_read_test_artifacts(self, arg: str) -> str:
+        """Coverage/junit benzeri test artefaktlarını hızlıca okur."""
+        raw = (arg or "").strip()
+        if not raw:
+            return "[TEST_ARTIFACTS] {}"
+
+        artifacts: dict[str, str] = {}
+        for chunk in raw.split(";"):
+            item = chunk.strip()
+            if not item or "=" not in item:
+                continue
+            key, path = item.split("=", 1)
+            resolved_key = key.strip() or "artifact"
+            resolved_path = path.strip()
+            if not resolved_path:
+                continue
+            _ok, out = await asyncio.to_thread(self.code.read_file, resolved_path)
+            artifacts[resolved_key] = out
+        return f"[TEST_ARTIFACTS] {json.dumps(artifacts, ensure_ascii=False)}"
+
     @staticmethod
     def _parse_qa_feedback(raw_feedback: str) -> dict[str, Any]:
         payload = (raw_feedback or "").strip()
@@ -157,6 +178,8 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("patch_file", prompt.split("|", 1)[1])
         if lower.startswith("execute_code|"):
             return await self.call_tool("execute_code", prompt.split("|", 1)[1])
+        if lower.startswith("read_test_artifacts|"):
+            return await self.call_tool("read_test_artifacts", prompt.split("|", 1)[1])
 
         if lower.startswith("qa_feedback|"):
             feedback = prompt.split("|", 1)[1].strip()

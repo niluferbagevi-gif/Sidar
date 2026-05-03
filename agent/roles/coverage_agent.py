@@ -54,6 +54,7 @@ class CoverageAgent(BaseAgent):
         self.register_tool("run_pytest", self._tool_run_pytest)
         self.register_tool("analyze_pytest_output", self._tool_analyze_pytest_output)
         self.register_tool("analyze_coverage_report", self._tool_analyze_coverage_report)
+        self.register_tool("analyze_test_artifacts", self._tool_analyze_test_artifacts)
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
         self.register_tool("write_missing_tests", self._tool_write_missing_tests)
 
@@ -409,6 +410,13 @@ class CoverageAgent(BaseAgent):
             ensure_ascii=False,
         )
 
+    async def _tool_analyze_test_artifacts(self, arg: str) -> str:
+        """Legacy uyumluluk: coverage/junit artefaktlarını coverage analizi formatına dönüştürür."""
+        payload = self._parse_payload(arg)
+        if not payload:
+            payload = {"coverage_xml": arg}
+        return await self._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))
+
     async def _generate_test_candidate(
         self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]
     ) -> str:
@@ -523,6 +531,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("analyze_pytest_output", prompt.split("|", 1)[1].strip())
         if lower.startswith("analyze_coverage_report|"):
             return await self.call_tool("analyze_coverage_report", prompt.split("|", 1)[1].strip())
+        if lower.startswith("analyze_test_artifacts|"):
+            return await self.call_tool("analyze_test_artifacts", prompt.split("|", 1)[1].strip())
         if lower.startswith("generate_missing_tests|"):
             return await self.call_tool("generate_missing_tests", prompt.split("|", 1)[1].strip())
         if lower.startswith("write_missing_tests|"):
