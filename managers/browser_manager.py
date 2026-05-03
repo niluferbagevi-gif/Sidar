@@ -758,7 +758,9 @@ class BrowserManager:
                 if candidate == "selenium":  # pragma: no cover
                     return importlib.util.find_spec("selenium") is not None
             except Exception as exc:
-                logger.debug("Browser provider availability check başarısız (%s): %s", candidate, exc)
+                logger.debug(
+                    "Browser provider availability check başarısız (%s): %s", candidate, exc
+                )
                 continue
         return False
 

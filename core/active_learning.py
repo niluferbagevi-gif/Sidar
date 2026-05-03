@@ -743,9 +743,7 @@ class LoRATrainer:
             except ImportError:
                 logger.warning("LoRATrainer: bitsandbytes kurulu değil, 4-bit modu devre dışı.")
 
-        model = AutoModelForCausalLM.from_pretrained(
-            self.base_model, **model_kwargs
-        )  # nosec B615
+        model = AutoModelForCausalLM.from_pretrained(self.base_model, **model_kwargs)  # nosec B615
 
         # LoRA adaptörü
         lora_config = LoraConfig(
@@ -757,14 +755,14 @@ class LoRATrainer:
             target_modules=["q_proj", "v_proj"],
         )
         model = typing.cast(Any, get_peft_model(model, lora_config))
-        print_trainable_parameters = typing.cast(Any, getattr(model, "print_trainable_parameters", None))
+        print_trainable_parameters = typing.cast(
+            Any, getattr(model, "print_trainable_parameters", None)
+        )
         if callable(print_trainable_parameters):
             print_trainable_parameters()
 
         # Dataset
-        dataset = load_dataset(
-            "json", data_files=dataset_path, split="train"
-        )  # nosec B615
+        dataset = load_dataset("json", data_files=dataset_path, split="train")  # nosec B615
 
         def _tokenize(example: dict[str, Any]) -> dict[str, Any]:
             prompt = str(example.get("instruction", example.get("prompt", "")) or "")

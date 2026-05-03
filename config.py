@@ -406,9 +406,7 @@ class Config:
     SELF_HEAL_MAX_PATCHES: int = get_int_env("SELF_HEAL_MAX_PATCHES", 3)
     SELF_HEAL_PLAN_MAX_RETRIES: int = get_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
     SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
-    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env(
-        "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6
-    )
+    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env("SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6)
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR: Path = BASE_DIR
@@ -1091,6 +1089,7 @@ class Config:
                     from opentelemetry.instrumentation.fastapi import (
                         FastAPIInstrumentor as imported_fastapi_instrumentor_cls,
                     )
+
                     fastapi_instrumentor_cls = imported_fastapi_instrumentor_cls
                 fastapi_instrumentor_cls.instrument_app(fastapi_app)
 
@@ -1100,6 +1099,7 @@ class Config:
                         from opentelemetry.instrumentation.httpx import (
                             HTTPXClientInstrumentor as imported_httpx_instrumentor_cls,
                         )
+
                         httpx_instrumentor_cls = imported_httpx_instrumentor_cls
                     except Exception:
                         httpx_instrumentor_cls = None

@@ -28,7 +28,9 @@ Kurallar:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sidar local self-heal CLI")
-    parser.add_argument("--log", required=True, help="Analiz log dosyası (örn: artifacts/mypy_errors.log)")
+    parser.add_argument(
+        "--log", required=True, help="Analiz log dosyası (örn: artifacts/mypy_errors.log)"
+    )
     parser.add_argument("--source", default="mypy", help="Hata kaynağı etiketi (varsayılan: mypy)")
     parser.add_argument(
         "--batch-size",
@@ -82,7 +84,9 @@ def _parse_approval_value(value: str | None) -> bool | None:
 
 def _prompt_hitl_approval() -> bool:
     while True:
-        answer = input("⚠ Riskli self-heal planı bulundu. Uygulansın mı? (evet/hayır): ").strip().lower()
+        answer = (
+            input("⚠ Riskli self-heal planı bulundu. Uygulansın mı? (evet/hayır): ").strip().lower()
+        )
         parsed = _parse_approval_value(answer)
         if parsed is not None:
             return parsed
@@ -101,7 +105,9 @@ def _select_auto_heal_model(current_model: str, source: str, requested_model: st
 
 
 def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> list[list[str]]:
-    raw_paths = [str(path).strip() for path in remediation_loop.get("scope_paths", []) if str(path).strip()]
+    raw_paths = [
+        str(path).strip() for path in remediation_loop.get("scope_paths", []) if str(path).strip()
+    ]
     if not raw_paths:
         return []
 
@@ -136,7 +142,9 @@ def _extract_scope_error_lines(
         normalized_line = line.replace("\\", "/")
         if not any(path in normalized_line for path in normalized_paths):
             continue
-        if not re.search(r"\berror\b|mypy|type|incompatible|no-untyped-def", normalized_line, re.IGNORECASE):
+        if not re.search(
+            r"\berror\b|mypy|type|incompatible|no-untyped-def", normalized_line, re.IGNORECASE
+        ):
             continue
         seen.add(line)
         selected.append(line)
@@ -153,7 +161,9 @@ def _build_attempt_diagnosis(
     attempt: int,
     total_attempts: int,
 ) -> str:
-    diagnosis_lines = [line.strip() for line in str(base_diagnosis or "").splitlines() if line.strip()]
+    diagnosis_lines = [
+        line.strip() for line in str(base_diagnosis or "").splitlines() if line.strip()
+    ]
     scope_display = ", ".join(scope_paths) or "-"
     if not diagnosis_lines:
         diagnosis_lines = [f"Hedef kapsam için tip hataları düzeltilecek: {scope_display}"]
@@ -195,10 +205,10 @@ async def _run_self_heal_attempt(
     return cast(
         dict[str, Any],
         await agent._attempt_autonomous_self_heal(  # noqa: SLF001
-        ci_context=context,
-        diagnosis=diagnosis,
-        remediation=remediation,
-        human_approval=approved,
+            ci_context=context,
+            diagnosis=diagnosis,
+            remediation=remediation,
+            human_approval=approved,
         ),
     )
 
@@ -229,7 +239,9 @@ async def _run(args: argparse.Namespace) -> int:
         batch_size=args.batch_size,
     )
     executions: list[dict[str, Any]] = []
-    queue = scope_queue or [list(remediation_base.get("remediation_loop", {}).get("scope_paths", []))]
+    queue = scope_queue or [
+        list(remediation_base.get("remediation_loop", {}).get("scope_paths", []))
+    ]
 
     for index, scope_paths in enumerate(queue, start=1):
         chunk_context = dict(context)
@@ -252,7 +264,10 @@ async def _run(args: argparse.Namespace) -> int:
         chunk_remediation["remediation_loop"] = chunk_remediation_loop
         attempt_logs: list[dict[str, Any]] = []
         attempt_count = max(1, int(args.batch_retries or 0) + 1)
-        execution: dict[str, Any] = {"status": "blocked", "summary": "Self-heal denemesi çalıştırılmadı."}
+        execution: dict[str, Any] = {
+            "status": "blocked",
+            "summary": "Self-heal denemesi çalıştırılmadı.",
+        }
         for attempt in range(1, attempt_count + 1):
             attempt_diagnosis = _build_attempt_diagnosis(
                 base_diagnosis=diagnosis,

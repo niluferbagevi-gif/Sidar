@@ -612,7 +612,9 @@ class SidarAgent:
             if last_plan is not None:
                 summary = str(last_plan.get("summary") or "").strip()
                 attempts_info = f" (attempts: {plan_max_retries}/{plan_max_retries})"
-                last_plan["summary"] = f"{summary}{attempts_info}" if summary else attempts_info.strip()
+                last_plan["summary"] = (
+                    f"{summary}{attempts_info}" if summary else attempts_info.strip()
+                )
                 last_plan["plan_attempt"] = plan_max_retries
                 last_plan["plan_max_retries"] = plan_max_retries
                 return last_plan
@@ -625,9 +627,8 @@ class SidarAgent:
                 "plan_max_retries": plan_max_retries,
             }
 
-        should_attempt_full_scope = (
-            len(scope_paths) < skip_full_scope_min_files
-            and not list(remediation_loop.get("autonomous_batches") or [])
+        should_attempt_full_scope = len(scope_paths) < skip_full_scope_min_files and not list(
+            remediation_loop.get("autonomous_batches") or []
         )
         fallback_plan: dict[str, Any] | None = None
         if should_attempt_full_scope:
@@ -874,7 +875,9 @@ class SidarAgent:
         return execution
 
     @staticmethod
-    def _trigger_attr(trigger: ExternalTriggerType | dict[str, Any], name: str, default: Any = "") -> Any:
+    def _trigger_attr(
+        trigger: ExternalTriggerType | dict[str, Any], name: str, default: Any = ""
+    ) -> Any:
         if isinstance(trigger, dict):
             return trigger.get(name, default)
         return getattr(trigger, name, default)
@@ -918,8 +921,14 @@ class SidarAgent:
             if payload_dict.get("federation_prompt"):
                 return str(payload_dict.get("federation_prompt"))
             return FederationTaskEnvelope(
-                task_id=str(federation_payload.get("task_id") or SidarAgent._trigger_attr(trigger, "trigger_id", "")),
-                source_system=str(federation_payload.get("source_system") or SidarAgent._trigger_attr(trigger, "source", "external")),
+                task_id=str(
+                    federation_payload.get("task_id")
+                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
+                ),
+                source_system=str(
+                    federation_payload.get("source_system")
+                    or SidarAgent._trigger_attr(trigger, "source", "external")
+                ),
                 source_agent=str(federation_payload.get("source_agent") or "external"),
                 target_system=str(federation_payload.get("target_system") or "sidar"),
                 target_agent=str(federation_payload.get("target_agent") or "supervisor"),
@@ -938,8 +947,14 @@ class SidarAgent:
         event_name = str(SidarAgent._trigger_attr(trigger, "event_name", "event"))
         if payload_dict.get("kind") == "action_feedback" or event_name == "action_feedback":
             return ActionFeedback(
-                feedback_id=str(payload_dict.get("feedback_id") or SidarAgent._trigger_attr(trigger, "trigger_id", "")),
-                source_system=str(payload_dict.get("source_system") or SidarAgent._trigger_attr(trigger, "source", "external")),
+                feedback_id=str(
+                    payload_dict.get("feedback_id")
+                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
+                ),
+                source_system=str(
+                    payload_dict.get("source_system")
+                    or SidarAgent._trigger_attr(trigger, "source", "external")
+                ),
                 source_agent=str(payload_dict.get("source_agent") or "external"),
                 action_name=str(payload_dict.get("action_name") or event_name),
                 status=str(payload_dict.get("status") or "received"),

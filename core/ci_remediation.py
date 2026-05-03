@@ -509,9 +509,10 @@ def build_self_heal_patch_prompt(
         snapshot_lines.append(f"[FILE] {path}\n{content}")
     mypy_summary = _summarize_mypy_log(info.get("log_excerpt") or "")
     mypy_lines = list(mypy_summary.get("sample_lines") or [])
-    mypy_modes = "mypy" in str(info.get("workflow_name") or "").lower() or "mypy" in str(
-        info.get("failure_summary") or ""
-    ).lower()
+    mypy_modes = (
+        "mypy" in str(info.get("workflow_name") or "").lower()
+        or "mypy" in str(info.get("failure_summary") or "").lower()
+    )
 
     return (
         "[SELF_HEAL_PLAN]\n"
@@ -556,6 +557,7 @@ def normalize_self_heal_plan(
     max_operations: int = 3,
 ) -> dict[str, Any]:
     """LLM çıktısını güvenli, kapsam kısıtlı self-heal planına dönüştürür."""
+
     def _coerce_payload(value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
             return dict(value)
@@ -612,13 +614,17 @@ def normalize_self_heal_plan(
         if not isinstance(item, dict):
             continue
         action = str(item.get("action") or item.get("op") or item.get("type") or "").strip().lower()
-        path = str(
-            item.get("path")
-            or item.get("file")
-            or item.get("target_path")
-            or item.get("file_path")
-            or ""
-        ).strip().lstrip("./")
+        path = (
+            str(
+                item.get("path")
+                or item.get("file")
+                or item.get("target_path")
+                or item.get("file_path")
+                or ""
+            )
+            .strip()
+            .lstrip("./")
+        )
         target = str(
             item.get("target")
             or item.get("find")

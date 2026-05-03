@@ -542,7 +542,9 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR kapatma hatası: {exc}"
 
-    def list_issues(self, state: str = "open", limit: int = 10) -> tuple[bool, list[dict[str, Any]]]:
+    def list_issues(
+        self, state: str = "open", limit: int = 10
+    ) -> tuple[bool, list[dict[str, Any]]]:
         """Depodaki Issue'ları listeler (PR'ları filtreler)."""
         if not self._repo:
             return False, []

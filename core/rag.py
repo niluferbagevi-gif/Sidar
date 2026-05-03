@@ -330,7 +330,9 @@ class GraphIndex:
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
             except Exception as exc:
-                logger.debug("Dosya okunamadı, dependency extraction atlandı (%s): %s", file_path, exc)
+                logger.debug(
+                    "Dosya okunamadı, dependency extraction atlandı (%s): %s", file_path, exc
+                )
                 continue
             dep_paths, endpoint_defs, endpoint_calls = self._extract_dependencies(
                 file_path, content
@@ -605,6 +607,7 @@ class DocumentStore:
     - USE_GPU=true ise GPU hızlandırmalı embedding fonksiyonu kullanılır.
     - GPU_MIXED_PRECISION=true ise FP16 ile VRAM tasarrufu sağlanır.
     """
+
     _hf_env_lock = threading.Lock()
     _hf_env_applied = False
 
@@ -1116,9 +1119,7 @@ class DocumentStore:
         session_id: str = "global",
     ) -> str:
         doc_id = uuid.uuid4().hex[:12]
-        parent_id = hashlib.md5(
-            f"{title}{source}".encode(), usedforsecurity=False
-        ).hexdigest()[:12]
+        parent_id = hashlib.md5(f"{title}{source}".encode(), usedforsecurity=False).hexdigest()[:12]
         tags = tags or []
         now = time.time()
 
@@ -1884,9 +1885,7 @@ class DocumentStore:
             final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)"
         )
 
-    def _fetch_pgvector(
-        self, query: str, top_k: int, session_id: str
-    ) -> list[dict[str, Any]]:
+    def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
         if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
             return []
         try:

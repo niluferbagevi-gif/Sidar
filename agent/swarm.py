@@ -64,14 +64,14 @@ def _is_contracts_module_healthy(module: ModuleType) -> bool:
         task_envelope_cls = getattr(module, "TaskEnvelope", None)
         task_result_cls = getattr(module, "TaskResult", None)
         delegation_request_cls = getattr(module, "DelegationRequest", None)
-        if not all(callable(cls) for cls in (task_envelope_cls, task_result_cls, delegation_request_cls)):
+        if not all(
+            callable(cls) for cls in (task_envelope_cls, task_result_cls, delegation_request_cls)
+        ):
             return False
 
         cast(Any, task_envelope_cls)(task_id="t", sender="s", receiver="r", goal="g")
         cast(Any, task_result_cls)(task_id="t", status="success", summary="ok", evidence=[])
-        cast(Any, delegation_request_cls)(
-            task_id="t", reply_to="s", target_agent="r", payload="p"
-        )
+        cast(Any, delegation_request_cls)(task_id="t", reply_to="s", target_agent="r", payload="p")
     except Exception:
         return False
 

@@ -35,7 +35,9 @@ def test_parse_and_rank_end_to_end(tmp_path):
 def test_main_success_output(monkeypatch, capsys):
     rows = [FileCoverage(path="svc.py", covered=4, missed=1)]
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", "x.xml"])
-    monkeypatch.setattr("scripts.coverage_hotspots.parse_coverage_xml", lambda *args, **kwargs: rows)
+    monkeypatch.setattr(
+        "scripts.coverage_hotspots.parse_coverage_xml", lambda *args, **kwargs: rows
+    )
 
     rc = main()
     output = capsys.readouterr().out

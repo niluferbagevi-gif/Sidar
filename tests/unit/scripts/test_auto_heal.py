@@ -45,7 +45,10 @@ def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
 
 
 def test_select_auto_heal_model_honors_requested_model() -> None:
-    assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b") == "qwen2.5-coder:14b"
+    assert (
+        _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b")
+        == "qwen2.5-coder:14b"
+    )
 
 
 def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
@@ -98,10 +101,12 @@ class _FakeAgent:
 
 
 def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
-    agent = _FakeAgent([
-        {"status": "awaiting_hitl", "summary": "needs approval"},
-        {"status": "applied", "summary": "done"},
-    ])
+    agent = _FakeAgent(
+        [
+            {"status": "awaiting_hitl", "summary": "needs approval"},
+            {"status": "applied", "summary": "done"},
+        ]
+    )
     args = argparse.Namespace(hitl_approve="yes")
 
     result = asyncio.run(
@@ -120,10 +125,12 @@ def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
 
 
 def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatch) -> None:
-    agent = _FakeAgent([
-        {"status": "awaiting_hitl", "summary": "needs approval"},
-        {"status": "blocked", "summary": "cancelled"},
-    ])
+    agent = _FakeAgent(
+        [
+            {"status": "awaiting_hitl", "summary": "needs approval"},
+            {"status": "blocked", "summary": "cancelled"},
+        ]
+    )
     args = argparse.Namespace(hitl_approve="unknown")
     monkeypatch.setattr("scripts.auto_heal._prompt_hitl_approval", lambda: False)
 
@@ -141,7 +148,9 @@ def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatc
     assert agent.calls[1]["human_approval"] is False
 
 
-def test_run_returns_1_when_log_file_missing(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_run_returns_1_when_log_file_missing(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     args = argparse.Namespace(
         log=str(tmp_path / "missing.log"),
         source="mypy",
@@ -180,7 +189,9 @@ def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
     assert main() == 17
 
 
-def test_run_returns_partial_when_later_retry_applies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_returns_partial_when_later_retry_applies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
@@ -233,7 +244,9 @@ def test_run_returns_partial_when_later_retry_applies(monkeypatch: pytest.Monkey
     assert rc == 0
 
 
-def test_run_returns_1_when_all_batches_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_returns_1_when_all_batches_fail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 

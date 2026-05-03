@@ -73,9 +73,7 @@ def _setting(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
 
 
-def _prepare_span_scope(
-    config: Any, span_name: str, stream: bool
-) -> tuple[Any, Any | None]:
+def _prepare_span_scope(config: Any, span_name: str, stream: bool) -> tuple[Any, Any | None]:
     tracer = _get_tracer(config)
     if tracer is None:
         return nullcontext(None), None
@@ -165,9 +163,7 @@ async def _retry_with_backoff(
                 ) from exc
 
             jitter_cap = min(0.5, base_delay)
-            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(
-                0, jitter_cap
-            )  # nosec B311 - güvenlik değil jitter/backoff amaçlıdır.
+            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0, jitter_cap)  # nosec B311 - güvenlik değil jitter/backoff amaçlıdır.
             attempt += 1
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",
@@ -934,7 +930,9 @@ class OpenAIClient(BaseLLMClient):
                 if stream:
                     payload["stream"] = True
                     payload["stream_options"] = {"include_usage": True}
-                    stream_iter = self._stream_openai(payload, headers, req_timeout=timeout, json_mode=json_mode)
+                    stream_iter = self._stream_openai(
+                        payload, headers, req_timeout=timeout, json_mode=json_mode
+                    )
                     return _trace_stream_metrics(
                         _track_stream_completion(
                             stream_iter, provider="openai", model=model_name, started_at=started_at

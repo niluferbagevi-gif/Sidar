@@ -2235,7 +2235,9 @@ async def admin_list_prompts(role_name: str = "", _user: Any = Depends(_require_
 
 
 @app.get("/admin/prompts/active")
-async def admin_active_prompt(role_name: str = "system", _user: Any = Depends(_require_admin_user)) -> Any:
+async def admin_active_prompt(
+    role_name: str = "system", _user: Any = Depends(_require_admin_user)
+) -> Any:
     agent = await _resolve_agent_instance()
     active = await agent.memory.db.get_active_prompt(role_name)
     if not active:
@@ -2389,7 +2391,9 @@ async def uninstall_plugin_marketplace_item(
 
 
 @app.post("/api/swarm/execute")
-async def execute_swarm(payload: _SwarmExecuteRequest, user: Any = Depends(_get_request_user)) -> Any:
+async def execute_swarm(
+    payload: _SwarmExecuteRequest, user: Any = Depends(_get_request_user)
+) -> Any:
     agent = await _resolve_agent_instance()
     orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
     session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
@@ -2446,7 +2450,9 @@ async def hitl_pending(user: Any = Depends(_get_request_user)) -> Any:
 
 
 @app.post("/api/hitl/request")
-async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(_get_request_user)) -> Any:
+async def hitl_create_request(
+    payload: dict[str, Any], user: Any = Depends(_get_request_user)
+) -> Any:
     """Yeni bir HITL onay isteği oluşturur (iç API / test amaçlı)."""
     gate = get_hitl_gate()
     action = str(payload.get("action", "manual")).strip()
@@ -3185,7 +3191,11 @@ async def websocket_chat(websocket: WebSocket) -> Any:
 
             if action == "cancel" and joined_room_id:
                 existing_room = _collaboration_rooms.get(joined_room_id)
-                if existing_room and existing_room.active_task and not existing_room.active_task.done():
+                if (
+                    existing_room
+                    and existing_room.active_task
+                    and not existing_room.active_task.done()
+                ):
                     existing_room.active_task.cancel()
                 continue
 
@@ -4053,9 +4063,13 @@ async def file_content(path: str) -> Any:
 def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
     """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
     try:
-        return subprocess.check_output(  # nosec B603
-            cmd, cwd=cwd, stderr=stderr
-        ).decode().strip()
+        return (
+            subprocess.check_output(  # nosec B603
+                cmd, cwd=cwd, stderr=stderr
+            )
+            .decode()
+            .strip()
+        )
     except Exception:
         return ""
 

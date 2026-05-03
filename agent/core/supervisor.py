@@ -26,6 +26,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+
 def _ensure_delegation_request_shape() -> type[DelegationRequest]:
     contracts_mod = importlib.import_module("agent.core.contracts")
     req_cls = getattr(contracts_mod, "DelegationRequest", None)
