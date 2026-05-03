@@ -97,6 +97,15 @@ def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -
     assert exc.value.code == 2
 
 
+def test_main_quick_mode_rejects_nonnumeric_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--port", "abc"])
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
+
+
 def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--provider", "openai"])
     monkeypatch.setattr(
@@ -205,12 +214,35 @@ def test_execute_command_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPa
     assert main.execute_command(["python", "cli.py"]) == 0
 
 
+def test_execute_command_capture_output_handles_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main, "_run_with_streaming", _raise)
+    assert main.execute_command(["python", "cli.py"], capture_output=True) == 0
+
+
 def test_execute_command_handles_unexpected_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise(*_args, **_kwargs):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(main.subprocess, "run", _raise)
     assert main.execute_command(["python", "cli.py"]) == 1
+
+
+def test_main_propagates_unexpected_runtime_error_from_wizard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py"])
+
+    def _boom():
+        raise RuntimeError("wizard crash")
+
+    monkeypatch.setattr(main, "run_wizard", _boom)
+    with pytest.raises(RuntimeError, match="wizard crash"):
+        main.main()
 
 
 def test_main_exits_when_critical_settings_invalid(monkeypatch: pytest.MonkeyPatch) -> None:

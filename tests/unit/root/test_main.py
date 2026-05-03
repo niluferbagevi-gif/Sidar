@@ -1773,7 +1773,14 @@ def test_load_plugin_agent_class_branches():
     with pytest.raises(HTTPException):
         web_server._load_plugin_agent_class("class X: pass", "X", "mod")
 
-    source = "from agent.base_agent import BaseAgent\nclass MyAgent(BaseAgent):\n    ROLE_NAME='my'\n    async def respond(self, prompt):\n        yield prompt\n"
+    source = (
+        "class BaseAgent:\n"
+        "    pass\n"
+        "class MyAgent(BaseAgent):\n"
+        "    ROLE_NAME='my'\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
     cls = web_server._load_plugin_agent_class(source, "MyAgent", "mod")
     assert cls.__name__ == "MyAgent"
 

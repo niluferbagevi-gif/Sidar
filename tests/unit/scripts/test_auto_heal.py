@@ -168,6 +168,53 @@ def test_run_returns_1_when_log_file_missing(
     assert "Log dosyası bulunamadı" in out
 
 
+def test_run_raises_when_failure_context_parser_crashes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("bad log", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_a, **_k: (_ for _ in ()).throw(
+                SyntaxError("ast parse failed")
+            ),
+            build_ci_remediation_payload=lambda *_a, **_k: {"remediation_loop": {"scope_paths": []}},
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=1,
+        scope_log_lines=10,
+    )
+
+    with pytest.raises(SyntaxError, match="ast parse failed"):
+        asyncio.run(_run(args))
+
+
 def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
     parsed = argparse.Namespace(
         log="x.log",
