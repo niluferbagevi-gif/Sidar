@@ -29,6 +29,7 @@ import secrets
 import shutil
 import signal
 import subprocess  # nosec B404
+import sys
 import tempfile
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -1890,19 +1891,39 @@ def _validate_plugin_source(source_code: str) -> None:
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
+    def _baseagent_candidates() -> list[Any]:
+        candidates: list[Any] = [BaseAgent]
+        seen: set[int] = {id(BaseAgent)}
+        for module_name in ("agent.base_agent",):
+            mod = sys.modules.get(module_name)
+            if mod is None:
+                continue
+            base = getattr(mod, "BaseAgent", None)
+            if base is not None and id(base) not in seen:
+                seen.add(id(base))
+                candidates.append(base)
+        return candidates
+
     def _is_baseagent_derived(candidate: Any) -> bool:
         if not inspect.isclass(candidate):
             return False
-        try:
-            if issubclass(candidate, BaseAgent):
-                return candidate is not BaseAgent
-        except TypeError:
-            return False
+        for base_cls in _baseagent_candidates():
+            try:
+                if issubclass(candidate, base_cls):
+                    return candidate is not base_cls
+            except TypeError:
+                continue
         # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
         # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
-        return any(
-            getattr(base, "__name__", "") == "BaseAgent" for base in inspect.getmro(candidate)[1:]
-        )
+        for base in inspect.getmro(candidate)[1:]:
+            base_name = getattr(base, "__name__", "")
+            base_qualname = getattr(base, "__qualname__", "")
+            base_module = getattr(base, "__module__", "")
+            if base_name == "BaseAgent" or base_qualname.endswith("BaseAgent"):
+                return True
+            if base_module == "agent.base_agent":
+                return True
+        return False
 
     _validate_plugin_source(source_code)
     namespace = {"__name__": module_label}

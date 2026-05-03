@@ -3914,12 +3914,12 @@ async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkey
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(client, "_get_client", lambda: _Client())
 
-    chunks = [
-        c
-        async for c in client.chat(
-            [{"role": "system", "content": ""}, {"role": "user", "content": "x"}]
-        )
-    ]
+    stream = await client.chat(
+        [{"role": "system", "content": ""}, {"role": "user", "content": "x"}],
+        stream=True,
+        json_mode=False,
+    )
+    chunks = [c async for c in stream]
     assert chunks == []
     assert "system" not in captured
 
