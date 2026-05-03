@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import runpy
+from pathlib import Path
 
 import pytest
 
@@ -51,9 +52,10 @@ def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
     xml = tmp_path / "empty.xml"
     xml.write_text("<?xml version='1.0'?><coverage/>", encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml)])
+    module_path = Path(__file__).resolve().parents[3] / "scripts" / "coverage_hotspots.py"
 
     with pytest.raises(SystemExit) as exc:
-        runpy.run_module("scripts.coverage_hotspots", run_name="__main__")
+        runpy.run_path(str(module_path), run_name="__main__")
 
     assert exc.value.code == 1
 
