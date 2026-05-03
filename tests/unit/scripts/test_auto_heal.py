@@ -198,7 +198,9 @@ def test_run_raises_when_failure_context_parser_crashes(
             build_local_failure_context=lambda *_a, **_k: (_ for _ in ()).throw(
                 SyntaxError("ast parse failed")
             ),
-            build_ci_remediation_payload=lambda *_a, **_k: {"remediation_loop": {"scope_paths": []}},
+            build_ci_remediation_payload=lambda *_a, **_k: {
+                "remediation_loop": {"scope_paths": []}
+            },
         ),
     )
     args = argparse.Namespace(
