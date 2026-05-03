@@ -96,6 +96,9 @@ BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-1}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-12}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
+PYTEST_REPORT_DIR="${PYTEST_REPORT_DIR:-artifacts/test_reports}"
+PYTEST_JSON_REPORT_PATH="${PYTEST_JSON_REPORT_PATH:-${PYTEST_REPORT_DIR}/pytest-report.json}"
+PYTEST_JUNIT_REPORT_PATH="${PYTEST_JUNIT_REPORT_PATH:-${PYTEST_REPORT_DIR}/pytest-junit.xml}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -563,7 +566,16 @@ PY
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
   # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
-  local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  mkdir -p "${PYTEST_REPORT_DIR}"
+  echo "ℹ️ Pytest makine-okunabilir raporları: ${PYTEST_JSON_REPORT_PATH}, ${PYTEST_JUNIT_REPORT_PATH}"
+
+  local base_pytest_cmd=(
+    env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
+    --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+    --json-report
+    --json-report-file="${PYTEST_JSON_REPORT_PATH}"
+    --junitxml="${PYTEST_JUNIT_REPORT_PATH}"
+  )
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
