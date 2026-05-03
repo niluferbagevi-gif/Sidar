@@ -6,9 +6,7 @@ import asyncio
 import inspect
 import json
 import re
-import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from agent.base_agent import BaseAgent
@@ -62,7 +60,6 @@ class CoderAgent(BaseAgent):
         self.register_tool("audit_project", self._tool_audit_project)
         self.register_tool("get_package_info", self._tool_get_package_info)
         self.register_tool("scan_project_todos", self._tool_scan_project_todos)
-        self.register_tool("read_test_artifacts", self._tool_read_test_artifacts)
 
     async def _tool_read_file(self, arg: str) -> str:
         _ok, out = await asyncio.to_thread(self.code.read_file, arg)
@@ -125,47 +122,6 @@ class CoderAgent(BaseAgent):
         directory = arg.strip() or str(self.cfg.BASE_DIR)
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
-    async def _tool_read_test_artifacts(self, arg: str) -> str:
-        payload = self._parse_qa_feedback(arg)
-        coverage_path = Path(str(payload.get("coverage_json", "coverage.json") or "coverage.json"))
-        junit_path = Path(str(payload.get("junit_xml", "test_results.xml") or "test_results.xml"))
-        data: dict[str, Any] = {"coverage_json": {"path": str(coverage_path), "exists": False}}
-        if coverage_path.exists():
-            try:
-                coverage_payload = json.loads(coverage_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                coverage_payload = {}
-            totals = coverage_payload.get("totals", {}) if isinstance(coverage_payload, dict) else {}
-            data["coverage_json"] = {
-                "path": str(coverage_path),
-                "exists": True,
-                "totals": totals,
-                "percent_covered": totals.get("percent_covered", totals.get("percent_covered_display")),
-            }
-        data["test_results_xml"] = {"path": str(junit_path), "exists": False}
-        if junit_path.exists():
-            try:
-                root = ET.fromstring(junit_path.read_text(encoding="utf-8"))
-                suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
-                tests = sum(int(s.attrib.get("tests", 0) or 0) for s in suites)
-                failures = sum(
-                    int(s.attrib.get("failures", 0) or 0) + int(s.attrib.get("errors", 0) or 0)
-                    for s in suites
-                )
-                data["test_results_xml"] = {
-                    "path": str(junit_path),
-                    "exists": True,
-                    "tests": tests,
-                    "failures": failures,
-                }
-            except ET.ParseError:
-                data["test_results_xml"] = {
-                    "path": str(junit_path),
-                    "exists": True,
-                    "parse_error": True,
-                }
-        return json.dumps(data, ensure_ascii=False)
-
     @staticmethod
     def _parse_qa_feedback(raw_feedback: str) -> dict[str, Any]:
         payload = (raw_feedback or "").strip()
@@ -201,8 +157,6 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("patch_file", prompt.split("|", 1)[1])
         if lower.startswith("execute_code|"):
             return await self.call_tool("execute_code", prompt.split("|", 1)[1])
-        if lower.startswith("read_test_artifacts|"):
-            return await self.call_tool("read_test_artifacts", prompt.split("|", 1)[1])
 
         if lower.startswith("qa_feedback|"):
             feedback = prompt.split("|", 1)[1].strip()
