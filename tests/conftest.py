@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import importlib
 import os
+
+# Collection sırasında Config() başlatılmasında JWT_SECRET_KEY doğrulamasının
+# tetiklenmemesi için pytest ortamını erken işaretle.
+os.environ.setdefault("SIDAR_ENV", "test")
 import sys
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
