@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Sidar: Otonom Test Başlatıcı",
+            "label": "Sidar: Otonom Döngü Başlatıcı",
             "type": "shell",
-            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
+            "command": "./autonomous_loop.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -18,9 +18,9 @@
             }
         },
         {
-            "label": "Sidar: Testleri Manuel Çalıştır",
+            "label": "Sidar: Otonom Döngüyü Manuel Çalıştır",
             "type": "shell",
-            "command": "source .venv/bin/activate && python github_upload.py && ./run_tests.sh",
+            "command": "./autonomous_loop.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
