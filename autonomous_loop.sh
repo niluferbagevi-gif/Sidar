@@ -17,22 +17,17 @@ if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [ "$ITERATIONS" -lt 1 ]; then
   exit 2
 fi
 
-if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
-fi
-
 run_recovery_block() {
   echo "[RECOVERY] Coverage hotspot analizi başlatılıyor..."
   if [ -f "coverage.xml" ]; then
-    python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+    uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
   else
     echo "[RECOVERY] coverage.xml bulunamadı; hotspot adımı atlandı."
   fi
 
   echo "[RECOVERY] Otonom self-heal adımı kontrol ediliyor..."
   if [ -f "artifacts/mypy_errors.log" ]; then
-    python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+    uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
   else
     echo "[RECOVERY] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
   fi
@@ -44,8 +39,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
 
-  echo "[1/3] Upload: python github_upload.py"
-  python github_upload.py
+  echo "[1/3] Upload: uv run python github_upload.py"
+  uv run python github_upload.py
   upload_exit=$?
   if [ "$upload_exit" -ne 0 ]; then
     echo "[HATA] Upload adımı başarısız oldu (exit code: $upload_exit). Döngü durduruluyor."
