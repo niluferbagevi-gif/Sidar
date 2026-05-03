@@ -76,14 +76,18 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_cache_redis_latency_ms gauge",
     ]
 
-    totals = cast(dict[str, Any], (snapshot or {}).get("totals", {}) if isinstance(snapshot, dict) else {})
+    totals = cast(
+        dict[str, Any], (snapshot or {}).get("totals", {}) if isinstance(snapshot, dict) else {}
+    )
     lines.append(f"sidar_llm_calls_total {int(totals.get('calls', 0) or 0)}")
     lines.append(f"sidar_llm_cost_total_usd {float(totals.get('cost_usd', 0.0) or 0.0)}")
     lines.append(f"sidar_llm_tokens_total {int(totals.get('total_tokens', 0) or 0)}")
     lines.append(f"sidar_llm_failures_total {int(totals.get('failures', 0) or 0)}")
 
     # Semantic cache metrikleri
-    cache = cast(dict[str, Any], (snapshot or {}).get("cache", {}) if isinstance(snapshot, dict) else {})
+    cache = cast(
+        dict[str, Any], (snapshot or {}).get("cache", {}) if isinstance(snapshot, dict) else {}
+    )
     hits = int(cache.get("hits", 0) or 0)
     misses = int(cache.get("misses", 0) or 0)
     skips = int(cache.get("skips", 0) or 0)

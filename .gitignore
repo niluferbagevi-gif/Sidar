@@ -94,6 +94,9 @@ Thumbs.db
 
 # IDE
 .idea/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/settings.json
 *.swp
 *.swo
 *~

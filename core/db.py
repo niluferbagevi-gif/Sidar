@@ -452,8 +452,7 @@ class Database:
                     if "database is locked" not in str(exc).lower() or attempt == 3:
                         raise
                     await asyncio.sleep(
-                        0.015 * (2 ** (attempt - 1))
-                        + random.uniform(0.0, 0.01)  # nosec B311 - güvenlik değil jitter/backoff amaçlıdır.
+                        0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311 - güvenlik değil jitter/backoff amaçlıdır.
                     )
                 except Exception:
                     # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa

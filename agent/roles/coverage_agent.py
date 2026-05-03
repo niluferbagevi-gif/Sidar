@@ -73,9 +73,7 @@ class CoverageAgent(BaseAgent):
             return self._db
 
     @staticmethod
-    async def _call_maybe_async(
-        func: Callable[..., Any], *args: Any, **kwargs: Any
-    ) -> Any:
+    async def _call_maybe_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Hem senkron hem async tool yardımcılarını güvenli şekilde çalıştır."""
         result = func(*args, **kwargs)
         if inspect.isawaitable(result):

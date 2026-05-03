@@ -76,12 +76,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-
 @pytest.fixture(autouse=True)
 def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gemini/Google istemci yolları için testte güvenli sahte anahtarlar tanımlar."""
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test_key"))
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
+
 
 # Not: `cli` modülünü burada global olarak import etmiyoruz.
 # Böylece pytest-cov ölçümü başlamadan önce `cli.py` yüklenip

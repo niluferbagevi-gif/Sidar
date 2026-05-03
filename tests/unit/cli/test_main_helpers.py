@@ -68,7 +68,9 @@ def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch)
 
     seen: dict[str, object] = {}
 
-    def fake_execute(cmd: list[str], capture_output: bool = False, child_log_path: str | None = None) -> int:
+    def fake_execute(
+        cmd: list[str], capture_output: bool = False, child_log_path: str | None = None
+    ) -> int:
         seen["cmd"] = cmd
         seen["capture"] = capture_output
         seen["child_log"] = child_log_path
@@ -97,7 +99,9 @@ def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -
 
 def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--provider", "openai"])
-    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (False, "runtime error"))
+    monkeypatch.setattr(
+        main, "validate_runtime_dependencies", lambda _mode: (False, "runtime error")
+    )
 
     with pytest.raises(SystemExit) as exc:
         main.main()
@@ -105,20 +109,26 @@ def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPat
     assert exc.value.code == 2
 
 
-def test_run_wizard_returns_2_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_wizard_returns_2_when_runtime_dependencies_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(main, "print_banner", lambda: None)
     choices = iter(["web", "openai", "full", "info"])
     monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
     monkeypatch.setattr(main, "ask_text", lambda *args, **kwargs: "7860")
     monkeypatch.setattr(main, "preflight", lambda _provider: None)
-    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (False, "runtime boom"))
+    monkeypatch.setattr(
+        main, "validate_runtime_dependencies", lambda _mode: (False, "runtime boom")
+    )
 
     rc = main.run_wizard()
 
     assert rc == 2
 
 
-def test_execute_command_capture_output_nonzero(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_execute_command_capture_output_nonzero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr(main, "_run_with_streaming", lambda _cmd, _log: 7)
 
     rc = main.execute_command(["python", "cli.py"], capture_output=True)
@@ -149,7 +159,9 @@ def test_main_without_quick_runs_wizard_exit_code(monkeypatch: pytest.MonkeyPatc
     assert exc.value.code == 5
 
 
-def test_validate_runtime_dependencies_reflects_config_import_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_validate_runtime_dependencies_reflects_config_import_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(main, "CONFIG_IMPORT_OK", True)
     assert main.validate_runtime_dependencies("web") == (True, None)
 

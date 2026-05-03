@@ -807,7 +807,7 @@ class CodeManager:
                 docker_cmd,
                 capture_output=True,
                 text=True,
-                    timeout=_to_int(limits["timeout"], 10),
+                timeout=_to_int(limits["timeout"], 10),
                 cwd=str(self.base_dir),
             )
         except FileNotFoundError:
@@ -924,7 +924,9 @@ class CodeManager:
         # Örn: "Test in comment: ...", markdown bullet'ları veya açıklama metinleri
         # pytest'e positional argüman olarak gitmemelidir.
         normalized = ""
-        pytest_cmd_pattern = re.compile(r"(?:^|\s)((?:python\s+-m\s+pytest)|pytest)(?:\s+.*)?$", re.IGNORECASE)
+        pytest_cmd_pattern = re.compile(
+            r"(?:^|\s)((?:python\s+-m\s+pytest)|pytest)(?:\s+.*)?$", re.IGNORECASE
+        )
         for line in raw_command.splitlines():
             candidate = line.strip()
             if not candidate:
@@ -934,7 +936,7 @@ class CodeManager:
 
             match = pytest_cmd_pattern.search(candidate)
             if match:
-                normalized = candidate[match.start(1):].strip()
+                normalized = candidate[match.start(1) :].strip()
                 break
 
         if not normalized:

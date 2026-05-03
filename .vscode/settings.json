@@ -1,5 +1,8 @@
 {
-    "python.defaultInterpreterPath": "/home/niluf/Sidar/.venv/bin/python",
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.terminal.activateEnvironment": true,
-    "terminal.integrated.defaultProfile.linux": "bash"
+    "terminal.integrated.env.linux": {
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+    }
 }

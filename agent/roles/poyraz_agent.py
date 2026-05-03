@@ -60,6 +60,7 @@ def _resolve_multimodal_pipeline_class() -> type[Any] | None:
         return None
     return cast(type[Any], candidate)
 
+
 try:
     from agent.tooling import parse_tool_argument
 except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabilir
@@ -524,9 +525,9 @@ class PoyrazAgent(BaseAgent):
         )
         return str(
             await self.call_llm(
-            [{"role": "user", "content": user_prompt}],
-            system_prompt=self.SYSTEM_PROMPT,
-            temperature=0.4,
+                [{"role": "user", "content": user_prompt}],
+                system_prompt=self.SYSTEM_PROMPT,
+                temperature=0.4,
             )
         )
 
@@ -545,31 +546,39 @@ class PoyrazAgent(BaseAgent):
         if lower.startswith("build_landing_page|") or lower.startswith("landing_page|"):
             return str(await self.call_tool("build_landing_page", prompt.split("|", 1)[1].strip()))
         if lower.startswith("generate_campaign_copy|"):
-            return str(await self.call_tool("generate_campaign_copy", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("generate_campaign_copy", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("publish_instagram_post|"):
-            return str(await self.call_tool("publish_instagram_post", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("publish_instagram_post", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("publish_facebook_post|"):
-            return str(await self.call_tool("publish_facebook_post", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("publish_facebook_post", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("send_whatsapp_message|"):
-            return str(await self.call_tool("send_whatsapp_message", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("send_whatsapp_message", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("ingest_video_insights|") or lower.startswith("analyze_video|"):
-            return str(await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("create_marketing_campaign|"):
             return str(
-                await self.call_tool(
-                "create_marketing_campaign", prompt.split("|", 1)[1].strip()
-                )
+                await self.call_tool("create_marketing_campaign", prompt.split("|", 1)[1].strip())
             )
         if lower.startswith("store_content_asset|"):
             return str(await self.call_tool("store_content_asset", prompt.split("|", 1)[1].strip()))
         if lower.startswith("create_operation_checklist|"):
             return str(
-                await self.call_tool(
-                "create_operation_checklist", prompt.split("|", 1)[1].strip()
-                )
+                await self.call_tool("create_operation_checklist", prompt.split("|", 1)[1].strip())
             )
         if lower.startswith("plan_service_operations|"):
-            return str(await self.call_tool("plan_service_operations", prompt.split("|", 1)[1].strip()))
+            return str(
+                await self.call_tool("plan_service_operations", prompt.split("|", 1)[1].strip())
+            )
         if lower.startswith("seo_audit|"):
             return await self._generate_marketing_output(
                 prompt.split("|", 1)[1].strip(), "seo_audit"
@@ -595,17 +604,17 @@ class PoyrazAgent(BaseAgent):
         ):
             return str(
                 await self.call_tool(
-                "build_landing_page",
-                json.dumps(
-                    {
-                        "brand_name": "SİDAR",
-                        "offer": prompt,
-                        "audience": "genel",
-                        "call_to_action": "İletişime geç",
-                        "tone": "professional",
-                    },
-                    ensure_ascii=False,
-                ),
+                    "build_landing_page",
+                    json.dumps(
+                        {
+                            "brand_name": "SİDAR",
+                            "offer": prompt,
+                            "audience": "genel",
+                            "call_to_action": "İletişime geç",
+                            "tone": "professional",
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 

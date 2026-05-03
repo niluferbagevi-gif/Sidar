@@ -223,7 +223,9 @@ class AutoHandle:
             return True, f"⚠ Log dosyası okunamadı: {exc}"
 
         context = build_local_failure_context(log_text, source="mypy", log_path=str(candidate))
-        diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
+        diagnosis = str(
+            context.get("root_cause_hint") or context.get("failure_summary") or ""
+        ).strip()
         remediation = build_ci_remediation_payload(context, diagnosis)
         loop = dict(remediation.get("remediation_loop") or {})
         summary = (

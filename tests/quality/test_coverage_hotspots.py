@@ -182,8 +182,6 @@ def test_main_prints_ranked_table_and_returns_0(
     assert "b.py" not in out
 
 
-
-
 def test_normalize_path_keeps_relative_path_unchanged() -> None:
     """Relative file paths should pass through unchanged."""
     rel = _normalize_path("pkg/module.py", "/tmp/repo")
@@ -222,6 +220,8 @@ def test_parse_coverage_xml_handles_missing_lines_and_default_hits(tmp_path: Pat
     assert by_path["sparse.py"].missed == 1
     assert by_path["nolines.py"].covered == 0
     assert by_path["nolines.py"].missed == 0
+
+
 def test_module_main_guard_raises_system_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

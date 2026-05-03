@@ -780,7 +780,10 @@ async def test_build_self_heal_plan_falls_back_to_batch_scope(
     plan = await agent._build_self_heal_plan(
         ci_context={},
         diagnosis="d",
-        remediation_loop={"scope_paths": ["a.py", "b.py", "c.py"], "validation_commands": ["pytest"]},
+        remediation_loop={
+            "scope_paths": ["a.py", "b.py", "c.py"],
+            "validation_commands": ["pytest"],
+        },
     )
 
     assert seen_scopes == [["a.py", "b.py", "c.py"], ["a.py", "b.py"]]

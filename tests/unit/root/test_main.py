@@ -3674,6 +3674,7 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+
     async def _dispatch_ok(**_kwargs):
         return {"ok": True}
 
@@ -3777,6 +3778,7 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
         lambda *_: {"workflow_name": "CI", "run_id": 10, "conclusion": "failure"},
     )
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+
     async def _dispatch_capture(**kwargs):
         dispatch_calls.append(kwargs)
         return {"ok": True}
@@ -3868,6 +3870,7 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+
     async def _dispatch_sync_helper(**_kwargs):
         return {"ok": True}
 

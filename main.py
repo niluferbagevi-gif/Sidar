@@ -161,7 +161,6 @@ def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
 
-
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
         print(f"{GREEN}✅ .env dosyası bulundu.{RESET}")

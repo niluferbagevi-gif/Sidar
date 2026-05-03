@@ -24,6 +24,7 @@ from managers.security import SecurityManager
 
 logger = logging.getLogger(__name__)
 
+
 @AgentCatalog.register(
     capabilities=["code_review", "security_audit", "quality_check"], is_builtin=True
 )
@@ -272,9 +273,7 @@ class ReviewerAgent(BaseAgent):
                 "risk": "düşük",
                 "high_risk_targets": [],
                 "followup_paths": [],
-                "summary": str(
-                    graph_payload.get("summary", "GraphRAG etki analizi üretilemedi.")
-                ),
+                "summary": str(graph_payload.get("summary", "GraphRAG etki analizi üretilemedi.")),
             }
 
         followup_paths = ReviewerAgent._collect_graph_followup_paths(dict(graph_payload))
@@ -680,9 +679,7 @@ class ReviewerAgent(BaseAgent):
     ) -> list[dict[str, object]]:
         failed_actions = ReviewerAgent._as_str_list(browser_summary.get("failed_actions", []))
         pending_actions = ReviewerAgent._as_str_list(browser_summary.get("pending_actions", []))
-        high_risk_actions = ReviewerAgent._as_str_list(
-            browser_summary.get("high_risk_actions", [])
-        )
+        high_risk_actions = ReviewerAgent._as_str_list(browser_summary.get("high_risk_actions", []))
         if not any((failed_actions, pending_actions, high_risk_actions)):
             return []
         return [

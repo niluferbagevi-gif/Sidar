@@ -312,7 +312,9 @@ def test_search_docs_returns_error_on_invalid_search_response_shape(poyraz_modul
             return {"unexpected": "shape"}
 
     agent = _agent(poyraz_module, fake_cfg, docstore=BrokenDocStore)
-    assert asyncio.run(agent._tool_search_docs("k")) == "[DOCS:ERROR] reason=invalid_search_response"
+    assert (
+        asyncio.run(agent._tool_search_docs("k")) == "[DOCS:ERROR] reason=invalid_search_response"
+    )
 
 
 def test_resolve_multimodal_pipeline_prefers_runtime_when_explicit_pipeline_missing(

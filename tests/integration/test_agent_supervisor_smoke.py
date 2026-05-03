@@ -60,7 +60,10 @@ async def test_judge_ci_and_federation_smoke(monkeypatch) -> None:
     assert result.quality_score_10 >= 8
 
     remediation = build_ci_remediation_payload(
-        {"failure_summary": "pytest failed", "failing_tests": ["tests/integration/test_sample.py::test_x"]},
+        {
+            "failure_summary": "pytest failed",
+            "failing_tests": ["tests/integration/test_sample.py::test_x"],
+        },
         diagnosis="assertion error",
     )
     assert remediation["root_cause_summary"]

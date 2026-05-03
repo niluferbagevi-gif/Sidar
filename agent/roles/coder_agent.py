@@ -207,10 +207,9 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("write_file", f"{path}|{content}")
 
         return f"[LEGACY_FALLBACK] coder_unhandled task={prompt}"
+
     @staticmethod
-    async def _call_maybe_async(
-        func: Callable[..., Any], *args: Any, **kwargs: Any
-    ) -> Any:
+    async def _call_maybe_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         result = func(*args, **kwargs)
         if inspect.isawaitable(result):
             return await result
