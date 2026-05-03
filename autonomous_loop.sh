@@ -3,6 +3,7 @@ set -u
 
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
+RECOVERY_WAIT_SECONDS="${AUTONOMOUS_LOOP_RECOVERY_WAIT_SECONDS:-15}"
 
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
@@ -16,11 +17,39 @@ if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [ "$ITERATIONS" -lt 1 ]; then
   echo "[HATA] AUTONOMOUS_LOOP_ITERATIONS pozitif bir tamsayı olmalı. Verilen: $ITERATIONS"
   exit 2
 fi
+if ! [[ "$RECOVERY_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
+  RECOVERY_WAIT_SECONDS=15
+fi
+
+wait_for_recovery_updates() {
+  local before_state="$1"
+  local waited=0
+
+  while [ "$waited" -lt "$RECOVERY_WAIT_SECONDS" ]; do
+    local current_state
+    current_state="$(git status --porcelain 2>/dev/null || true)"
+    if [ "$current_state" != "$before_state" ]; then
+      echo "[RECOVERY] Çalışma alanında değişiklik algılandı; testler yeniden başlatılıyor."
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  echo "[RECOVERY] ${RECOVERY_WAIT_SECONDS}s içinde yeni değişiklik algılanmadı; testler mevcut durumla yeniden çalıştırılacak."
+  return 0
+}
 
 run_recovery_block() {
+  local before_state
+  before_state="$(git status --porcelain 2>/dev/null || true)"
   echo "[RECOVERY] Coverage hotspot analizi başlatılıyor..."
   if [ -f "coverage.xml" ]; then
-    uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+    if uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root .; then
+      wait_for_recovery_updates "$before_state"
+    else
+      echo "[RECOVERY] coverage_hotspots.py başarısız oldu; bekleme adımı atlandı."
+    fi
   else
     echo "[RECOVERY] coverage.xml bulunamadı; hotspot adımı atlandı."
   fi
