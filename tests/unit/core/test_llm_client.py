@@ -3889,7 +3889,11 @@ async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkey
 
     class _CM:
         async def __aenter__(self):
-            return []
+            async def _empty_stream():
+                if False:
+                    yield ""
+
+            return _empty_stream()
 
         async def __aexit__(self, *_args):
             return None
