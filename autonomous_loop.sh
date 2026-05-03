@@ -16,6 +16,49 @@ fi
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 
+run_coverage_agent() {
+  if [ ! -f "coverage.xml" ]; then
+    echo "[HEAL] coverage.xml bulunamadı; CoverageAgent adımı atlandı."
+    return 0
+  fi
+
+  echo "[HEAL] CoverageAgent tetikleniyor (coverage analizi + test önerisi)..."
+  python - <<'PY_COVERAGE_AGENT'
+import asyncio
+import json
+
+from agent.roles.coverage_agent import CoverageAgent
+from config import Config
+
+
+async def main() -> int:
+    agent = CoverageAgent(config=Config())
+    payload = {"coverage_xml": "coverage.xml", "coveragerc": ".coveragerc", "limit": 10}
+    raw = await agent._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))  # noqa: SLF001
+    data = json.loads(raw)
+    findings = data.get("findings", [])
+    print(f"[CoverageAgent] {data.get('summary', 'coverage analizi tamamlandı.')}")
+    if not findings:
+      print("[CoverageAgent] Coverage açığı bulunamadı.")
+      return 0
+
+    first = findings[0]
+    candidate_payload = {
+        "coverage_finding": first,
+        "coveragerc": data.get("coveragerc", {}),
+    }
+    generated = await agent._tool_generate_missing_tests(json.dumps(candidate_payload, ensure_ascii=False))  # noqa: SLF001
+    preview = "\n".join(str(generated).splitlines()[:20])
+    print("[CoverageAgent] Örnek test önerisi (ilk 20 satır):")
+    print(preview)
+    return 0
+
+
+raise SystemExit(asyncio.run(main()))
+PY_COVERAGE_AGENT
+}
+
+
 for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
@@ -38,11 +81,10 @@ for ((i=1; i<=ITERATIONS; i++)); do
 
     healed=0
     for ((retry=1; retry<=AUTO_REMEDIATION_MAX_RETRIES; retry++)); do
-      echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage hotspot analizi"
+      echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
+      run_coverage_agent || true
       if [ -f "coverage.xml" ]; then
         python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
-      else
-        echo "[HEAL] coverage.xml bulunamadı; hotspot analizi atlandı."
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
