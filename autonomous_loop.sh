@@ -173,4 +173,3 @@ done
 
 echo ""
 echo "[BİTTİ] Upload -> Test -> Kontrol döngüsü $ITERATIONS kez başarıyla tamamlandı."
-
