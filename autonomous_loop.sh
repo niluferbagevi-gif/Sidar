@@ -129,8 +129,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
     exit "$upload_exit"
   fi
 
-  echo "[2/3] Test: ./run_tests.sh"
-  ./run_tests.sh
+  echo "[2/3] Test: CI=1 ./run_tests.sh"
+  CI=1 ./run_tests.sh
   test_exit=$?
 
   echo "[3/3] Kontrol: Test çıkış kodu = $test_exit"
@@ -153,7 +153,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
       fi
 
       echo "[HEAL] Testler tekrar çalıştırılıyor..."
-      ./run_tests.sh
+      CI=1 ./run_tests.sh
       test_exit=$?
       if [ "$test_exit" -eq 0 ]; then
         healed=1
