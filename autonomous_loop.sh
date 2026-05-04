@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
+
 set -u
 
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
+
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
 fi
+
 if [ "$AUTO_REMEDIATION_MAX_RETRIES" -gt 2 ]; then
   echo "[UYARI] Sonsuz döngü riskini sınırlamak için AUTO_REMEDIATION_MAX_RETRIES=2 olarak sınırlandı."
   AUTO_REMEDIATION_MAX_RETRIES=2
@@ -124,8 +127,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
     exit "$upload_exit"
   fi
 
-  echo "[2/3] Test: CI=1 ./run_tests.sh"
-  CI=1 ./run_tests.sh
+  echo "[2/3] Test: ./run_tests.sh"
+  ./run_tests.sh
   test_exit=$?
 
   echo "[3/3] Kontrol: Test çıkış kodu = $test_exit"
@@ -148,7 +151,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
       fi
 
       echo "[HEAL] Testler tekrar çalıştırılıyor..."
-      CI=1 ./run_tests.sh
+      ./run_tests.sh
       test_exit=$?
       if [ "$test_exit" -eq 0 ]; then
         healed=1
