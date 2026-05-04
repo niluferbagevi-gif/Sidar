@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-set -u
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
 
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
@@ -21,6 +24,13 @@ if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
   source .venv/bin/activate
 fi
 
+if command -v uv >/dev/null 2>&1; then
+  PY_CMD=(uv run python)
+else
+  echo "[UYARI] 'uv' bulunamadı; sistem python kullanılacak. Tutarlılık için uv kurulumu önerilir."
+  PY_CMD=(python)
+fi
+
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 
 run_coverage_agent() {
@@ -30,7 +40,7 @@ run_coverage_agent() {
   fi
 
   echo "[HEAL] CoverageAgent tetikleniyor (coverage analizi + test önerisi)..."
-  python - <<'PY_COVERAGE_AGENT'
+  "${PY_CMD[@]}" - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
 import re
@@ -121,8 +131,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
 
-  echo "[1/3] Upload: python github_upload.py"
-  python github_upload.py
+  echo "[1/3] Upload: ${PY_CMD[*]} github_upload.py"
+  "${PY_CMD[@]}" github_upload.py
   upload_exit=$?
   if [ "$upload_exit" -ne 0 ]; then
     echo "[HATA] Upload adımı başarısız oldu (exit code: $upload_exit). Döngü durduruluyor."
@@ -142,12 +152,12 @@ for ((i=1; i<=ITERATIONS; i++)); do
       echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
       run_coverage_agent || true
       if [ -f "coverage.xml" ]; then
-        python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+        "${PY_CMD[@]}" scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
         echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
-        python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        "${PY_CMD[@]}" scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
       else
         echo "[HEAL] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
       fi
