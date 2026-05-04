@@ -16,11 +16,6 @@ if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [ "$ITERATIONS" -lt 1 ]; then
   exit 2
 fi
 
-if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
-fi
-
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 
 run_coverage_agent() {
@@ -30,7 +25,7 @@ run_coverage_agent() {
   fi
 
   echo "[HEAL] CoverageAgent tetikleniyor (coverage analizi + test önerisi)..."
-  python - <<'PY_COVERAGE_AGENT'
+  uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
 import re
@@ -121,8 +116,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
 
-  echo "[1/3] Upload: python github_upload.py"
-  python github_upload.py
+  echo "[1/3] Upload: uv run python github_upload.py"
+  uv run python github_upload.py
   upload_exit=$?
   if [ "$upload_exit" -ne 0 ]; then
     echo "[HATA] Upload adımı başarısız oldu (exit code: $upload_exit). Döngü durduruluyor."
@@ -142,12 +137,12 @@ for ((i=1; i<=ITERATIONS; i++)); do
       echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
       run_coverage_agent || true
       if [ -f "coverage.xml" ]; then
-        python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+        uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
         echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
-        python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
       else
         echo "[HEAL] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
       fi
