@@ -19,7 +19,7 @@ from managers.security import SecurityManager
 
 @AgentCatalog.register(capabilities=["test_generation", "ci_remediation"], is_builtin=True)
 class QAAgent(BaseAgent):
-    """AGENTS.md QA/remediation akışına göre deterministik pytest taslakları üreten ajan."""
+    """Coverage açığını analiz edip pytest tabanlı test taslağı üreten uzman ajan."""
 
     SYSTEM_PROMPT = (
         "Sen coverage ve test otomasyonu odaklı bir QA ajansın. "

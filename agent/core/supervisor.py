@@ -96,10 +96,9 @@ class _NullSpan:
 
 
 class SupervisorAgent(BaseAgent):
-    """AGENTS.md koordinasyon kurallarına göre intent routing ve P2P kalite kapısını yönetir."""
-
     MAX_QA_RETRIES = 3
     MAX_TURNS = 10
+    """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
 
     SYSTEM_PROMPT = (
         "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."

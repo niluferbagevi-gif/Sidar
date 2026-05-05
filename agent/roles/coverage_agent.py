@@ -21,10 +21,13 @@ from config import Config
 
 @AgentCatalog.register(
     capabilities=["coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"],
+    description=(
+        "Pytest/coverage çıktısından eksik senaryoları bulup deterministik test üreten ajan."
+    ),
     is_builtin=True,
 )
 class CoverageAgent(BaseAgent):
-    """AGENTS.md coverage akışına göre test boşluklarını bulup reviewer/human onayına sunan ajan."""
+    """Pytest çıktısını okuyup eksik senaryoları belirleyen ve reviewer onayına sunan ajan."""
 
     SYSTEM_PROMPT = (
         "Sen Coverage Agent rolündesin. Pytest ve coverage çıktısını okuyup eksik senaryoları "

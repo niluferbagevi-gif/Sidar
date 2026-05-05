@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
     capabilities=["code_review", "security_audit", "quality_check"], is_builtin=True
 )
 class ReviewerAgent(BaseAgent):
-    """AGENTS.md kalite kapısına göre kod, güvenlik ve test yeterliliğini denetleyen ajan."""
+    """PR, issue ve repo gözden geçirme akışlarını yöneten uzman ajan."""
 
     SYSTEM_PROMPT = (
         "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "

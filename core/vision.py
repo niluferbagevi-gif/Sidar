@@ -211,7 +211,7 @@ def build_analyze_prompt(analysis_type: str = "general") -> str:
 
 class VisionPipeline:
     """
-    AGENTS.md görsel/screenshot kurallarına göre görseli LLM analizine hazırlar.
+    Görsel → LLM pipeline'ı.
 
     llm_client: LLMClient örneği (core/llm_client.py)
     config: Config nesnesi

@@ -33,32 +33,6 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 > Kaynak doğrulama notu: Bu listedeki rollerin **tek doğruluk kaynağı**
 > `agent/roles/__init__.py` ve dekoratör kayıtlarıdır.
 
-#### 2.1.1 Kaynak dosya haritası ve senkronizasyon kuralı
-
-Bu rehber mimari davranışın operasyonel özetidir; aşağıdaki kaynak dosyalarla birlikte
-senkron tutulmalıdır:
-
-- **Yerleşik roller ve capability kayıtları**: `agent/roles/__init__.py`,
-  `agent/registry.py`, `agent/roles/*_agent.py`
-- **Rol iş tanımları ve araç sınırları**: `agent/roles/coder_agent.py`,
-  `agent/roles/researcher_agent.py`, `agent/roles/reviewer_agent.py`,
-  `agent/roles/qa_agent.py`, `agent/roles/coverage_agent.py`,
-  `agent/roles/poyraz_agent.py`
-- **Supervisor/Swarm koordinasyonu**: `agent/core/supervisor.py`, `agent/swarm.py`,
-  `agent/core/event_stream.py`, `agent/core/event_backends/`
-- **Self-healing ve otonom döngüler**: `agent/auto_handle.py`, `scripts/auto_heal.py`,
-  `autonomous_loop.sh`
-- **Geliştirme ortamı/model standardı**: `README.md`, `install_sidar.sh`,
-  `pyproject.toml`, `config.py`, `.env.example`
-- **Multimodal/vision/voice yetenekleri**: `core/multimodal.py`, `core/vision.py`,
-  `core/voice.py`, `managers/browser_manager.py`
-
-Senkronizasyon kuralı: Bir ajanın `SYSTEM_PROMPT`, class/module docstring'i,
-`@AgentCatalog.register(...)` capability listesi, kayıtlı tool seti, `run_task` akışı,
-supervisor/swarm routing'i veya multimodal/self-heal davranışı değişirse aynı PR içinde
-`AGENTS.md` de güncellenmelidir. Docstring'ler kısa özet olarak kalabilir; ancak bu
-rehberdeki rol sınırları, onay kuralları ve güvenlik beklentileriyle çelişmemelidir.
-
 ### 2.2 AgentCatalog kayıt sistemi
 
 Ajanlar çalışma zamanında `agent/registry.py` içindeki `AgentCatalog` ile yönetilir.
@@ -85,256 +59,272 @@ otomatik kaydedilir.
 > Operasyonel kural: Yeni bir rol eklendiğinde hem `agent/roles/__init__.py` hem de
 > `_import_builtin_roles()` listesi birlikte güncellenmelidir.
 
-### 2.3 Roller ve temel yetenekler
+### 2.3 Roller, iş tanımları ve yetki sınırları
 
-- **coder** (`CoderAgent`):
-  - `code_generation`, `file_io`, `shell_execution`, `code_review`
-- **researcher** (`ResearcherAgent`):
-  - `web_search`, `rag_search`, `summarization`
-- **reviewer** (`ReviewerAgent`):
-  - `code_review`, `security_audit`, `quality_check`
-- **qa** (`QAAgent`):
-  - `test_generation`, `ci_remediation`
-- **coverage** (`CoverageAgent`):
-  - `coverage_analysis`, `pytest_output_analysis`, `autonomous_test_generation`
-- **poyraz** (`PoyrazAgent`):
-  - `marketing_strategy`, `seo_analysis`, `campaign_copy`, `audience_ops`
+Bu bölümdeki rol sözleşmeleri, ilgili ajan dosyalarındaki
+`@AgentCatalog.register(capabilities=[...])`, `SYSTEM_PROMPT` ve kayıtlı araçlarla
+tutarlı tutulmalıdır. Kısa capability listesi tek başına yeterli değildir; her rol için
+iş tanımı, kullanabileceği araç/yetki alanı ve diğer ajanlarla beklenen etkileşim
+aşağıda belirtilir.
 
-### 2.4 Rol sorumlulukları, araç sınırları ve devir kuralları
+#### 2.3.1 `coder` — `CoderAgent`
 
-Bu bölüm, kısa capability listesini operasyonel görev paylaşımıyla tamamlar.
-Capability listelerinin doğruluk kaynağı ajan dekoratörleri; görev sınırlarının doğruluk
-kaynağı ise ilgili ajanın `SYSTEM_PROMPT`, kayıtlı araçları ve `run_task` akışıdır.
+- **İş tanımı:** Kod üretimi, dosya okuma/yazma, terminal destekli düzeltme ve teknik
+  tasarım uygulama işlerinden sorumludur.
+- **Temel yetenekler:** `code_generation`, `file_io`, `shell_execution`, `code_review`.
+- **Yetki sınırı:** Üretim kodu ve test dosyalarında değişiklik yapabilir; riskli veya
+  kapsamı belirsiz değişikliklerde reviewer/QA geri bildirimi beklenir.
+- **Etkileşim:** `researcher` bulgularını uygulamaya dönüştürür; çıktısı
+  `reviewer -> qa` akışından geçmelidir. Coverage açığı varsa `coverage` tarafından
+  önerilen deterministik testleri projeye uyarlar.
 
-- **coder**:
-  - Kod yazma/değiştirme, dosya okuma-yazma, patch uygulama, güvenli shell/test
-    çalıştırma ve hedefli paket/proje inceleme işlerini üstlenir.
-  - İnceleme veya kalite kapısı gerektiğinde `request_review|...` ile `reviewer` ajanına
-    P2P devir isteği oluşturabilir.
-  - QA/reviewer reddi geldiğinde `qa_feedback|...` girdisini rework sinyali olarak ele
-    almalı; başarısız test özetini ve remediation notlarını düzeltme planına katmalıdır.
-- **researcher**:
-  - Kod değiştirmez; web, URL ve RAG/doküman aramasıyla doğrulanabilir araştırma
-    çıktısı üretir.
-  - Kaynak toplama, teknik/ürün araştırması, doküman karşılaştırması ve pazarlama
-    girdisi hazırlama işleri `researcher` ajanına devredilmelidir.
-  - Araştırma çıktısı kod değişikliğine dönüşecekse `coder`/`reviewer`; pazarlama
-    çıktısına dönüşecekse `poyraz` devam etmelidir.
-- **reviewer**:
-  - Kod kalitesi, güvenlik, regresyon riski, semantik etki ve test yeterliliği kalite
-    kapısıdır.
-  - Yüksek riskli kod/test değişikliklerinde nihai uygulama öncesi reviewer kontrolü
-    beklenir; reddedilen değişiklikler `qa_feedback|decision=reject...` biçimiyle
-    `coder` ajanına geri döndürülebilir.
-  - Coverage ajanının ürettiği yeni test önerileri özellikle kırılganlık, dış servis
-    bağımlılığı ve yanlış assertion riski açısından reviewer tarafından incelenmelidir.
-- **qa**:
-  - Test üretimi, CI/remediation ve başarısız test çıktılarının sınıflandırılması için
-    kullanılır.
-  - QA çıktısı düzeltme gerektiriyorsa supervisor/P2P akışında `coder` ajanına rework
-    döngüsü başlatır; tekrar sayısı `MAX_QA_RETRIES` sınırına tabidir.
-- **coverage**:
-  - Pytest ve coverage artefaktlarını okuyarak coverage gap, eksik branch/senaryo ve
-    düşük kapsama bulgularını tespit eder.
-  - Deterministik, ağ erişimsiz pytest testleri önerir/üretir; üretilen testlerin
-    onay durumu varsayılan olarak `pending_reviewer_or_human` kabul edilmelidir.
-  - Coverage odaklı işler doğrudan `coverage` ajanına; coverage ajanı yoksa geriye
-    dönük uyumluluk için `qa` ajanına yönlendirilir.
-- **poyraz**:
-  - Pazarlama stratejisi, SEO, kampanya mesajı, funnel optimizasyonu, landing page,
-    sosyal yayınlama ve audience operation çıktılarından sorumludur.
-  - Kaynak gerektiren pazarlama işlerinde önce `researcher` bulguları alınmalı; Poyraz
-    bu bulguları uygulanabilir kampanya/operasyon çıktısına çevirmelidir.
-  - Kod veya güvenlik etkisi olan pazarlama otomasyonları `coder`/`reviewer` kalite
-    kapısından geçmelidir.
+#### 2.3.2 `researcher` — `ResearcherAgent`
 
-### 2.5 Supervisor ve P2P etkileşim kuralları
+- **İş tanımı:** Web, URL ve RAG/doküman kaynaklarından doğrulanabilir bilgi toplar;
+  bulguları özetleyerek kod, pazarlama veya inceleme ekiplerine aktarır.
+- **Temel yetenekler:** `web_search`, `rag_search`, `summarization`.
+- **Araç/yetki alanı:** `web_search`, `fetch_url`, `search_docs` ve `docs_search`
+  araçlarıyla araştırma yapar. Kod yazma/değiştirme rolü değildir; kaynak, tarih,
+  belirsizlik ve varsayımları açıkça belirtmelidir.
+- **Etkileşim:** Teknik karar gerektiren araştırmalarda `coder` ve `reviewer` için
+  kaynaklı bağlam üretir. Kampanya, SEO veya hedef kitle çalışmaları için ham
+  araştırmayı `poyraz` ajanına devreder.
 
-- Supervisor, görev niyetine göre `researcher`, `reviewer`, `poyraz`, `coverage`/`qa`
-  veya varsayılan `coder` yönlendirmesini yapar.
-- Uzman ajanlar `DelegationRequest` ile P2P devir isteği oluşturabilir; isteklerde
-  `reply_to`, `target_agent` ve `payload` alanları boş olmamalıdır.
-- P2P döngüleri `MAX_TURNS`, QA rework döngüleri `MAX_QA_RETRIES` ile sınırlandırılır;
-  sınır aşımı circuit-breaker olarak ele alınmalıdır.
-- Normal kod geliştirme kalite kapısı: `coder -> reviewer -> qa/rework` akışıdır.
-  Coverage iyileştirmeleri bu akışa `coverage -> reviewer/QA -> coder` döngüsüyle
-  bağlanır.
-- `CLI_FAST_MODE` açıkken reviewer kalite kapısı atlanabilir; bu mod yalnızca hızlı CLI
-  geri bildirimi için kullanılmalı, kalıcı/riski yüksek değişikliklerde kapatılmalıdır.
+#### 2.3.3 `reviewer` — `ReviewerAgent`
 
-### 2.6 Koordinasyon mimarisi: Supervisor, Swarm ve event bus
+- **İş tanımı:** Kod kalitesi, güvenlik, mimari tutarlılık ve değişiklik kapsamı
+  açısından inceleme yapar.
+- **Temel yetenekler:** `code_review`, `security_audit`, `quality_check`.
+- **Yetki sınırı:** Üretim değişikliğini onaylama/geri çevirme niteliğinde bulgu
+  üretir; doğrudan uygulama rolü değildir.
+- **Etkileşim:** `coder` çıktısını inceler, `qa` ve `coverage` bulgularının üretim
+  davranışını bozmadığını doğrular. Pazarlama çıktılarında marka/güvenlik riski
+  kontrolü için `poyraz` sonrasında çalışabilir.
 
-Sidar'da koordinasyon iki tamamlayıcı katmanda ele alınır: supervisor merkezli
-niyet yönlendirme ve swarm tabanlı çoklu ajan orkestrasyonu. Bu bölüm, role
-capability listesinin ötesindeki çalışma zamanı mimarisini özetler.
+#### 2.3.4 `qa` — `QAAgent`
 
-- **SupervisorAgent (`agent/core/supervisor.py`)**:
-  - `researcher`, `coder`, `reviewer`, `poyraz`, `qa` ve mümkünse `coverage`
-    ajanlarını aktif registry'ye kaydeder; `coverage` kurulamazsa geriye dönük
-    uyumluluk için `qa` fallback'i kullanılır.
-  - Görev niyetini `research`, `review`, `marketing`, `coverage` veya varsayılan
-    `code` olarak sınıflandırır ve ilgili ajana yönlendirir.
-  - Kod geliştirme akışında önce `coder`, ardından `reviewer` kalite/test kapısı
-    çalışır; revizyon sinyali varsa `coder` rework döngüsüne alınır.
-  - P2P isteklerinde `DelegationRequest` doğrulanır; `MAX_TURNS` ve
-    `MAX_QA_RETRIES` circuit-breaker sınırları sonsuz delegasyon/retry döngülerini
-    engellemek için kullanılır.
-- **SwarmOrchestrator (`agent/swarm.py`)**:
-  - Dinamik çoklu ajan orkestrasyon motorudur; görevi intent/role bilgisine göre
-    route eder, tek görev çalıştırma (`run`), paralel çalışma (`run_parallel`) ve
-    sıralı pipeline (`run_pipeline`) modlarını destekler.
-  - Paralel modda `max_concurrency` semaforu ile eşzamanlılık sınırlandırılır; pipeline
-    modunda başarılı adımların özetleri sonraki görevin context'ine aktarılır.
-  - Ajan çıktısı `DelegationRequest` ise swarm bunu hedef role yeni görev olarak
-    yönlendirebilir ve handoff zinciri/derinliğiyle döngü riskini izler.
-  - Dağıtık delegasyon için `configure_delegation_backend(...)` ile broker backend'i
-    enjekte edilir; `dispatch_distributed(...)` görev zarfını `TaskEnvelope` ve
-    `BrokerTaskEnvelope` formatına çevirip backend'e dispatch eder.
-- **Event bus ve transport backend'leri (`agent/core/event_stream.py`)**:
-  - `AgentEventBus`, ajan durum mesajlarını önce process-içi subscriber'lara fanout
-    eder; yapılandırılmış remote backend uygunsa aynı event'i remote transport'a da
-    yayınlar.
-  - Backend stratejileri `redis`, `rabbitmq` ve `kafka` olarak yüklenebilir; ilgili
-    sınıflar `agent/core/event_backends/` altında tutulur.
-  - Remote publish başarısızlıklarında local fallback, dead-letter kaydı ve
-    Redis/Kafka için remote circuit-breaker mantığı devrededir.
-- **Kullanım ve bakım kuralları**:
-  - Yeni ajan eklenirken yalnızca `agent/roles/` ve `AgentCatalog` kaydı değil,
-    supervisor intent routing, swarm route/capability eşlemesi, P2P payload sözleşmesi
-    ve event görünürlüğü de değerlendirilmelidir.
-  - Cross-agent workflow eklenirse beklenen akış `AGENTS.md` içinde belgelenmeli ve
-    mümkünse supervisor/swarm için smoke test veya statik tutarlılık kontrolü
-    eklenmelidir.
-  - Dağıtık delegasyon backend'i kullanılacaksa broker zarfı, correlation id, retry
-    davranışı ve remote fallback stratejisi operasyonel runbook'ta açıkça belirtilmelidir.
+- **İş tanımı:** Test stratejisi, CI hatası analizi ve kalite kapısı iyileştirmelerinden
+  sorumludur.
+- **Temel yetenekler:** `test_generation`, `ci_remediation`.
+- **Yetki sınırı:** Test kapsamını genişletir ve CI düzeltmeleri önerir; coverage
+  hedefleri için `coverage` ajanından gelen hotspot/finding listesini kullanır.
+- **Etkileşim:** `coder` değişikliklerinden sonra smoke/unit/integration doğrulamayı
+  planlar; kalıcı başarısızlıkları `reviewer` ve `coder` geri bildirimine dönüştürür.
 
-### 2.7 Self-healing ve otonom remediation döngüsü
+#### 2.3.5 `coverage` — `CoverageAgent`
 
-Self-healing, yerel kalite kapısı çıktısını veya CI/test/coverage başarısızlığını
-yapılandırılmış remediation planına çeviren kontrollü bir iyileştirme döngüsüdür.
-Bu mekanizma otomatik analiz ve düzeltme önerisi/uygulaması yapabilir; ancak
-**tamamen onaysız** kabul edilmemelidir. Riskli planlarda HITL (human-in-the-loop)
-onayı istenebilir ve CI/otonom kullanımda onay açık bir opt-in ile verilmelidir.
+- **İş tanımı:** Pytest ve coverage çıktısını analiz ederek eksik senaryoları, kaçan
+  branch/line noktalarını ve test hotspotlarını belirler; %100 coverage hedefine
+  yaklaşmak için deterministik pytest testleri üretir.
+- **Temel yetenekler:** `coverage_analysis`, `pytest_output_analysis`,
+  `autonomous_test_generation`.
+- **Araç/yetki alanı:** `run_pytest`, `analyze_pytest_output`,
+  `analyze_coverage_report`, `analyze_test_artifacts`, `generate_missing_tests` ve
+  `write_missing_tests` araçlarını kullanır. Dış servis/ağ bağımlılığına dayalı test
+  üretmemeli; ürettiği testler reviewer onayına sunulabilecek şekilde deterministik
+  olmalıdır.
+- **Etkileşim:** `qa` ile coverage açığı kapatma döngüsünde çalışır; `coder` üretim
+  davranışını bozmadan eksik testleri entegre eder; `reviewer` üretilen testlerin
+  değerini, kırılganlığını ve güvenliğini kontrol eder.
 
-- **CLI kısa yolu (`.heal <log_dosyası>`)**:
-  - `agent/auto_handle.py`, `.heal` komutunu yakalar, log dosyasını okur,
-    `build_local_failure_context(...)` ve `build_ci_remediation_payload(...)` ile
-    yerel self-heal analiz özeti üretir.
-  - Bu kısa yol plan/kapsam/doğrulama bilgisini kullanıcıya gösterir; doğrudan
-    patch uygulayan ana mekanizma değildir.
-- **Yerel self-heal köprüsü (`scripts/auto_heal.py`)**:
-  - Statik analiz logunu okur, local failure context ve remediation payload oluşturur,
-    `ENABLE_AUTONOMOUS_SELF_HEAL=True` ile `SidarAgent` üzerinden autonomous
-    self-heal denemesi başlatır.
-  - `--batch-size` ile scope queue dosya gruplarına bölünür; `--batch-retries` ile
-    her batch için ek deneme yapılabilir.
-  - Çıktı statüleri `applied`, `partial` veya `failed` olabilir; `partial` başarılı
-    batch olduğunu ama tüm kapsamın kapanmadığını belirtir.
-  - Riskli planlarda `--hitl-approve` verilmezse etkileşimli insan onayı sorulabilir.
-    CI/otonom döngülerde `--hitl-approve yes` yalnızca bilinçli opt-in olarak kullanılmalıdır.
-- **Otonom kalite döngüsü (`autonomous_loop.sh`)**:
-  - `github_upload.py`, `run_tests.sh`, coverage metriği ve remediation adımlarını
-    döngüsel olarak çalıştırır.
-  - Varsayılan otonom coverage hedefi `%100` olup `AUTONOMOUS_LOOP_COVERAGE_TARGET`
-    ile değiştirilebilir; metrik varsayılan olarak `coverage.json` içinden okunur.
-  - Test başarısızlığı, coverage metriğinin okunamaması veya coverage hedefinin
-    tutmaması durumunda `CoverageAgent`, `scripts/coverage_hotspots.py` ve uygun
-    mypy logu varsa `scripts/auto_heal.py` devreye girer.
-  - Retry sayısı `AUTONOMOUS_LOOP_REMEDIATION_RETRIES` ile ayarlanır ve sonsuz döngü
-    riskini azaltmak için üst sınır uygulanır.
-- **Güvenlik ve kalite sınırları**:
-  - Self-heal patch'leri minimal scope ile üretilmeli; geniş kapsamlı refactor veya
-    güvenlik etkisi olan değişiklikler reviewer/QA kalite kapısından geçmelidir.
-  - Coverage ajanının ürettiği testler trivial assertion, dış servis bağımlılığı ve
-    deterministik olmayan davranış açısından reviewer onayı olmadan kalıcı kabul
-    edilmemelidir.
-  - Otonom döngü başarısız olursa çıktılar remediation raporu olarak ele alınmalı;
-    manuel inceleme, reviewer ve QA geri bildirimiyle devam edilmelidir.
+#### 2.3.6 `poyraz` — `PoyrazAgent`
 
-### 2.8 Geliştirme ortamı, model standardı ve terminoloji
+- **İş tanımı:** Dijital pazarlama, SEO, kampanya metni, funnel optimizasyonu, hedef
+  kitle operasyonları, sosyal medya yayınlama ve içerik varlığı üretimi için uzman
+  ajandır.
+- **Temel yetenekler:** `marketing_strategy`, `seo_analysis`, `campaign_copy`,
+  `audience_ops`.
+- **Araç/yetki alanı:** `web_search`, `fetch_url`, `search_docs`, sosyal yayın
+  araçları (`publish_social`, `publish_instagram_post`, `publish_facebook_post`,
+  `send_whatsapp_message`), kampanya/landing page araçları
+  (`build_landing_page`, `generate_campaign_copy`, `create_marketing_campaign`,
+  `store_content_asset`) ve operasyon planlama araçlarını kullanır. Harici yayınlama
+  veya müşteri iletişimi etkisi olan adımlarda konfigürasyon, onay ve platform
+  kısıtları dikkate alınmalıdır.
+- **Etkileşim:** `researcher` tarafından doğrulanan pazar/SEO bulgularını kampanya
+  çıktısına dönüştürür. Teknik landing page veya entegrasyon gerekiyorsa `coder` ile,
+  marka/güvenlik/kalite kontrolü gerekiyorsa `reviewer` ile çalışır.
 
-Repo içi ajan ve Codex çalıştırma ortamlarında aşağıdaki operasyon standartları
-esas alınmalıdır:
-
-- **Paket yöneticisi / çalışma ortamı**:
-  - Birincil geliştirme standardı `uv sync --all-extras` ile tam ortam senkronizasyonudur;
-    komutlar mümkünse `uv run ...` ile çalıştırılmalıdır.
-  - `python -m pip install -e ".[dev]"` yalnızca minimum/alternatif test-tooling
-    kurulumu olarak kullanılmalıdır; repo paritesi için `uv sync --all-extras` önceliklidir.
-  - `pyproject.toml` temel bağımlılık listesi pytest, ruff, mypy, bandit, safety gibi
-    geliştirme/test araçlarını standart kurulum akışına dahil eder; bu nedenle temiz
-    checkout doğrulamalarında eksik tooling görülürse önce ortam senkronizasyonu kontrol
-    edilmelidir.
-- **Yerel kod modeli standardı**:
-  - Kodlama ve remediation odaklı ajanlar için varsayılan yerel kod modeli standardı
-    `qwen2.5-coder:7b` kabul edilir.
-  - Farklı donanım veya sağlayıcı gereksinimlerinde model `CODING_MODEL` env/config
-    değeriyle override edilebilir; düşük VRAM ortamlarında daha küçük Qwen Coder varyantı
-    bilinçli tercih olarak kullanılabilir.
-  - Model değişikliği yapılırsa reviewer/QA/self-heal çıktılarında deterministiklik,
-    patch kalitesi ve test üretimi yeniden smoke doğrulamasından geçirilmelidir.
-- **Terminoloji ve eski isimlendirme**:
-  - Dokümantasyon, script ve config dosyalarında ürün/ajan sistemi adı olarak `Sidar`
-    kullanılmalıdır.
-  - Eski ürün adı veya dış proje kalıntısı olabilecek terminoloji yeni içerikte
-    kullanılmamalı; böyle bir kalıntı bulunursa ilgili dosyada Sidar terminolojisine
-    taşınmalıdır.
-
-### 2.9 Multimodal ve ses operasyon kuralları
-
-Sidar, medya girdilerini doğrudan ajan prompt'una serbest biçimde eklemek yerine önce
-normalize edilmiş, kaynaklanabilir ve güvenlik sınırları belli bir bağlama dönüştürmelidir.
-
-- **Medya türü tespiti ve normalizasyon**:
-  - Görsel, ses ve video girdilerinde ilk ayrım `core/multimodal.py::detect_media_kind(...)`
-    ile MIME tipi veya dosya yolu üzerinden yapılmalıdır.
-  - Desteklenen medya girdileri önce `MultimodalPipeline` üzerinden ortak LLM bağlamına
-    çevrilmeli; büyük/uzak medya kaynaklarında boyut, süre ve timeout limitleri
-    uygulanmalıdır.
-  - `ENABLE_MULTIMODAL=False` ise ajanlar medya içeriğini varsaymamalı; kullanıcıya
-    multimodal katmanın devre dışı olduğunu açık reason ile bildirmelidir.
-- **Görsel / screenshot akışı**:
-  - Görseller `core/vision.py::VisionPipeline` ile `image_path` veya `image_bytes`
-    girdisinden analiz edilmelidir; desteklenmeyen MIME tipleri reddedilmelidir.
-  - Frontend, browser veya görsel QA işlerinde screenshot sinyalleri tek başına nihai
-    karar sayılmamalı; browser/screenshot drift özeti reviewer/QA akışına context olarak
-    bağlanmalıdır.
-  - Görselden kod üretimi veya UI değişikliği yapılacaksa `coder -> reviewer -> qa`
-    kalite kapısı korunmalı; screenshot tabanlı bulgular regresyon testiyle
-    doğrulanmalıdır.
-- **Ses / STT / voice akışı**:
-  - Ses girdileri mümkünse `WebRTCAudioIngress` ile MIME, boyut, sıra ve oturum bilgisi
-    doğrulanarak normalize edilmelidir.
-  - STT için MVP sağlayıcı `whisper` kabul edilir; Whisper CLI yoksa sistem açık reason
-    ile başarısız dönmeli ve transkript varmış gibi işlem yapılmamalıdır.
-  - Sesli komutlar transkript belirsizliği taşıdığı için dosya silme, patch uygulama,
-    deployment, credential/secret işlemleri ve dış servis yayınlama gibi destructive
-    veya geri dönüşü zor aksiyonlarda açık kullanıcı onayı gerektirir.
-  - `core/voice.py::VoicePipeline`, WebSocket voice/TTS segmentleme ve enable flag
-    kontrollerinden sorumludur; `ENABLE_MULTIMODAL` veya `VOICE_ENABLED` kapalıysa
-    sesli yanıt üretimi zorlanmamalıdır.
-- **Video akışı ve birleşik bağlam**:
-  - Video girdilerinde mümkünse audio track çıkarılıp Whisper transkripsiyonu yapılmalı,
-    seçili frame'ler `VisionPipeline` ile analiz edilmeli ve transcript + frame özetleri
-    birleşik multimodal context olarak kullanılmalıdır.
-  - Video veya sosyal medya insight çıktıları pazarlama amacı taşıyorsa `poyraz`; ürün/UI
-    doğrulama amacı taşıyorsa `reviewer`/`qa`; kod değişikliği gerektiriyorsa `coder`
-    devam etmelidir.
-- **Güvenlik ve veri hassasiyeti**:
-  - Medya dosyaları kişisel veri, yüz/ses izi, ekran görüntüsü, token veya müşteri verisi
-    içerebilir; ajanlar gereksiz ham medya kopyalamamalı, özet/context paylaşımını
-    minimum gerekli kapsamda tutmalıdır.
-  - Transkript, OCR veya görsel analiz belirsizliği yüksekse ajan sonucu “kanıt” değil
-    “sinyal” olarak etiketlemeli ve reviewer/QA/human confirmation istemelidir.
-
-### 2.10 Önerilen temel iş akışları
+### 2.4 Önerilen temel iş akışları
 
 - Kod geliştirme akışı:
-  - `coder -> reviewer -> qa` (gerekirse `coverage` ile iyileştirme döngüsü)
+  - `researcher` (gerekiyorsa bağlam) -> `coder -> reviewer -> qa`
+  - Coverage açığı varsa `coverage -> coder -> reviewer -> qa` iyileştirme döngüsü
+    uygulanır.
 - Araştırma tabanlı üretim akışı:
   - `researcher -> coder/reviewer`
 - Pazarlama operasyon akışı:
   - `researcher -> poyraz -> reviewer`
+  - Teknik kampanya/landing page değişikliği gerekiyorsa akışa `coder` ve `qa` eklenir.
+
+### 2.5 Otonom operasyonlar / Self-healing döngüsü
+
+Self-healing akışı, lint/type-check/test/coverage hatalarını manuel kod müdahalesi olmadan
+tespit edip düşük riskli düzeltmeleri sınırlı kapsamda uygulamak için tasarlanmıştır.
+Bu mekanizma **kontrolsüz otomatik commit** anlamına gelmez; kapsam, doğrulama komutları,
+retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
+
+#### 2.5.1 Tetikleyiciler ve giriş noktaları
+
+- **Yerel kalite kapısı:** `run_tests.sh`, statik analizde önce `ruff check .`
+  çalıştırır, ardından `mypy` çıktısını `artifacts/mypy_errors.log` dosyasına yazar.
+  `AUTO_HEAL_ON_FAILURE=1` olduğunda mypy başarısızlığı için `scripts.auto_heal`
+  döngüsünü tetikler.
+- **Uzun otonom döngü:** `autonomous_loop.sh`, `github_upload.py -> ./run_tests.sh ->
+  kalite kapısı` sırasını çalıştırır. Test çıkışı, coverage JSON okunamaması veya
+  `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında kalma durumunda iyileştirme döngüsüne girer.
+- **CLI hızlı analiz:** `AutoHandle` içindeki `.heal <log_dosyası>` komutu logu okuyup
+  `build_local_failure_context(...)` ve `build_ci_remediation_payload(...)` ile
+  uygulanabilir scope/validation özeti üretir; bu yol patch uygulamaz, operatöre
+  self-heal planının kapsamını gösterir.
+- **Yerel self-heal köprüsü:** `scripts/auto_heal.py`, analiz logunu okuyarak
+  `SidarAgent._attempt_autonomous_self_heal(...)` çağrısına bağlanır; batch, retry,
+  model override ve HITL onay değerlerini CLI argümanlarıyla yönetir.
+
+#### 2.5.2 Döngü adımları
+
+1. **Tespit:** `ruff`, `mypy`, `pytest` ve coverage raporları hata/eksik kapsam
+   sinyali üretir. Mypy logları `build_local_failure_context(...)` ile
+   `suspected_targets`, `failure_summary`, `root_cause_hint` ve `log_excerpt` alanlarına
+   dönüştürülür.
+2. **Planlama:** `build_ci_remediation_payload(...)`, `remediation_loop` üretir. Bu
+   loop; `scope_paths`, `validation_commands`, `bootstrap_commands`,
+   `autonomous_batches`, `needs_human_approval`, `max_auto_attempts` ve adım
+   durumlarını taşır.
+3. **Kapsam daraltma:** `scripts/auto_heal.py`, hedef dosyaları batch'lere böler; her
+   batch için sadece ilgili log satırlarını prompt'a ekler. `SidarAgent` tarafında
+   `_resolve_self_heal_scope_batches(...)` ve `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı
+   sınırlamayı runtime'da korur.
+4. **Patch üretimi:** `SidarAgent._build_self_heal_plan(...)`, dosya snapshot'ları ve
+   remediation loop ile LLM'den yalnızca JSON patch planı ister. Plan,
+   `normalize_self_heal_plan(...)` ile scope dışı dosya, fazla operasyon ve geçersiz
+   action açısından normalize edilir.
+5. **Uygulama + doğrulama:** `_execute_self_heal_plan(...)`, patch öncesi dosya
+   yedeği alır, `CodeManager.patch_file(...)` ile minimal patch uygular ve her
+   `validation_commands` girdisini sandbox içinde çalıştırır. Doğrulama komutu yoksa
+   işlem `blocked` olur.
+6. **Rollback:** Patch veya sandbox doğrulaması başarısız olursa `_restore_self_heal_backups(...)`
+   ile tüm değişiklikler geri alınır ve sonuç `reverted` olarak raporlanır.
+7. **Tekrar:** `autonomous_loop.sh` en fazla `AUTONOMOUS_LOOP_REMEDIATION_RETRIES`
+   denemesi yapar ve bu değer sonsuz döngü riskine karşı 2 ile sınırlandırılır.
+   `scripts/auto_heal.py` tarafında `--batch-retries` her batch için ek plan/uygulama
+   denemelerini yönetir.
+
+#### 2.5.3 Onay, risk ve güvenlik sınırları
+
+- `ENABLE_AUTONOMOUS_SELF_HEAL=False` ise runtime self-heal `disabled` döner ve patch
+  uygulanmaz.
+- `remediation_loop.status != "planned"` ise işlem `skipped` olur; plansız/eksik
+  teşhisli döngüler otomatik patch'e geçemez.
+- `needs_human_approval=True` olan riskli remediation planları onay yoksa
+  `awaiting_hitl` durumunda bekler; `human_approval=False` verilirse `rejected` olur.
+  Sadece açık `human_approval=True` veya CLI'da bilinçli `--hitl-approve yes` ile devam eder.
+- Scope dışı dosya değişikliği yapılmamalıdır; patch planları `scope_paths` ile
+  kısıtlanmalı ve `SELF_HEAL_MAX_PATCHES` üzerinde operasyon üretilmemelidir.
+- `type: ignore` kullanımı son çare olmalı, çıplak `# type: ignore` yerine spesifik
+  kodlu ve dar kapsamlı ignore tercih edilmelidir; `scripts/auto_heal.py` içindeki
+  mypy quick-fix referansı bu kuralı prompt'a ekler.
+
+#### 2.5.4 Coverage odaklı otonom iyileştirme
+
+- `autonomous_loop.sh`, kalite kapısı sağlanmazsa `CoverageAgent` ile `coverage.xml`
+  analizini çalıştırır, `scripts/coverage_hotspots.py` ile düşük coverage dosyalarını
+  listeler ve gerekiyorsa eksik test önerisi üretir.
+- Coverage kaynaklı test önerileri önce trivial assertion kontrolünden geçer
+  (`assert True`, boş test vb.). Ardından `ReviewerAgent` semantik onayı alınmadan
+  öneri uygulanabilir kabul edilmez.
+- `CoverageAgent` deterministik pytest üretmelidir; ağ/dış servis bağımlılığı içeren
+  testler reviewer/QA aşamasında reddedilmelidir.
+
+#### 2.5.5 Operasyonel kullanım örnekleri
+
+- Log kapsamını görmek için: `.heal artifacts/mypy_errors.log`
+- Lokal mypy self-heal çalıştırmak için:
+  `uv run python -m scripts.auto_heal --log artifacts/mypy_errors.log --source mypy`
+- Otonom upload/test/iyileştirme döngüsünü çalıştırmak için: `./autonomous_loop.sh`
+
+### 2.6 Swarm, Supervisor ve event-driven koordinasyon
+
+Sidar ajanları yalnızca doğrusal `coder -> reviewer -> qa` pipeline'ı olarak çalışmaz.
+Kod tabanında iki tamamlayıcı koordinasyon modeli bulunur: `Supervisor`, tek görev için
+merkezi router/quality gate rolü üstlenir; `SwarmOrchestrator`, çoklu görevi intent ve
+capability eşleşmesine göre paralel, pipeline veya P2P handoff ile dağıtır.
+
+#### 2.6.1 Supervisor kontrol düzlemi
+
+- **Görev analizi ve yönlendirme:** `agent/core/supervisor.py`, gelen prompt için intent
+  belirler; research/review/marketing/coverage işleri doğrudan ilgili role, varsayılan
+  kod işleri ise önce `coder` sonra `reviewer` kalite kapısına gider.
+- **Aktif ajan ve bellek:** `ActiveAgentRegistry` runtime ajan örneklerini role göre
+  tutar; `MemoryHub` global notları ve role özel notları paylaşarak sonraki
+  delegasyonlara bağlam sağlar.
+- **Event yayını:** Supervisor her önemli durumda `AgentEventBus.publish(...)` ile
+  `supervisor` kaynaklı olay üretir (örn. “Researcher ajanına yönlendiriliyor...”,
+  “Reviewer kontrolü tekrar çalıştırılıyor...”). UI/CLI veya dış gözlemciler bu olayları
+  subscribe ederek akışı izler.
+- **P2P handoff:** Ajan çıktısı `DelegationRequest` / `P2PMessage` biçimindeyse
+  `_route_p2p(...)` hedef ajana doğrudan görev zarfı gönderir. `MAX_TURNS`,
+  `MAX_QA_RETRIES` ve `REACT_TIMEOUT` circuit breaker değerleri loop/sonsuz devir
+  riskini sınırlar.
+
+#### 2.6.2 Swarm orkestrasyonu
+
+- **Task modeli:** `SwarmTask` tekil hedefi, intent'i, context'i, task id'yi ve isteğe
+  bağlı `preferred_agent` değerini taşır; `SwarmResult` sonuç, evidence, handoff
+  zinciri ve graph/trace bilgisini döndürür.
+- **Router:** `TaskRouter`, intent'i capability'ye çevirir ve `AgentCatalog` üzerinden
+  uygun role ajanı seçer. Bu nedenle yeni ajan eklenirken capability kaydı doğruysa
+  swarm tarafı role'ü otomatik keşfedebilir.
+- **Yürütme modları:**
+  - `run(...)`: tek görevi otomatik role seçimiyle çalıştırır.
+  - `run_parallel(...)`: birden fazla `SwarmTask` için `asyncio.Semaphore` ile
+    `max_concurrency` sınırı uygulayarak paralel yürütür.
+  - `run_pipeline(...)`: görevleri sırayla yürütür ve başarılı özetleri sonraki görevin
+    context'ine `prev_<role>` anahtarıyla taşır.
+- **P2P / recursive handoff:** Bir ajan `DelegationRequest` döndürürse `_direct_handoff(...)`
+  yeni hedef role'e geçer; `SWARM_MAX_HANDOFF_HOPS`, `SWARM_LOOP_GUARD_MAX_REPEAT`,
+  `SWARM_TASK_MAX_RETRIES` ve `SWARM_TASK_RETRY_DELAY_MS` ayarları tekrar/başarısızlık
+  kontrolünü sağlar.
+- **Dağıtık delegasyon:** `dispatch_distributed(...)`, `TaskEnvelope`'ı
+  `BrokerTaskEnvelope` biçimine çevirip enjekte edilen `AsyncDelegationBackend` üzerinden
+  broker/backplane'e gönderir. Varsayılan `InMemoryDelegationBackend` test/prototip
+  içindir; gerçek Kafka/Rabbit/Redis iş kuyruğu entegrasyonları bu kontrata uymalıdır.
+
+#### 2.6.3 Event bus ve backend stratejileri
+
+- **Yerel fanout + uzak transport:** `AgentEventBus.publish(...)` olayı önce process içi
+  subscriber kuyruklarına dağıtır, ardından seçili remote backend'e yayınlamayı dener.
+  Remote backend başarısızsa local fallback korunur; Redis/Kafka için circuit breaker
+  ardışık hatalarda remote yayını geçici olarak durdurur.
+- **Backend seçimi:** `SIDAR_EVENT_BUS_BACKEND` `redis` (varsayılan), `rabbitmq` veya
+  `kafka` olabilir. Strategy sınıfları `agent/core/event_backends/` altında yer alır:
+  `RedisBackend`, `RabbitMQBackend`, `KafkaBackend`. Bu sınıflar ortak
+  `BaseEventBusBackend.schedule_bootstrap()` ve `publish(evt)` kontratını uygular.
+- **Redis:** `REDIS_URL`, `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP` ve Redis
+  timeout/max connection ayarlarıyla Redis Streams consumer group kullanır.
+- **RabbitMQ:** `RABBITMQ_URL` ile `aio_pika` üzerinden durable queue publish/consume
+  yapar. Paket veya broker yoksa debug log ile local fallback'e düşer.
+- **Kafka:** `KAFKA_BOOTSTRAP_SERVERS`, `SIDAR_EVENT_BUS_KAFKA_TOPIC` ve
+  `SIDAR_EVENT_BUS_KAFKA_GROUP` ile `aiokafka` producer/consumer kullanır. Paket veya
+  broker yoksa local fallback korunur.
+- **DLQ ve dayanıklılık:** Uzak publish/consume sırasında teslim edilemeyen veya parse
+  edilemeyen olaylar DLQ kanalına ve process içi `dlq_buffer`'a alınabilir;
+  `SIDAR_EVENT_BUS_DLQ_CHANNEL`, `SIDAR_EVENT_BUS_DLQ_MAXLEN` ve opsiyonel
+  `SIDAR_EVENT_BUS_DLQ_PERSIST_PATH` ile kalıcılık yönetilir.
+
+#### 2.6.4 Operasyonel kurallar
+
+- Linear pipeline, supervisor ve swarm kavramları karıştırılmamalıdır: pipeline sıralı
+  kalite akışıdır; supervisor merkezi yönlendirme ve P2P kontrolüdür; swarm ise çoklu
+  görevi paralel/pipeline/dağıtık biçimde koordine eder.
+- Yeni role/capability eklendiğinde `AgentCatalog` metadata'sı, `TaskRouter` intent
+  eşleşmesi ve gerekirse supervisor intent yönlendirmesi birlikte güncellenmelidir.
+- Event backend seçimi ortam değişkeniyle yapılmalı; broker erişilemediğinde sistemin
+  local fallback ile çalışacağı, fakat cross-process gözlemlenebilirlik/koordinasyonun
+  sınırlanacağı bilinmelidir.
+- P2P/swarm handoff üreten ajanlar `reply_to`, `target_agent`, `payload`, `intent` ve
+  `parent_task_id` alanlarını eksiksiz doldurmalı; circuit breaker limitlerini aşan
+  döngüler fail-closed sonlanmalıdır.
 
 ---
 
@@ -378,12 +368,8 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 2. `@AgentCatalog.register(...)` dekoratörüyle role/capability metadata’sını tanımla.
 3. `agent/roles/__init__.py` içinde dışa aktar.
 4. `agent/registry.py::_import_builtin_roles()` listesine yeni modülü ekle.
-5. Supervisor intent routing, swarm route/capability eşlemesi, P2P payload sözleşmesi ve
-   event görünürlüğü etkilerini değerlendir.
-6. Ajan medya girdisi tüketecekse multimodal/vision/voice enable flag'leri, MIME sınırları,
-   onay gerektiren destructive sesli komutlar ve reviewer/QA doğrulama akışını tanımla.
-7. Ajanın rol adı, capability seti, kullanım amacı ve koordinasyon/multimodal etkilerini dokümante et.
-8. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
+5. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
+6. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
 
 Örnek şablon:
 
@@ -415,15 +401,11 @@ class ExampleAgent(BaseAgent):
 çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
 `pydantic-settings` vb. proje bağımlılıkları henüz yoksa `agent.registry`, yerleşik rol
 modüllerini import ederken başarısız olabilir ve `AgentCatalog.list_all()` boş liste
-döndürebilir. Bu durumda önce bağımlılıkları kurun/senkronlayın:
+döndürebilir. Bu durumda önce bağımlılıkları kurun:
 
-- Birincil repo standardı: `uv sync --all-extras`
-- Komutları sanal ortamı aktive etmeden çalıştırmak için: `uv run <komut>`
-- Alternatif/minimum test-tooling kurulumu: `python -m pip install -e ".[dev]"`
-
-Not: `pyproject.toml` temel bağımlılık listesinde pytest, ruff, mypy, bandit ve safety
-gibi geliştirme/test araçları standart kurulum akışına dahil edilmiştir. Yine de ekip/CI
-paritesi için temiz checkout üzerinde önce `uv sync --all-extras` tercih edilmelidir.
+- `python -m pip install -e .`
+- Geliştirme/test araçları veya opsiyonel profiller gerekiyorsa ilgili extras ile kurulum yapın
+  (örn. `python -m pip install -e ".[dev]"`).
 
 Doğrulama adımları:
 

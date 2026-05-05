@@ -292,10 +292,10 @@ def _looks_like_delegation_request(value: object) -> bool:
 
 class SwarmOrchestrator:
     """
-    AGENTS.md koordinasyon kurallarına göre dinamik çoklu ajan orkestrasyon motoru.
+    Dinamik çoklu ajan orkestrasyon motoru.
 
-    Görevleri ajanlar arasında dağıtır, paralel/pipeline yürütmeyi yönetir,
-    P2P handoff zincirlerini ve dağıtık delegasyon zarflarını koordine eder.
+    Görevleri ajanlar arasında dağıtır, paralel yürütmeyi yönetir
+    ve sonuçları birleştirir.
     """
 
     def __init__(self, cfg: Any = None) -> None:
