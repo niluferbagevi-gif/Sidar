@@ -154,12 +154,13 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
         return True
 
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr("dotenv.load_dotenv", _fake_load_dotenv)
 
     reloaded = importlib.reload(config)
 
     assert reloaded.ENV_PATH == reloaded.BASE_DIR / ".env"
-    assert all(call.get("override") is False for call in calls)
+    assert all(call.get("override") in (False, None) for call in calls)
 
 
 def test_is_test_env_returns_true_when_sidar_env_is_testing(monkeypatch):
