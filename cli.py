@@ -268,8 +268,6 @@ def main() -> None:
     # Config sınıf attribute'ları module import anında bir kez değerlendirilir.
     cfg = Config()
     cfg.initialize_directories()
-    if not cfg.validate_critical_settings():
-        raise SystemExit("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
     if args.level:
         cfg.ACCESS_LEVEL = args.level
     if args.provider:
@@ -278,6 +276,8 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
     if args.command:
         cfg.CLI_FAST_MODE = True
+    if not cfg.validate_critical_settings():
+        raise SystemExit("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
 
     agent = SidarAgent(cfg)
 
