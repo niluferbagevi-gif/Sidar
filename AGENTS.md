@@ -92,6 +92,25 @@ operasyon sırasında hangi ajanın hangi sınırda kalacağını da belirtir.
     gibi dijital pazarlama operasyonlarını yürütmek; gerektiğinde researcher kaynakları ve
     multimodal video özetlerini kullanmak.
 
+#### 2.3.1 Rol sorumlulukları, araç sınırları ve devir kuralları
+
+- **Researcher çıktı sınırı:** Researcher `web_search`, `fetch_url`, `search_docs` ve
+  `docs_search` araçlarıyla doğrulanabilir kaynak/özet üretir; kod, test veya repo dosyası
+  değiştirmez. Kod değişikliği gerekiyorsa bağlamı `coder` veya `reviewer` rolüne devreder.
+- **Poyraz araç sınırı:** Poyraz pazarlama stratejisi, SEO, kampanya metni, landing page,
+  sosyal yayın, WhatsApp/Facebook/Instagram operasyonları ve `ingest_video_insights`
+  gibi multimodal pazarlama girdileriyle çalışır. Teknik kod değişikliği veya güvenlik
+  kararı gerekiyorsa sonucu `reviewer`/`coder` hattına aktarır.
+- **Coverage devir kuralı:** Coverage `run_pytest`, `analyze_pytest_output`,
+  `analyze_coverage_report`, `analyze_test_artifacts`, `generate_missing_tests` ve
+  `write_missing_tests` araçlarıyla coverage gap analizi ve deterministik pytest adayı
+  üretir. Yüksek riskli test yazımı, fixture değişikliği veya üretim koduna dokunan
+  düzeltmeler `qa -> reviewer -> coder` kontrolünden geçmelidir.
+- **Reviewer kalite kapısı:** Reviewer, LSP/security/browser/test sinyallerini birleştirir;
+  red/revizyon kararını P2P geri bildirim olarak üretir. Reviewer onayı olmadan riskli
+  self-heal, browser aksiyonu, sosyal yayın veya üretim kodu değişikliği tamamlanmış
+  kabul edilmez.
+
 ### 2.4 Önerilen temel iş akışları
 
 - Kod geliştirme akışı:
@@ -113,6 +132,8 @@ orkestrasyon katmanı kullanılır:
     `coder` rolüne yönlendirir.
   - Kod akışında `coder -> reviewer` zincirini çalıştırır; reviewer revizyon isterse
     P2P geri bildirimle coder'a yeni tur açar.
+  - `MAX_QA_RETRIES` ve `MAX_TURNS` sınırlarıyla retry/circuit breaker davranışını korur;
+    bu limitler aşılırsa P2P akışı güvenli şekilde durdurulmalıdır.
   - `DelegationRequest` sözleşmesiyle P2P handoff derinliğini ve hedef ajanı doğrular.
 - **Swarm orkestrasyonu** (`agent/swarm.py`):
   - `SwarmTask(intent=...)` değerini `AgentCatalog` capability metadata'sına göre route eder.
@@ -121,7 +142,9 @@ orkestrasyon katmanı kullanılır:
   - Dağıtık senaryoda `AsyncDelegationBackend` enjekte edilerek broker/kuyruk tabanlı
     task dispatch yapılabilir; test/prototip için `InMemoryDelegationBackend` vardır.
 - **Event bus altyapısı** (`agent/core/event_stream.py`, `agent/core/event_backends/`):
-  - Yerel fanout her zaman çalışır; uzak backend `SIDAR_EVENT_BUS_BACKEND` ile seçilir.
+  - Process içi fanout her zaman çalışır; broker yoksa operasyon local/in-memory sinyallerle
+    devam eder, ancak çoklu process/sunucu güvenilirliği için uzak backend şarttır.
+  - Uzak backend `SIDAR_EVENT_BUS_BACKEND` ile seçilir.
   - Desteklenen backend stratejileri: `redis` (varsayılan), `rabbitmq`, `kafka`.
   - İlgili ortam değişkenleri: `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP`,
     `SIDAR_EVENT_BUS_DLQ_CHANNEL`, `SIDAR_EVENT_BUS_DLQ_MAXLEN`, `REDIS_URL`,
@@ -139,26 +162,35 @@ rastgele dosya değiştirme mekanizması değildir. Operasyonel kural seti:
    raporlarını `artifacts/` altında toplar.
 2. **Analiz ve plan:** `scripts/auto_heal.py`, logları `agent/auto_handle.py` içindeki
    `local_self_heal` aracına taşır; kaynak türüne göre uygun model seçer ve risk
-   sınıflandırması yapar.
-3. **Güvenlik sınırları:** Düşük riskli planlar otomatik uygulanabilir; yüksek riskli
+   sınıflandırması yapar. CLI içinde aynı akış `.heal <log_dosyası>` kısayoluyla da
+   tetiklenebilir.
+3. **Batch ve retry sınırı:** Scope queue/batch retry davranışı sonsuz düzeltme döngüsüne
+   dönüşmemelidir. `autonomous_loop.sh` remediation deneme sayısını sınırlı tutar; başarısız,
+   partial veya blocked sonuçlar reviewer/QA değerlendirmesine veri olarak taşınmalıdır.
+4. **Güvenlik sınırları:** Düşük riskli planlar otomatik uygulanabilir; yüksek riskli
    değişikliklerde HITL onayı gerekir. CI/otonom çalışmada `--hitl-approve yes/no`
    açıkça belirtilmelidir.
-4. **Kalite kapısı:** Düzeltme sonrası test/lint/coverage komutları tekrar çalıştırılır;
+5. **Kalite kapısı:** Düzeltme sonrası test/lint/coverage komutları tekrar çalıştırılır;
    başarısız sonuç yeni self-heal turuna veri olur.
-5. **Rollback/izlenebilirlik:** Üretilen planlar, loglar ve değişiklik diff'i commit öncesi
+6. **Rollback/izlenebilirlik:** Üretilen planlar, loglar ve değişiklik diff'i commit öncesi
    gözden geçirilir; dış servis, ağ, secret veya yıkıcı shell aksiyonları self-heal içinde
    varsayılan olarak güvenli kabul edilmez.
 
 ### 2.7 Multimodal, vision ve voice kuralları
 
-- `core/multimodal.py`, video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattını
-  koordine eder; büyük medya girdilerinde byte/timeout limitleri korunmalıdır.
-- `core/vision.py`, görsel içerik özetleme ve OCR/vision sinyallerini normalize eder;
-  browser/frontend doğrulamasında görsel çıktı reviewer veya swarm bağlamına özet olarak
-  taşınmalıdır.
+- `core/multimodal.py`, video/audio/image türünü MIME veya dosya yolundan ayırır;
+  medya önce `MultimodalPipeline` ile ortak LLM bağlamına dönüştürülmelidir.
+- Video girdilerinde frame özetleri ve ses transkripti birlikte kullanılabilir. Ses
+  transkripsiyonunda Whisper CLI/STT sonucu yoksa hata nedeni açıkça raporlanmalı, ham medya
+  verisi loglara yazılmamalıdır.
+- `core/vision.py` içindeki `VisionPipeline`, görsel path/bytes girdisini analiz eder;
+  browser/frontend doğrulamasında screenshot/vision sinyali reviewer veya swarm bağlamına
+  özet olarak taşınmalıdır.
 - `core/voice.py`, `/ws/voice` için VAD, barge-in/interrupt, duplex output buffer ve TTS
-  segmentlerini yönetir. Sesli komutlar transcript'e dönüştürülmeden kod/dosya aksiyonu
-  tetiklememelidir.
+  segmentlerini yönetir; `WebRTCAudioIngress` tarayıcı ses paketlerini normalize eder.
+- Sesli komutlar transcript'e dönüştürülmeden kod/dosya/browser aksiyonu tetiklememelidir.
+  Destructive veya dış sistem etkili aksiyonlarda yanlış algılama riski nedeniyle reviewer/HITL
+  onayı gerekir.
 - Multimodal girdiler Poyraz'ın video insight/marketing akışında ve browser otomasyonu ile
   frontend görsel doğrulamada kullanılabilir; privacy/secret içerebilecek medya parçaları
   loglara ham içerik olarak yazılmamalıdır.
@@ -221,8 +253,10 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 2. `@AgentCatalog.register(...)` dekoratörüyle role/capability metadata’sını tanımla.
 3. `agent/roles/__init__.py` içinde dışa aktar.
 4. `agent/registry.py::_import_builtin_roles()` listesine yeni modülü ekle.
-5. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
-6. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
+5. Supervisor/swarm routing etkisini değerlendir: yeni capability bir intent'e bağlanacaksa
+   `agent/core/supervisor.py`, `agent/swarm.py` veya event bus sözleşmeleri de güncellenmelidir.
+6. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
+7. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
 
 Örnek şablon:
 
