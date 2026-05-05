@@ -125,12 +125,11 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 Örnek şablon:
 
 ```python
-from typing import List, Optional
-from agent.registry import AgentCatalog
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 
 @AgentCatalog.register(
-    capabilities=["example_capability"],  # type: Optional[List[str]]
+    capabilities=["example_capability"],
     description="Örnek uzman ajan",
     version="1.0.0",
     is_builtin=True,
