@@ -14,7 +14,11 @@ from core.rag import DocumentStore
 from managers.web_search import WebSearchManager
 
 
-@AgentCatalog.register(capabilities=["web_search", "rag_search", "summarization"], is_builtin=True)
+@AgentCatalog.register(
+    capabilities=["web_search", "rag_search", "summarization"],
+    description="Web ve RAG kaynaklarından doğrulanabilir araştırma özeti üreten uzman ajan.",
+    is_builtin=True,
+)
 class ResearcherAgent(BaseAgent):
     """Yalnızca bilgi toplama araçlarını kullanan uzman ajan."""
 

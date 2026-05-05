@@ -59,29 +59,103 @@ otomatik kaydedilir.
 > Operasyonel kural: Yeni bir rol eklendiğinde hem `agent/roles/__init__.py` hem de
 > `_import_builtin_roles()` listesi birlikte güncellenmelidir.
 
-### 2.3 Roller ve temel yetenekler
+### 2.3 Roller, iş tanımları ve yetki sınırları
 
-- **coder** (`CoderAgent`):
-  - `code_generation`, `file_io`, `shell_execution`, `code_review`
-- **researcher** (`ResearcherAgent`):
-  - `web_search`, `rag_search`, `summarization`
-- **reviewer** (`ReviewerAgent`):
-  - `code_review`, `security_audit`, `quality_check`
-- **qa** (`QAAgent`):
-  - `test_generation`, `ci_remediation`
-- **coverage** (`CoverageAgent`):
-  - `coverage_analysis`, `pytest_output_analysis`, `autonomous_test_generation`
-- **poyraz** (`PoyrazAgent`):
-  - `marketing_strategy`, `seo_analysis`, `campaign_copy`, `audience_ops`
+Bu bölümdeki rol sözleşmeleri, ilgili ajan dosyalarındaki
+`@AgentCatalog.register(capabilities=[...])`, `SYSTEM_PROMPT` ve kayıtlı araçlarla
+tutarlı tutulmalıdır. Kısa capability listesi tek başına yeterli değildir; her rol için
+iş tanımı, kullanabileceği araç/yetki alanı ve diğer ajanlarla beklenen etkileşim
+aşağıda belirtilir.
+
+#### 2.3.1 `coder` — `CoderAgent`
+
+- **İş tanımı:** Kod üretimi, dosya okuma/yazma, terminal destekli düzeltme ve teknik
+  tasarım uygulama işlerinden sorumludur.
+- **Temel yetenekler:** `code_generation`, `file_io`, `shell_execution`, `code_review`.
+- **Yetki sınırı:** Üretim kodu ve test dosyalarında değişiklik yapabilir; riskli veya
+  kapsamı belirsiz değişikliklerde reviewer/QA geri bildirimi beklenir.
+- **Etkileşim:** `researcher` bulgularını uygulamaya dönüştürür; çıktısı
+  `reviewer -> qa` akışından geçmelidir. Coverage açığı varsa `coverage` tarafından
+  önerilen deterministik testleri projeye uyarlar.
+
+#### 2.3.2 `researcher` — `ResearcherAgent`
+
+- **İş tanımı:** Web, URL ve RAG/doküman kaynaklarından doğrulanabilir bilgi toplar;
+  bulguları özetleyerek kod, pazarlama veya inceleme ekiplerine aktarır.
+- **Temel yetenekler:** `web_search`, `rag_search`, `summarization`.
+- **Araç/yetki alanı:** `web_search`, `fetch_url`, `search_docs` ve `docs_search`
+  araçlarıyla araştırma yapar. Kod yazma/değiştirme rolü değildir; kaynak, tarih,
+  belirsizlik ve varsayımları açıkça belirtmelidir.
+- **Etkileşim:** Teknik karar gerektiren araştırmalarda `coder` ve `reviewer` için
+  kaynaklı bağlam üretir. Kampanya, SEO veya hedef kitle çalışmaları için ham
+  araştırmayı `poyraz` ajanına devreder.
+
+#### 2.3.3 `reviewer` — `ReviewerAgent`
+
+- **İş tanımı:** Kod kalitesi, güvenlik, mimari tutarlılık ve değişiklik kapsamı
+  açısından inceleme yapar.
+- **Temel yetenekler:** `code_review`, `security_audit`, `quality_check`.
+- **Yetki sınırı:** Üretim değişikliğini onaylama/geri çevirme niteliğinde bulgu
+  üretir; doğrudan uygulama rolü değildir.
+- **Etkileşim:** `coder` çıktısını inceler, `qa` ve `coverage` bulgularının üretim
+  davranışını bozmadığını doğrular. Pazarlama çıktılarında marka/güvenlik riski
+  kontrolü için `poyraz` sonrasında çalışabilir.
+
+#### 2.3.4 `qa` — `QAAgent`
+
+- **İş tanımı:** Test stratejisi, CI hatası analizi ve kalite kapısı iyileştirmelerinden
+  sorumludur.
+- **Temel yetenekler:** `test_generation`, `ci_remediation`.
+- **Yetki sınırı:** Test kapsamını genişletir ve CI düzeltmeleri önerir; coverage
+  hedefleri için `coverage` ajanından gelen hotspot/finding listesini kullanır.
+- **Etkileşim:** `coder` değişikliklerinden sonra smoke/unit/integration doğrulamayı
+  planlar; kalıcı başarısızlıkları `reviewer` ve `coder` geri bildirimine dönüştürür.
+
+#### 2.3.5 `coverage` — `CoverageAgent`
+
+- **İş tanımı:** Pytest ve coverage çıktısını analiz ederek eksik senaryoları, kaçan
+  branch/line noktalarını ve test hotspotlarını belirler; %100 coverage hedefine
+  yaklaşmak için deterministik pytest testleri üretir.
+- **Temel yetenekler:** `coverage_analysis`, `pytest_output_analysis`,
+  `autonomous_test_generation`.
+- **Araç/yetki alanı:** `run_pytest`, `analyze_pytest_output`,
+  `analyze_coverage_report`, `analyze_test_artifacts`, `generate_missing_tests` ve
+  `write_missing_tests` araçlarını kullanır. Dış servis/ağ bağımlılığına dayalı test
+  üretmemeli; ürettiği testler reviewer onayına sunulabilecek şekilde deterministik
+  olmalıdır.
+- **Etkileşim:** `qa` ile coverage açığı kapatma döngüsünde çalışır; `coder` üretim
+  davranışını bozmadan eksik testleri entegre eder; `reviewer` üretilen testlerin
+  değerini, kırılganlığını ve güvenliğini kontrol eder.
+
+#### 2.3.6 `poyraz` — `PoyrazAgent`
+
+- **İş tanımı:** Dijital pazarlama, SEO, kampanya metni, funnel optimizasyonu, hedef
+  kitle operasyonları, sosyal medya yayınlama ve içerik varlığı üretimi için uzman
+  ajandır.
+- **Temel yetenekler:** `marketing_strategy`, `seo_analysis`, `campaign_copy`,
+  `audience_ops`.
+- **Araç/yetki alanı:** `web_search`, `fetch_url`, `search_docs`, sosyal yayın
+  araçları (`publish_social`, `publish_instagram_post`, `publish_facebook_post`,
+  `send_whatsapp_message`), kampanya/landing page araçları
+  (`build_landing_page`, `generate_campaign_copy`, `create_marketing_campaign`,
+  `store_content_asset`) ve operasyon planlama araçlarını kullanır. Harici yayınlama
+  veya müşteri iletişimi etkisi olan adımlarda konfigürasyon, onay ve platform
+  kısıtları dikkate alınmalıdır.
+- **Etkileşim:** `researcher` tarafından doğrulanan pazar/SEO bulgularını kampanya
+  çıktısına dönüştürür. Teknik landing page veya entegrasyon gerekiyorsa `coder` ile,
+  marka/güvenlik/kalite kontrolü gerekiyorsa `reviewer` ile çalışır.
 
 ### 2.4 Önerilen temel iş akışları
 
 - Kod geliştirme akışı:
-  - `coder -> reviewer -> qa` (gerekirse `coverage` ile iyileştirme döngüsü)
+  - `researcher` (gerekiyorsa bağlam) -> `coder -> reviewer -> qa`
+  - Coverage açığı varsa `coverage -> coder -> reviewer -> qa` iyileştirme döngüsü
+    uygulanır.
 - Araştırma tabanlı üretim akışı:
   - `researcher -> coder/reviewer`
 - Pazarlama operasyon akışı:
   - `researcher -> poyraz -> reviewer`
+  - Teknik kampanya/landing page değişikliği gerekiyorsa akışa `coder` ve `qa` eklenir.
 
 ---
 

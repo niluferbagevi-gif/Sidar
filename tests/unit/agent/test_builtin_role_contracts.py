@@ -117,6 +117,25 @@ def test_builtin_role_decorators_explicitly_mark_is_builtin_true() -> None:
         assert _extract_is_builtin_from_role_file(role_file) is True
 
 
+def test_agents_documentation_covers_specialized_roles_and_interactions() -> None:
+    docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "`researcher` — `ResearcherAgent`",
+        "`coverage` — `CoverageAgent`",
+        "`poyraz` — `PoyrazAgent`",
+        "web_search`, `fetch_url`, `search_docs` ve `docs_search`",
+        "run_pytest`, `analyze_pytest_output`",
+        "generate_missing_tests` ve",
+        "publish_social`, `publish_instagram_post`, `publish_facebook_post`",
+        "researcher -> poyraz -> reviewer",
+        "coverage -> coder -> reviewer -> qa",
+    ]
+
+    for fragment in expected_fragments:
+        assert fragment in docs
+
+
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
     role_file = tmp_path / "example_role.py"
     role_file.write_text(

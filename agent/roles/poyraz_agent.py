@@ -78,6 +78,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
 
 @AgentCatalog.register(
     capabilities=["marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"],
+    description="Dijital pazarlama, SEO, kampanya ve hedef kitle operasyonları uzmanı.",
     is_builtin=True,
 )
 class PoyrazAgent(BaseAgent):

@@ -21,6 +21,9 @@ from config import Config
 
 @AgentCatalog.register(
     capabilities=["coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"],
+    description=(
+        "Pytest/coverage çıktısından eksik senaryoları bulup deterministik test üreten ajan."
+    ),
     is_builtin=True,
 )
 class CoverageAgent(BaseAgent):
