@@ -75,6 +75,13 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
     env = os.environ.copy()
     from cryptography.fernet import Fernet
 
+    # config.py loads .env.{SIDAR_ENV} and DOTENV_FILE with override=True, which
+    # would clobber the OLLAMA_URL / MEMORY_ENCRYPTION_KEY values we inject below
+    # (the .env.test template ships an invalid Fernet placeholder and points at
+    # the real Ollama). Remove those triggers so the subprocess respects our env.
+    for key in ("SIDAR_ENV", "DOTENV_FILE"):
+        env.pop(key, None)
+
     env.update(
         {
             "PYTHONPATH": str(PROJECT_ROOT),
