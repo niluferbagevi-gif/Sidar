@@ -124,7 +124,6 @@ import json
 import re
 
 from agent.roles.coverage_agent import CoverageAgent
-from agent.roles.reviewer_agent import ReviewerAgent
 from config import Config
 
 
@@ -135,8 +134,77 @@ def _looks_trivial_test(code: str) -> bool:
     if re.search(r"assert\s+True\b", txt):
         return True
     if "def test_" in txt and "assert " not in txt and "pytest.raises" not in txt:
-@@ -114,69 +199,78 @@ async def main() -> int:
-    print(preview)
+        return True
+    return False
+
+
+async def main() -> int:
+    cfg = Config()
+    agent = CoverageAgent(config=cfg)
+    analysis_raw = await agent.run_task(
+        "analyze_coverage_report|"
+        + json.dumps(
+            {
+                "coverage_xml": "coverage.xml",
+                "coveragerc": ".coveragerc",
+                "limit": 1,
+            },
+            ensure_ascii=False,
+        )
+    )
+    analysis = json.loads(str(analysis_raw))
+    findings = list(analysis.get("findings") or [])
+    if not findings:
+        print("[HEAL] CoverageAgent: coverage açığı bulunamadı.")
+        return 0
+
+    finding = findings[0]
+    target_path = str(finding.get("target_path") or "")
+    suggested_test_path = str(
+        finding.get("suggested_test_path")
+        or CoverageAgent._suggest_test_path(target_path)
+    )
+    generated = await agent.run_task(
+        "generate_missing_tests|"
+        + json.dumps(
+            {
+                "coverage_finding": finding,
+                "coveragerc": analysis.get("coveragerc") or {},
+                "target_path": target_path,
+            },
+            ensure_ascii=False,
+        )
+    )
+    generated_text = CoverageAgent._clean_code_output(str(generated))
+    if _looks_trivial_test(generated_text):
+        print(
+            "[HEAL] CoverageAgent trivial/boş test üretti; otomatik yazma atlandı."
+        )
+        print(generated_text[:1000])
+        return 0
+
+    write_raw = await agent.run_task(
+        "write_missing_tests|"
+        + json.dumps(
+            {
+                "suggested_test_path": suggested_test_path,
+                "generated_test": generated_text,
+                "append": True,
+            },
+            ensure_ascii=False,
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "target_path": target_path,
+                "suggested_test_path": suggested_test_path,
+                "write_result": json.loads(str(write_raw)),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
