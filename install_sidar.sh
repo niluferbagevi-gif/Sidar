@@ -6,7 +6,7 @@
 #
 # Kullanım:
 #   chmod +x install_sidar.sh
-#   ./install_sidar.sh           # standart kurulum
+#   ./install_sidar.sh           # standart kurulum (dev bağımlılıkları varsayılan)
 #   ./install_sidar.sh --no-dev  # sadece production bağımlılıklarıyla
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
@@ -3711,7 +3711,7 @@ PY
         warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
     fi
     if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:3b"
+        CODE_MOD="qwen2.5-coder:7b"
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
     models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")

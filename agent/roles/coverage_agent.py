@@ -24,7 +24,7 @@ from config import Config
     is_builtin=True,
 )
 class CoverageAgent(BaseAgent):
-    """Pytest çıktısını okuyup eksik senaryoları belirleyen ve reviewer onayına sunan ajan."""
+    """AGENTS.md self-healing/coverage akışına göre eksik pytest senaryolarını planlar."""
 
     SYSTEM_PROMPT = (
         "Sen Coverage Agent rolündesin. Pytest ve coverage çıktısını okuyup eksik senaryoları "

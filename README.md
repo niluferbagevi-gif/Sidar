@@ -115,6 +115,25 @@
 - `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü, VAD olayları ve transcript→ajan yanıtı akışı
 - `core/voice.py` üzerinden ses segmentasyonu, duplex output buffer durumu, interrupt/barge-in temizliği ve TTS adaptörleri
 - FFmpeg sistem bağımlılığı ile medya dönüştürme; büyük dosyalar için byte limitleri ile korunur
+- Sesli veya görsel girdiler önce transcript/özet sinyaline indirgenir; kod, dosya veya browser aksiyonu
+  yalnız agent policy ve reviewer/swarm bağlamı üzerinden tetiklenmelidir.
+
+### Supervisor, Swarm ve Event Bus Koordinasyonu
+- `agent/core/supervisor.py`, intent'e göre role ajanlara P2P delegasyon yapar ve kod akışında
+  `coder -> reviewer -> revizyon` döngüsünü yönetir.
+- `agent/swarm.py`, capability metadata'sına göre `SwarmTask` route eder; paralel/pipeline çalışma,
+  direct handoff, loop guard ve supervisor fallback davranışlarını içerir.
+- `agent/core/event_stream.py`, yerel fanout + uzak broker stratejisi sağlar.
+  `SIDAR_EVENT_BUS_BACKEND=redis|rabbitmq|kafka` ile Redis, RabbitMQ veya Kafka seçilebilir;
+  çoklu sunucu/production ortamında broker endpoint'leri (`REDIS_URL`, `RABBITMQ_URL`,
+  `KAFKA_BOOTSTRAP_SERVERS`) açıkça yapılandırılmalıdır.
+
+### Self-Healing / Otonom Remediation
+- `autonomous_loop.sh`, kalite kapısı çıktıları ve coverage hotspot raporlarını toplar.
+- `scripts/auto_heal.py`, bu logları `agent/auto_handle.py` içindeki local self-heal aracına aktarır,
+  düşük/yüksek risk ayrımı yapar ve gerektiğinde HITL onayı ister.
+- Düzeltme sonrası pytest/lint/coverage tekrar çalıştırılmalı; başarısız sonuç yeni remediation turuna
+  veri olarak kullanılmalıdır.
 
 ### Playwright Dinamik Tarayıcı Otomasyonu (Kalıcı Yetenek)
 - `managers/browser_manager.py` üzerinden Playwright öncelikli, Selenium fallback sağlayıcı soyutlaması
@@ -279,6 +298,15 @@ uv sync --all-extras
 
 > Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
 > Kilitli ve platformlar arası deterministik çözüm için kaynak dosya `uv.lock` kabul edilir.
+> Geliştirme ortamı standardı `uv sync --all-extras` + `uv run ...` akışıdır; otomatik
+> kurulum betiği dev bağımlılıklarını varsayılan olarak kurar, yalnız minimal/production
+> profil için `./install_sidar.sh --no-dev` kullanılmalıdır.
+
+### Yerel LLM standardı
+
+Sidar'ın yerel coding modeli varsayılan olarak Ollama üzerindeki `qwen2.5-coder:7b`
+değeridir. Daha büyük Qwen 2.5 Coder varyantları kullanılacaksa `.env` içindeki
+`CODING_MODEL` değeri güncellenmeli ve ilgili model önceden çekilmelidir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
@@ -646,7 +674,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 ```env
 # AI Sağlayıcı
 AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
-CODING_MODEL=qwen2.5-coder:3b
+CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
 OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
 TEXT_MODEL=llama3.1:8b

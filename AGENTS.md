@@ -61,18 +61,55 @@ otomatik kaydedilir.
 
 ### 2.3 Roller ve temel yetenekler
 
+Aşağıdaki özet, `agent/roles/*.py` içindeki `@AgentCatalog.register(...)`
+dekoratörleriyle senkron tutulmalıdır. Rol açıklamaları yalnızca isim listesi değil,
+operasyon sırasında hangi ajanın hangi sınırda kalacağını da belirtir.
+
 - **coder** (`CoderAgent`):
-  - `code_generation`, `file_io`, `shell_execution`, `code_review`
+  - Capability seti: `code_generation`, `file_io`, `shell_execution`, `code_review`
+  - Görevi: Kod üretimi/değişikliği, dosya işlemleri, güvenli shell komutları ve ilk
+    seviye kod öz denetimi. Reviewer veya QA geri bildirimi geldiyse revizyonu uygular.
 - **researcher** (`ResearcherAgent`):
-  - `web_search`, `rag_search`, `summarization`
+  - Capability seti: `web_search`, `rag_search`, `summarization`
+  - Görevi: Web/RAG kaynaklarından doğrulanabilir bilgi toplamak, kaynak özetlemek ve
+    coder/reviewer/poyraz rollerine bağlam sağlamak. Kod veya repo dosyası değiştirmez.
 - **reviewer** (`ReviewerAgent`):
-  - `code_review`, `security_audit`, `quality_check`
+  - Capability seti: `code_review`, `security_audit`, `quality_check`
+  - Görevi: PR/issue/repo inceleme, LSP ve güvenlik sinyallerini değerlendirme, browser
+    sinyallerini yorumlama ve P2P geri bildirimle coder/coverage/qa akışını yönlendirme.
 - **qa** (`QAAgent`):
-  - `test_generation`, `ci_remediation`
+  - Capability seti: `test_generation`, `ci_remediation`
+  - Görevi: Hedefli test üretimi, CI hata özetinden remediation planı oluşturma ve
+    reviewer onayı için deterministik test çıktısı hazırlama.
 - **coverage** (`CoverageAgent`):
-  - `coverage_analysis`, `pytest_output_analysis`, `autonomous_test_generation`
+  - Capability seti: `coverage_analysis`, `pytest_output_analysis`, `autonomous_test_generation`
+  - Görevi: `coverage.xml`, pytest çıktısı ve `.coveragerc` bilgisinden eksik senaryoları
+    bulmak; ağ/dış servis bağımlılığı olmayan pytest adayları üretmek; %100 coverage
+    hedefi için reviewer/qa döngüsüne veri sağlamak.
 - **poyraz** (`PoyrazAgent`):
-  - `marketing_strategy`, `seo_analysis`, `campaign_copy`, `audience_ops`
+  - Capability seti: `marketing_strategy`, `seo_analysis`, `campaign_copy`, `audience_ops`
+  - Görevi: SEO, kampanya metni, hedef kitle, sosyal yayın, landing page ve video insight
+    gibi dijital pazarlama operasyonlarını yürütmek; gerektiğinde researcher kaynakları ve
+    multimodal video özetlerini kullanmak.
+
+#### 2.3.1 Rol sorumlulukları, araç sınırları ve devir kuralları
+
+- **Researcher çıktı sınırı:** Researcher `web_search`, `fetch_url`, `search_docs` ve
+  `docs_search` araçlarıyla doğrulanabilir kaynak/özet üretir; kod, test veya repo dosyası
+  değiştirmez. Kod değişikliği gerekiyorsa bağlamı `coder` veya `reviewer` rolüne devreder.
+- **Poyraz araç sınırı:** Poyraz pazarlama stratejisi, SEO, kampanya metni, landing page,
+  sosyal yayın, WhatsApp/Facebook/Instagram operasyonları ve `ingest_video_insights`
+  gibi multimodal pazarlama girdileriyle çalışır. Teknik kod değişikliği veya güvenlik
+  kararı gerekiyorsa sonucu `reviewer`/`coder` hattına aktarır.
+- **Coverage devir kuralı:** Coverage `run_pytest`, `analyze_pytest_output`,
+  `analyze_coverage_report`, `analyze_test_artifacts`, `generate_missing_tests` ve
+  `write_missing_tests` araçlarıyla coverage gap analizi ve deterministik pytest adayı
+  üretir. Yüksek riskli test yazımı, fixture değişikliği veya üretim koduna dokunan
+  düzeltmeler `qa -> reviewer -> coder` kontrolünden geçmelidir.
+- **Reviewer kalite kapısı:** Reviewer, LSP/security/browser/test sinyallerini birleştirir;
+  red/revizyon kararını P2P geri bildirim olarak üretir. Reviewer onayı olmadan riskli
+  self-heal, browser aksiyonu, sosyal yayın veya üretim kodu değişikliği tamamlanmış
+  kabul edilmez.
 
 ### 2.4 Önerilen temel iş akışları
 
@@ -82,10 +119,101 @@ otomatik kaydedilir.
   - `researcher -> coder/reviewer`
 - Pazarlama operasyon akışı:
   - `researcher -> poyraz -> reviewer`
+- Coverage iyileştirme akışı:
+  - `coverage -> qa -> reviewer -> coder`
+
+### 2.5 Supervisor, swarm ve event-driven koordinasyon
+
+Sidar ajanları yalnızca doğrusal pipeline olarak çalışmaz; görev türüne göre iki
+orkestrasyon katmanı kullanılır:
+
+- **Supervisor merkezli yönlendirme** (`agent/core/supervisor.py`):
+  - Intent tespit eder ve görevi `researcher`, `reviewer`, `poyraz`, `coverage` veya
+    `coder` rolüne yönlendirir.
+  - Kod akışında `coder -> reviewer` zincirini çalıştırır; reviewer revizyon isterse
+    P2P geri bildirimle coder'a yeni tur açar.
+  - `MAX_QA_RETRIES` ve `MAX_TURNS` sınırlarıyla retry/circuit breaker davranışını korur;
+    bu limitler aşılırsa P2P akışı güvenli şekilde durdurulmalıdır.
+  - `DelegationRequest` sözleşmesiyle P2P handoff derinliğini ve hedef ajanı doğrular.
+- **Swarm orkestrasyonu** (`agent/swarm.py`):
+  - `SwarmTask(intent=...)` değerini `AgentCatalog` capability metadata'sına göre route eder.
+  - Paralel görev, ardışık pipeline, direct handoff, loop guard ve supervisor fallback
+    davranışlarını içerir.
+  - Dağıtık senaryoda `AsyncDelegationBackend` enjekte edilerek broker/kuyruk tabanlı
+    task dispatch yapılabilir; test/prototip için `InMemoryDelegationBackend` vardır.
+- **Event bus altyapısı** (`agent/core/event_stream.py`, `agent/core/event_backends/`):
+  - Process içi fanout her zaman çalışır; broker yoksa operasyon local/in-memory sinyallerle
+    devam eder, ancak çoklu process/sunucu güvenilirliği için uzak backend şarttır.
+  - Uzak backend `SIDAR_EVENT_BUS_BACKEND` ile seçilir.
+  - Desteklenen backend stratejileri: `redis` (varsayılan), `rabbitmq`, `kafka`.
+  - İlgili ortam değişkenleri: `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP`,
+    `SIDAR_EVENT_BUS_DLQ_CHANNEL`, `SIDAR_EVENT_BUS_DLQ_MAXLEN`, `REDIS_URL`,
+    `RABBITMQ_URL`, `KAFKA_BOOTSTRAP_SERVERS`, `SIDAR_EVENT_BUS_KAFKA_TOPIC`,
+    `SIDAR_EVENT_BUS_KAFKA_GROUP`.
+  - Uzak broker hatalarında circuit breaker ve local fallback davranışı beklenir; üretim
+    ve çoklu sunucu kurulumlarında Redis/RabbitMQ/Kafka backend'i açıkça sağlanmalıdır.
+
+### 2.6 Otonom hata giderme / self-healing döngüsü
+
+Self-healing, kalite kapısı çıktılarından kontrollü düzeltme planı üretmek için vardır;
+rastgele dosya değiştirme mekanizması değildir. Operasyonel kural seti:
+
+1. **Sinyal toplama:** `autonomous_loop.sh`, mypy/pytest/coverage çıktıları ve hotspot
+   raporlarını `artifacts/` altında toplar.
+2. **Analiz ve plan:** `scripts/auto_heal.py`, logları `agent/auto_handle.py` içindeki
+   `local_self_heal` aracına taşır; kaynak türüne göre uygun model seçer ve risk
+   sınıflandırması yapar. CLI içinde aynı akış `.heal <log_dosyası>` kısayoluyla da
+   tetiklenebilir.
+3. **Batch ve retry sınırı:** Scope queue/batch retry davranışı sonsuz düzeltme döngüsüne
+   dönüşmemelidir. `autonomous_loop.sh` remediation deneme sayısını sınırlı tutar; başarısız,
+   partial veya blocked sonuçlar reviewer/QA değerlendirmesine veri olarak taşınmalıdır.
+4. **Güvenlik sınırları:** Düşük riskli planlar otomatik uygulanabilir; yüksek riskli
+   değişikliklerde HITL onayı gerekir. CI/otonom çalışmada `--hitl-approve yes/no`
+   açıkça belirtilmelidir.
+5. **Kalite kapısı:** Düzeltme sonrası test/lint/coverage komutları tekrar çalıştırılır;
+   başarısız sonuç yeni self-heal turuna veri olur.
+6. **Rollback/izlenebilirlik:** Üretilen planlar, loglar ve değişiklik diff'i commit öncesi
+   gözden geçirilir; dış servis, ağ, secret veya yıkıcı shell aksiyonları self-heal içinde
+   varsayılan olarak güvenli kabul edilmez.
+
+### 2.7 Multimodal, vision ve voice kuralları
+
+- `core/multimodal.py`, video/audio/image türünü MIME veya dosya yolundan ayırır;
+  medya önce `MultimodalPipeline` ile ortak LLM bağlamına dönüştürülmelidir.
+- Video girdilerinde frame özetleri ve ses transkripti birlikte kullanılabilir. Ses
+  transkripsiyonunda Whisper CLI/STT sonucu yoksa hata nedeni açıkça raporlanmalı, ham medya
+  verisi loglara yazılmamalıdır.
+- `core/vision.py` içindeki `VisionPipeline`, görsel path/bytes girdisini analiz eder;
+  browser/frontend doğrulamasında screenshot/vision sinyali reviewer veya swarm bağlamına
+  özet olarak taşınmalıdır.
+- `core/voice.py`, `/ws/voice` için VAD, barge-in/interrupt, duplex output buffer ve TTS
+  segmentlerini yönetir; `WebRTCAudioIngress` tarayıcı ses paketlerini normalize eder.
+- Sesli komutlar transcript'e dönüştürülmeden kod/dosya/browser aksiyonu tetiklememelidir.
+  Destructive veya dış sistem etkili aksiyonlarda yanlış algılama riski nedeniyle reviewer/HITL
+  onayı gerekir.
+- Multimodal girdiler Poyraz'ın video insight/marketing akışında ve browser otomasyonu ile
+  frontend görsel doğrulamada kullanılabilir; privacy/secret içerebilecek medya parçaları
+  loglara ham içerik olarak yazılmamalıdır.
 
 ---
 
-## 3) Codex skills rehberi
+## 3) Geliştirme ortamı, araç standardı ve terminoloji
+
+- Proje adı tüm doküman ve çıktılarda **Sidar** olarak kullanılmalıdır; eski proje adı
+  yeni içeriklere eklenmemelidir.
+- Yerel coding LLM varsayılanı `qwen2.5-coder:7b` değeridir; Ollama kullanan
+  geliştirme ortamlarında Qwen 2.5 Coder ailesi temel kabul edilir.
+- Standart paket/komut çalıştırma aracı **uv**'dir:
+  - Kurulum: `uv sync --all-extras`
+  - Komut çalıştırma: `uv run ...`
+  - Otomatik kurulum betiği: `./install_sidar.sh` (dev bağımlılıkları varsayılan olarak
+    kurulur; yalnız production/minimal kurulum için `--no-dev` kullanılır).
+- `python -m pip install -e .` yalnızca legacy/minimum fallback olarak düşünülmelidir;
+  dokümantasyon ve yeni otomasyonlarda uv komutları tercih edilmelidir.
+
+---
+
+## 4) Codex skills rehberi
 
 Bu oturumdaki gerçek kullanılabilir skill listesi, çalışma zamanı tarafından sağlanan
 `Available skills` bölümüdür. `AGENTS.md`, skill envanterinin tek doğruluk kaynağı
@@ -96,14 +224,14 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 > bilginin hızla bayatlayabileceği unutulmamalı; güncel kullanılabilirlik için her
 > zaman oturumdaki `Available skills` çıktısı esas alınmalıdır.
 
-### 3.1 Skill tetikleme kuralları
+### 4.1 Skill tetikleme kuralları
 
 - Kullanıcı skill adını açıkça verirse (`$SkillName` veya düz metin) skill kullanılmalıdır.
 - Kullanıcı isteği bir skill tanımıyla net eşleşiyorsa skill kullanılmalıdır.
 - Birden fazla skill gerekiyorsa minimum gerekli set seçilmeli ve sıra belirtilmelidir.
 - Skill bu turda tekrar anılmadıysa bir sonraki tura taşınmamalıdır.
 
-### 3.2 Skill kullanım yöntemi (progressive disclosure)
+### 4.2 Skill kullanım yöntemi (progressive disclosure)
 
 1. İlgili `SKILL.md` dosyasını aç ve yalnızca gerekli kısmı oku.
 2. Relative path’leri önce skill dizinine göre çöz.
@@ -111,7 +239,7 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 4. `scripts/` varsa uzun çıktıyı elle yazmak yerine script’i kullan.
 5. `assets/templates` varsa yeniden üretmek yerine tekrar kullan.
 
-### 3.3 Koordinasyon, bağlam hijyeni ve fallback
+### 4.3 Koordinasyon, bağlam hijyeni ve fallback
 
 - Uzun metinleri kopyalamak yerine özetle; bağlamı küçük tut.
 - Gereksiz derin referans zinciri açma.
@@ -119,14 +247,16 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 
 ---
 
-## 4) Yeni ajan ekleme kısa rehberi
+## 5) Yeni ajan ekleme kısa rehberi
 
 1. `agent/roles/` altında yeni ajan sınıfını oluştur.
 2. `@AgentCatalog.register(...)` dekoratörüyle role/capability metadata’sını tanımla.
 3. `agent/roles/__init__.py` içinde dışa aktar.
 4. `agent/registry.py::_import_builtin_roles()` listesine yeni modülü ekle.
-5. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
-6. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
+5. Supervisor/swarm routing etkisini değerlendir: yeni capability bir intent'e bağlanacaksa
+   `agent/core/supervisor.py`, `agent/swarm.py` veya event bus sözleşmeleri de güncellenmelidir.
+6. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
+7. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
 
 Örnek şablon:
 
@@ -146,13 +276,13 @@ class ExampleAgent(BaseAgent):
 
 ---
 
-## 5) Doküman bakım notları
+## 6) Doküman bakım notları
 
 - Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
 - Skill kullanılabilirliği için statik liste tutulmaz; güncel envanter çalışma zamanı `Available skills` çıktısından doğrulanmalıdır.
 - Yeni role/capability eklendiğinde bu dosyanın 2. bölümünü güncelleyin.
 
-### 5.1 Hızlı doğrulama checklist’i
+### 6.1 Hızlı doğrulama checklist’i
 
 Ön koşul: Aşağıdaki çalışma zamanı doğrulamaları **bağımlılıkları kurulmuş** bir ortamda
 çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
@@ -160,9 +290,10 @@ class ExampleAgent(BaseAgent):
 modüllerini import ederken başarısız olabilir ve `AgentCatalog.list_all()` boş liste
 döndürebilir. Bu durumda önce bağımlılıkları kurun:
 
-- `python -m pip install -e .`
-- Geliştirme/test araçları veya opsiyonel profiller gerekiyorsa ilgili extras ile kurulum yapın
-  (örn. `python -m pip install -e ".[dev]"`).
+- `uv sync --all-extras`
+- Kurulum betiği kullanılıyorsa `./install_sidar.sh` (dev bağımlılıkları varsayılan gelir).
+- Legacy fallback gerekiyorsa minimum test/tooling için `python -m pip install -e ".[dev]"`
+  kullanılabilir; ancak repo standardı uv akışıdır.
 
 Doğrulama adımları:
 
@@ -172,7 +303,7 @@ Aşağıdaki komut kullanılabilir; ancak yalnızca mevcut role adlarını basar
 başına yeterli kabul edilmemelidir:
 
 ```bash
-python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"
+uv run python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"
 ```
 
 Çıktı `[]` ise öncelikle bağımlılık kurulumunu ve import uyarılarını kontrol edin.
@@ -183,7 +314,7 @@ Yerleşik rollerin eksiksiz yüklendiğini doğrulamak için aşağıdaki komut
 çalıştırılmalıdır. Bu komut, boş liste veya eksik role durumlarını sessiz geçmez:
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 from agent.registry import AgentCatalog
 
 expected = {"coder", "researcher", "reviewer", "poyraz", "qa", "coverage"}
@@ -203,7 +334,7 @@ Capability listesinin dokümanla ve ajan dekoratörleriyle eşleştiğini doğru
 için aşağıdaki komut çalıştırılmalıdır:
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 from agent.registry import AgentCatalog
 
 expected = {
@@ -241,7 +372,7 @@ PY
 - `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki
   `@AgentCatalog.register(capabilities=[...])` ile eşleşmelidir.
 
-### 5.2 Ayrıştırma (SoC) yol haritası
+### 6.2 Ayrıştırma (SoC) yol haritası
 
 - Doküman boyutu büyüdüğünde `Codex skills` kurallarını ayrı bir `SKILLS.md` dosyasına taşıyın.
 - `AGENTS.md` dosyasını repo içi multi-agent mimari ve operasyonel standartlara odaklı tutun.
