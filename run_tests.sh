@@ -39,6 +39,33 @@ PY
 
 check_python_version
 
+# Test ortam değişken dosyasının (.env.test veya DOTENV_FILE ile belirtilen)
+# var olduğundan emin olur; yoksa .env.test.example şablonundan otomatik
+# olarak oluşturur. Böylece yeni klonlanan bir checkout'ta `bash run_tests.sh`
+# elle hazırlık gerektirmeden çalışabilir.
+ensure_test_dotenv() {
+  local target="${DOTENV_FILE:-.env.test}"
+  local template=".env.test.example"
+
+  if [ -f "${target}" ]; then
+    return 0
+  fi
+
+  if [ ! -f "${template}" ]; then
+    echo "⚠️ '${target}' bulunamadı ve şablon '${template}' da mevcut değil; varsayılan değerlerle devam edilecek."
+    return 0
+  fi
+
+  echo "ℹ️ '${target}' bulunamadı; '${template}' şablonundan otomatik oluşturuluyor."
+  if cp "${template}" "${target}"; then
+    echo "✅ '${target}' oluşturuldu. Lokal ihtiyaçlarınıza göre düzenleyebilirsiniz (sırlar yalnızca bu dosyada tutulur)."
+  else
+    echo "⚠️ '${target}' otomatik oluşturulamadı; ortam değişkenleri olmadan devam edilecek."
+  fi
+}
+
+ensure_test_dotenv
+
 run_precommit_autofix || exit 1
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
