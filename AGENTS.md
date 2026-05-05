@@ -74,7 +74,77 @@ otomatik kaydedilir.
 - **poyraz** (`PoyrazAgent`):
   - `marketing_strategy`, `seo_analysis`, `campaign_copy`, `audience_ops`
 
-### 2.4 Önerilen temel iş akışları
+### 2.4 Detaylı rol tanımları, yetkiler ve etkileşim modeli
+
+Bu bölüm, özellikle kod üretimi dışındaki uzman ajanların iş tanımı, operasyonel
+yetki sınırları ve diğer ajanlarla beklenen el değiştirme noktalarını açıklar.
+Yetenek listeleri için birincil kaynak ajan dosyalarındaki `@AgentCatalog.register(...)`
+dekoratörleridir; araç/yetki listeleri ise ilgili sınıfların `register_tool(...)`
+kayıtlarıyla uyumlu tutulmalıdır.
+
+#### 2.4.1 ResearcherAgent (`researcher`)
+
+- **İş tanımı:** Web, URL ve RAG/doküman kaynaklarından doğrulanabilir bilgi toplar;
+  araştırma çıktısını özet, kaynak, risk ve belirsizlik notlarıyla birlikte sonraki
+  ajana devreder.
+- **Yetki ve sınırlar:** Kod veya repo dosyası değiştirmez; dış servis ya da doküman
+  erişiminden gelen bilgiyi olduğu gibi uygulamak yerine doğrulanabilirlik ve
+  güncellik uyarılarıyla raporlar.
+- **Kayıtlı yetenekler:** `web_search`, `rag_search`, `summarization`.
+- **Kullanabildiği araçlar:** `web_search`, `fetch_url`, `search_docs`, `docs_search`.
+- **Etkileşim modeli:**
+  - `researcher -> coder`: Teknik tasarım, API davranışı, ürün/alan bilgisi veya
+    kaynaklı gereksinim notları sağlar.
+  - `researcher -> poyraz`: Pazar, hedef kitle, SEO ve rekabet araştırması gibi
+    pazarlama girdilerini teslim eder.
+  - `researcher -> reviewer`: İnceleme sırasında doğrulanması gereken iddialar,
+    kaynaklar ve belirsizlikleri bildirir.
+
+#### 2.4.2 PoyrazAgent (`poyraz`)
+
+- **İş tanımı:** Araştırma bulgularını pazarlama stratejisi, SEO önerisi, kampanya
+  metni, landing page taslağı, hedef kitle operasyonu ve servis operasyon planına
+  dönüştürür.
+- **Yetki ve sınırlar:** Pazarlama ve sosyal medya operasyon araçlarını kullanabilir;
+  yayınlama/mesaj gönderme gibi dış dünyaya etkisi olan araçlar için görev bağlamında
+  açık onay, geçerli hesap yapılandırması ve marka/uyum kontrolü gerektirir.
+- **Kayıtlı yetenekler:** `marketing_strategy`, `seo_analysis`, `campaign_copy`,
+  `audience_ops`.
+- **Kullanabildiği araçlar:** `web_search`, `fetch_url`, `search_docs`,
+  `publish_social`, `publish_instagram_post`, `publish_facebook_post`,
+  `send_whatsapp_message`, `build_landing_page`, `generate_campaign_copy`,
+  `ingest_video_insights`, `create_marketing_campaign`, `store_content_asset`,
+  `create_operation_checklist`, `plan_service_operations`.
+- **Etkileşim modeli:**
+  - `researcher -> poyraz`: Kaynaklı pazar/SEO/kitle içgörüleri alınır.
+  - `poyraz -> reviewer`: Yayına, müşteri iletişimine veya marka algısına etki eden
+    kampanya metinleri ve operasyon planları kalite/uyum kontrolüne gönderilir.
+  - `poyraz -> coder`: Landing page veya kampanya entegrasyonu için gereken teknik
+    değişiklikler iş paketine dönüştürülür.
+
+#### 2.4.3 CoverageAgent (`coverage`)
+
+- **İş tanımı:** Pytest ve coverage çıktılarını analiz ederek coverage açıklarını,
+  eksik branch/line senaryolarını ve test önceliklerini belirler; deterministik pytest
+  adayları üretip review akışına sunar.
+- **Yetki ve sınırlar:** Test komutu çalıştırabilir ve önerilen test dosyalarına
+  generated test yazabilir; üretilecek testler ağ erişimi veya dış servis bağımlılığı
+  kullanmamalıdır. Üretilen testlerin `is_approved=False` /
+  `pending_reviewer_or_human` durumuyla reviewer veya insan onayına gitmesi esastır.
+- **Kayıtlı yetenekler:** `coverage_analysis`, `pytest_output_analysis`,
+  `autonomous_test_generation`.
+- **Kullanabildiği araçlar:** `run_pytest`, `analyze_pytest_output`,
+  `analyze_coverage_report`, `analyze_test_artifacts`, `generate_missing_tests`,
+  `write_missing_tests`.
+- **Etkileşim modeli:**
+  - `qa -> coverage`: Test çıktısı, coverage raporu veya CI başarısızlığı coverage
+    açığına işaret ediyorsa analiz için devredilir.
+  - `coverage -> reviewer`: Üretilen test adayı, hedef dosya, önerilen test yolu ve
+    coverage bulguları onay için gönderilir.
+  - `coverage -> coder/qa`: Onaylanan testler veya kalan coverage açıkları düzeltme
+    ve regresyon döngüsüne aktarılır.
+
+### 2.5 Önerilen temel iş akışları
 
 - Kod geliştirme akışı:
   - `coder -> reviewer -> qa` (gerekirse `coverage` ile iyileştirme döngüsü)
