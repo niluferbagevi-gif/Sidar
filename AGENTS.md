@@ -39,8 +39,14 @@ Ajanlar çalışma zamanında `agent/registry.py` içindeki `AgentCatalog` ile y
 
 - Dekoratör tabanlı kayıt:
   - `@AgentCatalog.register(capabilities=[...], description=..., version=..., is_builtin=...)`
+  - Yeni yerleşik roller için `is_builtin=True` açıkça verilmelidir; decorator
+    varsayılanı `False` olduğu için bu alan unutulursa rol metadata'sı yerleşik
+    olmayan ajan gibi oluşur.  
 - Programatik kayıt:
   - `AgentCatalog.register_type(...)`
+  - Programatik kayıt varsayılanı geriye dönük uyumluluk nedeniyle `is_builtin=True`
+    değerini kullanır; harici/çalışma zamanı eklenti rollerinde `is_builtin=False`
+    açıkça verilmelidir.
 - Keşif/üretim:
   - `AgentCatalog.get(role_name)`
   - `AgentCatalog.find_by_capability(capability)`

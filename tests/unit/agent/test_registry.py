@@ -73,6 +73,35 @@ def test_agent_catalog_decorator_registration_exposes_metadata() -> None:
     assert AgentCatalog.unregister(role_name) is True
 
 
+def test_registration_apis_documented_is_builtin_defaults() -> None:
+    decorator_role = "unit_temp_decorator_default"
+    programmatic_role = "unit_temp_programmatic_default"
+    AgentCatalog.unregister(decorator_role)
+    AgentCatalog.unregister(programmatic_role)
+
+    @AgentCatalog.register(capabilities=["decorator_default_capability"])
+    class UnitTempDecoratorDefaultAgent:
+        ROLE_NAME = decorator_role
+
+    AgentCatalog.register_type(
+        role_name=programmatic_role,
+        agent_class=_DummyAgent,
+        capabilities=["programmatic_default_capability"],
+    )
+
+    try:
+        decorator_spec = AgentCatalog.get(decorator_role)
+        programmatic_spec = AgentCatalog.get(programmatic_role)
+
+        assert decorator_spec is not None
+        assert decorator_spec.is_builtin is False
+        assert programmatic_spec is not None
+        assert programmatic_spec.is_builtin is True
+    finally:
+        AgentCatalog.unregister(decorator_role)
+        AgentCatalog.unregister(programmatic_role)
+
+
 def test_register_decorator_populates_catalog_and_capability_index() -> None:
     @AgentCatalog.register(
         capabilities=["unit_test_capability"],

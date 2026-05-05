@@ -62,6 +62,24 @@ def _extract_capabilities_from_role_file(role_file: Path) -> set[str]:
     )
 
 
+def _extract_is_builtin_from_role_file(role_file: Path) -> bool:
+    tree = ast.parse(role_file.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                func = decorator.func
+                if not isinstance(func, ast.Attribute) or func.attr != "register":
+                    continue
+                for keyword in decorator.keywords:
+                    if keyword.arg == "is_builtin" and isinstance(keyword.value, ast.Constant):
+                        return keyword.value.value is True
+    raise AssertionError(
+        f"No explicit AgentCatalog.register(is_builtin=True) decorator found in {role_file}"
+    )
+
+
 def test_builtin_role_import_lists_are_consistent() -> None:
     from_init = _extract_builtin_import_modules()
     from_registry = _extract_registry_builtin_modules()
@@ -88,6 +106,15 @@ def test_builtin_role_capabilities_match_expected_contract() -> None:
     for file_name, expected_caps in expected.items():
         observed = _extract_capabilities_from_role_file(role_dir / file_name)
         assert observed == expected_caps
+
+
+def test_builtin_role_decorators_explicitly_mark_is_builtin_true() -> None:
+    root = _repo_root()
+    role_dir = root / "agent" / "roles"
+
+    for module_name in _extract_registry_builtin_modules():
+        role_file = role_dir / f"{module_name.rsplit('.', maxsplit=1)[-1]}.py"
+        assert _extract_is_builtin_from_role_file(role_file) is True
 
 
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:

@@ -42,6 +42,12 @@ class AgentCatalog:
         version: str = "1.0.0",
         is_builtin: bool = False,
     ) -> Callable[[type], type]:
+        """Decorate an agent class and add it to the catalog.
+
+        ``is_builtin`` intentionally defaults to ``False`` for decorator-based
+        registration so external/plugin roles are not marked built-in by
+        accident. Built-in role modules must pass ``is_builtin=True`` explicitly.
+        """
         def _decorator(agent_cls: type) -> type:
             role = getattr(agent_cls, "ROLE_NAME", agent_cls.__name__.lower().replace("agent", ""))
             cls.register_type(
@@ -67,6 +73,11 @@ class AgentCatalog:
         version: str = "1.0.0",
         is_builtin: bool = True,
     ) -> None:
+        """Register an agent type programmatically.
+
+        The programmatic API keeps ``is_builtin=True`` as its historical default.
+        Runtime/plugin callers should pass ``is_builtin=False`` explicitly.
+        """
         spec = AgentSpec(
             role_name=role_name,
             agent_class=agent_class,
