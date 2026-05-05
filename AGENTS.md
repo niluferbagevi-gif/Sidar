@@ -161,9 +161,76 @@ döndürebilir. Bu durumda önce bağımlılıkları kurun:
 
 Doğrulama adımları:
 
-- `python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"`
-  çıktısında beklenen yerleşik roller görünmelidir. Çıktı `[]` ise öncelikle bağımlılık
-  kurulumunu ve import uyarılarını kontrol edin.
+**1. Hızlı görünürlük/smoke kontrolü**
+
+Aşağıdaki komut kullanılabilir; ancak yalnızca mevcut role adlarını basar ve tek
+başına yeterli kabul edilmemelidir:
+
+```bash
+python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"
+```
+
+Çıktı `[]` ise öncelikle bağımlılık kurulumunu ve import uyarılarını kontrol edin.
+
+**2. Fail-fast yerleşik rol doğrulaması**
+
+Yerleşik rollerin eksiksiz yüklendiğini doğrulamak için aşağıdaki komut
+çalıştırılmalıdır. Bu komut, boş liste veya eksik role durumlarını sessiz geçmez:
+
+```bash
+python - <<'PY'
+from agent.registry import AgentCatalog
+
+expected = {"coder", "researcher", "reviewer", "poyraz", "qa", "coverage"}
+actual = {s.role_name for s in AgentCatalog.list_all()}
+missing = expected - actual
+
+if missing:
+    raise SystemExit(f"Eksik built-in roller: {sorted(missing)}; actual={sorted(actual)}")
+
+print("OK", sorted(actual))
+PY
+```
+
+**3. Capability doğrulaması**
+
+Capability listesinin dokümanla ve ajan dekoratörleriyle eşleştiğini doğrulamak
+için aşağıdaki komut çalıştırılmalıdır:
+
+```bash
+python - <<'PY'
+from agent.registry import AgentCatalog
+
+expected = {
+    "coder": {"code_generation", "file_io", "shell_execution", "code_review"},
+    "researcher": {"web_search", "rag_search", "summarization"},
+    "reviewer": {"code_review", "security_audit", "quality_check"},
+    "qa": {"test_generation", "ci_remediation"},
+    "coverage": {
+        "coverage_analysis",
+        "pytest_output_analysis",
+        "autonomous_test_generation",
+    },
+    "poyraz": {"marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"},
+}
+
+actual = {s.role_name: set(s.capabilities) for s in AgentCatalog.list_all()}
+
+for role, capabilities in expected.items():
+    if role not in actual:
+        raise SystemExit(f"Eksik rol: {role}")
+    if actual[role] != capabilities:
+        raise SystemExit(
+            f"Capability mismatch for {role}: "
+            f"expected={sorted(capabilities)} actual={sorted(actual[role])}"
+        )
+
+print("OK")
+PY
+```
+
+**4. Statik tutarlılık kontrolleri**
+
 - `agent/roles/__init__.py` içindeki dışa açılan roller ile
   `agent/registry.py::_import_builtin_roles()` listesi tutarlı olmalıdır.
 - `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki
