@@ -243,6 +243,89 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `uv run python -m scripts.auto_heal --log artifacts/mypy_errors.log --source mypy`
 - Otonom upload/test/iyileştirme döngüsünü çalıştırmak için: `./autonomous_loop.sh`
 
+### 2.6 Swarm, Supervisor ve event-driven koordinasyon
+
+Sidar ajanları yalnızca doğrusal `coder -> reviewer -> qa` pipeline'ı olarak çalışmaz.
+Kod tabanında iki tamamlayıcı koordinasyon modeli bulunur: `Supervisor`, tek görev için
+merkezi router/quality gate rolü üstlenir; `SwarmOrchestrator`, çoklu görevi intent ve
+capability eşleşmesine göre paralel, pipeline veya P2P handoff ile dağıtır.
+
+#### 2.6.1 Supervisor kontrol düzlemi
+
+- **Görev analizi ve yönlendirme:** `agent/core/supervisor.py`, gelen prompt için intent
+  belirler; research/review/marketing/coverage işleri doğrudan ilgili role, varsayılan
+  kod işleri ise önce `coder` sonra `reviewer` kalite kapısına gider.
+- **Aktif ajan ve bellek:** `ActiveAgentRegistry` runtime ajan örneklerini role göre
+  tutar; `MemoryHub` global notları ve role özel notları paylaşarak sonraki
+  delegasyonlara bağlam sağlar.
+- **Event yayını:** Supervisor her önemli durumda `AgentEventBus.publish(...)` ile
+  `supervisor` kaynaklı olay üretir (örn. “Researcher ajanına yönlendiriliyor...”,
+  “Reviewer kontrolü tekrar çalıştırılıyor...”). UI/CLI veya dış gözlemciler bu olayları
+  subscribe ederek akışı izler.
+- **P2P handoff:** Ajan çıktısı `DelegationRequest` / `P2PMessage` biçimindeyse
+  `_route_p2p(...)` hedef ajana doğrudan görev zarfı gönderir. `MAX_TURNS`,
+  `MAX_QA_RETRIES` ve `REACT_TIMEOUT` circuit breaker değerleri loop/sonsuz devir
+  riskini sınırlar.
+
+#### 2.6.2 Swarm orkestrasyonu
+
+- **Task modeli:** `SwarmTask` tekil hedefi, intent'i, context'i, task id'yi ve isteğe
+  bağlı `preferred_agent` değerini taşır; `SwarmResult` sonuç, evidence, handoff
+  zinciri ve graph/trace bilgisini döndürür.
+- **Router:** `TaskRouter`, intent'i capability'ye çevirir ve `AgentCatalog` üzerinden
+  uygun role ajanı seçer. Bu nedenle yeni ajan eklenirken capability kaydı doğruysa
+  swarm tarafı role'ü otomatik keşfedebilir.
+- **Yürütme modları:**
+  - `run(...)`: tek görevi otomatik role seçimiyle çalıştırır.
+  - `run_parallel(...)`: birden fazla `SwarmTask` için `asyncio.Semaphore` ile
+    `max_concurrency` sınırı uygulayarak paralel yürütür.
+  - `run_pipeline(...)`: görevleri sırayla yürütür ve başarılı özetleri sonraki görevin
+    context'ine `prev_<role>` anahtarıyla taşır.
+- **P2P / recursive handoff:** Bir ajan `DelegationRequest` döndürürse `_direct_handoff(...)`
+  yeni hedef role'e geçer; `SWARM_MAX_HANDOFF_HOPS`, `SWARM_LOOP_GUARD_MAX_REPEAT`,
+  `SWARM_TASK_MAX_RETRIES` ve `SWARM_TASK_RETRY_DELAY_MS` ayarları tekrar/başarısızlık
+  kontrolünü sağlar.
+- **Dağıtık delegasyon:** `dispatch_distributed(...)`, `TaskEnvelope`'ı
+  `BrokerTaskEnvelope` biçimine çevirip enjekte edilen `AsyncDelegationBackend` üzerinden
+  broker/backplane'e gönderir. Varsayılan `InMemoryDelegationBackend` test/prototip
+  içindir; gerçek Kafka/Rabbit/Redis iş kuyruğu entegrasyonları bu kontrata uymalıdır.
+
+#### 2.6.3 Event bus ve backend stratejileri
+
+- **Yerel fanout + uzak transport:** `AgentEventBus.publish(...)` olayı önce process içi
+  subscriber kuyruklarına dağıtır, ardından seçili remote backend'e yayınlamayı dener.
+  Remote backend başarısızsa local fallback korunur; Redis/Kafka için circuit breaker
+  ardışık hatalarda remote yayını geçici olarak durdurur.
+- **Backend seçimi:** `SIDAR_EVENT_BUS_BACKEND` `redis` (varsayılan), `rabbitmq` veya
+  `kafka` olabilir. Strategy sınıfları `agent/core/event_backends/` altında yer alır:
+  `RedisBackend`, `RabbitMQBackend`, `KafkaBackend`. Bu sınıflar ortak
+  `BaseEventBusBackend.schedule_bootstrap()` ve `publish(evt)` kontratını uygular.
+- **Redis:** `REDIS_URL`, `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP` ve Redis
+  timeout/max connection ayarlarıyla Redis Streams consumer group kullanır.
+- **RabbitMQ:** `RABBITMQ_URL` ile `aio_pika` üzerinden durable queue publish/consume
+  yapar. Paket veya broker yoksa debug log ile local fallback'e düşer.
+- **Kafka:** `KAFKA_BOOTSTRAP_SERVERS`, `SIDAR_EVENT_BUS_KAFKA_TOPIC` ve
+  `SIDAR_EVENT_BUS_KAFKA_GROUP` ile `aiokafka` producer/consumer kullanır. Paket veya
+  broker yoksa local fallback korunur.
+- **DLQ ve dayanıklılık:** Uzak publish/consume sırasında teslim edilemeyen veya parse
+  edilemeyen olaylar DLQ kanalına ve process içi `dlq_buffer`'a alınabilir;
+  `SIDAR_EVENT_BUS_DLQ_CHANNEL`, `SIDAR_EVENT_BUS_DLQ_MAXLEN` ve opsiyonel
+  `SIDAR_EVENT_BUS_DLQ_PERSIST_PATH` ile kalıcılık yönetilir.
+
+#### 2.6.4 Operasyonel kurallar
+
+- Linear pipeline, supervisor ve swarm kavramları karıştırılmamalıdır: pipeline sıralı
+  kalite akışıdır; supervisor merkezi yönlendirme ve P2P kontrolüdür; swarm ise çoklu
+  görevi paralel/pipeline/dağıtık biçimde koordine eder.
+- Yeni role/capability eklendiğinde `AgentCatalog` metadata'sı, `TaskRouter` intent
+  eşleşmesi ve gerekirse supervisor intent yönlendirmesi birlikte güncellenmelidir.
+- Event backend seçimi ortam değişkeniyle yapılmalı; broker erişilemediğinde sistemin
+  local fallback ile çalışacağı, fakat cross-process gözlemlenebilirlik/koordinasyonun
+  sınırlanacağı bilinmelidir.
+- P2P/swarm handoff üreten ajanlar `reply_to`, `target_agent`, `payload`, `intent` ve
+  `parent_task_id` alanlarını eksiksiz doldurmalı; circuit breaker limitlerini aşan
+  döngüler fail-closed sonlanmalıdır.
+
 ---
 
 ## 3) Codex skills rehberi

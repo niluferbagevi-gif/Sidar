@@ -164,6 +164,28 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "raise SystemExit(asyncio.run(main()))" in script
 
 
+def test_agents_documentation_covers_swarm_supervisor_event_coordination() -> None:
+    docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "### 2.6 Swarm, Supervisor ve event-driven koordinasyon",
+        "`Supervisor`, tek görev için",
+        "`SwarmOrchestrator`, çoklu görevi intent",
+        "`ActiveAgentRegistry` runtime ajan örneklerini",
+        "`AgentEventBus.publish(...)`",
+        "`DelegationRequest` / `P2PMessage`",
+        "`run_parallel(...)`",
+        "`dispatch_distributed(...)`",
+        "`AsyncDelegationBackend`",
+        "`SIDAR_EVENT_BUS_BACKEND` `redis`",
+        "`RedisBackend`, `RabbitMQBackend`, `KafkaBackend`",
+        "`SIDAR_EVENT_BUS_DLQ_CHANNEL`",
+    ]
+
+    for fragment in expected_fragments:
+        assert fragment in docs
+
+
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
     role_file = tmp_path / "example_role.py"
     role_file.write_text(
