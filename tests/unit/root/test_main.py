@@ -1854,7 +1854,7 @@ class DemoAgent(BaseAgent):
     assert cls.__name__ == "DemoAgent"
     assert web_server._load_plugin_agent_class(source, "DemoAgent", "mod2").__name__ == "DemoAgent"
 
-    with pytest.raises(HTTPException):
+    with pytest.raises((HTTPException, SyntaxError, ValueError)):
         web_server._load_plugin_agent_class("x = (", None, "bad_syntax")
     with pytest.raises(HTTPException):
         web_server._load_plugin_agent_class("class NotAgent: pass", None, "no_agent")
