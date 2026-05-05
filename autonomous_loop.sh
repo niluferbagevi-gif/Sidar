@@ -149,8 +149,12 @@ for ((i=1; i<=ITERATIONS; i++)); do
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
-        echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
-        uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        if grep -qi "Success: no issues found" "artifacts/mypy_errors.log"; then
+          echo "[HEAL] Mypy log'u temiz; auto_heal adımı atlandı."
+        else
+          echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
+          uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        fi
       else
         echo "[HEAL] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
       fi

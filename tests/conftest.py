@@ -12,6 +12,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+# Bazı modüller import anında Config() oluşturuyor.
+# Pytest collection aşamasında test-env işaretleri henüz garanti olmadığından
+# kritik ayarların boş gelmesini önlemek için en erken noktada varsayılanları set ediyoruz.
+os.environ.setdefault("SIDAR_ENV", "test")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
+
 import pytest
 from sqlalchemy import text
 
