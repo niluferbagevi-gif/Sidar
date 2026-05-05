@@ -119,8 +119,8 @@ def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
 
-    # .env*.example dosyasının güvenlik filtresine takılmasını önleyen istisna
-    if os.path.basename(normalized) == ".env*.example":
+    # .env.example dosyasının güvenlik filtresine takılmasını önleyen istisna
+    if os.path.basename(normalized) == ".env.example , .env.test.example ":
         return False
 
     return any(
