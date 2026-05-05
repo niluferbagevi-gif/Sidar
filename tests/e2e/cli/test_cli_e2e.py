@@ -83,6 +83,13 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
             "OLLAMA_URL": f"http://127.0.0.1:{mock_ollama_server.server_address[1]}",
             "DATABASE_URL": f"sqlite:///{db_path}",
             "MEMORY_ENCRYPTION_KEY": Fernet.generate_key().decode("utf-8"),
+            # config.py doğrulama zincirinde model/provider alanları zorunlu olabildiği
+            # için E2E ortamını üretime daha yakın hale getir.
+            "DEFAULT_PROVIDER": "ollama",
+            "DEFAULT_MODEL": "mocked-model",
+            "OLLAMA_MODEL": "mocked-model",
+            "QWEN_MODEL": "mocked-model",
+            "OPENAI_MODEL": "gpt-4o-mini",
         }
     )
 
