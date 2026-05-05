@@ -225,6 +225,27 @@ async def _run(args: argparse.Namespace) -> int:
 
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
     context = build_local_failure_context(log_text, source=args.source, log_path=str(log_path))
+    suspected_targets = list(context.get("suspected_targets") or [])
+    if not suspected_targets:
+        source_name = str(args.source or "local").strip() or "local"
+        lower_text = log_text.lower()
+        if "success: no issues found" in lower_text and source_name.lower() == "mypy":
+            print(
+                json.dumps(
+                    {
+                        "status": "skipped",
+                        "model": "",
+                        "queue_size": 0,
+                        "executions": [],
+                        "context": context,
+                        "reason": "mypy temiz çıktı verdi; uygulanacak patch yok.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
     diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
 
     cfg = Config()

@@ -410,9 +410,20 @@ def build_local_failure_context(
         if _ROOT_CAUSE_PATTERN.match(line) and not root_cause_hint:
             root_cause_hint = _trim_text(line, 220)
 
+    has_actionable_failure = bool(failure_lines)
+    if not has_actionable_failure and root_cause_hint:
+        lowered_hint = root_cause_hint.lower()
+        has_actionable_failure = any(
+            token in lowered_hint for token in ("failed", "error", "exception", "traceback")
+        )
     failure_summary = (
         f"{normalized_source} yerel kalite kapısında hata bulundu "
         f"({len(failure_lines)} kayıt, {len(suspected_targets)} dosya)."
+        if has_actionable_failure
+        else (
+            f"{normalized_source} yerel kalite kapısı temiz görünüyor "
+            f"(0 kayıt, 0 dosya)."
+        )
     )
     local_scope_limit = max(
         1,
@@ -431,7 +442,7 @@ def build_local_failure_context(
         "branch": "",
         "base_branch": "main",
         "sha": "",
-        "conclusion": "failure",
+        "conclusion": "failure" if has_actionable_failure else "success",
         "status": "completed",
         "html_url": "",
         "jobs_url": "",

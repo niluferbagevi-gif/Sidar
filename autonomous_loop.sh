@@ -73,7 +73,7 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
         )
         verdict = json.loads(str(verdict_raw or "{}"))
         approved = bool(verdict.get("approved", False))
-        reason = str(verdict.get("reason", "-"))
+        reason = str(verdict.get("reason", "")).strip() or "ReviewerAgent gerekçe üretmedi."
         print(f"[ReviewerAgent] approved={approved} reason={reason}")
         return approved
     except Exception as exc:
@@ -149,8 +149,12 @@ for ((i=1; i<=ITERATIONS; i++)); do
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
-        echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
-        uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        if grep -qi "Success: no issues found" "artifacts/mypy_errors.log"; then
+          echo "[HEAL] Mypy log'u temiz; auto_heal adımı atlandı."
+        else
+          echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
+          uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
+        fi
       else
         echo "[HEAL] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
       fi
