@@ -663,7 +663,7 @@ async def ingest_multimodal_analysis(
 
 
 class MultimodalPipeline:
-    """Video/ses/görsel dosyalarını ortak bir LLM bağlamına dönüştürür."""
+    """AGENTS.md multimodal kurallarına göre video/ses/görseli ortak LLM bağlamına dönüştürür."""
 
     def __init__(self, llm_client: Any, config: Any = None) -> None:
         self._llm = llm_client

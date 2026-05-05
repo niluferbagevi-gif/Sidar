@@ -97,7 +97,7 @@ def _build_tts_adapter(provider: str) -> _BaseTTSAdapter:
 
 
 class VoicePipeline:
-    """Websocket voice akışı için TTS adaptörü ve segmentleme yardımcıları."""
+    """AGENTS.md ses kurallarına göre WebSocket voice/TTS segmentleme akışını yönetir."""
 
     INTERRUPT_EVENTS = {"speech_start", "speech", "user_speaking", "barge_in", "interrupt"}
     COMMIT_EVENTS = {"speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"}
@@ -349,7 +349,7 @@ class BrowserAudioPacket:
 
 
 class WebRTCAudioIngress:
-    """Tarayıcı tabanlı WebRTC ses girişini OS bağımsız normalize eder."""
+    """AGENTS.md ses kurallarına göre WebRTC ses paketlerini doğrulayıp normalize eder."""
 
     SUPPORTED_MIME_TYPES = {
         "audio/webm",

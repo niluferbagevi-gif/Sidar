@@ -16,7 +16,7 @@ from managers.web_search import WebSearchManager
 
 @AgentCatalog.register(capabilities=["web_search", "rag_search", "summarization"], is_builtin=True)
 class ResearcherAgent(BaseAgent):
-    """Yalnızca bilgi toplama araçlarını kullanan uzman ajan."""
+    """AGENTS.md uyarınca kod değiştirmeden web/RAG kaynaklı doğrulanabilir çıktı üreten ajan."""
 
     SYSTEM_PROMPT = (
         "Sen yalnızca bilgi toplama odaklı bir araştırmacı ajansın. "

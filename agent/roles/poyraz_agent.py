@@ -81,7 +81,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
     is_builtin=True,
 )
 class PoyrazAgent(BaseAgent):
-    """SEO, kampanya içeriği ve hedef kitle operasyonları için uzman ajan."""
+    """AGENTS.md pazarlama akışına göre SEO, kampanya, funnel ve audience ops yürüten ajan."""
 
     SYSTEM_PROMPT = (
         "Sen Poyraz adında pazarlama ve dijital operasyon uzmanı bir ajansın. "
