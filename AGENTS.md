@@ -5,11 +5,13 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 
 ## 1) Amaç ve kapsam
 
-`AGENTS.md` iki farklı ama tamamlayıcı alanı dokümante eder:
+`AGENTS.md` üç farklı ama tamamlayıcı alanı dokümante eder:
 
 1. **Repo içi çalışma ajanları (multi-agent mimarisi)**
    - Kod, araştırma, inceleme, QA ve coverage gibi rol bazlı ajanlar.
-2. **Codex skill kullanımı (çalıştırma yardımcıları)**
+2. **Otonom operasyonlar ve self-healing döngüsü**
+   - Lint/test/coverage sinyallerinden otomatik teşhis, patch, doğrulama ve rollback akışı.
+3. **Codex skill kullanımı (çalıştırma yardımcıları)**
    - `SKILL.md` tabanlı sistem skill’lerinin ne zaman ve nasıl uygulanacağı.
 
 > Not: Önceki sürümlerde içerik ağırlıklı olarak skills tarafını anlatıyordu. Bu sürümde
@@ -155,7 +157,101 @@ kayıtlarıyla uyumlu tutulmalıdır.
 
 ---
 
-## 3) Codex skills rehberi
+## 3) Otonom operasyonlar ve self-healing döngüsü
+
+Sidar'daki self-healing akışı, kalite kapısı hatalarını insan müdahalesi olmadan
+tespit edip düşük riskli ve doğrulanabilir patch/test değişiklikleri üretmek için
+katmanlı çalışır. Bu bölümdeki davranışın operasyonel kaynakları
+`agent/auto_handle.py`, `autonomous_loop.sh` ve `scripts/auto_heal.py` dosyalarıdır.
+Patch üretme/uygulama güvenliği ise `SidarAgent` içindeki self-heal planlama ve
+sandbox doğrulama adımlarına dayanır.
+
+### 3.1 Tetikleme kanalları
+
+- **CLI kısa komutu (`.heal <log_dosyası>`):** `AutoHandle`, nokta-komut
+  standardında `.heal` komutunu yakalar; log dosyasını okur,
+  `build_local_failure_context(...)` ile hata bağlamını çıkarır ve
+  `build_ci_remediation_payload(...)` ile uygulanabilir kapsam/doğrulama planını
+  özetler. Bu kanal hızlı teşhis ve kapsam görünürlüğü sağlar; doğrudan patch
+  uygulamaz.
+- **Yerel self-heal CLI (`scripts/auto_heal.py`):** Mypy veya benzeri statik analiz
+  loglarını okuyup `SidarAgent._attempt_autonomous_self_heal(...)` akışına bağlar.
+  `--batch-size`, `--batch-retries`, `--scope-log-lines`, `--model` ve
+  `--hitl-approve` seçenekleriyle kapsamı ve risk onayını kontrol eder.
+- **Otonom kalite döngüsü (`autonomous_loop.sh`):** `github_upload.py ->
+  run_tests.sh -> quality gate` sırasını çalıştırır. Test başarısızlığı, coverage
+  hedefinin altında kalma veya coverage metriğinin okunamaması durumunda self-heal
+  ve coverage iyileştirme adımlarını tetikler.
+
+### 3.2 Döngünün adımları
+
+1. **Sinyal toplama:** `run_tests.sh`, `coverage.json`, `coverage.xml` ve
+   `artifacts/mypy_errors.log` gibi artefaktlar kalite sinyali olarak kullanılır.
+2. **Bağlam çıkarma:** Loglar hata kaynağına göre normalize edilir; şüpheli dosyalar,
+   hedefe özgü hata satırları, kök neden ipuçları ve güvenli doğrulama komutları
+   remediation payload'ına eklenir.
+3. **Kapsam küçültme:** `scripts/auto_heal.py`, şüpheli dosyaları batch'lere böler;
+   her batch için yalnızca ilgili hata satırları prompt'a eklenir. Böylece tek
+   denemede geniş ve riskli repo çapı patch üretimi yerine küçük, izlenebilir
+   değişiklikler hedeflenir.
+4. **Patch planlama:** Self-heal, LLM'den yalnızca JSON patch planı ister. Plan,
+   hedef dosya kapsamı, maksimum patch sayısı ve izinli doğrulama komutlarıyla
+   normalize edilir; kapsam dışı veya doğrulanamayan operasyonlar elenir.
+5. **Uygulama ve doğrulama:** Patch uygulanmadan önce dosya yedeği alınır. Patch
+   sonrası her doğrulama komutu sandbox içinde çalıştırılır. Tüm doğrulamalar
+   geçerse durum `applied` olur.
+6. **Rollback:** Herhangi bir patch veya doğrulama hatasında alınan yedekler geri
+   yazılır; durum `reverted`/`failed` olarak raporlanır ve sonraki retry/batch
+   kararına bırakılır.
+7. **Tekrar deneme:** Batch başarısızlığı `blocked`, `failed` veya `partial`
+   durumundaysa `--batch-retries` sınırı kadar yeniden denenebilir. Otonom shell
+   döngüsü ise sonsuz döngü riskini azaltmak için remediation retry sayısını en
+   fazla 2 ile sınırlar.
+
+### 3.3 Manuel onay olmadan düzeltme koşulları
+
+Self-heal yalnızca aşağıdaki koşullar birlikte sağlandığında manuel onay beklemeden
+patch uygulamalıdır:
+
+- `ENABLE_AUTONOMOUS_SELF_HEAL=True` etkin olmalıdır.
+- Remediation loop durumu `planned` olmalı ve en az bir `scope_path` içermelidir.
+- Plan yalnızca izinli dosya kapsamına dokunmalı, güvenli patch operasyonları
+  içermeli ve doğrulama komutları boş olmamalıdır.
+- Risk modeli `needs_human_approval=False` üretmelidir. Riskli planlarda akış
+  `awaiting_hitl` döner; `scripts/auto_heal.py --hitl-approve yes` gibi açık onay
+  verilmeden patch uygulanmaz.
+- Doğrulama komutları sandbox içinde başarıyla tamamlanmalıdır; aksi halde tüm
+  değişiklikler rollback edilir.
+
+### 3.4 Coverage iyileştirme hattı
+
+`autonomous_loop.sh`, testler geçse bile `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında
+kalınırsa coverage iyileştirme hattını çalıştırır. Bu hat:
+
+- `coverage.xml` varsa `CoverageAgent` ile coverage açıklarını analiz eder.
+- En öncelikli finding için deterministik pytest adayı üretmeye çalışır.
+- Boş veya trivial testleri (`assert True` gibi) otomatik yazmaz.
+- Geçerli test adayını önerilen test yoluna append eder ve ardından `run_tests.sh`
+  tekrar çalıştırılır.
+- Coverage hotspot raporu için `scripts/coverage_hotspots.py --xml coverage.xml`
+  yardımcı analizini best-effort çalıştırır.
+
+### 3.5 Operasyonel güvenlik sınırları
+
+- Self-heal, geniş kapsamlı refactor veya davranış değişikliği için değil; küçük,
+  logla doğrulanmış, testle kanıtlanabilir lint/type/test düzeltmeleri için
+  kullanılmalıdır.
+- `scripts/auto_heal.py` içindeki mypy referansı, `type: ignore` kullanımını dar ve
+  spesifik koda bağlı tutar; çıplak veya dosya geneli ignore son çare dışında
+  kullanılmamalıdır.
+- Otonom döngü başarısız olursa son test çıkış kodunu veya kalite kapısı hatasını
+  koruyarak durur; bu noktada görev `reviewer`/insan incelemesine devredilmelidir.
+- CoverageAgent tarafından yazılan testler sonraki `run_tests.sh` turunda
+  doğrulanmadan başarılı kabul edilmez.
+
+---
+
+## 4) Codex skills rehberi
 
 Bu oturumdaki gerçek kullanılabilir skill listesi, çalışma zamanı tarafından sağlanan
 `Available skills` bölümüdür. `AGENTS.md`, skill envanterinin tek doğruluk kaynağı
@@ -166,14 +262,14 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 > bilginin hızla bayatlayabileceği unutulmamalı; güncel kullanılabilirlik için her
 > zaman oturumdaki `Available skills` çıktısı esas alınmalıdır.
 
-### 3.1 Skill tetikleme kuralları
+### 4.1 Skill tetikleme kuralları
 
 - Kullanıcı skill adını açıkça verirse (`$SkillName` veya düz metin) skill kullanılmalıdır.
 - Kullanıcı isteği bir skill tanımıyla net eşleşiyorsa skill kullanılmalıdır.
 - Birden fazla skill gerekiyorsa minimum gerekli set seçilmeli ve sıra belirtilmelidir.
 - Skill bu turda tekrar anılmadıysa bir sonraki tura taşınmamalıdır.
 
-### 3.2 Skill kullanım yöntemi (progressive disclosure)
+### 4.2 Skill kullanım yöntemi (progressive disclosure)
 
 1. İlgili `SKILL.md` dosyasını aç ve yalnızca gerekli kısmı oku.
 2. Relative path’leri önce skill dizinine göre çöz.
@@ -181,7 +277,7 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 4. `scripts/` varsa uzun çıktıyı elle yazmak yerine script’i kullan.
 5. `assets/templates` varsa yeniden üretmek yerine tekrar kullan.
 
-### 3.3 Koordinasyon, bağlam hijyeni ve fallback
+### 4.3 Koordinasyon, bağlam hijyeni ve fallback
 
 - Uzun metinleri kopyalamak yerine özetle; bağlamı küçük tut.
 - Gereksiz derin referans zinciri açma.
@@ -189,7 +285,7 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 
 ---
 
-## 4) Yeni ajan ekleme kısa rehberi
+## 5) Yeni ajan ekleme kısa rehberi
 
 1. `agent/roles/` altında yeni ajan sınıfını oluştur.
 2. `@AgentCatalog.register(...)` dekoratörüyle role/capability metadata’sını tanımla.
@@ -216,13 +312,13 @@ class ExampleAgent(BaseAgent):
 
 ---
 
-## 5) Doküman bakım notları
+## 6) Doküman bakım notları
 
-- Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
+- Bu dosya **ajan + otonom operasyon + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
 - Skill kullanılabilirliği için statik liste tutulmaz; güncel envanter çalışma zamanı `Available skills` çıktısından doğrulanmalıdır.
 - Yeni role/capability eklendiğinde bu dosyanın 2. bölümünü güncelleyin.
 
-### 5.1 Hızlı doğrulama checklist’i
+### 6.1 Hızlı doğrulama checklist’i
 
 Ön koşul: Aşağıdaki çalışma zamanı doğrulamaları **bağımlılıkları kurulmuş** bir ortamda
 çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
@@ -311,7 +407,7 @@ PY
 - `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki
   `@AgentCatalog.register(capabilities=[...])` ile eşleşmelidir.
 
-### 5.2 Ayrıştırma (SoC) yol haritası
+### 6.2 Ayrıştırma (SoC) yol haritası
 
 - Doküman boyutu büyüdüğünde `Codex skills` kurallarını ayrı bir `SKILLS.md` dosyasına taşıyın.
 - `AGENTS.md` dosyasını repo içi multi-agent mimari ve operasyonel standartlara odaklı tutun.
