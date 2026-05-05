@@ -10,6 +10,16 @@ import main
 from main import _safe_choice, _safe_port, _safe_text, build_command
 
 
+@pytest.fixture(autouse=True)
+def _mock_critical_config_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid real critical-config validation side effects in unit tests."""
+    fake_cfg = SimpleNamespace(
+        validate_critical_settings=lambda: True,
+        init_telemetry=lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(main, "cfg", fake_cfg)
+
+
 def test_safe_choice_falls_back_for_invalid_inputs() -> None:
     allowed = {"web", "cli"}
 
