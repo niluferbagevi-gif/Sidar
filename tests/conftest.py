@@ -6,6 +6,14 @@ import importlib
 import os
 import sys
 import time
+
+# Bazı modüller (web_server.py, github_upload.py, main.py) import anında
+# Config() oluşturuyor ve JWT_SECRET_KEY boşsa ValueError fırlatıyor.
+# Pytest collection sırasında PYTEST_CURRENT_TEST henüz set edilmediği için
+# Config._is_test_env() False döner. Bu yüzden conftest'in en başında
+# test ortamı bayraklarını set ederek collection hatalarını engelliyoruz.
+os.environ.setdefault("SIDAR_ENV", "test")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
 from types import SimpleNamespace

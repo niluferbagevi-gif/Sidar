@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -229,6 +230,11 @@ def test_module_main_guard_raises_system_exit(
     xml_path = tmp_path / "coverage.xml"
     xml_path.write_text('<?xml version="1.0" ?><coverage></coverage>', encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml_path)])
+    # `from scripts.coverage_hotspots import ...` import'undan dolayı modül
+    # sys.modules'te zaten kayıtlı; `runpy.run_module` bu durumda RuntimeWarning
+    # üretiyor ve filterwarnings=error bunu hata yapıyor. __main__ guard'ını
+    # temiz çalıştırmak için kaydı geçici olarak kaldırıyoruz.
+    monkeypatch.delitem(sys.modules, "scripts.coverage_hotspots", raising=False)
 
     with pytest.raises(SystemExit) as exc:
         runpy.run_module("scripts.coverage_hotspots", run_name="__main__")

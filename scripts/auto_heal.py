@@ -227,6 +227,23 @@ async def _run(args: argparse.Namespace) -> int:
     context = build_local_failure_context(log_text, source=args.source, log_path=str(log_path))
     diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
 
+    if not context.get("suspected_targets") and "Success: no issues found" in log_text:
+        print(
+            json.dumps(
+                {
+                    "status": "noop",
+                    "reason": (
+                        f"{args.source} log'unda hata kaydı yok "
+                        "(\"Success: no issues found\"). Self-heal atlandı."
+                    ),
+                    "log_path": str(log_path),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     cfg = Config()
     cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
