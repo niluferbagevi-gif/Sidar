@@ -24,7 +24,7 @@ from managers.todo_manager import TodoManager
     capabilities=["code_generation", "file_io", "shell_execution", "code_review"], is_builtin=True
 )
 class CoderAgent(BaseAgent):
-    """Yalnızca kodlama ve proje denetim araçlarını kullanan uzman ajan."""
+    """AGENTS.md rol sınırlarına göre kod/dosya/shell işlerini yürüten uzman ajan."""
 
     SYSTEM_PROMPT = (
         "Sen bir kodlayıcı ajansın. Sadece kod/dosya araçlarıyla çalışırsın. "

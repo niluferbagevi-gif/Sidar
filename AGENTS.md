@@ -33,6 +33,32 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 > Kaynak doğrulama notu: Bu listedeki rollerin **tek doğruluk kaynağı**
 > `agent/roles/__init__.py` ve dekoratör kayıtlarıdır.
 
+#### 2.1.1 Kaynak dosya haritası ve senkronizasyon kuralı
+
+Bu rehber mimari davranışın operasyonel özetidir; aşağıdaki kaynak dosyalarla birlikte
+senkron tutulmalıdır:
+
+- **Yerleşik roller ve capability kayıtları**: `agent/roles/__init__.py`,
+  `agent/registry.py`, `agent/roles/*_agent.py`
+- **Rol iş tanımları ve araç sınırları**: `agent/roles/coder_agent.py`,
+  `agent/roles/researcher_agent.py`, `agent/roles/reviewer_agent.py`,
+  `agent/roles/qa_agent.py`, `agent/roles/coverage_agent.py`,
+  `agent/roles/poyraz_agent.py`
+- **Supervisor/Swarm koordinasyonu**: `agent/core/supervisor.py`, `agent/swarm.py`,
+  `agent/core/event_stream.py`, `agent/core/event_backends/`
+- **Self-healing ve otonom döngüler**: `agent/auto_handle.py`, `scripts/auto_heal.py`,
+  `autonomous_loop.sh`
+- **Geliştirme ortamı/model standardı**: `README.md`, `install_sidar.sh`,
+  `pyproject.toml`, `config.py`, `.env.example`
+- **Multimodal/vision/voice yetenekleri**: `core/multimodal.py`, `core/vision.py`,
+  `core/voice.py`, `managers/browser_manager.py`
+
+Senkronizasyon kuralı: Bir ajanın `SYSTEM_PROMPT`, class/module docstring'i,
+`@AgentCatalog.register(...)` capability listesi, kayıtlı tool seti, `run_task` akışı,
+supervisor/swarm routing'i veya multimodal/self-heal davranışı değişirse aynı PR içinde
+`AGENTS.md` de güncellenmelidir. Docstring'ler kısa özet olarak kalabilir; ancak bu
+rehberdeki rol sınırları, onay kuralları ve güvenlik beklentileriyle çelişmemelidir.
+
 ### 2.2 AgentCatalog kayıt sistemi
 
 Ajanlar çalışma zamanında `agent/registry.py` içindeki `AgentCatalog` ile yönetilir.
