@@ -177,3 +177,26 @@ def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.Mo
         "agent.roles.coverage_agent",
         "agent.roles.qa_agent",
     ]
+
+
+def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    snapshot = dict(AgentCatalog._registry)
+    AgentCatalog._registry.clear()
+
+    def _fake_import_module(module_name: str):
+        raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
+
+    monkeypatch.setattr("importlib.import_module", _fake_import_module)
+
+    try:
+        with caplog.at_level("WARNING", logger="agent.registry"):
+            _import_builtin_roles()
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+    assert "Yerleşik ajan rolleri yüklenemedi" in caplog.text
+    assert "python -m pip install -e ." in caplog.text
+    assert "dotenv" in caplog.text

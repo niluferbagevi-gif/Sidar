@@ -149,8 +149,21 @@ class ExampleAgent(BaseAgent):
 
 ### 5.1 Hızlı doğrulama checklist’i
 
+Ön koşul: Aşağıdaki çalışma zamanı doğrulamaları **bağımlılıkları kurulmuş** bir ortamda
+çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
+`pydantic-settings` vb. proje bağımlılıkları henüz yoksa `agent.registry`, yerleşik rol
+modüllerini import ederken başarısız olabilir ve `AgentCatalog.list_all()` boş liste
+döndürebilir. Bu durumda önce bağımlılıkları kurun:
+
+- `python -m pip install -e .`
+- Geliştirme/test araçları veya opsiyonel profiller gerekiyorsa ilgili extras ile kurulum yapın
+  (örn. `python -m pip install -e ".[dev]"`).
+
+Doğrulama adımları:
+
 - `python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"`
-  çıktısında beklenen yerleşik roller görünmelidir.
+  çıktısında beklenen yerleşik roller görünmelidir. Çıktı `[]` ise öncelikle bağımlılık
+  kurulumunu ve import uyarılarını kontrol edin.
 - `agent/roles/__init__.py` içindeki dışa açılan roller ile
   `agent/registry.py::_import_builtin_roles()` listesi tutarlı olmalıdır.
 - `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki

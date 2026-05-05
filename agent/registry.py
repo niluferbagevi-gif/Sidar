@@ -120,9 +120,24 @@ class AgentCatalog:
         return False
 
 
+def _has_builtin_specs() -> bool:
+    """Katalogda en az bir yerleşik ajan kaydı olup olmadığını döndürür."""
+    return any(spec.is_builtin for spec in AgentCatalog.list_all())
+
+
+def _format_import_failure(exc: Exception) -> str:
+    """Import hatasını checklist/operasyon logları için kısa ve okunabilir biçimlendirir."""
+    if isinstance(exc, ModuleNotFoundError):
+        missing_name = getattr(exc, "name", "") or str(exc)
+        return f"eksik Python modülü: {missing_name}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _import_builtin_roles() -> None:
     """Yerleşik ajan modüllerini içe aktararak dekoratör tabanlı kaydı tetikler."""
     import importlib
+
+    failures: list[tuple[str, Exception]] = []
 
     for module_name in (
         "agent.roles.coder_agent",
@@ -134,8 +149,19 @@ def _import_builtin_roles() -> None:
     ):
         try:
             importlib.import_module(module_name)
-        except Exception:
+        except Exception as exc:
+            failures.append((module_name, exc))
             logger.debug("Builtin role import'u atlandı: %s", module_name, exc_info=True)
+
+    if failures and not _has_builtin_specs():
+        first_module, first_exc = failures[0]
+        logger.warning(
+            "Yerleşik ajan rolleri yüklenemedi; AgentCatalog.list_all() boş dönebilir. "
+            "Proje bağımlılıklarını kurun (örn. `python -m pip install -e .`). "
+            "İlk hata: %s (%s).",
+            _format_import_failure(first_exc),
+            first_module,
+        )
 
 
 _import_builtin_roles()
