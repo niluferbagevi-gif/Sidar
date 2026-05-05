@@ -353,6 +353,12 @@ async def test_document_store_apply_hf_runtime_env_sets_expected_vars(
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
     monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
 
+    # _hf_env_applied class-level singleton flag; başka bir testte True'ya
+    # set edildiyse bu test no-op olur. Çağrıdan önce sıfırlayıp sonrasında
+    # geri yükleyerek sıralama bağımsızlığını sağlıyoruz.
+    store_cls = type(store)
+    monkeypatch.setattr(store_cls, "_hf_env_applied", False, raising=False)
+
     store._apply_hf_runtime_env()
 
     assert os.environ["HF_TOKEN"] == "abc-token"

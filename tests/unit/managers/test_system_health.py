@@ -370,14 +370,22 @@ def test_get_gpu_info_and_driver_version_variants(monkeypatch):
 
     manager3._nvml_initialized = True
     monkeypatch.setitem(sys.modules, "pynvml", BadPynvml())
+    # nvidia-smi fallback yolu shutil.which ile binary'yi arar; CI/GPU'suz
+    # ortamlarda None dönüp erken "N/A" verir. Testi host bağımsız tutmak için
+    # which sonucunu sabit bir yola sabitliyoruz.
+    import managers.system_health as _system_health_mod
+
+    monkeypatch.setattr(_system_health_mod.shutil, "which", lambda _bin: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(
-        "subprocess.run",
+        _system_health_mod.subprocess,
+        "run",
         lambda *_a, **_k: types.SimpleNamespace(stdout="535.54\n", returncode=0),
     )
     assert manager3._get_driver_version() == "535.54"
 
     monkeypatch.setattr(
-        "subprocess.run",
+        _system_health_mod.subprocess,
+        "run",
         lambda *_a, **_k: types.SimpleNamespace(stdout="\n", returncode=1),
     )
     assert manager3._get_driver_version() == "N/A"

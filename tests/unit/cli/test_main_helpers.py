@@ -10,6 +10,18 @@ import main
 from main import _safe_choice, _safe_port, _safe_text, build_command
 
 
+@pytest.fixture(autouse=True)
+def _stub_critical_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """main.main() çağrılarının runtime ortam doğrulaması yüzünden exit(2)
+    olmasını engellemek için validate_critical_settings'i True'ya sabitler.
+    Doğrulama hatası senaryosunu test eden case'ler bu fixture'ı kendi
+    monkeypatch'leri ile geçersiz kılar."""
+    if hasattr(main.cfg, "validate_critical_settings"):
+        monkeypatch.setattr(
+            main.cfg, "validate_critical_settings", lambda: True, raising=False
+        )
+
+
 def test_safe_choice_falls_back_for_invalid_inputs() -> None:
     allowed = {"web", "cli"}
 
