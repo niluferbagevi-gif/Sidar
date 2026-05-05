@@ -73,7 +73,7 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
         )
         verdict = json.loads(str(verdict_raw or "{}"))
         approved = bool(verdict.get("approved", False))
-        reason = str(verdict.get("reason", "-"))
+        reason = str(verdict.get("reason", "")).strip() or "ReviewerAgent gerekçe üretmedi."
         print(f"[ReviewerAgent] approved={approved} reason={reason}")
         return approved
     except Exception as exc:
