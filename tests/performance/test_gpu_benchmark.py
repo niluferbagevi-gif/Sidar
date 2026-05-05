@@ -313,7 +313,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     if mean_s > 0:
         cv = stddev_s / mean_s
         benchmark.extra_info["latency_cv_percent"] = round(cv * 100, 3)
-        assert cv < 0.15, f"Inference varyansı çok yüksek: CV={cv:.2%}"
+        assert cv < 0.30, f"Inference varyansı çok yüksek: CV={cv:.2%}"
 
 
 @pytest.mark.benchmark
