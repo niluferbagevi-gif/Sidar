@@ -135,7 +135,67 @@ def _looks_trivial_test(code: str) -> bool:
     if re.search(r"assert\s+True\b", txt):
         return True
     if "def test_" in txt and "assert " not in txt and "pytest.raises" not in txt:
-@@ -114,69 +199,78 @@ async def main() -> int:
+        return True
+    return False
+
+
+async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict) -> bool:
+    reviewer = ReviewerAgent(config=cfg)
+    prompt = (
+        "Aşağıdaki pytest test önerisini anlamsal kalite açısından incele. "
+        "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
+        "yan etkili/deterministik olmayan kullanım var mı değerlendir. "
+        "Sadece JSON döndür: {\"approved\": bool, \"reason\": str}.\n\n"
+        f"[COVERAGE_FINDING]\n{json.dumps(finding, ensure_ascii=False)}\n\n"
+        f"[TEST_CANDIDATE]\n{candidate[:6000]}"
+    )
+    try:
+        verdict_raw = await reviewer.call_llm(
+            [{"role": "user", "content": prompt}],
+            system_prompt=ReviewerAgent.SYSTEM_PROMPT,
+            temperature=0.0,
+            json_mode=True,
+        )
+        verdict = json.loads(str(verdict_raw or "{}"))
+        approved = bool(verdict.get("approved", False))
+        reason = str(verdict.get("reason", "-"))
+        print(f"[ReviewerAgent] approved={approved} reason={reason}")
+        return approved
+    except Exception as exc:
+        print(f"[ReviewerAgent] Semantic review başarısız: {exc}")
+        return False
+
+
+async def main() -> int:
+    cfg = Config()
+    agent = CoverageAgent(config=cfg)
+    payload = {"coverage_xml": "coverage.xml", "coveragerc": ".coveragerc", "limit": 10}
+    raw = await agent._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))  # noqa: SLF001
+    data = json.loads(raw)
+    findings = data.get("findings", [])
+    print(f"[CoverageAgent] {data.get('summary', 'coverage analizi tamamlandı.')}")
+    if not findings:
+        print("[CoverageAgent] Coverage açığı bulunamadı.")
+        return 0
+
+    first = findings[0]
+    candidate_payload = {
+        "coverage_finding": first,
+        "coveragerc": data.get("coveragerc", {}),
+    }
+    generated = await agent._tool_generate_missing_tests(json.dumps(candidate_payload, ensure_ascii=False))  # noqa: SLF001
+
+    if _looks_trivial_test(generated):
+        print("[ReviewerGate] Test önerisi anlamsız/trivial görünüyor (örn. assert True). Reddedildi.")
+        return 1
+
+    approved = await _review_with_reviewer_agent(cfg, str(generated), first)
+    if not approved:
+        print("[ReviewerGate] ReviewerAgent semantik onay vermedi. Öneri uygulanmayacak.")
+        return 1
+
+    preview = "\n".join(str(generated).splitlines()[:20])
+    print("[CoverageAgent] Reviewer onaylı örnek test önerisi (ilk 20 satır):")
     print(preview)
     return 0
 

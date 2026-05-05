@@ -157,6 +157,92 @@ aşağıda belirtilir.
   - `researcher -> poyraz -> reviewer`
   - Teknik kampanya/landing page değişikliği gerekiyorsa akışa `coder` ve `qa` eklenir.
 
+### 2.5 Otonom operasyonlar / Self-healing döngüsü
+
+Self-healing akışı, lint/type-check/test/coverage hatalarını manuel kod müdahalesi olmadan
+tespit edip düşük riskli düzeltmeleri sınırlı kapsamda uygulamak için tasarlanmıştır.
+Bu mekanizma **kontrolsüz otomatik commit** anlamına gelmez; kapsam, doğrulama komutları,
+retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
+
+#### 2.5.1 Tetikleyiciler ve giriş noktaları
+
+- **Yerel kalite kapısı:** `run_tests.sh`, statik analizde önce `ruff check .`
+  çalıştırır, ardından `mypy` çıktısını `artifacts/mypy_errors.log` dosyasına yazar.
+  `AUTO_HEAL_ON_FAILURE=1` olduğunda mypy başarısızlığı için `scripts.auto_heal`
+  döngüsünü tetikler.
+- **Uzun otonom döngü:** `autonomous_loop.sh`, `github_upload.py -> ./run_tests.sh ->
+  kalite kapısı` sırasını çalıştırır. Test çıkışı, coverage JSON okunamaması veya
+  `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında kalma durumunda iyileştirme döngüsüne girer.
+- **CLI hızlı analiz:** `AutoHandle` içindeki `.heal <log_dosyası>` komutu logu okuyup
+  `build_local_failure_context(...)` ve `build_ci_remediation_payload(...)` ile
+  uygulanabilir scope/validation özeti üretir; bu yol patch uygulamaz, operatöre
+  self-heal planının kapsamını gösterir.
+- **Yerel self-heal köprüsü:** `scripts/auto_heal.py`, analiz logunu okuyarak
+  `SidarAgent._attempt_autonomous_self_heal(...)` çağrısına bağlanır; batch, retry,
+  model override ve HITL onay değerlerini CLI argümanlarıyla yönetir.
+
+#### 2.5.2 Döngü adımları
+
+1. **Tespit:** `ruff`, `mypy`, `pytest` ve coverage raporları hata/eksik kapsam
+   sinyali üretir. Mypy logları `build_local_failure_context(...)` ile
+   `suspected_targets`, `failure_summary`, `root_cause_hint` ve `log_excerpt` alanlarına
+   dönüştürülür.
+2. **Planlama:** `build_ci_remediation_payload(...)`, `remediation_loop` üretir. Bu
+   loop; `scope_paths`, `validation_commands`, `bootstrap_commands`,
+   `autonomous_batches`, `needs_human_approval`, `max_auto_attempts` ve adım
+   durumlarını taşır.
+3. **Kapsam daraltma:** `scripts/auto_heal.py`, hedef dosyaları batch'lere böler; her
+   batch için sadece ilgili log satırlarını prompt'a ekler. `SidarAgent` tarafında
+   `_resolve_self_heal_scope_batches(...)` ve `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı
+   sınırlamayı runtime'da korur.
+4. **Patch üretimi:** `SidarAgent._build_self_heal_plan(...)`, dosya snapshot'ları ve
+   remediation loop ile LLM'den yalnızca JSON patch planı ister. Plan,
+   `normalize_self_heal_plan(...)` ile scope dışı dosya, fazla operasyon ve geçersiz
+   action açısından normalize edilir.
+5. **Uygulama + doğrulama:** `_execute_self_heal_plan(...)`, patch öncesi dosya
+   yedeği alır, `CodeManager.patch_file(...)` ile minimal patch uygular ve her
+   `validation_commands` girdisini sandbox içinde çalıştırır. Doğrulama komutu yoksa
+   işlem `blocked` olur.
+6. **Rollback:** Patch veya sandbox doğrulaması başarısız olursa `_restore_self_heal_backups(...)`
+   ile tüm değişiklikler geri alınır ve sonuç `reverted` olarak raporlanır.
+7. **Tekrar:** `autonomous_loop.sh` en fazla `AUTONOMOUS_LOOP_REMEDIATION_RETRIES`
+   denemesi yapar ve bu değer sonsuz döngü riskine karşı 2 ile sınırlandırılır.
+   `scripts/auto_heal.py` tarafında `--batch-retries` her batch için ek plan/uygulama
+   denemelerini yönetir.
+
+#### 2.5.3 Onay, risk ve güvenlik sınırları
+
+- `ENABLE_AUTONOMOUS_SELF_HEAL=False` ise runtime self-heal `disabled` döner ve patch
+  uygulanmaz.
+- `remediation_loop.status != "planned"` ise işlem `skipped` olur; plansız/eksik
+  teşhisli döngüler otomatik patch'e geçemez.
+- `needs_human_approval=True` olan riskli remediation planları onay yoksa
+  `awaiting_hitl` durumunda bekler; `human_approval=False` verilirse `rejected` olur.
+  Sadece açık `human_approval=True` veya CLI'da bilinçli `--hitl-approve yes` ile devam eder.
+- Scope dışı dosya değişikliği yapılmamalıdır; patch planları `scope_paths` ile
+  kısıtlanmalı ve `SELF_HEAL_MAX_PATCHES` üzerinde operasyon üretilmemelidir.
+- `type: ignore` kullanımı son çare olmalı, çıplak `# type: ignore` yerine spesifik
+  kodlu ve dar kapsamlı ignore tercih edilmelidir; `scripts/auto_heal.py` içindeki
+  mypy quick-fix referansı bu kuralı prompt'a ekler.
+
+#### 2.5.4 Coverage odaklı otonom iyileştirme
+
+- `autonomous_loop.sh`, kalite kapısı sağlanmazsa `CoverageAgent` ile `coverage.xml`
+  analizini çalıştırır, `scripts/coverage_hotspots.py` ile düşük coverage dosyalarını
+  listeler ve gerekiyorsa eksik test önerisi üretir.
+- Coverage kaynaklı test önerileri önce trivial assertion kontrolünden geçer
+  (`assert True`, boş test vb.). Ardından `ReviewerAgent` semantik onayı alınmadan
+  öneri uygulanabilir kabul edilmez.
+- `CoverageAgent` deterministik pytest üretmelidir; ağ/dış servis bağımlılığı içeren
+  testler reviewer/QA aşamasında reddedilmelidir.
+
+#### 2.5.5 Operasyonel kullanım örnekleri
+
+- Log kapsamını görmek için: `.heal artifacts/mypy_errors.log`
+- Lokal mypy self-heal çalıştırmak için:
+  `uv run python -m scripts.auto_heal --log artifacts/mypy_errors.log --source mypy`
+- Otonom upload/test/iyileştirme döngüsünü çalıştırmak için: `./autonomous_loop.sh`
+
 ---
 
 ## 3) Codex skills rehberi

@@ -136,6 +136,34 @@ def test_agents_documentation_covers_specialized_roles_and_interactions() -> Non
         assert fragment in docs
 
 
+def test_agents_documentation_covers_self_healing_loop_contract() -> None:
+    docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "### 2.5 Otonom operasyonlar / Self-healing döngüsü",
+        "`.heal <log_dosyası>`",
+        "`scripts/auto_heal.py`, analiz logunu okuyarak",
+        "`SidarAgent._attempt_autonomous_self_heal(...)`",
+        "`validation_commands` girdisini sandbox içinde çalıştırır",
+        "`_restore_self_heal_backups(...)`",
+        "`awaiting_hitl`",
+        "`CoverageAgent` ile `coverage.xml`",
+        "`ReviewerAgent` semantik onayı",
+    ]
+
+    for fragment in expected_fragments:
+        assert fragment in docs
+
+
+def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
+    script = (_repo_root() / "autonomous_loop.sh").read_text(encoding="utf-8")
+
+    assert "@@ -" not in script
+    assert "async def _review_with_reviewer_agent" in script
+    assert "ReviewerAgent semantik onay vermedi" in script
+    assert "raise SystemExit(asyncio.run(main()))" in script
+
+
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
     role_file = tmp_path / "example_role.py"
     role_file.write_text(
