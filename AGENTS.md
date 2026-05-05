@@ -81,14 +81,14 @@ otomatik kaydedilir.
 
 ## 3) Codex skills rehberi
 
-Aşağıdaki sistem skill’leri bu oturumda kullanılabilir:
+Bu oturumdaki gerçek kullanılabilir skill listesi, çalışma zamanı tarafından sağlanan
+`Available skills` bölümüdür. `AGENTS.md`, skill envanterinin tek doğruluk kaynağı
+değildir; yalnızca `/workspace/Sidar` deposuna özel skill kullanım kurallarını,
+tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 
-- `skill-creator`
-  - Yol: `/opt/codex/skills/.system/skill-creator/SKILL.md`
-  - Amaç: Yeni skill oluşturma/güncelleme
-- `skill-installer`
-  - Yol: `/opt/codex/skills/.system/skill-installer/SKILL.md`
-  - Amaç: Skill listeleme/kurma (küratörlü veya GitHub kaynağından)
+> Operasyonel kural: Belirli bir skill adı, yolu veya amacı dokümante edilecekse
+> bilginin hızla bayatlayabileceği unutulmamalı; güncel kullanılabilirlik için her
+> zaman oturumdaki `Available skills` çıktısı esas alınmalıdır.
 
 ### 3.1 Skill tetikleme kuralları
 
@@ -144,7 +144,7 @@ class ExampleAgent(BaseAgent):
 ## 5) Doküman bakım notları
 
 - Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
-- Skill listesi değişirse `Available skills` bölümü güncellenmelidir.
+- Skill kullanılabilirliği için statik liste tutulmaz; güncel envanter çalışma zamanı `Available skills` çıktısından doğrulanmalıdır.
 - Yeni role/capability eklendiğinde bu dosyanın 2. bölümünü güncelleyin.
 
 ### 5.1 Hızlı doğrulama checklist’i
