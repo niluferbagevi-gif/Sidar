@@ -73,6 +73,8 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
 
     db_path = tmp_path / "sidar_cli_e2e.db"
     env = os.environ.copy()
+    from cryptography.fernet import Fernet
+
     env.update(
         {
             "PYTHONPATH": str(PROJECT_ROOT),
@@ -80,7 +82,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
             "REQUIRE_GPU": "false",
             "OLLAMA_URL": f"http://127.0.0.1:{mock_ollama_server.server_address[1]}",
             "DATABASE_URL": f"sqlite:///{db_path}",
-            "MEMORY_ENCRYPTION_KEY": "8Jj8N4_VA8mYk9m97xzx6hQhYBL3J6f8xKqfZxM3VYQ=",
+            "MEMORY_ENCRYPTION_KEY": Fernet.generate_key().decode("utf-8"),
         }
     )
 
