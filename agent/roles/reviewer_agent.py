@@ -172,7 +172,7 @@ class ReviewerAgent(BaseAgent):
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "python -m pytest"))
+        commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest"))
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
     @staticmethod
@@ -728,7 +728,7 @@ class ReviewerAgent(BaseAgent):
         mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
         status = "planned" if is_blocked else "observe_only"
         validation_commands = list(
-            dict.fromkeys((regression_commands or []) + ["python -m pytest"])
+            dict.fromkeys((regression_commands or []) + ["uv run pytest"])
         )[:4]
         return {
             "status": status,
@@ -811,7 +811,7 @@ class ReviewerAgent(BaseAgent):
 
     async def _tool_run_tests(self, arg: str) -> str:
         command = (arg or "").strip() or self.config.REVIEWER_TEST_COMMAND
-        allowed_prefixes = ("bash run_tests.sh", "pytest", "python -m pytest")
+        allowed_prefixes = ("bash run_tests.sh", "pytest", "python -m pytest", "uv run pytest")
         if not command.startswith(allowed_prefixes):
             return "⚠ Kullanım: run_tests|bash run_tests.sh veya run_tests|pytest ..."
         ok, out = await asyncio.to_thread(
@@ -935,7 +935,7 @@ class ReviewerAgent(BaseAgent):
             arg = (
                 prompt.split("|", 1)[1].strip()
                 if "|" in prompt
-                else getattr(self.config, "REVIEWER_TEST_COMMAND", "python -m pytest")
+                else getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest")
             )
             return str(await self.call_tool("run_tests", arg))
         if lower.startswith("lsp_diagnostics"):

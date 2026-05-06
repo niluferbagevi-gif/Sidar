@@ -186,6 +186,45 @@ def test_agents_documentation_covers_swarm_supervisor_event_coordination() -> No
         assert fragment in docs
 
 
+def test_agents_documentation_codifies_sidar_uv_qwen_terminology() -> None:
+    docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "### 1.1 Geliştirme ortamı ve terminoloji standardı",
+        "Güncel ürün adı **Sidar**",
+        "qwen2.5-coder:7b",
+        "Tüm Python bağımlılık ve komut yönetimi `uv` üzerinden",
+        "uv sync --all-extras",
+        "uv sync --extra dev",
+    ]
+
+    for fragment in expected_fragments:
+        assert fragment in docs
+
+
+def test_readme_uses_sidar_uv_qwen_terminology_standards() -> None:
+    readme = (_repo_root() / "README.md").read_text(encoding="utf-8")
+
+    assert "CODING_MODEL=qwen2.5-coder:7b" in readme
+    assert "CODING_MODEL=qwen2.5-coder:3b" not in readme
+    assert "uv sync --all-extras" in readme
+    assert "uv run pytest" in readme
+    assert "uv run python main.py" in readme
+    # Ham `python -m pip install` referansı kalmamalıdır.
+    assert "python -m pip install" not in readme
+
+
+def test_install_script_defaults_match_terminology_standards() -> None:
+    script = (_repo_root() / "install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'CODE_MOD="qwen2.5-coder:7b"' in script
+    assert 'CODE_MOD="qwen2.5-coder:3b"' not in script
+    assert "uv run pytest" in script
+    # Eski ürün adı kullanıcıya görünen mesajda geçmemelidir; legacy yakalama korunur.
+    assert "*lotus*" in script
+    assert "'lotus' referansı" not in script
+
+
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
     role_file = tmp_path / "example_role.py"
     role_file.write_text(

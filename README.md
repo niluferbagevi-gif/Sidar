@@ -294,8 +294,8 @@ uv run python main.py
 `main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
 
 ```bash
-pip install eel
-python gui_launcher.py
+uv pip install eel
+uv run python gui_launcher.py
 ```
 
 Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui_launcher.py`
@@ -307,13 +307,13 @@ v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` kla
 
 ```bash
 uv sync --all-extras
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 PostgreSQL gibi farklı hedef veritabanı için bağlantıyı komut anında override edebilirsiniz:
 
 ```bash
-alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
+uv run alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
 ```
 
 SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
@@ -389,7 +389,7 @@ ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ### 🚀 Ultimate Launcher ile Başlatma (Önerilen)
 
 ```bash
-python main.py
+uv run python main.py
 ```
 
 `main.py`; preflight kontrollerini çalıştırır, etkileşimli TUI menüsünü açar, uygun çalışma modunu seçtirir ve `config.py` yüklenemezse child process'leri fail-fast biçimde durdurur. Varsayılan kullanıcı akışı artık burasıdır.
@@ -403,20 +403,20 @@ python main.py
 ### 🌐 Web Arayüzü (Doğrudan)
 
 ```bash
-python web_server.py
+uv run python web_server.py
 ```
 
 Tarayıcıda açılır: **http://localhost:7860**
 
 ```bash
 # Varsayılan kurumsal port ile dışarı aç
-python web_server.py --host 0.0.0.0 --port 7860
+uv run python web_server.py --host 0.0.0.0 --port 7860
 
 # Erişim seviyesi ile
-python web_server.py --level sandbox
+uv run python web_server.py --level sandbox
 
 # Gemini sağlayıcısı ile
-python web_server.py --provider gemini --port 7860
+uv run python web_server.py --provider gemini --port 7860
 ```
 
 > `web_server.py`, `web_ui_react/dist/` mevcutsa React SPA'yı öncelikli sunar; build yoksa geriye dönük uyumluluk için legacy `web_ui/` arayüzüne düşer.
@@ -447,13 +447,13 @@ Web arayüzü özellikleri:
 
 ```bash
 # Etkileşimli sihirbaz (önerilen)
-python main.py
+uv run python main.py
 
 # Sihirbazı atlayıp hızlı CLI başlat
-python main.py --quick cli --provider ollama --level full --model qwen2.5-coder:7b
+uv run python main.py --quick cli --provider ollama --level full --model qwen2.5-coder:7b
 
 # Sihirbazı atlayıp hızlı Web başlat
-python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --port 7860
+uv run python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --port 7860
 ```
 
 Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini alt süreçte başlatır.
@@ -461,16 +461,16 @@ Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_se
 ### 💻 Terminal (CLI) Modu
 
 ```bash
-python cli.py
+uv run python cli.py
 ```
 
 ### Tek Komut Modu
 
 ```bash
-python cli.py -c "Proje dizinini listele"
-python cli.py --status
-python cli.py --level full -c "Sistemi denetle"
-python cli.py --provider gemini -c "FastAPI nedir?"
+uv run python cli.py -c "Proje dizinini listele"
+uv run python cli.py --status
+uv run python cli.py --level full -c "Sistemi denetle"
+uv run python cli.py --provider gemini -c "FastAPI nedir?"
 ```
 
 ### CLI Seçenekleri
@@ -566,15 +566,17 @@ Sidar/
 
 ## Testleri Çalıştır
 
-> Kritik not: Sadece `dev` extra ile kurulum yapmak (`uv sync --extra dev` veya `uv pip install -e ".[dev]"),
-> opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`, `aws`, `browser`) **kurmaz**.
-> CI/CD ve ekip paritesi için geliştirme ortamında standart kurulum komutu `uv sync --all-extras` olmalıdır.
+> Kritik not: `dev` extras varsayılan kurulum akışına dahildir; `install_sidar.sh` `--no-dev`
+> verilmedikçe geliştirme bağımlılıklarını kurar. Yalnız `uv sync --extra dev` ile manuel
+> kurulum yapmak opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`,
+> `aws`, `browser`) **kurmaz**.  CI/CD ve ekip paritesi için geliştirme ortamında standart
+> kurulum komutu `uv sync --all-extras` olmalıdır.
 
 ```bash
 cd Sidar
 uv sync --all-extras
-python -m pytest -c pyproject.toml tests/ -v
-python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
+uv run pytest -c pyproject.toml tests/ -v
+uv run pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 2
 cd web_ui_react && npm run test:critical
@@ -582,16 +584,16 @@ bash scripts/ci/flaky_scan.sh
 uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
-> Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
-> kullanıyorsanız komutları doğrudan `python -m pytest ...` ile çalıştırın.
+> Not: `source .venv/bin/activate` zorunlu değildir. `uv run`, repo kökündeki uv ortamını
+> kendiliğinden kullanır.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
->   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutlardan birini çalıştırın:
->   - `uv sync --all-extras` (önerilen)
->   - `python -m pip install -e ".[dev]"` (minimum test/tooling kurulumu)
+>   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutu çalıştırın:
+>   - `uv sync --all-extras` (önerilen, geliştirme + opsiyonel entegrasyonlar dahil)
+>   - Yalnız test/tooling araçları yeterliyse `uv sync --extra dev` kullanılabilir.
 > - Kurulum sonrası doğrulama için:
->   - `python -m pytest -q tests/unit/agent/test_registry.py`
+>   - `uv run pytest -q tests/unit/agent/test_registry.py`
 >
 > Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
 > `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
@@ -610,6 +612,9 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.
+>
+> Geliştirme tarafında yardımcı komutlar da uv standardına taşınmalıdır
+> (`uv run black .`, `uv run ruff check .`, `uv run mypy .`).
 > GPU benchmarkları için `Nightly GPU Performance` hattında TTFT/TPS/VRAM metrikleri
 > geçmiş 7 koşu medyanına göre (`GPU_TREND_WINDOW=7`) varsayılan ±%20 trend eşiği
 > (`GPU_TREND_THRESHOLD_PERCENT`) ile korunur; quantization + architecture + driver
@@ -646,7 +651,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 ```env
 # AI Sağlayıcı
 AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
-CODING_MODEL=qwen2.5-coder:3b
+CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
 OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
 TEXT_MODEL=llama3.1:8b
@@ -706,9 +711,9 @@ MULTI_GPU=false
 ## Geliştirme
 
 ```bash
-black .
-flake8 . --max-line-length=100
-mypy . --ignore-missing-imports
+uv run black .
+uv run flake8 . --max-line-length=100
+uv run mypy . --ignore-missing-imports
 ```
 
 ---

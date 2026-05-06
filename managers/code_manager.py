@@ -357,7 +357,7 @@ class CodeManager:
                 return
             if self._try_docker_cli_fallback():
                 return
-            logger.warning("Docker SDK kurulu değil. (pip install docker)")
+            logger.warning("Docker SDK kurulu değil. (uv pip install docker)")
         except Exception as first_err:
             # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
             # (docker modülü try bloğunda import edildiyse kullan; yoksa yeniden import dene)

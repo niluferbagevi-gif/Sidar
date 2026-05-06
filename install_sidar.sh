@@ -1265,6 +1265,7 @@ PY
 }
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
+# Geliştirme bağımlılıkları varsayılan olarak kurulur; --no-dev ile devre dışı bırakılır.
 INSTALL_DEV=true
 FORCE_CPU=false
 SKIP_MODELS=false
@@ -2299,9 +2300,9 @@ install_python_deps() {
         fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
     fi
 
-    info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen)..."
+    info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen). Geliştirme bağımlılıkları, --no-dev verilmedikçe varsayılan olarak dahildir."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
+        fail "uv sync başarısız oldu. Python bağımlılıkları uv ile senkronlanamadı (uv sync --all-extras ile manuel deneyin)."
     fi
 
     local editable_extras=""
@@ -2364,7 +2365,7 @@ install_playwright_browsers() {
             ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
         else
             cat "$_pw_install_log" >&2
-            warn "Playwright kurulumu başarısız oldu. Manuel komut: python -m playwright install --with-deps chromium"
+            warn "Playwright kurulumu başarısız oldu. Manuel komut: uv run python -m playwright install --with-deps chromium"
         fi
 
         rm -f "$_pw_install_log"
@@ -2954,7 +2955,7 @@ ensure_database_url_defaults() {
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski 'lotus' referansı içeren DATABASE_URL tespit edildi: $current_db_url"
+        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
         sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
         ok ".env: DATABASE_URL Sidar varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
     fi
@@ -3711,7 +3712,7 @@ PY
         warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
     fi
     if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:3b"
+        CODE_MOD="qwen2.5-coder:7b"
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
     models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
@@ -4255,7 +4256,7 @@ run_smoke_tests() {
     if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
         warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
         info "PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden açtıktan sonra testleri çalıştırın:"
-        echo "  python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         SMOKE_TEST_STATUS="ertelendi_wsl_restart"
         return
     fi
@@ -4309,7 +4310,7 @@ run_smoke_tests() {
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if env "${pytest_smoke_env[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
+    if env "${pytest_smoke_env[@]}" uv run pytest "${pytest_smoke_args[@]}"; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
@@ -4484,20 +4485,20 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
-    echo "  python github_upload.py   — projeyi GitHub'a yükle"
+    echo "  uv run python github_upload.py   — projeyi GitHub'a yükle"
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  uv run alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
         echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Smoke testler: hata var. Tekrar için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
     else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then

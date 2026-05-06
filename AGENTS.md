@@ -15,6 +15,23 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 > Not: Önceki sürümlerde içerik ağırlıklı olarak skills tarafını anlatıyordu. Bu sürümde
 > repo içi gerçek ajan mimarisi de eklenmiştir.
 
+### 1.1 Geliştirme ortamı ve terminoloji standardı
+
+Bu repo için tek doğruluk kaynağı olan operasyonel kabuller:
+
+- **Ürün adı:** Güncel ürün adı **Sidar**'dır. Eski "Lotus" / "LotusAI" referansları yalnızca
+  geriye dönük migrasyon (örn. legacy `DATABASE_URL` yakalama) için tutulur; yeni
+  dokümantasyon, log mesajı veya kullanıcıya görünen çıktıda eski ad **kullanılmaz**.
+- **Yerel coding model standardı:** Varsayılan ve önerilen yerel coding modeli
+  `qwen2.5-coder:7b`'dir. `qwen2.5-coder:3b` yalnızca düşük donanım fallback'idir; yeni
+  varsayılan değerler ve dokümantasyon `qwen2.5-coder:7b` üzerinden yazılmalıdır.
+- **Paket/komut standardı:** Tüm Python bağımlılık ve komut yönetimi `uv` üzerinden yapılır.
+  Kurulum `uv sync`, çalıştırma `uv run`, ek paket kurulumu `uv pip install` ile yürütülür;
+  doğrudan `pip install` veya `python -m pip install` kullanılmamalıdır.
+- **Dev bağımlılıkları:** `dev` extras varsayılan kurulum akışına dahildir. Geliştirici
+  ortamı, CI ve ekip paritesi için tam kurulum komutu `uv sync --all-extras` olmalıdır;
+  yalnız test araçları gerektiğinde `uv sync --extra dev` yeterlidir.
+
 ---
 
 ## 2) Repo içi ajan mimarisi
@@ -401,11 +418,13 @@ class ExampleAgent(BaseAgent):
 çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
 `pydantic-settings` vb. proje bağımlılıkları henüz yoksa `agent.registry`, yerleşik rol
 modüllerini import ederken başarısız olabilir ve `AgentCatalog.list_all()` boş liste
-döndürebilir. Bu durumda önce bağımlılıkları kurun:
+döndürebilir. Bu durumda önce bağımlılıkları `uv` ile kurun:
 
-- `python -m pip install -e .`
-- Geliştirme/test araçları veya opsiyonel profiller gerekiyorsa ilgili extras ile kurulum yapın
-  (örn. `python -m pip install -e ".[dev]"`).
+- `uv sync --all-extras` — geliştirme/test/CI paritesi için önerilen tam kurulum.
+- Yalnız test/tooling araçları yeterliyse `uv sync --extra dev` kullanılabilir.
+
+Doğrulama komutları `python ...` yerine `uv run python ...` ile çalıştırılmalıdır;
+böylece komutlar uv ortamından bağımsız bir global Python yorumlayıcısına düşmez.
 
 Doğrulama adımları:
 
@@ -415,7 +434,7 @@ Aşağıdaki komut kullanılabilir; ancak yalnızca mevcut role adlarını basar
 başına yeterli kabul edilmemelidir:
 
 ```bash
-python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"
+uv run python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"
 ```
 
 Çıktı `[]` ise öncelikle bağımlılık kurulumunu ve import uyarılarını kontrol edin.
@@ -426,7 +445,7 @@ Yerleşik rollerin eksiksiz yüklendiğini doğrulamak için aşağıdaki komut
 çalıştırılmalıdır. Bu komut, boş liste veya eksik role durumlarını sessiz geçmez:
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 from agent.registry import AgentCatalog
 
 expected = {"coder", "researcher", "reviewer", "poyraz", "qa", "coverage"}
@@ -446,7 +465,7 @@ Capability listesinin dokümanla ve ajan dekoratörleriyle eşleştiğini doğru
 için aşağıdaki komut çalıştırılmalıdır:
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 from agent.registry import AgentCatalog
 
 expected = {
