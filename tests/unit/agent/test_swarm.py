@@ -284,6 +284,60 @@ def test_is_contracts_module_healthy_rejects_invalid_contract_module():
     assert swarm._is_contracts_module_healthy(bad_type) is False
 
 
+def test_is_contracts_module_healthy_rejects_non_callable_task_envelope():
+    """Branch L67-70: TaskEnvelope çağrılabilir değilse False dönmeli."""
+
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    not_callable_envelope = SimpleNamespace(
+        TaskEnvelope="not-callable",
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+    )
+    assert swarm._is_contracts_module_healthy(not_callable_envelope) is False
+
+
+def test_is_contracts_module_healthy_rejects_non_callable_task_result():
+    """Branch L67-70: TaskResult çağrılabilir değilse False dönmeli."""
+
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    not_callable_result = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=42,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+    )
+    assert swarm._is_contracts_module_healthy(not_callable_result) is False
+
+
+def test_is_contracts_module_healthy_rejects_non_callable_delegation_request():
+    """Branch L67-70: DelegationRequest çağrılabilir değilse False dönmeli."""
+
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    not_callable_delegation = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=SimpleNamespace(),
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+    )
+    assert swarm._is_contracts_module_healthy(not_callable_delegation) is False
+
+
 def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypatch):
     broken = SimpleNamespace(
         TaskEnvelope=lambda **_k: None,

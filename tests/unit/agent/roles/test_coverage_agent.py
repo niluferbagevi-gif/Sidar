@@ -306,6 +306,58 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
 
 
 @pytest.mark.asyncio
+async def test_tool_analyze_test_artifacts_with_structured_payload(
+    tmp_path, fake_coverage_code_manager
+):
+    """Yapılandırılmış JSON payload doğrudan _tool_analyze_coverage_report'a yönlendirilir."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    cov_xml = tmp_path / "coverage.xml"
+    cov_xml.write_text("<coverage></coverage>", encoding="utf-8")
+
+    structured_arg = json.dumps(
+        {
+            "coverage_xml": str(cov_xml),
+            "coverage_output": "",
+            "limit": 5,
+        }
+    )
+    artifact_json = await agent._tool_analyze_test_artifacts(structured_arg)
+    artifact_data = json.loads(artifact_json)
+    assert "coverage_xml" in artifact_data
+    assert "coverage_terminal" in artifact_data
+    assert artifact_data["findings"] == []
+
+
+@pytest.mark.asyncio
+async def test_tool_analyze_test_artifacts_falls_back_when_payload_unparsable(
+    tmp_path, fake_coverage_code_manager
+):
+    """Boş/parse edilemeyen argüman düz coverage_xml yolu olarak ele alınmalı."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    cov_xml = tmp_path / "coverage.xml"
+    cov_xml.write_text("<coverage></coverage>", encoding="utf-8")
+
+    artifact_json = await agent._tool_analyze_test_artifacts(str(cov_xml))
+    artifact_data = json.loads(artifact_json)
+    assert artifact_data["coverage_xml"]["exists"] is True
+
+
+@pytest.mark.asyncio
+async def test_tool_analyze_test_artifacts_handles_empty_argument(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    """Tamamen boş arg durumunda da fallback (coverage_xml=arg) çalışmalı."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    monkeypatch.chdir(tmp_path)
+
+    artifact_json = await agent._tool_analyze_test_artifacts("")
+    artifact_data = json.loads(artifact_json)
+    assert "coverage_xml" in artifact_data
+    assert artifact_data["coverage_xml"]["exists"] is False
+    assert artifact_data["findings"] == []
+
+
+@pytest.mark.asyncio
 async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     mocker.patch.object(

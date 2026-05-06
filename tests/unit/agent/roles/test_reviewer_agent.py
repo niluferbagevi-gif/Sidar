@@ -921,6 +921,15 @@ def test_scalar_coercion_helpers_cover_remaining_branches():
     assert ReviewerAgent._as_str_list("not-a-list") == []
 
 
+def test_to_int_returns_default_for_non_string_unsupported_types():
+    """Branch 249->252: bool/int/float/str dışı tipler default değere düşmeli."""
+    assert ReviewerAgent._to_int(None, default=11) == 11
+    assert ReviewerAgent._to_int([1, 2, 3], default=22) == 22
+    assert ReviewerAgent._to_int({"k": 1}, default=33) == 33
+    assert ReviewerAgent._to_int(object(), default=44) == 44
+    assert ReviewerAgent._to_int((5,), default=55) == 55
+
+
 def test_run_task_ignores_non_mapping_graph_and_browser_payloads(reviewer):
     async def fake_call_tool(name, _arg):
         if name == "run_tests":

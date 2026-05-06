@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from agent.registry import AgentCatalog, AgentSpec, _import_builtin_roles
+from agent.registry import (
+    AgentCatalog,
+    AgentSpec,
+    _format_import_failure,
+    _import_builtin_roles,
+)
 
 
 class _DummyAgent:
@@ -229,3 +234,42 @@ def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
     assert "Yerleşik ajan rolleri yüklenemedi" in caplog.text
     assert "uv sync --all-extras" in caplog.text
     assert "dotenv" in caplog.text
+
+
+def test_format_import_failure_for_module_not_found_error_uses_module_name() -> None:
+    formatted = _format_import_failure(
+        ModuleNotFoundError("No module named 'nonexistent'", name="nonexistent")
+    )
+    assert formatted == "eksik Python modülü: nonexistent"
+
+
+def test_format_import_failure_for_non_module_not_found_error_uses_repr() -> None:
+    formatted = _format_import_failure(RuntimeError("simulated boot failure"))
+    assert formatted == "RuntimeError: simulated boot failure"
+
+
+def test_format_import_failure_includes_exception_type_for_value_error() -> None:
+    formatted = _format_import_failure(ValueError("bozuk yapı"))
+    assert formatted.startswith("ValueError: ")
+    assert "bozuk yapı" in formatted
+
+
+def test_import_builtin_roles_logs_non_module_not_found_failures(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    snapshot = dict(AgentCatalog._registry)
+    AgentCatalog._registry.clear()
+
+    def _fake_import_module(module_name: str):
+        raise RuntimeError("kötü XML konfigürasyonu")
+
+    monkeypatch.setattr("importlib.import_module", _fake_import_module)
+
+    try:
+        with caplog.at_level("WARNING", logger="agent.registry"):
+            _import_builtin_roles()
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+    assert "RuntimeError: kötü XML konfigürasyonu" in caplog.text

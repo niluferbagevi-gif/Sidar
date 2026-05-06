@@ -984,6 +984,46 @@ async def test_build_self_heal_plan_retries_until_operation(
     assert plan["plan_max_retries"] == 3
 
 
+async def test_build_self_heal_plan_returns_zero_attempt_default_when_retry_loop_does_not_execute(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plan deneme döngüsü hiç çalışmazsa (range boş), plan_attempt=0 fallback dönmeli."""
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        CODING_MODEL="m",
+        SELF_HEAL_PLAN_MAX_RETRIES=1,
+        SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES=10,
+    )
+    agent.llm = AsyncMock()
+    agent.llm.chat = AsyncMock()
+
+    monkeypatch.setattr(sidar_agent, "build_self_heal_patch_prompt", lambda *_a, **_k: "P")
+    monkeypatch.setattr(sidar_agent, "normalize_self_heal_plan", lambda *_a, **_k: {})
+
+    def _empty_range(*_args, **_kwargs):
+        return iter(())
+
+    monkeypatch.setattr(sidar_agent, "range", _empty_range, raising=False)
+
+    plan = await agent._build_self_heal_plan(
+        ci_context={},
+        diagnosis="d",
+        remediation_loop={
+            "scope_paths": ["a.py"],
+            "validation_commands": ["pytest -q"],
+        },
+    )
+
+    assert plan["operations"] == []
+    assert plan["plan_attempt"] == 0
+    assert plan["plan_max_retries"] == 1
+    assert plan["validation_commands"] == ["pytest -q"]
+    assert plan["summary"].startswith("Self-heal planı üretilemedi")
+    assert agent.llm.chat.await_count == 0
+
+
 async def test_build_self_heal_plan_returns_default_when_batches_empty_and_full_scope_skipped(
     sidar_agent_factory,
 ) -> None:
