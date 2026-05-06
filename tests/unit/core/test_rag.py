@@ -52,11 +52,8 @@ async def test_graph_index_normalizers_and_extract_str_literal(tmp_path: Path) -
     assert rag.GraphIndex._normalize_node_id(tmp_path, nested) == "src/api.py"
     assert rag.GraphIndex._endpoint_node_id("get", "health") == "endpoint:GET /health"
 
-    import ast
-
     assert graph._extract_str_literal(ast.parse("'abc'").body[0].value) == "abc"
-    with pytest.warns(DeprecationWarning, match="ast.Str"):
-        assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
+    assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
 
 
 @pytest.mark.parametrize(
@@ -1866,8 +1863,7 @@ async def test_graph_index_additional_branch_coverage(
     assert keep in files
     assert all("node_modules" not in str(p) for p in files)
     assert gi._script_import_candidates(keep, "react", root) == []
-    with pytest.warns(DeprecationWarning):
-        legacy_node = ast.Str(s=" legacy ")
+    legacy_node = ast.Constant(value=" legacy ")
     assert gi._extract_str_literal(legacy_node) == "legacy"
 
     src = """
@@ -1978,7 +1974,7 @@ obj.router.get("/skip")
 
     # ast.Str branchini doğrudan zorla.
     fake_str_cls = type("FakeStr", (), {})
-    monkeypatch.setattr(rag.ast, "Str", fake_str_cls, raising=False)
+    monkeypatch.setitem(rag.ast.__dict__, "Str", fake_str_cls)
     node = fake_str_cls()
     node.s = " legacy "
     assert gi._extract_str_literal(node) == "legacy"

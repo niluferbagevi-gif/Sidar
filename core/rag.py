@@ -156,8 +156,9 @@ class GraphIndex:
     def _extract_str_literal(node: Any) -> str | None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value.strip()
-        if isinstance(node, ast.Str):
-            raw_value = node.s
+        legacy_str_cls = ast.__dict__.get("Str")
+        if legacy_str_cls is not None and isinstance(node, legacy_str_cls):
+            raw_value = getattr(node, "s", None)
             return raw_value.strip() if isinstance(raw_value, str) else None
         return None
 
