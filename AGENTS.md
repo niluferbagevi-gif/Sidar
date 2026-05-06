@@ -389,6 +389,62 @@ class ExampleAgent(BaseAgent):
 
 ---
 
+## 4.1) Geliştirme ortamı, araçlar ve terminoloji
+
+Bu bölüm tüm ajanların ve katkı sağlayıcıların uyması gereken **bağlayıcı standartları**
+özetler. Aşağıdaki kurallar, AGENTS.md'nin diğer bölümlerinde verilen örneklerden önce
+gelir; çelişki halinde bu bölüm esastır.
+
+### 4.1.1 İsimlendirme ve marka tutarlılığı
+
+- Projenin tek geçerli adı **Sidar** (UI'da `SİDAR`) olarak kullanılır. Eski kod adlarını
+  (örn. `LotusAI`, `Lotus`, `lotus-*`) yeni dokümantasyon, kod, log, mesaj veya commit
+  başlıklarında kullanmayın.
+- `.env`, `DATABASE_URL`, container/volume adları, namespace'ler vb. yapılandırmalarda
+  yeni `sidar-*` adlandırması kullanılmalıdır. `install_sidar.sh` ve `.env.example`
+  içindeki "eski `lotus` referansı" uyarıları yalnızca **legacy migration** içindir;
+  yeni ortamlarda bu uyarıyı tetikleyecek değer üretmeyin.
+- Ajan/role isimleri (`coder`, `reviewer`, `qa`, `coverage`, `researcher`, `poyraz`,
+  `sidar`/`SidarAgent`) `agent/registry.py` ve `agent/roles/__init__.py` ile birebir
+  tutarlı olmalıdır.
+
+### 4.1.2 Yerel LLM standardı: Qwen 2.5 Coder
+
+- Yerel/varsayılan kodlama LLM'i **Qwen 2.5 Coder** ailesidir (Ollama üzerinden):
+  - Birincil model: `qwen2.5-coder:7b`
+  - Düşük kaynak/CI profili: `qwen2.5-coder:3b`
+- Bulut yedek modelleri (Gemini 2.5 Flash, GPT-4o, Claude 3.5 Sonnet) yalnızca
+  `AI_PROVIDER` veya `--provider` ile bilinçli olarak seçildiğinde devreye girer;
+  varsayılan ajan davranışı yerel Qwen 2.5 Coder üzerinden çalışacak şekilde
+  konfigüre edilmelidir.
+- Yeni doküman/örneklerde model adı yazarken `qwen2.5-coder:<tag>` formatını koruyun;
+  jenerik "ollama modeli" ifadesinden kaçının.
+
+### 4.1.3 Paket yönetimi ve betik çalıştırma: `uv`
+
+- Standart paket yöneticisi `uv`'dur. Ajanlar düz `pip`, `pip3`, `pipx` veya
+  `python -m pip` komutları üretmemelidir; bunun yerine `uv` muadillerini kullanın:
+  - Bağımlılık kurulumu: `uv sync --all-extras`
+    - Geliştirici bağımlılıkları (`dev` extra: pytest, ruff, mypy, mutmut, benchmark
+      araçları vb.) bu komutla **varsayılan olarak yüklenir**; ayrıca `--extra dev`
+      eklemeye gerek yoktur.
+    - Yalnızca üretim runtime'ı için `uv sync` (extras'sız) kullanılabilir; ancak ajan
+      iş akışlarında (test, lint, mypy, benchmark) tam profil zorunludur.
+  - Editable kurulum gerekiyorsa: `uv pip install -e ".[dev]"` (örn. konteyner içi
+    bootstrap senaryoları). Bu yine `uv` üzerinden çalışır.
+  - Komut çalıştırma: `uv run <komut>` (örn. `uv run pytest`, `uv run python main.py`,
+    `uv run alembic upgrade head`, `uv run python -m scripts.auto_heal ...`).
+  - Tek seferlik araçlar için: `uv run --with <paket> <komut>` (örn.
+    `uv run --with mutmut mutmut run`).
+- `uv.lock` deterministik kaynak dosyadır; bağımlılık değişikliklerinde
+  `uv lock` / `uv sync` çıktısı ile birlikte commit edilmelidir. `requirements.txt`
+  veya doğrudan `pip install` ile lock atlanmamalıdır.
+- CI/Codex Cloud akışlarında bootstrap için `install_sidar.sh --ci` ve sonrasında
+  `uv sync --all-extras` kullanılmalı; ardından testler `uv run pytest ...` ile
+  çalıştırılmalıdır.
+
+---
+
 ## 5) Doküman bakım notları
 
 - Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
@@ -401,11 +457,17 @@ class ExampleAgent(BaseAgent):
 çalıştırılmalıdır. Temiz/çıplak repo checkout ortamında `python-dotenv`,
 `pydantic-settings` vb. proje bağımlılıkları henüz yoksa `agent.registry`, yerleşik rol
 modüllerini import ederken başarısız olabilir ve `AgentCatalog.list_all()` boş liste
-döndürebilir. Bu durumda önce bağımlılıkları kurun:
+döndürebilir. Bu durumda önce bağımlılıkları kurun (paket yönetimi standardı `uv`'dur;
+düz `pip`/`python -m pip` çağrıları yerine `uv` kullanın):
 
-- `python -m pip install -e .`
-- Geliştirme/test araçları veya opsiyonel profiller gerekiyorsa ilgili extras ile kurulum yapın
-  (örn. `python -m pip install -e ".[dev]"`).
+- `uv sync --all-extras` (önerilen; `dev` dahil tüm geliştirici/test bağımlılıklarını
+  varsayılan olarak yükler).
+- Yalnızca temel runtime gerekliyse: `uv sync`. Belirli bir extras profili için
+  `uv sync --extra <profil>` (örn. `uv sync --extra dev`) kullanılabilir; ancak ekip
+  paritesi için `--all-extras` tercih edilmelidir.
+- Komutları çalıştırırken `python ...` yerine `uv run python ...` (veya `uv run pytest ...`,
+  `uv run alembic ...` vb.) kullanın; bu sayede aktif `.venv` zorunlu olmadan doğru
+  bağımlılık ortamına bağlanılır.
 
 Doğrulama adımları:
 
