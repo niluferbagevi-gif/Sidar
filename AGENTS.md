@@ -343,6 +343,140 @@ capability eşleşmesine göre paralel, pipeline veya P2P handoff ile dağıtır
   `parent_task_id` alanlarını eksiksiz doldurmalı; circuit breaker limitlerini aşan
   döngüler fail-closed sonlanmalıdır.
 
+### 2.7 Çoklu modalite (multimodal): görüş ve ses yetenekleri
+
+Sidar, salt metin ajanlarının ötesinde görsel (vision) ve ses (voice/STT/TTS)
+girdilerini de işleyebilir. Bu yeteneklerin kaynak dosyaları `core/vision.py`,
+`core/voice.py` ve `core/multimodal.py`'dir; agent rolleri bu modülleri doğrudan
+import edip kullanabilir, ancak aşağıdaki operasyonel kurallar tüm ajanlar için
+bağlayıcıdır.
+
+#### 2.7.1 Feature flag ve devre dışı bırakma sözleşmesi
+
+Multimodal yetenekler **opt-in** olarak ele alınır; ortam değişkenleri tek doğruluk
+kaynağıdır ve runtime'da `Config` üzerinden okunur:
+
+- `ENABLE_VISION` (varsayılan `true`) — `VisionPipeline` ve görsel mesaj kurucuları
+  yalnızca bu bayrak açıkken aktiftir. `False` ise `mockup_to_code` / `analyze`
+  çağrıları `{"success": False, "reason": "ENABLE_VISION devre dışı"}` döner.
+- `ENABLE_MULTIMODAL` (varsayılan `true`) — Video/ses indirme, frame çıkarma,
+  Whisper STT ve WebRTC ses akışı bu bayrağa bağlıdır. `False` ise `VoicePipeline`
+  `voice_disabled_reason="ENABLE_MULTIMODAL devre dışı."` ile kapanır.
+- `VOICE_ENABLED` (varsayılan `true`) — TTS sentezi ve duplex akışı bağımsız
+  olarak kapatılabilir; multimodal açık olsa bile bu kapalıyken ajanlar metin
+  yanıtla yetinmelidir.
+- `VISION_MAX_IMAGE_BYTES` (varsayılan 10 MB) ve `MULTIMODAL_MAX_FILE_BYTES`
+  (varsayılan 50 MB) limitleri sıkı uygulanır; aşan girdiler `ValueError` ile
+  reddedilir, ajanlar bu hatayı kullanıcıya açık metinle raporlamalıdır.
+
+> Operasyonel kural: Yeni multimodal kod yolları flag kontrolünü **erkene** çekmeli
+> (pipeline başında); flag kapalıyken model çağrısı / ağ I/O yapılmamalıdır.
+
+#### 2.7.2 Görüş (vision) kullanım kuralları
+
+`VisionPipeline` (`core/vision.py`) UI mockup → frontend kodu üretimi ve genel
+görsel analiz (general / accessibility / ux_review) sağlar. Ajanlar için kurallar:
+
+- **Kabul edilen formatlar:** Yalnızca `image/jpeg`, `image/png`, `image/webp`,
+  `image/gif`. Diğer MIME tipleri `ValueError` ile reddedilir; ajan dönüştürme
+  yapmadan dosyayı doğrudan modele iletmemelidir.
+- **Sağlayıcı çoğulluğu:** `build_vision_messages(...)` `openai`/`litellm`,
+  `anthropic`, `gemini` ve Ollama (LLaVA / `llama3.2-vision`) için ayrı mesaj
+  şemaları üretir. Ajanlar provider seçimini `LLMClient.provider` üzerinden
+  yapmalı; manuel mesaj kurmaya çalışmamalıdır.
+- **Frontend doğrulama akışı:** Tarayıcı otomasyonu (`managers/browser_manager.py`)
+  ile alınan ekran görüntüleri `VisionPipeline.analyze(analysis_type="ux_review"
+  veya "accessibility")` ile doğrulanır. `coder` ajanı UI değişikliği üretirse,
+  `reviewer` veya `qa` ajanı render edilmiş ekran görüntüsünü vision pipeline'a
+  beslemelidir; salt DOM diff'i kalite kapısı olarak yeterli kabul edilmez.
+- **Erişilebilirlik kapısı:** Yeni veya değişen UI bileşenleri için
+  `analysis_type="accessibility"` raporu, WCAG 2.1 sapmaları içeriyorsa
+  reviewer/QA tarafından **engelleyici** sayılır.
+- **PII/DLP:** Ekran görüntülerinde kullanıcı verisi olabilir; vision pipeline'a
+  gönderilen görseller önce `core/dlp.py` redaksiyonundan geçirilmeli, log'a
+  base64 payload yazılmamalıdır.
+
+#### 2.7.3 Ses ve sesli komut algılama (voice/STT)
+
+`VoicePipeline` ve `WebRTCAudioIngress` (`core/voice.py`) full-duplex sesli
+asistan deneyimi sağlar; STT tarafı `core/multimodal.py` üzerinden Whisper
+(`WHISPER_MODEL`, varsayılan `turbo`) ile çalışır.
+
+- **Sesli komut algılama:** WebRTC üzerinden gelen paketler
+  `WebRTCAudioIngress.decode_packet(...)` ile normalize edilir; yalnızca
+  `SUPPORTED_MIME_TYPES` (`audio/webm`, `audio/ogg`, `audio/wav`, `audio/x-wav`,
+  `audio/mp4`, `audio/mpeg`, `audio/mp3`) kabul edilir. `VOICE_WEBRTC_MAX_CHUNK_BYTES`
+  (varsayılan 2 MB) limitini aşan paketler reddedilir.
+- **VAD ve commit kararı:** `VoicePipeline.should_commit_audio(...)` yalnızca
+  `VOICE_VAD_ENABLED=true` ve `event ∈ {speech_end, speech_ended, end_of_turn,
+  silence, vad_commit}` ve buffer ≥ `VOICE_VAD_MIN_SPEECH_BYTES` koşullarında
+  `True` döner. Ajanlar manuel "konuşma bitti" varsayımıyla STT tetiklememeli;
+  bu kontrat tek karar noktasıdır.
+- **Full-duplex barge-in:** `VOICE_DUPLEX_ENABLED=true` iken
+  `should_interrupt_response(...)` `INTERRUPT_EVENTS` setinde bir olay görür ve
+  buffer eşiği aşılırsa mevcut asistan turu **kesilir**. Ajan kendi yanıt
+  akışını kesilebilir varsaymalı; `interrupt_assistant_turn(...)` çağrısından
+  sonra `output_text_buffer` boşaltılır ve `assistant_turn_id` artırılır,
+  yani "kayıp" segmentleri yeniden göndermek yerine yeni turdan üretmek
+  gerekir.
+- **TTS sözleşmesi:** `VOICE_TTS_PROVIDER` `auto`/`pyttsx3` (offline) veya
+  `mock` (test) olabilir. `VoicePipeline.synthesize_text(...)` boş metin veya
+  pipeline kapalıyken `success=False` ve insan-okunur `reason` döner; ajanlar
+  bu cevapları sessizce yutmamalı, kullanıcıya görünür şekilde raporlamalıdır.
+- **Segmentleme:** Streaming üretimde `extract_ready_segments(...)` cümle sınırı
+  ve `VOICE_TTS_SEGMENT_CHARS` eşiği üzerinden segment çıkarır; ajanlar TTS'e
+  karakter karakter göndermemeli, segment bazlı paketleri kullanmalıdır.
+
+#### 2.7.4 Video/ses ingest ve transkript
+
+`core/multimodal.py` lokal ve uzak medyayı işler:
+
+- **Kaynak çözümleme:** `is_remote_media_source`, `detect_video_platform` ve
+  `extract_youtube_video_id` ile platform belirlenir. YouTube için önce
+  `fetch_youtube_transcript(...)` (yerleşik altyazı) denenmelidir; yoksa
+  `yt-dlp` mevcutsa `download_remote_media(...)`, ardından FFmpeg ile frame /
+  ses çıkarımı yapılır.
+- **Boyut ve süre limitleri:** `MULTIMODAL_MAX_FILE_BYTES` (varsayılan 50 MB)
+  ve `materialize_remote_media_for_ffmpeg(... max_duration_seconds=120.0 ...)`
+  varsayılan 2 dakika kesim limiti uygulanır. Bu limitler ajan tarafında
+  override edilmemelidir; daha uzun içerik için pipeline parçalı (chunked)
+  STT akışı kullanmalıdır.
+- **Subprocess güvenliği:** `_run_subprocess`/`_run_subprocess_capture` yalnızca
+  iç kaynaklı komut listeleri ile çağrılır; ajanlar kullanıcı girdisini
+  doğrudan komut dizisine **eklememelidir** (shell injection guard).
+- **Bağlama dönüştürme:** STT çıktısı LLM'e verilirken `text` alanı yanında
+  `segments` (start/duration) bilgisi de bağlama eklenmelidir; bu, sonraki
+  ajan turlarında zaman damgalı atıf üretebilmek için gereklidir.
+
+#### 2.7.5 Ajan-rol etkileşimi
+
+- `coder` ajanı UI üretiminde `VisionPipeline.mockup_to_code(...)` çıktısını
+  doğrudan dosyaya yazmadan önce `reviewer` semantik kontrolünden geçirmelidir;
+  pipeline `framework`/`language` parametreleriyle deterministik çalışır.
+- `reviewer` ve `qa` ajanları, frontend değişikliği için tarayıcı otomasyonu
+  (Playwright/`browser_manager`) ile ekran görüntüsü alıp
+  `VisionPipeline.analyze(...)` çağırmalıdır; sadece DOM/HTML diff yetersizdir.
+- `researcher` ajanı, video/ses kaynaklı bilgi toplarken önce YouTube
+  transkriptini, ardından Whisper STT'yi denemeli; her iki yol da
+  başarısızsa `success=False` ve gerekçe ile rapor edilmelidir.
+- Sesli arayüz (`VOICE_DUPLEX_ENABLED=true`) kullanıcısıyla çalışan supervisor
+  akışları, kullanıcı barge-in olayında mevcut planı **iptal** etmeli ve yeni
+  turu sıfırdan değerlendirmelidir; aksi takdirde paralel iki yanıt akışı
+  oluşur.
+
+#### 2.7.6 Operasyonel kurallar (özet)
+
+- Multimodal kod yolları flag kapalıyken ağ/model I/O yapmamalı; her giriş
+  noktasında erken kontrol uygulanmalıdır.
+- Boyut/format/MIME limitleri ajan tarafında zorlanmalı, sessiz kırpma yapılmamalıdır.
+- TTS/STT hata cevapları (`success=False`, `reason=...`) kullanıcıya görünür
+  şekilde raporlanmalıdır; sessiz başarısızlık kabul edilmez.
+- Vision/voice çıktıları log'a base64 payload olarak yazılmamalı; sadece özet
+  metadata (boyut, mime, segment sayısı) loglanmalıdır.
+- Yeni multimodal yetenek eklendiğinde hem `Config` ortam değişkeni eklenmeli
+  hem de bu bölüm güncellenmeli; yetenek bir ajan rolüyle birlikte geliyorsa
+  2.3 ve 4. bölümlerdeki kayıt adımları da uygulanmalıdır.
+
 ---
 
 ## 3) Codex skills rehberi
@@ -411,6 +545,10 @@ class ExampleAgent(BaseAgent):
 - Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
 - Skill kullanılabilirliği için statik liste tutulmaz; güncel envanter çalışma zamanı `Available skills` çıktısından doğrulanmalıdır.
 - Yeni role/capability eklendiğinde bu dosyanın 2. bölümünü güncelleyin.
+- Yeni multimodal yetenek (vision / voice / video / STT-TTS) eklendiğinde 2.7
+  bölümü ve ilgili ortam değişkenleri (`ENABLE_VISION`, `ENABLE_MULTIMODAL`,
+  `VOICE_*`, `WHISPER_MODEL`, `MULTIMODAL_MAX_FILE_BYTES`,
+  `VISION_MAX_IMAGE_BYTES`) birlikte güncellenmelidir.
 
 ### 5.1 Hızlı doğrulama checklist’i
 
