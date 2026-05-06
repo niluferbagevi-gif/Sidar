@@ -1230,6 +1230,40 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
     ), "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
 
 
+async def test_try_multi_agent_handles_supervisor_constructor_returning_none(
+    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = sidar_agent_factory()
+    agent._supervisor = None
+    supervisor_calls = []
+
+    def _supervisor_agent(_cfg):
+        supervisor_calls.append(_cfg)
+        return None
+
+    fake_supervisor_mod = types.SimpleNamespace(
+        SupervisorAgent=_supervisor_agent,
+        ResearcherAgent=type("ResearcherAgent", (), {"__module__": "agent.roles.researcher_agent"}),
+        CoderAgent=type("CoderAgent", (), {"__module__": "agent.roles.coder_agent"}),
+        ReviewerAgent=type("ReviewerAgent", (), {"__module__": "agent.roles.reviewer_agent"}),
+        PoyrazAgent=type("PoyrazAgent", (), {"__module__": "agent.roles.poyraz_agent"}),
+        QAAgent=type("QAAgent", (), {"__module__": "agent.roles.qa_agent"}),
+        CoverageAgent=type("CoverageAgent", (), {"__module__": "agent.roles.coverage_agent"}),
+    )
+    monkeypatch.setattr(sidar_agent, "import_module", lambda name: fake_supervisor_mod)
+
+    def _unexpected_reload(_module):
+        raise AssertionError("role modules are valid; reload should not be needed")
+
+    monkeypatch.setattr(sidar_agent.importlib, "reload", _unexpected_reload)
+
+    result = await agent._try_multi_agent("implement feature")
+
+    assert result == "⚠ Supervisor başlatılamadı."
+    assert supervisor_calls == [agent.cfg]
+    assert agent._supervisor is None
+
+
 async def test_run_nightly_memory_maintenance_skipped_paths(
     sidar_agent_factory,
     frozen_time,
