@@ -319,6 +319,23 @@ def test_del_swallows_exceptions(mem, monkeypatch):
     mem.__del__()
 
 
+def test_initialize_propagates_database_connect_drop_and_keeps_memory_uninitialized(
+    monkeypatch, tmp_path: Path
+):
+    class DroppingDB(FakeDB):
+        async def connect(self):
+            raise ConnectionError("database connection dropped")
+
+    monkeypatch.setattr(memory_module, "Database", DroppingDB)
+    mem = ConversationMemory(base_dir=tmp_path)
+
+    with pytest.raises(ConnectionError, match="connection dropped"):
+        asyncio.run(mem._ensure_initialized())
+
+    assert mem._initialized is False
+    assert mem.active_user_id is None
+
+
 def test_constructor_defaults_and_ensure_initialized_lock(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     monkeypatch.chdir(tmp_path)

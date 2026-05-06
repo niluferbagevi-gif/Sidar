@@ -1131,6 +1131,31 @@ async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) ->
 
 
 @pytest.mark.asyncio
+async def test_ollama_qwen_timeout_is_wrapped_as_non_retryable_llm_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = llm_client.OllamaClient(
+        _make_config(
+            OLLAMA_URL="http://localhost:11434",
+            CODING_MODEL="qwen2.5-coder:7b",
+            LLM_MAX_RETRIES=0,
+        )
+    )
+
+    async def _raise_timeout(*_args, **_kwargs):
+        raise TimeoutError("qwen2.5-coder API timed out")
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_timeout)
+
+    with pytest.raises(llm_client.LLMAPIError) as exc_info:
+        await client.chat([{"role": "user", "content": "kod üret"}], stream=False, json_mode=False)
+
+    assert exc_info.value.provider == "ollama"
+    assert exc_info.value.retryable is False
+    assert "qwen2.5-coder API timed out" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_ollama_missing_model_error_suggests_pull_command(respx_mock_router) -> None:
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b")

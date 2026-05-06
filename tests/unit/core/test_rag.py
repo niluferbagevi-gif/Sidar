@@ -1811,6 +1811,31 @@ async def test_document_store_pgvector_search_handles_pool_drop_and_empty_result
     assert "ilgili sonuç bulunamadı" in msg
 
 
+async def test_document_store_fetch_chroma_empty_collection_queries_minimum_candidate(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    captured: dict[str, object] = {}
+
+    class _EmptyCollection:
+        @staticmethod
+        def count() -> int:
+            return 0
+
+        @staticmethod
+        def query(**kwargs: object) -> dict[str, list[list[str]]]:
+            captured.update(kwargs)
+            return {"ids": []}
+
+    store.collection = _EmptyCollection()
+    store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=5)
+    store._is_local_llm_provider = True
+
+    assert store._fetch_chroma("boş koleksiyon", top_k=3, session_id="s-empty") == []
+    assert captured["n_results"] == 1
+    assert captured["where"] == {"session_id": "s-empty"}
+
+
 async def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Path) -> None:
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=1)

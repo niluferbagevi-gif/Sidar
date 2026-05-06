@@ -333,6 +333,28 @@ async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -
 
 
 @pytest.mark.asyncio
+async def test_bulk_message_write_coerces_string_and_invalid_token_counts(
+    sqlite_db: Database,
+) -> None:
+    user = await sqlite_db.create_user("bulk-token-user", password="pw")
+    session = await sqlite_db.create_session(user.id, "tokens")
+
+    inserted = await sqlite_db.add_messages_bulk(
+        [
+            {"session_id": session.id, "role": "user", "content": "string", "tokens_used": " 7 "},
+            {"session_id": session.id, "role": "assistant", "content": "blank", "tokens_used": " "},
+            {"session_id": session.id, "role": "user", "content": "bad", "tokens_used": "NaN"},
+            {"session_id": session.id, "role": "assistant", "content": "object", "tokens_used": object()},
+            {"session_id": session.id, "role": "assistant", "content": "negative", "tokens_used": "-3"},
+        ]
+    )
+
+    assert inserted == 5
+    messages = await sqlite_db.get_session_messages(session.id)
+    assert [m.tokens_used for m in messages] == [7, 0, 0, 0, 0]
+
+
+@pytest.mark.asyncio
 async def test_bulk_and_grouped_messages_empty_inputs_return_empty(sqlite_db: Database) -> None:
     assert await sqlite_db.add_messages_bulk([]) == 0
     assert await sqlite_db.get_messages_for_sessions(["", "   "]) == {}

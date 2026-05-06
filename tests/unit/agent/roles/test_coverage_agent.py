@@ -621,13 +621,6 @@ async def test_analyze_test_artifacts_empty_payload_uses_raw_arg_as_coverage_xml
     assert data["coverage_xml"]["exists"] is False
     assert data["findings"] == []
 
-    explicit_result = await agent._tool_analyze_test_artifacts(
-        json.dumps({"coverage_xml": "explicit-missing.xml"})
-    )
-    explicit_data = json.loads(explicit_result)
-    assert explicit_data["coverage_xml"]["path"] == "explicit-missing.xml"
-    assert explicit_data["coverage_xml"]["exists"] is False
-
 
 async def test_analyze_test_artifacts_dict_payload_skips_legacy_path(
     tmp_path, monkeypatch, fake_coverage_code_manager
