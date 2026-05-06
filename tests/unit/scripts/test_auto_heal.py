@@ -12,6 +12,7 @@ from scripts.auto_heal import (
     _build_attempt_diagnosis,
     _build_scope_queue,
     _extract_scope_error_lines,
+    _initialize_agent_soft_dependency,
     _parse_approval_value,
     _redact_database_url,
     _resolve_auto_heal_database_url,
@@ -116,6 +117,27 @@ def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
 
     assert auto_heal._prompt_hitl_approval() is True
     assert "Lütfen" in capsys.readouterr().out
+
+
+def test_initialize_agent_soft_dependency_continues_after_failure() -> None:
+    class _Agent:
+        async def initialize(self):
+            raise RuntimeError("pgvector offline")
+
+    warning = asyncio.run(_initialize_agent_soft_dependency(_Agent()))
+
+    assert warning is not None
+    assert "self-heal temel code/LLM yetenekleriyle devam edecek" in warning
+    assert "pgvector offline" in warning
+
+
+def test_initialize_agent_soft_dependency_returns_none_when_ready() -> None:
+    class _Agent:
+        async def initialize(self):
+            return None
+
+    assert asyncio.run(_initialize_agent_soft_dependency(_Agent())) is None
+
 
 def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
     assert _parse_approval_value("e") is True
@@ -430,6 +452,65 @@ def test_run_uses_isolated_sqlite_memory_by_default(
     assert _Agent.seen_database_url.startswith("sqlite+aiosqlite:///")
     assert _Agent.seen_database_url.endswith("/auto_heal_memory.db")
     assert payload["database_url"] == _Agent.seen_database_url
+
+
+def test_run_continues_when_agent_initialize_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+        DATABASE_URL = "postgresql+asyncpg://sidar:wrong@localhost:5432/sidar"
+
+    class _Agent:
+        async def initialize(self):
+            raise RuntimeError("PostgreSQL password authentication failed")
+
+        def __init__(self, config):
+            self.config = config
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            return {"status": "applied", "summary": "done"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=0,
+        scope_log_lines=10,
+        database_url=None,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload["status"] == "applied"
+    assert "PostgreSQL password authentication failed" in payload["initialization_warning"]
 
 
 def test_run_returns_partial_when_later_retry_applies(

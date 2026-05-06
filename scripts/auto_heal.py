@@ -108,6 +108,19 @@ def _redact_database_url(database_url: str) -> str:
     return f"{scheme}://{username}:***@{host_part}"
 
 
+async def _initialize_agent_soft_dependency(agent: Any) -> str | None:
+    """Ajan altyapısı hazır değilse self-heal'i soft dependency olarak devam ettirir."""
+    try:
+        await agent.initialize()
+    except Exception as exc:
+        warning = (
+            "Ajan başlatma sırasında opsiyonel bellek/RAG altyapısı hazırlanamadı; "
+            f"self-heal temel code/LLM yetenekleriyle devam edecek: {exc}"
+        )
+        return warning
+    return None
+
+
 def _parse_approval_value(value: str | None) -> bool | None:
     normalized = str(value or "").strip().lower()
     if not normalized:
@@ -290,7 +303,7 @@ async def _run(args: argparse.Namespace) -> int:
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
     cfg.DATABASE_URL = _resolve_auto_heal_database_url(log_path, getattr(args, "database_url", None))
     agent = SidarAgent(config=cfg)
-    await agent.initialize()
+    initialization_warning = await _initialize_agent_soft_dependency(agent)
 
     remediation_base = build_ci_remediation_payload(context, diagnosis)
     scope_queue = _build_scope_queue(
@@ -371,6 +384,7 @@ async def _run(args: argparse.Namespace) -> int:
                 "status": final_status,
                 "model": cfg.CODING_MODEL,
                 "database_url": _redact_database_url(str(getattr(cfg, "DATABASE_URL", ""))),
+                "initialization_warning": initialization_warning,
                 "queue_size": len(queue),
                 "executions": executions,
                 "context": context,

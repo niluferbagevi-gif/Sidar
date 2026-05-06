@@ -311,6 +311,9 @@ class Database:
         self._sqlite_write_lock: asyncio.Lock | None = None
 
         self._pg_pool = None
+        self.degraded_mode = False
+        self.degraded_reason = ""
+        self.primary_database_url = self.database_url
 
         self._configure_backend()
 
@@ -507,13 +510,57 @@ class Database:
             else:
                 await asyncio.to_thread(self._sqlite_conn.commit)
 
+    @staticmethod
+    def _redact_database_url(database_url: str) -> str:
+        text = str(database_url or "").strip()
+        if not text or "://" not in text:
+            return text
+        scheme, rest = text.split("://", 1)
+        if "@" not in rest:
+            return text
+        credentials, host_part = rest.split("@", 1)
+        if ":" not in credentials:
+            return text
+        username = credentials.split(":", 1)[0]
+        return f"{scheme}://{username}:***@{host_part}"
+
+    def _postgres_degraded_sqlite_url(self) -> str:
+        configured = str(getattr(self.cfg, "DB_DEGRADED_SQLITE_URL", "") or "").strip()
+        if configured:
+            return configured
+        base_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()))
+        return f"sqlite+aiosqlite:///{(base_dir / 'data' / 'sidar_degraded.db').as_posix()}"
+
+    async def _enter_degraded_mode(self, reason: str, exc: BaseException) -> None:
+        if not bool(getattr(self.cfg, "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True)):
+            raise exc
+
+        fallback_url = self._postgres_degraded_sqlite_url()
+        logger.warning(
+            "PostgreSQL bağlantısı kurulamadı; Sidar degraded mode ile SQLite fallback kullanacak: primary=%s fallback=%s reason=%s",
+            self._redact_database_url(self.primary_database_url),
+            self._redact_database_url(fallback_url),
+            reason,
+        )
+        self.degraded_mode = True
+        self.degraded_reason = reason
+        self._pg_pool = None
+        self.database_url = fallback_url
+        self.cfg.DATABASE_URL = fallback_url
+        self._backend = "sqlite"
+        self._sqlite_conn = None
+        self._sqlite_write_lock = None
+        self._configure_backend()
+        await self._connect_sqlite()
+
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
             return
         try:
             import asyncpg
         except Exception as exc:  # pragma: no cover - paket opsiyonel
-            raise RuntimeError("PostgreSQL için asyncpg bağımlılığı gerekli.") from exc
+            await self._enter_degraded_mode("asyncpg bağımlılığı kullanılamıyor", exc)
+            return
 
         dsn = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
         try:
@@ -523,27 +570,16 @@ class Database:
                 max_size=max(1, self.pool_size),
             )
         except Exception as exc:
-            if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
-                logger.warning(
-                    "PostgreSQL bağlantı havuzu zaman aşımına uğradı; hata üst katmana iletiliyor: %s",
-                    exc,
-                )
-                raise
-
             pool_error_type = getattr(asyncpg, "PoolError", None)
             is_pool_error = bool(pool_error_type and isinstance(exc, pool_error_type))
             error_text = str(exc).lower()
-            if is_pool_error or "pool" in error_text:
-                logger.warning(
-                    "PostgreSQL bağlantı havuzu kullanılamıyor; bağlantı kurulamadı: %s",
-                    exc,
-                )
+            if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
+                reason = f"PostgreSQL bağlantı havuzu zaman aşımına uğradı: {exc}"
+            elif is_pool_error or "pool" in error_text:
+                reason = f"PostgreSQL bağlantı havuzu kullanılamıyor: {exc}"
             else:
-                logger.warning(
-                    "PostgreSQL bağlantı havuzu oluşturulamadı; üst katmana iletiliyor: %s",
-                    exc,
-                )
-            raise
+                reason = f"PostgreSQL bağlantı havuzu oluşturulamadı: {exc}"
+            await self._enter_degraded_mode(reason, exc)
 
     async def close(self) -> None:
         if self._sqlite_conn is not None:

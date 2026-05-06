@@ -1336,8 +1336,18 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     missing_dep = Database(cfg)
     monkeypatch.delitem(sys.modules, "asyncpg", raising=False)
     monkeypatch.setitem(sys.modules, "asyncpg", None)
-    with pytest.raises(RuntimeError, match="asyncpg"):
-        await missing_dep._connect_postgresql()
+    await missing_dep._connect_postgresql()
+    assert missing_dep.degraded_mode is True
+    assert missing_dep._backend == "sqlite"
+    assert missing_dep._sqlite_conn is not None
+    assert "asyncpg" in missing_dep.degraded_reason
+
+    strict_missing_dep = Database(
+        DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    )
+    strict_missing_dep.cfg.DB_DEGRADED_MODE_ON_POSTGRES_FAILURE = False
+    with pytest.raises(Exception, match="asyncpg"):
+        await strict_missing_dep._connect_postgresql()
 
     class _AsyncpgStub:
         class PoolError(Exception):
@@ -1353,8 +1363,11 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
         "asyncpg",
         types.SimpleNamespace(create_pool=_raise_timeout, PoolError=_AsyncpgStub.PoolError),
     )
-    with pytest.raises(TimeoutError):
-        await timeout_db._connect_postgresql()
+    await timeout_db._connect_postgresql()
+    assert timeout_db.degraded_mode is True
+    assert timeout_db._backend == "sqlite"
+    assert timeout_db._sqlite_conn is not None
+    assert "zaman aşımına" in timeout_db.degraded_reason
 
     pool_error_db = Database(cfg)
 
@@ -1366,8 +1379,10 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
         "asyncpg",
         types.SimpleNamespace(create_pool=_raise_pool, PoolError=_AsyncpgStub.PoolError),
     )
-    with pytest.raises(_AsyncpgStub.PoolError):
-        await pool_error_db._connect_postgresql()
+    await pool_error_db._connect_postgresql()
+    assert pool_error_db.degraded_mode is True
+    assert pool_error_db._backend == "sqlite"
+    assert "kullanılamıyor" in pool_error_db.degraded_reason
 
     generic_db = Database(cfg)
 
@@ -1379,12 +1394,16 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
         "asyncpg",
         types.SimpleNamespace(create_pool=_raise_generic, PoolError=_AsyncpgStub.PoolError),
     )
-    with pytest.raises(RuntimeError, match="connection failed"):
-        await generic_db._connect_postgresql()
+    await generic_db._connect_postgresql()
+    assert generic_db.degraded_mode is True
+    assert generic_db._backend == "sqlite"
+    assert "connection failed" in generic_db.degraded_reason
 
 
 @pytest.mark.asyncio
-async def test_connect_postgresql_propagates_connection_drop(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+async def test_connect_postgresql_connection_drop_enters_degraded_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
 
@@ -1397,9 +1416,13 @@ async def test_connect_postgresql_propagates_connection_drop(monkeypatch: pytest
         types.SimpleNamespace(create_pool=_raise_disconnect, PoolError=RuntimeError),
     )
 
-    with pytest.raises(ConnectionError, match="server closed"):
-        await db._connect_postgresql()
+    await db._connect_postgresql()
+
     assert db._pg_pool is None
+    assert db.degraded_mode is True
+    assert db._backend == "sqlite"
+    assert db._sqlite_conn is not None
+    assert "server closed" in db.degraded_reason
 
 
 @pytest.mark.asyncio
