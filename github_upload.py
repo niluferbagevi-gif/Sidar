@@ -1,6 +1,6 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
-Sürüm: 2.1
+Sürüm: 2.2
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
 Kullanım:
@@ -72,11 +72,32 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
 
 
 def _is_valid_repo_url(url: str) -> bool:
-    """Temel GitHub repo URL doğrulaması."""
-    if not url:
+    """GitHub origin URL'ini temel enjeksiyon ve yazım hatalarına karşı doğrular."""
+    normalized = str(url or "").strip()
+    if not normalized or any(char.isspace() for char in normalized):
         return False
-    normalized = url.strip()
-    return normalized.startswith("https://github.com/") or normalized.startswith("git@github.com:")
+
+    https_pattern = r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$"
+    ssh_pattern = r"^git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"
+    return bool(re.fullmatch(https_pattern, normalized) or re.fullmatch(ssh_pattern, normalized))
+
+
+def _is_valid_branch_name(branch_name: str) -> bool:
+    """Git branch adını komut argümanı olarak güvenli ve geçerli olacak şekilde denetler."""
+    normalized = str(branch_name or "").strip()
+    if not normalized or normalized.startswith("-") or normalized in {".", "..", "@"}:
+        return False
+    if normalized.endswith("/") or normalized.endswith(".") or normalized.endswith(".lock"):
+        return False
+    if normalized.startswith("/") or normalized.startswith("."):
+        return False
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in normalized):
+        return False
+    forbidden_fragments = ("..", "//", "@{")
+    forbidden_chars = set("~^:?*[\\]")
+    return not any(fragment in normalized for fragment in forbidden_fragments) and not any(
+        char in forbidden_chars for char in normalized
+    )
 
 
 def _normalize_path(path: str) -> str:
@@ -150,6 +171,18 @@ def get_deleted_files() -> list[str]:
         return []
 
     return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def get_commit_count() -> int:
+    """Aktif dalda rollback için kullanılabilir commit sayısını güvenli biçimde döndürür."""
+    success, output = run_command(["git", "rev-list", "--count", "HEAD"], show_output=False)
+    if not success or not output:
+        return 0
+
+    try:
+        return int(output.strip())
+    except ValueError:
+        return 0
 
 
 def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[list[str], list[str]]:
@@ -233,11 +266,18 @@ def main() -> None:
                 )
                 sys.exit(1)
         else:
+            if not _is_valid_branch_name(arg):
+                print(
+                    f"{Colors.FAIL}❌ Hata: Geçersiz dal adı. "
+                    "Dal adı boşluk, kontrol karakteri veya Git ref için riskli semboller içeremez."
+                    f"{Colors.ENDC}"
+                )
+                sys.exit(1)
             target_branch = arg
 
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
     print(
-        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.1) {Colors.ENDC}"
+        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.2) {Colors.ENDC}"
     )
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
@@ -366,11 +406,21 @@ def main() -> None:
                 f"\n{Colors.WARNING}⏳ Proje {rollback_steps} adım geriye sarılıyor...{Colors.ENDC}"
             )
 
-            # 1. Yerel dosyaları merge/pull öncesi referansa sert şekilde geri al.
-            # ORIG_HEAD son tehlikeli hareket öncesini işaret eder; FF merge dahil tek adımda güvenli geri dönüş sağlar.
+            # 1. Yerel commit geçmişini kullanıcının istediği kadar adım geri sar.
+            # ORIG_HEAD merge/pull geçmişine bağlı olarak beklenmedik referansa işaret edebilir;
+            # kullanıcı -N verdiğinde en anlaşılır ve deterministik hedef HEAD~N'dir.
             print(f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch}{Colors.ENDC}")
+
+            available_commits = get_commit_count()
+            if available_commits <= rollback_steps:
+                print(
+                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} commit var, "
+                    f"{rollback_steps} adım geriye gidilemez.{Colors.ENDC}"
+                )
+                sys.exit(1)
+
             reset_success, reset_err = run_command(
-                ["git", "reset", "--hard", "ORIG_HEAD"], show_output=False
+                ["git", "reset", "--hard", f"HEAD~{rollback_steps}"], show_output=False
             )
             if not reset_success:
                 print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")

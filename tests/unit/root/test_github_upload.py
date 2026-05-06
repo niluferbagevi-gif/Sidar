@@ -33,9 +33,17 @@ def test_run_command_success_and_error(monkeypatch, capsys):
 
 def test_url_and_path_helpers(tmp_path):
     assert gu._is_valid_repo_url("https://github.com/a/b")
+    assert gu._is_valid_repo_url("https://github.com/a/b.git")
     assert gu._is_valid_repo_url("git@github.com:a/b.git")
     assert not gu._is_valid_repo_url("https://gitlab.com/a/b")
+    assert not gu._is_valid_repo_url("https://github.com/a/b extra")
     assert not gu._is_valid_repo_url("")
+
+    assert gu._is_valid_branch_name("feature/safe-branch_1")
+    assert not gu._is_valid_branch_name("-upload-pack=evil")
+    assert not gu._is_valid_branch_name("bad branch")
+    assert not gu._is_valid_branch_name("bad..branch")
+    assert not gu._is_valid_branch_name("bad@{branch")
 
     assert gu._normalize_path("./a//b\\c") == "a/b/c"
     assert gu._normalize_path("/root/x") == "root/x"
@@ -206,6 +214,7 @@ def test_main_rollback_yes_push_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "5"),
             (True, "reset ok"),
             (False, "protected"),
         ],
@@ -501,6 +510,7 @@ def test_main_rollback_reset_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "3"),
             (False, "reset fail"),
         ],
         inputs=["yes"],
@@ -658,6 +668,7 @@ def test_main_rollback_push_success(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "2"),
             (True, "reset ok"),
             (True, "push ok"),
         ],
