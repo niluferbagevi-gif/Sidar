@@ -433,6 +433,54 @@ def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None
     assert normalized["validation_commands"] == ["uv pip install psycopg2-binary"]
 
 
+def test_normalize_self_heal_plan_accepts_single_operation_shapes() -> None:
+    dict_operations = ci.normalize_self_heal_plan(
+        {
+            "operations": {
+                "action": "patch",
+                "path": "core/a.py",
+                "target": "old",
+                "replacement": "new",
+            }
+        },
+        scope_paths=["core/a.py"],
+        fallback_validation_commands=[],
+    )
+    assert dict_operations["operations"] == [
+        {"action": "patch", "path": "core/a.py", "target": "old", "replacement": "new"}
+    ]
+
+    operation_alias = ci.normalize_self_heal_plan(
+        {
+            "operation": {
+                "action": "patch",
+                "path": "core/b.py",
+                "target": "before",
+                "replacement": "after",
+            }
+        },
+        scope_paths=["core/b.py"],
+        fallback_validation_commands=[],
+    )
+    assert operation_alias["operations"][0]["path"] == "core/b.py"
+
+
+def test_normalize_self_heal_plan_treats_patch_like_payload_as_operation() -> None:
+    normalized = ci.normalize_self_heal_plan(
+        {
+            "path": "core/c.py",
+            "target": "left",
+            "replacement": "right",
+        },
+        scope_paths=["core/c.py"],
+        fallback_validation_commands=[],
+    )
+
+    assert normalized["operations"] == [
+        {"action": "patch", "path": "core/c.py", "target": "left", "replacement": "right"}
+    ]
+
+
 def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
     summary = ci.build_root_cause_summary(
         _sample_context(), "Root cause: flaky assertion\nsecond line"
@@ -674,6 +722,24 @@ def test_build_remediation_loop_large_scope_respects_env_threshold(
     assert result["needs_human_approval"] is True
 
 
+def test_build_remediation_loop_ignores_unknown_auto_install_modules() -> None:
+    context = {
+        "suspected_targets": ["core/unknown.py"],
+        "failed_jobs": [],
+        "failure_summary": "ModuleNotFoundError: No module named 'totally_unknown_pkg'",
+        "log_excerpt": 'Library stubs not installed for "unknownlib"  [import-untyped]',
+    }
+
+    result = ci.build_remediation_loop(
+        context,
+        "Cannot find implementation or library stub for module named 'unknownlib'",
+    )
+
+    assert result["bootstrap_commands"] == []
+    assert all("totally_unknown_pkg" not in cmd for cmd in result["validation_commands"])
+    assert all("unknownlib" not in cmd for cmd in result["validation_commands"])
+
+
 def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() -> None:
     context = {
         "suspected_targets": ["core/rag.py"],
@@ -819,6 +885,18 @@ def test_summarize_mypy_log_skips_noise_and_honors_max_lines() -> None:
     assert summary["sample_lines"][0].startswith("core/a.py:1:")
 
 
+def test_summarize_mypy_log_caps_per_file_samples_after_three_entries() -> None:
+    log_text = "\n".join(
+        f"core/repeated.py:{line}: error: issue {line} [assignment]" for line in range(1, 5)
+    )
+
+    summary = ci._summarize_mypy_log(log_text, max_lines=10)
+
+    assert summary["total_errors"] == 4
+    assert len(summary["sample_lines"]) == 3
+    assert all(line.startswith("core/repeated.py:") for line in summary["sample_lines"])
+
+
 @pytest.mark.parametrize(
     ("log_line", "expected_codes"),
     [
@@ -851,6 +929,21 @@ def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause
     assert ctx["suspected_targets"] == ["core/sample.py"]
     assert "Root cause:" in ctx["root_cause_hint"]
     assert "(1 kayıt, 1 dosya)" in ctx["failure_summary"]
+
+
+def test_build_local_failure_context_keeps_first_root_cause_hint() -> None:
+    log_text = "\n".join(
+        [
+            "ValueError: first actionable failure",
+            "TypeError: second actionable failure",
+        ]
+    )
+
+    ctx = ci.build_local_failure_context(log_text, source="ruff")
+
+    assert ctx["root_cause_hint"] == "ValueError: first actionable failure"
+    assert ctx["conclusion"] == "failure"
+    assert ctx["suspected_targets"] == []
 
 
 def test_build_local_failure_context_deduplicates_suspected_targets() -> None:
