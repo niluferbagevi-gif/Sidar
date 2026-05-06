@@ -2,12 +2,51 @@
 
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 
 import pytest
 
 import main
 from main import _safe_choice, _safe_port, _safe_text, build_command
+
+
+class _FakeStreamingPipe(io.StringIO):
+    """StringIO pipe double that records close without breaking getvalue assertions."""
+
+    def __init__(self, value: str) -> None:
+        super().__init__(value)
+        self.closed_by_streamer = False
+
+    def close(self) -> None:  # pragma: no cover - behavior asserted through flag
+        self.closed_by_streamer = True
+
+
+class _FakeStreamingProcess:
+    def __init__(
+        self,
+        *,
+        stdout: _FakeStreamingPipe | None = None,
+        stderr: _FakeStreamingPipe | None = None,
+        return_code: int = 0,
+        running_after_wait: bool = False,
+    ) -> None:
+        self.stdout = stdout
+        self.stderr = stderr
+        self.return_code = return_code
+        self.running_after_wait = running_after_wait
+        self.terminated = False
+        self.wait_calls: list[float | None] = []
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls.append(timeout)
+        return self.return_code
+
+    def poll(self) -> int | None:
+        return None if self.running_after_wait and not self.terminated else self.return_code
+
+    def terminate(self) -> None:
+        self.terminated = True
 
 
 @pytest.fixture(autouse=True)
@@ -272,3 +311,120 @@ def test_main_exits_when_critical_settings_invalid(monkeypatch: pytest.MonkeyPat
         main.main()
 
     assert exc.value.code == 2
+
+
+def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_stdout = _FakeStreamingPipe("hello stdout\n")
+    fake_stderr = _FakeStreamingPipe("warn stderr\n")
+    fake_process = _FakeStreamingProcess(stdout=fake_stdout, stderr=fake_stderr, return_code=0)
+    popen_calls = {}
+
+    def fake_popen(cmd, **kwargs):
+        popen_calls["cmd"] = cmd
+        popen_calls["kwargs"] = kwargs
+        return fake_process
+
+    monkeypatch.setattr(main.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
+
+    rc = main._run_with_streaming(["python", "cli.py"], "logs/child.log")
+
+    assert rc == 0
+    assert popen_calls["cmd"] == ["python", "cli.py"]
+    assert popen_calls["kwargs"]["stdout"] is main.subprocess.PIPE
+    assert popen_calls["kwargs"]["stderr"] is main.subprocess.PIPE
+    assert popen_calls["kwargs"]["text"] is True
+    assert fake_stdout.closed_by_streamer is True
+    assert fake_stderr.closed_by_streamer is True
+
+    child_log = tmp_path / "logs" / "child.log"
+    assert child_log.read_text(encoding="utf-8") == (
+        "$ python cli.py\n\n"
+        "[stdout] hello stdout\n"
+        "[stderr] warn stderr\n"
+        "\n[exit_code]\n0\n"
+    )
+    out = capsys.readouterr().out
+    assert "[stdout]" in out
+    assert "hello stdout" in out
+    assert "[stderr]" in out
+    assert "warn stderr" in out
+    assert "Child process çıktısı kaydedildi" in out
+
+
+def test_run_with_streaming_without_log_returns_child_exit_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_process = _FakeStreamingProcess(
+        stdout=_FakeStreamingPipe("only stdout\n"),
+        stderr=_FakeStreamingPipe(""),
+        return_code=3,
+    )
+    monkeypatch.setattr(main.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
+
+    rc = main._run_with_streaming(["python", "cli.py"], None)
+
+    assert rc == 3
+    assert "only stdout" in capsys.readouterr().out
+
+
+def test_run_with_streaming_rejects_missing_child_pipes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_process = _FakeStreamingProcess(stdout=None, stderr=_FakeStreamingPipe(""))
+    monkeypatch.setattr(main.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
+
+    with pytest.raises(RuntimeError, match="stdout/stderr pipe"):
+        main._run_with_streaming(["python", "cli.py"], None)
+
+
+def test_run_with_streaming_terminates_process_still_running_after_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_process = _FakeStreamingProcess(
+        stdout=_FakeStreamingPipe(""),
+        stderr=_FakeStreamingPipe(""),
+        return_code=0,
+        running_after_wait=True,
+    )
+    monkeypatch.setattr(main.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
+
+    assert main._run_with_streaming(["python", "cli.py"], None) == 0
+    assert fake_process.terminated is True
+    assert fake_process.wait_calls == [None, 3]
+
+
+def test_run_with_streaming_kills_when_terminate_timeout_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _TimeoutOnTerminateProcess(_FakeStreamingProcess):
+        def __init__(self) -> None:
+            super().__init__(
+                stdout=_FakeStreamingPipe(""),
+                stderr=_FakeStreamingPipe(""),
+                return_code=4,
+                running_after_wait=True,
+            )
+            self.kill_called = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls.append(timeout)
+            if timeout is not None:
+                raise TimeoutError("still running")
+            return self.return_code
+
+        def poll(self) -> int | None:
+            return None
+
+        def kill(self) -> None:
+            self.kill_called = True
+
+    fake_process = _TimeoutOnTerminateProcess()
+    monkeypatch.setattr(main.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
+
+    assert main._run_with_streaming(["python", "cli.py"], None) == 4
+    assert fake_process.terminated is True
+    assert fake_process.kill_called is True
+    assert fake_process.wait_calls == [None, 3]
