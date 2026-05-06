@@ -52,11 +52,8 @@ async def test_graph_index_normalizers_and_extract_str_literal(tmp_path: Path) -
     assert rag.GraphIndex._normalize_node_id(tmp_path, nested) == "src/api.py"
     assert rag.GraphIndex._endpoint_node_id("get", "health") == "endpoint:GET /health"
 
-    import ast
-
     assert graph._extract_str_literal(ast.parse("'abc'").body[0].value) == "abc"
-    with pytest.warns(DeprecationWarning, match="ast.Str"):
-        assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
+    assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
 
 
 @pytest.mark.parametrize(
@@ -149,6 +146,97 @@ new WebSocket('ws://localhost/ws/stream')
     assert "endpoint:POST /api/items" in ids
     assert "endpoint:WS /ws/stream" in ids
     assert len(calls) == 2
+
+
+async def test_graph_index_endpoint_call_skip_branches_are_explicit(tmp_path: Path) -> None:
+    graph = rag.GraphIndex(tmp_path)
+    src = """
+def call_it():
+    requests.get()
+    requests.post('relative-path')
+    requests.put('/ok')
+"""
+
+    _deps, defs, calls = graph._parse_python_source(tmp_path / "client.py", src)
+
+    assert defs == []
+    assert calls == [
+        {
+            "endpoint_id": "endpoint:PUT /ok",
+            "method": "PUT",
+            "path": "/ok",
+        }
+    ]
+
+
+async def test_graph_index_script_endpoint_call_skip_branches_are_explicit(
+    tmp_path: Path,
+) -> None:
+    graph = rag.GraphIndex(tmp_path)
+
+    calls = graph._extract_script_endpoint_calls(
+        """
+fetch('https://example.com/api/remote')
+fetch('/api/local')
+new WebSocket('https://example.com/ws/remote')
+new WebSocket('/ws/local')
+new WebSocket('/ws/local')
+"""
+    )
+
+    assert calls == [
+        {
+            "endpoint_id": "endpoint:GET /api/local",
+            "method": "GET",
+            "path": "/api/local",
+        },
+        {
+            "endpoint_id": "endpoint:WS /ws/local",
+            "method": "WS",
+            "path": "/ws/local",
+        },
+    ]
+
+
+async def test_document_store_add_document_from_file_empty_and_explicit_title(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    captured: dict[str, object] = {}
+
+    def _fake_add(title: str, content: str, source: str, tags: list[str], session_id: str) -> str:
+        captured.update(
+            title=title,
+            content=content,
+            source=source,
+            tags=tags,
+            session_id=session_id,
+        )
+        return "doc-explicit-title"
+
+    store._add_document_sync = _fake_add  # type: ignore[method-assign]
+
+    empty = tmp_path / "empty.md"
+    empty.write_text("   \n", encoding="utf-8")
+    ok, message = store.add_document_from_file(str(empty), session_id="s-empty")
+    assert ok is False
+    assert "Dosya boş" in message
+
+    non_empty = tmp_path / "notes.md"
+    non_empty.write_text("body", encoding="utf-8")
+    ok, message = store.add_document_from_file(
+        str(non_empty), title="Explicit title", tags=["t"], session_id="s-explicit"
+    )
+
+    assert ok is True
+    assert "doc-explicit-title" in message
+    assert captured == {
+        "title": "Explicit title",
+        "content": "body",
+        "source": f"file://{non_empty.resolve()}",
+        "tags": ["t"],
+        "session_id": "s-explicit",
+    }
 
 
 async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> None:
@@ -1866,8 +1954,7 @@ async def test_graph_index_additional_branch_coverage(
     assert keep in files
     assert all("node_modules" not in str(p) for p in files)
     assert gi._script_import_candidates(keep, "react", root) == []
-    with pytest.warns(DeprecationWarning):
-        legacy_node = ast.Str(s=" legacy ")
+    legacy_node = ast.Constant(value=" legacy ")
     assert gi._extract_str_literal(legacy_node) == "legacy"
 
     src = """
@@ -1978,7 +2065,7 @@ obj.router.get("/skip")
 
     # ast.Str branchini doğrudan zorla.
     fake_str_cls = type("FakeStr", (), {})
-    monkeypatch.setattr(rag.ast, "Str", fake_str_cls, raising=False)
+    monkeypatch.setitem(rag.ast.__dict__, "Str", fake_str_cls)
     node = fake_str_cls()
     node.s = " legacy "
     assert gi._extract_str_literal(node) == "legacy"
@@ -2353,7 +2440,9 @@ async def test_document_store_pgvector_init_handles_hnsw_index_failure(
             AssertionError("embedding model should not load after index failure")
         )
     )
-    sqlalchemy = types.SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda sql: sql)
+    sqlalchemy = types.SimpleNamespace(
+        create_engine=lambda *_a, **_k: _Engine(), text=lambda sql: sql
+    )
     monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
     monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy)
     monkeypatch.setitem(sys.modules, "pgvector", types.SimpleNamespace())

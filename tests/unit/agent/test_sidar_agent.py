@@ -176,6 +176,32 @@ async def test_build_trigger_prompt_prioritizes_ci_context(
     assert prompt == "CI::backend-ci"
 
 
+async def test_trigger_helpers_handle_dict_and_plain_object_payloads() -> None:
+    prompt = sidar_agent.SidarAgent._trigger_to_prompt(
+        {
+            "source": "webhook",
+            "event_name": "push",
+            "payload": {"branch": "main"},
+        }
+    )
+
+    assert sidar_agent.SidarAgent._trigger_attr({"source": "webhook"}, "source") == "webhook"
+    assert "source=webhook" in prompt
+    assert "event_name=push" in prompt
+    assert '"branch": "main"' in prompt
+
+    plain_trigger = types.SimpleNamespace(
+        source="scheduler",
+        event_name="nightly",
+        payload={"task": "digest"},
+    )
+    plain_prompt = sidar_agent.SidarAgent._trigger_to_prompt(plain_trigger)
+
+    assert "source=scheduler" in plain_prompt
+    assert "event_name=nightly" in plain_prompt
+    assert '"task": "digest"' in plain_prompt
+
+
 async def test_build_trigger_prompt_formats_federation_and_action_feedback(
     sidar_agent_factory,
 ) -> None:
@@ -846,6 +872,7 @@ async def test_resolve_self_heal_scope_batches_prefers_autonomous_batches(
         ["a.py", "b.py", "c.py", "d.py"],
         {
             "autonomous_batches": [
+                "not-a-batch",
                 {"scope_paths": ["c.py", "d.py"]},
                 {"scope_paths": ["a.py", "b.py"]},
                 {"scope_paths": ["a.py", "b.py"]},
@@ -1378,6 +1405,13 @@ async def test_get_autonomy_activity_handles_limit_edge_cases(
 
     res_str = agent.get_autonomy_activity(limit="2")
     assert res_str["returned"] == 2
+
+
+async def test_try_multi_agent_accepts_sync_supervisor_result(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    agent._supervisor = types.SimpleNamespace(run_task=Mock(return_value="sync supervisor ok"))
+
+    assert await agent._try_multi_agent("x") == "sync supervisor ok"
 
 
 async def test_try_multi_agent_and_archive_context_error_paths(sidar_agent_factory) -> None:
@@ -2175,6 +2209,64 @@ async def test_nightly_maintenance_handles_entity_failure(
     )
     report = await agent.run_nightly_memory_maintenance(force=True)
     assert report["entity_report"]["status"] == "failed"
+
+
+async def test_memory_archive_context_returns_empty_when_collection_disappears(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+
+    class _DocsWithFlakyCollection:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        @property
+        def collection(self):
+            self.calls += 1
+            return object() if self.calls == 1 else None
+
+    agent.docs = _DocsWithFlakyCollection()
+
+    assert agent._get_memory_archive_context_sync("q", 1, 0.2, 100) == ""
+
+
+async def test_load_instruction_files_skips_stat_and_read_errors(
+    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    agent = sidar_agent_factory(cfg=types.SimpleNamespace(BASE_DIR=str(tmp_path)))
+    agent._instructions_cache = None
+    agent._instructions_mtimes = {}
+    agent._instructions_lock = asyncio.Lock()
+
+    class _FakePath:
+        def __init__(self, *_parts: object) -> None:
+            pass
+
+        def rglob(self, name: str):
+            return [_BrokenInstructionPath()] if name == "SIDAR.md" else []
+
+    class _BrokenInstructionPath(_FakePath):
+        def is_file(self) -> bool:
+            return True
+
+        def resolve(self):
+            return self
+
+        def stat(self):
+            raise OSError("mtime unavailable")
+
+        def relative_to(self, _root):
+            return "SIDAR.md"
+
+        def read_text(self, **_kwargs):
+            raise OSError("read unavailable")
+
+        def __str__(self) -> str:
+            return "SIDAR.md"
+
+    monkeypatch.setattr(sidar_agent, "Path", _FakePath)
+
+    assert agent._load_instruction_files() == ""
 
 
 async def test_get_memory_archive_context_sync_filters_distances(sidar_agent_factory) -> None:

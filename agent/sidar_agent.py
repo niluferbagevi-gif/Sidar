@@ -618,14 +618,6 @@ class SidarAgent:
                 last_plan["plan_attempt"] = plan_max_retries
                 last_plan["plan_max_retries"] = plan_max_retries
                 return last_plan
-            return {
-                "summary": "Self-heal planı üretilemedi.",
-                "confidence": "unknown",
-                "operations": [],
-                "validation_commands": fallback_validation_commands,
-                "plan_attempt": plan_max_retries,
-                "plan_max_retries": plan_max_retries,
-            }
 
         should_attempt_full_scope = len(scope_paths) < skip_full_scope_min_files and not list(
             remediation_loop.get("autonomous_batches") or []
