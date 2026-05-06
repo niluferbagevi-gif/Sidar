@@ -16,7 +16,6 @@ wheels/
 .venv/
 venv/
 env/
-.python-version
 
 # uv
 .uv/
