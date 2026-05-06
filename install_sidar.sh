@@ -2281,9 +2281,15 @@ install_python_deps() {
 
     local -a LOCK_ARGS=()
     local -a SYNC_ARGS=(--frozen)
-    for _extra in "${EXTRAS[@]}"; do
-        SYNC_ARGS+=(--extra "$_extra")
-    done
+    if [[ "$INSTALL_DEV" == true ]]; then
+        # Sidar geliştirme standardı: dev bağımlılıkları varsayılan kurulumun parçasıdır
+        # ve ekip/CI paritesi için tam extras profili uv üzerinden senkronlanır.
+        SYNC_ARGS+=(--all-extras)
+    else
+        for _extra in "${EXTRAS[@]}"; do
+            SYNC_ARGS+=(--extra "$_extra")
+        done
+    fi
 
     if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
         info "uv.lock bulundu. Lock dosyası yeniden oluşturulup güncellenecek (uv lock --upgrade)..."
@@ -2300,9 +2306,13 @@ install_python_deps() {
         fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
     fi
 
-    info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen). Geliştirme bağımlılıkları, --no-dev verilmedikçe varsayılan olarak dahildir."
+    if [[ "$INSTALL_DEV" == true ]]; then
+        info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --all-extras --frozen). Geliştirme bağımlılıkları varsayılan olarak dahildir."
+    else
+        info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen, --no-dev profili)."
+    fi
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync başarısız oldu. Python bağımlılıkları uv ile senkronlanamadı (uv sync --all-extras ile manuel deneyin)."
+        fail "uv sync başarısız oldu. Python bağımlılıkları uv ile senkronlanamadı (geliştirme için uv sync --all-extras --frozen ile manuel deneyin)."
     fi
 
     local editable_extras=""

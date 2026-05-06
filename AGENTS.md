@@ -19,15 +19,17 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 
 Bu repo için tek doğruluk kaynağı olan operasyonel kabuller:
 
-- **Ürün adı:** Güncel ürün adı **Sidar**'dır. Eski "Lotus" / "LotusAI" referansları yalnızca
-  geriye dönük migrasyon (örn. legacy `DATABASE_URL` yakalama) için tutulur; yeni
-  dokümantasyon, log mesajı veya kullanıcıya görünen çıktıda eski ad **kullanılmaz**.
+- **Ürün adı:** Güncel ürün adı **Sidar**'dır. Eski ürün adı yalnızca
+  geriye dönük migrasyon (örn. legacy `DATABASE_URL` yakalama) için teknik yakalama
+  desenlerinde tutulabilir; yeni dokümantasyon, log mesajı veya kullanıcıya görünen
+  çıktıda eski ad **kullanılmaz**.
 - **Yerel coding model standardı:** Varsayılan ve önerilen yerel coding modeli
-  `qwen2.5-coder:7b`'dir. `qwen2.5-coder:3b` yalnızca düşük donanım fallback'idir; yeni
-  varsayılan değerler ve dokümantasyon `qwen2.5-coder:7b` üzerinden yazılmalıdır.
+  `qwen2.5-coder:7b`'dir. Düşük donanım fallback'leri yeni varsayılan değer veya
+  dokümantasyon standardı olarak yazılmamalı; tüm yeni örnekler `qwen2.5-coder:7b`
+  üzerinden verilmelidir.
 - **Paket/komut standardı:** Tüm Python bağımlılık ve komut yönetimi `uv` üzerinden yapılır.
   Kurulum `uv sync`, çalıştırma `uv run`, ek paket kurulumu `uv pip install` ile yürütülür;
-  doğrudan `pip install` veya `python -m pip install` kullanılmamalıdır.
+  standart pip tabanlı doğrudan kurulum komutları kullanılmamalıdır.
 - **Dev bağımlılıkları:** `dev` extras varsayılan kurulum akışına dahildir. Geliştirici
   ortamı, CI ve ekip paritesi için tam kurulum komutu `uv sync --all-extras` olmalıdır;
   yalnız test araçları gerektiğinde `uv sync --extra dev` yeterlidir.

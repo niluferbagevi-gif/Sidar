@@ -279,6 +279,11 @@ uv sync --all-extras
 
 > Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
 > Kilitli ve platformlar arası deterministik çözüm için kaynak dosya `uv.lock` kabul edilir.
+> Sidar geliştirme standardında paket ve komut yönetimi `uv` ile yapılır: kurulum için
+> `uv sync --all-extras`, çalıştırma için `uv run ...`, ek paket ihtiyacında `uv pip install ...`
+> kullanılmalıdır. `dev` extras geliştirme kurulumunun varsayılan parçasıdır; `install_sidar.sh`
+> yalnız `--no-dev` verildiğinde geliştirici bağımlılıklarını dışarıda bırakır. Yerel coding
+> modeli standardı Ollama üzerinde `qwen2.5-coder:7b` olarak hedeflenir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
