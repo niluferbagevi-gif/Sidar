@@ -355,7 +355,7 @@ bağlayıcıdır.
 
 #### 2.7.1 Feature flag ve devre dışı bırakma sözleşmesi
 
-Multimodal yetenekler **opt-in** olarak ele alınır; ortam değişkenleri tek doğruluk
+Multimodal yetenekler feature flag'lerle yönetilir; ortam değişkenleri tek doğruluk
 kaynağıdır ve runtime'da `Config` üzerinden okunur:
 
 - `ENABLE_VISION` (varsayılan `true`) — `VisionPipeline` ve görsel mesaj kurucuları
@@ -391,6 +391,12 @@ görsel analiz (general / accessibility / ux_review) sağlar. Ajanlar için kura
   veya "accessibility")` ile doğrulanır. `coder` ajanı UI değişikliği üretirse,
   `reviewer` veya `qa` ajanı render edilmiş ekran görüntüsünü vision pipeline'a
   beslemelidir; salt DOM diff'i kalite kapısı olarak yeterli kabul edilmez.
+- **Visual drift + multimodal eskalasyon:** `BrowserManager.analyze_visual_drift(...)`
+  önce baseline/current screenshot piksel farkını hesaplar; drift skoru
+  `BROWSER_VISUAL_QA_MULTIMODAL_MARGIN` eşiği içinde belirsiz kalırsa
+  `_analyze_screenshot_with_multimodal(...)` üzerinden `MultimodalPipeline.analyze_media(...)`
+  çağrılır. Ajanlar bu sonucu `multimodal_check.triggered` ve varsa
+  `multimodal_analysis.success/reason` alanlarıyla raporlamalıdır.
 - **Erişilebilirlik kapısı:** Yeni veya değişen UI bileşenleri için
   `analysis_type="accessibility"` raporu, WCAG 2.1 sapmaları içeriyorsa
   reviewer/QA tarafından **engelleyici** sayılır.
@@ -402,7 +408,7 @@ görsel analiz (general / accessibility / ux_review) sağlar. Ajanlar için kura
 
 `VoicePipeline` ve `WebRTCAudioIngress` (`core/voice.py`) full-duplex sesli
 asistan deneyimi sağlar; STT tarafı `core/multimodal.py` üzerinden Whisper
-(`WHISPER_MODEL`, varsayılan `turbo`) ile çalışır.
+(`WHISPER_MODEL`, varsayılan `base`) ile çalışır.
 
 - **Sesli komut algılama:** WebRTC üzerinden gelen paketler
   `WebRTCAudioIngress.decode_packet(...)` ile normalize edilir; yalnızca
@@ -466,7 +472,26 @@ asistan deneyimi sağlar; STT tarafı `core/multimodal.py` üzerinden Whisper
   turu sıfırdan değerlendirmelidir; aksi takdirde paralel iki yanıt akışı
   oluşur.
 
-#### 2.7.6 Operasyonel kurallar (özet)
+#### 2.7.6 Ajan giriş yönlendirme matrisi
+
+- **Görsel/mockup girdisi:** `coder` yalnız `VisionPipeline.mockup_to_code(...)` ile
+  kod önerisi üretmeli; çıktı doğrudan dosyaya yazılmadan önce `reviewer` semantik
+  kontrolünden ve UI değişikliği ise `qa` görsel doğrulamasından geçmelidir.
+- **Render edilmiş frontend screenshot'ı:** `reviewer`/`qa`, Playwright veya
+  `BrowserManager.capture_screenshot(...)` çıktısını `VisionPipeline.analyze(...)` ya da
+  `BrowserManager.analyze_visual_drift(...)` ile değerlendirmeli; erişilebilirlik veya
+  UX bulgularını kalite kapısı olarak işaretlemelidir.
+- **Sesli komut / WebRTC chunk'ı:** Supervisor veya web socket katmanı önce
+  `WebRTCAudioIngress.decode_packet(...)` ile MIME/boyut doğrulaması yapmalı;
+  `VoicePipeline.should_commit_audio(...)` `True` dönmeden Whisper STT çalıştırılmamalıdır.
+- **Video/uzak medya girdisi:** `researcher` ve `poyraz`, URL/video kaynaklarında önce
+  `MultimodalPipeline.analyze_media_source(...)` yolunu kullanmalı; YouTube transcript
+  yoksa süre/boyut limitlerine uyan Whisper fallback'i devreye alınmalıdır.
+- **Yanıt üretimi + TTS:** `VoicePipeline.extract_ready_segments(...)` segment üretmeden
+  TTS çağrısı yapılmamalı; `success=False` dönen TTS/STT/vision sonuçları ajan
+  çıktısında açık `reason` ile görünür olmalıdır.
+
+#### 2.7.7 Operasyonel kurallar (özet)
 
 - Multimodal kod yolları flag kapalıyken ağ/model I/O yapmamalı; her giriş
   noktasında erken kontrol uygulanmalıdır.

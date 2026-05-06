@@ -53,7 +53,8 @@ def _extract_capabilities_from_role_file(role_file: Path) -> set[str]:
                         values = {
                             elt.value
                             for elt in keyword.value.elts
-                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                            if isinstance(elt, ast.Constant)
+                            and isinstance(elt.value, str)
                         }
                         if values:
                             return values
@@ -73,7 +74,9 @@ def _extract_is_builtin_from_role_file(role_file: Path) -> bool:
                 if not isinstance(func, ast.Attribute) or func.attr != "register":
                     continue
                 for keyword in decorator.keywords:
-                    if keyword.arg == "is_builtin" and isinstance(keyword.value, ast.Constant):
+                    if keyword.arg == "is_builtin" and isinstance(
+                        keyword.value, ast.Constant
+                    ):
                         return keyword.value.value is True
     raise AssertionError(
         f"No explicit AgentCatalog.register(is_builtin=True) decorator found in {role_file}"
@@ -90,7 +93,12 @@ def test_builtin_role_import_lists_are_consistent() -> None:
 def test_builtin_role_capabilities_match_expected_contract() -> None:
     root = _repo_root()
     expected = {
-        "coder_agent.py": {"code_generation", "file_io", "shell_execution", "code_review"},
+        "coder_agent.py": {
+            "code_generation",
+            "file_io",
+            "shell_execution",
+            "code_review",
+        },
         "researcher_agent.py": {"web_search", "rag_search", "summarization"},
         "reviewer_agent.py": {"code_review", "security_audit", "quality_check"},
         "qa_agent.py": {"test_generation", "ci_remediation"},
@@ -99,7 +107,12 @@ def test_builtin_role_capabilities_match_expected_contract() -> None:
             "pytest_output_analysis",
             "autonomous_test_generation",
         },
-        "poyraz_agent.py": {"marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"},
+        "poyraz_agent.py": {
+            "marketing_strategy",
+            "seo_analysis",
+            "campaign_copy",
+            "audience_ops",
+        },
     }
 
     role_dir = root / "agent" / "roles"
@@ -180,6 +193,28 @@ def test_agents_documentation_covers_swarm_supervisor_event_coordination() -> No
         "`SIDAR_EVENT_BUS_BACKEND` `redis`",
         "`RedisBackend`, `RabbitMQBackend`, `KafkaBackend`",
         "`SIDAR_EVENT_BUS_DLQ_CHANNEL`",
+    ]
+
+    for fragment in expected_fragments:
+        assert fragment in docs
+
+
+def test_agents_documentation_covers_multimodal_voice_vision_contracts() -> None:
+    docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "### 2.7 Çoklu modalite (multimodal): görüş ve ses yetenekleri",
+        "`ENABLE_VISION`",
+        "`ENABLE_MULTIMODAL`",
+        '`VisionPipeline.analyze(analysis_type="ux_review"',
+        "`BrowserManager.analyze_visual_drift(...)`",
+        "`MultimodalPipeline.analyze_media(...)`",
+        "`WebRTCAudioIngress.decode_packet(...)`",
+        "`VoicePipeline.should_commit_audio(...)`",
+        "`WHISPER_MODEL`, varsayılan `base`",
+        "`MultimodalPipeline.analyze_media_source(...)`",
+        "`VoicePipeline.extract_ready_segments(...)`",
+        "#### 2.7.7 Operasyonel kurallar (özet)",
     ]
 
     for fragment in expected_fragments:
@@ -292,6 +327,7 @@ def test_sidar_uv_qwen_development_contract() -> None:
     for rel_path, text in text_by_file.items():
         for term in forbidden_terms:
             assert term not in text, f"{term!r} should not appear in {rel_path}"
+
 
 @pytest.mark.parametrize(
     "source",

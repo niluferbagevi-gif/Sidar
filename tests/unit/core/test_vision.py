@@ -52,6 +52,19 @@ def test_load_image_from_bytes_too_large():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def test_load_image_from_bytes_respects_custom_max_bytes():
+    with pytest.raises(ValueError, match="Görsel çok büyük"):
+        load_image_from_bytes(b"1234", "image/png", max_bytes=3)
+
+
+@pytest.mark.asyncio
+async def test_load_image_as_base64_respects_custom_max_bytes(tmp_path):
+    f = tmp_path / "small-limit.png"
+    f.write_bytes(b"1234")
+    with pytest.raises(ValueError, match="Görsel çok büyük"):
+        await load_image_as_base64(f, max_bytes=3)
+
+
 @pytest.mark.asyncio
 async def test_load_image_as_base64_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
@@ -153,7 +166,9 @@ def test_build_mockup_prompt_defaults():
 
 
 def test_build_mockup_prompt_custom():
-    prompt = build_mockup_prompt(framework="Vue", css_framework="Bootstrap", language="JavaScript")
+    prompt = build_mockup_prompt(
+        framework="Vue", css_framework="Bootstrap", language="JavaScript"
+    )
     assert "Vue" in prompt
     assert "Bootstrap" in prompt
     assert "JavaScript" in prompt
@@ -228,6 +243,28 @@ async def test_pipeline_no_input_returns_error():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_mockup_to_code_enforces_configured_image_limit():
+    pipeline, llm = _make_pipeline()
+    pipeline.max_image_bytes = 3
+    result = await pipeline.mockup_to_code(image_bytes=b"1234", mime_type="image/png")
+    assert result["success"] is False
+    assert "Görsel çok büyük" in result["reason"]
+    llm.chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_analyze_enforces_configured_image_limit(tmp_path):
+    pipeline, llm = _make_pipeline()
+    pipeline.max_image_bytes = 3
+    f = tmp_path / "too-big.png"
+    f.write_bytes(b"1234")
+    result = await pipeline.analyze(image_path=str(f), analysis_type="ux_review")
+    assert result["success"] is False
+    assert "Görsel çok büyük" in result["reason"]
+    llm.chat.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_from_bytes():
     pipeline, llm = _make_pipeline()
     raw = b"\x89PNG\r\n"
@@ -270,7 +307,9 @@ async def test_pipeline_analyze_from_bytes():
     pipeline, llm = _make_pipeline()
     llm.chat.return_value = "Bu bir analiz."
     raw = b"\x89PNG\r\n"
-    result = await pipeline.analyze(image_bytes=raw, mime_type="image/png", analysis_type="general")
+    result = await pipeline.analyze(
+        image_bytes=raw, mime_type="image/png", analysis_type="general"
+    )
     assert result["success"] is True
     assert result["analysis"] == "Bu bir analiz."
     assert result["analysis_type"] == "general"
