@@ -86,7 +86,7 @@ def start_gui() -> None:
     try:
         import eel
     except ImportError as exc:
-        raise RuntimeError("Eel kurulu değil. Kurmak için: uv sync --all-extras veya uv sync --extra gui") from exc
+        raise RuntimeError("Eel kurulu değil. Kurmak için: uv pip install eel") from exc
 
     gui_dir = Path(__file__).resolve().parent / "launcher_gui"
     eel.init(str(gui_dir))

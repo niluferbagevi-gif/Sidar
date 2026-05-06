@@ -917,7 +917,7 @@ class Config:
                 logger.error(
                     "❌ MEMORY_ENCRYPTION_KEY ayarlanmış ama 'cryptography' paketi kurulu değil.\n"
                     "   Bu kritik bir güvenlik ayarıdır. Şifreleme olmadan devam etmek\n"
-                    "   güvenlik riskine yol açabilir. Kurmak için: uv sync veya uv pip install cryptography"
+                    "   güvenlik riskine yol açabilir. Kurmak için: uv pip install cryptography"
                 )
                 is_valid = False
         else:

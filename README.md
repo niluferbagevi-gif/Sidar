@@ -294,7 +294,7 @@ uv run python main.py
 `main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
 
 ```bash
-uv sync --all-extras
+uv pip install eel
 uv run python gui_launcher.py
 ```
 
@@ -313,7 +313,7 @@ uv run alembic upgrade head
 PostgreSQL gibi farklı hedef veritabanı için bağlantıyı komut anında override edebilirsiniz:
 
 ```bash
-alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
+uv run alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
 ```
 
 SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
@@ -403,7 +403,7 @@ uv run python main.py
 ### 🌐 Web Arayüzü (Doğrudan)
 
 ```bash
-uv run python main.py
+uv run python web_server.py
 ```
 
 Tarayıcıda açılır: **http://localhost:7860**
@@ -461,16 +461,16 @@ Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_se
 ### 💻 Terminal (CLI) Modu
 
 ```bash
-python cli.py
+uv run python cli.py
 ```
 
 ### Tek Komut Modu
 
 ```bash
-python cli.py -c "Proje dizinini listele"
-python cli.py --status
-python cli.py --level full -c "Sistemi denetle"
-python cli.py --provider gemini -c "FastAPI nedir?"
+uv run python cli.py -c "Proje dizinini listele"
+uv run python cli.py --status
+uv run python cli.py --level full -c "Sistemi denetle"
+uv run python cli.py --provider gemini -c "FastAPI nedir?"
 ```
 
 ### CLI Seçenekleri
@@ -566,9 +566,11 @@ Sidar/
 
 ## Testleri Çalıştır
 
-> Kritik not: Sadece `dev` extra ile kurulum yapmak (`uv sync --extra dev` veya `uv pip install -e ".[dev]"),
-> opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`, `aws`, `browser`) **kurmaz**.
-> CI/CD ve ekip paritesi için geliştirme ortamında standart kurulum komutu `uv sync --all-extras` olmalıdır.
+> Kritik not: `dev` extras varsayılan kurulum akışına dahildir; `install_sidar.sh` `--no-dev`
+> verilmedikçe geliştirme bağımlılıklarını kurar. Yalnız `uv sync --extra dev` ile manuel
+> kurulum yapmak opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`,
+> `aws`, `browser`) **kurmaz**.  CI/CD ve ekip paritesi için geliştirme ortamında standart
+> kurulum komutu `uv sync --all-extras` olmalıdır.
 
 ```bash
 cd Sidar
@@ -582,14 +584,14 @@ bash scripts/ci/flaky_scan.sh
 uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
-> Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
-> kullanıyorsanız komutları doğrudan `uv run pytest ...` ile çalıştırın.
+> Not: `source .venv/bin/activate` zorunlu değildir. `uv run`, repo kökündeki uv ortamını
+> kendiliğinden kullanır.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
->   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutlardan birini çalıştırın:
->   - `uv sync --all-extras` (önerilen)
->   - `uv sync --extra dev` (minimum test/tooling kurulumu)
+>   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutu çalıştırın:
+>   - `uv sync --all-extras` (önerilen, geliştirme + opsiyonel entegrasyonlar dahil)
+>   - Yalnız test/tooling araçları yeterliyse `uv sync --extra dev` kullanılabilir.
 > - Kurulum sonrası doğrulama için:
 >   - `uv run pytest -q tests/unit/agent/test_registry.py`
 >
@@ -610,6 +612,9 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.
+>
+> Geliştirme tarafında yardımcı komutlar da uv standardına taşınmalıdır
+> (`uv run black .`, `uv run ruff check .`, `uv run mypy .`).
 > GPU benchmarkları için `Nightly GPU Performance` hattında TTFT/TPS/VRAM metrikleri
 > geçmiş 7 koşu medyanına göre (`GPU_TREND_WINDOW=7`) varsayılan ±%20 trend eşiği
 > (`GPU_TREND_THRESHOLD_PERCENT`) ile korunur; quantization + architecture + driver
@@ -706,9 +711,9 @@ MULTI_GPU=false
 ## Geliştirme
 
 ```bash
-black .
-flake8 . --max-line-length=100
-mypy . --ignore-missing-imports
+uv run black .
+uv run flake8 . --max-line-length=100
+uv run mypy . --ignore-missing-imports
 ```
 
 ---
