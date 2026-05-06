@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -133,6 +134,12 @@ def _parse_approval_value(value: str | None) -> bool | None:
 
 
 def _prompt_hitl_approval() -> bool:
+    if not sys.stdin.isatty():
+        print(
+            "HITL onayı interaktif olmayan ortamda alınamadı; "
+            "--hitl-approve yes ile açık onay verilmediği için self-heal reddedildi."
+        )
+        return False
     while True:
         answer = (
             input("⚠ Riskli self-heal planı bulundu. Uygulansın mı? (evet/hayır): ").strip().lower()

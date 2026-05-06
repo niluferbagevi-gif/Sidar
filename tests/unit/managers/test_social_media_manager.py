@@ -271,6 +271,38 @@ def test_publish_instagram_post_flow() -> None:
     assert post_id == "publish789"
 
 
+def test_publish_instagram_and_facebook_handle_non_mapping_api_payloads() -> None:
+    ig = SocialMediaManager(graph_api_token="tkn", instagram_business_account_id="ig")
+
+    async def ig_non_mapping_create(path: str, payload: dict[str, Any]):
+        return True, "created"
+
+    ig._post = ig_non_mapping_create  # type: ignore[method-assign]
+    ok, err = _run(ig.publish_instagram_post(caption="c", image_url="https://img"))
+    assert ok is False
+    assert "beklenen formatta" in err
+
+    async def ig_non_mapping_publish(path: str, payload: dict[str, Any]):
+        if path.endswith("/media"):
+            return True, {"id": "creation-1"}
+        return True, "published"
+
+    ig._post = ig_non_mapping_publish  # type: ignore[method-assign]
+    ok, post_id = _run(ig.publish_instagram_post(caption="c", image_url="https://img"))
+    assert ok is True
+    assert post_id == "creation-1"
+
+    fb = SocialMediaManager(graph_api_token="tkn", facebook_page_id="page")
+
+    async def fb_non_mapping(path: str, payload: dict[str, Any]):
+        return True, "posted"
+
+    fb._post = fb_non_mapping  # type: ignore[method-assign]
+    ok, err = _run(fb.publish_facebook_post(message="hi"))
+    assert ok is False
+    assert "beklenen formatta" in err
+
+
 def test_publish_facebook_and_whatsapp() -> None:
     fb = SocialMediaManager(graph_api_token="tkn")
     ok, err = _run(fb.publish_facebook_post(message="hi"))

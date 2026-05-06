@@ -137,6 +137,7 @@ def test_build_and_execute_docker_cli_command(manager, monkeypatch):
 
 
 def test_try_docker_cli_fallback(manager, monkeypatch):
+    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -144,6 +145,25 @@ def test_try_docker_cli_fallback(manager, monkeypatch):
     )
     assert manager._try_docker_cli_fallback() is True
     assert manager.docker_available is True
+
+
+def test_try_docker_cli_fallback_handles_missing_error_and_nonzero(manager, monkeypatch):
+    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+
+    def _raise_timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="docker info", timeout=5)
+
+    monkeypatch.setattr(subprocess, "run", _raise_timeout)
+    assert manager._try_docker_cli_fallback() is False
+    assert manager.docker_available is False
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="daemon off"),
+    )
+    assert manager._try_docker_cli_fallback() is False
+    assert manager.docker_available is False
 
 
 def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
@@ -330,6 +350,15 @@ def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeyp
     result = manager.run_pytest_and_collect("   ")
     assert result["success"] is True
     assert result["command"] == "pytest -q"
+
+
+def test_run_pytest_and_collect_skips_internal_blank_line_before_pytest(manager, monkeypatch):
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_args, **_kwargs: (True, "ok"))
+
+    result = manager.run_pytest_and_collect("Intro text\n   \npytest -q tests/unit/managers")
+
+    assert result["success"] is True
+    assert result["command"] == "pytest -q tests/unit/managers"
 
 
 def test_run_shell_paths(manager, monkeypatch, tmp_path):

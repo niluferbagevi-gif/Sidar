@@ -109,10 +109,39 @@ def test_redact_database_url_masks_password() -> None:
     assert _redact_database_url("sqlite+aiosqlite:///tmp/db.sqlite") == "sqlite+aiosqlite:///tmp/db.sqlite"
 
 
+def test_redact_database_url_handles_non_url_and_token_without_password() -> None:
+    assert _redact_database_url("plain-db-name") == "plain-db-name"
+    assert _redact_database_url("postgresql://sidar@localhost/db") == "postgresql://sidar@localhost/db"
+
+
+def test_prompt_hitl_approval_fails_closed_without_tty(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class _NonTTY:
+        @staticmethod
+        def isatty() -> bool:
+            return False
+
+    monkeypatch.setattr(auto_heal.sys, "stdin", _NonTTY())
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("input must not be called")),
+    )
+
+    assert auto_heal._prompt_hitl_approval() is False
+    assert "interaktif olmayan ortam" in capsys.readouterr().out
+
+
 def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    class _TTY:
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
     answers = iter(["belki", "e"])
+    monkeypatch.setattr(auto_heal.sys, "stdin", _TTY())
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
 
     assert auto_heal._prompt_hitl_approval() is True

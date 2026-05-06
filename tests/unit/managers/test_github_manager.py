@@ -234,6 +234,23 @@ def test_create_or_update_file_paths(manager):
     assert manager.create_or_update_file("z.txt", "new", "m")[0] is False
 
 
+def test_create_or_update_file_branch_update_empty_list_and_no_branch_create(manager):
+    manager._repo._contents[("branch.txt", "dev")] = FileMock("branch.txt", sha="devsha")
+    ok, msg = manager.create_or_update_file("branch.txt", "new", "msg", branch="dev")
+    assert ok is True and "güncellendi" in msg
+    assert manager._repo.update_calls[-1]["branch"] == "dev"
+
+    manager._repo._contents[("empty-list.txt", "dev")] = []
+    ok, msg = manager.create_or_update_file("empty-list.txt", "new", "msg", branch="dev")
+    assert ok is True and "oluşturuldu" in msg
+    assert manager._repo.create_calls[-1]["branch"] == "dev"
+
+    manager._repo._contents[("new.txt", None)] = Err404("missing")
+    ok, msg = manager.create_or_update_file("new.txt", "new", "msg")
+    assert ok is True and "oluşturuldu" in msg
+    assert "branch" not in manager._repo.create_calls[-1]
+
+
 def test_create_or_update_file_write_exception(manager):
     manager._repo._contents[("x.txt", None)] = FileMock("x.txt", sha="s1")
     manager._repo.update_file = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("write boom"))
@@ -388,6 +405,22 @@ def test_init_client_import_error_and_generic_error(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_BadGithub))
     GitHubManager(token="tok")
+
+
+def test_init_client_handles_github_constructor_returning_none(monkeypatch):
+    class _FakeAuth:
+        @staticmethod
+        def Token(token):
+            return token
+
+    monkeypatch.setitem(
+        sys.modules,
+        "github",
+        SimpleNamespace(Auth=_FakeAuth, Github=lambda auth: None),
+    )
+
+    m = GitHubManager(token="tok")
+    assert m.is_available() is False
 
 
 def test_init_client_success_with_repo_load(monkeypatch):
