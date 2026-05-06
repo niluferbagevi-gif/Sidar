@@ -366,11 +366,26 @@ def main() -> None:
                 f"\n{Colors.WARNING}⏳ Proje {rollback_steps} adım geriye sarılıyor...{Colors.ENDC}"
             )
 
-            # 1. Yerel dosyaları merge/pull öncesi referansa sert şekilde geri al.
-            # ORIG_HEAD son tehlikeli hareket öncesini işaret eder; FF merge dahil tek adımda güvenli geri dönüş sağlar.
+            # 1. Yerel dosyaları istenen commit sayısı kadar ilk ebeveyn geçmişinde geri al.
+            # ORIG_HEAD son merge/pull öncesi referansı tutar ve kullanıcının verdiği -N
+            # değerini temsil etmez; merge sonrası yanlış noktaya dönme riski doğurur.
+            rollback_ref = f"HEAD~{rollback_steps}"
             print(f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch}{Colors.ENDC}")
+            ref_success, ref_err = run_command(
+                ["git", "rev-parse", "--verify", rollback_ref], show_output=False
+            )
+            if not ref_success:
+                print(
+                    f"{Colors.FAIL}❌ Geri alma hedefi bulunamadı: {rollback_ref}\n"
+                    f"{ref_err}{Colors.ENDC}"
+                )
+                print(
+                    f"{Colors.WARNING}Bu dalda {rollback_steps} commit geriye gidecek kadar geçmiş olmayabilir.{Colors.ENDC}"
+                )
+                sys.exit(1)
+
             reset_success, reset_err = run_command(
-                ["git", "reset", "--hard", "ORIG_HEAD"], show_output=False
+                ["git", "reset", "--hard", rollback_ref], show_output=False
             )
             if not reset_success:
                 print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
