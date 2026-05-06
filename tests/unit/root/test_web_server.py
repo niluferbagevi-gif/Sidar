@@ -1856,6 +1856,20 @@ def test_validate_plugin_source_rejects_banned_function_and_attribute_calls():
     assert "dinamik kod" in attribute_call.value.detail
 
 
+def test_validate_plugin_source_rejects_banned_import_statements():
+    with pytest.raises(HTTPException) as import_call:
+        web_server._validate_plugin_source("import os\n")
+    assert import_call.value.status_code == 400
+    assert "tehlikeli modül" in import_call.value.detail
+
+    with pytest.raises(HTTPException) as import_from_call:
+        web_server._validate_plugin_source("from subprocess import run\n")
+    assert import_from_call.value.status_code == 400
+    assert "tehlikeli modül" in import_from_call.value.detail
+
+    web_server._validate_plugin_source("import math\nfrom typing import Any\n")
+
+
 def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ):

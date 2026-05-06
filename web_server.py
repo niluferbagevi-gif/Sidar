@@ -733,12 +733,11 @@ async def get_agent() -> SidarAgent:
         return _agent
     if _agent_lock is None:
         _agent_lock = asyncio.Lock()
-    if _agent_lock is not None:
-        async with _agent_lock:
-            if _agent is None:
-                _agent = SidarAgent(cfg)
-                await _agent.initialize()
-                _bind_llm_usage_sink(_agent)
+    async with _agent_lock:
+        if _agent is None:
+            _agent = SidarAgent(cfg)
+            await _agent.initialize()
+            _bind_llm_usage_sink(_agent)
     return _agent
 
 
@@ -1930,9 +1929,7 @@ def _load_plugin_agent_class(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}"
-        ) from exc
+        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
 
     namespace = {"__name__": module_label}
     try:
