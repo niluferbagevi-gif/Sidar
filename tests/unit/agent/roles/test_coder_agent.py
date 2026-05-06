@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, create_autospec
@@ -218,6 +219,36 @@ async def test_tool_methods_are_routed_correctly(coder_module):
     assert await agent._tool_get_package_info(" requests ") == "pkg:requests"
     assert await agent._tool_scan_project_todos("") == "todos:/tmp/base"
     assert await agent._tool_scan_project_todos("src") == "todos:src"
+
+
+@pytest.mark.asyncio
+async def test_tool_read_test_artifacts_empty_input_returns_empty_payload(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+
+    assert await agent._tool_read_test_artifacts("  ") == "[TEST_ARTIFACTS] {}"
+    agent.code.read_file.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tool_read_test_artifacts_reads_named_and_default_artifacts(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+
+    result = await agent._tool_read_test_artifacts(
+        " coverage = coverage.xml ; ignored ; =fallback.txt; blank= ; junit= reports/junit.xml "
+    )
+
+    prefix, payload = result.split(" ", 1)
+    assert prefix == "[TEST_ARTIFACTS]"
+    assert json.loads(payload) == {
+        "coverage": "read:coverage.xml",
+        "artifact": "read:fallback.txt",
+        "junit": "read:reports/junit.xml",
+    }
+    assert [call.args[0] for call in agent.code.read_file.call_args_list] == [
+        "coverage.xml",
+        "fallback.txt",
+        "reports/junit.xml",
+    ]
 
 
 @pytest.mark.asyncio
