@@ -10553,3 +10553,99 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
     assert calls["unsubscribe"] == ["sub-room-cleanup"]
     assert calls["reset"] == ["ctx:u1"]
     assert room.active_task is None
+
+
+def test_validate_plugin_source_blocks_attribute_exec_and_eval_calls():
+    with pytest.raises(HTTPException) as exec_info:
+        web_server._validate_plugin_source(
+            "class P:\n    def run(self):\n        runner.exec('payload')\n"
+        )
+    assert "dinamik kod" in str(exec_info.value.detail)
+
+    with pytest.raises(HTTPException) as eval_info:
+        web_server._validate_plugin_source(
+            "class P:\n    def run(self):\n        sandbox.eval('payload')\n"
+        )
+    assert "dinamik kod" in str(eval_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_rag_search_awaits_sync_search_returning_coroutine(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _Docs:
+        def search(self, query: str, top_k: int, mode: str, session_id: str):
+            captured.update(
+                {"query": query, "top_k": top_k, "mode": mode, "session_id": session_id}
+            )
+
+            async def _result():
+                return True, {"source": "awaitable-from-sync-search"}
+
+            return _result()
+
+    agent = SimpleNamespace(memory=SimpleNamespace(active_session_id=""), docs=_Docs())
+
+    async def _agent():
+        return agent
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _agent)
+
+    response = await web_server.rag_search("  async query  ", mode="hybrid", top_k=99)
+    payload = json.loads(response.body)
+
+    assert payload == {"success": True, "result": {"source": "awaitable-from-sync-search"}}
+    assert captured == {
+        "query": "async query",
+        "top_k": 10,
+        "mode": "hybrid",
+        "session_id": "global",
+    }
+
+
+def test_launcher_execute_command_exception_blocks(monkeypatch, capsys):
+    import main as launcher_main
+
+    def _keyboard_interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(launcher_main.subprocess, "run", _keyboard_interrupt)
+    assert launcher_main.execute_command(["sidar"]) == 0
+    assert "Kullanıcı müdahalesi" in capsys.readouterr().out
+
+    def _called_process_error(*_args, **_kwargs):
+        raise launcher_main.subprocess.CalledProcessError(7, ["sidar"])
+
+    monkeypatch.setattr(launcher_main.subprocess, "run", _called_process_error)
+    assert launcher_main.execute_command(["sidar"]) == 7
+    assert "Çıkış Kodu: 7" in capsys.readouterr().out
+
+    def _runtime_error(*_args, **_kwargs):
+        raise RuntimeError("launcher boom")
+
+    monkeypatch.setattr(launcher_main.subprocess, "run", _runtime_error)
+    assert launcher_main.execute_command(["sidar"]) == 1
+    assert "launcher boom" in capsys.readouterr().out
+
+
+def test_launcher_preflight_ollama_import_and_request_exceptions(monkeypatch, tmp_path, capsys):
+    import main as launcher_main
+
+    monkeypatch.setattr(launcher_main.cfg, "BASE_DIR", str(tmp_path), raising=False)
+    monkeypatch.setitem(sys.modules, "httpx", None)
+    launcher_main.preflight("ollama")
+    assert "httpx" in capsys.readouterr().out
+
+    class _ExplodingClient:
+        def __init__(self, timeout: int):
+            self.timeout = timeout
+
+        def __enter__(self):
+            raise RuntimeError("ollama offline")
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Client=_ExplodingClient))
+    launcher_main.preflight("ollama")
+    assert "Ollama erişimi doğrulanamadı" in capsys.readouterr().out
