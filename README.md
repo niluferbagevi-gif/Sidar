@@ -270,6 +270,11 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Önerilen: `.venv` + `uv` ile kurulum
 
+> Paket yönetimi standardı: **`uv`**. Düz `pip` / `python -m pip` çağrıları yerine
+> `uv sync` ve `uv run` kullanın. `uv sync --all-extras` komutu `dev` extra dahil tüm
+> geliştirici/test bağımlılıklarını **varsayılan olarak yükler**; ayrıca bir komut
+> çalıştırmaya gerek yoktur.
+
 ```bash
 cd Sidar
 python -m venv .venv
@@ -294,9 +299,13 @@ uv run python main.py
 `main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
 
 ```bash
-pip install eel
-python gui_launcher.py
+uv pip install eel
+uv run python gui_launcher.py
 ```
+
+> Not: Paket yönetimi için `uv` standarttır; `pip install ...` yerine `uv pip install ...`
+> ya da `uv sync ...` kullanın. Ayrı bir kurulum gerekmiyorsa `uv sync --all-extras`
+> komutu `eel` dahil opsiyonel ekstraları otomatik olarak getirir.
 
 Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui_launcher.py`
 üzerinden mevcut `preflight`, `build_command` ve `execute_command` akışına bağlar.
@@ -331,6 +340,11 @@ cp .env.example .env
 ```
 
 ### Ollama Kurulumu
+
+> Yerel LLM standardı: **Qwen 2.5 Coder** ailesi. Birincil model `qwen2.5-coder:7b`,
+> düşük kaynak/CI profili `qwen2.5-coder:3b` olarak hedeflenir. Bulut yedek modelleri
+> (Gemini 2.5 Flash, GPT-4o, Claude 3.5 Sonnet) yalnızca `AI_PROVIDER` veya
+> `--provider` ile bilinçli olarak seçildiğinde devreye girer.
 
 ```bash
 # Resmi Linux kurulumu: https://ollama.com/download/linux
@@ -566,9 +580,15 @@ Sidar/
 
 ## Testleri Çalıştır
 
-> Kritik not: Sadece `dev` extra ile kurulum yapmak (`uv sync --extra dev` veya `uv pip install -e ".[dev]"),
-> opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`, `aws`, `browser`) **kurmaz**.
-> CI/CD ve ekip paritesi için geliştirme ortamında standart kurulum komutu `uv sync --all-extras` olmalıdır.
+> Kritik not: Paket yönetimi standardı `uv`'dur (`pip` yerine `uv` kullanılır).
+> `uv sync --all-extras` komutu `dev` dahil tüm geliştirici/test bağımlılıklarını
+> **varsayılan olarak yükler**; ayrıca `--extra dev` eklemeye gerek yoktur.
+> Sadece `dev` extra ile kurulum yapmak (`uv sync --extra dev` veya
+> `uv pip install -e ".[dev]"`), opsiyonel entegrasyonları (ör. `postgres`,
+> `telemetry`, `slack`, `jira`, `aws`, `browser`) **kurmaz**.
+> CI/CD ve ekip paritesi için geliştirme ortamında standart kurulum komutu
+> `uv sync --all-extras`, çalıştırma standardı ise `uv run <komut>` (örn.
+> `uv run pytest`, `uv run python main.py`) olmalıdır.
 
 ```bash
 cd Sidar
@@ -587,11 +607,13 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
->   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutlardan birini çalıştırın:
->   - `uv sync --all-extras` (önerilen)
->   - `python -m pip install -e ".[dev]"` (minimum test/tooling kurulumu)
+>   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutu çalıştırın
+>   (paket yönetimi standardı `uv`'dur, `pip` kullanılmaz):
+>   - `uv sync --all-extras` (önerilen — `dev` extra dahil tüm geliştirici/test
+>     bağımlılıklarını varsayılan olarak yükler)
+>   - Konteyner/bootstrap senaryoları için: `uv pip install -e ".[dev]"`
 > - Kurulum sonrası doğrulama için:
->   - `python -m pytest -q tests/unit/agent/test_registry.py`
+>   - `uv run pytest -q tests/unit/agent/test_registry.py`
 >
 > Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
 > `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
