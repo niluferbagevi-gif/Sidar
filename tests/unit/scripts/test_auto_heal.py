@@ -1,10 +1,12 @@
 import argparse
 import asyncio
+import json
 import types
 from pathlib import Path
 
 import pytest
 
+import scripts.auto_heal as auto_heal
 from scripts.auto_heal import (
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
@@ -17,6 +19,65 @@ from scripts.auto_heal import (
     main,
 )
 
+
+def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "mypy.log"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "auto_heal.py",
+            "--log",
+            str(log_path),
+            "--source",
+            "ruff",
+            "--batch-size",
+            "3",
+            "--model",
+            "qwen2.5-coder:14b",
+            "--hitl-approve",
+            "yes",
+            "--batch-retries",
+            "4",
+            "--scope-log-lines",
+            "12",
+        ],
+    )
+
+    args = auto_heal._parse_args()
+
+    assert args.log == str(log_path)
+    assert args.source == "ruff"
+    assert args.batch_size == 3
+    assert args.model == "qwen2.5-coder:14b"
+    assert args.hitl_approve == "yes"
+    assert args.batch_retries == 4
+    assert args.scope_log_lines == 12
+
+
+def test_parse_args_applies_optional_defaults(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    monkeypatch.setattr("sys.argv", ["auto_heal.py", "--log", str(log_path)])
+
+    args = auto_heal._parse_args()
+
+    assert args.source == "mypy"
+    assert args.batch_size == 1
+    assert args.model is None
+    assert args.hitl_approve is None
+    assert args.batch_retries == 2
+    assert args.scope_log_lines == 30
+
+
+def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answers = iter(["belki", "e"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert auto_heal._prompt_hitl_approval() is True
+    assert "Lütfen" in capsys.readouterr().out
 
 def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
     assert _parse_approval_value("e") is True
@@ -50,6 +111,37 @@ def test_select_auto_heal_model_honors_requested_model() -> None:
         == "qwen2.5-coder:14b"
     )
 
+
+
+def test_build_scope_queue_returns_empty_when_scope_paths_are_blank() -> None:
+    assert _build_scope_queue({"scope_paths": ["", "  "]}, batch_size=0) == []
+
+
+def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
+    assert _extract_scope_error_lines("   ", scope_paths=["pkg/a.py"], limit=1) == []
+    assert _extract_scope_error_lines("pkg/a.py: ok", scope_paths=[], limit=1) == []
+    assert (
+        _extract_scope_error_lines(
+            "other.py:1: error: ignored\npkg/a.py:2: note: informational",
+            scope_paths=["./pkg/a.py"],
+            limit=1,
+        )
+        == []
+    )
+
+
+def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines() -> None:
+    diagnosis = _build_attempt_diagnosis(
+        base_diagnosis="",
+        scope_paths=["pkg/a.py"],
+        scope_error_lines=[],
+        attempt=2,
+        total_attempts=2,
+    )
+
+    assert "Hedef kapsam için tip hataları düzeltilecek: pkg/a.py" in diagnosis
+    assert "Batch retry 2/2" in diagnosis
+    assert "Hedef hata satırları" not in diagnosis
 
 def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
     queue = _build_scope_queue(
@@ -344,3 +436,174 @@ def test_run_returns_1_when_all_batches_fail(
 
     rc = asyncio.run(_run(args))
     assert rc == 1
+
+
+def test_run_skips_clean_mypy_output_without_targets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy-clean.log"
+    log_path.write_text("Success: no issues found in 12 source files", encoding="utf-8")
+
+    def _unexpected_payload_call(*_args, **_kwargs):
+        raise AssertionError("clean mypy output should not build remediation payload")
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=object))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=object),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "failure_summary": "clean",
+                "suspected_targets": [],
+            },
+            build_ci_remediation_payload=_unexpected_payload_call,
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=2,
+        scope_log_lines=30,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload["status"] == "skipped"
+    assert payload["queue_size"] == 0
+    assert "mypy temiz" in payload["reason"]
+
+
+def test_run_does_not_retry_non_retryable_batch_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        instances = []
+
+        def __init__(self, config):
+            self.config = config
+            self.calls = 0
+            self.__class__.instances.append(self)
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            self.calls += 1
+            return {"status": "reverted", "summary": "rollback kept tree clean"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=5,
+        scope_log_lines=10,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert _Agent.instances[0].calls == 1
+    assert payload["status"] == "failed"
+    assert payload["executions"][0]["status"] == "reverted"
+    assert payload["executions"][0]["attempts"] == [
+        {"attempt": 1, "status": "reverted", "summary": "rollback kept tree clean"}
+    ]
+
+
+def test_run_handles_targeted_context_without_scope_error_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: note: informational only", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        async def initialize(self):
+            return None
+
+        def __init__(self, config):
+            self.config = config
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            return {"status": "applied", "summary": "done"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "",
+                "failure_summary": "",
+                "suspected_targets": ["pkg/a.py"],
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=2,
+        scope_log_lines=5,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload["status"] == "applied"
+    assert payload["executions"][0]["attempts"] == [
+        {"attempt": 1, "status": "applied", "summary": "done"}
+    ]
