@@ -42,7 +42,7 @@ def test_parse_approval_value_returns_none_for_unknown() -> None:
 
 def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
     assert _select_auto_heal_model("qwen2.5-coder:" "3b", "mypy", None) == "qwen2.5-coder:7b"
-    
+
 
 def test_select_auto_heal_model_honors_requested_model() -> None:
     assert (
