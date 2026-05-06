@@ -2894,3 +2894,127 @@ async def test_document_store_search_fallbacks_when_fake_vector_store_empty_or_e
     assert result_err == "keyword-fallback"
     fake_vector_store.search.side_effect = None
     assert _pgvector_error("pytest", 2, "s1") == (True, "unused")
+
+
+async def test_require_pg_engine_raises_when_engine_missing(tmp_path: Path) -> None:
+    """Line 703: pgvector engine başlatılmadıysa açık RuntimeError fırlatılmalı."""
+    store = _make_store_stub(tmp_path)
+    store.pg_engine = None
+    with pytest.raises(RuntimeError, match="pgvector engine başlatılmamış"):
+        store._require_pg_engine()
+
+    sentinel = object()
+    store.pg_engine = sentinel
+    assert store._require_pg_engine() is sentinel
+
+
+async def test_require_chroma_collection_raises_when_collection_missing(
+    tmp_path: Path,
+) -> None:
+    """Line 709: chroma collection başlatılmadıysa açık RuntimeError fırlatılmalı."""
+    store = _make_store_stub(tmp_path)
+    store.collection = None
+    with pytest.raises(RuntimeError, match="Chroma collection başlatılmamış"):
+        store._require_chroma_collection()
+
+    sentinel = SimpleNamespace(count=lambda: 0)
+    store.collection = sentinel
+    assert store._require_chroma_collection() is sentinel
+
+
+async def test_pgvector_embed_texts_uses_tolist_when_vectors_support_it(
+    tmp_path: Path,
+) -> None:
+    """Lines 920-922: encode() çıktısı tolist'e sahipse bunu kullanmalı."""
+    store = _make_store_stub(tmp_path)
+
+    class _FakeVectors:
+        def tolist(self) -> list[list[float]]:
+            return [[1.0, 2.0], [3.0, 4.0]]
+
+    class _FakeModel:
+        def encode(self, texts, **_kwargs):
+            assert texts == ["a", "b"]
+            return _FakeVectors()
+
+    store._pg_embedding_model = _FakeModel()
+    embedded = store._pgvector_embed_texts(["a", "b"])
+    assert embedded == [[1.0, 2.0], [3.0, 4.0]]
+
+
+async def test_pgvector_embed_texts_falls_back_when_vectors_lack_tolist(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+
+    class _FakeModel:
+        def encode(self, texts, **_kwargs):
+            return [[5.0, 6.0]]
+
+    store._pg_embedding_model = _FakeModel()
+    embedded = store._pgvector_embed_texts(["x"])
+    assert embedded == [[5.0, 6.0]]
+
+
+async def test_pgvector_embed_texts_returns_empty_for_missing_model_or_texts(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._pg_embedding_model = None
+    assert store._pgvector_embed_texts(["a"]) == []
+    store._pg_embedding_model = object()
+    assert store._pgvector_embed_texts([]) == []
+
+
+async def test_load_index_returns_empty_dict_when_json_is_not_dict(tmp_path: Path) -> None:
+    """Line 1010: JSON parse edilebilir ama dict değilse {} dönmeli."""
+    store = _make_store_stub(tmp_path)
+    store.index_file.write_text('["not", "a", "dict"]', encoding="utf-8")
+    assert store._load_index() == {}
+
+    store.index_file.write_text('{"d1": {"title": "ok"}}', encoding="utf-8")
+    assert store._load_index() == {"d1": {"title": "ok"}}
+
+
+async def test_analyze_graph_impact_returns_format_error_when_analysis_not_dict(
+    tmp_path: Path,
+) -> None:
+    """Line 1500: graph_impact_details (True, <dict-değil>) dönerse formatlı hata mesajı."""
+    store = _make_store_stub(tmp_path)
+    store.graph_impact_details = lambda *_args, **_kwargs: (  # type: ignore[method-assign]
+        True,
+        "string-yerine-dict-değil",
+    )
+    ok, message = store.analyze_graph_impact("a.py")
+    assert ok is False
+    assert message == "Graph impact analizi beklenen formatta dönmedi."
+
+
+async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None:
+    """Branch 1873->1875: bm25 sonucu zaten docs_map'te varsa skoru güncellenmeli ama tekrar eklenmemeli."""
+    store = _make_store_stub(tmp_path)
+    store._index = {"d-shared": {"session_id": "s1", "title": "Shared", "source": "src://shared"}}
+    store._pgvector_available = True
+
+    vector_doc = {
+        "id": "d-shared",
+        "title": "Shared",
+        "source": "src://shared",
+        "snippet": "vector-snippet",
+        "score": 0.9,
+    }
+    bm25_doc = {
+        "id": "d-shared",
+        "title": "Shared (bm25)",
+        "source": "src://shared",
+        "snippet": "bm25-snippet",
+        "score": 0.5,
+    }
+    store._fetch_pgvector = lambda _q, _k, _s: [vector_doc]  # type: ignore[method-assign]
+    store._fetch_bm25 = lambda _q, _k, _s: [bm25_doc]  # type: ignore[method-assign]
+
+    ok, text = store._rrf_search("query", 1, "s1")
+    assert ok is True
+    # Vector kayıt korunmalı: snippet vector kaynağından gelmeli, bm25 üzerine yazmamalı.
+    assert "vector-snippet" in text
+    assert "bm25-snippet" not in text

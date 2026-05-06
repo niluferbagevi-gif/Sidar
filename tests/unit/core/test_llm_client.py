@@ -2857,6 +2857,50 @@ async def test_gemini_tracing_nonstream_and_empty_stream_chunk(
     assert await _collect(c._stream_gemini_generator(_gen())) == ["T"]
 
 
+@pytest.mark.asyncio
+async def test_gemini_non_stream_error_returns_fallback_message_without_ending_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Branch 832->834: stream=False olduğunda hata path'i span.end() çağırmadan fallback döner."""
+
+    class _ExplodingModels:
+        async def generate_content(self, **_kw):
+            raise RuntimeError("non-stream-fail")
+
+        async def generate_content_stream(self, **_kw):
+            raise AssertionError("stream çağrılmamalı")
+
+    class _Client:
+        def __init__(self, api_key):
+            self.aio = SimpleNamespace(models=_ExplodingModels())
+
+    fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
+    _mock_google_genai(monkeypatch, _Client, fake_types)
+
+    span = _Span()
+    span_cm = _SpanCM(span)
+    monkeypatch.setattr(
+        llm_client,
+        "_get_tracer",
+        lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
+    )
+
+    c = llm_client.GeminiClient(
+        _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=True)
+    )
+
+    out = await c.chat(
+        [{"role": "user", "content": "u"}], stream=False, json_mode=False
+    )
+    payload = json.loads(out)
+    assert payload["tool"] == "final_answer"
+    assert "non-stream-fail" in payload["argument"]
+    # stream=False olduğu için except içindeki span.end() çağrısına girilmemiş olmalı.
+    assert span.ended == 0
+    # Span context manager kendi __exit__ ile bir kez kapanmış olmalı.
+    assert span_cm.exit_calls == 1
+
+
 @pytest.mark.parametrize("enable_tracing", [True, False])
 @pytest.mark.asyncio
 async def test_openai_stream_empty_and_error_branches(

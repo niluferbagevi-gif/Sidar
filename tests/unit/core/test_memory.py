@@ -458,3 +458,73 @@ def test_delete_non_active_session_and_nightly_skipped_report_branch(mem):
         assert report["reports"] and report["reports"][0]["status"] == "skipped"
 
     asyncio.run(scenario())
+
+
+def test_init_keeps_explicit_database_url_when_not_placeholder(
+    monkeypatch, tmp_path: Path
+):
+    """Branch 84->89: should_use_memory_default False olduğunda DATABASE_URL korunmalı."""
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    explicit_url = "sqlite+aiosqlite:///" + str(tmp_path / "explicit-test.db").replace(
+        "\\", "/"
+    )
+    mem = ConversationMemory(base_dir=tmp_path, database_url=explicit_url)
+    assert mem.cfg.DATABASE_URL == explicit_url
+
+
+def test_add_returns_early_when_session_creation_yields_empty_id(mem):
+    """Line 217: create_session sonrası active_session_id boşsa add() DB'ye yazmadan dönmeli."""
+
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u-add", "alice")
+        # create_session monkeypatch: aktif kullanıcı ataması korunur ama
+        # active_session_id boş bırakılır, böylece add() line 217'den döner.
+        async def _create_empty_session(_title: str = "Yeni Sohbet") -> str:
+            mem.active_session_id = ""
+            return ""
+
+        mem.create_session = _create_empty_session  # type: ignore[method-assign]
+        mem.active_session_id = None
+        before_messages = sum(len(v) for v in mem.db.messages.values())
+
+        await mem.add("user", "session-yok")
+        assert mem._turns and mem._turns[-1]["content"] == "session-yok"
+        after_messages = sum(len(v) for v in mem.db.messages.values())
+        assert after_messages == before_messages
+
+    asyncio.run(scenario())
+
+
+def test_set_active_user_invokes_ensure_user_id_when_callable(mem):
+    """Line 231: ensure_user_id callable ise çağırılmalı."""
+    captured: list[dict[str, str | None]] = []
+
+    async def _ensure(*, user_id, username):
+        captured.append({"user_id": user_id, "username": username})
+
+    mem.db.ensure_user_id = _ensure
+
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u-with-ensure", "alice")
+        assert captured == [{"user_id": "u-with-ensure", "username": "alice"}]
+        # username verilmediğinde fallback olarak user_id kullanılmalı
+        await mem.set_active_user("u-fallback")
+        assert captured[-1] == {"user_id": "u-fallback", "username": "u-fallback"}
+
+    asyncio.run(scenario())
+
+
+def test_set_active_user_skips_ensure_user_id_when_not_callable(mem):
+    """Line 230 false dalı: ensure_user_id callable değilse atlanmalı."""
+    mem.db.ensure_user_id = "not-a-callable"
+
+    async def scenario():
+        await mem.initialize()
+        # Çağrı hata vermeden tamamlanmalı; aktif kullanıcı/oturum atanmalı.
+        await mem.set_active_user("u-no-ensure")
+        assert mem.active_user_id == "u-no-ensure"
+        assert mem.active_session_id is not None
+
+    asyncio.run(scenario())

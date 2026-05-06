@@ -2089,6 +2089,114 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000099"
 
 
+def test_new_entity_id_falls_back_to_uuid4_when_uuid6_module_lacks_callable_uuid7(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Branch 261->266: uuid6 modülü import edilebilir ancak uuid7 callable değilse uuid4'e düş."""
+    monkeypatch.delattr(uuid, "uuid7", raising=False)
+
+    fake_uuid6 = types.ModuleType("uuid6")
+    fake_uuid6.uuid7 = "not-callable-attribute"
+    monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
+
+    monkeypatch.setattr(
+        uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000222")
+    )
+
+    assert _new_entity_id() == "00000000-0000-4000-8000-000000000222"
+
+
+def test_redact_database_url_returns_text_unchanged_when_no_scheme() -> None:
+    """Line 517: '://' içermeyen string olduğu gibi döner."""
+    assert Database._redact_database_url("plain-text-url") == "plain-text-url"
+    assert Database._redact_database_url("") == ""
+    assert Database._redact_database_url("   ") == ""
+
+
+def test_redact_database_url_returns_text_when_credentials_have_no_password() -> None:
+    """Line 523: 'user@host' gibi parolasız kimlikler değiştirilmeden döner."""
+    assert (
+        Database._redact_database_url("postgresql://user@host:5432/db")
+        == "postgresql://user@host:5432/db"
+    )
+
+
+def test_redact_database_url_masks_password_in_credentials() -> None:
+    redacted = Database._redact_database_url("postgresql://user:secret@host:5432/db")
+    assert redacted == "postgresql://user:***@host:5432/db"
+
+
+def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> None:
+    """Line 530: DB_DEGRADED_SQLITE_URL ayarlıysa olduğu gibi dönmeli."""
+    cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
+    cfg.DB_DEGRADED_SQLITE_URL = "sqlite+aiosqlite:////tmp/configured-degraded.db"
+    db = Database(cfg=cfg)
+    assert (
+        db._postgres_degraded_sqlite_url()
+        == "sqlite+aiosqlite:////tmp/configured-degraded.db"
+    )
+
+
+def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
+    db = Database(cfg=cfg)
+    fallback_url = db._postgres_degraded_sqlite_url()
+    assert fallback_url.startswith("sqlite+aiosqlite:///")
+    assert "data/sidar_degraded.db" in fallback_url
+
+
+@pytest.mark.asyncio
+async def test_add_messages_bulk_handles_diverse_token_types(sqlite_db: Database) -> None:
+    """Lines 3367, 3370-3376: tokens_used için bool/str/diğer tipler güvenle çevrilmeli."""
+    user = await sqlite_db.create_user("bulk-tokens-user", password="pw")
+    session = await sqlite_db.create_session(user.id, "tokens")
+
+    inserted = await sqlite_db.add_messages_bulk(
+        [
+            {"session_id": session.id, "role": "user", "content": "bool", "tokens_used": True},
+            {"session_id": session.id, "role": "user", "content": "str-num", "tokens_used": "12"},
+            {
+                "session_id": session.id,
+                "role": "user",
+                "content": "str-pad",
+                "tokens_used": "  9  ",
+            },
+            {
+                "session_id": session.id,
+                "role": "user",
+                "content": "str-empty",
+                "tokens_used": "",
+            },
+            {
+                "session_id": session.id,
+                "role": "user",
+                "content": "str-bad",
+                "tokens_used": "not-a-number",
+            },
+            {"session_id": session.id, "role": "user", "content": "none", "tokens_used": None},
+            {
+                "session_id": session.id,
+                "role": "user",
+                "content": "list",
+                "tokens_used": [1, 2],
+            },
+        ]
+    )
+    assert inserted == 7
+
+    grouped = await sqlite_db.get_messages_for_sessions([session.id])
+    by_content = {m.content: m.tokens_used for m in grouped[session.id]}
+    assert by_content == {
+        "bool": 1,
+        "str-num": 12,
+        "str-pad": 9,
+        "str-empty": 0,
+        "str-bad": 0,
+        "none": 0,
+        "list": 0,
+    }
+
+
 def test_expires_in_uses_default_days_when_no_argument() -> None:
     now = datetime.now(UTC)
     expiry = datetime.fromisoformat(_expires_in())
