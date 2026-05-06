@@ -26,11 +26,11 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sidar}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sidar} -d $${POSTGRES_DB:-sidar}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,10 +65,16 @@ services:
           cpus: '2.0'
           memory: 4G
 
+    depends_on:
+      - redis
+      - postgres
+      - ollama
+
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
 
@@ -121,12 +127,14 @@ services:
 
     depends_on:
       - redis
+      - postgres
       - ollama
 
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - USE_GPU=true
@@ -193,7 +201,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
 
     env_file:
       - .env
@@ -261,7 +269,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
 
     env_file:
       - .env

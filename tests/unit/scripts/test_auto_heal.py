@@ -13,6 +13,8 @@ from scripts.auto_heal import (
     _build_scope_queue,
     _extract_scope_error_lines,
     _parse_approval_value,
+    _redact_database_url,
+    _resolve_auto_heal_database_url,
     _run,
     _run_self_heal_attempt,
     _select_auto_heal_model,
@@ -40,6 +42,8 @@ def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_p
             "4",
             "--scope-log-lines",
             "12",
+            "--database-url",
+            "postgresql://u:p@db/sidar",
         ],
     )
 
@@ -52,6 +56,7 @@ def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert args.hitl_approve == "yes"
     assert args.batch_retries == 4
     assert args.scope_log_lines == 12
+    assert args.database_url == "postgresql://u:p@db/sidar"
 
 
 def test_parse_args_applies_optional_defaults(
@@ -68,6 +73,39 @@ def test_parse_args_applies_optional_defaults(
     assert args.hitl_approve is None
     assert args.batch_retries == 2
     assert args.scope_log_lines == 30
+    assert args.database_url is None
+
+
+def test_resolve_auto_heal_database_url_defaults_to_log_scoped_sqlite(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("SELF_HEAL_DATABASE_URL", raising=False)
+    log_path = tmp_path / "artifacts" / "mypy.log"
+
+    resolved = _resolve_auto_heal_database_url(log_path, None)
+
+    assert resolved == f"sqlite+aiosqlite:///{(log_path.parent / 'auto_heal_memory.db').as_posix()}"
+
+
+def test_resolve_auto_heal_database_url_honors_cli_and_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    monkeypatch.setenv("SELF_HEAL_DATABASE_URL", "sqlite+aiosqlite:///env.db")
+
+    assert _resolve_auto_heal_database_url(log_path, None) == "sqlite+aiosqlite:///env.db"
+    assert (
+        _resolve_auto_heal_database_url(log_path, "postgresql://u:p@db/sidar")
+        == "postgresql://u:p@db/sidar"
+    )
+
+
+def test_redact_database_url_masks_password() -> None:
+    assert (
+        _redact_database_url("postgresql+asyncpg://sidar:secret@localhost:5432/sidar")
+        == "postgresql+asyncpg://sidar:***@localhost:5432/sidar"
+    )
+    assert _redact_database_url("sqlite+aiosqlite:///tmp/db.sqlite") == "sqlite+aiosqlite:///tmp/db.sqlite"
 
 
 def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
@@ -328,6 +366,70 @@ def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("scripts.auto_heal.asyncio.run", _fake_asyncio_run)
 
     assert main() == 17
+
+
+def test_run_uses_isolated_sqlite_memory_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+    monkeypatch.delenv("SELF_HEAL_DATABASE_URL", raising=False)
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+        DATABASE_URL = "postgresql+asyncpg://sidar:wrong@localhost:5432/sidar"
+
+    class _Agent:
+        seen_database_url = ""
+
+        def __init__(self, config):
+            self.config = config
+            self.__class__.seen_database_url = config.DATABASE_URL
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **kwargs):
+            return {"status": "applied", "summary": "done"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=0,
+        scope_log_lines=10,
+        database_url=None,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert _Agent.seen_database_url.startswith("sqlite+aiosqlite:///")
+    assert _Agent.seen_database_url.endswith("/auto_heal_memory.db")
+    assert payload["database_url"] == _Agent.seen_database_url
 
 
 def test_run_returns_partial_when_later_retry_applies(

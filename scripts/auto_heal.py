@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -68,7 +69,43 @@ def _parse_args() -> argparse.Namespace:
         default=30,
         help="Her batch prompt'una eklenecek hedefe özgü hata satırı limiti (varsayılan: 30).",
     )
+    parser.add_argument(
+        "--database-url",
+        help=(
+            "Self-heal çalışma belleği için DB URL override değeri. "
+            "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite kullanılır."
+        ),
+    )
     return parser.parse_args()
+
+
+def _resolve_auto_heal_database_url(log_path: Path, requested_database_url: str | None) -> str:
+    """Self-heal için altyapı bağımlılığı düşük, izole bellek veritabanı seçer."""
+    requested = str(requested_database_url or "").strip()
+    if requested:
+        return requested
+
+    env_database_url = os.getenv("SELF_HEAL_DATABASE_URL", "").strip()
+    if env_database_url:
+        return env_database_url
+
+    db_path = log_path.expanduser().resolve().parent / "auto_heal_memory.db"
+    return f"sqlite+aiosqlite:///{db_path.as_posix()}"
+
+
+def _redact_database_url(database_url: str) -> str:
+    """Log/JSON çıktısında parola sızdırmadan DB URL bilgisini gösterir."""
+    text = str(database_url or "").strip()
+    if not text or "://" not in text:
+        return text
+    scheme, rest = text.split("://", 1)
+    if "@" not in rest:
+        return text
+    credentials, host_part = rest.split("@", 1)
+    if ":" not in credentials:
+        return text
+    username = credentials.split(":", 1)[0]
+    return f"{scheme}://{username}:***@{host_part}"
 
 
 def _parse_approval_value(value: str | None) -> bool | None:
@@ -251,6 +288,7 @@ async def _run(args: argparse.Namespace) -> int:
     cfg = Config()
     cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
+    cfg.DATABASE_URL = _resolve_auto_heal_database_url(log_path, getattr(args, "database_url", None))
     agent = SidarAgent(config=cfg)
     await agent.initialize()
 
@@ -332,6 +370,7 @@ async def _run(args: argparse.Namespace) -> int:
             {
                 "status": final_status,
                 "model": cfg.CODING_MODEL,
+                "database_url": _redact_database_url(str(getattr(cfg, "DATABASE_URL", ""))),
                 "queue_size": len(queue),
                 "executions": executions,
                 "context": context,
