@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.registry import AgentCatalog, AgentSpec, _import_builtin_roles
+from agent.registry import AgentCatalog, AgentSpec, _format_import_failure, _import_builtin_roles
 
 
 class _DummyAgent:
@@ -183,6 +183,10 @@ def test_create_raises_typeerror_when_no_class_or_factory() -> None:
 
 def test_unregister_returns_false_for_unknown_role() -> None:
     assert AgentCatalog.unregister("definitely_unknown_role") is False
+
+
+def test_format_import_failure_includes_non_module_exception_type() -> None:
+    assert _format_import_failure(RuntimeError("boom")) == "RuntimeError: boom"
 
 
 def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.MonkeyPatch) -> None:

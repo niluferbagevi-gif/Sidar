@@ -608,6 +608,42 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(
     assert data["findings"][0]["target_path"] == "src/app.py"
 
 
+async def test_analyze_test_artifacts_empty_payload_uses_raw_arg_as_coverage_xml(
+    tmp_path, monkeypatch, fake_coverage_code_manager
+):
+    monkeypatch.chdir(tmp_path)
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    result = await agent._tool_analyze_test_artifacts("")
+    data = json.loads(result)
+
+    assert data["coverage_xml"]["path"] == "coverage.xml"
+    assert data["coverage_xml"]["exists"] is False
+    assert data["findings"] == []
+
+    explicit_result = await agent._tool_analyze_test_artifacts(
+        json.dumps({"coverage_xml": "explicit-missing.xml"})
+    )
+    explicit_data = json.loads(explicit_result)
+    assert explicit_data["coverage_xml"]["path"] == "explicit-missing.xml"
+    assert explicit_data["coverage_xml"]["exists"] is False
+
+
+async def test_analyze_test_artifacts_dict_payload_skips_legacy_path(
+    tmp_path, monkeypatch, fake_coverage_code_manager
+):
+    monkeypatch.chdir(tmp_path)
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    result = await agent._tool_analyze_test_artifacts(
+        json.dumps({"coverage_xml": "explicit-missing.xml"})
+    )
+    data = json.loads(result)
+
+    assert data["coverage_xml"]["path"] == "explicit-missing.xml"
+    assert data["coverage_xml"]["exists"] is False
+
+
 @pytest.mark.asyncio
 async def test_coverage_agent_generate_candidate_with_fake_llm(
     tmp_path, fake_coverage_code_manager

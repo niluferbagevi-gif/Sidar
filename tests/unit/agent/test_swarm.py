@@ -284,6 +284,19 @@ def test_is_contracts_module_healthy_rejects_invalid_contract_module():
     assert swarm._is_contracts_module_healthy(bad_type) is False
 
 
+def test_is_contracts_module_healthy_rejects_non_callable_contract_classes():
+    broken = SimpleNamespace(
+        TaskEnvelope=object(),
+        TaskResult=lambda **_kwargs: None,
+        DelegationRequest=lambda **_kwargs: None,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _value: False,
+    )
+
+    assert swarm._is_contracts_module_healthy(broken) is False
+
+
 def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypatch):
     broken = SimpleNamespace(
         TaskEnvelope=lambda **_k: None,

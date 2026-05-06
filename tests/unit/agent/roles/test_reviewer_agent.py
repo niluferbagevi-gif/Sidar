@@ -918,6 +918,7 @@ def test_scalar_coercion_helpers_cover_remaining_branches():
     assert ReviewerAgent._to_int("7", default=9) == 7
     assert ReviewerAgent._to_int("not-int", default=9) == 9
     assert ReviewerAgent._to_int("12x", default=4) == 4
+    assert ReviewerAgent._to_int(None, default=5) == 5
     assert ReviewerAgent._as_str_list("not-a-list") == []
 
 
