@@ -109,6 +109,21 @@ def test_redact_database_url_masks_password() -> None:
     assert _redact_database_url("sqlite+aiosqlite:///tmp/db.sqlite") == "sqlite+aiosqlite:///tmp/db.sqlite"
 
 
+def test_redact_database_url_returns_text_when_no_scheme_separator() -> None:
+    """Line 100: '://' içermeyen ham string olduğu gibi dönmeli."""
+    assert _redact_database_url("plain-text-string") == "plain-text-string"
+    assert _redact_database_url("") == ""
+    assert _redact_database_url("   ") == ""
+
+
+def test_redact_database_url_returns_text_when_credentials_have_no_password() -> None:
+    """Line 106: 'user@host' gibi ':' olmayan kimlikler değiştirilmeden dönmeli."""
+    assert (
+        _redact_database_url("postgresql://oauth-token@localhost:5432/sidar")
+        == "postgresql://oauth-token@localhost:5432/sidar"
+    )
+
+
 def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -790,3 +805,70 @@ def test_run_handles_targeted_context_without_scope_error_lines(
     assert payload["executions"][0]["attempts"] == [
         {"attempt": 1, "status": "applied", "summary": "done"}
     ]
+
+
+def test_run_falls_back_to_default_execution_when_attempt_loop_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Branch 343->371: deneme döngüsü sıfır iterasyon çalışırsa default execution korunmalı."""
+    log_path = tmp_path / "mypy.log"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+        DATABASE_URL = "sqlite+aiosqlite:///fallback.db"
+
+    class _Agent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **_kwargs):
+            raise AssertionError("attempt loop boşken çağrılmamalı")
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "x",
+                "failure_summary": "y",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+
+    # Deneme döngüsünü zorla boşalt: range yerine her zaman boş iterator dönen stub.
+    monkeypatch.setattr(auto_heal, "range", lambda *_a, **_kw: iter(()), raising=False)
+
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=0,
+        scope_log_lines=10,
+        database_url=None,
+    )
+
+    rc = asyncio.run(_run(args))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert payload["status"] == "failed"
+    execution = payload["executions"][0]
+    assert execution["status"] == "blocked"
+    assert execution["summary"] == "Self-heal denemesi çalıştırılmadı."
+    assert execution["attempts"] == []

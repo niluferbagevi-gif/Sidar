@@ -271,6 +271,47 @@ def test_publish_instagram_post_flow() -> None:
     assert post_id == "publish789"
 
 
+def test_publish_instagram_post_rejects_non_dict_creation_response() -> None:
+    """Line 110: media container yanıtı dict değilse format hatası dönmeli."""
+    mgr = SocialMediaManager(graph_api_token="tkn", instagram_business_account_id="ig")
+
+    async def non_dict_creation(_path: str, _payload: dict[str, Any]):
+        return True, "string-response"
+
+    mgr._post = non_dict_creation  # type: ignore[method-assign]
+    ok, err = _run(mgr.publish_instagram_post(caption="c", image_url="https://img"))
+    assert ok is False
+    assert "beklenen formatta" in err
+
+
+def test_publish_instagram_post_returns_creation_id_when_publish_response_not_dict() -> None:
+    """Line 123: publish yanıtı dict değilse creation_id döndürülmeli."""
+    mgr = SocialMediaManager(graph_api_token="tkn", instagram_business_account_id="ig")
+
+    async def mixed_responses(path: str, _payload: dict[str, Any]):
+        if path.endswith("/media"):
+            return True, {"id": "create-only-id"}
+        return True, "string-publish-result"
+
+    mgr._post = mixed_responses  # type: ignore[method-assign]
+    ok, post_id = _run(mgr.publish_instagram_post(caption="c", image_url="https://img"))
+    assert ok is True
+    assert post_id == "create-only-id"
+
+
+def test_publish_facebook_post_rejects_non_dict_response() -> None:
+    """Line 137: Facebook yanıtı dict değilse format hatası dönmeli."""
+    mgr = SocialMediaManager(graph_api_token="tkn", facebook_page_id="page")
+
+    async def non_dict_response(_path: str, _payload: dict[str, Any]):
+        return True, "string-response"
+
+    mgr._post = non_dict_response  # type: ignore[method-assign]
+    ok, err = _run(mgr.publish_facebook_post(message="merhaba"))
+    assert ok is False
+    assert "beklenen formatta" in err
+
+
 def test_publish_facebook_and_whatsapp() -> None:
     fb = SocialMediaManager(graph_api_token="tkn")
     ok, err = _run(fb.publish_facebook_post(message="hi"))

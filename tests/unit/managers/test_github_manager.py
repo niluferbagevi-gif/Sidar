@@ -241,6 +241,67 @@ def test_create_or_update_file_write_exception(manager):
     assert ok is False and "GitHub dosya yazma hatası" in msg
 
 
+def test_create_or_update_file_picks_first_when_get_contents_returns_list(manager):
+    """Line 377: get_contents bir liste dönerse ilk eleman seçilmelidir."""
+    primary = FileMock("dir/index.md", sha="multi-sha")
+    manager._repo._contents[("dir/index.md", None)] = [primary, FileMock("dir/other.md")]
+    ok, msg = manager.create_or_update_file("dir/index.md", "new", "m")
+    assert ok is True and "güncellendi" in msg
+    assert manager._repo.update_calls[-1]["sha"] == "multi-sha"
+    assert "branch" not in manager._repo.update_calls[-1]
+
+
+def test_create_or_update_file_treats_empty_list_as_not_found(manager):
+    """Line 377 (else dalı): boş liste None gibi davranıp create akışına düşmeli."""
+    manager._repo._contents[("empty.md", None)] = []
+    ok, msg = manager.create_or_update_file("empty.md", "yeni", "m")
+    assert ok is True and "oluşturuldu" in msg
+    assert manager._repo.create_calls and "branch" not in manager._repo.create_calls[-1]
+
+
+def test_create_or_update_file_update_with_branch(manager):
+    """Lines 381-387: mevcut dosyayı branch parametresiyle güncellemeli."""
+    manager._repo._contents[("conf.yaml", "feat/x")] = FileMock("conf.yaml", sha="branch-sha")
+    ok, msg = manager.create_or_update_file("conf.yaml", "yeni", "m", branch="feat/x")
+    assert ok is True and "güncellendi" in msg
+    last = manager._repo.update_calls[-1]
+    assert last["branch"] == "feat/x"
+    assert last["sha"] == "branch-sha"
+
+
+def test_create_or_update_file_create_without_branch(manager):
+    """Line 405: branch parametresi yoksa create_file branch'siz çağrılmalı."""
+    manager._repo._contents[("new.txt", None)] = Err404("missing")
+    ok, msg = manager.create_or_update_file("new.txt", "içerik", "m")
+    assert ok is True and "oluşturuldu" in msg
+    last = manager._repo.create_calls[-1]
+    assert "branch" not in last
+    assert last["path"] == "new.txt"
+
+
+def test_init_client_raises_when_github_constructor_returns_none(monkeypatch):
+    """Line 142: Github(...) None dönerse RuntimeError fırlatılmalı."""
+    import importlib
+
+    try:
+        github_module = importlib.import_module("github")
+    except ImportError:
+        pytest.skip("PyGithub kurulu değil")
+
+    monkeypatch.setattr(github_module, "Github", lambda **_kw: None, raising=True)
+    monkeypatch.setattr(
+        github_module,
+        "Auth",
+        SimpleNamespace(Token=lambda token: SimpleNamespace(token=token)),
+        raising=True,
+    )
+
+    m = GitHubManager(token="tk", repo_name="", require_token=False)
+    # _init_client RuntimeError'ı yakalayıp _available=False bırakmalı.
+    assert m.is_available() is False
+    assert m._gh is None
+
+
 def test_branch_and_pr_operations(manager):
     assert manager.create_branch("bad name")[0] is False
     ok, _ = manager.create_branch("feat/x", from_branch="main")

@@ -1838,3 +1838,38 @@ def test_run_pytest_and_collect_skips_blank_lines_before_pytest(manager, monkeyp
 
     assert result["success"] is True
     assert result["command"] == "pytest -q tests/unit/managers"
+
+
+def test_run_pytest_and_collect_skips_internal_blank_lines(manager, monkeypatch):
+    """Line 933: çok satırlı komut ortasındaki boş satırlar atlanmalı."""
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
+
+    result = manager.run_pytest_and_collect(
+        "intro açıklaması\n\n   \npytest -q tests/unit/managers"
+    )
+
+    assert result["success"] is True
+    assert result["command"] == "pytest -q tests/unit/managers"
+
+
+def test_try_docker_cli_fallback_returns_false_when_docker_binary_missing(
+    manager, monkeypatch
+):
+    """Line 308: shutil.which docker bulamazsa fallback False dönmeli."""
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
+    assert manager._try_docker_cli_fallback() is False
+
+
+def test_audit_project_records_validation_errors_for_invalid_syntax(
+    manager, tmp_path
+):
+    """Line 1826: validate_python_syntax False döndüğünde hata raporda yer almalı."""
+    bad = tmp_path / "broken.py"
+    bad.write_text("def x(:\n    return 1\n", encoding="utf-8")
+    good = tmp_path / "ok.py"
+    good.write_text("def y():\n    return 1\n", encoding="utf-8")
+
+    report = manager.audit_project(root=str(tmp_path), max_files=10)
+    assert "Sidar Denetim Raporu" in report
+    assert "broken.py" in report
+    assert "Geçerli" in report
