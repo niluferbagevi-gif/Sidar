@@ -2896,7 +2896,8 @@ async def test_gemini_non_stream_error_returns_fallback_message_without_ending_s
     assert payload["tool"] == "final_answer"
     assert "non-stream-fail" in payload["argument"]
     # stream=False olduğu için except içindeki span.end() çağrısına girilmemiş olmalı.
-    assert span.ended == 0
+    # _SpanCM.__exit__ kendisi 1 kez span.end() çağırır; explicit branch çalışsaydı 2 olurdu.
+    assert span.ended == 1
     # Span context manager kendi __exit__ ile bir kez kapanmış olmalı.
     assert span_cm.exit_calls == 1
 
