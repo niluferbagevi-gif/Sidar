@@ -145,7 +145,9 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
         "Aşağıdaki pytest test önerisini anlamsal kalite açısından incele. "
         "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
         "yan etkili/deterministik olmayan kullanım var mı değerlendir. "
-        "Sadece JSON döndür: {\"approved\": bool, \"reason\": str}.\n\n"
+        "Sadece JSON döndür: {\"approved\": bool, "
+        "\"reason\": str (red ise somut neden, en az 1 cümle), "
+        "\"weaknesses\": [str]}.\n\n"
         f"[COVERAGE_FINDING]\n{json.dumps(finding, ensure_ascii=False)}\n\n"
         f"[TEST_CANDIDATE]\n{candidate[:6000]}"
     )
@@ -158,8 +160,14 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
         )
         verdict = json.loads(str(verdict_raw or "{}"))
         approved = bool(verdict.get("approved", False))
-        reason = str(verdict.get("reason", "-"))
-        print(f"[ReviewerAgent] approved={approved} reason={reason}")
+        reason = str(verdict.get("reason", "") or "").strip()
+        weaknesses = verdict.get("weaknesses", [])
+        if not isinstance(weaknesses, list):
+            weaknesses = [str(weaknesses)] if weaknesses else []
+        if not reason:
+            reason = "ReviewerAgent reason alanı boş döndü; somut ret/onay gerekçesi belirtilmedi."
+        weakness_text = "; ".join(str(item) for item in weaknesses if str(item).strip()) or "-"
+        print(f"[ReviewerAgent] approved={approved} reason={reason} weaknesses={weakness_text}")
         return approved
     except Exception as exc:
         print(f"[ReviewerAgent] Semantic review başarısız: {exc}")

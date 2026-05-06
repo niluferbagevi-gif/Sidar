@@ -347,7 +347,13 @@ class CoverageAgent(BaseAgent):
         }
 
     @staticmethod
-    def _build_dynamic_pytest_prompt(*, finding: dict[str, Any], coveragerc: dict[str, Any]) -> str:
+    def _build_dynamic_pytest_prompt(
+        *,
+        finding: dict[str, Any],
+        coveragerc: dict[str, Any],
+        source_excerpt: str = "",
+        source_read_ok: bool = False,
+    ) -> str:
         target = str(finding.get("target_path", "") or "")
         missing_lines = (
             ", ".join(str(x) for x in (finding.get("missing_lines", []) or [])[:50]) or "-"
@@ -361,6 +367,7 @@ class CoverageAgent(BaseAgent):
         include_cfg = (
             coveragerc.get("run", {}).get("include", "") if isinstance(coveragerc, dict) else ""
         )
+        source_block = source_excerpt[:4000] if source_read_ok else "kaynak okunamadı"
         return (
             f"Hedef dosya: {target}\n"
             f"Önerilen test dosyası: {CoverageAgent._suggest_test_path(target)}\n"
@@ -368,6 +375,7 @@ class CoverageAgent(BaseAgent):
             f"Eksik branch'ler: {missing_branches}\n"
             f".coveragerc include: {include_cfg or '-'}\n"
             f".coveragerc omit: {omit_cfg or '-'}\n\n"
+            f"[KAYNAK DOSYA]\n{source_block}\n\n"
             "Görev: pytest uyumlu, deterministik ve ağ erişimsiz testler üret.\n"
             "- Dış servis çağrılarını unittest.mock ile taklit et.\n"
             "- Gerekirse fixture kullan.\n"
@@ -415,9 +423,15 @@ class CoverageAgent(BaseAgent):
 
     async def _tool_analyze_test_artifacts(self, arg: str) -> str:
         """Legacy uyumluluk: coverage/junit artefaktlarını coverage analizi formatına dönüştürür."""
+        raw_arg = str(arg or "").strip()
         payload = self._parse_payload(arg)
-        if not payload:
-            payload = {"coverage_xml": arg}
+        raw_is_xml_path = bool(
+            raw_arg
+            and not raw_arg.startswith(("{", "["))
+            and (raw_arg.lower().endswith(".xml") or Path(raw_arg).is_file())
+        )
+        if not payload or raw_is_xml_path:
+            payload = {"coverage_xml": raw_arg}
         return await self._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))
 
     async def _generate_test_candidate(
@@ -457,8 +471,16 @@ class CoverageAgent(BaseAgent):
         if coverage_finding and not target_path:
             target_path = str(coverage_finding.get("target_path", "") or "")
         if coverage_finding:
+            read_ok, source_excerpt = (
+                await self._call_maybe_async(self.code.read_file, target_path)
+                if target_path
+                else (False, "")
+            )
             payload_prompt = self._build_dynamic_pytest_prompt(
-                finding=coverage_finding, coveragerc=coveragerc
+                finding=coverage_finding,
+                coveragerc=coveragerc,
+                source_excerpt=str(source_excerpt or ""),
+                source_read_ok=bool(read_ok),
             )
             return await self.call_llm(
                 [{"role": "user", "content": payload_prompt}],

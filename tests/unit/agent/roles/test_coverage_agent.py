@@ -210,10 +210,14 @@ async def test_build_dynamic_prompt():
     prompt = CoverageAgent._build_dynamic_pytest_prompt(
         finding={"target_path": "src/a.py", "missing_lines": [1, 2], "missing_branches": ["3:50%"]},
         coveragerc={"run": {"include": "src/*"}, "report": {"omit": "tests/*"}},
+        source_excerpt="def target():\n    return 1",
+        source_read_ok=True,
     )
     assert "Hedef dosya: src/a.py" in prompt
     assert "Eksik satırlar: 1, 2" in prompt
     assert ".coveragerc include: src/*" in prompt
+    assert "[KAYNAK DOSYA]" in prompt
+    assert "def target():" in prompt
 
 
 @pytest.mark.asyncio
@@ -266,6 +270,10 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
     async def fake_llm(messages, system_prompt, temperature):
         assert system_prompt == CoverageAgent.TEST_GENERATION_PROMPT
         assert temperature == 0.1
+        prompt_text = messages[0]["content"]
+        if "Eksik satırlar: 5" in prompt_text:
+            assert "[KAYNAK DOSYA]" in prompt_text
+            assert "SOURCE:src/m.py" in prompt_text
         return "```python\ndef test_ok():\n    assert True\n```"
 
     agent.call_llm = fake_llm
