@@ -173,6 +173,10 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
 
     assert "@@ -" not in script
     assert "async def _review_with_reviewer_agent" in script
+    assert "eksik exception path'i" in script
+    assert "tautolojik mock kontrolü" in script
+    assert "(neden belirtilmedi)" in script
+    assert 'print(f"[ReviewerAgent] weaknesses={weaknesses}")' in script
     assert "ReviewerAgent semantik onay vermedi" in script
     assert "raise SystemExit(asyncio.run(main()))" in script
 
