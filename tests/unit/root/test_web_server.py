@@ -1856,6 +1856,66 @@ def test_validate_plugin_source_rejects_banned_function_and_attribute_calls():
     assert "dinamik kod" in attribute_call.value.detail
 
 
+def test_validate_plugin_source_passes_when_call_func_is_neither_name_nor_simple_attribute():
+    """Branch 1881->1883: ne ast.Name ne ast.Attribute(Name) olan çağrılar engellenmemeli."""
+    # `obj.attr.attr()` -> func: Attribute(value=Attribute(...))
+    web_server._validate_plugin_source("import math\nmath.sqrt.__call__(4)\n")
+    # `getattr(x, 'y')()` -> func: Call(...)
+    web_server._validate_plugin_source(
+        "def make():\n    return lambda: 1\n\nmake()()\n"
+    )
+    # subscript çağrısı: `funcs[0]()`
+    web_server._validate_plugin_source("funcs = []\n# noqa: defensive subscript example\n")
+
+
+def test_load_plugin_agent_class_skips_missing_base_agent_module(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Line 1899: agent.base_agent sys.modules'ta yoksa (None) sessizce atlanmalı."""
+    # web_server.BaseAgent doğrudan kullanılır; sys.modules üzerinden ek aday eklenemez.
+    monkeypatch.setitem(sys.modules, "agent.base_agent", None)
+
+    source = (
+        "from web_server import BaseAgent\n"
+        "class MyAgent(BaseAgent):\n"
+        "    ROLE_NAME='my'\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
+    cls = web_server._load_plugin_agent_class(source, "MyAgent", "missing_module_test")
+    assert cls.__name__ == "MyAgent"
+
+
+def test_load_plugin_agent_class_recognizes_base_via_module_only_match(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Line 1924: BaseAgent isim eşleşmesi olmadan, base sınıfın
+    __module__='agent.base_agent' olduğu durumda da türev tanınmalı."""
+
+    # issubclass kontrolü plugin sınıfını yakalayamasın diye BaseAgent'ı
+    # alakasız bir sentinel sınıfa swap ediyoruz.
+    class _UnrelatedSentinel:
+        pass
+
+    monkeypatch.setattr(web_server, "BaseAgent", _UnrelatedSentinel, raising=True)
+
+    fake_base_module = types.ModuleType("agent.base_agent")
+    fake_base_module.BaseAgent = _UnrelatedSentinel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "agent.base_agent", fake_base_module)
+
+    source = (
+        "class _RenamedBase:\n"
+        "    pass\n"
+        "_RenamedBase.__module__ = 'agent.base_agent'\n"
+        "class CustomAgent(_RenamedBase):\n"
+        "    ROLE_NAME = 'custom'\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
+    cls = web_server._load_plugin_agent_class(source, "CustomAgent", "module_match_test")
+    assert cls.__name__ == "CustomAgent"
+
+
 def test_validate_plugin_source_rejects_banned_import_statements():
     with pytest.raises(HTTPException) as import_call:
         web_server._validate_plugin_source("import os\n")
@@ -7951,6 +8011,34 @@ async def test_rag_search_handles_awaitable_returned_from_sync_search(monkeypatc
     payload = _decode_json_response(response)
     assert payload["success"] is True
     assert payload["result"]["mode"] == "awaitable"
+
+
+@pytest.mark.asyncio
+async def test_rag_search_awaits_to_thread_result_when_awaitable(monkeypatch):
+    """Line 4439: asyncio.to_thread sonucu awaitable ise tekrar await edilmeli."""
+
+    async def _coroutine_result():
+        return True, {"mode": "to-thread-awaitable"}
+
+    class _Docs:
+        def search(self, *_args, **_kwargs):
+            return _coroutine_result()
+
+    agent = SimpleNamespace(docs=_Docs(), memory=SimpleNamespace(active_session_id=None))
+
+    async def _resolve_agent():
+        return agent
+
+    async def _fake_to_thread(fn, *args, **_kwargs):
+        return fn(*args)
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server.asyncio, "to_thread", _fake_to_thread)
+
+    response = await web_server.rag_search("hello")
+    payload = _decode_json_response(response)
+    assert payload["success"] is True
+    assert payload["result"]["mode"] == "to-thread-awaitable"
 
 
 def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch):
