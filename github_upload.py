@@ -235,11 +235,11 @@ def main() -> None:
         else:
             target_branch = arg
 
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+    print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     print(
         f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.1) {Colors.ENDC}"
     )
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
+    print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}\n")
 
     github_token = resolve_github_token()
     if not github_token:
@@ -400,11 +400,11 @@ def main() -> None:
             )
 
             if push_success:
-                print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 print(
                     f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} adım önceki haline döndürüldü.{Colors.ENDC}"
                 )
-                print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
             else:
                 print(
                     f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız oldu:\n{push_err}{Colors.ENDC}"
@@ -557,11 +557,11 @@ def main() -> None:
     )
 
     if push_success:
-        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+        print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
         print(
             f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
         )
-        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+        print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
         confirm = (
@@ -600,11 +600,11 @@ def main() -> None:
                 )
 
                 if retry_success:
-                    print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                    print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                     print(
                         f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
                     )
-                    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                    print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 else:
                     if "rule violations" in retry_err:
                         print(
