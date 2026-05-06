@@ -198,7 +198,7 @@ def test_main_switch_to_main_stash_pop_conflict(monkeypatch):
 
 
 def test_main_rollback_yes_push_fail(monkeypatch):
-    MainHarness(
+    h = MainHarness(
         monkeypatch,
         ["-2"],
         outputs=[
@@ -206,12 +206,16 @@ def test_main_rollback_yes_push_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "target sha"),
             (True, "reset ok"),
             (False, "protected"),
         ],
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 1
+    assert ["git", "rev-parse", "--verify", "HEAD~2"] in h.calls
+    assert ["git", "reset", "--hard", "HEAD~2"] in h.calls
+    assert ["git", "reset", "--hard", "ORIG_HEAD"] not in h.calls
 
 
 def test_main_rollback_cancel(monkeypatch):
@@ -501,6 +505,7 @@ def test_main_rollback_reset_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "target sha"),
             (False, "reset fail"),
         ],
         inputs=["yes"],
@@ -510,6 +515,25 @@ def test_main_rollback_reset_fail(monkeypatch):
         gu.main()
 
     assert exc_info.value.code == 1
+
+
+def test_main_rollback_ref_missing_exits_before_reset(monkeypatch):
+    h = MainHarness(
+        monkeypatch,
+        ["-3"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (False, "unknown revision"),
+        ],
+        inputs=["yes"],
+    )
+
+    assert run_main_and_exit_code() == 1
+    assert ["git", "rev-parse", "--verify", "HEAD~3"] in h.calls
+    assert not any(call[:3] == ["git", "reset", "--hard"] for call in h.calls)
 
 
 def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
@@ -650,7 +674,7 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
 
 
 def test_main_rollback_push_success(monkeypatch):
-    MainHarness(
+    h = MainHarness(
         monkeypatch,
         ["-1"],
         outputs=[
@@ -658,9 +682,11 @@ def test_main_rollback_push_success(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "target sha"),
             (True, "reset ok"),
             (True, "push ok"),
         ],
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 0
+    assert ["git", "reset", "--hard", "HEAD~1"] in h.calls
