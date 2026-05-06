@@ -1844,6 +1844,50 @@ def test_plugin_role_validation_and_sanitizers():
     assert web_server._plugin_source_filename("mod / name.py") == "<sidar-plugin:mod_name.py>"
 
 
+def test_validate_plugin_source_rejects_banned_function_and_attribute_calls():
+    with pytest.raises(HTTPException) as direct_call:
+        web_server._validate_plugin_source("eval('1')")
+    assert direct_call.value.status_code == 400
+    assert "dinamik kod" in direct_call.value.detail
+
+    with pytest.raises(HTTPException) as attribute_call:
+        web_server._validate_plugin_source("safe.exec('payload')")
+    assert attribute_call.value.status_code == 400
+    assert "dinamik kod" in attribute_call.value.detail
+
+
+def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def _raise_unexpected(_source_code):
+        raise RuntimeError("validator down")
+
+    monkeypatch.setattr(web_server, "_validate_plugin_source", _raise_unexpected)
+
+    with pytest.raises(HTTPException) as exc:
+        web_server._load_plugin_agent_class("x = 1", None, "validator_boom")
+    assert exc.value.status_code == 400
+    assert "Plugin kaynağı doğrulanamadı" in exc.value.detail
+    assert "validator down" in exc.value.detail
+
+
+def test_load_plugin_agent_class_reraises_http_exception_and_wraps_runtime_exec_errors():
+    with pytest.raises(HTTPException) as http_exc:
+        web_server._load_plugin_agent_class(
+            "from fastapi import HTTPException\nraise HTTPException(status_code=418, detail='teapot')",
+            None,
+            "http_boom",
+        )
+    assert http_exc.value.status_code == 418
+    assert http_exc.value.detail == "teapot"
+
+    with pytest.raises(HTTPException) as runtime_exc:
+        web_server._load_plugin_agent_class("raise RuntimeError('boom')", None, "runtime_boom")
+    assert runtime_exc.value.status_code == 400
+    assert "Plugin kodu derlenemedi/çalıştırılamadı" in runtime_exc.value.detail
+    assert "boom" in runtime_exc.value.detail
+
+
 def test_load_plugin_agent_class_discovers_and_validates():
     source = """
 from agent.base_agent import BaseAgent
