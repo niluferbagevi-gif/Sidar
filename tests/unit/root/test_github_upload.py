@@ -206,6 +206,7 @@ def test_main_rollback_yes_push_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "5"),
             (True, "reset ok"),
             (False, "protected"),
         ],
@@ -501,9 +502,50 @@ def test_main_rollback_reset_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "10"),
             (False, "reset fail"),
         ],
         inputs=["yes"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.main()
+
+    assert exc_info.value.code == 1
+
+
+def test_main_rollback_insufficient_commits(monkeypatch):
+    MainHarness(
+        monkeypatch,
+        ["-3"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "2"),
+        ],
+        inputs=["evet"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.main()
+
+    assert exc_info.value.code == 1
+
+
+def test_main_rollback_unparsable_commit_count(monkeypatch):
+    MainHarness(
+        monkeypatch,
+        ["-1"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "not-a-number"),
+        ],
+        inputs=["evet"],
     )
 
     with pytest.raises(SystemExit) as exc_info:
@@ -650,7 +692,7 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
 
 
 def test_main_rollback_push_success(monkeypatch):
-    MainHarness(
+    h = MainHarness(
         monkeypatch,
         ["-1"],
         outputs=[
@@ -658,9 +700,12 @@ def test_main_rollback_push_success(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "10"),
             (True, "reset ok"),
             (True, "push ok"),
         ],
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 0
+    reset_cmd = next(c for c in h.calls if c[:3] == ["git", "reset", "--hard"])
+    assert reset_cmd[3] == "HEAD~1"
