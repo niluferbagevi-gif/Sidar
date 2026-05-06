@@ -1384,6 +1384,25 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
 
 
 @pytest.mark.asyncio
+async def test_connect_postgresql_propagates_connection_drop(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+
+    async def _raise_disconnect(**_kwargs):
+        raise ConnectionError("server closed the connection unexpectedly")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_disconnect, PoolError=RuntimeError),
+    )
+
+    with pytest.raises(ConnectionError, match="server closed"):
+        await db._connect_postgresql()
+    assert db._pg_pool is None
+
+
+@pytest.mark.asyncio
 async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     db = Database(cfg)

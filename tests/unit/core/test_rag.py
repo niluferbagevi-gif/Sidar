@@ -55,7 +55,8 @@ async def test_graph_index_normalizers_and_extract_str_literal(tmp_path: Path) -
     import ast
 
     assert graph._extract_str_literal(ast.parse("'abc'").body[0].value) == "abc"
-    assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
+    with pytest.warns(DeprecationWarning, match="ast.Str"):
+        assert graph._extract_str_literal(ast.parse("123").body[0].value) is None
 
 
 @pytest.mark.parametrize(
@@ -1865,7 +1866,9 @@ async def test_graph_index_additional_branch_coverage(
     assert keep in files
     assert all("node_modules" not in str(p) for p in files)
     assert gi._script_import_candidates(keep, "react", root) == []
-    assert gi._extract_str_literal(ast.Str(s=" legacy ")) == "legacy"
+    with pytest.warns(DeprecationWarning):
+        legacy_node = ast.Str(s=" legacy ")
+    assert gi._extract_str_literal(legacy_node) == "legacy"
 
     src = """
 from . import mod
@@ -2307,6 +2310,60 @@ def call_it():
 
     assert defs == []
     assert calls == []
+
+
+async def test_document_store_pgvector_init_handles_hnsw_index_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@localhost/db")
+    store._pg_table = "rag_embeddings"
+    store._pg_embedding_dim = 3
+    store._pg_embedding_model_name = "mini"
+    store._pg_embedding_model = None
+    store.pg_engine = None
+    store._pgvector_available = False
+    store._hf_env_lock = threading.Lock()
+    store._hf_env_applied = False
+    executed: list[str] = []
+
+    class _Conn:
+        def execute(self, statement):
+            sql = str(statement)
+            executed.append(sql)
+            if "embedding_hnsw" in sql:
+                raise RuntimeError("hnsw index unavailable")
+
+    class _Begin:
+        def __enter__(self):
+            return _Conn()
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Engine:
+        def begin(self):
+            return _Begin()
+
+        def dispose(self):
+            return None
+
+    sentence_transformers = types.SimpleNamespace(
+        SentenceTransformer=lambda _model_name: (_ for _ in ()).throw(
+            AssertionError("embedding model should not load after index failure")
+        )
+    )
+    sqlalchemy = types.SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda sql: sql)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
+    monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy)
+    monkeypatch.setitem(sys.modules, "pgvector", types.SimpleNamespace())
+    monkeypatch.setattr(store, "_check_import", lambda _module_name: True)
+
+    store._init_pgvector()
+
+    assert store._pgvector_available is False
+    assert any("CREATE EXTENSION" in sql for sql in executed)
+    assert any("idx_rag_embeddings_embedding_hnsw" in sql for sql in executed)
 
 
 async def test_document_store_init_fts_skips_migration_when_index_empty(tmp_path: Path) -> None:
