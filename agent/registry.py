@@ -168,7 +168,7 @@ def _import_builtin_roles() -> None:
         first_module, first_exc = failures[0]
         logger.warning(
             "Yerleşik ajan rolleri yüklenemedi; AgentCatalog.list_all() boş dönebilir. "
-            "Proje bağımlılıklarını kurun (örn. `python -m pip install -e .`). "
+            "Proje bağımlılıklarını kurun (önerilen: `uv sync --all-extras`; minimum dev araçları için `uv sync --extra dev`). "
             "İlk hata: %s (%s).",
             _format_import_failure(first_exc),
             first_module,

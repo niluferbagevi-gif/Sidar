@@ -356,7 +356,7 @@ def check_hardware() -> HardwareInfo:
                     "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
                     "Windows NVIDIA sürücüsü güncel mi? "
                     "PyTorch CUDA 12.x wheel ile kuruldu mu? "
-                    "(pip install torch --index-url https://download.pytorch.org/whl/cu124)"
+                    "(uv pip install torch --index-url https://download.pytorch.org/whl/cu124)"
                 )
             else:
                 logger.info("ℹ️  CUDA bulunamadı — CPU modunda çalışılacak.")
@@ -613,7 +613,7 @@ class Config:
     GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
 
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
-    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "python -m pytest")
+    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "uv run pytest")
 
     # ─── DLP — Veri Kaybı Önleme ─────────────────────────────
     DLP_ENABLED: bool = get_bool_env("DLP_ENABLED", True)
@@ -917,7 +917,7 @@ class Config:
                 logger.error(
                     "❌ MEMORY_ENCRYPTION_KEY ayarlanmış ama 'cryptography' paketi kurulu değil.\n"
                     "   Bu kritik bir güvenlik ayarıdır. Şifreleme olmadan devam etmek\n"
-                    "   güvenlik riskine yol açabilir. Kurmak için: pip install cryptography"
+                    "   güvenlik riskine yol açabilir. Kurmak için: uv sync veya uv pip install cryptography"
                 )
                 is_valid = False
         else:

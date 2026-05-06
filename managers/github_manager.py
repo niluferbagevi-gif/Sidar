@@ -146,7 +146,7 @@ class GitHubManager:
             if self.repo_name:  # pragma: no cover
                 self._load_repo(self.repo_name)
         except ImportError:
-            logger.error("'PyGithub' paketi kurulu değil. pip install PyGithub")
+            logger.error("'PyGithub' paketi kurulu değil. uv sync veya uv pip install PyGithub")
         except Exception as exc:
             logger.error("GitHub bağlantı hatası: %s", exc)
 

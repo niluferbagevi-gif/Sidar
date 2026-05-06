@@ -294,8 +294,8 @@ uv run python main.py
 `main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
 
 ```bash
-pip install eel
-python gui_launcher.py
+uv sync --all-extras
+uv run python gui_launcher.py
 ```
 
 Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui_launcher.py`
@@ -307,7 +307,7 @@ v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` kla
 
 ```bash
 uv sync --all-extras
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 PostgreSQL gibi farklı hedef veritabanı için bağlantıyı komut anında override edebilirsiniz:
@@ -389,7 +389,7 @@ ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ### 🚀 Ultimate Launcher ile Başlatma (Önerilen)
 
 ```bash
-python main.py
+uv run python main.py
 ```
 
 `main.py`; preflight kontrollerini çalıştırır, etkileşimli TUI menüsünü açar, uygun çalışma modunu seçtirir ve `config.py` yüklenemezse child process'leri fail-fast biçimde durdurur. Varsayılan kullanıcı akışı artık burasıdır.
@@ -403,20 +403,20 @@ python main.py
 ### 🌐 Web Arayüzü (Doğrudan)
 
 ```bash
-python web_server.py
+uv run python main.py
 ```
 
 Tarayıcıda açılır: **http://localhost:7860**
 
 ```bash
 # Varsayılan kurumsal port ile dışarı aç
-python web_server.py --host 0.0.0.0 --port 7860
+uv run python web_server.py --host 0.0.0.0 --port 7860
 
 # Erişim seviyesi ile
-python web_server.py --level sandbox
+uv run python web_server.py --level sandbox
 
 # Gemini sağlayıcısı ile
-python web_server.py --provider gemini --port 7860
+uv run python web_server.py --provider gemini --port 7860
 ```
 
 > `web_server.py`, `web_ui_react/dist/` mevcutsa React SPA'yı öncelikli sunar; build yoksa geriye dönük uyumluluk için legacy `web_ui/` arayüzüne düşer.
@@ -447,13 +447,13 @@ Web arayüzü özellikleri:
 
 ```bash
 # Etkileşimli sihirbaz (önerilen)
-python main.py
+uv run python main.py
 
 # Sihirbazı atlayıp hızlı CLI başlat
-python main.py --quick cli --provider ollama --level full --model qwen2.5-coder:7b
+uv run python main.py --quick cli --provider ollama --level full --model qwen2.5-coder:7b
 
 # Sihirbazı atlayıp hızlı Web başlat
-python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --port 7860
+uv run python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --port 7860
 ```
 
 Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini alt süreçte başlatır.
@@ -573,8 +573,8 @@ Sidar/
 ```bash
 cd Sidar
 uv sync --all-extras
-python -m pytest -c pyproject.toml tests/ -v
-python -m pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
+uv run pytest -c pyproject.toml tests/ -v
+uv run pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 2
 cd web_ui_react && npm run test:critical
@@ -583,15 +583,15 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 ```
 
 > Not: `source .venv/bin/activate` zorunlu değildir. Sanal ortam yoksa veya farklı bir araç
-> kullanıyorsanız komutları doğrudan `python -m pytest ...` ile çalıştırın.
+> kullanıyorsanız komutları doğrudan `uv run pytest ...` ile çalıştırın.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
 >   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutlardan birini çalıştırın:
 >   - `uv sync --all-extras` (önerilen)
->   - `python -m pip install -e ".[dev]"` (minimum test/tooling kurulumu)
+>   - `uv sync --extra dev` (minimum test/tooling kurulumu)
 > - Kurulum sonrası doğrulama için:
->   - `python -m pytest -q tests/unit/agent/test_registry.py`
+>   - `uv run pytest -q tests/unit/agent/test_registry.py`
 >
 > Mutation/edge-case kalite kapısı için GitHub Actions üzerinde haftalık
 > `Weekly Mutation & Critical Assertion Gates` iş akışı tanımlıdır.
@@ -646,7 +646,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 ```env
 # AI Sağlayıcı
 AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
-CODING_MODEL=qwen2.5-coder:3b
+CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
 OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
 TEXT_MODEL=llama3.1:8b

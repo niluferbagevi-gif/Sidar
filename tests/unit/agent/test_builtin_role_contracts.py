@@ -221,6 +221,39 @@ class ExampleRole:
         _extract_capabilities_from_role_file(role_file)
 
 
+def test_sidar_uv_qwen_development_contract() -> None:
+    """Keep repo-facing setup guidance aligned with Sidar's local dev standard."""
+    root = _repo_root()
+    text_by_file = {
+        rel_path: (root / rel_path).read_text(encoding="utf-8")
+        for rel_path in [
+            "AGENTS.md",
+            "README.md",
+            "install_sidar.sh",
+            "agent/registry.py",
+            "config.py",
+            "gui_launcher.py",
+        ]
+    }
+
+    assert "Güncel ürün adı **Sidar**" in text_by_file["AGENTS.md"]
+    assert "uv sync --all-extras" in text_by_file["AGENTS.md"]
+    assert "CODING_MODEL=qwen2.5-coder:7b" in text_by_file["README.md"]
+    assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["config.py"]
+    assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
+    assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
+    assert "uv run pytest" in text_by_file["install_sidar.sh"]
+    assert "uv run alembic upgrade head" in text_by_file["README.md"]
+
+    forbidden_terms = [
+        "Lot" "us",
+        "qwen2.5-coder:" "3b",
+        "python -m " "pip install",
+    ]
+    for rel_path, text in text_by_file.items():
+        for term in forbidden_terms:
+            assert term not in text, f"{term!r} should not appear in {rel_path}"
+
 @pytest.mark.parametrize(
     "source",
     [

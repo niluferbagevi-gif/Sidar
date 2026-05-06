@@ -110,7 +110,7 @@ Yüksek hacimli tip hatalarında `blocked` oranı yalnızca JSON şema ihlalleri
    - Sonuç: model, kapsam dışına kayan veya yarım kalan operasyonlar üretebilir.
 
 2. **Model kapasitesi sınırı (LLM tarafı)**
-   - `qwen2.5-coder:3b` gibi küçük ölçekli modelde, `Missing type parameters`,
+   - 3B sınıfı küçük ölçekli coding modellerinde, `Missing type parameters`,
      `Incompatible types`, `no-any-return` gibi ilişkili mypy hatalarını
      tek denemede tutarlı patch planına dökmek zorlaşır.
    - Bu durum özellikle çok dosyalı tip propagasyonu gerektiren refactor’larda belirginleşir.

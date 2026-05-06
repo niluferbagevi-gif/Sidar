@@ -70,7 +70,7 @@ class SlackManager:
                 )
                 return
             except ImportError:
-                logger.warning("slack-sdk paketi kurulu değil. pip install slack-sdk")
+                logger.warning("slack-sdk paketi kurulu değil. uv sync --all-extras veya uv sync --extra slack")
             except Exception as exc:
                 logger.error("Slack istemcisi oluşturma hatası: %s", exc)
 

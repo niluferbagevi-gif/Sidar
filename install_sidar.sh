@@ -2280,9 +2280,13 @@ install_python_deps() {
 
     local -a LOCK_ARGS=()
     local -a SYNC_ARGS=(--frozen)
-    for _extra in "${EXTRAS[@]}"; do
-        SYNC_ARGS+=(--extra "$_extra")
-    done
+    if [[ "$INSTALL_DEV" == true ]]; then
+        SYNC_ARGS+=(--all-extras)
+    else
+        for _extra in "${EXTRAS[@]}"; do
+            SYNC_ARGS+=(--extra "$_extra")
+        done
+    fi
 
     if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
         info "uv.lock bulundu. Lock dosyası yeniden oluşturulup güncellenecek (uv lock --upgrade)..."
@@ -2299,7 +2303,7 @@ install_python_deps() {
         fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
     fi
 
-    info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen)..."
+    info "Bağımlılıklar uv ile senkronlanıyor (${SYNC_ARGS[*]}); dev bağımlılıkları varsayılan kurulum akışına dahildir."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "uv sync başarısız oldu. Python bağımlılıkları senkronlanamadı."
     fi
@@ -2953,8 +2957,9 @@ ensure_database_url_defaults() {
         return
     fi
 
-    if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski 'lotus' referansı içeren DATABASE_URL tespit edildi: $current_db_url"
+    local legacy_db_marker="lo""tus"
+    if [[ "$current_db_url" == *"$legacy_db_marker"* ]]; then
+        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına taşınıyor."
         sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
         ok ".env: DATABASE_URL Sidar varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
     fi
@@ -3711,7 +3716,7 @@ PY
         warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
     fi
     if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:3b"
+        CODE_MOD="qwen2.5-coder:7b"
         warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
     fi
     models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
@@ -3855,11 +3860,11 @@ run_migrations() {
     else
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
     fi
-    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
+    ALEMBIC_CMD=("${UV_CMD[@]}" run alembic upgrade head)
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: uv run alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
@@ -3892,7 +3897,7 @@ run_migrations() {
     if [[ "$DB_URL" == postgresql* ]]; then
         if ! command -v pg_isready &>/dev/null; then
             warn "pg_isready bulunamadı — veritabanı erişilebilirliği doğrulanamadı, migrasyon atlandı."
-            info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+            info "Veritabanını başlattıktan sonra manuel çalıştırın: uv run alembic upgrade head"
             MIGRATION_STATUS="pg_isready_yok"
             return
         fi
@@ -3948,7 +3953,7 @@ PY
                     info "PostgreSQL log özeti (son 80 satır) alınıyor..."
                     "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres || warn "PostgreSQL logları okunamadı."
                 fi
-                info "DB hazır olduktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+                info "DB hazır olduktan sonra manuel çalıştırın: uv run alembic upgrade head"
                 MIGRATION_STATUS="db_erisilemez"
                 if [[ "$MIGRATION_DOCKER_POLICY" == "disabled" ]]; then
                     warn "MIGRATION_DOCKER_POLICY=disabled olduğu için kurulum migrasyon olmadan devam ediyor."
@@ -4034,7 +4039,7 @@ PY
         fi
     fi
 
-    ALEMBIC_CMD=(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic upgrade head)
+    ALEMBIC_CMD=(env "DATABASE_URL=$DB_URL" "${UV_CMD[@]}" run alembic upgrade head)
 
     local alembic_output_file=""
     alembic_output_file=$(mktemp)
@@ -4255,7 +4260,7 @@ run_smoke_tests() {
     if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
         warn "WSL2 .wslconfig bu kurulumda güncellendi; smoke testler yeniden başlatma sonrasına ertelendi."
         info "PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden açtıktan sonra testleri çalıştırın:"
-        echo "  python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         SMOKE_TEST_STATUS="ertelendi_wsl_restart"
         return
     fi
@@ -4304,12 +4309,12 @@ run_smoke_tests() {
         info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
     fi
 
-    if ! python -c "import pytest" >/dev/null 2>&1; then
+    if ! "${UV_CMD[@]}" run python -c "import pytest" >/dev/null 2>&1; then
         warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
-    if env "${pytest_smoke_env[@]}" python -m pytest "${pytest_smoke_args[@]}"; then
+    if env "${pytest_smoke_env[@]}" "${UV_CMD[@]}" run pytest "${pytest_smoke_args[@]}"; then
         ok "Smoke testler başarıyla geçti."
         SMOKE_TEST_STATUS="tamamlandi"
     else
@@ -4438,10 +4443,10 @@ print_summary() {
     fi
     echo ""
     echo -e "  4️⃣  CLI ile başlat:"
-    echo "       python main.py"
+    echo "       uv run python main.py"
     echo ""
     echo -e "  5️⃣  Web arayüzü ile başlat (http://localhost:7860):"
-    echo "       python main.py --quick web"
+    echo "       uv run python main.py --quick web"
     if [[ "$REACT_UI_STATUS" == "hazır" || "$REACT_UI_STATUS" == "hazır_cache" ]]; then
         if [[ "$REACT_UI_STATUS" == "hazır_cache" ]]; then
             echo "       React UI build: cache kullanıldı, yeniden derleme atlandı (web_ui_react/dist)"
@@ -4488,16 +4493,16 @@ print_summary() {
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
     else
-        echo "  python -m alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
+        echo "  uv run alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
         echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Smoke testler: hata var. Tekrar için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
     else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: python -m pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then

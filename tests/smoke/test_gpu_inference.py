@@ -15,7 +15,7 @@ from tests.helpers import make_test_config
 
 # Fresh kurulumda installer'ın .env üzerinden hazırladığı model ile hizalı olsun.
 # İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
-MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:3b"
+MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b"
 _NVIDIA_SMI_TIMEOUT_S = 0.4
 
 

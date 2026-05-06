@@ -227,5 +227,5 @@ def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
         AgentCatalog._registry.update(snapshot)
 
     assert "Yerleşik ajan rolleri yüklenemedi" in caplog.text
-    assert "python -m pip install -e ." in caplog.text
+    assert "uv sync --all-extras" in caplog.text
     assert "dotenv" in caplog.text
