@@ -6,20 +6,17 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 
 def _load_migration(monkeypatch):
-    """Load the migration module with mocked alembic and sqlalchemy."""
+    """Load the migration module with mocked Alembic operations."""
     op_mock = MagicMock()
-    sa_mock = MagicMock()
-
     alembic_mod = types.ModuleType("alembic")
     alembic_mod.op = op_mock
     monkeypatch.setitem(sys.modules, "alembic", alembic_mod)
     monkeypatch.setitem(sys.modules, "alembic.op", op_mock)
 
-    monkeypatch.setitem(sys.modules, "sqlalchemy", sa_mock)
 
     spec = importlib.util.spec_from_file_location(
         "migrations.versions.0001_baseline_schema",
@@ -27,11 +24,11 @@ def _load_migration(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module, op_mock, sa_mock
+    return module, op_mock
 
 
 def test_module_metadata(monkeypatch):
-    module, _, _ = _load_migration(monkeypatch)
+    module, _ = _load_migration(monkeypatch)
     assert module.revision == "0001_baseline_schema"
     assert module.down_revision is None
     assert module.branch_labels is None
@@ -39,7 +36,7 @@ def test_module_metadata(monkeypatch):
 
 
 def test_upgrade_creates_all_tables(monkeypatch):
-    module, op_mock, _ = _load_migration(monkeypatch)
+    module, op_mock = _load_migration(monkeypatch)
     module.upgrade()
 
     created_tables = [c.args[0] for c in op_mock.create_table.call_args_list]
@@ -54,7 +51,7 @@ def test_upgrade_creates_all_tables(monkeypatch):
 
 
 def test_upgrade_creates_all_indexes(monkeypatch):
-    module, op_mock, _ = _load_migration(monkeypatch)
+    module, op_mock = _load_migration(monkeypatch)
     module.upgrade()
 
     created_indexes = [c.args[0] for c in op_mock.create_index.call_args_list]
@@ -65,8 +62,18 @@ def test_upgrade_creates_all_indexes(monkeypatch):
     assert len(created_indexes) == 4
 
 
+def test_upgrade_uses_backend_aware_uuid_columns(monkeypatch):
+    module, op_mock = _load_migration(monkeypatch)
+    module.upgrade()
+
+    users_call = next(call for call in op_mock.create_table.call_args_list if call.args[0] == "users")
+    user_id_column = users_call.args[1]
+
+    assert isinstance(user_id_column.type, module.SidarUUID)
+
+
 def test_downgrade_drops_all_indexes_and_tables(monkeypatch):
-    module, op_mock, _ = _load_migration(monkeypatch)
+    module, op_mock = _load_migration(monkeypatch)
     module.downgrade()
 
     dropped_indexes = [c.args[0] for c in op_mock.drop_index.call_args_list]
@@ -84,7 +91,7 @@ def test_downgrade_drops_all_indexes_and_tables(monkeypatch):
 
 
 def test_downgrade_drops_tables_in_dependency_order(monkeypatch):
-    module, op_mock, _ = _load_migration(monkeypatch)
+    module, op_mock = _load_migration(monkeypatch)
     module.downgrade()
 
     dropped_tables = [c.args[0] for c in op_mock.drop_table.call_args_list]

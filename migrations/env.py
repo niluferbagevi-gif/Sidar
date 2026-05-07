@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from logging.config import fileConfig
 import os
+from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
+
+from core.models import Base
+
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
@@ -28,7 +31,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def _preload_dotenv_for_alembic() -> None:
