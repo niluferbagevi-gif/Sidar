@@ -815,7 +815,9 @@ class CoverageAgent(BaseAgent):
         """Aday testi geçici dosyada `uv run pytest <test_file>` ile izole doğrular."""
         base_dir = Path(self.cfg.BASE_DIR)
         validation_dir = base_dir / "artifacts" / "coverage_candidate_validation"
-        digest = hashlib.sha1(generated_test.encode("utf-8", errors="ignore")).hexdigest()[:12]
+        digest = hashlib.sha1(  # noqa: S324  # nosec B324 - non-cryptographic, sadece dosya adı için
+            generated_test.encode("utf-8", errors="ignore"), usedforsecurity=False
+        ).hexdigest()[:12]
         stem = Path(suggested_test_path or "generated_candidate.py").stem or "generated_candidate"
         candidate_path = validation_dir / f"{stem}_{digest}.py"
         details: dict[str, Any] = {
