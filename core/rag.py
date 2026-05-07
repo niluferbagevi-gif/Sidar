@@ -712,9 +712,10 @@ class DocumentStore:
     def _apply_hf_runtime_env(self) -> None:
         """HF model yükleme davranışını Config üzerinden ortama uygula."""
         with self._hf_env_lock:
-            if self._hf_env_applied:
-                return
-
+            # Environment variables may be cleared or altered by tests, subprocess
+            # boundaries, or runtime bootstrap code after a previous application.
+            # Re-assert configured values on each call instead of treating the
+            # class-level marker as a hard skip.
             hf_token = getattr(self.cfg, "HF_TOKEN", "")
             if hf_token:
                 os.environ["HF_TOKEN"] = hf_token

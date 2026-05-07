@@ -358,9 +358,7 @@ class SystemHealthManager:
                 logger.debug("pynvml sürücü sürümü alınamadı: %s", exc)
         # WSL2 fallback: nvidia-smi subprocess ile sürücü sürümünü al
         try:
-            nvidia_smi_bin = shutil.which("nvidia-smi")
-            if not nvidia_smi_bin:
-                return "N/A"
+            nvidia_smi_bin = shutil.which("nvidia-smi") or "nvidia-smi"
             result = subprocess.run(
                 [nvidia_smi_bin, "--query-gpu=driver_version", "--format=csv,noheader"],
                 capture_output=True,
