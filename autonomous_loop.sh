@@ -126,8 +126,10 @@ run_coverage_agent() {
   AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}" \
     uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
+import json
 import os
 import re
+from pathlib import Path
 
 from agent.roles.coverage_agent import CoverageAgent
 from agent.roles.reviewer_agent import ReviewerAgent
@@ -143,6 +145,72 @@ def _looks_trivial_test(code: str) -> bool:
     if "def test_" in txt and "assert " not in txt and "pytest.raises" not in txt:
         return True
     return False
+
+
+REJECTION_STATE_PATH = Path(os.getenv("AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE", "artifacts/coverage_reviewer_rejections.json"))
+
+
+def _rejection_signatures(result: dict) -> list[str]:
+    signatures: list[str] = []
+    for item in result.get("results", []) or []:
+        if not isinstance(item, dict) or item.get("status") != "review_rejected":
+            continue
+        target_path = str(item.get("target_path") or "<unknown>").strip() or "<unknown>"
+        review_reason = str(item.get("review_reason") or "<unknown>").strip() or "<unknown>"
+        signatures.append(f"{target_path}|{review_reason}")
+    return sorted(set(signatures))
+
+
+def _update_reviewer_block_state(result: dict) -> dict:
+    """Aynı hedef+red tipi tekrar ederse otonom döngüyü reviewer blokajı olarak işaretler."""
+    signatures = _rejection_signatures(result)
+    has_success = any(
+        bool(item.get("success")) for item in result.get("results", []) or [] if isinstance(item, dict)
+    )
+    if has_success:
+        if REJECTION_STATE_PATH.exists():
+            REJECTION_STATE_PATH.unlink(missing_ok=True)
+        return result
+    if not signatures:
+        return result
+
+    previous_signatures: set[str] = set()
+    repeat_count = 1
+    if REJECTION_STATE_PATH.exists():
+        try:
+            previous = json.loads(REJECTION_STATE_PATH.read_text(encoding="utf-8"))
+            previous_signatures = set(str(item) for item in previous.get("signatures", []) or [])
+            repeat_count = int(previous.get("repeat_count", 1) or 1)
+        except Exception as exc:  # noqa: BLE001 - bozuk state dosyası döngüyü kırmamalı.
+            print(f"[CoverageAgent] reviewer block state okunamadı; sıfırlanıyor: {exc}")
+            previous_signatures = set()
+            repeat_count = 1
+
+    repeated = sorted(set(signatures) & previous_signatures)
+    if repeated:
+        repeat_count += 1
+        result["status"] = "blocked_by_reviewer"
+        result["success"] = False
+        result["blocked_reason"] = "same_target_same_rejection_repeated"
+        result["manual_action"] = "Manuel test yazılması gerekiyor; aynı hedef dosya aynı red tipiyle tekrar reddedildi."
+        result["repeated_rejections"] = repeated
+    else:
+        repeat_count = 1
+
+    REJECTION_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REJECTION_STATE_PATH.write_text(
+        json.dumps(
+            {
+                "signatures": signatures,
+                "repeat_count": repeat_count,
+                "status": result.get("status"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return result
 
 
 async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict) -> bool:
@@ -202,6 +270,7 @@ async def main() -> int:
         append=True,
         reviewer_gate=reviewer_gate,
     )
+    result = _update_reviewer_block_state(result)
     print(f"[CoverageAgent] {result.get('summary', 'coverage batch analizi tamamlandı.')}")
     print(
         f"[CoverageAgent] batch_count={result.get('batch_count', 0)} "
@@ -217,6 +286,13 @@ async def main() -> int:
     if result.get("status") == "no_gaps_detected":
         print("[CoverageAgent] Coverage açığı bulunamadı.")
         return 0
+    if result.get("status") == "blocked_by_reviewer":
+        print(
+            "[CoverageAgent] status=blocked_by_reviewer reason="
+            f"{result.get('blocked_reason')} repeated={result.get('repeated_rejections', [])}"
+        )
+        print(f"[CoverageAgent] {result.get('manual_action')}")
+        return 3
     return 0 if any(item.get("success") for item in result.get("results", [])) else 1
 
 
@@ -270,7 +346,12 @@ run_preflight_quality_gate() {
       echo "[PREFLIGHT 2/3] Mevcut coverage hedefi sağlıyor: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
     else
       echo "[PREFLIGHT 2/3] Mevcut coverage hedef altında veya okunamadı; testleri çalıştırmadan önce CoverageAgent tetiklenecek."
-      run_coverage_agent || true
+      run_coverage_agent
+      coverage_agent_exit=$?
+      if [ "${coverage_agent_exit}" -eq 3 ]; then
+        echo "[PREFLIGHT] CoverageAgent status=blocked_by_reviewer; manuel test yazılması gerekiyor. Otonom döngü başlatılmayacak."
+        exit 1
+      fi
       run_post_coverage_static_heal || true
     fi
   else
@@ -331,7 +412,13 @@ for ((i=1; i<=ITERATIONS; i++)); do
     healed=0
     for ((retry=1; retry<=AUTO_REMEDIATION_MAX_RETRIES; retry++)); do
       echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
-      run_coverage_agent || true
+      run_coverage_agent
+      coverage_agent_exit=$?
+      if [ "${coverage_agent_exit}" -eq 3 ]; then
+        echo "[HEAL] CoverageAgent status=blocked_by_reviewer; aynı hedef dosya aynı red tipiyle tekrarlandı."
+        echo "[HEAL] Manuel test yazılması gerekiyor; gereksiz remediation tekrarları durduruluyor."
+        exit 1
+      fi
       run_post_coverage_static_heal || true
       if [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
         uv run python scripts/coverage_hotspots.py --xml "${AUTONOMOUS_COVERAGE_XML}" --top 20 --root . || true
