@@ -95,6 +95,132 @@ class ReviewerAgent(BaseAgent):
             f"    raise AssertionError('''{safe_reason}''')\n"
         )
 
+    @staticmethod
+    def _coerce_review_weaknesses(raw_weaknesses: object) -> list[str]:
+        """LLM reviewer zayıflık sinyallerini görünür, sınırlı listeye dönüştürür."""
+        if isinstance(raw_weaknesses, list):
+            return [str(item).strip() for item in raw_weaknesses if str(item).strip()]
+        weakness_text = str(raw_weaknesses or "").strip()
+        return [weakness_text] if weakness_text else []
+
+    @staticmethod
+    def _build_test_candidate_review_prompt(
+        candidate: str,
+        finding: Mapping[str, object],
+        *,
+        retry: bool = False,
+    ) -> str:
+        """Coverage test adayı için JSON sözleşmeli reviewer promptu üretir."""
+        retry_clause = (
+            "\nÖNEMLİ: Önceki reviewer çıktısı geçersizdi çünkü approved=false iken reason boştu. "
+            "Bu tekrar değerlendirmesinde red veriyorsan reason alanını mutlaka somut, "
+            "insan-okunur en az bir cümleyle doldur; weaknesses alanına 1-2 sinyal ekle. "
+            if retry
+            else ""
+        )
+        return (
+            "Aşağıdaki pytest test önerisini anlamsal kalite açısından incele. "
+            "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
+            "yan etkili/deterministik olmayan kullanım, eksik exception path'i veya "
+            "tautolojik mock kontrolü var mı değerlendir. "
+            "Sadece JSON döndür: "
+            "{\"approved\": bool, \"reason\": str (red ise mutlaka somut neden, "
+            "en az 1 cümle), \"weaknesses\": [str]}."
+            f"{retry_clause}\n\n"
+            f"[COVERAGE_FINDING]\n{json.dumps(dict(finding), ensure_ascii=False)}\n\n"
+            f"[TEST_CANDIDATE]\n{str(candidate or '')[:6000]}"
+        )
+
+    async def review_test_candidate(
+        self,
+        candidate: str,
+        finding: Mapping[str, object],
+        *,
+        candidate_path: str = "",
+    ) -> dict[str, object]:
+        """CoverageAgent test adayını fail-closed ve gerekçesi zorunlu şekilde inceler.
+
+        ``approved=False`` ve boş ``reason`` kombinasyonu geçersiz reviewer çıktısıdır.
+        Bu durumda ilk değerlendirme loglanır, görünür zayıflık sinyalleri korunur ve
+        daha sıkı bir fallback promptuyla ikinci değerlendirme denenir. İkinci deneme de
+        geçersizse aday fail-closed reddedilir ve kullanıcıya gösterilebilir reason üretilir.
+        """
+        target_path = str(finding.get("target_path", "") or "").strip()
+        visible_candidate_path = (
+            candidate_path
+            or str(finding.get("suggested_test_path", "") or "").strip()
+            or "<unknown>"
+        )
+        last_weaknesses: list[str] = []
+
+        for attempt in (1, 2):
+            retry = attempt == 2
+            prompt = self._build_test_candidate_review_prompt(candidate, finding, retry=retry)
+            try:
+                verdict_raw = await self.call_llm(
+                    [{"role": "user", "content": prompt}],
+                    system_prompt=self.SYSTEM_PROMPT,
+                    temperature=0.0,
+                    json_mode=True,
+                )
+                verdict = json.loads(str(verdict_raw or "{}"))
+            except Exception as exc:  # noqa: BLE001 - reviewer gate fail-closed olmalı.
+                reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
+                logger.warning(
+                    "ReviewerAgent semantic review failed candidate_path=%s target_path=%s attempt=%s reason=%s",
+                    visible_candidate_path,
+                    target_path or "<unknown>",
+                    attempt,
+                    reason,
+                )
+                return {
+                    "approved": False,
+                    "reason": reason,
+                    "weaknesses": last_weaknesses,
+                    "attempts": attempt,
+                    "invalid_reason": False,
+                }
+
+            if not isinstance(verdict, dict):
+                verdict = {}
+            approved = bool(verdict.get("approved", False))
+            reason = str(verdict.get("reason", "") or "").strip()
+            weaknesses = self._coerce_review_weaknesses(verdict.get("weaknesses"))
+            last_weaknesses = weaknesses
+            invalid_rejection = not approved and not reason
+            if invalid_rejection:
+                weakness_preview = weaknesses[:2]
+                logger.warning(
+                    "Invalid ReviewerAgent rejection: approved=false with empty reason; "
+                    "candidate_path=%s target_path=%s attempt=%s weakness_signals=%s",
+                    visible_candidate_path,
+                    target_path or "<unknown>",
+                    attempt,
+                    weakness_preview,
+                )
+                if attempt == 1:
+                    continue
+                reason = (
+                    "Geçersiz reviewer çıktısı: approved=false fakat reason boş döndü; "
+                    "öneri fail-closed reddedildi."
+                )
+
+            return {
+                "approved": approved,
+                "reason": reason or ("approved" if approved else "rejected"),
+                "weaknesses": weaknesses,
+                "attempts": attempt,
+                "invalid_reason": invalid_rejection,
+            }
+
+        return {
+            "approved": False,
+            "reason": "Geçersiz reviewer çıktısı: reason doğrulanamadı.",
+            "weaknesses": last_weaknesses,
+            "attempts": 2,
+            "invalid_reason": True,
+        }
+
     async def _build_dynamic_test_content(self, code_context: str) -> str:
         """Kod bağlamına göre LLM destekli dinamik pytest içeriği üretir."""
         context = (code_context or "").strip()

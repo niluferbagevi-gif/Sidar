@@ -958,3 +958,68 @@ def test_run_task_ignores_non_mapping_graph_and_browser_payloads(reviewer):
     payload = json.loads(result.payload.split("qa_feedback|", 1)[1])
     assert payload["risk"] == "düşük"
     assert "GraphRAG çıktısı çözümlenemedi." in payload["graph_impact_report"]["summary"]
+
+
+def test_review_test_candidate_retries_when_rejection_reason_is_empty(reviewer, caplog):
+    calls = []
+
+    async def fake_call_llm(messages, **_kwargs):
+        calls.append(messages[0]["content"])
+        if len(calls) == 1:
+            return json.dumps(
+                {
+                    "approved": False,
+                    "reason": "",
+                    "weaknesses": ["assert True", "zayıf doğrulama"],
+                }
+            )
+        return json.dumps(
+            {
+                "approved": False,
+                "reason": "Somut red nedeni var.",
+                "weaknesses": ["branch yok"],
+            }
+        )
+
+    reviewer.call_llm = fake_call_llm
+    caplog.set_level("WARNING")
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert True\n",
+            {"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
+        )
+    )
+
+    assert result["approved"] is False
+    assert result["reason"] == "Somut red nedeni var."
+    assert result["attempts"] == 2
+    assert "Önceki reviewer çıktısı geçersizdi" in calls[1]
+    log_text = caplog.text
+    assert "candidate_path=tests/test_x.py" in log_text
+    assert "target_path=core/x.py" in log_text
+    assert "assert True" in log_text
+
+
+def test_review_test_candidate_fail_closed_when_retry_still_has_empty_reason(reviewer, caplog):
+    async def fake_call_llm(*_args, **_kwargs):
+        return json.dumps(
+            {"approved": False, "reason": "", "weaknesses": ["tautolojik mock"]}
+        )
+
+    reviewer.call_llm = fake_call_llm
+    caplog.set_level("WARNING")
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert mock.called\n",
+            {"target_path": "agent/y.py"},
+            candidate_path="tests/test_y.py",
+        )
+    )
+
+    assert result["approved"] is False
+    assert "Geçersiz reviewer çıktısı" in result["reason"]
+    assert result["invalid_reason"] is True
+    assert result["attempts"] == 2
+    assert caplog.text.count("approved=false with empty reason") == 2

@@ -126,7 +126,6 @@ run_coverage_agent() {
   AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}" \
     uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
-import json
 import os
 import re
 
@@ -148,40 +147,26 @@ def _looks_trivial_test(code: str) -> bool:
 
 async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict) -> bool:
     reviewer = ReviewerAgent(config=cfg)
-    prompt = (
-        "Aşağıdaki pytest test önerisini anlamsal kalite açısından incele. "
-        "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
-        "yan etkili/deterministik olmayan kullanım, eksik exception path'i veya "
-        "tautolojik mock kontrolü var mı değerlendir. "
-        "Sadece JSON döndür: "
-        "{\"approved\": bool, \"reason\": str (red ise mutlaka somut neden, "
-        "en az 1 cümle), \"weaknesses\": [str]}.\n\n"
-        f"[COVERAGE_FINDING]\n{json.dumps(finding, ensure_ascii=False)}\n\n"
-        f"[TEST_CANDIDATE]\n{candidate[:6000]}"
+    candidate_path = str(finding.get("suggested_test_path") or "")
+    result = await reviewer.review_test_candidate(
+        candidate,
+        finding,
+        candidate_path=candidate_path,
     )
-    try:
-        verdict_raw = await reviewer.call_llm(
-            [{"role": "user", "content": prompt}],
-            system_prompt=ReviewerAgent.SYSTEM_PROMPT,
-            temperature=0.0,
-            json_mode=True,
-        )
-        verdict = json.loads(str(verdict_raw or "{}"))
-        approved = bool(verdict.get("approved", False))
-        reason = str(verdict.get("reason", "") or "").strip() or "(neden belirtilmedi)"
-        raw_weaknesses = verdict.get("weaknesses") or []
-        if isinstance(raw_weaknesses, list):
-            weaknesses = [str(w).strip() for w in raw_weaknesses if str(w).strip()]
-        else:
-            weakness_text = str(raw_weaknesses).strip()
-            weaknesses = [weakness_text] if weakness_text else []
-        print(f"[ReviewerAgent] approved={approved} reason={reason}")
-        if weaknesses:
-            print(f"[ReviewerAgent] weaknesses={weaknesses}")
-        return approved
-    except Exception as exc:
-        print(f"[ReviewerAgent] Semantic review başarısız: {exc}")
-        return False
+    approved = bool(result.get("approved", False))
+    reason = str(result.get("reason", "") or "").strip()
+    weaknesses = result.get("weaknesses") or []
+    print(
+        "[ReviewerAgent] "
+        f"approved={approved} reason={reason} attempts={result.get('attempts', 1)} "
+        f"candidate_path={candidate_path or '<unknown>'} "
+        f"target_path={finding.get('target_path', '<unknown>')}"
+    )
+    if weaknesses:
+        print(f"[ReviewerAgent] weaknesses={list(weaknesses)[:2]}")
+    if result.get("invalid_reason"):
+        print("[ReviewerAgent] invalid_reason=true; boş red gerekçesi fail-closed reddedildi.")
+    return approved
 
 
 async def main() -> int:
