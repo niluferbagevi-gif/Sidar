@@ -806,3 +806,213 @@ async def test_coverage_agent_run_task_marks_pending_approval(
     run_task_payload = json.loads(await agent.run_task("pytest --cov=. --cov-report=xml"))
     assert run_task_payload["approval_status"] == "pending_reviewer_or_human"
     assert run_task_payload["is_approved"] is False
+
+
+@pytest.mark.asyncio
+async def test_autonomous_batch_reviewer_gate_reject_payload(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    finding = {
+        "target_path": "agent/roles/coverage_agent.py",
+        "suggested_test_path": "tests/test_cov.py",
+    }
+
+    async def fake_analyze(_arg):
+        return json.dumps({"summary": "one gap", "coveragerc": {}, "findings": [finding]})
+
+    async def fake_generate(_arg):
+        return "def test_meaningful_candidate():\n    assert 2 + 2 == 4\n"
+
+    async def reviewer_gate(candidate, gate_finding):
+        assert "test_meaningful_candidate" in candidate
+        assert gate_finding == finding
+        return False
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(reviewer_gate=reviewer_gate)
+
+    assert result["success"] is False
+    assert result["status"] == "batch_completed"
+    assert result["results"] == [
+        {
+            "success": False,
+            "status": "review_rejected",
+            "batch_index": 1,
+            "finding_index": 1,
+            "target_path": "agent/roles/coverage_agent.py",
+            "suggested_test_path": "tests/test_cov.py",
+            "review_reason": "rejected",
+            "generated_test_candidate": "def test_meaningful_candidate():\n    assert 2 + 2 == 4",
+        }
+    ]
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    async def fake_analyze(_arg):
+        return json.dumps(
+            {
+                "summary": "gate boom",
+                "coveragerc": {},
+                "findings": [{"target_path": "src/explode.py"}],
+            }
+        )
+
+    async def fake_generate(_arg):
+        return "```python\ndef test_exception_candidate():\n    assert 'x'.upper() == 'X'\n```"
+
+    async def reviewer_gate(_candidate, _finding):
+        raise RuntimeError("reviewer unavailable")
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(reviewer_gate=reviewer_gate)
+    rejected = result["results"][0]
+
+    assert result["success"] is False
+    assert rejected["status"] == "review_rejected"
+    assert rejected["review_reason"] == "reviewer_gate_exception:RuntimeError"
+    assert rejected["review_error"] == "reviewer unavailable"
+    assert rejected["suggested_test_path"] == "tests/src/test_explode.py"
+    assert rejected["generated_test_candidate"].startswith("def test_exception_candidate")
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_autonomous_batch_rejects_missing_and_trivial_candidates_before_reviewer(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    findings = [
+        {"target_path": "src/empty.py", "suggested_test_path": "tests/test_empty.py"},
+        {"target_path": "src/trivial.py", "suggested_test_path": "tests/test_trivial.py"},
+    ]
+    generated_by_target = {
+        "src/empty.py": "```python\n```",
+        "src/trivial.py": "def test_trivial_candidate():\n    assert True\n",
+    }
+    reviewer_calls = []
+
+    async def fake_analyze(_arg):
+        return json.dumps({"summary": "bad candidates", "coveragerc": {}, "findings": findings})
+
+    async def fake_generate(arg):
+        payload = json.loads(arg)
+        return generated_by_target[payload["coverage_finding"]["target_path"]]
+
+    async def reviewer_gate(candidate, finding):
+        reviewer_calls.append((candidate, finding))
+        return True
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(reviewer_gate=reviewer_gate)
+
+    assert result["success"] is False
+    assert [item["review_reason"] for item in result["results"]] == [
+        "generated_candidate_empty",
+        "generated_candidate_trivial_or_missing_assertion",
+    ]
+    assert reviewer_calls == []
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_autonomous_batch_partial_success_and_all_rejected_scenarios(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    findings = [
+        {"target_path": "src/a.py", "suggested_test_path": "tests/test_a.py"},
+        {"target_path": "src/b.py", "suggested_test_path": "tests/test_b.py"},
+        {"target_path": "src/c.py", "suggested_test_path": "tests/test_c.py"},
+    ]
+
+    async def fake_analyze(_arg):
+        return json.dumps({"summary": "partial", "coveragerc": {}, "findings": findings})
+
+    async def fake_generate(arg):
+        target = (
+            json.loads(arg)["coverage_finding"]["target_path"].removesuffix(".py").split("/")[-1]
+        )
+        return f"def test_{target}_candidate():\n    assert {target!r}.isalpha()\n"
+
+    async def partial_reviewer_gate(_candidate, finding):
+        return finding["target_path"] != "src/b.py"
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    partial = await agent.run_autonomous_coverage_batch(
+        batch_size=2,
+        reviewer_gate=partial_reviewer_gate,
+    )
+
+    assert partial["success"] is True
+    assert partial["batch_count"] == 2
+    assert [item["status"] for item in partial["results"]] == [
+        "tests_written",
+        "review_rejected",
+        "tests_written",
+    ]
+    assert partial["results"][1]["batch_index"] == 1
+    assert partial["results"][2]["batch_index"] == 2
+    assert fake_coverage_code_manager.write_generated_test.await_count == 2
+
+    fake_coverage_code_manager.write_generated_test.reset_mock()
+
+    async def reject_all(_candidate, _finding):
+        return False
+
+    all_rejected = await agent.run_autonomous_coverage_batch(
+        batch_size=2,
+        reviewer_gate=reject_all,
+    )
+
+    assert all_rejected["success"] is False
+    assert all(item["status"] == "review_rejected" for item in all_rejected["results"])
+    assert [item["review_reason"] for item in all_rejected["results"]] == [
+        "rejected",
+        "rejected",
+        "rejected",
+    ]
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_candidate_rejection_and_cleaning_edge_cases():
+    assert CoverageAgent._candidate_rejection_reason("") == "generated_candidate_empty"
+    assert (
+        CoverageAgent._candidate_rejection_reason("def helper():\n    return True")
+        == "generated_candidate_missing_pytest_function"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason("def test_only_true():\n    assert True")
+        == "generated_candidate_trivial_or_missing_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason("def test_broken(:\n    assert True")
+        == "generated_candidate_invalid_python"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "import pytest\n\ndef test_raises():\n    with pytest.raises(ValueError):\n        raise ValueError"
+        )
+        == ""
+    )
+    assert CoverageAgent._clean_code_output("```Python\ndef test_x():\n    assert 1\n```") == (
+        "def test_x():\n    assert 1"
+    )
+    assert CoverageAgent._clean_code_output("```py\ndef test_y():\n    assert 2\n```") == (
+        "def test_y():\n    assert 2"
+    )

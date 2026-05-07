@@ -245,6 +245,47 @@ class CoverageAgent(BaseAgent):
         return clean_text
 
     @staticmethod
+    def _candidate_rejection_reason(generated_test: str) -> str:
+        """Otonom batch yazımı öncesi boş/trivial test adaylarını fail-closed reddeder."""
+        source = str(generated_test or "").strip()
+        if not source:
+            return "generated_candidate_empty"
+        try:
+            tree = ast.parse(source or "\n")
+        except SyntaxError:
+            return "generated_candidate_invalid_python"
+
+        test_nodes = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        ]
+        if not test_nodes:
+            return "generated_candidate_missing_pytest_function"
+
+        has_meaningful_assert = False
+        has_pytest_raises = False
+        for test_node in test_nodes:
+            for child in ast.walk(test_node):
+                if isinstance(child, ast.Assert):
+                    if isinstance(child.test, ast.Constant) and child.test.value is True:
+                        continue
+                    has_meaningful_assert = True
+                if (
+                    isinstance(child, ast.Call)
+                    and isinstance(child.func, ast.Attribute)
+                    and child.func.attr == "raises"
+                    and isinstance(child.func.value, ast.Name)
+                    and child.func.value.id == "pytest"
+                ):
+                    has_pytest_raises = True
+
+        if not has_meaningful_assert and not has_pytest_raises:
+            return "generated_candidate_trivial_or_missing_assertion"
+        return ""
+
+    @staticmethod
     def _normalize_analysis(raw: Any) -> dict[str, Any]:
         if not isinstance(raw, dict):
             return {"summary": "", "findings": []}
@@ -673,12 +714,8 @@ class CoverageAgent(BaseAgent):
                     )
                 )
                 generated = self._clean_code_output(generated)
-                approved = True
-                review_reason = "reviewer_gate_not_configured"
-                if reviewer_gate is not None:
-                    approved = bool(await reviewer_gate(generated, finding))
-                    review_reason = "approved" if approved else "rejected"
-                if not approved:
+                candidate_rejection_reason = self._candidate_rejection_reason(generated)
+                if candidate_rejection_reason:
                     results.append(
                         {
                             "success": False,
@@ -687,9 +724,38 @@ class CoverageAgent(BaseAgent):
                             "finding_index": finding_index,
                             "target_path": finding.get("target_path", ""),
                             "suggested_test_path": suggested_test_path,
-                            "review_reason": review_reason,
+                            "review_reason": candidate_rejection_reason,
+                            "generated_test_candidate": generated,
                         }
                     )
+                    continue
+
+                approved = True
+                review_reason = "reviewer_gate_not_configured"
+                review_error = ""
+                if reviewer_gate is not None:
+                    try:
+                        approved = bool(await reviewer_gate(generated, finding))
+                    except Exception as exc:  # noqa: BLE001 - reviewer gate hata verirse yazma fail-closed olmalı.
+                        approved = False
+                        review_reason = f"reviewer_gate_exception:{exc.__class__.__name__}"
+                        review_error = str(exc)
+                    else:
+                        review_reason = "approved" if approved else "rejected"
+                if not approved:
+                    rejected_result = {
+                        "success": False,
+                        "status": "review_rejected",
+                        "batch_index": batch_index,
+                        "finding_index": finding_index,
+                        "target_path": finding.get("target_path", ""),
+                        "suggested_test_path": suggested_test_path,
+                        "review_reason": review_reason,
+                        "generated_test_candidate": generated,
+                    }
+                    if review_error:
+                        rejected_result["review_error"] = review_error
+                    results.append(rejected_result)
                     continue
 
                 write_raw = await self._tool_write_missing_tests(
