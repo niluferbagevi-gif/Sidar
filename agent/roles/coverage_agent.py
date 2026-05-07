@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import configparser
 import inspect
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,7 @@ class CoverageAgent(BaseAgent):
         self.register_tool("analyze_test_artifacts", self._tool_analyze_test_artifacts)
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
         self.register_tool("write_missing_tests", self._tool_write_missing_tests)
+        self.register_tool("autonomous_batch_heal", self._tool_autonomous_batch_heal)
 
     async def _ensure_db(self) -> Any:
         if self._db is not None:
@@ -83,6 +85,100 @@ class CoverageAgent(BaseAgent):
         if inspect.isawaitable(result):
             return await result
         return result
+
+    @staticmethod
+    def _extract_test_function_names(source: str) -> set[str]:
+        """Python test kodundaki test_* fonksiyon adlarını AST ile çıkarır."""
+        tree = ast.parse(str(source or "") or "\n")
+        return {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        }
+
+    @staticmethod
+    def _build_finding_batches(
+        findings: list[dict[str, Any]],
+        *,
+        batch_size: int,
+        max_findings: int | None = None,
+    ) -> list[list[dict[str, Any]]]:
+        """Coverage bulgularını dosya sırasını koruyan deterministik batch kuyruğuna böler."""
+        normalized_batch_size = max(1, int(batch_size or 1))
+        capped_findings = list(findings[: max(0, int(max_findings))] if max_findings else findings)
+        return [
+            capped_findings[index : index + normalized_batch_size]
+            for index in range(0, len(capped_findings), normalized_batch_size)
+        ]
+
+    def _resolve_repo_path(self, path_value: str) -> Path:
+        """Repo base dizinine göre path çözer; mutlak pathleri olduğu gibi korur."""
+        raw_path = Path(str(path_value or "").strip())
+        if raw_path.is_absolute():
+            return raw_path
+        return Path(self.cfg.BASE_DIR) / raw_path
+
+    def _validate_generated_test_before_write(
+        self,
+        *,
+        suggested_test_path: str,
+        generated_test: str,
+        append: bool,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Append öncesi sözdizimi ve test fonksiyonu çakışmalarını fail-closed kontrol eder."""
+        details: dict[str, Any] = {"generated_test_functions": [], "existing_test_functions": []}
+        if not str(suggested_test_path or "").strip():
+            return False, "suggested_test_path boş olduğu için test yazımı engellendi.", details
+        if not str(generated_test or "").strip():
+            return False, "generated_test boş olduğu için test yazımı engellendi.", details
+
+        try:
+            generated_names = self._extract_test_function_names(generated_test)
+        except SyntaxError as exc:
+            return False, f"Üretilen test kodu geçerli Python AST değil: {exc}", details
+        details["generated_test_functions"] = sorted(generated_names)
+
+        if not generated_names:
+            return (
+                False,
+                "Üretilen test kodunda test_ ile başlayan pytest fonksiyonu bulunamadı.",
+                details,
+            )
+        if len(generated_names) != sum(
+            1
+            for node in ast.walk(ast.parse(generated_test))
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        ):
+            return False, "Üretilen test kodunda yinelenen test fonksiyon adı var.", details
+
+        if not append:
+            return True, "AST kontrolü başarılı.", details
+
+        target_path = self._resolve_repo_path(suggested_test_path)
+        if not target_path.exists():
+            return True, "AST kontrolü başarılı; hedef test dosyası yeni oluşturulacak.", details
+
+        try:
+            existing_text = target_path.read_text(encoding="utf-8")
+            existing_names = self._extract_test_function_names(existing_text)
+        except SyntaxError as exc:
+            return False, f"Mevcut test dosyası AST olarak ayrıştırılamadı: {exc}", details
+        except OSError as exc:
+            return False, f"Mevcut test dosyası okunamadı: {exc}", details
+
+        details["existing_test_functions"] = sorted(existing_names)
+        collisions = sorted(generated_names & existing_names)
+        if collisions:
+            details["collisions"] = collisions
+            return (
+                False,
+                "Test fonksiyonu adı çakışması nedeniyle append engellendi: "
+                + ", ".join(collisions),
+                details,
+            )
+        return True, "AST kontrolü başarılı; çakışma bulunmadı.", details
 
     @staticmethod
     def _parse_payload(raw: str) -> dict[str, Any]:
@@ -503,6 +599,24 @@ class CoverageAgent(BaseAgent):
         suggested_test_path = str(payload.get("suggested_test_path", "") or "")
         generated_test = self._clean_code_output(str(payload.get("generated_test", "") or ""))
         append = bool(payload.get("append", True))
+        validation_ok, validation_message, validation_details = (
+            self._validate_generated_test_before_write(
+                suggested_test_path=suggested_test_path,
+                generated_test=generated_test,
+                append=append,
+            )
+        )
+        if not validation_ok:
+            return json.dumps(
+                {
+                    "success": False,
+                    "suggested_test_path": suggested_test_path,
+                    "message": validation_message,
+                    "validation": validation_details,
+                },
+                ensure_ascii=False,
+            )
+
         ok, message = await self._call_maybe_async(
             self.code.write_generated_test,
             suggested_test_path,
@@ -514,9 +628,114 @@ class CoverageAgent(BaseAgent):
                 "success": ok,
                 "suggested_test_path": suggested_test_path,
                 "message": message,
+                "validation": {"message": validation_message, **validation_details},
             },
             ensure_ascii=False,
         )
+
+    async def run_autonomous_coverage_batch(
+        self,
+        *,
+        coverage_xml: str = "coverage.xml",
+        coveragerc: str = ".coveragerc",
+        limit: int = 10,
+        batch_size: int = 1,
+        append: bool = True,
+        reviewer_gate: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+    ) -> dict[str, Any]:
+        """Coverage bulgularını çoklu batch kuyruğunda üretip write_missing_tests ile yazar."""
+        analysis_raw = await self._tool_analyze_coverage_report(
+            json.dumps(
+                {"coverage_xml": coverage_xml, "coveragerc": coveragerc, "limit": limit},
+                ensure_ascii=False,
+            )
+        )
+        analysis = json.loads(analysis_raw)
+        findings = [
+            item for item in list(analysis.get("findings", []) or []) if isinstance(item, dict)
+        ]
+        batches = self._build_finding_batches(findings, batch_size=batch_size, max_findings=limit)
+        results: list[dict[str, Any]] = []
+
+        for batch_index, batch in enumerate(batches, start=1):
+            for finding_index, finding in enumerate(batch, start=1):
+                suggested_test_path = str(
+                    finding.get("suggested_test_path")
+                    or self._suggest_test_path(str(finding.get("target_path", "") or ""))
+                )
+                generated = await self._tool_generate_missing_tests(
+                    json.dumps(
+                        {
+                            "coverage_finding": finding,
+                            "coveragerc": analysis.get("coveragerc", {}),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                generated = self._clean_code_output(generated)
+                approved = True
+                review_reason = "reviewer_gate_not_configured"
+                if reviewer_gate is not None:
+                    approved = bool(await reviewer_gate(generated, finding))
+                    review_reason = "approved" if approved else "rejected"
+                if not approved:
+                    results.append(
+                        {
+                            "success": False,
+                            "status": "review_rejected",
+                            "batch_index": batch_index,
+                            "finding_index": finding_index,
+                            "target_path": finding.get("target_path", ""),
+                            "suggested_test_path": suggested_test_path,
+                            "review_reason": review_reason,
+                        }
+                    )
+                    continue
+
+                write_raw = await self._tool_write_missing_tests(
+                    json.dumps(
+                        {
+                            "suggested_test_path": suggested_test_path,
+                            "generated_test": generated,
+                            "append": append,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                write_result = json.loads(write_raw)
+                results.append(
+                    {
+                        "success": bool(write_result.get("success", False)),
+                        "status": "tests_written"
+                        if write_result.get("success")
+                        else "write_failed",
+                        "batch_index": batch_index,
+                        "finding_index": finding_index,
+                        "target_path": finding.get("target_path", ""),
+                        "suggested_test_path": suggested_test_path,
+                        "write_result": write_result,
+                    }
+                )
+
+        return {
+            "success": any(item.get("success") for item in results) if results else True,
+            "status": "no_gaps_detected" if not findings else "batch_completed",
+            "summary": analysis.get("summary", ""),
+            "total_findings": len(findings),
+            "batch_count": len(batches),
+            "results": results,
+        }
+
+    async def _tool_autonomous_batch_heal(self, arg: str) -> str:
+        payload = self._parse_payload(arg)
+        result = await self.run_autonomous_coverage_batch(
+            coverage_xml=str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml"),
+            coveragerc=str(payload.get("coveragerc", ".coveragerc") or ".coveragerc"),
+            limit=int(payload.get("limit", 10) or 10),
+            batch_size=int(payload.get("batch_size", 1) or 1),
+            append=bool(payload.get("append", True)),
+        )
+        return json.dumps(result, ensure_ascii=False)
 
     async def _record_task(
         self,
@@ -567,6 +786,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("generate_missing_tests", prompt.split("|", 1)[1].strip())
         if lower.startswith("write_missing_tests|"):
             return await self.call_tool("write_missing_tests", prompt.split("|", 1)[1].strip())
+        if lower.startswith("autonomous_batch_heal|"):
+            return await self.call_tool("autonomous_batch_heal", prompt.split("|", 1)[1].strip())
 
         payload = self._parse_payload(prompt)
         default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
@@ -610,16 +831,21 @@ class CoverageAgent(BaseAgent):
             "is_approved": False,
             "approval_status": "pending_reviewer_or_human",
         }
-        write_ok, write_message = await self._call_maybe_async(
-            self.code.write_generated_test,
-            suggested_test_path,
-            generated_test,
-            append=True,
+        write_result = json.loads(
+            await self._tool_write_missing_tests(
+                json.dumps(
+                    {
+                        "suggested_test_path": suggested_test_path,
+                        "generated_test": generated_test,
+                        "append": True,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         )
-        review_payload["write_result"] = {
-            "success": write_ok,
-            "message": write_message,
-        }
+        write_ok = bool(write_result.get("success", False))
+        write_message = str(write_result.get("message", "") or "")
+        review_payload["write_result"] = write_result
         try:
             await self._record_task(
                 command=command,

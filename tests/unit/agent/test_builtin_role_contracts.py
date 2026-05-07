@@ -53,8 +53,7 @@ def _extract_capabilities_from_role_file(role_file: Path) -> set[str]:
                         values = {
                             elt.value
                             for elt in keyword.value.elts
-                            if isinstance(elt, ast.Constant)
-                            and isinstance(elt.value, str)
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
                         }
                         if values:
                             return values
@@ -74,9 +73,7 @@ def _extract_is_builtin_from_role_file(role_file: Path) -> bool:
                 if not isinstance(func, ast.Attribute) or func.attr != "register":
                     continue
                 for keyword in decorator.keywords:
-                    if keyword.arg == "is_builtin" and isinstance(
-                        keyword.value, ast.Constant
-                    ):
+                    if keyword.arg == "is_builtin" and isinstance(keyword.value, ast.Constant):
                         return keyword.value.value is True
     raise AssertionError(
         f"No explicit AgentCatalog.register(is_builtin=True) decorator found in {role_file}"
@@ -178,6 +175,10 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "(neden belirtilmedi)" in script
     assert 'print(f"[ReviewerAgent] weaknesses={weaknesses}")' in script
     assert "ReviewerAgent semantik onay vermedi" in script
+    assert "run_autonomous_coverage_batch" in script
+    assert "write_missing_tests" in script
+    assert "run_post_coverage_static_heal" in script
+    assert "Mevcut coverage artefaktları bulundu" in script
     assert "raise SystemExit(asyncio.run(main()))" in script
 
 

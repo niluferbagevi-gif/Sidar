@@ -8,6 +8,9 @@ ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
 AUTONOMOUS_COVERAGE_TARGET="${AUTONOMOUS_LOOP_COVERAGE_TARGET:-100}"
 AUTONOMOUS_COVERAGE_JSON="${AUTONOMOUS_LOOP_COVERAGE_JSON:-coverage.json}"
+AUTONOMOUS_COVERAGE_XML="${AUTONOMOUS_LOOP_COVERAGE_XML:-coverage.xml}"
+AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-10}"
+AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
 fi
@@ -112,15 +115,19 @@ check_autonomous_quality_gate() {
 }
 
 run_coverage_agent() {
-  if [ ! -f "coverage.xml" ]; then
-    echo "[HEAL] coverage.xml bulunamadı; CoverageAgent adımı atlandı."
+  if [ ! -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
+    echo "[HEAL] ${AUTONOMOUS_COVERAGE_XML} bulunamadı; CoverageAgent adımı atlandı."
     return 0
   fi
 
   echo "[HEAL] CoverageAgent tetikleniyor (coverage analizi + test önerisi)..."
-  uv run python - <<'PY_COVERAGE_AGENT'
+  AUTONOMOUS_LOOP_COVERAGE_XML="${AUTONOMOUS_COVERAGE_XML}" \
+  AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_COVERAGE_AGENT_LIMIT}" \
+  AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}" \
+    uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
+import os
 import re
 
 from agent.roles.coverage_agent import CoverageAgent
@@ -180,39 +187,73 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
 async def main() -> int:
     cfg = Config()
     agent = CoverageAgent(config=cfg)
-    payload = {"coverage_xml": "coverage.xml", "coveragerc": ".coveragerc", "limit": 10}
-    raw = await agent._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))  # noqa: SLF001
-    data = json.loads(raw)
-    findings = data.get("findings", [])
-    print(f"[CoverageAgent] {data.get('summary', 'coverage analizi tamamlandı.')}")
-    if not findings:
+    coverage_xml = os.getenv("AUTONOMOUS_LOOP_COVERAGE_XML", "coverage.xml")
+    limit = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT", "10") or "10")
+    batch_size = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE", "1") or "1")
+
+    async def reviewer_gate(candidate: str, finding: dict) -> bool:
+        if _looks_trivial_test(candidate):
+            print("[ReviewerGate] Test önerisi anlamsız/trivial görünüyor (örn. assert True). Reddedildi.")
+            return False
+        approved = await _review_with_reviewer_agent(cfg, str(candidate), finding)
+        if not approved:
+            print("[ReviewerGate] ReviewerAgent semantik onay vermedi. Öneri uygulanmayacak.")
+        return approved
+
+    # run_autonomous_coverage_batch içeride CoverageAgent write_missing_tests aracını çağırır.
+    result = await agent.run_autonomous_coverage_batch(
+        coverage_xml=coverage_xml,
+        coveragerc=".coveragerc",
+        limit=limit,
+        batch_size=batch_size,
+        append=True,
+        reviewer_gate=reviewer_gate,
+    )
+    print(f"[CoverageAgent] {result.get('summary', 'coverage batch analizi tamamlandı.')}")
+    print(
+        f"[CoverageAgent] batch_count={result.get('batch_count', 0)} "
+        f"total_findings={result.get('total_findings', 0)}"
+    )
+    for item in result.get("results", []):
+        print(
+            "[CoverageAgent] "
+            f"batch={item.get('batch_index')} finding={item.get('finding_index')} "
+            f"status={item.get('status')} target={item.get('target_path')} "
+            f"test={item.get('suggested_test_path')}"
+        )
+    if result.get("status") == "no_gaps_detected":
         print("[CoverageAgent] Coverage açığı bulunamadı.")
         return 0
-
-    first = findings[0]
-    candidate_payload = {
-        "coverage_finding": first,
-        "coveragerc": data.get("coveragerc", {}),
-    }
-    generated = await agent._tool_generate_missing_tests(json.dumps(candidate_payload, ensure_ascii=False))  # noqa: SLF001
-
-    if _looks_trivial_test(generated):
-        print("[ReviewerGate] Test önerisi anlamsız/trivial görünüyor (örn. assert True). Reddedildi.")
-        return 1
-
-    approved = await _review_with_reviewer_agent(cfg, str(generated), first)
-    if not approved:
-        print("[ReviewerGate] ReviewerAgent semantik onay vermedi. Öneri uygulanmayacak.")
-        return 1
-
-    preview = "\n".join(str(generated).splitlines()[:20])
-    print("[CoverageAgent] Reviewer onaylı örnek test önerisi (ilk 20 satır):")
-    print(preview)
-    return 0
+    return 0 if any(item.get("success") for item in result.get("results", [])) else 1
 
 
 raise SystemExit(asyncio.run(main()))
 PY_COVERAGE_AGENT
+}
+
+run_post_coverage_static_heal() {
+  local ruff_exit
+  local mypy_exit
+
+  echo "[HEAL] CoverageAgent sonrası hızlı statik kontrol: uv run ruff check ."
+  uv run ruff check .
+  ruff_exit=$?
+  if [ "${ruff_exit}" -ne 0 ]; then
+    echo "[HEAL] ruff check sorun bildirdi (exit code: ${ruff_exit}); run_tests.sh öncesi akış devam edecek."
+  fi
+
+  mkdir -p artifacts
+  echo "[HEAL] CoverageAgent sonrası hızlı mypy kontrolü: uv run mypy ."
+  uv run mypy . > artifacts/mypy_errors.log 2>&1
+  mypy_exit=$?
+  if [ "${mypy_exit}" -eq 0 ]; then
+    echo "Success: no issues found" > artifacts/mypy_errors.log
+    echo "[HEAL] Hızlı mypy kontrolü temiz."
+    return 0
+  fi
+
+  echo "[HEAL] Hızlı mypy kontrolü hata buldu; scripts/auto_heal.py tetikleniyor."
+  uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
 }
 
 run_github_upload() {
@@ -223,14 +264,31 @@ run_preflight_quality_gate() {
   local test_exit
   local gate_exit
   local upload_exit
+  local current_percent
+  local coverage_status
 
   echo ""
   echo "========== Ön Kontrol =========="
-  echo "[PREFLIGHT 1/2] Test: ./run_tests.sh"
+  if [ -f "${AUTONOMOUS_COVERAGE_JSON}" ] && [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
+    echo "[PREFLIGHT 1/3] Mevcut coverage artefaktları bulundu: ${AUTONOMOUS_COVERAGE_JSON}, ${AUTONOMOUS_COVERAGE_XML}"
+    current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}")"
+    coverage_status=$?
+    if [ "${coverage_status}" -eq 0 ] && coverage_target_reached "${current_percent}" "${AUTONOMOUS_COVERAGE_TARGET}"; then
+      echo "[PREFLIGHT 2/3] Mevcut coverage hedefi sağlıyor: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
+    else
+      echo "[PREFLIGHT 2/3] Mevcut coverage hedef altında veya okunamadı; testleri çalıştırmadan önce CoverageAgent tetiklenecek."
+      run_coverage_agent || true
+      run_post_coverage_static_heal || true
+    fi
+  else
+    echo "[PREFLIGHT 1/3] Coverage artefaktı eksik (${AUTONOMOUS_COVERAGE_JSON}/${AUTONOMOUS_COVERAGE_XML}); önce ./run_tests.sh ile üretilecek."
+  fi
+
+  echo "[PREFLIGHT 2/3] Test: ./run_tests.sh"
   ./run_tests.sh
   test_exit=$?
 
-  echo "[PREFLIGHT 2/2] Kontrol: Test çıkış kodu = $test_exit; coverage hedefi = %${AUTONOMOUS_COVERAGE_TARGET}"
+  echo "[PREFLIGHT 3/3] Kontrol: Test çıkış kodu = $test_exit; coverage hedefi = %${AUTONOMOUS_COVERAGE_TARGET}"
   check_autonomous_quality_gate "$test_exit"
   gate_exit=$?
 
@@ -281,8 +339,9 @@ for ((i=1; i<=ITERATIONS; i++)); do
     for ((retry=1; retry<=AUTO_REMEDIATION_MAX_RETRIES; retry++)); do
       echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
       run_coverage_agent || true
-      if [ -f "coverage.xml" ]; then
-        uv run python scripts/coverage_hotspots.py --xml coverage.xml --top 20 --root . || true
+      run_post_coverage_static_heal || true
+      if [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
+        uv run python scripts/coverage_hotspots.py --xml "${AUTONOMOUS_COVERAGE_XML}" --top 20 --root . || true
       fi
 
       if [ -f "artifacts/mypy_errors.log" ]; then
