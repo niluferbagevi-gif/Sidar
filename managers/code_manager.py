@@ -923,7 +923,8 @@ class CodeManager:
         # pytest'e positional argüman olarak gitmemelidir.
         normalized = ""
         pytest_cmd_pattern = re.compile(
-            r"(?:^|\s)((?:python\s+-m\s+pytest)|pytest)(?:\s+.*)?$", re.IGNORECASE
+            r"(?:^|\s)((?:uv\s+run\s+pytest)|(?:python\s+-m\s+pytest)|pytest)(?:\s+.*)?$",
+            re.IGNORECASE,
         )
         for line in raw_command.splitlines():
             candidate = line.strip()
@@ -944,7 +945,11 @@ class CodeManager:
         if " #" in normalized:
             normalized = normalized.split(" #", 1)[0].rstrip()
 
-        if not re.match(r"^(pytest|python\s+-m\s+pytest)\b", normalized, re.IGNORECASE):
+        if not re.match(
+            r"^(pytest|python\s+-m\s+pytest|uv\s+run\s+pytest)\b",
+            normalized,
+            re.IGNORECASE,
+        ):
             return {
                 "success": False,
                 "command": normalized,

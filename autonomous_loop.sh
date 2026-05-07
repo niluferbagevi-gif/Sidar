@@ -177,7 +177,6 @@ run_coverage_agent() {
 import asyncio
 import json
 import os
-import re
 from pathlib import Path
 
 from agent.roles.coverage_agent import CoverageAgent
@@ -185,15 +184,12 @@ from agent.roles.reviewer_agent import ReviewerAgent
 from config import Config
 
 
+def _static_candidate_rejection_reason(code: str, finding: dict | None = None) -> str:
+    return CoverageAgent._candidate_rejection_reason(code, finding=finding or {})
+
+
 def _looks_trivial_test(code: str) -> bool:
-    txt = str(code or "")
-    if not txt.strip():
-        return True
-    if re.search(r"assert\s+True\b", txt):
-        return True
-    if "def test_" in txt and "assert " not in txt and "pytest.raises" not in txt:
-        return True
-    return False
+    return bool(_static_candidate_rejection_reason(code))
 
 
 REJECTION_STATE_PATH = Path(os.getenv("AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE", "artifacts/coverage_reviewer_rejections.json"))
@@ -309,8 +305,12 @@ async def main() -> int:
     batch_size = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE", "1") or "1")
 
     async def reviewer_gate(candidate: str, finding: dict) -> bool:
-        if _looks_trivial_test(candidate):
-            print("[ReviewerGate] Test önerisi anlamsız/trivial görünüyor (örn. assert True). Reddedildi.")
+        static_rejection_reason = _static_candidate_rejection_reason(candidate, finding)
+        if static_rejection_reason:
+            print(
+                "[ReviewerGate] Test önerisi statik kalite filtresinden geçemedi "
+                f"(reason={static_rejection_reason}). Reddedildi."
+            )
             return False
         approved = await _review_with_reviewer_agent(cfg, str(candidate), finding)
         if not approved:

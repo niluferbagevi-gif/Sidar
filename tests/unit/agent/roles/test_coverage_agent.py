@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import json
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -453,7 +454,7 @@ async def test_autonomous_coverage_batch_writes_multiple_findings(
     async def fake_generate(arg):
         data = json.loads(arg)
         target = data["coverage_finding"]["target_path"].split("/")[-1].split(".")[0]
-        return f"def test_{target}_generated():\n    assert {target!r}\n"
+        return f"def test_{target}_generated():\n    value = {target!r}\n    assert value.isalpha()\n"
 
     monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
     monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
@@ -809,6 +810,70 @@ async def test_coverage_agent_run_task_marks_pending_approval(
 
 
 @pytest.mark.asyncio
+async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
+    tmp_path, fake_coverage_code_manager
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
+        suggested_test_path="tests/test_candidate.py",
+        generated_test="def test_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n",
+    )
+
+    assert ok is True
+    assert reason == "isolated_pytest_passed"
+    assert details["isolated_pytest_command"].startswith("uv run pytest -q ")
+    assert "artifacts/coverage_candidate_validation/test_candidate_" in details[
+        "isolated_pytest_command"
+    ]
+    assert not Path(details["isolated_test_file"]).exists()
+    fake_coverage_code_manager.run_pytest_and_collect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    fake_coverage_code_manager.run_pytest_and_collect.return_value = {
+        "success": False,
+        "command": "uv run pytest -q artifacts/candidate.py",
+        "output": "FAILED",
+        "analysis": {"has_failures": True},
+    }
+
+    async def fake_analyze(_arg):
+        return json.dumps(
+            {
+                "summary": "isolated fail",
+                "coveragerc": {},
+                "findings": [{"target_path": "src/isolated.py"}],
+            }
+        )
+
+    async def fake_generate(_arg):
+        return "def test_isolated_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
+
+    reviewer_calls = []
+
+    async def reviewer_gate(candidate, finding):
+        reviewer_calls.append((candidate, finding))
+        return True
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(reviewer_gate=reviewer_gate)
+
+    rejected = result["results"][0]
+    assert rejected["status"] == "review_rejected"
+    assert rejected["review_reason"] == "generated_candidate_isolated_pytest_failed"
+    assert rejected["validation"]["isolated_pytest_command"].startswith("uv run pytest -q ")
+    assert reviewer_calls == []
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_autonomous_batch_reviewer_gate_reject_payload(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
@@ -822,7 +887,7 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
         return json.dumps({"summary": "one gap", "coveragerc": {}, "findings": [finding]})
 
     async def fake_generate(_arg):
-        return "def test_meaningful_candidate():\n    assert 2 + 2 == 4\n"
+        return "def test_meaningful_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
 
     async def reviewer_gate(candidate, gate_finding):
         assert "test_meaningful_candidate" in candidate
@@ -845,7 +910,7 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
             "target_path": "agent/roles/coverage_agent.py",
             "suggested_test_path": "tests/test_cov.py",
             "review_reason": "rejected",
-            "generated_test_candidate": "def test_meaningful_candidate():\n    assert 2 + 2 == 4",
+            "generated_test_candidate": "def test_meaningful_candidate():\n    value = 'x'.upper()\n    assert value == 'X'",
         }
     ]
     fake_coverage_code_manager.write_generated_test.assert_not_awaited()
@@ -999,6 +1064,34 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
     assert (
         CoverageAgent._candidate_rejection_reason("def test_only_true():\n    assert True")
         == "generated_candidate_trivial_or_missing_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason("def test_constant_math():\n    assert 2 + 2 == 4")
+        == "generated_candidate_trivial_or_missing_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "def test_mock_called(mock):\n    assert mock.called"
+        )
+        == "generated_candidate_tautological_mock_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "from unittest.mock import Mock\n\n"
+            "def test_mock_without_call_verification():\n"
+            "    service = Mock(return_value=1)\n"
+            "    assert service() == 1"
+        )
+        == "generated_candidate_mock_without_call_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "def test_exception_path_without_raises():\n"
+            "    value = 'x'.upper()\n"
+            "    assert value == 'X'",
+            finding={"summary": "missing exception path"},
+        )
+        == "generated_candidate_missing_pytest_raises_for_exception_path"
     )
     assert (
         CoverageAgent._candidate_rejection_reason("def test_broken(:\n    assert True")

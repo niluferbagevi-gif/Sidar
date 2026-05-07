@@ -325,6 +325,17 @@ def test_run_pytest_and_collect_extracts_pytest_from_prefixed_sentence(manager, 
     assert result["command"] == "python -m pytest tests/unit/managers -q"
 
 
+def test_run_pytest_and_collect_accepts_uv_run_pytest(manager, monkeypatch):
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
+
+    result = manager.run_pytest_and_collect(
+        "Validate candidate with: uv run pytest -q tests/unit/test_candidate.py # isolated"
+    )
+
+    assert result["success"] is True
+    assert result["command"] == "uv run pytest -q tests/unit/test_candidate.py"
+
+
 def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeypatch):
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
     result = manager.run_pytest_and_collect("   ")
