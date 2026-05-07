@@ -63,6 +63,7 @@ async def test_init_registers_tools(mocker, tmp_path):
         "analyze_test_artifacts",
         "generate_missing_tests",
         "write_missing_tests",
+        "autonomous_batch_heal",
     ]
 
 
@@ -307,7 +308,13 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
     assert "test_ok" in gen_from_analysis
 
     write_json = await agent._tool_write_missing_tests(
-        '{"suggested_test_path":"tests/a.py","generated_test":"```python\\na=1\\n```","append":false}'
+        json.dumps(
+            {
+                "suggested_test_path": "tests/a.py",
+                "generated_test": "```python\ndef test_generated():\n    assert 1 == 1\n```",
+                "append": False,
+            }
+        )
     )
     write_data = json.loads(write_json)
     assert write_data["success"] is True
@@ -391,11 +398,72 @@ async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager,
     )
 
     write_json = await agent._tool_write_missing_tests(
-        '{"suggested_test_path":"tests/fail.py","generated_test":"print(1)","append":false}'
+        json.dumps(
+            {
+                "suggested_test_path": "tests/fail.py",
+                "generated_test": "def test_fail():\n    assert 1 == 1",
+                "append": False,
+            }
+        )
     )
     write_data = json.loads(write_json)
     assert write_data["success"] is False
     assert "Permission Denied" in write_data["message"]
+
+
+@pytest.mark.asyncio
+async def test_write_missing_tests_rejects_duplicate_test_function(
+    tmp_path, fake_coverage_code_manager
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    test_file = tmp_path / "tests" / "test_dup.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("def test_same():\n    assert 1 == 1\n", encoding="utf-8")
+
+    write_json = await agent._tool_write_missing_tests(
+        json.dumps(
+            {
+                "suggested_test_path": "tests/test_dup.py",
+                "generated_test": "def test_same():\n    assert 2 == 2\n",
+                "append": True,
+            }
+        )
+    )
+    write_data = json.loads(write_json)
+
+    assert write_data["success"] is False
+    assert "çakışması" in write_data["message"]
+    assert write_data["validation"]["collisions"] == ["test_same"]
+    agent.code.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_autonomous_coverage_batch_writes_multiple_findings(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    findings = [
+        {"target_path": "src/a.py", "suggested_test_path": "tests/test_a.py"},
+        {"target_path": "src/b.py", "suggested_test_path": "tests/test_b.py"},
+    ]
+
+    async def fake_analyze(_arg):
+        return json.dumps({"summary": "two gaps", "coveragerc": {}, "findings": findings})
+
+    async def fake_generate(arg):
+        data = json.loads(arg)
+        target = data["coverage_finding"]["target_path"].split("/")[-1].split(".")[0]
+        return f"def test_{target}_generated():\n    assert {target!r}\n"
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(limit=10, batch_size=1)
+
+    assert result["status"] == "batch_completed"
+    assert result["batch_count"] == 2
+    assert [item["status"] for item in result["results"]] == ["tests_written", "tests_written"]
+    assert fake_coverage_code_manager.write_generated_test.await_count == 2
 
 
 @pytest.mark.asyncio
