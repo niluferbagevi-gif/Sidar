@@ -215,13 +215,52 @@ raise SystemExit(asyncio.run(main()))
 PY_COVERAGE_AGENT
 }
 
+run_github_upload() {
+  uv run python github_upload.py
+}
+
+run_preflight_quality_gate() {
+  local test_exit
+  local gate_exit
+  local upload_exit
+
+  echo ""
+  echo "========== Ön Kontrol =========="
+  echo "[PREFLIGHT 1/2] Test: ./run_tests.sh"
+  ./run_tests.sh
+  test_exit=$?
+
+  echo "[PREFLIGHT 2/2] Kontrol: Test çıkış kodu = $test_exit; coverage hedefi = %${AUTONOMOUS_COVERAGE_TARGET}"
+  check_autonomous_quality_gate "$test_exit"
+  gate_exit=$?
+
+  if [ "$gate_exit" -ne 0 ]; then
+    echo "[PREFLIGHT] Kalite kapısı sağlanmadı (durum: $gate_exit); ${ITERATIONS} döngülük otonom onarım akışı başlatılacak."
+    return 1
+  fi
+
+  echo "[PREFLIGHT] Kod zaten sağlıklı; gereksiz otonom onarım döngüsü atlanıyor."
+  echo "[PREFLIGHT] Upload: uv run python github_upload.py"
+  run_github_upload
+  upload_exit=$?
+  if [ "$upload_exit" -ne 0 ]; then
+    echo "[HATA] Ön kontrol sonrası upload adımı başarısız oldu (exit code: $upload_exit)."
+    exit "$upload_exit"
+  fi
+
+  echo "[BİTTİ] Ön kontrol başarıyla geçti; upload tamamlandı, otonom döngü çalıştırılmadı."
+  exit 0
+}
+
+
+run_preflight_quality_gate
 
 for ((i=1; i<=ITERATIONS; i++)); do
   echo ""
   echo "========== Döngü $i/$ITERATIONS =========="
 
   echo "[1/3] Upload: uv run python github_upload.py"
-  uv run python github_upload.py
+  run_github_upload
   upload_exit=$?
   if [ "$upload_exit" -ne 0 ]; then
     echo "[HATA] Upload adımı başarısız oldu (exit code: $upload_exit). Döngü durduruluyor."
