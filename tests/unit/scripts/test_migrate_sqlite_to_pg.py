@@ -7,6 +7,11 @@ import pytest
 from scripts import migrate_sqlite_to_pg
 
 
+def test_safe_table_name_rejects_unknown_table():
+    with pytest.raises(ValueError, match="Geçersiz tablo adı: not_allowed"):
+        migrate_sqlite_to_pg._safe_table_name("not_allowed")
+
+
 def test_load_rows_reads_columns_and_data(tmp_path: Path):
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
