@@ -998,14 +998,46 @@ def test_review_test_candidate_retries_when_rejection_reason_is_empty(reviewer, 
     log_text = caplog.text
     assert "candidate_path=tests/test_x.py" in log_text
     assert "target_path=core/x.py" in log_text
+    assert "suggested_test_path=tests/test_x.py" in log_text
+    assert "finding_index=<unknown>" in log_text
     assert "assert True" in log_text
+    assert "raw_reviewer_json=" in log_text
+    assert result["candidate_preview"].startswith("def test_x()")
+    assert result["raw_reviewer_json"] == ""
+
+
+def test_review_test_candidate_logs_raw_json_and_missing_weaknesses(reviewer, caplog):
+    async def fake_call_llm(*_args, **_kwargs):
+        return json.dumps({"approved": False, "reason": "", "weaknesses": []})
+
+    reviewer.call_llm = fake_call_llm
+    caplog.set_level("WARNING")
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_raw():\n    assert 1 == 1\n",
+            {
+                "target_path": "core/raw.py",
+                "suggested_test_path": "tests/test_raw.py",
+                "finding_index": 7,
+            },
+        )
+    )
+
+    assert result["approved"] is False
+    assert result["invalid_reason"] is True
+    assert result["weaknesses_missing"] is True
+    assert result["finding_index"] == "7"
+    assert "raw_reviewer_json=" in caplog.text
+    assert "weaknesses_missing" in caplog.text
+    assert "suggested_test_path=tests/test_raw.py" in caplog.text
+    assert "finding_index=7" in caplog.text
+    assert "def test_raw()" in caplog.text
 
 
 def test_review_test_candidate_fail_closed_when_retry_still_has_empty_reason(reviewer, caplog):
     async def fake_call_llm(*_args, **_kwargs):
-        return json.dumps(
-            {"approved": False, "reason": "", "weaknesses": ["tautolojik mock"]}
-        )
+        return json.dumps({"approved": False, "reason": "", "weaknesses": ["tautolojik mock"]})
 
     reviewer.call_llm = fake_call_llm
     caplog.set_level("WARNING")

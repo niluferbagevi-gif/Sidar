@@ -734,8 +734,14 @@ class CoverageAgent(BaseAgent):
                 review_reason = "reviewer_gate_not_configured"
                 review_error = ""
                 if reviewer_gate is not None:
+                    gate_finding = {
+                        **finding,
+                        "batch_index": batch_index,
+                        "finding_index": finding_index,
+                        "suggested_test_path": suggested_test_path,
+                    }
                     try:
-                        approved = bool(await reviewer_gate(generated, finding))
+                        approved = bool(await reviewer_gate(generated, gate_finding))
                     except Exception as exc:  # noqa: BLE001 - reviewer gate hata verirse yazma fail-closed olmalı.
                         approved = False
                         review_reason = f"reviewer_gate_exception:{exc.__class__.__name__}"

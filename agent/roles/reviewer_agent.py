@@ -104,6 +104,12 @@ class ReviewerAgent(BaseAgent):
         return [weakness_text] if weakness_text else []
 
     @staticmethod
+    def _candidate_preview(candidate: str, *, max_lines: int = 3) -> str:
+        """ReviewerGate logları için aday testin ilk satırlarını tek satırlı özetler."""
+        lines = [line.rstrip() for line in str(candidate or "").splitlines()[:max_lines]]
+        return " | ".join(line for line in lines if line.strip())[:500] or "<empty>"
+
+    @staticmethod
     def _build_test_candidate_review_prompt(
         candidate: str,
         finding: Mapping[str, object],
@@ -146,12 +152,12 @@ class ReviewerAgent(BaseAgent):
         geçersizse aday fail-closed reddedilir ve kullanıcıya gösterilebilir reason üretilir.
         """
         target_path = str(finding.get("target_path", "") or "").strip()
-        visible_candidate_path = (
-            candidate_path
-            or str(finding.get("suggested_test_path", "") or "").strip()
-            or "<unknown>"
-        )
+        suggested_test_path = str(finding.get("suggested_test_path", "") or "").strip()
+        finding_index = str(finding.get("finding_index", "") or "").strip() or "<unknown>"
+        visible_candidate_path = candidate_path or suggested_test_path or "<unknown>"
+        candidate_preview = self._candidate_preview(candidate)
         last_weaknesses: list[str] = []
+        last_raw_reviewer_json = ""
 
         for attempt in (1, 2):
             retry = attempt == 2
@@ -167,10 +173,14 @@ class ReviewerAgent(BaseAgent):
             except Exception as exc:  # noqa: BLE001 - reviewer gate fail-closed olmalı.
                 reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
                 logger.warning(
-                    "ReviewerAgent semantic review failed candidate_path=%s target_path=%s attempt=%s reason=%s",
+                    "ReviewerAgent semantic review failed candidate_path=%s target_path=%s "
+                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s reason=%s",
                     visible_candidate_path,
                     target_path or "<unknown>",
+                    suggested_test_path or "<unknown>",
+                    finding_index,
                     attempt,
+                    candidate_preview,
                     reason,
                 )
                 return {
@@ -179,8 +189,15 @@ class ReviewerAgent(BaseAgent):
                     "weaknesses": last_weaknesses,
                     "attempts": attempt,
                     "invalid_reason": False,
+                    "target_path": target_path,
+                    "suggested_test_path": suggested_test_path,
+                    "finding_index": finding_index,
+                    "candidate_preview": candidate_preview,
+                    "raw_reviewer_json": last_raw_reviewer_json,
+                    "weaknesses_missing": not last_weaknesses,
                 }
 
+            last_raw_reviewer_json = str(verdict_raw or "")
             if not isinstance(verdict, dict):
                 verdict = {}
             approved = bool(verdict.get("approved", False))
@@ -188,15 +205,32 @@ class ReviewerAgent(BaseAgent):
             weaknesses = self._coerce_review_weaknesses(verdict.get("weaknesses"))
             last_weaknesses = weaknesses
             invalid_rejection = not approved and not reason
+            weaknesses_missing = not weaknesses
+            if not approved and weaknesses_missing:
+                logger.warning(
+                    "ReviewerAgent weaknesses_missing candidate_path=%s target_path=%s "
+                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s",
+                    visible_candidate_path,
+                    target_path or "<unknown>",
+                    suggested_test_path or "<unknown>",
+                    finding_index,
+                    attempt,
+                    candidate_preview,
+                )
             if invalid_rejection:
                 weakness_preview = weaknesses[:2]
                 logger.warning(
                     "Invalid ReviewerAgent rejection: approved=false with empty reason; "
-                    "candidate_path=%s target_path=%s attempt=%s weakness_signals=%s",
+                    "candidate_path=%s target_path=%s suggested_test_path=%s finding_index=%s "
+                    "attempt=%s weakness_signals=%s candidate_preview=%s raw_reviewer_json=%s",
                     visible_candidate_path,
                     target_path or "<unknown>",
+                    suggested_test_path or "<unknown>",
+                    finding_index,
                     attempt,
                     weakness_preview,
+                    candidate_preview,
+                    last_raw_reviewer_json,
                 )
                 if attempt == 1:
                     continue
@@ -211,6 +245,12 @@ class ReviewerAgent(BaseAgent):
                 "weaknesses": weaknesses,
                 "attempts": attempt,
                 "invalid_reason": invalid_rejection,
+                "target_path": target_path,
+                "suggested_test_path": suggested_test_path,
+                "finding_index": finding_index,
+                "candidate_preview": candidate_preview,
+                "raw_reviewer_json": last_raw_reviewer_json if invalid_rejection else "",
+                "weaknesses_missing": weaknesses_missing,
             }
 
         return {
@@ -219,6 +259,12 @@ class ReviewerAgent(BaseAgent):
             "weaknesses": last_weaknesses,
             "attempts": 2,
             "invalid_reason": True,
+            "target_path": target_path,
+            "suggested_test_path": suggested_test_path,
+            "finding_index": finding_index,
+            "candidate_preview": candidate_preview,
+            "raw_reviewer_json": last_raw_reviewer_json,
+            "weaknesses_missing": not last_weaknesses,
         }
 
     async def _build_dynamic_test_content(self, code_context: str) -> str:
@@ -853,9 +899,9 @@ class ReviewerAgent(BaseAgent):
         )
         mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
         status = "planned" if is_blocked else "observe_only"
-        validation_commands = list(
-            dict.fromkeys((regression_commands or []) + ["uv run pytest"])
-        )[:4]
+        validation_commands = list(dict.fromkeys((regression_commands or []) + ["uv run pytest"]))[
+            :4
+        ]
         return {
             "status": status,
             "mode": mode,

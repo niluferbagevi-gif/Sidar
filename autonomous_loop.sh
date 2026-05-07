@@ -156,16 +156,24 @@ async def _review_with_reviewer_agent(cfg: Config, candidate: str, finding: dict
     approved = bool(result.get("approved", False))
     reason = str(result.get("reason", "") or "").strip()
     weaknesses = result.get("weaknesses") or []
+    candidate_preview = str(result.get("candidate_preview") or "").strip() or "<empty>"
     print(
         "[ReviewerAgent] "
-        f"approved={approved} reason={reason} attempts={result.get('attempts', 1)} "
-        f"candidate_path={candidate_path or '<unknown>'} "
-        f"target_path={finding.get('target_path', '<unknown>')}"
+        f"approved={approved} reason={reason or '<empty>'} attempts={result.get('attempts', 1)} "
+        f"target_path={result.get('target_path') or finding.get('target_path', '<unknown>')} "
+        f"suggested_test_path={result.get('suggested_test_path') or candidate_path or '<unknown>'} "
+        f"finding_index={result.get('finding_index') or finding.get('finding_index', '<unknown>')} "
+        f"candidate_preview={candidate_preview}"
     )
     if weaknesses:
         print(f"[ReviewerAgent] weaknesses={list(weaknesses)[:2]}")
+    elif not approved:
+        print("[ReviewerAgent] weaknesses_missing=true")
     if result.get("invalid_reason"):
         print("[ReviewerAgent] invalid_reason=true; boş red gerekçesi fail-closed reddedildi.")
+        raw_json = str(result.get("raw_reviewer_json") or "").strip()
+        if raw_json:
+            print(f"[ReviewerAgent] raw_reviewer_json={raw_json[:1000]}")
     return approved
 
 

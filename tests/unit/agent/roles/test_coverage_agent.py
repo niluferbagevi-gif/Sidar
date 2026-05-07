@@ -826,7 +826,7 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
 
     async def reviewer_gate(candidate, gate_finding):
         assert "test_meaningful_candidate" in candidate
-        assert gate_finding == finding
+        assert gate_finding == {**finding, "batch_index": 1, "finding_index": 1}
         return False
 
     monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
