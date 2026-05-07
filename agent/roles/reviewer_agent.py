@@ -305,7 +305,7 @@ class ReviewerAgent(BaseAgent):
                 "weaknesses_missing": weaknesses_missing,
             }
 
-        return {
+        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar.
             "approved": False,
             "reason": "Geçersiz reviewer çıktısı: reason doğrulanamadı.",
             "weaknesses": last_weaknesses,

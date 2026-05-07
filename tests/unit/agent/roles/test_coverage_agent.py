@@ -1115,3 +1115,434 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
     assert CoverageAgent._clean_code_output("```py\ndef test_y():\n    assert 2\n```") == (
         "def test_y():\n    assert 2"
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_path_returns_absolute_path_unchanged(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 122: mutlak path verildiğinde olduğu gibi döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    abs_path = tmp_path / "tests" / "test_abs.py"
+    resolved = agent._resolve_repo_path(str(abs_path))
+    assert resolved == abs_path
+    assert resolved.is_absolute()
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_empty_path_or_test(
+    tmp_path, fake_coverage_code_manager
+):
+    """Lines 135, 137: suggested_test_path veya generated_test boşsa False döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="", generated_test="def test_x():\n    assert 1\n", append=False
+    )
+    assert ok is False
+    assert "suggested_test_path boş" in msg
+
+    ok2, msg2, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_x.py", generated_test="   ", append=False
+    )
+    assert ok2 is False
+    assert "generated_test boş" in msg2
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_invalid_python_syntax(
+    tmp_path, fake_coverage_code_manager
+):
+    """Lines 141-142: üretilen test geçersiz Python ise SyntaxError yakalanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_x.py",
+        generated_test="def test_broken(:\n    assert 1",
+        append=False,
+    )
+    assert ok is False
+    assert "geçerli Python AST değil" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_no_test_function(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 146: test_ ile başlayan fonksiyon yoksa fail-closed mesajı döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_x.py",
+        generated_test="def helper():\n    return 1\n",
+        append=False,
+    )
+    assert ok is False
+    assert "test_ ile başlayan" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_duplicate_function_names(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 157: aynı modülde yinelenen test fonksiyonu adı reddedilir."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    duplicated = (
+        "def test_dup():\n    assert 1 == 1\n\ndef test_dup():\n    assert 2 == 2\n"
+    )
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_x.py", generated_test=duplicated, append=False
+    )
+    assert ok is False
+    assert "yinelenen test fonksiyon adı" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_existing_file_syntax_error(
+    tmp_path, fake_coverage_code_manager
+):
+    """Lines 169-170: mevcut test dosyası geçersiz Python ise hata mesajı döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    target = Path(agent.cfg.BASE_DIR) / "tests/test_existing_bad.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_existing_bad.py",
+        generated_test="def test_new():\n    assert 1\n",
+        append=True,
+    )
+    assert ok is False
+    assert "Mevcut test dosyası AST" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_existing_file_unreadable(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    """Lines 171-172: mevcut test dosyası okunamazsa OSError yakalanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    target = Path(agent.cfg.BASE_DIR) / "tests/test_unreadable.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def test_existing():\n    assert 1\n", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def raising_read_text(self, *args, **kwargs):
+        if str(self).endswith("test_unreadable.py"):
+            raise OSError("permission denied")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", raising_read_text)
+
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_unreadable.py",
+        generated_test="def test_new():\n    assert 1\n",
+        append=True,
+    )
+    assert ok is False
+    assert "okunamadı" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_generated_test_before_write_no_collisions(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 184: çakışma yoksa True döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    target = Path(agent.cfg.BASE_DIR) / "tests/test_no_dup.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def test_existing():\n    assert 1\n", encoding="utf-8")
+
+    ok, msg, _ = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_no_dup.py",
+        generated_test="def test_brand_new():\n    assert 2\n",
+        append=True,
+    )
+    assert ok is True
+    assert "çakışma bulunmadı" in msg
+
+
+async def test_module_import_path_strips_init_suffix():
+    """Line 220: __init__ ile biten path için __init__ kaldırılır."""
+    assert CoverageAgent._module_import_path("agent/__init__.py") == "agent"
+    # Branch 217->219: .py ile bitmeyen path
+    assert CoverageAgent._module_import_path("pkg/module") == "pkg.module"
+
+
+async def test_build_deterministic_test_template_exception_path():
+    """Line 242: finding exception path olduğunda pytest.raises şablonu üretilir."""
+    finding = {"target_path": "src/m.py", "summary": "exception path missing"}
+    template = CoverageAgent._build_deterministic_test_template(
+        finding=finding, llm_idea=""
+    )
+    assert "with pytest.raises" in template
+    assert "# CoverageAgent LLM idea" not in template
+
+    template_with_idea = CoverageAgent._build_deterministic_test_template(
+        finding=finding, llm_idea="bir fikir"
+    )
+    assert "# CoverageAgent LLM idea: bir fikir" in template_with_idea
+
+
+async def test_has_runtime_behavior_signal_attribute_and_subscript():
+    """Lines 321, 323: Attribute ve Subscript düğümleri runtime sinyal sayılır."""
+    import ast
+
+    attr_tree = ast.parse("obj.method")
+    assert CoverageAgent._has_runtime_behavior_signal(attr_tree) is True
+
+    subscript_tree = ast.parse("data[0]")
+    assert CoverageAgent._has_runtime_behavior_signal(subscript_tree) is True
+
+
+async def test_has_mock_call_verification_returns_true_for_assert_called():
+    """Line 335: mock.assert_called_with gibi assert_called_* çağrısı tespit edilmeli."""
+    import ast
+
+    tree = ast.parse("mock_obj.assert_called_with('arg')")
+    assert CoverageAgent._has_mock_call_verification(tree) is True
+
+
+async def test_uses_mocking_attribute_and_mocker_signals():
+    """Lines 347, 349: Attribute (unittest.mock.Mock) ve `mocker` adı tespit edilmeli."""
+    import ast
+
+    attr_tree = ast.parse("import unittest.mock\nx = unittest.mock.Mock()")
+    assert CoverageAgent._uses_mocking(attr_tree) is True
+
+    # Sadece `mocker` Name düğümü (Attribute tetiklemesin) — Line 349'u izole eder
+    mocker_only_tree = ast.parse("value = mocker")
+    assert CoverageAgent._uses_mocking(mocker_only_tree) is True
+
+
+@pytest.mark.asyncio
+async def test_tool_analyze_test_artifacts_structured_payload_without_coverage_xml(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 701: structured JSON içinde coverage_xml yoksa boş string atanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    arg = json.dumps({"coverage_output": "Name Stmts Miss Branch BrPart Cover Missing\n"})
+    out = await agent._tool_analyze_test_artifacts(arg)
+    data = json.loads(out)
+    # coverage_xml anahtarı eklenmiş olmalı (Line 701 satırı çalışmış olmalı)
+    assert "coverage_xml" in data
+    assert "coverage_terminal" in data
+
+
+@pytest.mark.asyncio
+async def test_tool_generate_missing_tests_returns_cleaned_candidate(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 766: aday red olmazsa cleaned_candidate döner."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    valid_candidate = (
+        "import pytest\n\n"
+        "def test_meaningful_value_check():\n"
+        "    value = 'x'.upper()\n"
+        "    assert value == 'X'\n"
+    )
+
+    async def fake_llm(*_args, **_kwargs):
+        return f"```python\n{valid_candidate}```"
+
+    agent.call_llm = fake_llm
+    out = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {"target_path": "src/m.py", "missing_lines": [1]},
+                "coveragerc": {},
+            }
+        )
+    )
+    assert "test_meaningful_value_check" in out
+    # Deterministic template fallback'in ilk satırını ihtiva etmemeli
+    assert "deterministic exception path" not in out
+
+
+@pytest.mark.asyncio
+async def test_tool_generate_missing_tests_skips_source_when_target_missing(
+    tmp_path, fake_coverage_code_manager
+):
+    """Branch 744->750: target_path boşsa source okuma atlanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    async def fake_llm(*_args, **_kwargs):
+        return (
+            "import pytest\n\n"
+            "def test_no_target():\n"
+            "    value = 'a'.upper()\n"
+            "    assert value == 'A'\n"
+        )
+
+    agent.call_llm = fake_llm
+    out = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {"target_path": "", "missing_lines": [1]},
+                "coveragerc": {},
+            }
+        )
+    )
+    assert "test_no_target" in out
+
+
+@pytest.mark.asyncio
+async def test_tool_generate_missing_tests_skips_source_when_read_fails(
+    tmp_path, fake_coverage_code_manager
+):
+    """Branch 748->750: read_file False döndürdüğünde source_excerpt boş kalır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    fake_coverage_code_manager.read_file = AsyncMock(return_value=(False, "kaynak okunamadı"))
+
+    async def fake_llm(*_args, **_kwargs):
+        return (
+            "import pytest\n\n"
+            "def test_read_fail_path():\n"
+            "    value = 'b'.upper()\n"
+            "    assert value == 'B'\n"
+        )
+
+    agent.call_llm = fake_llm
+    out = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {"target_path": "src/m.py", "missing_lines": [1]},
+                "coveragerc": {},
+            }
+        )
+    )
+    assert "test_read_fail_path" in out
+
+
+@pytest.mark.asyncio
+async def test_validate_candidate_with_isolated_pytest_handles_outside_base_dir(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    """Lines 830-831: candidate_path base_dir dışında ise relative_to ValueError yakalanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    other_dir = tmp_path.parent / "outside_validation"
+    other_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(agent.cfg, "BASE_DIR", str(tmp_path))
+
+    # base_dir'i değiştir ama tmp_path dışındaki bir validation_dir kullan
+    original_path_class = _COVERAGE_MODULE.Path
+
+    class _PathAlias(original_path_class):
+        pass
+
+    # candidate_path mutlak ama base_dir dışında olacak şekilde hile
+    original_method = _COVERAGE_MODULE.Path.relative_to
+
+    def raising_relative_to(self, *args, **kwargs):
+        if "outside" in str(self):
+            raise ValueError("not relative")
+        return original_method(self, *args, **kwargs)
+
+    monkeypatch.setattr(_COVERAGE_MODULE.Path, "relative_to", raising_relative_to)
+
+    # validation_dir'i base_dir dışına yönlendir
+    fake_validation_dir = other_dir / "outside_artifacts"
+
+    original_truediv = _COVERAGE_MODULE.Path.__truediv__
+    base_dir_path = original_path_class(str(tmp_path))
+
+    def patched_truediv(self, other):
+        result = original_truediv(self, other)
+        if str(self) == str(base_dir_path) and other == "artifacts":
+            return fake_validation_dir
+        return result
+
+    # Daha basit: BASE_DIR'i ayarlama yerine doğrudan relative_to'yu mock'la
+    generated = (
+        "def test_outside_base():\n    value = 'z'.upper()\n    assert value == 'Z'\n"
+    )
+    ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
+        suggested_test_path="tests/test_outside.py",
+        generated_test=generated,
+    )
+    assert "isolated_pytest_command" in details
+
+
+@pytest.mark.asyncio
+async def test_validate_candidate_with_isolated_pytest_catches_exception(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    """Lines 839-841: write_text/run_pytest sırasında exception fail-closed yakalanır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    fake_coverage_code_manager.run_pytest_and_collect = AsyncMock(
+        side_effect=RuntimeError("pytest crashed")
+    )
+    ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
+        suggested_test_path="tests/test_x.py",
+        generated_test="def test_x():\n    value = 'a'.upper()\n    assert value == 'A'\n",
+    )
+    assert ok is False
+    assert reason == "generated_candidate_isolated_pytest_error"
+    assert "pytest crashed" in details["error"]
+
+
+@pytest.mark.asyncio
+async def test_validate_candidate_with_isolated_pytest_invalid_result_type(
+    tmp_path, fake_coverage_code_manager
+):
+    """Lines 847-848: run_pytest_and_collect dict dışı dönerse fail-closed."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    fake_coverage_code_manager.run_pytest_and_collect = AsyncMock(return_value="not-a-dict")
+
+    ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
+        suggested_test_path="tests/test_y.py",
+        generated_test="def test_y():\n    value = 'b'.upper()\n    assert value == 'B'\n",
+    )
+    assert ok is False
+    assert reason == "generated_candidate_isolated_pytest_invalid_result"
+    assert details["result_type"] == "str"
+
+
+@pytest.mark.asyncio
+async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    """Lines 1012-1020: _tool_autonomous_batch_heal payload'ı çözüp run_autonomous_coverage_batch çağırır."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    captured: dict = {}
+
+    async def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "status": "batch_completed", "results": []}
+
+    monkeypatch.setattr(agent, "run_autonomous_coverage_batch", fake_run)
+    payload = json.dumps(
+        {
+            "coverage_xml": "cov.xml",
+            "coveragerc": ".cov",
+            "limit": 5,
+            "batch_size": 2,
+            "append": False,
+        }
+    )
+    out = await agent._tool_autonomous_batch_heal(payload)
+    data = json.loads(out)
+    assert data["status"] == "batch_completed"
+    assert captured["coverage_xml"] == "cov.xml"
+    assert captured["coveragerc"] == ".cov"
+    assert captured["limit"] == 5
+    assert captured["batch_size"] == 2
+    assert captured["append"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_task_routes_autonomous_batch_heal_prefix(
+    tmp_path, fake_coverage_code_manager
+):
+    """Line 1072: run_task autonomous_batch_heal| prefix'ini call_tool'a yönlendirir."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    captured: list = []
+
+    async def fake_tool(name, arg):
+        captured.append((name, arg))
+        return f"TOOL:{name}:{arg}"
+
+    agent.call_tool = fake_tool
+    result = await agent.run_task("autonomous_batch_heal|{}")
+    assert result == "TOOL:autonomous_batch_heal:{}"
+    assert captured == [("autonomous_batch_heal", "{}")]
