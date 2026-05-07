@@ -7,7 +7,7 @@
       "command": "bash",
       "args": [
         "-lc",
-        "if [ -f .venv/bin/activate ]; then source .venv/bin/activate && echo '✅ Sidar sanal ortamı aktif.'; else echo '⚠️ .venv bulunamadı; önce uv sync --all-extras çalıştırın.'; fi; echo ''; read -r -p '🤖 Otonom döngü başlatılsın mı? (e/H): ' choice; if [[ \"$choice\" =~ ^[eE] ]]; then ./autonomous_loop.sh; else echo 'ℹ️ Otonom döngü atlandı. Terminal manuel kullanıma hazır.'; exec bash -i; fi"
+        "if [ -f .venv/bin/activate ]; then source .venv/bin/activate && echo \"✅ Sidar sanal ortamı aktif.\"; else echo \"⚠️ .venv bulunamadı; önce uv sync --all-extras çalıştırın.\"; fi; echo \"\"; read -r -p \"🤖 Otonom döngü başlatılsın mı? (e/H): \" choice; if [[ \"$choice\" =~ ^[eE] ]]; then ./autonomous_loop.sh; else echo \"ℹ️ Otonom döngü atlandı. Terminal manuel kullanıma hazır.\"; exec bash -i; fi"
       ],
       "runOptions": {
         "runOn": "folderOpen"
