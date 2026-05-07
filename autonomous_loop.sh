@@ -6,11 +6,45 @@ cd "${SCRIPT_DIR}"
 
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
-AUTONOMOUS_COVERAGE_TARGET="${AUTONOMOUS_LOOP_COVERAGE_TARGET:-100}"
+AUTONOMOUS_COVERAGE_PROFILE="${AUTONOMOUS_LOOP_COVERAGE_PROFILE:-short}"
+AUTONOMOUS_COVERAGE_TARGET_FILE="${AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE:-}"
 AUTONOMOUS_COVERAGE_JSON="${AUTONOMOUS_LOOP_COVERAGE_JSON:-coverage.json}"
 AUTONOMOUS_COVERAGE_XML="${AUTONOMOUS_LOOP_COVERAGE_XML:-coverage.xml}"
 AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-10}"
 AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
+
+resolve_autonomous_coverage_target() {
+  if [ -n "${AUTONOMOUS_LOOP_COVERAGE_TARGET+x}" ]; then
+    echo "${AUTONOMOUS_LOOP_COVERAGE_TARGET}"
+    return 0
+  fi
+
+  case "${AUTONOMOUS_COVERAGE_PROFILE}" in
+    short)
+      echo "99.8"
+      ;;
+    full)
+      echo "100"
+      ;;
+    file)
+      if [ -z "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
+        echo "[HATA] AUTONOMOUS_LOOP_COVERAGE_PROFILE=file için AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE verilmelidir." >&2
+        return 2
+      fi
+      echo "100"
+      ;;
+    *)
+      echo "[HATA] AUTONOMOUS_LOOP_COVERAGE_PROFILE short/full/file olmalı. Verilen: ${AUTONOMOUS_COVERAGE_PROFILE}" >&2
+      return 2
+      ;;
+  esac
+}
+
+AUTONOMOUS_COVERAGE_TARGET="$(resolve_autonomous_coverage_target)"
+resolve_target_exit=$?
+if [ "${resolve_target_exit}" -ne 0 ]; then
+  exit "${resolve_target_exit}"
+fi
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
 fi
@@ -35,28 +69,43 @@ if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
 fi
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
-echo "[INFO] CI/CD ve hızlı yerel testler run_tests.sh/.coveragerc eşiğini korur; otonom döngü hedefi: %${AUTONOMOUS_COVERAGE_TARGET}."
+echo "[INFO] CI/CD ve hızlı yerel testler run_tests.sh/.coveragerc eşiğini korur; otonom döngü profili: ${AUTONOMOUS_COVERAGE_PROFILE}; hedef: %${AUTONOMOUS_COVERAGE_TARGET}."
+if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
+  echo "[INFO] Otonom coverage hedef dosyası: ${AUTONOMOUS_COVERAGE_TARGET_FILE}."
+fi
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
 
 read_coverage_percent() {
   local coverage_json="${1:-coverage.json}"
+  local target_file="${2:-}"
 
   if [ ! -f "${coverage_json}" ]; then
     echo "[UYARI] ${coverage_json} bulunamadı; coverage hedefi değerlendirilemiyor." >&2
     return 2
   fi
 
-  python - "${coverage_json}" <<'PY_COVERAGE_PERCENT'
+  python - "${coverage_json}" "${target_file}" <<'PY_COVERAGE_PERCENT'
 import json
 import sys
 from pathlib import Path
 
 coverage_path = Path(sys.argv[1])
+target_file = (sys.argv[2] if len(sys.argv) > 2 else "").strip().lstrip("./")
 try:
     payload = json.loads(coverage_path.read_text(encoding="utf-8"))
-    percent = payload["totals"]["percent_covered"]
+    if target_file:
+        files = payload.get("files") or {}
+        normalized_files = {str(path).lstrip("./"): data for path, data in files.items()}
+        file_payload = normalized_files[target_file]
+        percent = file_payload["summary"]["percent_covered"]
+    else:
+        percent = payload["totals"]["percent_covered"]
+except KeyError as exc:
+    scope = f"files[{target_file!r}].summary.percent_covered" if target_file else "totals.percent_covered"
+    print(f"[UYARI] {coverage_path} {scope} içermiyor: {exc}", file=sys.stderr)
+    raise SystemExit(2) from exc
 except Exception as exc:  # noqa: BLE001 - shell kullanıcılarına net hata vermek için geniş yakalanır.
-    print(f"[UYARI] {coverage_path} okunamadı veya totals.percent_covered içermiyor: {exc}", file=sys.stderr)
+    print(f"[UYARI] {coverage_path} okunamadı: {exc}", file=sys.stderr)
     raise SystemExit(2) from exc
 
 try:
@@ -98,7 +147,7 @@ check_autonomous_quality_gate() {
     return 1
   fi
 
-  current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}")"
+  current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}" "${AUTONOMOUS_COVERAGE_TARGET_FILE}")"
   coverage_status=$?
   if [ "${coverage_status}" -ne 0 ]; then
     echo "[UYARI] Testler geçti fakat otonom coverage metriği okunamadı; iyileştirme döngüsü tetiklenecek."
@@ -340,7 +389,7 @@ run_preflight_quality_gate() {
   echo "========== Ön Kontrol =========="
   if [ -f "${AUTONOMOUS_COVERAGE_JSON}" ] && [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
     echo "[PREFLIGHT 1/3] Mevcut coverage artefaktları bulundu: ${AUTONOMOUS_COVERAGE_JSON}, ${AUTONOMOUS_COVERAGE_XML}"
-    current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}")"
+    current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}" "${AUTONOMOUS_COVERAGE_TARGET_FILE}")"
     coverage_status=$?
     if [ "${coverage_status}" -eq 0 ] && coverage_target_reached "${current_percent}" "${AUTONOMOUS_COVERAGE_TARGET}"; then
       echo "[PREFLIGHT 2/3] Mevcut coverage hedefi sağlıyor: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."

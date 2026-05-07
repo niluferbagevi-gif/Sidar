@@ -88,6 +88,23 @@ python cli.py -c '{"command":"pytest --cov-fail-under=90","cwd":"."}'
 
 Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu ilerlemek için 3 aşamalı prefix akışı daha doğrudur.
 
+
+## 4.1) Otonom döngü coverage profilleri
+
+`./autonomous_loop.sh`, CI kalite kapısını değiştirmez; `run_tests.sh` ve `.coveragerc`
+üzerindeki eşikler aynen korunur. Otonom döngünün kendi iyileştirme hedefi ise
+maliyet/iterasyon kontrolü için profillenebilir:
+
+| Profil | Komut | Hedef | Kullanım amacı |
+| --- | --- | --- | --- |
+| Kısa (varsayılan) | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short ./autonomous_loop.sh` | `%99.8` | Lokal döngüde son küçük yüzde dilimleri için gereksiz LLM/ajan tekrarını azaltır. |
+| Tam | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full ./autonomous_loop.sh` | `%100` | Bilinçli olarak tam coverage hedeflenen uzun koşularda kullanılır. |
+| Dosya | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=file AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE=agent/roles/coverage_agent.py ./autonomous_loop.sh` | hedef dosyada `%100` | Belirli bir dosyayı kapatmaya odaklanır; toplam coverage yerine `coverage.json` içindeki dosya özetini okur. |
+
+Geriye dönük uyumluluk için `AUTONOMOUS_LOOP_COVERAGE_TARGET` verilirse profil hedefini
+ezer. Örneğin `AUTONOMOUS_LOOP_COVERAGE_TARGET=99.5 ./autonomous_loop.sh` doğrudan
+`%99.5` otonom hedefiyle çalışır.
+
 ## 5) Pratik öneri (senin mevcut çıktına göre)
 
 Senin loguna göre hızlı kazanım için düşük coverage ve nispeten izole modüllerden başla:
