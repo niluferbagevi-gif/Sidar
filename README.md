@@ -583,12 +583,19 @@ uv sync --all-extras
 uv run pytest -c pyproject.toml tests/ -v
 uv run pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
+# Alternatif olarak aynı betiği doğrudan çalıştırabilirsiniz: ./run_tests.sh
 uv run --with mutmut mutmut run --max-children 2
 cd web_ui_react && npm run test:critical
 bash scripts/ci/flaky_scan.sh
 uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
+> Not: `bash run_tests.sh` ve çalıştırma izni verilmiş checkout'larda `./run_tests.sh`
+> aynı QA betiğini başlatır; dokümantasyonda `bash` formu kabuk bağımsızlığını netleştirmek
+> için korunur. Betik önce pre-commit autofix/linter adımlarını, ardından Python sürüm
+> kontrolü, model senkronizasyonu, statik analiz, güvenlik taramaları, servis hazırlığı
+> ve pytest/coverage aşamalarını sırayla yürütür.
+>
 > Not: `source .venv/bin/activate` zorunlu değildir. `uv run`, repo kökündeki uv ortamını
 > kendiliğinden kullanır.
 >
