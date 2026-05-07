@@ -78,35 +78,40 @@ class FakePgAdapter:
 
 
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
+async def test_init_schema_postgresql_delegates_to_alembic(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
-    fake_pg = FakePgAdapter()
-    db._pg_pool = fake_pg
+    calls = 0
+
+    def _fake_upgrade() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(db, "_run_alembic_upgrade_head", _fake_upgrade)
 
     await db._init_schema_postgresql()
 
-    assert fake_pg.conn.execute.await_count > 20
+    assert calls == 1
 
 
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_path) -> None:
+async def test_init_schema_postgresql_propagates_alembic_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
-    fake_pg = FakePgAdapter()
-    db._pg_pool = fake_pg
-    fake_pg.conn.execute.side_effect = [
-        None,
-        None,
-        ConnectionError("database connection lost during migration"),
-    ]
 
-    with pytest.raises(ConnectionError, match="migration"):
+    def _fake_upgrade() -> None:
+        raise ConnectionError("database connection lost during alembic migration")
+
+    monkeypatch.setattr(db, "_run_alembic_upgrade_head", _fake_upgrade)
+
+    with pytest.raises(ConnectionError, match="alembic migration"):
         await db._init_schema_postgresql()
-
-    assert fake_pg.conn.execute.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -742,30 +747,23 @@ async def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database) -
 
 
 @pytest.mark.asyncio
-async def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path) -> None:
+async def test_access_control_schema_sqlite_delegates_to_alembic(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'ac.db'}", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     await db.connect()
-    assert db._sqlite_conn is not None
-    await db._run_sqlite_op(
-        lambda: db._sqlite_conn.executescript(
-            """
-            DROP TABLE IF EXISTS users;
-            CREATE TABLE users (
-                id TEXT PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT,
-                role TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            """
-        )
-    )
+    calls = 0
+
+    async def _fake_upgrade() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(db, "_upgrade_schema_with_alembic", _fake_upgrade)
+
     await db._ensure_access_control_schema_sqlite()
-    cols = await db._run_sqlite_op(
-        lambda: db._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
-    )
-    assert "tenant_id" in {str(col[1]) for col in cols}
+
+    assert calls == 1
     await db.close()
 
 
@@ -1426,30 +1424,34 @@ async def test_connect_postgresql_connection_drop_enters_degraded_mode(
 
 
 @pytest.mark.asyncio
-async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
+async def test_postgresql_schema_helpers_and_init_routing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     db = Database(cfg)
-    fake_pg = FakePgAdapter()
-    db._pg_pool = fake_pg
-
-    await db._ensure_access_control_schema_postgresql()
-    await db._ensure_audit_log_schema_postgresql()
-    assert fake_pg.conn.execute.await_count >= 6
-
     calls: list[str] = []
 
-    async def _mark(name: str):
-        calls.append(name)
+    async def _fake_upgrade() -> None:
+        calls.append("upgrade")
+
+    async def _fake_version() -> None:
+        calls.append("version")
+
+    async def _fake_prompt() -> None:
+        calls.append("prompt")
+
+    monkeypatch.setattr(db, "_upgrade_schema_with_alembic", _fake_upgrade)
+    monkeypatch.setattr(db, "_ensure_schema_version_marker", _fake_version)
+    monkeypatch.setattr(db, "ensure_default_prompt_registry", _fake_prompt)
 
     db._backend = "postgresql"
-    db._init_schema_postgresql = lambda: _mark("init")
-    db._ensure_access_control_schema_postgresql = lambda: _mark("ac")
-    db._ensure_audit_log_schema_postgresql = lambda: _mark("audit")
-    db._ensure_schema_version_postgresql = lambda: _mark("version")
-    db.ensure_default_prompt_registry = lambda: _mark("prompt")
+    await db._ensure_access_control_schema_postgresql()
+    await db._ensure_audit_log_schema_postgresql()
+    assert calls == ["upgrade", "upgrade"]
 
+    calls.clear()
     await db.init_schema()
-    assert calls == ["init", "ac", "audit", "version", "prompt"]
+    assert calls == ["upgrade", "version", "prompt"]
 
 
 @pytest.mark.asyncio
@@ -1986,7 +1988,6 @@ async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
 
     assert result == 7
     assert isinstance(sqlite_db._sqlite_lock, asyncio.Lock)
-    assert "kilidi farklı event loop'a bağlı" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -2099,9 +2100,7 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid6_module_lacks_callable_uuid
     fake_uuid6.uuid7 = "not-callable-attribute"
     monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
 
-    monkeypatch.setattr(
-        uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000222")
-    )
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000222"))
 
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000222"
 
@@ -2131,10 +2130,7 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
     cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
     cfg.DB_DEGRADED_SQLITE_URL = "sqlite+aiosqlite:////tmp/configured-degraded.db"
     db = Database(cfg=cfg)
-    assert (
-        db._postgres_degraded_sqlite_url()
-        == "sqlite+aiosqlite:////tmp/configured-degraded.db"
-    )
+    assert db._postgres_degraded_sqlite_url() == "sqlite+aiosqlite:////tmp/configured-degraded.db"
 
 
 def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:

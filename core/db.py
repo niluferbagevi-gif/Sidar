@@ -439,15 +439,20 @@ class Database:
             self._sqlite_write_lock = asyncio.Lock()
         else:
             lock_loop = getattr(self._sqlite_write_lock, "_loop", None)
-            if lock_loop is not None and lock_loop is not running_loop:
+            if not isinstance(self._sqlite_write_lock, asyncio.Lock) or (
+                lock_loop is not None and lock_loop is not running_loop
+            ):
                 logger.warning(
                     "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
                 )
                 self._sqlite_write_lock = asyncio.Lock()
-        if not write:
-            return await asyncio.to_thread(operation)
-
+        # sqlite3 connections are not safe for concurrent cursor use from multiple
+        # worker threads even when check_same_thread=False. Alembic-managed schemas
+        # keep the same connection open longer in tests, so serialize reads too.
         async with self._sqlite_write_lock:
+            if not write:
+                return await asyncio.to_thread(operation)
+
             for attempt in range(1, 4):
                 try:
                     return await asyncio.to_thread(operation)
@@ -497,7 +502,9 @@ class Database:
             self._sqlite_write_lock = asyncio.Lock()
         else:
             lock_loop = getattr(self._sqlite_write_lock, "_loop", None)
-            if lock_loop is not None and lock_loop is not running_loop:
+            if not isinstance(self._sqlite_write_lock, asyncio.Lock) or (
+                lock_loop is not None and lock_loop is not running_loop
+            ):
                 self._sqlite_write_lock = asyncio.Lock()
 
         async with self._sqlite_write_lock:
@@ -595,504 +602,91 @@ class Database:
             await pool.close()
 
     async def init_schema(self) -> None:
-        if self._backend == "postgresql":
-            await self._init_schema_postgresql()
-            await self._ensure_access_control_schema_postgresql()
-            await self._ensure_audit_log_schema_postgresql()
-            await self._ensure_schema_version_postgresql()
-            await self.ensure_default_prompt_registry()
-            return
-        await self._init_schema_sqlite()
-        await self._ensure_access_control_schema_sqlite()
-        await self._ensure_audit_log_schema_sqlite()
-        await self._ensure_schema_version_sqlite()
+        """Apply the canonical Alembic-managed schema and seed runtime defaults."""
+        await self._upgrade_schema_with_alembic()
+        await self._ensure_schema_version_marker()
         await self.ensure_default_prompt_registry()
 
-    async def _ensure_access_control_schema_sqlite(self) -> None:
+    def _alembic_database_url(self) -> str:
+        if self._backend == "sqlite":
+            if self._sqlite_path is not None:
+                return f"sqlite+aiosqlite:///{self._sqlite_path.as_posix()}"
+            return self.database_url
+        return self.database_url
+
+    def _is_sqlite_memory_database(self) -> bool:
+        return self._backend == "sqlite" and str(self.database_url).endswith(":memory:")
+
+    async def _upgrade_schema_with_alembic(self) -> None:
+        """Run Alembic as the single schema owner.
+
+        SQLite in-memory databases cannot be reached by Alembic through a second
+        connection, so tests use the same SQLAlchemy metadata as Alembic
+        autogenerate. File-backed SQLite and PostgreSQL always go through the
+        migration chain.
+        """
+        if self._is_sqlite_memory_database():
+            await self._create_in_memory_sqlite_schema_from_metadata()
+            return
+
+        await asyncio.to_thread(self._run_alembic_upgrade_head)
+
+    def _run_alembic_upgrade_head(self) -> None:
+        from alembic import command
+        from alembic.config import Config as AlembicConfig
+
+        project_root = Path(__file__).resolve().parents[1]
+        alembic_cfg = AlembicConfig(str(project_root / "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", str(project_root / "migrations"))
+        alembic_cfg.set_main_option("sqlalchemy.url", self._alembic_database_url())
+        command.upgrade(alembic_cfg, "head")
+
+    async def _create_in_memory_sqlite_schema_from_metadata(self) -> None:
         assert self._sqlite_conn is not None
 
         def _run() -> None:
             assert self._sqlite_conn is not None
-            cols = self._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
-            col_names = {str(c[1]) for c in cols}
-            if "tenant_id" not in col_names:
-                self._sqlite_conn.execute(
-                    "ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
-                )
-            self._sqlite_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS access_policies (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    resource_type TEXT NOT NULL,
-                    resource_id TEXT NOT NULL DEFAULT '*',
-                    action TEXT NOT NULL,
-                    effect TEXT NOT NULL DEFAULT 'allow',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
-                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-                """
+            from sqlalchemy import create_engine
+            from sqlalchemy.pool import StaticPool
+
+            from core.db_models import Base
+
+            engine = create_engine(
+                "sqlite://",
+                creator=lambda: self._sqlite_conn,
+                poolclass=StaticPool,
+                connect_args={"check_same_thread": False},
             )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
-            )
-            self._sqlite_conn.commit()
+            try:
+                Base.metadata.create_all(engine)
+            finally:
+                engine.dispose(close=False)
 
         await self._run_sqlite_op(_run)
+
+    async def _ensure_access_control_schema_sqlite(self) -> None:
+        """Compatibility shim: access-control DDL is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def _ensure_access_control_schema_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS access_policies (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    resource_type TEXT NOT NULL,
-                    resource_id TEXT NOT NULL DEFAULT '*',
-                    action TEXT NOT NULL,
-                    effect TEXT NOT NULL DEFAULT 'allow',
-                    created_at TIMESTAMPTZ NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
-            )
+        """Compatibility shim: access-control DDL is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL DEFAULT '',
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    action TEXT NOT NULL,
-                    resource TEXT NOT NULL,
-                    ip_address TEXT NOT NULL,
-                    allowed INTEGER NOT NULL DEFAULT 0,
-                    timestamp TEXT NOT NULL
-                )
-                """
-            )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
-            )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        """Compatibility shim: audit DDL is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def _ensure_audit_log_schema_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL DEFAULT '',
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    action TEXT NOT NULL,
-                    resource TEXT NOT NULL,
-                    ip_address TEXT NOT NULL,
-                    allowed BOOLEAN NOT NULL DEFAULT FALSE,
-                    timestamp TIMESTAMPTZ NOT NULL
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
-            )
+        """Compatibility shim: audit DDL is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def _init_schema_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        schema_sql = """
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT,
-            role TEXT NOT NULL DEFAULT 'user',
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS auth_tokens (
-            token TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS user_quotas (
-            user_id TEXT PRIMARY KEY,
-            daily_token_limit INTEGER NOT NULL DEFAULT 0,
-            daily_request_limit INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS provider_usage_daily (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            usage_date TEXT NOT NULL,
-            requests_used INTEGER NOT NULL DEFAULT 0,
-            tokens_used INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(user_id, provider, usage_date),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            tokens_used INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
-        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
-        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);
-        CREATE TABLE IF NOT EXISTS access_policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL DEFAULT '*',
-            action TEXT NOT NULL,
-            effect TEXT NOT NULL DEFAULT 'allow',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant
-            ON access_policies(user_id, tenant_id, resource_type, action);
-
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            action TEXT NOT NULL,
-            resource TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            allowed INTEGER NOT NULL DEFAULT 0,
-            timestamp TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
-
-        CREATE TABLE IF NOT EXISTS prompt_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            role_name TEXT NOT NULL,
-            prompt_text TEXT NOT NULL,
-            version INTEGER NOT NULL DEFAULT 1,
-            is_active INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON prompt_registry(role_name, version);
-        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);
-
-        CREATE TABLE IF NOT EXISTS marketing_campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            name TEXT NOT NULL,
-            channel TEXT NOT NULL DEFAULT '',
-            objective TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'draft',
-            owner_user_id TEXT NOT NULL DEFAULT '',
-            budget REAL NOT NULL DEFAULT 0,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status
-            ON marketing_campaigns(tenant_id, status, updated_at);
-
-        CREATE TABLE IF NOT EXISTS content_assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campaign_id INTEGER NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            asset_type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            channel TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant
-            ON content_assets(campaign_id, tenant_id, asset_type);
-
-        CREATE TABLE IF NOT EXISTS operation_checklists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campaign_id INTEGER,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            title TEXT NOT NULL,
-            items_json TEXT NOT NULL DEFAULT '[]',
-            status TEXT NOT NULL DEFAULT 'pending',
-            owner_user_id TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE SET NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant
-            ON operation_checklists(campaign_id, tenant_id, status);
-
-        CREATE TABLE IF NOT EXISTS coverage_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            requester_role TEXT NOT NULL DEFAULT 'coverage',
-            command TEXT NOT NULL,
-            pytest_output TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'pending_review',
-            target_path TEXT NOT NULL DEFAULT '',
-            suggested_test_path TEXT NOT NULL DEFAULT '',
-            review_payload_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status
-            ON coverage_tasks(tenant_id, status, updated_at);
-
-        CREATE TABLE IF NOT EXISTS coverage_findings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL,
-            finding_type TEXT NOT NULL,
-            target_path TEXT NOT NULL DEFAULT '',
-            summary TEXT NOT NULL,
-            severity TEXT NOT NULL DEFAULT 'medium',
-            details_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(task_id) REFERENCES coverage_tasks(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_coverage_findings_task
-            ON coverage_findings(task_id, finding_type, severity);
-        """
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.executescript(schema_sql)
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        """Compatibility shim: schema bootstrap is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def _init_schema_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        queries = [
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT,
-                role TEXT NOT NULL DEFAULT 'user',
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS auth_tokens (
-                token TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                expires_at TIMESTAMPTZ NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS user_quotas (
-                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                daily_token_limit INTEGER NOT NULL DEFAULT 0,
-                daily_request_limit INTEGER NOT NULL DEFAULT 0
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS provider_usage_daily (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                provider TEXT NOT NULL,
-                usage_date DATE NOT NULL,
-                requests_used INTEGER NOT NULL DEFAULT 0,
-                tokens_used INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(user_id, provider, usage_date)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                title TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS messages (
-                id BIGSERIAL PRIMARY KEY,
-                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tokens_used INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
-            "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);",
-            """
-            CREATE TABLE IF NOT EXISTS access_policies (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                resource_type TEXT NOT NULL,
-                resource_id TEXT NOT NULL DEFAULT '*',
-                action TEXT NOT NULL,
-                effect TEXT NOT NULL DEFAULT 'allow',
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL,
-                UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action);",
-            """
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id BIGSERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL DEFAULT '',
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                action TEXT NOT NULL,
-                resource TEXT NOT NULL,
-                ip_address TEXT NOT NULL,
-                allowed BOOLEAN NOT NULL DEFAULT FALSE,
-                timestamp TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);",
-            """
-            CREATE TABLE IF NOT EXISTS prompt_registry (
-                id BIGSERIAL PRIMARY KEY,
-                role_name TEXT NOT NULL,
-                prompt_text TEXT NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                is_active BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL,
-                UNIQUE(role_name, version)
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);",
-            """
-            CREATE TABLE IF NOT EXISTS marketing_campaigns (
-                id BIGSERIAL PRIMARY KEY,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                name TEXT NOT NULL,
-                channel TEXT NOT NULL DEFAULT '',
-                objective TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'draft',
-                owner_user_id TEXT NOT NULL DEFAULT '',
-                budget DOUBLE PRECISION NOT NULL DEFAULT 0,
-                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status ON marketing_campaigns(tenant_id, status, updated_at);",
-            """
-            CREATE TABLE IF NOT EXISTS content_assets (
-                id BIGSERIAL PRIMARY KEY,
-                campaign_id BIGINT NOT NULL REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                asset_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                channel TEXT NOT NULL DEFAULT '',
-                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant ON content_assets(campaign_id, tenant_id, asset_type);",
-            """
-            CREATE TABLE IF NOT EXISTS operation_checklists (
-                id BIGSERIAL PRIMARY KEY,
-                campaign_id BIGINT REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                title TEXT NOT NULL,
-                items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-                status TEXT NOT NULL DEFAULT 'pending',
-                owner_user_id TEXT NOT NULL DEFAULT '',
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant ON operation_checklists(campaign_id, tenant_id, status);",
-            """
-            CREATE TABLE IF NOT EXISTS coverage_tasks (
-                id BIGSERIAL PRIMARY KEY,
-                tenant_id TEXT NOT NULL DEFAULT 'default',
-                requester_role TEXT NOT NULL DEFAULT 'coverage',
-                command TEXT NOT NULL,
-                pytest_output TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'pending_review',
-                target_path TEXT NOT NULL DEFAULT '',
-                suggested_test_path TEXT NOT NULL DEFAULT '',
-                review_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status ON coverage_tasks(tenant_id, status, updated_at);",
-            """
-            CREATE TABLE IF NOT EXISTS coverage_findings (
-                id BIGSERIAL PRIMARY KEY,
-                task_id BIGINT NOT NULL REFERENCES coverage_tasks(id) ON DELETE CASCADE,
-                finding_type TEXT NOT NULL,
-                target_path TEXT NOT NULL DEFAULT '',
-                summary TEXT NOT NULL,
-                severity TEXT NOT NULL DEFAULT 'medium',
-                details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL
-            );
-            """,
-            "CREATE INDEX IF NOT EXISTS idx_coverage_findings_task ON coverage_findings(task_id, finding_type, severity);",
-        ]
-        async with self._pg_pool.acquire() as conn:
-            for q in queries:
-                await conn.execute(q)
+        """Compatibility shim: schema bootstrap is owned by Alembic."""
+        await self._upgrade_schema_with_alembic()
 
     async def ensure_default_prompt_registry(self) -> None:
         import importlib.util as _importlib_util
@@ -1386,15 +980,18 @@ class Database:
             return None
         return await self.get_active_prompt(role_name)
 
+    async def _ensure_schema_version_marker(self) -> None:
+        if self._backend == "postgresql":
+            await self._ensure_schema_version_postgresql()
+            return
+        await self._ensure_schema_version_sqlite()
+
     async def _ensure_schema_version_sqlite(self) -> None:
         assert self._sqlite_conn is not None
 
         def _run() -> None:
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
-            self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
-            )
             cur = self._sqlite_conn.execute(
                 f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
             )
@@ -1404,8 +1001,8 @@ class Database:
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 self._sqlite_conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608
-                    (v, _utc_now_iso(), f"baseline migration v{v}"),
+                    f"INSERT OR IGNORE INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608
+                    (v, _utc_now_iso(), f"alembic-managed baseline marker v{v}"),
                 )
             self._sqlite_conn.commit()
 
@@ -1415,9 +1012,6 @@ class Database:
         assert self._pg_pool is not None
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
-            )
             current = await conn.fetchval(
                 f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
             )
@@ -1429,7 +1023,7 @@ class Database:
                     f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608
                     v,
                     datetime.now(UTC),
-                    f"baseline migration v{v}",
+                    f"alembic-managed baseline marker v{v}",
                 )
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
