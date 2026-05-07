@@ -7,11 +7,23 @@ cd "${SCRIPT_DIR}"
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
 AUTONOMOUS_COVERAGE_PROFILE="${AUTONOMOUS_LOOP_COVERAGE_PROFILE:-short}"
+AUTONOMOUS_OPERATION_PROFILE="${AUTONOMOUS_LOOP_OPERATION_PROFILE:-autonomous-improvement}"
 AUTONOMOUS_COVERAGE_TARGET_FILE="${AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE:-}"
 AUTONOMOUS_COVERAGE_JSON="${AUTONOMOUS_LOOP_COVERAGE_JSON:-coverage.json}"
 AUTONOMOUS_COVERAGE_XML="${AUTONOMOUS_LOOP_COVERAGE_XML:-coverage.xml}"
 AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-10}"
 AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
+
+resolve_local_coverage_gate() {
+  python - <<'PY_LOCAL_COVERAGE_GATE'
+from configparser import ConfigParser
+from pathlib import Path
+
+cfg = ConfigParser()
+cfg.read(Path(".coveragerc"))
+print(cfg.get("report", "fail_under", fallback="90"))
+PY_LOCAL_COVERAGE_GATE
+}
 
 resolve_autonomous_coverage_target() {
   if [ -n "${AUTONOMOUS_LOOP_COVERAGE_TARGET+x}" ]; then
@@ -40,11 +52,21 @@ resolve_autonomous_coverage_target() {
   esac
 }
 
+LOCAL_COVERAGE_GATE="${COVERAGE_FAIL_UNDER:-$(resolve_local_coverage_gate)}"
 AUTONOMOUS_COVERAGE_TARGET="$(resolve_autonomous_coverage_target)"
 resolve_target_exit=$?
 if [ "${resolve_target_exit}" -ne 0 ]; then
   exit "${resolve_target_exit}"
 fi
+case "${AUTONOMOUS_OPERATION_PROFILE}" in
+  daily-local|autonomous-improvement|ci-required|coverage-campaign)
+    ;;
+  *)
+    echo "[UYARI] Geçersiz AUTONOMOUS_LOOP_OPERATION_PROFILE='${AUTONOMOUS_OPERATION_PROFILE}'. 'autonomous-improvement' kullanılacak."
+    AUTONOMOUS_OPERATION_PROFILE="autonomous-improvement"
+    ;;
+esac
+
 if ! [[ "$AUTO_REMEDIATION_MAX_RETRIES" =~ ^[0-9]+$ ]] || [ "$AUTO_REMEDIATION_MAX_RETRIES" -lt 1 ]; then
   AUTO_REMEDIATION_MAX_RETRIES=2
 fi
@@ -62,6 +84,10 @@ if ! [[ "$AUTONOMOUS_COVERAGE_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "[HATA] AUTONOMOUS_LOOP_COVERAGE_TARGET sayısal bir yüzde olmalı. Verilen: $AUTONOMOUS_COVERAGE_TARGET"
   exit 2
 fi
+if ! [[ "$LOCAL_COVERAGE_GATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "[UYARI] Yerel coverage gate değeri sayısal değil: '${LOCAL_COVERAGE_GATE}'. 90 kullanılacak."
+  LOCAL_COVERAGE_GATE="90"
+fi
 
 if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
   # shellcheck disable=SC1091
@@ -69,7 +95,11 @@ if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
 fi
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
-echo "[INFO] CI/CD ve hızlı yerel testler run_tests.sh/.coveragerc eşiğini korur; otonom döngü profili: ${AUTONOMOUS_COVERAGE_PROFILE}; hedef: %${AUTONOMOUS_COVERAGE_TARGET}."
+echo "[INFO] Coverage operasyon profili: ${AUTONOMOUS_OPERATION_PROFILE}."
+echo "[INFO] Günlük local kalite kapısı: run_tests.sh / .coveragerc / COVERAGE_FAIL_UNDER => %${LOCAL_COVERAGE_GATE}."
+echo "[INFO] Otonom coverage iyileştirme hedefi: AUTONOMOUS_LOOP_COVERAGE_PROFILE=${AUTONOMOUS_COVERAGE_PROFILE} => %${AUTONOMOUS_COVERAGE_TARGET}."
+echo "[INFO] CI zorunlu gate ayrı profildir: CI=true TEST_PROFILE=ci ./run_tests.sh (AUTONOMOUS_LOOP hedefi CI gate değildir)."
+echo "[INFO] Coverage kampanyası manuel/planlı çalışmadır: AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ile görünür etiketlenebilir."
 if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
   echo "[INFO] Otonom coverage hedef dosyası: ${AUTONOMOUS_COVERAGE_TARGET_FILE}."
 fi
@@ -155,11 +185,12 @@ check_autonomous_quality_gate() {
   fi
 
   if coverage_target_reached "${current_percent}" "${AUTONOMOUS_COVERAGE_TARGET}"; then
-    echo "[OK] Otonom coverage hedefi sağlandı: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
+    echo "[OK] Otonom coverage iyileştirme hedefi sağlandı: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
     return 0
   fi
 
-  echo "[UYARI] Testler geçti, ancak otonom coverage hedefi henüz sağlanmadı: %${current_percent} < %${AUTONOMOUS_COVERAGE_TARGET}."
+  echo "[INFO] Günlük local kalite kapısı geçti (run_tests.sh exit=0; gate=%${LOCAL_COVERAGE_GATE})."
+  echo "[INFO] Otonom coverage iyileştirme hedefi ayrı bir operasyon hedefidir ve henüz sağlanmadı: %${current_percent} < %${AUTONOMOUS_COVERAGE_TARGET}."
   return 3
 }
 
@@ -399,9 +430,10 @@ run_preflight_quality_gate() {
     current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}" "${AUTONOMOUS_COVERAGE_TARGET_FILE}")"
     coverage_status=$?
     if [ "${coverage_status}" -eq 0 ] && coverage_target_reached "${current_percent}" "${AUTONOMOUS_COVERAGE_TARGET}"; then
-      echo "[PREFLIGHT 2/3] Mevcut coverage hedefi sağlıyor: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
+      echo "[PREFLIGHT 2/3] Mevcut coverage otonom iyileştirme hedefini sağlıyor: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
     else
-      echo "[PREFLIGHT 2/3] Mevcut coverage hedef altında veya okunamadı; testleri çalıştırmadan önce CoverageAgent tetiklenecek."
+      echo "[PREFLIGHT 2/3] Mevcut coverage otonom iyileştirme hedefinin altında veya okunamadı; bu durum local/CI gate başarısızlığı anlamına gelmez."
+      echo "[PREFLIGHT 2/3] AUTONOMOUS_LOOP_OPERATION_PROFILE=${AUTONOMOUS_OPERATION_PROFILE}; CoverageAgent testleri çalıştırmadan önce denenecek."
       run_coverage_agent
       coverage_agent_exit=$?
       if [ "${coverage_agent_exit}" -eq 3 ]; then
@@ -418,12 +450,12 @@ run_preflight_quality_gate() {
   ./run_tests.sh
   test_exit=$?
 
-  echo "[PREFLIGHT 3/3] Kontrol: Test çıkış kodu = $test_exit; coverage hedefi = %${AUTONOMOUS_COVERAGE_TARGET}"
+  echo "[PREFLIGHT 3/3] Kontrol: Test çıkış kodu = $test_exit; local gate = %${LOCAL_COVERAGE_GATE}; otonom hedef = %${AUTONOMOUS_COVERAGE_TARGET}"
   check_autonomous_quality_gate "$test_exit"
   gate_exit=$?
 
   if [ "$gate_exit" -ne 0 ]; then
-    echo "[PREFLIGHT] Kalite kapısı sağlanmadı (durum: $gate_exit); ${ITERATIONS} döngülük otonom onarım akışı başlatılacak."
+    echo "[PREFLIGHT] Otonom iyileştirme hedefi veya test adımı sağlanmadı (durum: $gate_exit); ${ITERATIONS} döngülük otonom onarım akışı başlatılacak."
     return 1
   fi
 
@@ -459,11 +491,11 @@ for ((i=1; i<=ITERATIONS; i++)); do
   ./run_tests.sh
   test_exit=$?
 
-  echo "[3/3] Kontrol: Test çıkış kodu = $test_exit; coverage hedefi = %${AUTONOMOUS_COVERAGE_TARGET}"
+  echo "[3/3] Kontrol: Test çıkış kodu = $test_exit; local gate = %${LOCAL_COVERAGE_GATE}; otonom hedef = %${AUTONOMOUS_COVERAGE_TARGET}"
   check_autonomous_quality_gate "$test_exit"
   gate_exit=$?
   if [ "$gate_exit" -ne 0 ]; then
-    echo "[UYARI] Otonom kalite kapısı sağlanmadı (durum: $gate_exit). Otonom düzeltme/coverage iyileştirme döngüsü başlatılıyor..."
+    echo "[UYARI] Otonom iyileştirme hedefi veya test adımı sağlanmadı (durum: $gate_exit). Otonom düzeltme/coverage iyileştirme döngüsü başlatılıyor..."
 
     healed=0
     for ((retry=1; retry<=AUTO_REMEDIATION_MAX_RETRIES; retry++)); do

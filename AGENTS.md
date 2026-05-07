@@ -246,9 +246,17 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 #### 2.5.4 Coverage odaklı otonom iyileştirme
 
-- `autonomous_loop.sh`, kalite kapısı sağlanmazsa `CoverageAgent` ile `coverage.xml`
-  analizini çalıştırır, `scripts/coverage_hotspots.py` ile düşük coverage dosyalarını
-  listeler ve gerekiyorsa eksik test önerisi üretir.
+- Coverage eşikleri operasyonel olarak ayrıdır: günlük local kalite kapısı
+  `run_tests.sh` / `.coveragerc` / `COVERAGE_FAIL_UNDER` üzerinden stabil eşik
+  (varsayılan `%90`) kullanır; CI zorunlu gate `TEST_PROFILE=ci` ile ayrı
+  profildir; `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom
+  iyileştirme hedefi** olarak izler. `%99.8` altında kalmak, testler ve local
+  gate geçiyorsa CI/local başarısızlığı değil CoverageAgent döngüsünün devam
+  edeceği anlamına gelir. Planlı/manual coverage kampanyaları
+  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile etiketlenmelidir.
+- `autonomous_loop.sh`, kalite kapısı veya otonom iyileştirme hedefi sağlanmazsa
+  `CoverageAgent` ile `coverage.xml` analizini çalıştırır, `scripts/coverage_hotspots.py`
+  ile düşük coverage dosyalarını listeler ve gerekiyorsa eksik test önerisi üretir.
 - Coverage kaynaklı test önerileri önce trivial assertion kontrolünden geçer
   (`assert True`, boş test vb.). Ardından `ReviewerAgent` semantik onayı alınmadan
   öneri uygulanabilir kabul edilmez.

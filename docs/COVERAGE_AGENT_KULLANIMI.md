@@ -89,21 +89,36 @@ python cli.py -c '{"command":"pytest --cov-fail-under=90","cwd":"."}'
 Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu ilerlemek için 3 aşamalı prefix akışı daha doğrudur.
 
 
-## 4.1) Otonom döngü coverage profilleri
+## 4.1) Coverage hedefleri operasyonel olarak ayrıdır
+
+Coverage yüzdeleri tek bir kapı gibi okunmamalıdır. Sidar'da dört ayrı operasyonel
+profil vardır:
+
+| Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
+| --- | --- | --- | --- |
+| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER` (bugün `%90`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER` | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Merge engelleyici CI profilidir; otonom `%99.8` hedefiyle karıştırılmaz. |
+| Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
+| Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
 
 `./autonomous_loop.sh`, CI kalite kapısını değiştirmez; `run_tests.sh` ve `.coveragerc`
-üzerindeki eşikler aynen korunur. Otonom döngünün kendi iyileştirme hedefi ise
-maliyet/iterasyon kontrolü için profillenebilir:
+üzerindeki eşikler aynen korunur. Loglarda artık `local gate` ve `otonom hedef` ayrı
+yazılır: testler `%90` eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
+başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
+
+Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için profillenebilir:
 
 | Profil | Komut | Hedef | Kullanım amacı |
 | --- | --- | --- | --- |
-| Kısa (varsayılan) | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short ./autonomous_loop.sh` | `%99.8` | Lokal döngüde son küçük yüzde dilimleri için gereksiz LLM/ajan tekrarını azaltır. |
-| Tam | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full ./autonomous_loop.sh` | `%100` | Bilinçli olarak tam coverage hedeflenen uzun koşularda kullanılır. |
-| Dosya | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=file AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE=agent/roles/coverage_agent.py ./autonomous_loop.sh` | hedef dosyada `%100` | Belirli bir dosyayı kapatmaya odaklanır; toplam coverage yerine `coverage.json` içindeki dosya özetini okur. |
+| Kısa (varsayılan) | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short ./autonomous_loop.sh` | `%99.8` | Otonom iyileştirme için varsayılan hedeftir; günlük local gate ile aynı şey değildir. |
+| Tam | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ./autonomous_loop.sh` | `%100` | Bilinçli olarak tam coverage hedeflenen uzun/planlı coverage kampanyalarında kullanılır. |
+| Dosya | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=file AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE=agent/roles/coverage_agent.py AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ./autonomous_loop.sh` | hedef dosyada `%100` | Belirli bir dosyayı kapatmaya odaklanır; toplam coverage yerine `coverage.json` içindeki dosya özetini okur. |
 
 Geriye dönük uyumluluk için `AUTONOMOUS_LOOP_COVERAGE_TARGET` verilirse profil hedefini
 ezer. Örneğin `AUTONOMOUS_LOOP_COVERAGE_TARGET=99.5 ./autonomous_loop.sh` doğrudan
-`%99.5` otonom hedefiyle çalışır.
+`%99.5` otonom hedefiyle çalışır. `AUTONOMOUS_LOOP_OPERATION_PROFILE` ise hedefi
+değiştirmez; loglarda çalışmanın `daily-local`, `autonomous-improvement`, `ci-required`
+veya `coverage-campaign` bağlamında etiketlenmesini sağlar.
 
 ## 5) Pratik öneri (senin mevcut çıktına göre)
 
