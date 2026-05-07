@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from logging.config import fileConfig
 import os
+from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
+
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
@@ -23,12 +24,14 @@ except Exception:  # pragma: no cover - only for minimal test doubles
         pass
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from core.models import Base
+
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def _preload_dotenv_for_alembic() -> None:

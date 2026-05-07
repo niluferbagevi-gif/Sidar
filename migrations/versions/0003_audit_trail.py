@@ -7,19 +7,21 @@ Create Date: 2026-03-19 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0003_audit_trail"
 down_revision = "0002_prompt_registry"
 branch_labels = None
 depends_on = None
 
+BIGINT_PK = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
+
 
 def upgrade() -> None:
     op.create_table(
         "audit_logs",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column("id", BIGINT_PK, primary_key=True, autoincrement=True),
         sa.Column("user_id", sa.Text(), nullable=False, server_default=""),
         sa.Column("tenant_id", sa.Text(), nullable=False, server_default="default"),
         sa.Column("action", sa.Text(), nullable=False),
@@ -30,7 +32,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_audit_logs_user_timestamp", "audit_logs", ["user_id", "timestamp"])
     op.create_index("idx_audit_logs_timestamp", "audit_logs", ["timestamp"])
-
 
 def downgrade() -> None:
     op.drop_index("idx_audit_logs_timestamp", table_name="audit_logs")

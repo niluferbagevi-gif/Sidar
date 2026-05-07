@@ -15,15 +15,17 @@ branch_labels = None
 depends_on = None
 
 
+RAG_EMBEDDING_DIMENSION = 384
+
+
 def upgrade() -> None:
-    # Veritabanı motorunu kontrol et. PostgreSQL değilse (örn: testlerdeki SQLite) sessizce atla.
+    # pgvector yalnızca PostgreSQL'de desteklenir; SQLite degraded mode bu migrasyonu atlar.
     bind = op.get_bind()
     if bind.engine.name != "postgresql":
         return
 
-    # pgvector mevcut değilse migrasyonu sessizce atla (ChromaDB fallback çalışmaya devam eder).
     op.execute(
-        """
+        f"""
         DO $$
         DECLARE
             vector_available BOOLEAN;
@@ -46,24 +48,37 @@ def upgrade() -> None:
                     RETURN;
             END;
 
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'rag_embeddings'
-                  AND column_name = 'embedding'
-            ) THEN
-                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
-                     || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
-            END IF;
+            EXECUTE '
+                CREATE TABLE IF NOT EXISTS rag_embeddings (
+                    doc_id TEXT NOT NULL,
+                    parent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    title TEXT,
+                    source TEXT,
+                    chunk_content TEXT,
+                    embedding vector({RAG_EMBEDDING_DIMENSION}),
+                    PRIMARY KEY (doc_id, chunk_index)
+                )
+            ';
+
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_session '
+                 || 'ON rag_embeddings(session_id)';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_parent '
+                 || 'ON rag_embeddings(parent_id)';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
+                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
         END $$;
         """
     )
 
 
 def downgrade() -> None:
-    # Downgrade işleminde de veritabanı motorunu kontrol et.
     bind = op.get_bind()
     if bind.engine.name != "postgresql":
         return
 
     op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_embedding_hnsw")
+    op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_parent")
+    op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_session")
+    op.execute("DROP TABLE IF EXISTS rag_embeddings")

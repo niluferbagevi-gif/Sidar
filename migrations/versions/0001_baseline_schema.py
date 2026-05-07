@@ -7,19 +7,37 @@ Create Date: 2026-03-11 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+
+class MigrationGUID(sa.types.TypeDecorator[str]):
+    """PostgreSQL'de native UUID, SQLite'ta String(36) kullanan migrasyon tipi."""
+
+    impl = sa.String
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):  # type: ignore[no-untyped-def]
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(postgresql.UUID(as_uuid=False))
+        return dialect.type_descriptor(sa.String(length=36))
+
+
+GUID = MigrationGUID()
 
 revision = "0001_baseline_schema"
 down_revision = None
 branch_labels = None
 depends_on = None
 
+BIGINT_PK = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
+
 
 def upgrade() -> None:
     op.create_table(
         "users",
-        sa.Column("id", sa.String(length=36), primary_key=True),
+        sa.Column("id", GUID, primary_key=True),
         sa.Column("username", sa.Text(), nullable=False, unique=True),
         sa.Column("password_hash", sa.Text(), nullable=True),
         sa.Column("role", sa.Text(), nullable=False, server_default="user"),
@@ -29,22 +47,22 @@ def upgrade() -> None:
     op.create_table(
         "auth_tokens",
         sa.Column("token", sa.Text(), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("user_id", GUID, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
 
     op.create_table(
         "user_quotas",
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column("user_id", GUID, sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("daily_token_limit", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("daily_request_limit", sa.Integer(), nullable=False, server_default="0"),
     )
 
     op.create_table(
         "provider_usage_daily",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", BIGINT_PK, primary_key=True, autoincrement=True),
+        sa.Column("user_id", GUID, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("provider", sa.Text(), nullable=False),
         sa.Column("usage_date", sa.Date(), nullable=False),
         sa.Column("requests_used", sa.Integer(), nullable=False, server_default="0"),
@@ -54,8 +72,8 @@ def upgrade() -> None:
 
     op.create_table(
         "sessions",
-        sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", GUID, primary_key=True),
+        sa.Column("user_id", GUID, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -63,8 +81,8 @@ def upgrade() -> None:
 
     op.create_table(
         "messages",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("session_id", sa.String(length=36), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", BIGINT_PK, primary_key=True, autoincrement=True),
+        sa.Column("session_id", GUID, sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False),
         sa.Column("role", sa.Text(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("tokens_used", sa.Integer(), nullable=False, server_default="0"),
@@ -82,7 +100,6 @@ def upgrade() -> None:
     op.create_index("idx_messages_session_id", "messages", ["session_id"])
     op.create_index("idx_auth_tokens_user_id", "auth_tokens", ["user_id"])
     op.create_index("idx_provider_usage_daily_user_id", "provider_usage_daily", ["user_id"])
-
 
 def downgrade() -> None:
     op.drop_index("idx_provider_usage_daily_user_id", table_name="provider_usage_daily")

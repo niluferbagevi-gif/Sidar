@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import jwt
+from alembic import command
+from alembic.config import Config as AlembicConfig
 
 from config import Config
 
@@ -428,9 +430,8 @@ class Database:
     async def _run_sqlite_op(self, operation: Callable[[], _T], *, write: bool = True) -> _T:
         """SQLite işlemini çalıştırır.
 
-        Varsayılan davranış yazma işlemlerini tek bir kilit ile sıralamaktır.
-        Sadece-okuma çağrılarında `write=False` verilerek gereksiz lock contention
-        azaltılabilir.
+        SQLite tek bağlantı üzerinden çalıştığı için yazma ve okuma çağrıları aynı
+        kilitle sıralanır; `write=False` yalnızca retry/rollback davranışını değiştirir.
         """
         if self._sqlite_conn is None:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
@@ -445,7 +446,8 @@ class Database:
                 )
                 self._sqlite_write_lock = asyncio.Lock()
         if not write:
-            return await asyncio.to_thread(operation)
+            async with self._sqlite_write_lock:
+                return await asyncio.to_thread(operation)
 
         async with self._sqlite_write_lock:
             for attempt in range(1, 4):
@@ -594,7 +596,33 @@ class Database:
             self._pg_pool = None
             await pool.close()
 
+    def _alembic_database_url(self) -> str:
+        if self._backend == "sqlite":
+            assert self._sqlite_path is not None
+            return f"sqlite:///{self._sqlite_path.as_posix()}"
+        return self.database_url
+
+    async def _upgrade_schema_with_alembic(self) -> bool:
+        """Alembic head'e yükseltir; test double bağlantılarda güvenli şekilde legacy'ye düşer."""
+        alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+        if not alembic_ini.exists():
+            logger.warning("alembic.ini bulunamadı; legacy şema kurulumuna dönülüyor.")
+            return False
+
+        cfg = AlembicConfig(str(alembic_ini))
+        cfg.set_main_option("sqlalchemy.url", self._alembic_database_url())
+        try:
+            await asyncio.to_thread(command.upgrade, cfg, "head")
+        except Exception as exc:
+            logger.warning("Alembic şema yükseltmesi başarısız; legacy kurulum deneniyor: %s", exc)
+            return False
+        return True
+
     async def init_schema(self) -> None:
+        if await self._upgrade_schema_with_alembic():
+            await self.ensure_default_prompt_registry()
+            return
+
         if self._backend == "postgresql":
             await self._init_schema_postgresql()
             await self._ensure_access_control_schema_postgresql()
