@@ -7,8 +7,8 @@ Create Date: 2026-03-26 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0004_faz_e_tables"
 down_revision = "0003_audit_trail"
@@ -19,7 +19,12 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "marketing_campaigns",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column("tenant_id", sa.Text(), nullable=False, server_default="default"),
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("channel", sa.Text(), nullable=False),
@@ -39,10 +44,15 @@ def upgrade() -> None:
 
     op.create_table(
         "content_assets",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column(
             "campaign_id",
-            sa.BigInteger(),
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
             sa.ForeignKey("marketing_campaigns.id", ondelete="CASCADE"),
             nullable=False,
         ),
@@ -63,10 +73,15 @@ def upgrade() -> None:
 
     op.create_table(
         "operation_checklists",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column(
             "campaign_id",
-            sa.BigInteger(),
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
             sa.ForeignKey("marketing_campaigns.id", ondelete="SET NULL"),
             nullable=True,
         ),
@@ -86,7 +101,12 @@ def upgrade() -> None:
 
     op.create_table(
         "coverage_tasks",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column("tenant_id", sa.Text(), nullable=False, server_default="default"),
         sa.Column("requester_role", sa.Text(), nullable=False),
         sa.Column("command", sa.Text(), nullable=False),
@@ -106,10 +126,15 @@ def upgrade() -> None:
 
     op.create_table(
         "coverage_findings",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column(
             "task_id",
-            sa.BigInteger(),
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
             sa.ForeignKey("coverage_tasks.id", ondelete="CASCADE"),
             nullable=False,
         ),

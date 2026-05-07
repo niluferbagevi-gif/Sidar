@@ -90,3 +90,22 @@ def test_each_revision_defines_upgrade_and_downgrade_callables(
         assert hasattr(module, "downgrade") and callable(
             module.downgrade
         ), f"revision {revision.revision} is missing a callable downgrade()"
+
+
+def test_core_db_does_not_define_raw_schema_ddl() -> None:
+    db_source = (PROJECT_ROOT / "core" / "db.py").read_text()
+    forbidden_fragments = ("CREATE TABLE", "ALTER TABLE", "CREATE INDEX")
+    offenders = [fragment for fragment in forbidden_fragments if fragment in db_source]
+    assert not offenders, "core/db.py must delegate schema DDL to Alembic migrations"
+
+
+def test_alembic_env_uses_sqlalchemy_model_metadata() -> None:
+    env_source = (PROJECT_ROOT / "migrations" / "env.py").read_text()
+    assert "from core.db_models import Base" in env_source
+    assert "target_metadata = Base.metadata" in env_source
+
+
+def test_pgvector_migration_is_postgresql_guarded() -> None:
+    vector_source = (MIGRATIONS_DIR / "0005_pgvector_hnsw_index.py").read_text()
+    assert 'bind.engine.name != "postgresql"' in vector_source
+    assert "return" in vector_source

@@ -7,8 +7,8 @@ Create Date: 2026-03-19 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0003_audit_trail"
 down_revision = "0002_prompt_registry"
@@ -19,7 +19,12 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "audit_logs",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column("user_id", sa.Text(), nullable=False, server_default=""),
         sa.Column("tenant_id", sa.Text(), nullable=False, server_default="default"),
         sa.Column("action", sa.Text(), nullable=False),
