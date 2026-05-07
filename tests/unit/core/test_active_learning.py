@@ -912,3 +912,90 @@ async def test_schedule_and_flag_wrappers(monkeypatch):
 
     monkeypatch.setattr(al, "get_feedback_store", lambda config=None: FakeStore())
     assert await al.flag_weak_response("p", "r", 1, "x") is True
+
+
+def test_lora_trainer_train_returns_when_model_revision_missing(monkeypatch):
+    """Line 692: model_revision boşsa fail-closed reason döndürür."""
+    cfg = DummyConfig()
+    trainer = al.LoRATrainer(config=cfg)
+    monkeypatch.setattr(trainer, "_check_peft", lambda: True)
+    trainer.base_model = "m"
+    trainer.model_revision = ""
+    result = trainer.train("dataset.jsonl")
+    assert result["success"] is False
+    assert "LORA_MODEL_REVISION" in result["reason"]
+
+
+def test_lora_run_training_skips_print_trainable_when_not_callable(monkeypatch, tmp_path):
+    """Branch 761->765: model.print_trainable_parameters None ise atlanır."""
+    cfg = DummyConfig()
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "out_skip")
+    trainer = al.LoRATrainer(config=cfg)
+    trainer.model_revision = "rev-skip"
+
+    class FakeTokenizer:
+        eos_token = "<eos>"
+        pad_token = "pad"
+
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            return FakeTokenizer()
+
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1]}
+
+        def save_pretrained(self, out):
+            Path(out, "tok.txt").write_text("ok", encoding="utf-8")
+
+    class FakeModel:
+        # print_trainable_parameters yok — getattr None döner ve callable değildir
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            return FakeModel()
+
+        def save_pretrained(self, out):
+            Path(out, "model.txt").write_text("ok", encoding="utf-8")
+
+    class FakeTrainResult:
+        training_loss = 0.1
+        global_step = 1
+
+    class FakeTrainer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def train(self):
+            return FakeTrainResult()
+
+    class FakeDataset:
+        column_names = ["instruction", "output"]
+
+        def map(self, fn, remove_columns=None):
+            fn({"instruction": "p", "output": "o"})
+            return [{"x": 1}]
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.AutoModelForCausalLM = FakeModel
+    fake_transformers.AutoTokenizer = FakeTokenizer
+    fake_transformers.TrainingArguments = lambda **kwargs: kwargs
+    fake_transformers.Trainer = lambda **kwargs: FakeTrainer(**kwargs)
+    fake_transformers.DataCollatorForSeq2Seq = lambda tokenizer, model=None, padding=True: {
+        "tok": tokenizer,
+        "model": model,
+        "padding": padding,
+    }
+
+    fake_peft = types.ModuleType("peft")
+    fake_peft.TaskType = types.SimpleNamespace(CAUSAL_LM="causal")
+    fake_peft.LoraConfig = lambda **kwargs: kwargs
+    fake_peft.get_peft_model = lambda model, conf: model
+
+    fake_datasets = types.ModuleType("datasets")
+    fake_datasets.load_dataset = lambda *args, **kwargs: FakeDataset()
+
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setitem(sys.modules, "peft", fake_peft)
+    monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+
+    result = trainer._run_training("dataset.jsonl")
+    assert result["success"] is True

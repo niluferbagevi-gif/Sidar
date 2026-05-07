@@ -4015,3 +4015,127 @@ async def test_llm_client_chat_stream_awaits_coroutine_response_before_iterating
     stream = await client.chat([{"role": "user", "content": "hello"}], stream=True)
     chunks = [chunk async for chunk in stream]
     assert chunks == ["chunk-1", "chunk-2"]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_includes_system_prompt_when_nonempty(monkeypatch) -> None:
+    """Line 1437: system_prompt non-empty olduğunda stream_kwargs'a 'system' eklenir."""
+    captured: dict[str, object] = {}
+
+    class _CM:
+        async def __aenter__(self):
+            async def _empty_stream():
+                if False:
+                    yield ""
+
+            return _empty_stream()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Messages:
+        def stream(self, **kwargs):
+            captured.update(kwargs)
+            return _CM()
+
+    class _Client:
+        messages = _Messages()
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: _Client())
+
+    out = await _collect(
+        client._stream_anthropic(
+            _Client(), "m", [{"role": "user", "content": "u"}], "Sen bir uzmansın.", 0.1, False
+        )
+    )
+    assert out == []
+    assert captured.get("system") == "Sen bir uzmansın."
+
+
+def test_truncate_messages_keeps_full_rag_when_remaining_fits(monkeypatch) -> None:
+    """Branch 1566->1570: rag_content remaining içinde olduğunda kırpılmaz."""
+    cfg = _make_config(OPENAI_API_KEY="k")
+    cfg.OLLAMA_CONTEXT_MAX_CHARS = 1500
+    client = llm_client.LLMClient("openai", cfg)
+
+    msgs = [
+        {"role": "system", "content": "system mesajı kısa."},
+        {"role": "tool", "content": "[RAG] kısa bağlam"},
+        {"role": "user", "content": "uzun " + ("kullanıcı içeriği " * 200)},
+    ]
+    out = client._truncate_messages_for_local_model(msgs)
+    rag_messages = [m for m in out if "[RAG]" in m["content"]]
+    assert rag_messages and rag_messages[0]["content"] == "[RAG] kısa bağlam"
+
+
+def test_truncate_messages_skips_empty_rag_message(monkeypatch) -> None:
+    """Branch 1570->1575: rag_content boşsa insert atlanır."""
+    cfg = _make_config(OPENAI_API_KEY="k")
+    cfg.OLLAMA_CONTEXT_MAX_CHARS = 1500
+    client = llm_client.LLMClient("openai", cfg)
+
+    msgs = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "long " * 500},  # 2500 chars history
+        {"role": "tool", "content": ""},  # boş RAG (role=tool)
+        {"role": "user", "content": "u" * 50},  # son kısa mesaj → used düşük kalır
+    ]
+    out = client._truncate_messages_for_local_model(msgs)
+    # Boş tool/RAG mesajı eklenmemeli
+    assert not any(m["role"] == "tool" for m in out)
+
+
+def test_truncate_messages_skips_already_inserted_rag_in_history(monkeypatch) -> None:
+    """Line 1582: ikinci döngüde rag_idx ile aynı index atlanır."""
+    cfg = _make_config(OPENAI_API_KEY="k")
+    cfg.OLLAMA_CONTEXT_MAX_CHARS = 600
+    client = llm_client.LLMClient("openai", cfg)
+
+    msgs = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "geçmiş u1 " + ("a" * 50)},
+        {"role": "tool", "content": "[RAG] " + ("kaynak " * 20)},
+        {"role": "user", "content": "geçmiş u2 " + ("b" * 50)},
+        {"role": "user", "content": "son istek " + ("c" * 200)},
+    ]
+    out = client._truncate_messages_for_local_model(msgs)
+    rag_count = sum(1 for m in out if "[RAG]" in m["content"])
+    # Tek bir RAG mesajı olmalı (ikinci döngüde tekrar eklenmez)
+    assert rag_count == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_client_chat_stream_awaits_inner_coroutine_response(
+    monkeypatch,
+) -> None:
+    """Line 1664: response zaten coroutine ise tekrar await edilir."""
+    client = llm_client.LLMClient("openai", _make_config(OPENAI_API_KEY="k"))
+
+    async def _stream():
+        yield "x1"
+        yield "x2"
+
+    async def _inner_coroutine():
+        return _stream()
+
+    class _Backend:
+        async def chat(self, **_kwargs):
+            return _inner_coroutine()
+
+    monkeypatch.setattr(client, "_client", _Backend())
+
+    async def _safe_track(stream_iter, *, messages, config, model):
+        async for item in stream_iter:
+            yield item
+
+    monkeypatch.setattr(llm_client, "_track_stream_routing_cost", _safe_track)
+
+    stream = await client.chat([{"role": "user", "content": "hi"}], stream=True)
+    chunks = [chunk async for chunk in stream]
+    assert chunks == ["x1", "x2"]

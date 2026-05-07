@@ -564,3 +564,88 @@ def test_get_llm_judge_singleton(monkeypatch):
     first = judge.get_llm_judge()
     second = judge.get_llm_judge()
     assert first is second
+
+
+@pytest.mark.asyncio
+async def test_record_judge_metrics_awaitable_non_coroutine_uses_ensure_future(monkeypatch):
+    """Line 486: out awaitable ama coroutine değilse asyncio.ensure_future kullanılır."""
+    result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
+
+    class Collector:
+        def __init__(self, sink):
+            self._usage_sink = sink
+
+    class _AwaitableNonCoroutine:
+        def __init__(self):
+            self.closed = False
+
+        def __await__(self):
+            return iter([])
+
+        def close(self):
+            self.closed = True
+
+    awaitable_obj = _AwaitableNonCoroutine()
+
+    def sink(_payload):
+        return awaitable_obj
+
+    class _Event:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    ensure_calls = {"n": 0}
+
+    def fake_ensure_future(arg):
+        ensure_calls["n"] += 1
+        if hasattr(arg, "close"):
+            arg.close()
+        return arg
+
+    metrics_mod = types.ModuleType("core.llm_metrics")
+    metrics_mod.get_llm_metrics_collector = lambda: Collector(sink)
+    metrics_mod.LLMMetricEvent = _Event
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", metrics_mod)
+    monkeypatch.setattr(judge.asyncio, "ensure_future", fake_ensure_future)
+    judge._record_judge_metrics(result)
+    assert ensure_calls["n"] == 1
+
+
+def test_record_judge_metrics_runtime_error_without_close(monkeypatch):
+    """Branch 488->exit: RuntimeError sonrası out.close yoksa sessizce çık."""
+    result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
+
+    class Collector:
+        def __init__(self, sink):
+            self._usage_sink = sink
+
+    class _AwaitableNoClose:
+        def __await__(self):
+            return iter([])
+
+    awaitable_obj = _AwaitableNoClose()
+
+    def sink(_payload):
+        return awaitable_obj
+
+    class _Event:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    metrics_mod = types.ModuleType("core.llm_metrics")
+    metrics_mod.get_llm_metrics_collector = lambda: Collector(sink)
+    metrics_mod.LLMMetricEvent = _Event
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", metrics_mod)
+
+    def no_loop():
+        raise RuntimeError("no loop")
+
+    monkeypatch.setattr(judge.asyncio, "get_running_loop", no_loop)
+
+    def raising_ensure(_arg):
+        raise RuntimeError("no loop ensure")
+
+    monkeypatch.setattr(judge.asyncio, "ensure_future", raising_ensure)
+    judge._record_judge_metrics(result)

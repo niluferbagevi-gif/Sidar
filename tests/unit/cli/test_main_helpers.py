@@ -742,3 +742,76 @@ def test_run_with_streaming_kills_when_terminate_timeout_fails(
     assert fake_process.terminated is True
     assert fake_process.kill_called is True
     assert fake_process.wait_calls == [None, 3]
+
+
+def test_stream_pipe_writes_to_file_without_mirror(tmp_path) -> None:
+    """Branch 265->261: mirror=False ise print atlanır ve döngü sonraki satıra geçer."""
+    pipe = _FakeStreamingPipe("line1\nline2\n")
+    log_path = tmp_path / "pipe.log"
+    with open(log_path, "w", encoding="utf-8") as f:
+        main._stream_pipe(pipe, f, "[stdout]", main.CYAN, mirror=False)
+    contents = log_path.read_text(encoding="utf-8")
+    assert "[stdout] line1" in contents
+    assert "[stdout] line2" in contents
+    assert pipe.closed_by_streamer is True
+
+
+def test_run_wizard_cli_non_ollama_provider_skips_ollama_model_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Branch 392->405: mode=cli ama provider != ollama → elif (web) bloğu da atlanır."""
+    monkeypatch.setattr(main, "print_banner", lambda: None)
+    choices = iter(["cli", "openai", "sandbox", "info"])
+    monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
+    ask_text_called = {"n": 0}
+
+    def _ask_text(*_args, **_kwargs):
+        ask_text_called["n"] += 1
+        return ""
+
+    monkeypatch.setattr(main, "ask_text", _ask_text)
+    monkeypatch.setattr(main, "preflight", lambda _provider: None)
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: False)
+
+    assert main.run_wizard() == 0
+    # cli + non-ollama → ne ollama prompt ne de web prompt çalışmalı
+    assert ask_text_called["n"] == 0
+
+
+def test_execute_command_capture_output_zero_returns_without_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Branch 433->435: capture_output ve return_code==0 ise hata mesajı yazılmaz."""
+    monkeypatch.setattr(main, "_run_with_streaming", lambda _cmd, _log: 0)
+
+    rc = main.execute_command(["python", "cli.py"], capture_output=True)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Program hata ile sonlandı" not in out
+
+
+def test_main_quick_mode_with_valid_port_continues_through_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Branch 493->501: --port geçerli aralıktaysa port doğrulamasından sorunsuz geçer."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "--quick", "web", "--provider", "openai", "--port", "9001"],
+    )
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+
+    captured: dict[str, object] = {}
+
+    def fake_execute(cmd: list[str], capture_output=False, child_log_path=None):
+        captured["cmd"] = cmd
+        return 0
+
+    monkeypatch.setattr(main, "execute_command", fake_execute)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 0
+    assert "9001" in captured["cmd"]

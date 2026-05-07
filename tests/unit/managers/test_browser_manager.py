@@ -1321,6 +1321,25 @@ def test_selenium_provider_close_with_none_driver_and_current_url_fallback() -> 
     assert provider.current_url(session) == ""
 
 
+def test_is_available_returns_false_when_all_candidates_fail(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Line 765: tüm provider adayları exception'a düşerse fallthrough False döner."""
+    for key in [k for k in list(sys.modules) if k.startswith("playwright")]:
+        monkeypatch.delitem(sys.modules, key, raising=False)
+
+    original_import = __import__
+
+    def _failing_import(name: str, *args: object, **kwargs: object):
+        if name.startswith("playwright"):
+            raise ImportError("playwright missing")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _failing_import)
+    monkeypatch.setattr(manager, "_provider_candidates", lambda: ["playwright"])
+    assert manager.is_available() is False
+
+
 def test_run_coro_sync_uses_new_event_loop_when_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

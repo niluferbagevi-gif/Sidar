@@ -851,3 +851,24 @@ def test_transcribe_webrtc_audio_chunk_uses_temp_file_and_adds_transport(monkeyp
     assert result["bytes"] == len(payload)
     assert captured["path"].suffix == ".webm"
     assert captured["kwargs"]["language"] == "tr"
+
+
+def test_pipeline_analyze_local_media_image_unexpected_response_type(monkeypatch, tmp_path):
+    """Line 713: VisionPipeline.analyze dict dışı döndüğünde fail-closed mesajı dönmeli."""
+    img = tmp_path / "img.png"
+    img.write_bytes(b"i")
+
+    class VisionPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze(self, **_kwargs):
+            return "unexpected-string-result"
+
+    monkeypatch.setitem(
+        sys.modules, "core.vision", types.SimpleNamespace(VisionPipeline=VisionPipeline)
+    )
+    pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
+    result = run(pipeline._analyze_local_media(media_path=img))
+    assert result["success"] is False
+    assert result["reason"] == "VisionPipeline unexpected response type"
