@@ -44,6 +44,10 @@ def test_url_and_path_helpers(tmp_path):
     assert not gu._is_valid_branch_name("bad branch")
     assert not gu._is_valid_branch_name("bad..branch")
     assert not gu._is_valid_branch_name("bad@{branch")
+    assert not gu._is_valid_branch_name("release/")
+    assert not gu._is_valid_branch_name("release.lock")
+    assert not gu._is_valid_branch_name("/release")
+    assert not gu._is_valid_branch_name(".release")
 
     assert gu._normalize_path("./a//b\\c") == "a/b/c"
     assert gu._normalize_path("/root/x") == "root/x"
@@ -90,6 +94,14 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     assert safe2 == [] and blocked2 == []
 
 
+def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
+    assert gu.get_commit_count() == 0
+
+    monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (True, "not-a-number"))
+    assert gu.get_commit_count() == 0
+
+
 def test_stage_files(monkeypatch):
     assert gu.stage_files([]) == (True, "")
 
@@ -131,6 +143,11 @@ def run_main_and_exit_code():
     with pytest.raises(SystemExit) as e:
         gu.main()
     return e.value.code
+
+
+def test_main_rejects_invalid_target_branch_name(monkeypatch):
+    MainHarness(monkeypatch, ["release.lock"], outputs=[])
+    assert run_main_and_exit_code() == 1
 
 
 def test_main_invalid_rollback(monkeypatch):
@@ -201,6 +218,22 @@ def test_main_switch_to_main_stash_pop_conflict(monkeypatch):
             (True, "ok"),
             (False, "conflict"),
         ],
+    )
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_rollback_rejects_when_not_enough_commits(monkeypatch):
+    MainHarness(
+        monkeypatch,
+        ["-2"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "2"),
+        ],
+        inputs=["yes"],
     )
     assert run_main_and_exit_code() == 1
 
