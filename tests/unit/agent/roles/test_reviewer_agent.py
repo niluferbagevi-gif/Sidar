@@ -1004,6 +1004,72 @@ def test_review_test_candidate_retries_when_rejection_reason_is_empty(reviewer, 
     assert "raw_reviewer_json=" in log_text
     assert result["candidate_preview"].startswith("def test_x()")
     assert result["raw_reviewer_json"] == ""
+    assert "thought/tool/argument sarmalı" in calls[0]
+
+
+def test_review_test_candidate_extracts_tool_json_argument(reviewer):
+    async def fake_call_llm(*_args, **_kwargs):
+        return json.dumps(
+            {
+                "thought": "Kararı tool sarmalıyla döndürüyorum.",
+                "tool": "JSON",
+                "argument": json.dumps(
+                    {
+                        "approved": False,
+                        "reason": "Exception path eksik kaldığı için reddedildi.",
+                        "weaknesses": ["eksik exception path'i"],
+                    }
+                ),
+            }
+        )
+
+    reviewer.call_llm = fake_call_llm
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert service.ok\n",
+            {"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
+        )
+    )
+
+    assert result["approved"] is False
+    assert result["reason"] == "Exception path eksik kaldığı için reddedildi."
+    assert result["weaknesses"] == ["eksik exception path'i"]
+    assert result["invalid_reason"] is False
+    assert result["weaknesses_missing"] is False
+    assert result["attempts"] == 1
+
+
+def test_review_test_candidate_derives_weakness_from_argument_reason(reviewer):
+    async def fake_call_llm(*_args, **_kwargs):
+        return json.dumps(
+            {
+                "tool": "JSON",
+                "argument": json.dumps(
+                    {
+                        "approved": "false",
+                        "reason": "Tautolojik mock kontrolü davranışı doğrulamıyor.",
+                    }
+                ),
+            }
+        )
+
+    reviewer.call_llm = fake_call_llm
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert mock.called\n",
+            {"target_path": "agent/y.py"},
+            candidate_path="tests/test_y.py",
+        )
+    )
+
+    assert result["approved"] is False
+    assert result["reason"] == "Tautolojik mock kontrolü davranışı doğrulamıyor."
+    assert result["weaknesses"] == ["Tautolojik mock kontrolü davranışı doğrulamıyor."]
+    assert result["weaknesses_missing"] is False
+    assert result["invalid_reason"] is False
+    assert result["attempts"] == 1
 
 
 def test_review_test_candidate_logs_raw_json_and_missing_weaknesses(reviewer, caplog):

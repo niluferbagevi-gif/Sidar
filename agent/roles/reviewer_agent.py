@@ -96,12 +96,59 @@ class ReviewerAgent(BaseAgent):
         )
 
     @staticmethod
+    def _coerce_review_approved(raw_approved: object) -> bool:
+        """LLM reviewer onay alanını bool dışı JSON varyantlarından güvenli dönüştürür."""
+        if isinstance(raw_approved, bool):
+            return raw_approved
+        if isinstance(raw_approved, int | float):
+            return bool(raw_approved)
+        approved_text = str(raw_approved or "").strip().lower()
+        if approved_text in {"true", "yes", "evet", "approved", "approve", "1"}:
+            return True
+        if approved_text in {"false", "no", "hayır", "hayir", "rejected", "reject", "0"}:
+            return False
+        return False
+
+    @staticmethod
     def _coerce_review_weaknesses(raw_weaknesses: object) -> list[str]:
         """LLM reviewer zayıflık sinyallerini görünür, sınırlı listeye dönüştürür."""
         if isinstance(raw_weaknesses, list):
             return [str(item).strip() for item in raw_weaknesses if str(item).strip()]
         weakness_text = str(raw_weaknesses or "").strip()
         return [weakness_text] if weakness_text else []
+
+    @staticmethod
+    def _derive_review_weaknesses_from_reason(reason: str) -> list[str]:
+        """Weakness listesi boşsa somut reason metnini görünür sinyale dönüştürür."""
+        normalized = " ".join(str(reason or "").split())
+        if not normalized:
+            return []
+        return [normalized[:240]]
+
+    @classmethod
+    def _normalize_test_candidate_verdict(cls, verdict: object) -> dict[str, object]:
+        """Reviewer LLM çıktısını doğrudan veya tool/argument sarmalından karar JSON'una indirger."""
+        if not isinstance(verdict, dict):
+            return {}
+
+        verdict_keys = {"approved", "reason", "weaknesses"}
+        if verdict_keys & set(verdict):
+            return verdict
+
+        tool_name = str(verdict.get("tool") or "").strip().lower()
+        argument = verdict.get("argument")
+        if tool_name == "json" or argument is not None:
+            if isinstance(argument, str):
+                try:
+                    parsed_argument = json.loads(argument)
+                except json.JSONDecodeError:
+                    return verdict
+                if isinstance(parsed_argument, dict) and verdict_keys & set(parsed_argument):
+                    return parsed_argument
+            elif isinstance(argument, dict) and verdict_keys & set(argument):
+                return argument
+
+        return verdict
 
     @staticmethod
     def _candidate_preview(candidate: str, *, max_lines: int = 3) -> str:
@@ -129,9 +176,10 @@ class ReviewerAgent(BaseAgent):
             "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
             "yan etkili/deterministik olmayan kullanım, eksik exception path'i veya "
             "tautolojik mock kontrolü var mı değerlendir. "
-            "Sadece JSON döndür: "
+            "Yanıt yalnızca ve yalnızca şu şemada tek JSON nesnesi olmalı; markdown, "
+            "thought/tool/argument sarmalı veya ek anahtar kullanma: "
             "{\"approved\": bool, \"reason\": str (red ise mutlaka somut neden, "
-            "en az 1 cümle), \"weaknesses\": [str]}."
+            "en az 1 cümle), \"weaknesses\": [str]}. "
             f"{retry_clause}\n\n"
             f"[COVERAGE_FINDING]\n{json.dumps(dict(finding), ensure_ascii=False)}\n\n"
             f"[TEST_CANDIDATE]\n{str(candidate or '')[:6000]}"
@@ -169,7 +217,9 @@ class ReviewerAgent(BaseAgent):
                     temperature=0.0,
                     json_mode=True,
                 )
-                verdict = json.loads(str(verdict_raw or "{}"))
+                verdict = self._normalize_test_candidate_verdict(
+                    json.loads(str(verdict_raw or "{}"))
+                )
             except Exception as exc:  # noqa: BLE001 - reviewer gate fail-closed olmalı.
                 reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
                 logger.warning(
@@ -200,9 +250,11 @@ class ReviewerAgent(BaseAgent):
             last_raw_reviewer_json = str(verdict_raw or "")
             if not isinstance(verdict, dict):
                 verdict = {}
-            approved = bool(verdict.get("approved", False))
+            approved = self._coerce_review_approved(verdict.get("approved", False))
             reason = str(verdict.get("reason", "") or "").strip()
             weaknesses = self._coerce_review_weaknesses(verdict.get("weaknesses"))
+            if not approved and not weaknesses and reason:
+                weaknesses = self._derive_review_weaknesses_from_reason(reason)
             last_weaknesses = weaknesses
             invalid_rejection = not approved and not reason
             weaknesses_missing = not weaknesses
