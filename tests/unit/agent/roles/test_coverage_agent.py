@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import importlib
 import json
 import sys
@@ -815,15 +816,20 @@ async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
 ):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
+    generated_test = "def test_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
+    expected_digest = hashlib.sha256(generated_test.encode("utf-8", errors="ignore")).hexdigest()[
+        :12
+    ]
+
     ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
         suggested_test_path="tests/test_candidate.py",
-        generated_test="def test_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n",
+        generated_test=generated_test,
     )
 
     assert ok is True
     assert reason == "isolated_pytest_passed"
     assert details["isolated_pytest_command"].startswith("uv run pytest -q ")
-    assert "artifacts/coverage_candidate_validation/test_candidate_" in details[
+    assert f"artifacts/coverage_candidate_validation/test_candidate_{expected_digest}.py" in details[
         "isolated_pytest_command"
     ]
     assert not Path(details["isolated_test_file"]).exists()
