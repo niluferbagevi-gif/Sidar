@@ -1121,3 +1121,118 @@ def test_review_test_candidate_fail_closed_when_retry_still_has_empty_reason(rev
     assert result["invalid_reason"] is True
     assert result["attempts"] == 2
     assert caplog.text.count("approved=false with empty reason") == 2
+
+
+def test_coerce_review_approved_handles_numeric_and_text_variants():
+    """Lines 104, 107, 110: numeric/string/unknown approved değerleri için tüm dallar."""
+    # Line 104: int/float numeric → bool dönüşümü
+    assert ReviewerAgent._coerce_review_approved(1) is True
+    assert ReviewerAgent._coerce_review_approved(0) is False
+    assert ReviewerAgent._coerce_review_approved(0.0) is False
+    assert ReviewerAgent._coerce_review_approved(2.5) is True
+
+    # Line 107: yes/evet/approved gibi pozitif metinler
+    assert ReviewerAgent._coerce_review_approved("yes") is True
+    assert ReviewerAgent._coerce_review_approved("evet") is True
+    assert ReviewerAgent._coerce_review_approved("APPROVED") is True
+    assert ReviewerAgent._coerce_review_approved("1") is True
+
+    # Tanınan red metinleri
+    assert ReviewerAgent._coerce_review_approved("hayır") is False
+    assert ReviewerAgent._coerce_review_approved("rejected") is False
+
+    # Line 110: tanınmayan metin → fail-closed False
+    assert ReviewerAgent._coerce_review_approved("kararsızım") is False
+    assert ReviewerAgent._coerce_review_approved(None) is False
+
+
+def test_derive_review_weaknesses_from_empty_reason_returns_empty_list():
+    """Line 125: reason boş veya whitespace ise [] döner."""
+    assert ReviewerAgent._derive_review_weaknesses_from_reason("") == []
+    assert ReviewerAgent._derive_review_weaknesses_from_reason("   \n\t ") == []
+    assert ReviewerAgent._derive_review_weaknesses_from_reason(None) == []
+
+
+def test_normalize_test_candidate_verdict_handles_non_dict_input():
+    """Line 132: dict olmayan girdi {} olarak dönüştürülür."""
+    assert ReviewerAgent._normalize_test_candidate_verdict("string-not-dict") == {}
+    assert ReviewerAgent._normalize_test_candidate_verdict(["list"]) == {}
+    assert ReviewerAgent._normalize_test_candidate_verdict(None) == {}
+
+
+def test_normalize_test_candidate_verdict_handles_invalid_json_argument():
+    """Lines 144-145: argument string ama geçersiz JSON ise verdict olduğu gibi döner."""
+    verdict = {"tool": "JSON", "argument": "{not valid json"}
+    result = ReviewerAgent._normalize_test_candidate_verdict(verdict)
+    assert result == verdict
+
+
+def test_normalize_test_candidate_verdict_extracts_dict_argument_directly():
+    """Lines 148-151: argument zaten dict ise içinden verdict_keys çıkarılır."""
+    inner = {"approved": True, "reason": "iyi", "weaknesses": []}
+    verdict = {"tool": "JSON", "argument": inner}
+    result = ReviewerAgent._normalize_test_candidate_verdict(verdict)
+    assert result == inner
+
+    # argument dict ama verdict_keys içermiyor → orijinal verdict döner
+    no_keys_inner = {"foo": "bar"}
+    verdict2 = {"tool": "JSON", "argument": no_keys_inner}
+    result2 = ReviewerAgent._normalize_test_candidate_verdict(verdict2)
+    assert result2 == verdict2
+
+
+def test_normalize_test_candidate_verdict_skips_when_no_tool_or_argument():
+    """Branch 140->151: tool_name boş ve argument None ise tool sarmalı atlanır, verdict aynen döner."""
+    verdict = {"some_other_key": "value"}
+    result = ReviewerAgent._normalize_test_candidate_verdict(verdict)
+    assert result == verdict
+
+
+def test_normalize_test_candidate_verdict_string_argument_without_verdict_keys():
+    """Branch 146->151: argument parse edilir ama verdict_keys içermiyor → verdict aynen döner."""
+    verdict = {"tool": "JSON", "argument": json.dumps({"unrelated": "data"})}
+    result = ReviewerAgent._normalize_test_candidate_verdict(verdict)
+    assert result == verdict
+
+
+def test_review_test_candidate_returns_fail_closed_when_call_llm_raises(reviewer, caplog):
+    """Lines 223-236: call_llm exception attığında reviewer fail-closed reason döner."""
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("LLM down")
+
+    reviewer.call_llm = boom
+    caplog.set_level("WARNING")
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert True\n",
+            {"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
+        )
+    )
+
+    assert result["approved"] is False
+    assert "ReviewerAgent semantik değerlendirme hatası" in result["reason"]
+    assert "LLM down" in result["reason"]
+    assert result["attempts"] == 1
+    assert "ReviewerAgent semantic review failed" in caplog.text
+
+
+def test_review_test_candidate_handles_normalize_returning_non_dict(reviewer):
+    """Line 252: _normalize_test_candidate_verdict dict dışı dönerse verdict={} olur."""
+    async def fake_call_llm(*_args, **_kwargs):
+        return json.dumps({"approved": True, "reason": "ok"})
+
+    reviewer.call_llm = fake_call_llm
+
+    # _normalize_test_candidate_verdict her zaman non-dict döndürsün
+    reviewer._normalize_test_candidate_verdict = lambda _verdict: "not-a-dict"
+
+    result = asyncio.run(
+        reviewer.review_test_candidate(
+            "def test_x():\n    assert True\n",
+            {"target_path": "core/x.py"},
+        )
+    )
+
+    # verdict = {} → approved False, reason "" → invalid_rejection True path
+    assert result["approved"] is False
