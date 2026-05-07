@@ -231,6 +231,9 @@ def test_module_main_guard_raises_system_exit(
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml_path)])
 
     with pytest.raises(SystemExit) as exc:
-        runpy.run_module("scripts.coverage_hotspots", run_name="__main__")
+        runpy.run_path(
+            str(Path(__file__).resolve().parents[2] / "scripts" / "coverage_hotspots.py"),
+            run_name="__main__",
+        )
 
     assert exc.value.code == 1
