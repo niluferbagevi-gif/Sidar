@@ -14,6 +14,7 @@ Kullanım:
     python cli.py --status         # sistem durumunu göster
     python cli.py -c "komut"       # tek komut çalıştır
     python cli.py --level full     # erişim seviyesini geçici olarak ayarla
+    python cli.py doctor           # artifacts/install/doctor.json sağlık raporu üret
 
 Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
 noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
@@ -21,9 +22,11 @@ noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
@@ -224,11 +227,38 @@ async def _ensure_cli_memory_user(agent: SidarAgent) -> None:
 
 
 # ─────────────────────────────────────────────
+#  DOCTOR KOMUTU
+# ─────────────────────────────────────────────
+
+
+def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> int:
+    """Run the install/readiness doctor and persist its JSON report."""
+    from core.doctor import run_doctor_report
+
+    report = run_doctor_report(output_path=Path(output_path))
+    print(f"Sidar Doctor overall_status={report['overall_status']}")
+    print(f"Rapor: {output_path}")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["overall_status"] in {"pass", "warn"} else 1
+
+
+# ─────────────────────────────────────────────
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        doctor_parser = argparse.ArgumentParser(description="Sidar Doctor sağlık raporu üret")
+        doctor_parser.add_argument("doctor", nargs="?")
+        doctor_parser.add_argument(
+            "--output",
+            default="artifacts/install/doctor.json",
+            help="Doctor JSON rapor yolu",
+        )
+        doctor_args = doctor_parser.parse_args()
+        raise SystemExit(_run_doctor_command(doctor_args.output))
+
     cfg_defaults = Config()
 
     parser = argparse.ArgumentParser(
@@ -237,6 +267,7 @@ def main() -> None:
     )
     parser.add_argument("-c", "--command", help="Tek komut çalıştır ve çık")
     parser.add_argument("--status", action="store_true", help="Sistem durumunu göster ve çık")
+    parser.add_argument("--doctor", action="store_true", help="Doctor sağlık raporu üret ve çık")
     parser.add_argument(
         "--level",
         choices=["restricted", "sandbox", "full"],
@@ -262,6 +293,9 @@ def main() -> None:
     args = parser.parse_args()
 
     _setup_logging(args.log)
+
+    if args.doctor:
+        raise SystemExit(_run_doctor_command())
 
     # Config nesnesini oluştur; CLI flag'leri instance attribute olarak
     # doğrudan override et. os.environ üzerinden override ÇALIŞMAZ çünkü

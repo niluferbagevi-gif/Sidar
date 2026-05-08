@@ -7,7 +7,7 @@
 # Kullanım:
 #   chmod +x install_sidar.sh
 #   ./install_sidar.sh           # standart kurulum
-#   ./install_sidar.sh --no-dev  # sadece production bağımlılıklarıyla
+#   ./install_sidar.sh --upgrade-lock  # uv.lock dosyasını bilinçli olarak güncelle
 #   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
 #   ./install_sidar.sh --kubernetes  # Helm ile Kubernetes kurulumuna geç
 #   ./install_sidar.sh --headless --yes  # tam etkileşimsiz kurulum (CI/sunucu)
@@ -344,6 +344,27 @@ resolve_windows_localappdata_path() {
     fi
 
     return 1
+}
+
+
+verify_offline_bundle_manifest() {
+    local bundle_dir="${1:-}"
+    [[ -n "$bundle_dir" ]] || fail "Çevrimdışı mod etkin ancak offline bundle dizini bulunamadı."
+    [[ -d "$bundle_dir" ]] || fail "Çevrimdışı bundle dizini bulunamadı: $bundle_dir"
+    [[ -f "$bundle_dir/manifest.json" ]] || fail "Çevrimdışı bundle manifesti eksik: $bundle_dir/manifest.json"
+
+    if command -v python3 &>/dev/null; then
+        python3 "$SCRIPT_DIR/scripts/offline_bundle.py" verify "$bundle_dir" \
+            || fail "Çevrimdışı bundle SHA256 doğrulaması başarısız oldu."
+    else
+        fail "Çevrimdışı manifest doğrulaması için python3 gereklidir."
+    fi
+
+    export UV_FIND_LINKS="${bundle_dir}/wheels"
+    export UV_NO_INDEX=1
+    export npm_config_cache="${bundle_dir}/npm/cache"
+    export OLLAMA_MODELS="${bundle_dir}/ollama/models"
+    ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
 }
 
 download_verified_script() {
@@ -1271,8 +1292,10 @@ PY
 }
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
-# Geliştirme bağımlılıkları varsayılan olarak kurulur; --no-dev ile devre dışı bırakılır.
+# Geliştirme bağımlılıkları Sidar self-healing için standart kurulumun parçasıdır.
 INSTALL_DEV=true
+UPGRADE_LOCK=false
+ALLOW_FULL_ACCESS=false
 FORCE_CPU=false
 SKIP_MODELS=false
 DOWNLOAD_MODELS=true
@@ -1318,9 +1341,13 @@ WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
+INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
     case "$arg" in
-        --no-dev) INSTALL_DEV=false ;;
+        --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ; INSTALL_DEV=true ;;
+        --upgrade-lock) UPGRADE_LOCK=true ;;
+        --i-understand-full-access) ALLOW_FULL_ACCESS=true ;;
+        doctor|prepare-system|sync-deps|provision-models|smoke) INSTALL_SUBCOMMAND="$arg" ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
         --silent) SILENT_MODE=true ;;
@@ -1352,8 +1379,10 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--no-dev] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
-            echo "  --no-dev  Geliştirici bağımlılıklarını atla (varsayılan olarak kurulur)"
+            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
+            echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
+  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
@@ -1393,7 +1422,7 @@ for arg in "$@"; do
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--no-dev | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1503,7 +1532,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
     fi
 fi
-DEFAULT_DATABASE_URL="postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+DEFAULT_DATABASE_URL=""
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
@@ -2153,6 +2182,10 @@ detect_gpu() {
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
+        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
+            export RUN_GPU_STRESS=1
+            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+        fi
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
         ok "Sürücü  : $DRIVER_VER"
@@ -2277,66 +2310,27 @@ install_python_deps() {
     cd "$SCRIPT_DIR"
     UV_CMD=(uv)
 
-    local -a EXTRAS=(gemini anthropic openai litellm postgres telemetry rag sandbox gui browser slack voice tools aws jira teams)
-    if [[ "$INSTALL_DEV" == true ]]; then
-        EXTRAS+=(dev)
-    fi
-    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
-        EXTRAS+=(gpu)
+    local -a SYNC_ARGS=(--frozen --all-extras)
+
+    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
+        fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
     fi
 
-    local -a LOCK_ARGS=()
-    local -a SYNC_ARGS=(--frozen)
-    if [[ "$INSTALL_DEV" == true ]]; then
-        # Sidar geliştirme standardı: dev bağımlılıkları varsayılan kurulumun parçasıdır
-        # ve ekip/CI paritesi için tam extras profili uv üzerinden senkronlanır.
-        SYNC_ARGS+=(--all-extras)
+    if [[ "$UPGRADE_LOCK" == true ]]; then
+        info "--upgrade-lock verildi; uv.lock bilinçli olarak güncelleniyor (uv lock --upgrade)."
+        if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade; then
+            fail "uv lock --upgrade başarısız oldu; uv.lock güncellenemedi."
+        fi
     else
-        for _extra in "${EXTRAS[@]}"; do
-            SYNC_ARGS+=(--extra "$_extra")
-        done
+        info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    if [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
-        info "uv.lock bulundu. Lock dosyası yeniden oluşturulup güncellenecek (uv lock --upgrade)..."
-    else
-        warn "uv.lock bulunamadı. Yeni lock dosyası oluşturulacak (uv lock --upgrade)..."
-    fi
-
-    # Bazı ortamlarda (örn. kullanıcı shell profilinden miras kalan UV_EXTRA)
-    # uv lock komutuna desteklenmeyen --extra argümanı enjekte edilebilir.
-    # Lock adımını extras env değişkenlerinden izole ederek deterministik çalıştır.
-    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade "${LOCK_ARGS[@]}"; then
-        warn "uv lock başarısız oldu. Çoğu durumda neden, pyproject.toml içindeki sürüm aralıklarının birbiriyle çakışmasıdır."
-        warn "Özellikle nemoguardrails ve langchain-community sürümlerini birlikte kontrol edin."
-        fail "uv lock başarısız oldu. uv.lock dosyası oluşturulamadı/güncellenemedi."
-    fi
-
-    if [[ "$INSTALL_DEV" == true ]]; then
-        info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --all-extras --frozen). Geliştirme bağımlılıkları varsayılan olarak dahildir."
-    else
-        info "Bağımlılıklar güncel uv.lock üzerinden senkronlanıyor (uv sync --frozen, --no-dev profili)."
-    fi
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras. Dev araçları self-healing için standarttır."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync başarısız oldu. Python bağımlılıkları uv ile senkronlanamadı (geliştirme için uv sync --all-extras --frozen ile manuel deneyin)."
+        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
-    local editable_extras=""
-    local editable_profile_label=""
-    if [[ "$INSTALL_DEV" == true ]]; then
-        editable_extras="all"
-        editable_profile_label="tam profil"
-    else
-        editable_extras="$(IFS=,; echo "${EXTRAS[*]}")"
-        editable_profile_label="production/minimal profil"
-    fi
-
-    info "Sidar paketi editable modda kuruluyor (${editable_profile_label}, -e .[${editable_extras}])..."
-    if ! "${UV_CMD[@]}" pip install -e "$SCRIPT_DIR[$editable_extras]"; then
-        fail "Sidar paketi uv/venv ortamına editable olarak kurulamadı."
-    fi
-
-    ok "Python bağımlılıkları senkronlandı."
+    ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -2884,6 +2878,15 @@ harden_database_credentials() {
                         else
                             echo "POSTGRES_USER=${db_user}" >> "$env_file"
                         fi
+                        local db_name_for_container="${db_host_and_name#*/}"
+                        db_name_for_container="${db_name_for_container%%\?*}"
+                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
+                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
+                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
+                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
+                        else
+                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
+                        fi
                         DB_PASSWORD_HARDENED=true
                         ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                         info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
@@ -2936,15 +2939,42 @@ sync_postgres_env_with_database_url() {
         sed -i '/^POSTGRES_DB=/d' "$env_file"
         sed -i '/^DATABASE_URL=/d' "$env_file"
 
+        local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
+        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
         {
             echo "POSTGRES_USER=${db_user}"
             echo "POSTGRES_PASSWORD=${db_password}"
             echo "POSTGRES_DB=${db_name}"
             echo "DATABASE_URL=${db_url}"
+            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
         } >> "$env_file"
 
         ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
     fi
+}
+
+write_generated_default_database_url() {
+    local env_file="$1"
+    local generated_password=""
+    generated_password=$(generate_secure_token 24)
+    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
+
+    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
+    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
+
+    sed -i '/^POSTGRES_USER=/d' "$env_file"
+    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+    sed -i '/^POSTGRES_DB=/d' "$env_file"
+    sed -i '/^DATABASE_URL=/d' "$env_file"
+    sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+    {
+        echo "POSTGRES_USER=sidar"
+        echo "POSTGRES_PASSWORD=${generated_password}"
+        echo "POSTGRES_DB=sidar"
+        echo "DATABASE_URL=${local_db_url}"
+        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
+    } >> "$env_file"
+    DB_PASSWORD_HARDENED=true
 }
 
 ensure_database_url_defaults() {
@@ -2958,22 +2988,22 @@ ensure_database_url_defaults() {
     current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
 
     if [[ -z "$current_db_url" ]]; then
-        echo "DATABASE_URL=${DEFAULT_DATABASE_URL}" >> "$env_file"
-        ok ".env: DATABASE_URL varsayılan PostgreSQL DSN ile eklendi."
+        write_generated_default_database_url "$env_file"
+        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
         return
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
-        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
-        ok ".env: DATABASE_URL PostgreSQL varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
+        write_generated_default_database_url "$env_file"
+        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
         warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
-        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DEFAULT_DATABASE_URL}|" "$env_file"
-        ok ".env: DATABASE_URL Sidar varsayılanına güncellendi (${DEFAULT_DATABASE_URL})."
+        write_generated_default_database_url "$env_file"
+        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
     fi
 }
 
@@ -3412,6 +3442,17 @@ PY
     _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
         "69df1db55791dd991a3197958f5fce4ea0ed47e3"
 
+    # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
+    if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
+        local _v; _v=$(_gen_urlsafe 32)
+        if [[ -n "$_v" ]]; then
+            _write_secret "GRAFANA_ADMIN_PASSWORD" "$_v"
+            ok ".env: GRAFANA_ADMIN_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "GRAFANA_ADMIN_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
     # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
     if _is_missing_or_insecure "METRICS_TOKEN" \
@@ -3519,6 +3560,73 @@ prompt_post_install_sidar_env_mode() {
     ok "Sidar kullanıma hazır!"
 }
 
+
+get_env_value() {
+    local env_file="$1" key="$2"
+    grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
+}
+
+is_weak_secret_value() {
+    local value="${1:-}"
+    [[ -n "${value//[[:space:]]/}" ]] || return 0
+    case "${value,,}" in
+        sidar|admin|password|changeme|change_me|secret|default|test|example|postgres|root|123456|12345678)
+            return 0
+            ;;
+    esac
+    (( ${#value} < 24 )) && return 0
+    return 1
+}
+
+validate_required_security_profile() {
+    local env_file="$1"
+    local api_key memory_key access_level db_password database_url pg_password grafana_password
+    api_key="$(get_env_value "$env_file" API_KEY)"
+    memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
+    access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
+    database_url="$(get_env_value "$env_file" DATABASE_URL)"
+    pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
+    grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
+
+    if is_weak_secret_value "$api_key"; then
+        fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
+    fi
+
+    if [[ -z "$memory_key" ]]; then
+        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY boş. Geçerli Fernet anahtarı zorunludur."
+    fi
+    if ! python3 - "$memory_key" <<'PYFERNET'
+import sys
+from cryptography.fernet import Fernet
+Fernet(sys.argv[1].encode())
+PYFERNET
+    then
+        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY geçerli Fernet anahtarı değil."
+    fi
+
+    if [[ "${access_level,,}" == "full" && "$ALLOW_FULL_ACCESS" != true ]]; then
+        fail "ACCESS_LEVEL=full yalnız açık onayla kullanılabilir. Riskleri kabul ediyorsanız --i-understand-full-access bayrağını verin."
+    fi
+
+    db_password="$(python3 - "$database_url" <<'PYDB' 2>/dev/null || true
+import sys
+from urllib.parse import urlparse, unquote
+url = sys.argv[1]
+if url:
+    print(unquote(urlparse(url).password or ""))
+PYDB
+)"
+    if [[ -n "$database_url" ]] && is_weak_secret_value "$db_password"; then
+        fail ".env güvenlik doğrulaması başarısız: DATABASE_URL içindeki veritabanı parolası boş veya zayıf."
+    fi
+    if is_weak_secret_value "$pg_password"; then
+        fail ".env güvenlik doğrulaması başarısız: POSTGRES_PASSWORD boş veya zayıf."
+    fi
+    if is_weak_secret_value "$grafana_password"; then
+        fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -3533,6 +3641,7 @@ setup_env_file() {
         sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
+        validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
         return
@@ -3554,6 +3663,7 @@ setup_env_file() {
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"
+    validate_required_security_profile "$ENV_FILE"
 
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
@@ -3605,6 +3715,48 @@ setup_env_file() {
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
+
+run_coding_model_smoke_prompt() {
+    local model_name="${1:-}"
+    local ollama_base_url="${2:-}"
+    local response_file=""
+    local response_text=""
+
+    [[ -n "$model_name" ]] || model_name="qwen2.5-coder:7b"
+    [[ -n "$ollama_base_url" ]] || ollama_base_url="http://localhost:11434"
+    response_file=$(mktemp)
+
+    info "Coding model JSON smoke testi çalışıyor (${model_name})..."
+    if ! curl -fsS --max-time 75 \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"${model_name}\",\"prompt\":\"Return exactly this JSON and nothing else: {\\\"sidar_smoke\\\": true}\",\"stream\":false,\"format\":\"json\"}" \
+        "${ollama_base_url%/}/api/generate" > "$response_file"; then
+        rm -f "$response_file"
+        fail "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi (${model_name})."
+    fi
+
+    response_text=$(python3 - "$response_file" <<'PYSMOKE' 2>/dev/null || true
+import json
+import sys
+payload = json.loads(open(sys.argv[1], encoding="utf-8").read())
+print(payload.get("response", ""))
+PYSMOKE
+)
+    rm -f "$response_file"
+
+    if ! python3 - "$response_text" <<'PYJSON' >/dev/null 2>&1
+import json
+import sys
+parsed = json.loads(sys.argv[1])
+raise SystemExit(0 if parsed.get("sidar_smoke") is True else 1)
+PYJSON
+    then
+        fail "Coding model JSON smoke testi başarısız: model geçerli JSON çıktı üretmedi. Yanıt: ${response_text:0:200}"
+    fi
+
+    ok "Coding model JSON smoke testi başarılı (${model_name})."
+}
+
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
@@ -3752,6 +3904,7 @@ PY
 
             if (( ${#models_to_pull[@]} == 0 )); then
                 ok "Ollama üzerinde ${existing_model_count} model mevcut ve gerekli modeller zaten yüklü (${ollama_tags_url})."
+                run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
                 return
             fi
 
@@ -3842,7 +3995,8 @@ PY
         fi
     done
 
-    ok "Gerekli tüm modeller başarıyla hazırlandı."
+    run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
+    ok "Gerekli tüm modeller başarıyla hazırlandı ve doğrulandı."
 }
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
@@ -4322,7 +4476,7 @@ run_smoke_tests() {
     fi
 
     if ! python -c "import pytest" >/dev/null 2>&1; then
-        warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini --no-dev olmadan tekrar çalıştırın."
+        warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini uv.lock ile tekrar çalıştırın."
         SMOKE_TEST_STATUS="pytest_yok"
         return
     fi
@@ -4825,6 +4979,101 @@ EOF
     done
 }
 
+
+run_doctor_phase() {
+    step "Sidar Doctor"
+    cd "$SCRIPT_DIR"
+    mkdir -p artifacts/install
+    local -a doctor_cmd=()
+    if command -v uv &>/dev/null; then
+        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
+    elif command -v python3 &>/dev/null; then
+        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
+    else
+        fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
+    fi
+
+    if "${doctor_cmd[@]}"; then
+        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
+    else
+        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
+        return 1
+    fi
+}
+
+run_prepare_system_phase() {
+    install_system_dependencies
+    sync_repo
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    select_runtime_mode_early
+    detect_gpu
+    setup_nvidia_docker
+    create_directories
+    setup_env_file
+    ok "prepare-system fazı tamamlandı."
+}
+
+run_sync_deps_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    select_runtime_mode_early
+    detect_gpu
+    setup_uv
+    setup_python_env
+    install_python_deps
+    verify_torch_cuda
+    ok "sync-deps fazı tamamlandı."
+}
+
+run_provision_models_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    detect_gpu
+    setup_env_file
+    download_ollama_models
+    ok "provision-models fazı tamamlandı."
+}
+
+run_smoke_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    detect_gpu
+    prepare_docker_for_migrations
+    run_migrations
+    run_smoke_tests
+    run_test_artifact_audit
+    run_doctor_phase || true
+    ok "smoke fazı tamamlandı."
+}
+
+run_install_subcommand_if_requested() {
+    case "$INSTALL_SUBCOMMAND" in
+        full) return 1 ;;
+        doctor)
+            run_doctor_phase
+            return 0
+            ;;
+        prepare-system)
+            run_prepare_system_phase
+            return 0
+            ;;
+        sync-deps)
+            run_sync_deps_phase
+            return 0
+            ;;
+        provision-models)
+            run_provision_models_phase
+            return 0
+            ;;
+        smoke)
+            run_smoke_phase
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -4834,11 +5083,24 @@ main() {
         OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
         if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
             info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
+            verify_offline_bundle_manifest "$OFFLINE_PACKAGES_DIR"
         else
-            warn "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı. İndirme gerektiren adımlar bu modda hata verebilir."
+            fail "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."
         fi
     fi
+
+    if [[ "$INSTALL_SUBCOMMAND" == "doctor" ]]; then
+        run_doctor_phase
+        return
+    fi
+
     ensure_noninteractive_sudo_ready
+
+    if run_install_subcommand_if_requested; then
+        relocate_log_file_if_needed
+        cleanup_bootstrap_script_copy
+        return
+    fi
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."

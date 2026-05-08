@@ -22,6 +22,7 @@ from typing import Any, TypeVar, cast
 import jwt
 
 from config import Config
+from sidar_assets.paths import alembic_ini_path, migrations_path
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
@@ -916,9 +917,8 @@ class Database:
         from alembic import command
         from alembic.config import Config as AlembicConfig
 
-        repo_root = Path(__file__).resolve().parents[1]
-        alembic_cfg = AlembicConfig(str(repo_root / "alembic.ini"))
-        alembic_cfg.set_main_option("script_location", str(repo_root / "migrations"))
+        alembic_cfg = AlembicConfig(str(alembic_ini_path()))
+        alembic_cfg.set_main_option("script_location", str(migrations_path()))
         alembic_cfg.set_main_option("sqlalchemy.url", self.database_url)
         command.upgrade(alembic_cfg, "head")
 

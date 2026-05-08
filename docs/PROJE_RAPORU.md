@@ -727,7 +727,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-benchmark` | ✓ Zorunlu (CI/QA) | Test yürütme, async test, coverage gate, benchmark |
-| `ruff`, `mypy`, `black`, `flake8` | ✓ Zorunlu (CI/QA) | Lint, statik analiz, format kalite kapıları |
+| `ruff format --check`, `ruff check`, `mypy` | ✓ Zorunlu (CI/QA) | Format, lint ve statik analiz kalite kapıları |
 | `uv` | Ortam/araç bağımlılığı | `environment.yml` ve `uv.lock` ile hızlı kilit/paket yönetimi iş akışı |
 
 **Geçiş Notu (v3.0):**

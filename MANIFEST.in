@@ -41,3 +41,6 @@ global-exclude *.pyc *.pyo *.pyd
 global-exclude .DS_Store
 global-exclude *.log
 global-exclude *:Zone.Identifier
+
+# Paketlenmiş Sidar runtime varlıkları
+recursive-include sidar_assets *.ini *.html *.json *.mako *.py *.tpl *.txt *.yaml *.yml

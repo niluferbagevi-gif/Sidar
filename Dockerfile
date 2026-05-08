@@ -24,7 +24,6 @@
 # GPU:      nvidia/cuda:13.0.0-runtime-ubuntu22.04
 ARG BASE_IMAGE=python:3.11-slim
 ARG GPU_ENABLED=false
-ARG INSTALL_DEV=false
 
 FROM ${BASE_IMAGE}
 
@@ -81,12 +80,9 @@ ENV UV_INDEX_STRATEGY=first-index \
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
+RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ "$INSTALL_DEV" = "true" ]; then \
-      uv sync --frozen --no-install-project; \
-    else \
-      uv sync --frozen --no-dev --no-install-project; \
-    fi
+    uv sync --frozen --all-extras --no-install-project
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
 # Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .
@@ -103,11 +99,7 @@ COPY . .
 
 # Proje paketini mevcut lock dosyasına göre ortama kur
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ "$INSTALL_DEV" = "true" ]; then \
-      uv sync --frozen; \
-    else \
-      uv sync --frozen --no-dev; \
-    fi
+    uv sync --frozen --all-extras
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
 RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
