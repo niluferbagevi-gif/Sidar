@@ -285,7 +285,10 @@ def _ollama_base_url() -> str:
 
 
 def check_model(coding_model: str | None = None, *, smoke: bool = True) -> DoctorCheck:
-    model = coding_model or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b"
+    model = (coding_model or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b").strip()
+    if not model:
+        model = "qwen2.5-coder:7b"
+    model_prefix = model.split(":", 1)[0]
     base = _ollama_base_url()
     details: dict[str, Any] = {"model": model, "ollama_url": base, "present": False, "json_smoke": False}
     try:
@@ -296,7 +299,7 @@ def check_model(coding_model: str | None = None, *, smoke: bool = True) -> Docto
             tags.raise_for_status()
             models = tags.json().get("models", [])
             names = {str(item.get("name", "")) for item in models if isinstance(item, dict)}
-            details["present"] = model in names or any(name.startswith(model.split(":", 1)[0]) for name in names)
+            details["present"] = model in names or any(name.startswith(model_prefix) for name in names)
             details["available_models"] = sorted(names)[:20]
             if smoke and details["present"]:
                 prompt = 'Return exactly this JSON and nothing else: {"sidar_doctor": true}'
