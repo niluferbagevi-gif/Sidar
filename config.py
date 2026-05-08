@@ -448,7 +448,7 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
-    ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "full")
+    ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
     API_KEY: str = os.getenv("API_KEY", "")
 
     # ─── JWT Auth (stateless) ─────────────────────────────────
@@ -889,6 +889,19 @@ class Config:
             logger.error(
                 "❌ GPU zorunlu mod aktif (REQUIRE_GPU=true) ancak CUDA/PyTorch uygun değil veya USE_GPU=false.\n"
                 "   Çözüm: CUDA destekli PyTorch kurun ve .env içinde USE_GPU=true yapın."
+            )
+            is_valid = False
+
+        allow_full_access = os.getenv("SIDAR_ALLOW_FULL_ACCESS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if cls.ACCESS_LEVEL.strip().lower() == "full" and not allow_full_access:
+            logger.error(
+                "❌ ACCESS_LEVEL=full açık onay olmadan yasaktır. "
+                "Riskleri kabul ediyorsanız SIDAR_ALLOW_FULL_ACCESS=true ayarlayın."
             )
             is_valid = False
 

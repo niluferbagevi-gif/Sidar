@@ -1,0 +1,34 @@
+{{- if and .Values.apm.enabled (eq .Values.apm.backend "jaeger") .Values.apm.jaeger.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidar.fullname" . }}-jaeger
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: jaeger
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: jaeger
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: jaeger
+          image: {{ .Values.apm.jaeger.image | quote }}
+          ports:
+            - name: collector-grpc
+              containerPort: {{ .Values.apm.jaeger.service.collectorGrpcPort }}
+            - name: collector-http
+              containerPort: {{ .Values.apm.jaeger.service.collectorHttpPort }}
+            - name: query
+              containerPort: {{ .Values.apm.jaeger.service.queryPort }}
+          resources:
+            {{- toYaml .Values.apm.jaeger.resources | nindent 12 }}
+{{- end }}

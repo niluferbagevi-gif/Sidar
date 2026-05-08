@@ -1,0 +1,41 @@
+{{- if .Values.apm.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidar.fullname" . }}-otel-collector
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  replicas: {{ .Values.apm.collector.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: otel-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: otel-collector
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: otel-collector
+          image: {{ .Values.apm.collector.image | quote }}
+          args:
+            - "--config=/conf/collector-config.yaml"
+          ports:
+            - name: otlp-grpc
+              containerPort: {{ .Values.apm.collector.service.grpcPort }}
+            - name: otlp-http
+              containerPort: {{ .Values.apm.collector.service.httpPort }}
+          resources:
+            {{- toYaml .Values.apm.collector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "sidar.fullname" . }}-otel-collector
+{{- end }}

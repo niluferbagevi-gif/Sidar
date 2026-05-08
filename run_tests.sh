@@ -582,8 +582,8 @@ import pytest_asyncio  # noqa: F401
 PY
   then
     echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. dev bağımlılıkları otomatik kuruluyor..."
-    echo "ℹ️ dev bağımlılıkları ve opsiyonel entegrasyonlar uv ile senkronize ediliyor (uv sync --all-extras)..."
-    uv sync --all-extras
+    echo "ℹ️ dev bağımlılıkları ve opsiyonel entegrasyonlar uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
+    uv sync --frozen --all-extras
 
     if ! uv run python -c "import pytest_asyncio" >/dev/null 2>&1; then
       echo "❌ Geliştirici bağımlılıklarının otomatik kurulumu başarısız oldu."

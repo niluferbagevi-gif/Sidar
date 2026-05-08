@@ -1,0 +1,97 @@
+name: Release Quality Gates
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  helm-validate:
+    name: Helm lint and template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
+      - name: Helm lint
+        run: helm lint helm/sidar
+      - name: Helm template validation
+        run: |
+          helm template sidar helm/sidar --values helm/sidar/values.yaml >/tmp/sidar-rendered.yaml
+          test -s /tmp/sidar-rendered.yaml
+
+  sbom-and-sign:
+    name: SBOM and signing gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: sigstore/cosign-installer@v3.7.0
+      - name: Generate CycloneDX SBOM
+        run: syft dir:. -o cyclonedx-json=artifacts/sbom/sidar.cdx.json
+      - name: Sign SBOM with keyless cosign
+        run: cosign sign-blob --yes --bundle artifacts/sbom/sidar.cdx.bundle artifacts/sbom/sidar.cdx.json
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidar-sbom-and-signature
+          path: artifacts/sbom/
+
+  wheel-smoke:
+    name: Wheel clean install smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Build wheel
+        run: uv build --wheel
+      - name: Clean venv install from wheel
+        run: |
+          python -m venv /tmp/sidar-wheel-smoke
+          /tmp/sidar-wheel-smoke/bin/pip install --no-cache-dir dist/*.whl
+          /tmp/sidar-wheel-smoke/bin/sidar doctor --output /tmp/sidar-wheel-doctor.json
+          test -s /tmp/sidar-wheel-doctor.json
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidar-wheel
+          path: dist/*.whl
+
+  docker-smoke:
+    name: Docker image clean smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t sidar:${{ github.sha }} .
+      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: sigstore/cosign-installer@v3.7.0
+      - name: Generate Docker image SBOM
+        run: syft sidar:${{ github.sha }} -o cyclonedx-json=artifacts/sbom/sidar-image.cdx.json
+      - name: Sign Docker image SBOM
+        run: cosign sign-blob --yes --bundle artifacts/sbom/sidar-image.cdx.bundle artifacts/sbom/sidar-image.cdx.json
+      - name: Smoke run image
+        run: |
+          MEMORY_ENCRYPTION_KEY=$(python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+          API_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+          docker run --rm \
+            -e MEMORY_ENCRYPTION_KEY="${MEMORY_ENCRYPTION_KEY}" \
+            -e API_KEY="${API_KEY}" \
+            -e SIDAR_ENV=development \
+            sidar:${{ github.sha }} --status
+      - name: Upload Docker SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidar-docker-sbom-and-signature
+          path: artifacts/sbom/
