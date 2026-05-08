@@ -71,7 +71,7 @@ def test_env_int_clamps_value_to_bounds(monkeypatch):
 
 
 def test_read_gpu_memory_used_mib_parses_all_devices(monkeypatch):
-    monkeypatch.setattr(gpu_smoke, "is_gpu_available", lambda: True)
+    monkeypatch.setattr(gpu_smoke, "_nvidia_smi_cmd", lambda: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(
         gpu_smoke.subprocess,
         "check_output",
@@ -81,7 +81,7 @@ def test_read_gpu_memory_used_mib_parses_all_devices(monkeypatch):
 
 
 def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
-    monkeypatch.setattr(gpu_smoke, "is_gpu_available", lambda: True)
+    monkeypatch.setattr(gpu_smoke, "_nvidia_smi_cmd", lambda: "/usr/bin/nvidia-smi")
 
     def _raise(*_args, **_kwargs):
         raise subprocess.CalledProcessError(returncode=1, cmd="nvidia-smi")

@@ -4,6 +4,12 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+# Codespaces overlay dosya sisteminde uv hardlink denemesi pahalı uyarılara neden olur;
+# UV_LINK_MODE=copy hem devcontainer hem de manuel script çalıştırmalarında deterministik kalır.
+if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB_CODESPACES:-}" = "true" ]; }; then
+  export UV_LINK_MODE=copy
+fi
+
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 run_precommit_autofix() {
@@ -576,8 +582,8 @@ import pytest_asyncio  # noqa: F401
 PY
   then
     echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. dev bağımlılıkları otomatik kuruluyor..."
-    echo "ℹ️ dev bağımlılıkları uv ile senkronize ediliyor..."
-    uv sync --extra dev
+    echo "ℹ️ dev bağımlılıkları ve opsiyonel entegrasyonlar uv ile senkronize ediliyor (uv sync --all-extras)..."
+    uv sync --all-extras
 
     if ! uv run python -c "import pytest_asyncio" >/dev/null 2>&1; then
       echo "❌ Geliştirici bağımlılıklarının otomatik kurulumu başarısız oldu."

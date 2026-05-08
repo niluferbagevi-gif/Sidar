@@ -4,6 +4,11 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+# Codespaces overlay dosya sisteminde uv hardlink denemesi pahalı uyarılara neden olur.
+if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB_CODESPACES:-}" = "true" ]; }; then
+  export UV_LINK_MODE=copy
+fi
+
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
 AUTONOMOUS_COVERAGE_PROFILE="${AUTONOMOUS_LOOP_COVERAGE_PROFILE:-short}"
