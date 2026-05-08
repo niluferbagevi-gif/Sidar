@@ -11,6 +11,7 @@ from scripts.auto_heal import (
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
     _build_scope_queue,
+    _configure_auto_heal_memory_backend,
     _extract_scope_error_lines,
     _initialize_agent_soft_dependency,
     _parse_approval_value,
@@ -103,6 +104,25 @@ def test_resolve_auto_heal_database_url_honors_cli_and_env(
         _resolve_auto_heal_database_url(log_path, "postgresql://u:p@db/sidar")
         == "postgresql://u:p@db/sidar"
     )
+
+
+
+def test_configure_auto_heal_memory_backend_uses_bm25_for_sqlite_pgvector() -> None:
+    cfg = types.SimpleNamespace(RAG_VECTOR_BACKEND="pgvector")
+
+    backend = _configure_auto_heal_memory_backend(cfg, "sqlite+aiosqlite:///tmp/auto_heal.db")
+
+    assert backend == "bm25"
+    assert cfg.RAG_VECTOR_BACKEND == "bm25"
+
+
+def test_configure_auto_heal_memory_backend_preserves_postgres_pgvector() -> None:
+    cfg = types.SimpleNamespace(RAG_VECTOR_BACKEND="pgvector")
+
+    backend = _configure_auto_heal_memory_backend(cfg, "postgresql+asyncpg://u:p@db/sidar")
+
+    assert backend == "pgvector"
+    assert cfg.RAG_VECTOR_BACKEND == "pgvector"
 
 
 def test_redact_database_url_masks_password() -> None:
@@ -420,13 +440,16 @@ def test_run_uses_isolated_sqlite_memory_by_default(
         CODING_MODEL = "qwen2.5-coder:7b"
         ENABLE_AUTONOMOUS_SELF_HEAL = False
         DATABASE_URL = "postgresql+asyncpg://sidar:wrong@localhost:5432/sidar"
+        RAG_VECTOR_BACKEND = "pgvector"
 
     class _Agent:
         seen_database_url = ""
+        seen_vector_backend = ""
 
         def __init__(self, config):
             self.config = config
             self.__class__.seen_database_url = config.DATABASE_URL
+            self.__class__.seen_vector_backend = config.RAG_VECTOR_BACKEND
 
         async def initialize(self):
             return None
@@ -471,6 +494,8 @@ def test_run_uses_isolated_sqlite_memory_by_default(
     assert _Agent.seen_database_url.startswith("sqlite+aiosqlite:///")
     assert _Agent.seen_database_url.endswith("/auto_heal_memory.db")
     assert payload["database_url"] == _Agent.seen_database_url
+    assert _Agent.seen_vector_backend == "bm25"
+    assert payload["memory_backend"] == "bm25"
 
 
 def test_run_continues_when_agent_initialize_fails(

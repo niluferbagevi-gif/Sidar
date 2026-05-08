@@ -113,6 +113,16 @@ def _resolve_auto_heal_database_url(log_path: Path, requested_database_url: str 
     return f"sqlite+aiosqlite:///{db_path.as_posix()}"
 
 
+def _configure_auto_heal_memory_backend(cfg: Any, database_url: str) -> str:
+    """Prefer lightweight BM25 memory when self-heal runs on its isolated SQLite DB."""
+
+    vector_backend = str(getattr(cfg, "RAG_VECTOR_BACKEND", "") or "").strip().lower()
+    if vector_backend == "pgvector" and not str(database_url or "").startswith("postgresql"):
+        cfg.RAG_VECTOR_BACKEND = "bm25"
+        return "bm25"
+    return str(getattr(cfg, "RAG_VECTOR_BACKEND", vector_backend) or vector_backend)
+
+
 def _redact_database_url(database_url: str) -> str:
     """Log/JSON çıktısında parola sızdırmadan DB URL bilgisini gösterir."""
     text = str(database_url or "").strip()
@@ -328,6 +338,7 @@ async def _run(args: argparse.Namespace) -> int:
     cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
     cfg.DATABASE_URL = _resolve_auto_heal_database_url(log_path, getattr(args, "database_url", None))
+    memory_backend = _configure_auto_heal_memory_backend(cfg, str(cfg.DATABASE_URL))
     agent = SidarAgent(config=cfg)
     initialization_warning = await _initialize_agent_soft_dependency(agent)
 
@@ -409,6 +420,7 @@ async def _run(args: argparse.Namespace) -> int:
             "status": final_status,
             "model": cfg.CODING_MODEL,
             "database_url": _redact_database_url(str(getattr(cfg, "DATABASE_URL", ""))),
+            "memory_backend": memory_backend,
             "initialization_warning": initialization_warning,
             "queue_size": len(queue),
             "executions": executions,
