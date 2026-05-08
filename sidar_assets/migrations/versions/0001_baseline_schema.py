@@ -8,9 +8,12 @@ Create Date: 2026-03-11 00:00:00
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import Dialect
+from sqlalchemy.types import TypeDecorator, TypeEngine
 
 revision = "0001_baseline_schema"
 down_revision = None
@@ -18,20 +21,20 @@ branch_labels = None
 depends_on = None
 
 
-class SidarUUID(sa.TypeDecorator):
+class SidarUUID(TypeDecorator[str]):
     """Use PostgreSQL native UUID while preserving SQLite string fallback."""
 
     impl = sa.String
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
         if dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import UUID
 
             return dialect.type_descriptor(UUID(as_uuid=True))
         return dialect.type_descriptor(sa.String(length=36))
 
-    def process_bind_param(self, value, dialect):
+    def process_bind_param(self, value: object | None, dialect: Dialect) -> str | uuid.UUID | None:
         if value is None:
             return None
         parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -39,7 +42,7 @@ class SidarUUID(sa.TypeDecorator):
             return parsed
         return str(parsed)
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(self, value: object | None, dialect: Dialect) -> str | None:
         if value is None:
             return None
         return str(value)
@@ -61,14 +64,18 @@ def upgrade() -> None:
     op.create_table(
         "auth_tokens",
         sa.Column("token", sa.Text(), primary_key=True),
-        sa.Column("user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
 
     op.create_table(
         "user_quotas",
-        sa.Column("user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+        ),
         sa.Column("daily_token_limit", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("daily_request_limit", sa.Integer(), nullable=False, server_default="0"),
     )
@@ -76,7 +83,9 @@ def upgrade() -> None:
     op.create_table(
         "provider_usage_daily",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("provider", sa.Text(), nullable=False),
         sa.Column("usage_date", sa.Date(), nullable=False),
         sa.Column("requests_used", sa.Integer(), nullable=False, server_default="0"),
@@ -87,7 +96,9 @@ def upgrade() -> None:
     op.create_table(
         "sessions",
         sa.Column("id", UUID_TYPE, primary_key=True),
-        sa.Column("user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", UUID_TYPE, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -96,7 +107,12 @@ def upgrade() -> None:
     op.create_table(
         "messages",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("session_id", UUID_TYPE, sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "session_id",
+            UUID_TYPE,
+            sa.ForeignKey("sessions.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("role", sa.Text(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("tokens_used", sa.Integer(), nullable=False, server_default="0"),

@@ -306,6 +306,7 @@ sidar doctor                           # artifacts/install/doctor.json üretir
 ```bash
 cd Sidar
 python -m venv .venv
+uv sync --all-extras
 uv sync --frozen --all-extras
 uv run python main.py
 ```
