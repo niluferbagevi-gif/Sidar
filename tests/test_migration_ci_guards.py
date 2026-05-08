@@ -117,3 +117,16 @@ def test_alembic_documentation_uses_supported_asyncpg_driver() -> None:
         doc_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         assert "postgresql+psycopg://" not in doc_text
         assert "postgresql+asyncpg://user:pass@host:5432/sidar" in doc_text
+
+
+def test_alembic_revision_creation_uses_modern_naming_defaults() -> None:
+    expected_options = {
+        "file_template": "%(year)d_%(month).2d_%(day).2d_%(rev)s_%(slug)s",
+        "truncate_slug_length": "60",
+        "timezone": "UTC",
+        "path_separator": "os",
+    }
+    for relative_path in ("alembic.ini", "sidar_assets/alembic.ini"):
+        cfg = Config(str(PROJECT_ROOT / relative_path))
+        for option, expected_value in expected_options.items():
+            assert cfg.get_main_option(option) == expected_value
