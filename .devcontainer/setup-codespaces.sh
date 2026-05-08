@@ -7,6 +7,7 @@ cd "${REPO_ROOT}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-.venv}"
+export SIDAR_PYTHON_VERSION="${SIDAR_PYTHON_VERSION:-3.11}"
 export CODING_MODEL="${CODING_MODEL:-qwen2.5-coder:7b}"
 export OLLAMA_REQUIRED_MODELS="${OLLAMA_REQUIRED_MODELS:-${CODING_MODEL}}"
 
@@ -38,8 +39,8 @@ ensure_uv() {
 sync_python_environment() {
   ensure_uv
   log "Codespaces overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
-  log "Sanal ortam hazırlanıyor: uv venv ${UV_PROJECT_ENVIRONMENT}"
-  uv venv "${UV_PROJECT_ENVIRONMENT}"
+  log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
+  uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
   log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
   uv sync --frozen --all-extras
 

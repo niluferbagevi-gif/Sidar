@@ -19,6 +19,7 @@
   "containerEnv": {
     "UV_LINK_MODE": "copy",
     "UV_PROJECT_ENVIRONMENT": ".venv",
+    "SIDAR_PYTHON_VERSION": "3.11",
     "CODING_MODEL": "qwen2.5-coder:7b",
     "OLLAMA_REQUIRED_MODELS": "qwen2.5-coder:7b",
     "OLLAMA_MODEL_SYNC": "auto",
@@ -28,7 +29,8 @@
   },
   "remoteEnv": {
     "UV_LINK_MODE": "copy",
-    "UV_PROJECT_ENVIRONMENT": ".venv"
+    "UV_PROJECT_ENVIRONMENT": ".venv",
+    "SIDAR_PYTHON_VERSION": "3.11"
   },
   "postCreateCommand": "bash .devcontainer/setup-codespaces.sh post-create",
   "postStartCommand": "bash .devcontainer/setup-codespaces.sh post-start",

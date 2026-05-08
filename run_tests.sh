@@ -10,6 +10,74 @@ if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB
   export UV_LINK_MODE=copy
 fi
 
+PROJECT_VENV_ENV="${UV_PROJECT_ENVIRONMENT:-.venv}"
+case "${PROJECT_VENV_ENV}" in
+  /*) PROJECT_VENV_DIR="${PROJECT_VENV_ENV}" ;;
+  *) PROJECT_VENV_DIR="${SCRIPT_DIR}/${PROJECT_VENV_ENV}" ;;
+esac
+
+read_preferred_python_version() {
+  if [ -n "${SIDAR_PYTHON_VERSION:-}" ]; then
+    printf '%s' "${SIDAR_PYTHON_VERSION}"
+    return 0
+  fi
+  if [ -f "${SCRIPT_DIR}/.python-version" ]; then
+    head -n 1 "${SCRIPT_DIR}/.python-version" | tr -d '[:space:]'
+    return 0
+  fi
+  printf '3.11'
+}
+
+ensure_project_venv() {
+  export UV_PROJECT_ENVIRONMENT="${PROJECT_VENV_ENV}"
+
+  if ! command -v uv >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local preferred_python
+  preferred_python="$(read_preferred_python_version)"
+  local recreate_venv=0
+
+  if [ ! -x "${PROJECT_VENV_DIR}/bin/python" ]; then
+    recreate_venv=1
+  elif ! "${PROJECT_VENV_DIR}/bin/python" - <<'PY_VENV_CHECK' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if (3, 11) <= sys.version_info[:2] < (3, 13) else 1)
+PY_VENV_CHECK
+  then
+    recreate_venv=1
+  elif [ -n "${preferred_python}" ] && ! "${PROJECT_VENV_DIR}/bin/python" - "${preferred_python}" <<'PY_VENV_VERSION' >/dev/null 2>&1
+import sys
+
+preferred = sys.argv[1].strip()
+if not preferred:
+    raise SystemExit(0)
+major_minor = f"{sys.version_info.major}.{sys.version_info.minor}"
+# Only enforce major.minor pins such as 3.11; patch-level pins remain uv's job.
+parts = preferred.split(".")
+if len(parts) >= 2 and all(part.isdigit() for part in parts[:2]):
+    raise SystemExit(0 if major_minor == ".".join(parts[:2]) else 1)
+raise SystemExit(0)
+PY_VENV_VERSION
+  then
+    recreate_venv=1
+  fi
+
+  if [ "${recreate_venv}" -eq 1 ]; then
+    echo "ℹ️ Proje sanal ortamı hazırlanıyor: uv venv --python ${preferred_python} ${PROJECT_VENV_ENV}"
+    rm -rf "${PROJECT_VENV_DIR}"
+    uv venv --python "${preferred_python}" "${PROJECT_VENV_ENV}"
+  fi
+
+  if [ -f "${PROJECT_VENV_DIR}/bin/activate" ]; then
+    # shellcheck disable=SC1090
+    source "${PROJECT_VENV_DIR}/bin/activate"
+  fi
+}
+
+ensure_project_venv
+
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 run_precommit_autofix() {
