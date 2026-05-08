@@ -285,6 +285,22 @@ uv sync --frozen --all-extras
 > geliştirme araçlarını varsayılan akıştan çıkarmaz. Yerel coding modeli standardı Ollama üzerinde
 > `qwen2.5-coder:7b` olarak hedeflenir.
 
+
+### Modüler Kurulum Fazları ve Doctor
+
+Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata alınan fazı tekrar çalıştırmak için aşağıdaki alt komutları kullanabilirsiniz:
+
+```bash
+./install_sidar.sh prepare-system      # sistem paketleri, repo, ön koşullar, .env hazırlığı
+./install_sidar.sh sync-deps           # uv venv + uv sync --frozen --all-extras
+./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
+./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
+./install_sidar.sh doctor              # sadece doctor raporu
+sidar doctor                           # artifacts/install/doctor.json üretir
+```
+
+`sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
 ```bash

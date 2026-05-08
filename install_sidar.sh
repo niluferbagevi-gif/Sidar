@@ -1320,11 +1320,13 @@ WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
+INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
     case "$arg" in
         --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ; INSTALL_DEV=true ;;
         --upgrade-lock) UPGRADE_LOCK=true ;;
         --i-understand-full-access) ALLOW_FULL_ACCESS=true ;;
+        doctor|prepare-system|sync-deps|provision-models|smoke) INSTALL_SUBCOMMAND="$arg" ;;
         --cpu)  FORCE_CPU=true ;;
         --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
         --silent) SILENT_MODE=true ;;
@@ -1356,7 +1358,8 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
@@ -1398,7 +1401,7 @@ for arg in "$@"; do
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (--upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -2158,6 +2161,10 @@ detect_gpu() {
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
+        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
+            export RUN_GPU_STRESS=1
+            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+        fi
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
         ok "Sürücü  : $DRIVER_VER"
@@ -3687,6 +3694,48 @@ setup_env_file() {
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
+
+run_coding_model_smoke_prompt() {
+    local model_name="${1:-}"
+    local ollama_base_url="${2:-}"
+    local response_file=""
+    local response_text=""
+
+    [[ -n "$model_name" ]] || model_name="qwen2.5-coder:7b"
+    [[ -n "$ollama_base_url" ]] || ollama_base_url="http://localhost:11434"
+    response_file=$(mktemp)
+
+    info "Coding model JSON smoke testi çalışıyor (${model_name})..."
+    if ! curl -fsS --max-time 75 \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"${model_name}\",\"prompt\":\"Return exactly this JSON and nothing else: {\\\"sidar_smoke\\\": true}\",\"stream\":false,\"format\":\"json\"}" \
+        "${ollama_base_url%/}/api/generate" > "$response_file"; then
+        rm -f "$response_file"
+        fail "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi (${model_name})."
+    fi
+
+    response_text=$(python3 - "$response_file" <<'PYSMOKE' 2>/dev/null || true
+import json
+import sys
+payload = json.loads(open(sys.argv[1], encoding="utf-8").read())
+print(payload.get("response", ""))
+PYSMOKE
+)
+    rm -f "$response_file"
+
+    if ! python3 - "$response_text" <<'PYJSON' >/dev/null 2>&1
+import json
+import sys
+parsed = json.loads(sys.argv[1])
+raise SystemExit(0 if parsed.get("sidar_smoke") is True else 1)
+PYJSON
+    then
+        fail "Coding model JSON smoke testi başarısız: model geçerli JSON çıktı üretmedi. Yanıt: ${response_text:0:200}"
+    fi
+
+    ok "Coding model JSON smoke testi başarılı (${model_name})."
+}
+
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
@@ -3834,6 +3883,7 @@ PY
 
             if (( ${#models_to_pull[@]} == 0 )); then
                 ok "Ollama üzerinde ${existing_model_count} model mevcut ve gerekli modeller zaten yüklü (${ollama_tags_url})."
+                run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
                 return
             fi
 
@@ -3924,7 +3974,8 @@ PY
         fi
     done
 
-    ok "Gerekli tüm modeller başarıyla hazırlandı."
+    run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
+    ok "Gerekli tüm modeller başarıyla hazırlandı ve doğrulandı."
 }
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
@@ -4907,6 +4958,101 @@ EOF
     done
 }
 
+
+run_doctor_phase() {
+    step "Sidar Doctor"
+    cd "$SCRIPT_DIR"
+    mkdir -p artifacts/install
+    local -a doctor_cmd=()
+    if command -v uv &>/dev/null; then
+        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
+    elif command -v python3 &>/dev/null; then
+        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
+    else
+        fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
+    fi
+
+    if "${doctor_cmd[@]}"; then
+        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
+    else
+        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
+        return 1
+    fi
+}
+
+run_prepare_system_phase() {
+    install_system_dependencies
+    sync_repo
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    select_runtime_mode_early
+    detect_gpu
+    setup_nvidia_docker
+    create_directories
+    setup_env_file
+    ok "prepare-system fazı tamamlandı."
+}
+
+run_sync_deps_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    select_runtime_mode_early
+    detect_gpu
+    setup_uv
+    setup_python_env
+    install_python_deps
+    verify_torch_cuda
+    ok "sync-deps fazı tamamlandı."
+}
+
+run_provision_models_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    detect_gpu
+    setup_env_file
+    download_ollama_models
+    ok "provision-models fazı tamamlandı."
+}
+
+run_smoke_phase() {
+    cd "$SCRIPT_DIR"
+    ensure_prerequisites
+    detect_gpu
+    prepare_docker_for_migrations
+    run_migrations
+    run_smoke_tests
+    run_test_artifact_audit
+    run_doctor_phase || true
+    ok "smoke fazı tamamlandı."
+}
+
+run_install_subcommand_if_requested() {
+    case "$INSTALL_SUBCOMMAND" in
+        full) return 1 ;;
+        doctor)
+            run_doctor_phase
+            return 0
+            ;;
+        prepare-system)
+            run_prepare_system_phase
+            return 0
+            ;;
+        sync-deps)
+            run_sync_deps_phase
+            return 0
+            ;;
+        provision-models)
+            run_provision_models_phase
+            return 0
+            ;;
+        smoke)
+            run_smoke_phase
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
@@ -4920,7 +5066,19 @@ main() {
             warn "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı. İndirme gerektiren adımlar bu modda hata verebilir."
         fi
     fi
+
+    if [[ "$INSTALL_SUBCOMMAND" == "doctor" ]]; then
+        run_doctor_phase
+        return
+    fi
+
     ensure_noninteractive_sudo_ready
+
+    if run_install_subcommand_if_requested; then
+        relocate_log_file_if_needed
+        cleanup_bootstrap_script_copy
+        return
+    fi
 
     if [[ "$INSTALL_KUBERNETES" == true ]]; then
         info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
