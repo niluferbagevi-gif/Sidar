@@ -2,38 +2,52 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import importlib.util
 import os
 from collections.abc import Callable
 from logging.config import fileConfig
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.engine import Connection, Engine
-from sqlalchemy.exc import InvalidRequestError as SQLAlchemyInvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from core.models import Base
 
-
-def load_dotenv(*args: Any, **kwargs: Any) -> bool:
-    """Load dotenv when python-dotenv is installed; otherwise keep env unchanged."""
-
-    try:
-        dotenv_module = importlib.import_module("dotenv")
-    except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
-        return False
-    dotenv_loader = getattr(dotenv_module, "load_dotenv", None)
-    if not callable(dotenv_loader):
-        return False
-    return bool(dotenv_loader(*args, **kwargs))
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection, Engine
 
 
+LoadDotenv = Callable[..., bool]
+CreateEngine = Callable[..., "Engine"]
+
+
+def _noop_load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
+    return False
+
+
+def _resolve_load_dotenv() -> LoadDotenv:
+    """Return python-dotenv's loader when available without conditional redefinition."""
+
+    if importlib.util.find_spec("dotenv") is None:
+        return _noop_load_dotenv
+    dotenv_module = importlib.import_module("dotenv")
+    candidate = getattr(dotenv_module, "load_dotenv", None)
+    if not callable(candidate):
+        return _noop_load_dotenv
+    return cast(LoadDotenv, candidate)
+
+
+_load_dotenv: LoadDotenv = _resolve_load_dotenv()
 _create_engine_candidate = getattr(sa, "create_engine", None)
-create_sync_engine: Callable[..., Engine] | None = (
-    _create_engine_candidate if callable(_create_engine_candidate) else None
+_create_engine: CreateEngine | None = (
+    cast(CreateEngine, _create_engine_candidate) if callable(_create_engine_candidate) else None
+)
+_InvalidRequestError = cast(
+    type[BaseException],
+    getattr(getattr(sa, "exc", None), "InvalidRequestError", RuntimeError),
 )
 
 config = context.config
@@ -48,7 +62,7 @@ def _preload_dotenv_for_alembic() -> None:
     env_path = Path(__file__).resolve().parents[1] / ".env"
     if env_path.exists():
         # Keep externally-provided env vars (e.g. test DATABASE_URL) as source of truth.
-        load_dotenv(dotenv_path=env_path, override=False)
+        _load_dotenv(dotenv_path=env_path, override=False)
 
 
 _preload_dotenv_for_alembic()
@@ -102,10 +116,10 @@ async def run_async_migrations() -> None:
             raise RuntimeError("DATABASE_URL or sqlalchemy.url must be configured for Alembic migrations")
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
-        except SQLAlchemyInvalidRequestError:
-            if create_sync_engine is None:
+        except _InvalidRequestError:
+            if _create_engine is None:
                 raise
-            connectable = create_sync_engine(url, poolclass=pool.NullPool)
+            connectable = _create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
         with connectable.connect() as connection:
