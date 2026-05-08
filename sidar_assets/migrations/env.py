@@ -6,49 +6,52 @@ import importlib.util
 import os
 from collections.abc import Callable
 from logging.config import fileConfig
+from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Protocol, TextIO, cast
 
-import sqlalchemy as sa
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from core.models import Base
 
-if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection, Engine
+
+class DotenvLoader(Protocol):
+    def __call__(
+        self,
+        dotenv_path: str | PathLike[str] | None = None,
+        stream: TextIO | None = None,
+        verbose: bool = False,
+        override: bool = False,
+        interpolate: bool = True,
+        encoding: str | None = "utf-8",
+    ) -> bool: ...
 
 
-LoadDotenv = Callable[..., bool]
-CreateEngine = Callable[..., "Engine"]
-
-
-def _noop_load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
+def _missing_load_dotenv(
+    dotenv_path: str | PathLike[str] | None = None,
+    stream: TextIO | None = None,
+    verbose: bool = False,
+    override: bool = False,
+    interpolate: bool = True,
+    encoding: str | None = "utf-8",
+) -> bool:
+    del dotenv_path, stream, verbose, override, interpolate, encoding
     return False
 
 
-def _resolve_load_dotenv() -> LoadDotenv:
-    """Return python-dotenv's loader when available without conditional redefinition."""
-
+def _resolve_dotenv_loader() -> DotenvLoader:
     if importlib.util.find_spec("dotenv") is None:
-        return _noop_load_dotenv
+        return _missing_load_dotenv
     dotenv_module = importlib.import_module("dotenv")
-    candidate = getattr(dotenv_module, "load_dotenv", None)
-    if not callable(candidate):
-        return _noop_load_dotenv
-    return cast(LoadDotenv, candidate)
+    return cast(DotenvLoader, dotenv_module.load_dotenv)
 
 
-_load_dotenv: LoadDotenv = _resolve_load_dotenv()
-_create_engine_candidate = getattr(sa, "create_engine", None)
-_create_engine: CreateEngine | None = (
-    cast(CreateEngine, _create_engine_candidate) if callable(_create_engine_candidate) else None
-)
-_InvalidRequestError = cast(
-    type[BaseException],
-    getattr(getattr(sa, "exc", None), "InvalidRequestError", RuntimeError),
-)
+_load_dotenv = _resolve_dotenv_loader()
+
 
 config = context.config
 
@@ -81,8 +84,20 @@ def _load_database_url() -> str | None:
     return None
 
 
+def _configured_database_url(section: dict[str, str] | None = None) -> str:
+    raw_url = None
+    if section is not None:
+        raw_url = section.get("sqlalchemy.url")
+    url = raw_url or config.get_main_option("sqlalchemy.url")
+    if not url:
+        raise RuntimeError(
+            "Alembic sqlalchemy.url is not configured; set DATABASE_URL or sqlalchemy.url."
+        )
+    return url
+
+
 def run_migrations_offline() -> None:
-    url = _load_database_url() or config.get_main_option("sqlalchemy.url")
+    url = _load_database_url() or _configured_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -103,23 +118,21 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = context.config.attributes.get("connection", None)
+    connectable = cast(
+        "AsyncEngine | Engine | None", context.config.attributes.get("connection", None)
+    )
 
     if connectable is None:
-        section = config.get_section(config.config_ini_section) or {}
+        section = dict(config.get_section(config.config_ini_section) or {})
         x_database_url = _load_database_url()
         if x_database_url:
             section["sqlalchemy.url"] = x_database_url
 
-        url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
-        if not url:
-            raise RuntimeError("DATABASE_URL or sqlalchemy.url must be configured for Alembic migrations")
+        url = _configured_database_url(section)
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
-        except _InvalidRequestError:
-            if _create_engine is None:
-                raise
-            connectable = _create_engine(url, poolclass=pool.NullPool)
+        except InvalidRequestError:
+            connectable = create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
         with connectable.connect() as connection:
@@ -128,7 +141,8 @@ async def run_async_migrations() -> None:
         return
 
     async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+        sync_runner: Callable[[Connection], None] = do_run_migrations
+        await connection.run_sync(sync_runner)
 
     await connectable.dispose()
 

@@ -294,7 +294,7 @@ def main() -> None:
 
     _setup_logging(args.log)
 
-    if args.doctor:
+    if getattr(args, "doctor", False):
         raise SystemExit(_run_doctor_command())
 
     # Config nesnesini oluştur; CLI flag'leri instance attribute olarak

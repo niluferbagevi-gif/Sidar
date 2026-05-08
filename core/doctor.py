@@ -11,7 +11,7 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404 - doctor runs fixed local health-check commands only.
+import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import dataclass, field
@@ -164,7 +164,9 @@ def check_migrations() -> DoctorCheck:
     return DoctorCheck(
         "migrations",
         status,
-        "Alembic heads are discoverable" if status == "pass" else "Alembic head command could not be fully verified",
+        "Alembic heads are discoverable"
+        if status == "pass"
+        else "Alembic head command could not be fully verified",
         {"expected_heads": heads, "revision_count": len(revisions), "alembic_heads_output": output},
     )
 
@@ -182,7 +184,9 @@ def check_agent_catalog() -> DoctorCheck:
     return DoctorCheck(
         "agent_catalog",
         _status_from_bool(not missing),
-        "all built-in roles are registered" if not missing else f"missing roles: {', '.join(missing)}",
+        "all built-in roles are registered"
+        if not missing
+        else f"missing roles: {', '.join(missing)}",
         {"required_roles": sorted(required_roles), "registered_roles": sorted(registered)},
     )
 
@@ -198,7 +202,9 @@ def check_supervisor_routing() -> DoctorCheck:
             "coverage": "pytest coverage eksik test yaz",
             "code": "dosyaya fonksiyon ekle",
         }
-        observed = {expected: SupervisorAgent._intent(prompt) for expected, prompt in samples.items()}
+        observed = {
+            expected: SupervisorAgent._intent(prompt) for expected, prompt in samples.items()
+        }
     except Exception as exc:  # pragma: no cover - defensive runtime path
         return DoctorCheck("supervisor_routing", "fail", f"Supervisor routing check failed: {exc}")
 
@@ -233,7 +239,11 @@ def check_websocket_routes() -> DoctorCheck:
             "web_server import failed, but websocket decorators were found statically"
             if not missing_static
             else f"web_server import failed and static routes are missing: {missing_static}",
-            {"required": sorted(required), "websocket_paths": static_paths, "import_error": str(exc)},
+            {
+                "required": sorted(required),
+                "websocket_paths": static_paths,
+                "import_error": str(exc),
+            },
         )
 
     required = {"/ws/chat", "/ws/voice"}
@@ -241,7 +251,9 @@ def check_websocket_routes() -> DoctorCheck:
     return DoctorCheck(
         "websocket_routes",
         _status_from_bool(not missing),
-        "required websocket routes are mounted" if not missing else f"missing websocket routes: {missing}",
+        "required websocket routes are mounted"
+        if not missing
+        else f"missing websocket routes: {missing}",
         {"required": sorted(required), "websocket_paths": websocket_paths},
     )
 
@@ -250,9 +262,13 @@ def check_gpu() -> DoctorCheck:
     details: dict[str, Any] = {"detected": False, "run_gpu_stress": False}
     nvidia_smi = shutil.which("nvidia-smi")
     if nvidia_smi:
-        rc, output = _run_command([nvidia_smi, "--query-gpu=name", "--format=csv,noheader"], timeout=10)
+        rc, output = _run_command(
+            [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"], timeout=10
+        )
         if rc == 0 and output:
-            details.update({"detected": True, "source": "nvidia-smi", "devices": output.splitlines()})
+            details.update(
+                {"detected": True, "source": "nvidia-smi", "devices": output.splitlines()}
+            )
     if not details["detected"]:
         try:
             import torch
@@ -262,7 +278,9 @@ def check_gpu() -> DoctorCheck:
                     {
                         "detected": True,
                         "source": "torch",
-                        "devices": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                        "devices": [
+                            torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
+                        ],
                     }
                 )
         except Exception as exc:
@@ -286,11 +304,14 @@ def _ollama_base_url() -> str:
 
 def check_model(coding_model: str | None = None, *, smoke: bool = True) -> DoctorCheck:
     model = (coding_model or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b").strip()
-    if not model:
-        model = "qwen2.5-coder:7b"
     model_prefix = model.split(":", 1)[0]
     base = _ollama_base_url()
-    details: dict[str, Any] = {"model": model, "ollama_url": base, "present": False, "json_smoke": False}
+    details: dict[str, Any] = {
+        "model": model,
+        "ollama_url": base,
+        "present": False,
+        "json_smoke": False,
+    }
     try:
         import httpx
 
@@ -299,7 +320,9 @@ def check_model(coding_model: str | None = None, *, smoke: bool = True) -> Docto
             tags.raise_for_status()
             models = tags.json().get("models", [])
             names = {str(item.get("name", "")) for item in models if isinstance(item, dict)}
-            details["present"] = model in names or any(name.startswith(model_prefix) for name in names)
+            details["present"] = model in names or any(
+                name.startswith(model_prefix) for name in names
+            )
             details["available_models"] = sorted(names)[:20]
             if smoke and details["present"]:
                 prompt = 'Return exactly this JSON and nothing else: {"sidar_doctor": true}'
@@ -320,7 +343,9 @@ def check_model(coding_model: str | None = None, *, smoke: bool = True) -> Docto
     if not details["present"]:
         return DoctorCheck("model", "warn", f"coding model is not present: {model}", details)
     if smoke and not details["json_smoke"]:
-        return DoctorCheck("model", "fail", "coding model did not return valid JSON smoke output", details)
+        return DoctorCheck(
+            "model", "fail", "coding model did not return valid JSON smoke output", details
+        )
     return DoctorCheck("model", "pass", "coding model is present and JSON smoke passed", details)
 
 

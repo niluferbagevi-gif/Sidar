@@ -303,9 +303,7 @@ class CodeManager:
 
     def _try_docker_cli_fallback(self) -> bool:
         """Docker SDK yoksa CLI üzerinden daemon erişimini doğrular."""
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False
+        docker_bin = shutil.which("docker") or "docker"
         try:
             result = subprocess.run(  # nosec B603
                 [docker_bin, "info"],

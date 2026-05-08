@@ -49,6 +49,10 @@ def asset_path(relative_path: str, *, require_exists: bool = False) -> Path:
         return packaged
 
     fallback = _FALLBACKS.get(normalized, _REPO_ROOT / normalized)
+    if normalized == "web_ui_react/dist" and not fallback.exists():
+        # Local source checkouts may not have a Vite production build yet; keep
+        # readiness/offline checks resolvable via the committed HTML shell.
+        fallback = _REPO_ROOT / "web_ui_react" / "public"
     if require_exists and not fallback.exists():
         raise FileNotFoundError(f"Sidar asset not found: {normalized} (fallback={fallback})")
     return fallback
