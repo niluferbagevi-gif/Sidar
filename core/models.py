@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -46,7 +47,7 @@ class SidarUUID(TypeDecorator[str]):
         return str(value)
 
 
-class PGVector384(UserDefinedType):
+class PGVector384(UserDefinedType[Any]):
     """Minimal pgvector column type for Alembic metadata without runtime pgvector import."""
 
     cache_ok = True
