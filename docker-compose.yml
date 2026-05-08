@@ -24,7 +24,7 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sidar}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env; default passwords are refused}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -74,7 +74,7 @@ services:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
 
@@ -134,7 +134,7 @@ services:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - USE_GPU=true
@@ -201,7 +201,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
 
     env_file:
       - .env
@@ -269,7 +269,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
 
     env_file:
       - .env
@@ -308,7 +308,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set a strong GRAFANA_ADMIN_PASSWORD in .env; default admin/admin is refused}
     volumes:
       - ./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro

@@ -274,23 +274,23 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 cd Sidar
 python -m venv .venv
 source .venv/bin/activate
-uv sync --all-extras
+uv sync --frozen --all-extras
 ```
 
 > Not: Bu akışta bağımlılıklar `pyproject.toml` üzerinden editable kurulum ile yüklenir.
 > Kilitli ve platformlar arası deterministik çözüm için kaynak dosya `uv.lock` kabul edilir.
 > Sidar geliştirme standardında paket ve komut yönetimi `uv` ile yapılır: kurulum için
-> `uv sync --all-extras`, çalıştırma için `uv run ...`, ek paket ihtiyacında `uv pip install ...`
-> kullanılmalıdır. `dev` extras geliştirme kurulumunun varsayılan parçasıdır; `install_sidar.sh`
-> yalnız `--no-dev` verildiğinde geliştirici bağımlılıklarını dışarıda bırakır. Yerel coding
-> modeli standardı Ollama üzerinde `qwen2.5-coder:7b` olarak hedeflenir.
+> `uv sync --frozen --all-extras`, çalıştırma için `uv run ...`, ek paket ihtiyacında `uv pip install ...`
+> kullanılmalıdır. `dev` extras self-healing için standart kurulumun parçasıdır; `install_sidar.sh`
+> geliştirme araçlarını varsayılan akıştan çıkarmaz. Yerel coding modeli standardı Ollama üzerinde
+> `qwen2.5-coder:7b` olarak hedeflenir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
 ```bash
 cd Sidar
 python -m venv .venv
-uv sync --all-extras
+uv sync --frozen --all-extras
 uv run python main.py
 ```
 
@@ -311,7 +311,7 @@ Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui
 v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
 
 ```bash
-uv sync --all-extras
+uv sync --frozen --all-extras
 uv run alembic upgrade head
 ```
 
@@ -377,7 +377,7 @@ docker compose up -d sidar-web
 Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapılandırmasını kullanır:
 
 - `UV_LINK_MODE=copy`, Codespaces overlay dosya sisteminde uv'nin hardlink denemesinden kaynaklanan `Failed to hardlink files; falling back to full copy` uyarısını önler.
-- `postCreateCommand`, `.devcontainer/setup-codespaces.sh post-create` ile `uv venv .venv` ve `uv sync --all-extras` çalıştırarak geliştirici bağımlılıkları ve opsiyonel entegrasyonları hazırlar.
+- `postCreateCommand`, `.devcontainer/setup-codespaces.sh post-create` ile `uv venv .venv` ve `uv sync --frozen --all-extras` çalıştırarak geliştirici bağımlılıkları ve opsiyonel entegrasyonları hazırlar.
 - Ollama CLI varsayılan olarak kurulmaya çalışılır, servis `postStartCommand` ile arka planda başlatılır ve standart coding modeli `qwen2.5-coder:7b` olarak tanımlanır. Büyük model indirmesini Codespaces açılışında zorunlu kılmak istemiyorsanız varsayılan `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=0` kalır; önceden indirme için Codespaces secret/env olarak `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1` verebilirsiniz.
 - Codespaces ortamında otonom coverage kampanyası için `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full` ve `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ayarlanır. Lokal/CI quality gate ise hâlâ `.coveragerc` ve `run_tests.sh` profilinden okunur.
 - `hostRequirements.gpu=optional` GPU'lu Codespaces makinesi seçilebilen ortamlarda donanım hızlandırmayı görünür kılar; CPU-only makinede `run_tests.sh` `nvidia-smi` bulamazsa GPU testlerini güvenli şekilde atlar.
@@ -584,15 +584,15 @@ Sidar/
 
 ## Testleri Çalıştır
 
-> Kritik not: `dev` extras varsayılan kurulum akışına dahildir; `install_sidar.sh` `--no-dev`
-> verilmedikçe geliştirme bağımlılıklarını kurar. Yalnız `uv sync --extra dev` ile manuel
+> Kritik not: `dev` extras standart kurulum akışına dahildir; `install_sidar.sh`
+> geliştirme bağımlılıklarını self-healing için kurar. Yalnız `uv sync --frozen --extra dev` ile manuel
 > kurulum yapmak opsiyonel entegrasyonları (ör. `postgres`, `telemetry`, `slack`, `jira`,
-> `aws`, `browser`) **kurmaz**.  CI/CD ve ekip paritesi için geliştirme ortamında standart
-> kurulum komutu `uv sync --all-extras` olmalıdır.
+> `aws`, `browser`) **kurmaz**. CI/CD ve ekip paritesi için geliştirme ortamında standart
+> kurulum komutu `uv sync --frozen --all-extras` olmalıdır.
 
 ```bash
 cd Sidar
-uv sync --all-extras
+uv sync --frozen --all-extras
 uv run pytest -c pyproject.toml tests/ -v
 uv run pytest -c pyproject.toml tests/ -v --cov=. --cov-report=term-missing
 bash run_tests.sh
@@ -615,8 +615,8 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
 >   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutu çalıştırın:
->   - `uv sync --all-extras` (önerilen, geliştirme + opsiyonel entegrasyonlar dahil)
->   - Yalnız test/tooling araçları yeterliyse `uv sync --extra dev` kullanılabilir.
+>   - `uv sync --frozen --all-extras` (tek standart: geliştirme + opsiyonel entegrasyonlar dahil)
+>   - Yalnız test/tooling araçları yeterliyse `uv sync --frozen --extra dev` kullanılabilir.
 > - Kurulum sonrası doğrulama için:
 >   - `uv run pytest -q tests/unit/agent/test_registry.py`
 >
@@ -639,7 +639,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > komutlarından biriyle regresyon takibi yapın.
 >
 > Geliştirme tarafında yardımcı komutlar da uv standardına taşınmalıdır
-> (`uv run black .`, `uv run ruff check .`, `uv run mypy .`).
+> (`uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy .`).
 > GPU benchmarkları için `Nightly GPU Performance` hattında TTFT/TPS/VRAM metrikleri
 > geçmiş 7 koşu medyanına göre (`GPU_TREND_WINDOW=7`) varsayılan ±%20 trend eşiği
 > (`GPU_TREND_THRESHOLD_PERCENT`) ile korunur; quantization + architecture + driver
@@ -736,9 +736,9 @@ MULTI_GPU=false
 ## Geliştirme
 
 ```bash
-uv run black .
-uv run flake8 . --max-line-length=100
-uv run mypy . --ignore-missing-imports
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy .
 ```
 
 ---

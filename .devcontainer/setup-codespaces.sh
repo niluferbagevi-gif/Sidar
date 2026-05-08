@@ -40,8 +40,8 @@ sync_python_environment() {
   log "Codespaces overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
   log "Sanal ortam hazırlanıyor: uv venv ${UV_PROJECT_ENVIRONMENT}"
   uv venv "${UV_PROJECT_ENVIRONMENT}"
-  log "Geliştirici ortamı senkronlanıyor: uv sync --all-extras"
-  uv sync --all-extras
+  log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
+  uv sync --frozen --all-extras
 
   if [ ! -f .env.test ] && [ -f .env.test.example ]; then
     cp .env.test.example .env.test
