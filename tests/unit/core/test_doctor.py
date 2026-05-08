@@ -28,6 +28,23 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
     assert json.loads(output.read_text(encoding="utf-8"))["overall_status"] == "warn"
 
 
+def test_resolve_coding_model_defaults_for_none_empty_and_whitespace(monkeypatch):
+    monkeypatch.delenv("CODING_MODEL", raising=False)
+    assert doctor._resolve_coding_model(None) == doctor.DEFAULT_CODING_MODEL
+
+    monkeypatch.setenv("CODING_MODEL", "")
+    assert doctor._resolve_coding_model(None) == doctor.DEFAULT_CODING_MODEL
+
+    monkeypatch.setenv("CODING_MODEL", "   ")
+    assert doctor._resolve_coding_model(None) == doctor.DEFAULT_CODING_MODEL
+
+
+def test_resolve_coding_model_prefers_explicit_and_trims(monkeypatch):
+    monkeypatch.setenv("CODING_MODEL", "qwen2.5-coder:14b")
+
+    assert doctor._resolve_coding_model(" qwen2.5-coder:7b ") == "qwen2.5-coder:7b"
+
+
 def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
     monkeypatch.setattr(doctor, "_run_command", lambda cmd, timeout=20: (0, "NVIDIA Test GPU"))

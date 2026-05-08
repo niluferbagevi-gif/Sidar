@@ -23,6 +23,16 @@ from sidar_assets.paths import migrations_path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
+DEFAULT_CODING_MODEL = "qwen2.5-coder:7b"
+
+
+def _resolve_coding_model(coding_model: str | None = None) -> str:
+    raw_model = coding_model if coding_model is not None else os.getenv("CODING_MODEL")
+    if raw_model is None:
+        return DEFAULT_CODING_MODEL
+
+    normalized = raw_model.strip()
+    return normalized or DEFAULT_CODING_MODEL
 
 
 @dataclass
@@ -285,7 +295,7 @@ def _ollama_base_url() -> str:
 
 
 def check_model(coding_model: str | None = None, *, smoke: bool = True) -> DoctorCheck:
-    model = coding_model or os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
+    model = _resolve_coding_model(coding_model)
     base = _ollama_base_url()
     details: dict[str, Any] = {"model": model, "ollama_url": base, "present": False, "json_smoke": False}
     try:
@@ -296,7 +306,8 @@ def check_model(coding_model: str | None = None, *, smoke: bool = True) -> Docto
             tags.raise_for_status()
             models = tags.json().get("models", [])
             names = {str(item.get("name", "")) for item in models if isinstance(item, dict)}
-            details["present"] = model in names or any(name.startswith(model.split(":", 1)[0]) for name in names)
+            model_prefix = model.split(":", 1)[0]
+            details["present"] = model in names or any(name.startswith(model_prefix) for name in names)
             details["available_models"] = sorted(names)[:20]
             if smoke and details["present"]:
                 prompt = 'Return exactly this JSON and nothing else: {"sidar_doctor": true}'
