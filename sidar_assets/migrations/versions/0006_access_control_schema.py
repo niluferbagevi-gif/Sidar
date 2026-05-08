@@ -12,6 +12,8 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.types import TypeEngine
 
 revision = "0006_access_control_schema"
 down_revision = "0005_pgvector_hnsw_index"
@@ -19,20 +21,20 @@ branch_labels = None
 depends_on = None
 
 
-class SidarUUID(sa.TypeDecorator[uuid.UUID | str]):
+class SidarUUID(sa.TypeDecorator[str]):
     """Use PostgreSQL native UUID while preserving SQLite string fallback."""
 
     impl = sa.String
     cache_ok = True
 
-    def load_dialect_impl(self, dialect: Any) -> Any:
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
         if dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import UUID
 
             return dialect.type_descriptor(UUID(as_uuid=True))
         return dialect.type_descriptor(sa.String(length=36))
 
-    def process_bind_param(self, value: object, dialect: Any) -> uuid.UUID | str | None:
+    def process_bind_param(self, value: object, dialect: Dialect) -> uuid.UUID | str | None:
         if value is None:
             return None
         parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -40,7 +42,7 @@ class SidarUUID(sa.TypeDecorator[uuid.UUID | str]):
             return parsed
         return str(parsed)
 
-    def process_result_value(self, value: object, dialect: Any) -> str | None:
+    def process_result_value(self, value: object, dialect: Dialect) -> str | None:
         if value is None:
             return None
         return str(value)
