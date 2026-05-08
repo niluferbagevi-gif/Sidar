@@ -81,8 +81,44 @@ def _load_database_url() -> str | None:
     return None
 
 
+LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+PRODUCTION_ENV_NAMES = {"prod", "production"}
+
+
+def _is_production_environment() -> bool:
+    return os.getenv("SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES
+
+
+def _ensure_database_url_allowed(url: str, *, source: str) -> str:
+    normalized_url = str(url or "").strip()
+    if (
+        source == "alembic.ini"
+        and normalized_url == LOCAL_DEV_FALLBACK_DATABASE_URL
+        and _is_production_environment()
+    ):
+        raise RuntimeError(
+            "Alembic local development fallback database URL is disabled when "
+            "SIDAR_ENV=production. Set DATABASE_URL or pass "
+            "-x database_url=... with production credentials."
+        )
+    return normalized_url
+
+
+def _configured_database_url(section: dict[str, str] | None = None) -> str:
+    raw_url = None
+    if section is not None:
+        raw_url = section.get("sqlalchemy.url")
+    url = raw_url or config.get_main_option("sqlalchemy.url")
+    if not url:
+        raise RuntimeError(
+            "Alembic sqlalchemy.url is not configured; set DATABASE_URL or "
+            "-x database_url=..."
+        )
+    return _ensure_database_url_allowed(url, source="alembic.ini")
+
+
 def run_migrations_offline() -> None:
-    url = _load_database_url() or config.get_main_option("sqlalchemy.url")
+    url = _load_database_url() or _configured_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -111,9 +147,7 @@ async def run_async_migrations() -> None:
         if x_database_url:
             section["sqlalchemy.url"] = x_database_url
 
-        url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
-        if not url:
-            raise RuntimeError("DATABASE_URL or sqlalchemy.url must be configured for Alembic migrations")
+        url = _configured_database_url(section)
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
         except _InvalidRequestError:

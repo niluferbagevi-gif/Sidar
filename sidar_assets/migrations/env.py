@@ -52,6 +52,28 @@ def _resolve_dotenv_loader() -> DotenvLoader:
 
 _load_dotenv = _resolve_dotenv_loader()
 
+LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+PRODUCTION_ENV_NAMES = {"prod", "production"}
+
+
+def _is_production_environment() -> bool:
+    return os.getenv("SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES
+
+
+def _ensure_database_url_allowed(url: str, *, source: str) -> str:
+    normalized_url = str(url or "").strip()
+    if (
+        source == "alembic.ini"
+        and normalized_url == LOCAL_DEV_FALLBACK_DATABASE_URL
+        and _is_production_environment()
+    ):
+        raise RuntimeError(
+            "Alembic local development fallback database URL is disabled when "
+            "SIDAR_ENV=production. Set DATABASE_URL or pass "
+            "-x database_url=... with production credentials."
+        )
+    return normalized_url
+
 
 config = context.config
 
@@ -91,9 +113,10 @@ def _configured_database_url(section: dict[str, str] | None = None) -> str:
     url = raw_url or config.get_main_option("sqlalchemy.url")
     if not url:
         raise RuntimeError(
-            "Alembic sqlalchemy.url is not configured; set DATABASE_URL or sqlalchemy.url."
+            "Alembic sqlalchemy.url is not configured; set DATABASE_URL or "
+            "-x database_url=..."
         )
-    return url
+    return _ensure_database_url_allowed(url, source="alembic.ini")
 
 
 def run_migrations_offline() -> None:

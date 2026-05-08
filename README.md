@@ -340,7 +340,7 @@ uv run alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" 
 
 SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
 
-Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki varsayılan URL'nin önüne geçirir.
+Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki lokal geliştirme varsayılan URL'sinin önüne geçirir. `SIDAR_ENV=production` iken bu lokal fallback bilinçli olarak reddedilir; üretim/CI/container migration çalıştırmalarında güçlü kimlik bilgileriyle `DATABASE_URL` veya `-x database_url=...` verilmelidir.
 
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın.

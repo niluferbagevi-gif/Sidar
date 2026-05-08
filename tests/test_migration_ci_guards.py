@@ -90,3 +90,20 @@ def test_each_revision_defines_upgrade_and_downgrade_callables(
         assert hasattr(module, "downgrade") and callable(
             module.downgrade
         ), f"revision {revision.revision} is missing a callable downgrade()"
+
+
+def test_alembic_default_url_is_documented_as_local_only() -> None:
+    for relative_path in ("alembic.ini", "sidar_assets/alembic.ini"):
+        config_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "Local development fallback only" in config_text
+        assert "DATABASE_URL or -x database_url=..." in config_text
+        assert "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar" in config_text
+
+
+def test_alembic_env_rejects_local_fallback_in_production() -> None:
+    for relative_path in ("migrations/env.py", "sidar_assets/migrations/env.py"):
+        env_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "LOCAL_DEV_FALLBACK_DATABASE_URL" in env_text
+        assert 'SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES' in env_text
+        assert "Set DATABASE_URL or pass" in env_text
+        assert '_ensure_database_url_allowed(url, source="alembic.ini")' in env_text
