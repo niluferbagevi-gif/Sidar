@@ -1,30 +1,40 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
+from collections.abc import Callable
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Any
 
+import sqlalchemy as sa
 from alembic import context
 from sqlalchemy import pool
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import InvalidRequestError as SQLAlchemyInvalidRequestError
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from core.models import Base
 
-try:
-    from dotenv import load_dotenv
-except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
-    def load_dotenv(*_args, **_kwargs):
+
+def load_dotenv(*args: Any, **kwargs: Any) -> bool:
+    """Load dotenv when python-dotenv is installed; otherwise keep env unchanged."""
+
+    try:
+        dotenv_module = importlib.import_module("dotenv")
+    except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
         return False
-try:
-    from sqlalchemy import create_engine
-except ImportError:  # pragma: no cover - only for minimal test doubles
-    create_engine = None
-try:
-    from sqlalchemy.exc import InvalidRequestError
-except Exception:  # pragma: no cover - only for minimal test doubles
-    class InvalidRequestError(Exception):
-        pass
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+    dotenv_loader = getattr(dotenv_module, "load_dotenv", None)
+    if not callable(dotenv_loader):
+        return False
+    return bool(dotenv_loader(*args, **kwargs))
+
+
+_create_engine_candidate = getattr(sa, "create_engine", None)
+create_sync_engine: Callable[..., Engine] | None = (
+    _create_engine_candidate if callable(_create_engine_candidate) else None
+)
 
 config = context.config
 
@@ -71,7 +81,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection) -> None:
+def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
 
     with context.begin_transaction():
@@ -88,12 +98,14 @@ async def run_async_migrations() -> None:
             section["sqlalchemy.url"] = x_database_url
 
         url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
+        if not url:
+            raise RuntimeError("DATABASE_URL or sqlalchemy.url must be configured for Alembic migrations")
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
-        except InvalidRequestError:
-            if create_engine is None:
+        except SQLAlchemyInvalidRequestError:
+            if create_sync_engine is None:
                 raise
-            connectable = create_engine(url, poolclass=pool.NullPool)
+            connectable = create_sync_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
         with connectable.connect() as connection:

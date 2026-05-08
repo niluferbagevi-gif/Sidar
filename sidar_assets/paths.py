@@ -27,7 +27,7 @@ _FALLBACKS: Final[dict[str, Path]] = {
 
 def _resource_path(relative_path: str) -> Path | None:
     traversable = resources.files(_ASSET_PACKAGE).joinpath(relative_path)
-    if not traversable.exists():
+    if not (traversable.is_file() or traversable.is_dir()):
         return None
     try:
         return Path(str(traversable))
