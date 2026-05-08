@@ -39,8 +39,15 @@ ensure_uv() {
 sync_python_environment() {
   ensure_uv
   log "Codespaces overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
-  log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
-  uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
+  
+  # İYİLEŞTİRME: .venv klasörü kontrolü eklendi
+  if [ -d "${UV_PROJECT_ENVIRONMENT}" ]; then
+    ok "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) zaten mevcut, oluşturma adımı atlanıyor."
+  else
+    log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
+    uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
+  fi
+
   log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
   uv sync --frozen --all-extras
 
