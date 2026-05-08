@@ -8,6 +8,7 @@ Create Date: 2026-03-11 00:00:00
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -18,20 +19,20 @@ branch_labels = None
 depends_on = None
 
 
-class SidarUUID(sa.TypeDecorator):
+class SidarUUID(sa.TypeDecorator[Any]):
     """Use PostgreSQL native UUID while preserving SQLite string fallback."""
 
     impl = sa.String
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
+    def load_dialect_impl(self, dialect: Any) -> Any:
         if dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import UUID
 
             return dialect.type_descriptor(UUID(as_uuid=True))
         return dialect.type_descriptor(sa.String(length=36))
 
-    def process_bind_param(self, value, dialect):
+    def process_bind_param(self, value: Any, dialect: Any) -> Any:
         if value is None:
             return None
         parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -39,7 +40,7 @@ class SidarUUID(sa.TypeDecorator):
             return parsed
         return str(parsed)
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(self, value: Any, dialect: Any) -> Any:
         if value is None:
             return None
         return str(value)

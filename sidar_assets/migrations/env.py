@@ -2,29 +2,48 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Any
 
 from alembic import context
 from sqlalchemy import pool
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from core.models import Base
 
+_dotenv_module: Any | None
 try:
-    from dotenv import load_dotenv
+    import dotenv as _dotenv_module
 except ModuleNotFoundError:  # pragma: no cover - optional dependency in some test stubs
-    def load_dotenv(*_args, **_kwargs):
-        return False
+    _dotenv_module = None
+
+
+def _fallback_load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
+    return False
+
+
+load_dotenv: Callable[..., bool] = (
+    _fallback_load_dotenv
+    if _dotenv_module is None
+    else _dotenv_module.load_dotenv
+)
+
 try:
-    from sqlalchemy import create_engine
+    import sqlalchemy as _sqlalchemy_module
 except ImportError:  # pragma: no cover - only for minimal test doubles
-    create_engine = None
+    _sqlalchemy_create_engine: Callable[..., Engine] | None = None
+else:
+    _sqlalchemy_create_engine = _sqlalchemy_module.create_engine
+
 try:
-    from sqlalchemy.exc import InvalidRequestError
+    from sqlalchemy import exc as _sqlalchemy_exc
 except Exception:  # pragma: no cover - only for minimal test doubles
-    class InvalidRequestError(Exception):
-        pass
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+    _InvalidRequestError: type[Exception] = RuntimeError
+else:
+    _InvalidRequestError = _sqlalchemy_exc.InvalidRequestError
 
 config = context.config
 
@@ -57,10 +76,16 @@ def _load_database_url() -> str | None:
     return None
 
 
-def run_migrations_offline() -> None:
+def _configured_database_url() -> str:
     url = _load_database_url() or config.get_main_option("sqlalchemy.url")
+    if not url:
+        raise RuntimeError("Alembic database URL is not configured")
+    return url
+
+
+def run_migrations_offline() -> None:
     context.configure(
-        url=url,
+        url=_configured_database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -71,7 +96,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection) -> None:
+def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
 
     with context.begin_transaction():
@@ -87,18 +112,19 @@ async def run_async_migrations() -> None:
         if x_database_url:
             section["sqlalchemy.url"] = x_database_url
 
-        url = section.get("sqlalchemy.url") or config.get_main_option("sqlalchemy.url")
+        url = section.get("sqlalchemy.url") or _configured_database_url()
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
-        except InvalidRequestError:
-            if create_engine is None:
+        except _InvalidRequestError:
+            if _sqlalchemy_create_engine is None:
                 raise
-            connectable = create_engine(url, poolclass=pool.NullPool)
+            connectable = _sqlalchemy_create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
-        with connectable.connect() as connection:
+        sync_connectable = connectable
+        with sync_connectable.connect() as connection:
             do_run_migrations(connection)
-        connectable.dispose()
+        sync_connectable.dispose()
         return
 
     async with connectable.connect() as connection:

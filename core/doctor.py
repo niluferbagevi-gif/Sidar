@@ -285,7 +285,7 @@ def _ollama_base_url() -> str:
 
 
 def check_model(coding_model: str | None = None, *, smoke: bool = True) -> DoctorCheck:
-    model = coding_model or os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
+    model = coding_model or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b"
     base = _ollama_base_url()
     details: dict[str, Any] = {"model": model, "ollama_url": base, "present": False, "json_smoke": False}
     try:
