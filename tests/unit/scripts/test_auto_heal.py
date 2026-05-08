@@ -16,6 +16,7 @@ from scripts.auto_heal import (
     _parse_approval_value,
     _redact_database_url,
     _resolve_auto_heal_database_url,
+    _resolve_hitl_approval,
     _run,
     _run_self_heal_attempt,
     _select_auto_heal_model,
@@ -265,6 +266,48 @@ class _FakeAgent:
     async def _attempt_autonomous_self_heal(self, **kwargs):
         self.calls.append(kwargs)
         return self._responses.pop(0)
+
+
+def test_resolve_hitl_approval_rejects_without_tty(monkeypatch, capsys) -> None:
+    args = argparse.Namespace(hitl_approve=None)
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: False)
+
+    approved, details = _resolve_hitl_approval(args)
+    captured = capsys.readouterr()
+
+    assert approved is False
+    assert details == {
+        "required": True,
+        "approved": False,
+        "source": "non_interactive_reject",
+    }
+    assert "stdin etkileşimli değil" in captured.err
+    assert captured.out == ""
+
+
+def test_run_self_heal_attempt_non_interactive_hitl_fails_closed(monkeypatch) -> None:
+    agent = _FakeAgent(
+        [
+            {"status": "awaiting_hitl", "summary": "needs approval"},
+            {"status": "rejected", "summary": "cancelled"},
+        ]
+    )
+    args = argparse.Namespace(hitl_approve=None)
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: False)
+
+    result = asyncio.run(
+        _run_self_heal_attempt(
+            agent=agent,
+            context={},
+            diagnosis="diag",
+            remediation={},
+            args=args,
+        )
+    )
+
+    assert result["status"] == "rejected"
+    assert result["hitl_approval"]["source"] == "non_interactive_reject"
+    assert agent.calls[1]["human_approval"] is False
 
 
 def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:

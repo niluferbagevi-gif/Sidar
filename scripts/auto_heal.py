@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -143,6 +144,31 @@ def _prompt_hitl_approval() -> bool:
         print("Lütfen 'evet/e' veya 'hayır/h' (ya da yes/no) girin.")
 
 
+def _resolve_hitl_approval(args: argparse.Namespace) -> tuple[bool, dict[str, Any]]:
+    parsed = _parse_approval_value(args.hitl_approve)
+    if parsed is not None:
+        return parsed, {"required": True, "approved": parsed, "source": "cli"}
+
+    if args.hitl_approve is not None:
+        print(
+            "⚠ --hitl-approve değeri anlaşılamadı. "
+            "Kabul edilenler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0.",
+            file=sys.stderr,
+        )
+
+    if sys.stdin.isatty():
+        approved = _prompt_hitl_approval()
+        return approved, {"required": True, "approved": approved, "source": "interactive_prompt"}
+
+    print(
+        "⚠ HITL onayı gerekiyor ancak stdin etkileşimli değil; "
+        "self-heal fail-closed olarak reddedilecek. "
+        "Otomasyonlarda --hitl-approve yes/no kullanın.",
+        file=sys.stderr,
+    )
+    return False, {"required": True, "approved": False, "source": "non_interactive_reject"}
+
+
 def _select_auto_heal_model(current_model: str, source: str, requested_model: str | None) -> str:
     requested = str(requested_model or "").strip()
     if requested:
@@ -245,14 +271,8 @@ async def _run_self_heal_attempt(
     if str(execution.get("status") or "") != "awaiting_hitl":
         return cast(dict[str, Any], execution)
 
-    approved = _parse_approval_value(args.hitl_approve)
-    if approved is None and args.hitl_approve is not None:
-        print(
-            "⚠ --hitl-approve değeri anlaşılamadı. "
-            "Kabul edilenler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0."
-        )
-    approved = approved if approved is not None else _prompt_hitl_approval()
-    return cast(
+    approved, approval_details = _resolve_hitl_approval(args)
+    approved_execution = cast(
         dict[str, Any],
         await agent._attempt_autonomous_self_heal(  # noqa: SLF001
             ci_context=context,
@@ -261,6 +281,8 @@ async def _run_self_heal_attempt(
             human_approval=approved,
         ),
     )
+    approved_execution["hitl_approval"] = approval_details
+    return approved_execution
 
 
 async def _run(args: argparse.Namespace) -> int:
