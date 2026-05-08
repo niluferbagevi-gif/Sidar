@@ -346,6 +346,27 @@ resolve_windows_localappdata_path() {
     return 1
 }
 
+
+verify_offline_bundle_manifest() {
+    local bundle_dir="${1:-}"
+    [[ -n "$bundle_dir" ]] || fail "Çevrimdışı mod etkin ancak offline bundle dizini bulunamadı."
+    [[ -d "$bundle_dir" ]] || fail "Çevrimdışı bundle dizini bulunamadı: $bundle_dir"
+    [[ -f "$bundle_dir/manifest.json" ]] || fail "Çevrimdışı bundle manifesti eksik: $bundle_dir/manifest.json"
+
+    if command -v python3 &>/dev/null; then
+        python3 "$SCRIPT_DIR/scripts/offline_bundle.py" verify "$bundle_dir" \
+            || fail "Çevrimdışı bundle SHA256 doğrulaması başarısız oldu."
+    else
+        fail "Çevrimdışı manifest doğrulaması için python3 gereklidir."
+    fi
+
+    export UV_FIND_LINKS="${bundle_dir}/wheels"
+    export UV_NO_INDEX=1
+    export npm_config_cache="${bundle_dir}/npm/cache"
+    export OLLAMA_MODELS="${bundle_dir}/ollama/models"
+    ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -5062,8 +5083,9 @@ main() {
         OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
         if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
             info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
+            verify_offline_bundle_manifest "$OFFLINE_PACKAGES_DIR"
         else
-            warn "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı. İndirme gerektiren adımlar bu modda hata verebilir."
+            fail "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."
         fi
     fi
 

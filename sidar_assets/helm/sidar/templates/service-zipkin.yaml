@@ -1,0 +1,19 @@
+{{- if and .Values.apm.enabled (eq .Values.apm.backend "zipkin") .Values.apm.zipkin.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidar.fullname" . }}-zipkin
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: zipkin
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.apm.zipkin.service.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/component: zipkin
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

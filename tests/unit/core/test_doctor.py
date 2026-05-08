@@ -66,7 +66,7 @@ def test_migration_parser_identifies_head(tmp_path, monkeypatch):
     versions.mkdir(parents=True)
     (versions / "0001_first.py").write_text("revision = 'a'\ndown_revision = None\n", encoding="utf-8")
     (versions / "0002_second.py").write_text("revision = 'b'\ndown_revision = 'a'\n", encoding="utf-8")
-    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(doctor, "migrations_path", lambda: tmp_path / "migrations")
 
     revisions, down_revisions = doctor._parse_migration_revisions()
 

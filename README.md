@@ -362,6 +362,21 @@ OLLAMA_NUM_PARALLEL=4 ollama serve
 > Güvenlik notu: `install_sidar.sh` varsayılan olarak uzaktan kurulum scripti çalıştırmaz.
 > Otomatik kurulum gerekiyorsa bilinçli opt-in ile çalıştırın: `ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh`.
 
+
+### Paket Varlıkları, Offline Bundle ve Release Kalite Kapıları
+
+Sidar paketli ortamlarda repo kökü varsayımına bağlı kalmamak için statik varlıkları `sidar_assets` paketi üzerinden çözer. Web UI dist, Helm chart ve Alembic migration yolları `importlib.resources.files("sidar_assets")` tabanlı resolver ile bulunur; geliştirme checkout'larında aynı helper repo içi fallback kullanır.
+
+Air-gapped kurulumlarda `offline_packages/manifest.json` zorunludur. Manifest; `wheels/`, `npm/cache/`, `ollama/models/`, `system/` ve `uv/` altındaki dosyaların SHA256 değerlerini taşır ve kurulum başlamadan doğrulanır:
+
+```bash
+uv run python scripts/offline_bundle.py create offline_packages
+uv run python scripts/offline_bundle.py verify offline_packages
+AIR_GAPPED_INSTALL=true ./install_sidar.sh sync-deps
+```
+
+Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm lint/template, CycloneDX SBOM üretimi, cosign imzalama, temiz wheel kurulumu smoke testi ve temiz Docker image smoke testini zorunlu release kontrolleri olarak tanımlar.
+
 ### Docker ile
 
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).

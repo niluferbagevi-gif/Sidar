@@ -1,0 +1,22 @@
+{{- if .Values.apm.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidar.fullname" . }}-otel-collector
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  type: ClusterIP
+  ports:
+    - name: otlp-grpc
+      port: {{ .Values.apm.collector.service.grpcPort }}
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: {{ .Values.apm.collector.service.httpPort }}
+      targetPort: otlp-http
+  selector:
+    app.kubernetes.io/component: otel-collector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

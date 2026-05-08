@@ -83,6 +83,7 @@ from core.llm_metrics import (
     set_current_metrics_user_id,
 )
 from managers.system_health import render_llm_metrics_prometheus
+from sidar_assets.paths import web_dist_path
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
@@ -2789,7 +2790,7 @@ app.add_middleware(
 )
 
 # React SPA yalnızca web_ui_react/dist üzerinden sunulur.
-REACT_DIST_DIR = Path(__file__).parent / "web_ui_react" / "dist"
+REACT_DIST_DIR = web_dist_path()
 WEB_DIR = REACT_DIST_DIR
 
 

@@ -310,12 +310,22 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "managers*", "plugins*"]
+include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*"]
 exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
 include-package-data = true
 py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "github_upload"]
+
+
+[tool.setuptools.package-data]
+sidar_assets = [
+  "alembic.ini",
+  "web_ui_react/dist/**/*",
+  "helm/sidar/**/*",
+  "migrations/**/*",
+  "docker_setup/**/*",
+]
 
 [tool.setuptools.data-files]
 "share/sidar/web_ui" = ["web_ui/*.html", "web_ui/*.css", "web_ui/*.js"]

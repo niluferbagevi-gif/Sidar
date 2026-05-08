@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from sidar_assets.paths import migrations_path
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
 
@@ -139,7 +141,7 @@ def check_database_env() -> DoctorCheck:
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
     revisions: list[str] = []
     down_revisions: list[str] = []
-    versions_dir = BASE_DIR / "migrations" / "versions"
+    versions_dir = migrations_path() / "versions"
     for file_path in sorted(versions_dir.glob("*.py")):
         text = file_path.read_text(encoding="utf-8")
         rev_match = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
