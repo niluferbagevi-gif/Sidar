@@ -45,6 +45,8 @@ def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_p
             "12",
             "--database-url",
             "postgresql://u:p@db/sidar",
+            "--output",
+            str(tmp_path / "auto_heal_result.json"),
         ],
     )
 
@@ -58,6 +60,7 @@ def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert args.batch_retries == 4
     assert args.scope_log_lines == 12
     assert args.database_url == "postgresql://u:p@db/sidar"
+    assert args.output == str(tmp_path / "auto_heal_result.json")
 
 
 def test_parse_args_applies_optional_defaults(
@@ -75,6 +78,7 @@ def test_parse_args_applies_optional_defaults(
     assert args.batch_retries == 2
     assert args.scope_log_lines == 30
     assert args.database_url is None
+    assert args.output is None
 
 
 def test_resolve_auto_heal_database_url_defaults_to_log_scoped_sqlite(
@@ -679,6 +683,68 @@ def test_run_skips_clean_mypy_output_without_targets(
     assert payload["status"] == "skipped"
     assert payload["queue_size"] == 0
     assert "mypy temiz" in payload["reason"]
+
+
+
+def test_run_persists_final_json_result_when_output_is_requested(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    output_path = tmp_path / "artifacts" / "auto_heal_result.json"
+    log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
+
+    class _Cfg:
+        CODING_MODEL = "qwen2.5-coder:7b"
+        ENABLE_AUTONOMOUS_SELF_HEAL = False
+
+    class _Agent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+        async def _attempt_autonomous_self_heal(self, **_kwargs):
+            return {"status": "applied", "summary": "done"}
+
+    monkeypatch.setitem(__import__("sys").modules, "config", types.SimpleNamespace(Config=_Cfg))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "agent.sidar_agent",
+        types.SimpleNamespace(SidarAgent=_Agent),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "core.ci_remediation",
+        types.SimpleNamespace(
+            build_local_failure_context=lambda *_args, **_kwargs: {
+                "root_cause_hint": "type mismatch",
+                "failure_summary": "summary",
+            },
+            build_ci_remediation_payload=lambda *_args, **_kwargs: {
+                "remediation_loop": {"scope_paths": ["pkg/a.py"]}
+            },
+        ),
+    )
+    args = argparse.Namespace(
+        log=str(log_path),
+        source="mypy",
+        batch_size=1,
+        model=None,
+        hitl_approve=None,
+        batch_retries=1,
+        scope_log_lines=10,
+        database_url=None,
+        output=str(output_path),
+    )
+
+    rc = asyncio.run(_run(args))
+    stdout_payload = json.loads(capsys.readouterr().out)
+    file_payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert rc == 0
+    assert stdout_payload["status"] == "applied"
+    assert file_payload == stdout_payload
 
 
 def test_run_does_not_retry_non_retryable_batch_status(

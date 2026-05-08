@@ -197,6 +197,7 @@ BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-1}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-12}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
+AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -369,6 +370,7 @@ run_static_analysis_gates() {
     return 1
   fi
   mkdir -p "$(dirname "${AUTO_HEAL_LOG_PATH}")"
+  mkdir -p "$(dirname "${AUTO_HEAL_RESULT_PATH}")"
   local attempt=0
   local auto_heal_prompt_done=0
   while [ "${attempt}" -le "${AUTO_HEAL_MAX_ATTEMPTS}" ]; do
@@ -395,12 +397,12 @@ run_static_analysis_gates() {
       auto_heal_prompt_done=1
     fi
     echo "⚠️ Mypy hataları tespit edildi. Otonom iyileştirme döngüsü başlatılıyor... (deneme $((attempt + 1))/${AUTO_HEAL_MAX_ATTEMPTS})"
-    if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy; then
-      echo "❌ Otonom ajan düzeltme planını uygulayamadı."
+    if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --output "${AUTO_HEAL_RESULT_PATH}"; then
+      echo "❌ Otonom ajan düzeltme planını uygulayamadı. Sonuç artefaktı: ${AUTO_HEAL_RESULT_PATH}"
       BACKEND_EXIT_CODE=1
       return 1
     fi
-    echo "✅ Otonom iyileştirme tamamlandı. Mypy yeniden çalıştırılıyor..."
+    echo "✅ Otonom iyileştirme tamamlandı. Sonuç artefaktı: ${AUTO_HEAL_RESULT_PATH}. Mypy yeniden çalıştırılıyor..."
     attempt=$((attempt + 1))
   done
 }

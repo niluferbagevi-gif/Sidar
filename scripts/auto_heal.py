@@ -76,7 +76,27 @@ def _parse_args() -> argparse.Namespace:
             "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite kullanılır."
         ),
     )
+    parser.add_argument(
+        "--output",
+        help=(
+            "Nihai self-heal JSON sonucunu yazılacak dosya. "
+            "Verilirse stdout'a basılan sonuç aynı zamanda bu artefakta da kaydedilir."
+        ),
+    )
     return parser.parse_args()
+
+
+def _emit_result(payload: dict[str, Any], args: argparse.Namespace) -> None:
+    """Print the final self-heal result and optionally persist it for truncated logs."""
+
+    rendered = json.dumps(payload, ensure_ascii=False, indent=2)
+    print(rendered)
+    output_path_text = str(getattr(args, "output", "") or "").strip()
+    if not output_path_text:
+        return
+    output_path = Path(output_path_text)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(rendered + "\n", encoding="utf-8")
 
 
 def _resolve_auto_heal_database_url(log_path: Path, requested_database_url: str | None) -> str:
@@ -270,7 +290,16 @@ async def _run(args: argparse.Namespace) -> int:
 
     log_path = Path(args.log)
     if not log_path.exists():
-        print(f"❌ Log dosyası bulunamadı: {log_path}")
+        _emit_result(
+            {
+                "status": "failed",
+                "model": "",
+                "queue_size": 0,
+                "executions": [],
+                "reason": f"Log dosyası bulunamadı: {log_path}",
+            },
+            args,
+        )
         return 1
 
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
@@ -280,19 +309,16 @@ async def _run(args: argparse.Namespace) -> int:
         source_name = str(args.source or "local").strip() or "local"
         lower_text = log_text.lower()
         if "success: no issues found" in lower_text and source_name.lower() == "mypy":
-            print(
-                json.dumps(
-                    {
-                        "status": "skipped",
-                        "model": "",
-                        "queue_size": 0,
-                        "executions": [],
-                        "context": context,
-                        "reason": "mypy temiz çıktı verdi; uygulanacak patch yok.",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            _emit_result(
+                {
+                    "status": "skipped",
+                    "model": "",
+                    "queue_size": 0,
+                    "executions": [],
+                    "context": context,
+                    "reason": "mypy temiz çıktı verdi; uygulanacak patch yok.",
+                },
+                args,
             )
             return 0
 
@@ -378,20 +404,17 @@ async def _run(args: argparse.Namespace) -> int:
     any_applied = any(status == "applied" for status in status_values)
     all_applied = bool(status_values) and all(status == "applied" for status in status_values)
     final_status = "applied" if all_applied else ("partial" if any_applied else "failed")
-    print(
-        json.dumps(
-            {
-                "status": final_status,
-                "model": cfg.CODING_MODEL,
-                "database_url": _redact_database_url(str(getattr(cfg, "DATABASE_URL", ""))),
-                "initialization_warning": initialization_warning,
-                "queue_size": len(queue),
-                "executions": executions,
-                "context": context,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+    _emit_result(
+        {
+            "status": final_status,
+            "model": cfg.CODING_MODEL,
+            "database_url": _redact_database_url(str(getattr(cfg, "DATABASE_URL", ""))),
+            "initialization_warning": initialization_warning,
+            "queue_size": len(queue),
+            "executions": executions,
+            "context": context,
+        },
+        args,
     )
     return 0 if final_status in {"applied", "partial"} else 1
 
