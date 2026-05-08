@@ -1,8 +1,8 @@
 import importlib.util
-from contextlib import contextmanager
-from pathlib import Path
 import sys
 import types
+from contextlib import contextmanager
+from pathlib import Path
 
 
 @contextmanager
@@ -65,12 +65,23 @@ def _import_env_module(monkeypatch, fake_context):
     monkeypatch.setitem(sys.modules, "sqlalchemy.ext", types.ModuleType("sqlalchemy.ext"))
     monkeypatch.setitem(sys.modules, "sqlalchemy.ext.asyncio", async_mod)
 
+    core_models_mod = types.ModuleType("core.models")
+    core_models_mod.Base = types.SimpleNamespace(metadata=types.SimpleNamespace(tables={}))
+    monkeypatch.setitem(sys.modules, "core.models", core_models_mod)
+
     env_path = Path("migrations/env.py")
     spec = importlib.util.spec_from_file_location("migrations.env", env_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
     return module
+
+
+def test_target_metadata_uses_core_models_base(monkeypatch):
+    fake_context = _FakeContext()
+    module = _import_env_module(monkeypatch, fake_context)
+
+    assert module.target_metadata.tables == {}
 
 
 def test_load_database_url_prefers_x_argument(monkeypatch):

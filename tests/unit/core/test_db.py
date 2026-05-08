@@ -77,36 +77,76 @@ class FakePgAdapter:
         self.conn.execute.side_effect = ConnectionError("database connection lost")
 
 
+def test_run_alembic_upgrade_head_configures_repo_migrations(monkeypatch, tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    captured: dict[str, object] = {}
+
+    class _FakeAlembicConfig:
+        def __init__(self, path: str) -> None:
+            captured["config_path"] = path
+            self.options: dict[str, str] = {}
+
+        def set_main_option(self, key: str, value: str) -> None:
+            self.options[key] = value
+            captured.setdefault("options", self.options)
+
+    def _upgrade(config, revision: str) -> None:
+        captured["config"] = config
+        captured["revision"] = revision
+
+    alembic_mod = types.ModuleType("alembic")
+    command_mod = types.ModuleType("alembic.command")
+    command_mod.upgrade = _upgrade  # type: ignore[attr-defined]
+    config_mod = types.ModuleType("alembic.config")
+    config_mod.Config = _FakeAlembicConfig  # type: ignore[attr-defined]
+    alembic_mod.command = command_mod  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "alembic", alembic_mod)
+    monkeypatch.setitem(sys.modules, "alembic.command", command_mod)
+    monkeypatch.setitem(sys.modules, "alembic.config", config_mod)
+
+    db._run_alembic_upgrade_head()
+
+    options = captured["options"]
+    assert captured["revision"] == "head"
+    assert str(captured["config_path"]).endswith("alembic.ini")
+    assert options["sqlalchemy.url"] == db.database_url
+    assert str(options["script_location"]).endswith("migrations")
+
+
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_executes_all_queries(tmp_path) -> None:
+async def test_init_schema_postgresql_runs_alembic_upgrade(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
-    fake_pg = FakePgAdapter()
-    db._pg_pool = fake_pg
+    db._pg_pool = FakePgAdapter()
+    ran: list[str] = []
+
+    def _mark_alembic() -> None:
+        ran.append("head")
+
+    db._run_alembic_upgrade_head = _mark_alembic  # type: ignore[method-assign]
 
     await db._init_schema_postgresql()
 
-    assert fake_pg.conn.execute.await_count > 20
+    assert ran == ["head"]
 
 
 @pytest.mark.asyncio
-async def test_init_schema_postgresql_propagates_mid_migration_disconnect(tmp_path) -> None:
+async def test_init_schema_postgresql_propagates_alembic_failure(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
-    fake_pg = FakePgAdapter()
-    db._pg_pool = fake_pg
-    fake_pg.conn.execute.side_effect = [
-        None,
-        None,
-        ConnectionError("database connection lost during migration"),
-    ]
+    db._pg_pool = FakePgAdapter()
+
+    def _raise_alembic() -> None:
+        raise ConnectionError("database connection lost during migration")
+
+    db._run_alembic_upgrade_head = _raise_alembic  # type: ignore[method-assign]
 
     with pytest.raises(ConnectionError, match="migration"):
         await db._init_schema_postgresql()
-
-    assert fake_pg.conn.execute.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -1449,7 +1489,7 @@ async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
     db.ensure_default_prompt_registry = lambda: _mark("prompt")
 
     await db.init_schema()
-    assert calls == ["init", "ac", "audit", "version", "prompt"]
+    assert calls == ["init", "prompt"]
 
 
 @pytest.mark.asyncio

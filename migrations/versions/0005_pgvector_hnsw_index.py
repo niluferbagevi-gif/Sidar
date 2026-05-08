@@ -46,15 +46,26 @@ def upgrade() -> None:
                     RETURN;
             END;
 
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'rag_embeddings'
-                  AND column_name = 'embedding'
-            ) THEN
-                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
-                     || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
-            END IF;
+            EXECUTE '
+                CREATE TABLE IF NOT EXISTS rag_embeddings (
+                    doc_id TEXT NOT NULL,
+                    parent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    title TEXT,
+                    source TEXT,
+                    chunk_content TEXT,
+                    embedding vector(384),
+                    PRIMARY KEY (doc_id, chunk_index)
+                )
+            ';
+
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_session '
+                 || 'ON rag_embeddings(session_id)';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_parent '
+                 || 'ON rag_embeddings(parent_id)';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
+                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
         END $$;
         """
     )
@@ -67,3 +78,6 @@ def downgrade() -> None:
         return
 
     op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_embedding_hnsw")
+    op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_parent")
+    op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_session")
+    op.execute("DROP TABLE IF EXISTS rag_embeddings")

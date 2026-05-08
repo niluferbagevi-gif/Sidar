@@ -9,24 +9,28 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 
-def _load_migration(monkeypatch, system_prompt: str = "TEST_SYSTEM_PROMPT"):
+class _TextClause:
+    def __init__(self, sql: str) -> None:
+        self.sql = sql
+        self.bound_params: dict[str, object] = {}
+
+    def bindparams(self, **kwargs: object) -> _TextClause:
+        self.bound_params.update(kwargs)
+        return self
+
+
+def _load_migration(monkeypatch):
     op_mock = MagicMock()
     sa_mock = MagicMock()
-    sa_mock.text = lambda s: MagicMock(bindparams=MagicMock(return_value=MagicMock()))
+    sa_mock.text = lambda s: _TextClause(s)
 
     alembic_mod = types.ModuleType("alembic")
     alembic_mod.op = op_mock
     monkeypatch.setitem(sys.modules, "alembic", alembic_mod)
     monkeypatch.setitem(sys.modules, "alembic.op", op_mock)
     monkeypatch.setitem(sys.modules, "sqlalchemy", sa_mock)
-
-    # Mock agent.definitions so we can inject SIDAR_SYSTEM_PROMPT
-    definitions_mod = types.ModuleType("agent.definitions")
-    definitions_mod.SIDAR_SYSTEM_PROMPT = system_prompt
-    agent_mod = types.ModuleType("agent")
-    agent_mod.definitions = definitions_mod
-    monkeypatch.setitem(sys.modules, "agent", agent_mod)
-    monkeypatch.setitem(sys.modules, "agent.definitions", definitions_mod)
+    monkeypatch.delitem(sys.modules, "agent.definitions", raising=False)
+    monkeypatch.delitem(sys.modules, "agent", raising=False)
 
     spec = importlib.util.spec_from_file_location(
         "migrations.versions.0002_prompt_registry",
@@ -45,6 +49,15 @@ def test_module_metadata(monkeypatch):
     assert module.depends_on is None
 
 
+def test_module_uses_static_seed_prompt_without_agent_import(monkeypatch):
+    module, _, _ = _load_migration(monkeypatch)
+    source = Path("migrations/versions/0002_prompt_registry.py").read_text(encoding="utf-8")
+
+    assert "from agent.definitions import" not in source
+    assert module.MIGRATION_SEED_SYSTEM_PROMPT.startswith("Sen SİDAR'sın")
+    assert "qwen2.5-coder:7b" in module.MIGRATION_SEED_SYSTEM_PROMPT
+
+
 def test_upgrade_creates_prompt_registry_table(monkeypatch):
     module, op_mock, _ = _load_migration(monkeypatch)
     module.upgrade()
@@ -61,11 +74,16 @@ def test_upgrade_creates_index(monkeypatch):
     assert "idx_prompt_registry_role_active" in created_indexes
 
 
-def test_upgrade_executes_seed_insert(monkeypatch):
+def test_upgrade_executes_static_seed_insert(monkeypatch):
     module, op_mock, _ = _load_migration(monkeypatch)
     module.upgrade()
 
-    assert op_mock.execute.called, "upgrade() must execute the seed INSERT"
+    executed = op_mock.execute.call_args.args[0]
+    assert "INSERT INTO prompt_registry" in executed.sql
+    assert executed.bound_params["role_name"] == "system"
+    assert executed.bound_params["prompt_text"] == module.MIGRATION_SEED_SYSTEM_PROMPT
+    assert executed.bound_params["version"] == 1
+    assert executed.bound_params["is_active"] is True
 
 
 def test_downgrade_drops_index_and_table(monkeypatch):
