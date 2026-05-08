@@ -335,7 +335,7 @@ uv run alembic upgrade head
 PostgreSQL gibi farklı hedef veritabanı için bağlantıyı komut anında override edebilirsiniz:
 
 ```bash
-uv run alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
+uv run alembic -x database_url="postgresql+asyncpg://user:pass@host:5432/sidar" upgrade head
 ```
 
 SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
