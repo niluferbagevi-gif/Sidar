@@ -107,3 +107,13 @@ def test_alembic_env_rejects_local_fallback_in_production() -> None:
         assert 'SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES' in env_text
         assert "Set DATABASE_URL or pass" in env_text
         assert '_ensure_database_url_allowed(url, source="alembic.ini")' in env_text
+
+
+def test_alembic_documentation_uses_supported_asyncpg_driver() -> None:
+    for relative_path in (
+        "README.md",
+        "docs/module-notes/runbooks/production-cutover-playbook.md.md",
+    ):
+        doc_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "postgresql+psycopg://" not in doc_text
+        assert "postgresql+asyncpg://user:pass@host:5432/sidar" in doc_text

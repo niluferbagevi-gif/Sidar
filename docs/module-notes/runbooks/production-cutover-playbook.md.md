@@ -80,9 +80,9 @@ Dolayısıyla runbook ile CI kapıları arasında bire bir operasyonel hizalama 
 ### Örnek A — Alembic doğrulama
 
 ```bash
-alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
-alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" downgrade -1
-alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
+uv run alembic -x database_url="postgresql+asyncpg://user:pass@host:5432/sidar" upgrade head
+uv run alembic -x database_url="postgresql+asyncpg://user:pass@host:5432/sidar" downgrade -1
+uv run alembic -x database_url="postgresql+asyncpg://user:pass@host:5432/sidar" upgrade head
 ```
 
 ### Örnek B — Migration dry-run ve gerçek taşıma
