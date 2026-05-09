@@ -156,6 +156,11 @@ class CoverageAgent(BaseAgent):
         ):
             return False, "Üretilen test kodunda yinelenen test fonksiyon adı var.", details
 
+        quality_rejection = self._candidate_rejection_reason(generated_test)
+        details["quality_rejection_reason"] = quality_rejection
+        if quality_rejection:
+            return False, f"Üretilen test kalite kapısından geçemedi: {quality_rejection}", details
+
         if not append:
             return True, "AST kontrolü başarılı.", details
 
@@ -227,32 +232,21 @@ class CoverageAgent(BaseAgent):
         return safe or "generated"
 
     @staticmethod
-    def _build_deterministic_test_template(
-        *, finding: dict[str, Any], llm_idea: str = ""
-    ) -> str:
-        """LLM çıktısı zayıfsa deterministik, statik filtrelerden geçebilen iskelet üretir."""
-        target_path = str(finding.get("target_path", "") or "")
-        module_path = CoverageAgent._module_import_path(target_path)
-        test_fragment = CoverageAgent._safe_test_name_fragment(target_path)
-        idea_comment = ""
-        if str(llm_idea or "").strip():
-            first_line = " ".join(str(llm_idea).strip().split())[:160]
-            idea_comment = f"# CoverageAgent LLM idea: {first_line}\n"
-        if CoverageAgent._finding_mentions_exception_path(finding):
-            return (
-                "import pytest\n\n"
-                f"{idea_comment}"
-                f"def test_{test_fragment}_exception_path_template():\n"
-                "    with pytest.raises(Exception):\n"
-                "        raise Exception('coverage-agent deterministic exception path')\n"
-            )
+    def _build_deterministic_test_template(*, finding: dict[str, Any], llm_idea: str = "") -> str:
+        """Fail-closed placeholder used when LLM output is too weak to write safely.
+
+        CoverageAgent must not inflate coverage by writing import-only or synthetic
+        exception tests. Returning a non-test placeholder makes downstream quality
+        gates reject the candidate deterministically instead of accepting a weak
+        template.
+        """
+        target_path = str(finding.get("target_path", "") or "<unknown>")
+        rejection = CoverageAgent._candidate_rejection_reason(str(llm_idea or ""), finding=finding)
+        first_line = " ".join(str(llm_idea or "").strip().split())[:160]
+        idea_comment = f" LLM idea: {first_line}" if first_line else ""
         return (
-            "import importlib\n\n"
-            f"{idea_comment}"
-            f"def test_{test_fragment}_module_import_contract():\n"
-            f"    module = importlib.import_module({module_path!r})\n"
-            "    assert module is not None\n"
-            f"    assert getattr(module, '__name__', '') == {module_path!r}\n"
+            f"# CoverageAgent blocked weak generated test for {target_path}."
+            f" reason={rejection or 'quality_gate_failed'}.{idea_comment}\n"
         )
 
     @staticmethod
@@ -338,12 +332,19 @@ class CoverageAgent(BaseAgent):
     @staticmethod
     def _uses_mocking(tree: ast.AST) -> bool:
         for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and node.id in {"Mock", "MagicMock", "AsyncMock", "patch"}:
+            if isinstance(node, ast.Name) and node.id in {
+                "Mock",
+                "MagicMock",
+                "AsyncMock",
+                "patch",
+            }:
                 return True
-            if (
-                isinstance(node, ast.Attribute)
-                and node.attr in {"Mock", "MagicMock", "AsyncMock", "patch"}
-            ):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "Mock",
+                "MagicMock",
+                "AsyncMock",
+                "patch",
+            }:
                 return True
             if isinstance(node, ast.Name) and node.id == "mocker":
                 return True
@@ -364,6 +365,241 @@ class CoverageAgent(BaseAgent):
             marker in haystack
             for marker in ("exception", "pytest.raises", "raise ", "raises", "except", "hata")
         )
+
+    @staticmethod
+    def _root_name(node: ast.AST) -> str:
+        """Return the root ``Name`` for attribute/call/subscript chains."""
+        current = node
+        while isinstance(current, ast.Attribute | ast.Subscript | ast.Call):
+            if isinstance(current, ast.Attribute):
+                current = current.value
+                continue
+            if isinstance(current, ast.Subscript):
+                current = current.value
+                continue
+            current = current.func
+        return current.id if isinstance(current, ast.Name) else ""
+
+    @staticmethod
+    def _literal_string(node: ast.AST) -> str:
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else ""
+
+    @classmethod
+    def _collect_target_import_aliases(
+        cls, tree: ast.AST, target_module: str
+    ) -> tuple[set[str], set[str], set[str]]:
+        """Collect target module aliases, imported symbols and target patch strings."""
+        module_aliases: set[str] = set()
+        imported_symbols: set[str] = set()
+        patch_targets: set[str] = set()
+        target_module = str(target_module or "").strip()
+        if not target_module:
+            return module_aliases, imported_symbols, patch_targets
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == target_module:
+                        module_aliases.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                module = "." * int(node.level or 0) + str(node.module or "")
+                if module == target_module:
+                    for alias in node.names:
+                        if alias.name != "*":
+                            imported_symbols.add(alias.asname or alias.name)
+            elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                call = node.value
+                is_importlib = (
+                    isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "import_module"
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == "importlib"
+                )
+                if (
+                    is_importlib
+                    and call.args
+                    and cls._literal_string(call.args[0]) == target_module
+                ):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            module_aliases.add(target.id)
+            elif isinstance(node, ast.Call):
+                func_name = ""
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    if (
+                        node.func.attr == "object"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "patch"
+                    ):
+                        func_name = "patch.object"
+                    else:
+                        func_name = node.func.attr
+                if func_name in {"patch", "patch.object"} and node.args:
+                    patch_target = cls._literal_string(node.args[0])
+                    if patch_target.startswith(f"{target_module}."):
+                        patch_targets.add(patch_target)
+        return module_aliases, imported_symbols, patch_targets
+
+    @classmethod
+    def _call_references_target(
+        cls,
+        call: ast.Call,
+        *,
+        module_aliases: set[str],
+        imported_symbols: set[str],
+    ) -> bool:
+        root = cls._root_name(call.func)
+        if root in module_aliases or root in imported_symbols:
+            return True
+        return any(
+            isinstance(child, ast.Name) and child.id in module_aliases | imported_symbols
+            for child in ast.walk(call)
+        )
+
+    @classmethod
+    def _is_import_only_assertion(
+        cls, node: ast.Assert, *, module_aliases: set[str], target_module: str
+    ) -> bool:
+        """Detect assertions that merely prove a module was imported."""
+        test = node.test
+        if isinstance(test, ast.Compare):
+            compared_nodes = [test.left, *test.comparators]
+            names = {item.id for item in compared_nodes if isinstance(item, ast.Name)}
+            constants = {item.value for item in compared_nodes if isinstance(item, ast.Constant)}
+            if names & module_aliases and (None in constants or target_module in constants):
+                return True
+            for item in compared_nodes:
+                if (
+                    isinstance(item, ast.Call)
+                    and isinstance(item.func, ast.Name)
+                    and item.func.id == "getattr"
+                    and item.args
+                    and isinstance(item.args[0], ast.Name)
+                    and item.args[0].id in module_aliases
+                ):
+                    return True
+        if isinstance(test, ast.Call):
+            func_name = test.func.id if isinstance(test.func, ast.Name) else ""
+            if func_name in {"hasattr", "getattr"} and test.args:
+                first_arg = test.args[0]
+                return isinstance(first_arg, ast.Name) and first_arg.id in module_aliases
+        return False
+
+    @classmethod
+    def _target_behavior_quality_reason(cls, tree: ast.AST, target_path: str) -> str:
+        """Fail-closed quality gate for coverage tests tied to a target module.
+
+        A candidate must both execute target behavior and assert on a value derived
+        from that target behavior. Import-only smoke tests and unrelated local
+        computations are rejected because they can inflate coverage without proving
+        behavior.
+        """
+        target_module = cls._module_import_path(target_path)
+        module_aliases, imported_symbols, patch_targets = cls._collect_target_import_aliases(
+            tree, target_module
+        )
+        if not module_aliases and not imported_symbols and not patch_targets:
+            return "generated_candidate_no_target_behavior_reference"
+
+        target_derived_names: set[str] = set()
+        target_call_seen = False
+        target_coupled_assertion = False
+        target_coupled_raises = False
+        import_only_assert_seen = False
+
+        for test_node in (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        ):
+            for child in ast.walk(test_node):
+                if isinstance(child, ast.Assign):
+                    value_has_target_call = any(
+                        isinstance(item, ast.Call)
+                        and cls._call_references_target(
+                            item,
+                            module_aliases=module_aliases,
+                            imported_symbols=imported_symbols,
+                        )
+                        for item in ast.walk(child.value)
+                    )
+                    if value_has_target_call:
+                        target_call_seen = True
+                        for target in child.targets:
+                            if isinstance(target, ast.Name):
+                                target_derived_names.add(target.id)
+                elif isinstance(child, ast.AnnAssign):
+                    value = child.value
+                    value_has_target_call = bool(value) and any(
+                        isinstance(item, ast.Call)
+                        and cls._call_references_target(
+                            item,
+                            module_aliases=module_aliases,
+                            imported_symbols=imported_symbols,
+                        )
+                        for item in ast.walk(value)
+                    )
+                    if value_has_target_call and isinstance(child.target, ast.Name):
+                        target_call_seen = True
+                        target_derived_names.add(child.target.id)
+                elif isinstance(child, ast.Call) and cls._call_references_target(
+                    child, module_aliases=module_aliases, imported_symbols=imported_symbols
+                ):
+                    target_call_seen = True
+                elif isinstance(child, ast.Assert):
+                    if cls._is_import_only_assertion(
+                        child, module_aliases=module_aliases, target_module=target_module
+                    ):
+                        import_only_assert_seen = True
+                        continue
+                    direct_target_call = any(
+                        isinstance(item, ast.Call)
+                        and cls._call_references_target(
+                            item,
+                            module_aliases=module_aliases,
+                            imported_symbols=imported_symbols,
+                        )
+                        for item in ast.walk(child.test)
+                    )
+                    derived_value_assert = any(
+                        isinstance(item, ast.Name) and item.id in target_derived_names
+                        for item in ast.walk(child.test)
+                    )
+                    mock_assert = any(
+                        isinstance(item, ast.Call)
+                        and isinstance(item.func, ast.Attribute)
+                        and item.func.attr.startswith("assert_")
+                        for item in ast.walk(child.test)
+                    )
+                    if (
+                        direct_target_call
+                        or derived_value_assert
+                        or (patch_targets and mock_assert)
+                    ):
+                        target_coupled_assertion = True
+                elif isinstance(child, ast.With | ast.AsyncWith):
+                    if any(cls._is_pytest_raises_call(item.context_expr) for item in child.items):
+                        target_coupled_raises = any(
+                            isinstance(item, ast.Call)
+                            and cls._call_references_target(
+                                item,
+                                module_aliases=module_aliases,
+                                imported_symbols=imported_symbols,
+                            )
+                            for stmt in child.body
+                            for item in ast.walk(stmt)
+                        )
+
+        if not target_call_seen:
+            return "generated_candidate_import_only_contract"
+        if import_only_assert_seen and not target_coupled_assertion and not target_coupled_raises:
+            return "generated_candidate_import_only_contract"
+        if not target_coupled_assertion and not target_coupled_raises:
+            return "generated_candidate_uncoupled_assertion"
+        return ""
 
     @staticmethod
     def _candidate_rejection_reason(
@@ -405,12 +641,20 @@ class CoverageAgent(BaseAgent):
 
         if has_tautological_mock_called_assertion:
             return "generated_candidate_tautological_mock_assertion"
-        if CoverageAgent._uses_mocking(tree) and not CoverageAgent._has_mock_call_verification(tree):
+        if CoverageAgent._uses_mocking(tree) and not CoverageAgent._has_mock_call_verification(
+            tree
+        ):
             return "generated_candidate_mock_without_call_assertion"
         if CoverageAgent._finding_mentions_exception_path(finding) and not has_pytest_raises:
             return "generated_candidate_missing_pytest_raises_for_exception_path"
         if not has_behavioral_assert and not has_pytest_raises:
             return "generated_candidate_trivial_or_missing_assertion"
+
+        target_path = str((finding or {}).get("target_path", "") or "").strip()
+        if target_path:
+            target_quality_reason = CoverageAgent._target_behavior_quality_reason(tree, target_path)
+            if target_quality_reason:
+                return target_quality_reason
         return ""
 
     @staticmethod
@@ -647,7 +891,9 @@ class CoverageAgent(BaseAgent):
             "Görev: pytest uyumlu, deterministik ve ağ erişimsiz testler üret.\n"
             "- 'assert True' veya tautolojik kontroller YASAK.\n"
             "- Her test fonksiyonu en az 1 anlamlı assertion içermeli.\n"
-            "- Dış servis çağrılarını unittest.mock ile taklit et.\n"
+            "- Assertion, hedef modülden çağrılan fonksiyon/metot sonucuna bağlanmalı; "
+            "sadece import, module is not None, __name__ veya ilgisiz lokal hesap kontrolü YASAK.\n"
+            "- Dış servis çağrılarını unittest.mock ile taklit et ve mock beklentilerini assert_called*/awaited* ile doğrula.\n"
             "- Gerekirse fixture kullan.\n"
             "- Hem başarılı hem hata (exception/edge-case) akışları için test üret.\n"
             "- Eksik satır/branch'lere doğrudan tetikleyici çağrılar yaz.\n"
@@ -918,11 +1164,13 @@ class CoverageAgent(BaseAgent):
                     )
                     continue
 
-                isolated_ok, isolated_reason, isolated_details = (
-                    await self._validate_candidate_with_isolated_pytest(
-                        suggested_test_path=suggested_test_path,
-                        generated_test=generated,
-                    )
+                (
+                    isolated_ok,
+                    isolated_reason,
+                    isolated_details,
+                ) = await self._validate_candidate_with_isolated_pytest(
+                    suggested_test_path=suggested_test_path,
+                    generated_test=generated,
                 )
                 if not isolated_ok:
                     results.append(
@@ -1113,18 +1361,29 @@ class CoverageAgent(BaseAgent):
             "is_approved": False,
             "approval_status": "pending_reviewer_or_human",
         }
-        write_result = json.loads(
-            await self._tool_write_missing_tests(
-                json.dumps(
-                    {
-                        "suggested_test_path": suggested_test_path,
-                        "generated_test": generated_test,
-                        "append": True,
-                    },
-                    ensure_ascii=False,
+        candidate_rejection_reason = self._candidate_rejection_reason(
+            generated_test, finding=primary
+        )
+        if candidate_rejection_reason:
+            write_result = {
+                "success": False,
+                "suggested_test_path": suggested_test_path,
+                "message": f"Üretilen test kalite kapısından geçemedi: {candidate_rejection_reason}",
+                "validation": {"quality_rejection_reason": candidate_rejection_reason},
+            }
+        else:
+            write_result = json.loads(
+                await self._tool_write_missing_tests(
+                    json.dumps(
+                        {
+                            "suggested_test_path": suggested_test_path,
+                            "generated_test": generated_test,
+                            "append": True,
+                        },
+                        ensure_ascii=False,
+                    )
                 )
             )
-        )
         write_ok = bool(write_result.get("success", False))
         write_message = str(write_result.get("message", "") or "")
         review_payload["write_result"] = write_result

@@ -1455,6 +1455,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Dynamic Browser Automation** | Playwright/Selenium tabanlı, HITL ve audit trail ile kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | ✅ Tamamlandı |
 | **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
+| **Coverage Test Quality Gate** | CoverageAgent aday testlerini reviewer LLM öncesinde AST ile denetler; `assert True`, sabit/trivial assertion, import-only kontrat ve hedef davranışına bağlanmayan testler yazılmadan fail-closed reddedilir (`agent/roles/coverage_agent.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
 > **Not:** “%100 test kapsaması” ifadesi kültürel/ideal hedef olarak korunabilir; ancak güncel ve kodlanmış resmî kalite kapısı `.coveragerc`, `run_tests.sh` ve CI üzerinde `%90` eşiğiyle uygulanmaktadır.

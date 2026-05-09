@@ -232,6 +232,8 @@ REJECTION_STATE_PATH = Path(os.getenv("AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE", "a
 REVIEWER_GATE_SEMANTIC_CRITERIA = (
     "eksik exception path'i",
     "tautolojik mock kontrolü",
+    "hedef modül davranışına bağlanmayan assertion",
+    "import-only veya sabit/trivial coverage testi",
 )
 REVIEWER_GATE_MISSING_REASON = "(neden belirtilmedi)"
 

@@ -313,7 +313,7 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
         json.dumps(
             {
                 "suggested_test_path": "tests/a.py",
-                "generated_test": "```python\ndef test_generated():\n    assert 1 == 1\n```",
+                "generated_test": "```python\ndef test_generated():\n    value = 'x'.upper()\n    assert value == 'X'\n```",
                 "append": False,
             }
         )
@@ -403,7 +403,7 @@ async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager,
         json.dumps(
             {
                 "suggested_test_path": "tests/fail.py",
-                "generated_test": "def test_fail():\n    assert 1 == 1",
+                "generated_test": "def test_fail():\n    value = 'x'.upper()\n    assert value == 'X'",
                 "append": False,
             }
         )
@@ -426,7 +426,7 @@ async def test_write_missing_tests_rejects_duplicate_test_function(
         json.dumps(
             {
                 "suggested_test_path": "tests/test_dup.py",
-                "generated_test": "def test_same():\n    assert 2 == 2\n",
+                "generated_test": "def test_same():\n    value = 'x'.upper()\n    assert value == 'X'\n",
                 "append": True,
             }
         )
@@ -453,9 +453,15 @@ async def test_autonomous_coverage_batch_writes_multiple_findings(
         return json.dumps({"summary": "two gaps", "coveragerc": {}, "findings": findings})
 
     async def fake_generate(arg):
-        data = json.loads(arg)
-        target = data["coverage_finding"]["target_path"].split("/")[-1].split(".")[0]
-        return f"def test_{target}_generated():\n    value = {target!r}\n    assert value.isalpha()\n"
+        target_path = json.loads(arg)["coverage_finding"]["target_path"]
+        target = target_path.split("/")[-1].split(".")[0]
+        module = target_path.removesuffix(".py").replace("/", ".")
+        return (
+            f"from {module} import compute\n\n"
+            f"def test_{target}_generated():\n"
+            "    result = compute()\n"
+            f"    assert result == {target!r}\n"
+        )
 
     monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
     monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
@@ -703,7 +709,14 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
 
     async def fake_candidate(target_path, pytest_output, analysis):
         assert target_path == "src/a.py"
-        return "```python\ndef test_x():\n    assert True\n```"
+        return (
+            "```python\n"
+            "from src.a import compute\n\n"
+            "def test_x():\n"
+            "    result = compute()\n"
+            "    assert result == 'a'\n"
+            "```"
+        )
 
     agent._generate_test_candidate = fake_candidate
 
@@ -829,9 +842,10 @@ async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
     assert ok is True
     assert reason == "isolated_pytest_passed"
     assert details["isolated_pytest_command"].startswith("uv run pytest -q ")
-    assert f"artifacts/coverage_candidate_validation/test_candidate_{expected_digest}.py" in details[
-        "isolated_pytest_command"
-    ]
+    assert (
+        f"artifacts/coverage_candidate_validation/test_candidate_{expected_digest}.py"
+        in details["isolated_pytest_command"]
+    )
     assert not Path(details["isolated_test_file"]).exists()
     fake_coverage_code_manager.run_pytest_and_collect.assert_awaited_once()
 
@@ -858,7 +872,12 @@ async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
         )
 
     async def fake_generate(_arg):
-        return "def test_isolated_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
+        return (
+            "from src.isolated import compute\n\n"
+            "def test_isolated_candidate():\n"
+            "    result = compute()\n"
+            "    assert result == 'ok'\n"
+        )
 
     reviewer_calls = []
 
@@ -893,7 +912,12 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
         return json.dumps({"summary": "one gap", "coveragerc": {}, "findings": [finding]})
 
     async def fake_generate(_arg):
-        return "def test_meaningful_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
+        return (
+            "from agent.roles.coverage_agent import CoverageAgent\n\n"
+            "def test_meaningful_candidate():\n"
+            "    result = CoverageAgent._module_import_path('x.py')\n"
+            "    assert result == 'x'\n"
+        )
 
     async def reviewer_gate(candidate, gate_finding):
         assert "test_meaningful_candidate" in candidate
@@ -916,7 +940,12 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
             "target_path": "agent/roles/coverage_agent.py",
             "suggested_test_path": "tests/test_cov.py",
             "review_reason": "rejected",
-            "generated_test_candidate": "def test_meaningful_candidate():\n    value = 'x'.upper()\n    assert value == 'X'",
+            "generated_test_candidate": (
+                "from agent.roles.coverage_agent import CoverageAgent\n\n"
+                "def test_meaningful_candidate():\n"
+                "    result = CoverageAgent._module_import_path('x.py')\n"
+                "    assert result == 'x'"
+            ),
         }
     ]
     fake_coverage_code_manager.write_generated_test.assert_not_awaited()
@@ -938,7 +967,14 @@ async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
         )
 
     async def fake_generate(_arg):
-        return "```python\ndef test_exception_candidate():\n    assert 'x'.upper() == 'X'\n```"
+        return (
+            "```python\n"
+            "from src.explode import compute\n\n"
+            "def test_exception_candidate():\n"
+            "    result = compute()\n"
+            "    assert result == 'ok'\n"
+            "```"
+        )
 
     async def reviewer_gate(_candidate, _finding):
         raise RuntimeError("reviewer unavailable")
@@ -954,7 +990,7 @@ async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
     assert rejected["review_reason"] == "reviewer_gate_exception:RuntimeError"
     assert rejected["review_error"] == "reviewer unavailable"
     assert rejected["suggested_test_path"] == "tests/src/test_explode.py"
-    assert rejected["generated_test_candidate"].startswith("def test_exception_candidate")
+    assert "def test_exception_candidate" in rejected["generated_test_candidate"]
     fake_coverage_code_manager.write_generated_test.assert_not_awaited()
 
 
@@ -1013,10 +1049,15 @@ async def test_autonomous_batch_partial_success_and_all_rejected_scenarios(
         return json.dumps({"summary": "partial", "coveragerc": {}, "findings": findings})
 
     async def fake_generate(arg):
-        target = (
-            json.loads(arg)["coverage_finding"]["target_path"].removesuffix(".py").split("/")[-1]
+        target_path = json.loads(arg)["coverage_finding"]["target_path"]
+        target = target_path.removesuffix(".py").split("/")[-1]
+        module = target_path.removesuffix(".py").replace("/", ".")
+        return (
+            f"from {module} import compute\n\n"
+            f"def test_{target}_candidate():\n"
+            "    result = compute()\n"
+            f"    assert result == {target!r}\n"
         )
-        return f"def test_{target}_candidate():\n    assert {target!r}.isalpha()\n"
 
     async def partial_reviewer_gate(_candidate, finding):
         return finding["target_path"] != "src/b.py"
@@ -1072,7 +1113,9 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
         == "generated_candidate_trivial_or_missing_assertion"
     )
     assert (
-        CoverageAgent._candidate_rejection_reason("def test_constant_math():\n    assert 2 + 2 == 4")
+        CoverageAgent._candidate_rejection_reason(
+            "def test_constant_math():\n    assert 2 + 2 == 4"
+        )
         == "generated_candidate_trivial_or_missing_assertion"
     )
     assert (
@@ -1114,6 +1157,52 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
     )
     assert CoverageAgent._clean_code_output("```py\ndef test_y():\n    assert 2\n```") == (
         "def test_y():\n    assert 2"
+    )
+
+
+@pytest.mark.asyncio
+async def test_candidate_rejection_requires_target_coupled_behavior():
+    finding = {"target_path": "src/service.py", "summary": "line gap"}
+
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "def test_unrelated_local_computation():\n"
+            "    value = 'x'.upper()\n"
+            "    assert value == 'X'",
+            finding=finding,
+        )
+        == "generated_candidate_no_target_behavior_reference"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "import importlib\n\n"
+            "def test_import_only_contract():\n"
+            "    module = importlib.import_module('src.service')\n"
+            "    assert module is not None\n"
+            "    assert getattr(module, '__name__', '') == 'src.service'",
+            finding=finding,
+        )
+        == "generated_candidate_import_only_contract"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "from src.service import compute\n\n"
+            "def test_uncoupled_assertion_after_target_call():\n"
+            "    compute()\n"
+            "    assert 'x'.upper() == 'X'",
+            finding=finding,
+        )
+        == "generated_candidate_uncoupled_assertion"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "from src.service import compute\n\n"
+            "def test_target_result_contract():\n"
+            "    result = compute()\n"
+            "    assert result == 'ok'",
+            finding=finding,
+        )
+        == ""
     )
 
 
@@ -1184,9 +1273,7 @@ async def test_validate_generated_test_before_write_duplicate_function_names(
 ):
     """Line 157: aynı modülde yinelenen test fonksiyonu adı reddedilir."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
-    duplicated = (
-        "def test_dup():\n    assert 1 == 1\n\ndef test_dup():\n    assert 2 == 2\n"
-    )
+    duplicated = "def test_dup():\n    assert 1 == 1\n\ndef test_dup():\n    assert 2 == 2\n"
     ok, msg, _ = agent._validate_generated_test_before_write(
         suggested_test_path="tests/test_x.py", generated_test=duplicated, append=False
     )
@@ -1206,7 +1293,7 @@ async def test_validate_generated_test_before_write_existing_file_syntax_error(
 
     ok, msg, _ = agent._validate_generated_test_before_write(
         suggested_test_path="tests/test_existing_bad.py",
-        generated_test="def test_new():\n    assert 1\n",
+        generated_test="def test_new():\n    value = 'x'.upper()\n    assert value == 'X'\n",
         append=True,
     )
     assert ok is False
@@ -1234,7 +1321,7 @@ async def test_validate_generated_test_before_write_existing_file_unreadable(
 
     ok, msg, _ = agent._validate_generated_test_before_write(
         suggested_test_path="tests/test_unreadable.py",
-        generated_test="def test_new():\n    assert 1\n",
+        generated_test="def test_new():\n    value = 'x'.upper()\n    assert value == 'X'\n",
         append=True,
     )
     assert ok is False
@@ -1253,7 +1340,7 @@ async def test_validate_generated_test_before_write_no_collisions(
 
     ok, msg, _ = agent._validate_generated_test_before_write(
         suggested_test_path="tests/test_no_dup.py",
-        generated_test="def test_brand_new():\n    assert 2\n",
+        generated_test="def test_brand_new():\n    value = 'x'.upper()\n    assert value == 'X'\n",
         append=True,
     )
     assert ok is True
@@ -1268,18 +1355,16 @@ async def test_module_import_path_strips_init_suffix():
 
 
 async def test_build_deterministic_test_template_exception_path():
-    """Line 242: finding exception path olduğunda pytest.raises şablonu üretilir."""
+    """Zayıf LLM çıktısı artık coverage artıran pytest.raises iskeleti üretmez."""
     finding = {"target_path": "src/m.py", "summary": "exception path missing"}
-    template = CoverageAgent._build_deterministic_test_template(
-        finding=finding, llm_idea=""
-    )
-    assert "with pytest.raises" in template
-    assert "# CoverageAgent LLM idea" not in template
+    template = CoverageAgent._build_deterministic_test_template(finding=finding, llm_idea="")
+    assert "CoverageAgent blocked weak generated test" in template
+    assert "with pytest.raises" not in template
 
     template_with_idea = CoverageAgent._build_deterministic_test_template(
         finding=finding, llm_idea="bir fikir"
     )
-    assert "# CoverageAgent LLM idea: bir fikir" in template_with_idea
+    assert "LLM idea: bir fikir" in template_with_idea
 
 
 async def test_has_runtime_behavior_signal_attribute_and_subscript():
@@ -1453,9 +1538,7 @@ async def test_validate_candidate_with_isolated_pytest_handles_outside_base_dir(
         return result
 
     # Daha basit: BASE_DIR'i ayarlama yerine doğrudan relative_to'yu mock'la
-    generated = (
-        "def test_outside_base():\n    value = 'z'.upper()\n    assert value == 'Z'\n"
-    )
+    generated = "def test_outside_base():\n    value = 'z'.upper()\n    assert value == 'Z'\n"
     ok, reason, details = await agent._validate_candidate_with_isolated_pytest(
         suggested_test_path="tests/test_outside.py",
         generated_test=generated,
@@ -1531,9 +1614,7 @@ async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
 
 
 @pytest.mark.asyncio
-async def test_run_task_routes_autonomous_batch_heal_prefix(
-    tmp_path, fake_coverage_code_manager
-):
+async def test_run_task_routes_autonomous_batch_heal_prefix(tmp_path, fake_coverage_code_manager):
     """Line 1072: run_task autonomous_batch_heal| prefix'ini call_tool'a yönlendirir."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     captured: list = []
