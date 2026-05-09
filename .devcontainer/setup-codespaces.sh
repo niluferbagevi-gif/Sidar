@@ -35,6 +35,44 @@ diagnose_devcontainer_runtime() {
   fi
 }
 
+
+ensure_system_dependencies() {
+  local packages=(portaudio19-dev)
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    warn "apt-get bulunamadı; PyAudio/PortAudio sistem bağımlılığı otomatik doğrulanamadı."
+    return 0
+  fi
+
+  local missing=()
+  local package
+  for package in "${packages[@]}"; do
+    if ! dpkg-query -W -f='${Status}' "${package}" 2>/dev/null | grep -q "ok installed"; then
+      missing+=("${package}")
+    fi
+  done
+
+  if [ "${#missing[@]}" -eq 0 ]; then
+    ok "Python native sistem bağımlılıkları hazır: ${packages[*]}"
+    return 0
+  fi
+
+  warn "Eksik Python native sistem bağımlılıkları kurulacak: ${missing[*]}"
+  local sudo_cmd=()
+  if [ "${EUID}" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd=(sudo)
+    else
+      warn "sudo bulunamadı; eksik paketleri kuramıyorum: ${missing[*]}"
+      return 1
+    fi
+  fi
+
+  "${sudo_cmd[@]}" apt-get update
+  "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+  ok "Python native sistem bağımlılıkları kuruldu: ${missing[*]}"
+}
+
 ensure_uv() {
   if command -v uv >/dev/null 2>&1; then
     ok "uv hazır: $(uv --version)"
@@ -58,20 +96,25 @@ ensure_uv() {
 
 sync_python_environment() {
   ensure_uv
+  ensure_system_dependencies
   log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
-  
-  # İYİLEŞTİRME: .venv klasörü kontrolü eklendi
-  if [ -d "${UV_PROJECT_ENVIRONMENT}" ]; then
-    ok "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) zaten mevcut, oluşturma adımı atlanıyor."
+
+  local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
+  if [ -x "${venv_python}" ]; then
+    ok "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) mevcut."
+  elif [ -e "${UV_PROJECT_ENVIRONMENT}" ]; then
+    warn "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) geçersiz veya eksik Python içeriyor; uv sync yeniden oluşturacak."
   else
     log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
     uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
   fi
 
   log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
-  uv sync --frozen --all-extras
+  if ! uv sync --frozen --all-extras; then
+    warn "uv sync başarısız oldu. PyAudio derleme hatası görüyorsanız portaudio19-dev paketinin kurulu olduğundan emin olun."
+    return 1
+  fi
 
-  local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
   if [ -x "${venv_python}" ]; then
     local actual_version
     actual_version="$(${venv_python} -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"

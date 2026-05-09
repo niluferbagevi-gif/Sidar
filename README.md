@@ -410,6 +410,7 @@ Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapıla
 
 - `UV_LINK_MODE=copy`, Codespaces overlay dosya sisteminde uv'nin hardlink denemesinden kaynaklanan `Failed to hardlink files; falling back to full copy` uyarısını önler.
 - `postCreateCommand`, `.devcontainer/setup-codespaces.sh post-create` ile `uv venv .venv` ve `uv sync --frozen --all-extras` çalıştırarak geliştirici bağımlılıkları ve opsiyonel entegrasyonları hazırlar.
+- Dev Container imajı ve setup betiği, `sidar[voice]` içindeki PyAudio derlemesinin ihtiyaç duyduğu `portaudio19-dev` sistem paketini önceden sağlar; böylece `portaudio.h` eksikliği nedeniyle `uv sync --frozen --all-extras` kesilmez.
 - Ollama CLI varsayılan olarak kurulmaya çalışılır, servis `postStartCommand` ile arka planda başlatılır ve standart coding modeli `qwen2.5-coder:7b` olarak tanımlanır. Büyük model indirmesini Codespaces açılışında zorunlu kılmak istemiyorsanız varsayılan `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=0` kalır; önceden indirme için Codespaces secret/env olarak `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1` verebilirsiniz.
 - Codespaces ortamında otonom coverage kampanyası için `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full` ve `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ayarlanır. Lokal/CI quality gate ise hâlâ `.coveragerc` ve `run_tests.sh` profilinden okunur.
 - `hostRequirements.gpu=optional` GPU'lu Codespaces makinesi seçilebilen ortamlarda donanım hızlandırmayı görünür kılar; CPU-only makinede `run_tests.sh` `nvidia-smi` bulamazsa GPU testlerini güvenli şekilde atlar.

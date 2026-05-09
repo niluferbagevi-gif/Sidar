@@ -15,3 +15,12 @@ RUN rm -f \
     /etc/apt/sources.list.d/yarn.sources \
     /usr/share/keyrings/yarnkey.gpg \
     /usr/share/keyrings/yarn-archive-keyring.gpg
+
+# `uv sync --frozen --all-extras` installs the `voice` extra, whose PyAudio
+# wheel can fall back to a local build on Linux. Provide PortAudio headers at
+# image-build time so updateContent/postCreate dependency syncs do not fail with
+# `fatal error: portaudio.h: No such file or directory`.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
