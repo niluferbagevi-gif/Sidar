@@ -98,14 +98,14 @@ check_python_version() {
 import sys
 
 major, minor = sys.version_info[:2]
-if (major, minor) < (3, 11) or (major, minor) >= (3, 13):
+if (major, minor) < (3, 11) or (major, minor) >= (3, 12):
     raise SystemExit(1)
 PY
   then
     local current_python
     current_python="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
     echo "❌ Desteklenmeyen Python sürümü: ${current_python}"
-    echo "ℹ️ Bu proje için desteklenen aralık: >=3.11, <3.13 (Python 3.11 veya 3.12)."
+    echo "ℹ️ Bu proje için desteklenen aralık: >=3.11, <3.12 (yalnızca Python 3.11)."
     echo "ℹ️ Not: Uyumlu sürüm kullanılmadığında SQLAlchemy gibi bağımlılıklar yüklenemez ve ModuleNotFoundError alınabilir."
     exit 1
   fi

@@ -16,7 +16,8 @@ wheels/
 .venv/
 venv/
 env/
-.python-version
+# Track Sidar's project-level Python pin while keeping local venvs ignored.
+!.python-version
 
 # uv
 .uv/
