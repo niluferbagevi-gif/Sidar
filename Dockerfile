@@ -20,12 +20,16 @@
 # ═══════════════════════════════════════════════════════════════
 
 # ── Build-time argümanlar ──────────────────────────────────────
-# CPU-only: python:3.11-slim
+# CPU-only: python:${PYTHON_VERSION}-slim (varsayılan: 3.11)
 # GPU:      nvidia/cuda:13.0.0-runtime-ubuntu22.04
-ARG BASE_IMAGE=python:3.11-slim
+ARG PYTHON_VERSION=3.11
+ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
 
 FROM ${BASE_IMAGE}
+
+# FROM öncesi ARG değerini build katmanlarında da kullanmak için yeniden tanımla.
+ARG PYTHON_VERSION=3.11
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
@@ -40,7 +44,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=7860 \
     PIP_NO_CACHE_DIR=1 \
-    UV_PYTHON=3.11 \
+    UV_PYTHON=${PYTHON_VERSION} \
     UV_LINK_MODE=copy \
     VIRTUAL_ENV=/app/.venv \
     PYTHONPATH=/app \
