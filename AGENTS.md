@@ -161,8 +161,11 @@ aşağıda belirtilir.
   veya müşteri iletişimi etkisi olan adımlarda konfigürasyon, onay ve platform
   kısıtları dikkate alınmalıdır.
 - **Etkileşim:** `researcher` tarafından doğrulanan pazar/SEO bulgularını kampanya
-  çıktısına dönüştürür. Teknik landing page veya entegrasyon gerekiyorsa `coder` ile,
-  marka/güvenlik/kalite kontrolü gerekiyorsa `reviewer` ile çalışır.
+  çıktısına dönüştürür. `search_docs` çağrılarında Poyraz önce RAG entity extraction
+  pipeline'ının ürettiği ilişkisel GraphRAG belleğini (kampanya -> hedef kitle ->
+  marka dili/kanal) kullanmalı, ardından vektörel/BM25 kanıtla desteklemelidir.
+  Teknik landing page veya entegrasyon gerekiyorsa `coder` ile, marka/güvenlik/kalite
+  kontrolü gerekiyorsa `reviewer` ile çalışır.
 
 ### 2.4 Önerilen temel iş akışları
 

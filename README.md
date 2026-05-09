@@ -130,6 +130,7 @@
 - ChromaDB vektör araması (semantik) + GPU embedding desteği
 - BM25 anahtar kelime araması
 - **GraphRAG (beta)**: kod tabanı modül bağımlılıklarını grafik olarak tarayıp ilgili dosyaları ve bağımlılık yollarını açıklayabilir
+- **İlişkisel RAG entity belleği**: RAG'a eklenen kampanya/marka/hedef kitle/marka dili/kanal bilgilerini deterministik entity extraction pipeline'ı ile `entity_graph.json` içine yazar; PoyrazAgent `search_docs` çıktısında bu graph belleği vektörel/BM25 sonuçlarının önüne alır
 - **Recursive Character Chunking** (`\nclass ` → `\ndef ` → `\n\n` → `\n` → ` ` öncelik sırası)
 - URL'den async belge ekleme (`httpx.AsyncClient`)
 - `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_TOP_K` env değişkenleri ile yapılandırılabilir

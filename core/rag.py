@@ -536,6 +536,22 @@ class GraphRAGSearchPlan:
     cypher_hint: str = ""
 
 
+@dataclass(frozen=True)
+class ExtractedKnowledgeEntity:
+    id: str
+    label: str
+    name: str
+    properties: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ExtractedKnowledgeRelation:
+    source: str
+    target: str
+    relation: str
+    properties: dict[str, Any] = field(default_factory=dict)
+
+
 def embed_texts_for_semantic_cache(
     texts: builtins.list[str], cfg: Config | None = None
 ) -> builtins.list[builtins.list[float]]:
@@ -648,6 +664,12 @@ class DocumentStore:
 
         # Meta verileri yükle
         self._index: dict[str, dict[str, Any]] = self._load_index()
+        self.entity_graph_file = self.store_dir / "entity_graph.json"
+        self._entity_graph: dict[str, Any] = self._load_entity_graph()
+        self._entity_extraction_enabled = bool(
+            getattr(self.cfg, "ENABLE_RAG_ENTITY_EXTRACTION", True)
+        )
+        self._entity_max_per_doc = int(getattr(self.cfg, "RAG_ENTITY_MAX_PER_DOC", 24) or 24)
 
         self._vector_backend = (
             str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
@@ -1019,6 +1041,317 @@ class DocumentStore:
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _entity_slug(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
+        normalized = normalized.strip("-")
+        if normalized:
+            return normalized[:80]
+        return hashlib.md5(str(value).encode(), usedforsecurity=False).hexdigest()[:12]
+
+    @classmethod
+    def _entity_id(cls, label: str, name: str) -> str:
+        return f"{label.lower()}:{cls._entity_slug(name)}"
+
+    @staticmethod
+    def _clean_entity_value(value: Any) -> str:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n-–—:|,.;")
+        return cleaned[:180]
+
+    def _load_entity_graph(self) -> dict[str, Any]:
+        graph_file = getattr(self, "entity_graph_file", self.store_dir / "entity_graph.json")
+        if graph_file.exists():
+            try:
+                loaded = json.loads(graph_file.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    return {
+                        "nodes": dict(loaded.get("nodes") or {}),
+                        "edges": list(loaded.get("edges") or []),
+                    }
+            except Exception as exc:
+                logger.warning("RAG entity graph okunamadı: %s", exc)
+        return {"nodes": {}, "edges": []}
+
+    def _save_entity_graph(self) -> None:
+        graph_file = getattr(self, "entity_graph_file", self.store_dir / "entity_graph.json")
+        graph_file.write_text(
+            json.dumps(self._ensure_entity_graph(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _ensure_entity_graph(self) -> dict[str, Any]:
+        graph = getattr(self, "_entity_graph", None)
+        if not isinstance(graph, dict):
+            graph = {"nodes": {}, "edges": []}
+            self._entity_graph = graph
+        if not isinstance(graph.get("nodes"), dict):
+            graph["nodes"] = {}
+        if not isinstance(graph.get("edges"), list):
+            graph["edges"] = []
+        return graph
+
+    def _extract_json_entities(
+        self, payload: Any, prefix: str = ""
+    ) -> builtins.list[ExtractedKnowledgeEntity]:
+        key_to_label = {
+            "campaign": "Campaign",
+            "campaign_name": "Campaign",
+            "name": "Campaign" if prefix.endswith("campaign") else "",
+            "brand": "Brand",
+            "brand_name": "Brand",
+            "audience": "Audience",
+            "target_audience": "Audience",
+            "persona": "Audience",
+            "tone": "Tone",
+            "brand_voice": "Tone",
+            "language": "Tone",
+            "channel": "Channel",
+            "platform": "Channel",
+        }
+        entities: builtins.list[ExtractedKnowledgeEntity] = []
+        if isinstance(payload, dict):
+            for raw_key, raw_value in payload.items():
+                key = str(raw_key).strip().lower().replace("-", "_").replace(" ", "_")
+                label = key_to_label.get(key, "")
+                if label and isinstance(raw_value, str | int | float):
+                    name = self._clean_entity_value(raw_value)
+                    if name:
+                        entities.append(
+                            ExtractedKnowledgeEntity(
+                                id=self._entity_id(label, name),
+                                label=label,
+                                name=name,
+                                properties={"source_field": key},
+                            )
+                        )
+                if isinstance(raw_value, dict | list):
+                    child_prefix = f"{prefix}.{key}" if prefix else key
+                    entities.extend(self._extract_json_entities(raw_value, child_prefix))
+        elif isinstance(payload, list):
+            for item in payload[:20]:
+                entities.extend(self._extract_json_entities(item, prefix))
+        return entities
+
+    def extract_document_entities(
+        self,
+        title: str,
+        content: str,
+        *,
+        tags: builtins.list[str] | None = None,
+        source: str = "",
+    ) -> tuple[builtins.list[ExtractedKnowledgeEntity], builtins.list[ExtractedKnowledgeRelation]]:
+        """RAG belgesinden deterministik pazarlama/kurumsal entity ilişkileri çıkarır."""
+        text = f"{title}\n{content}"
+        tag_values = tags or []
+        patterns: dict[str, builtins.list[str]] = {
+            "Campaign": [
+                r"(?:kampanya(?: adı)?|campaign(?: name)?)\s*[:：=-]\s*([^\n;|]+)",
+            ],
+            "Brand": [
+                r"(?:marka|brand(?: name)?)\s*[:：=-]\s*([^\n;|]+)",
+            ],
+            "Audience": [
+                r"(?:hedef kitle|target audience|audience|persona)\s*[:：=-]\s*([^\n;|]+)",
+            ],
+            "Tone": [
+                r"(?:marka dili|brand voice|tone|üslup|dil)\s*[:：=-]\s*([^\n;|]+)",
+            ],
+            "Channel": [
+                r"(?:kanal|channel|platform)\s*[:：=-]\s*([^\n;|]+)",
+            ],
+        }
+
+        by_id: dict[str, ExtractedKnowledgeEntity] = {}
+
+        def add_entity(label: str, raw_name: Any, **properties: Any) -> None:
+            name = self._clean_entity_value(raw_name)
+            if not name:
+                return
+            entity_id = self._entity_id(label, name)
+            current = dict(by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties)
+            current.update({key: value for key, value in properties.items() if value not in (None, "")})
+            by_id[entity_id] = ExtractedKnowledgeEntity(
+                id=entity_id,
+                label=label,
+                name=name,
+                properties=current,
+            )
+
+        for label, label_patterns in patterns.items():
+            for pattern in label_patterns:
+                for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                    value = self._clean_entity_value(match.group(1))
+                    if value:
+                        add_entity(label, value, extraction="regex")
+
+        for tag in tag_values:
+            if ":" not in str(tag):
+                continue
+            key, value = [part.strip() for part in str(tag).split(":", 1)]
+            tag_label = {
+                "campaign": "Campaign",
+                "brand": "Brand",
+                "audience": "Audience",
+                "target_audience": "Audience",
+                "tone": "Tone",
+                "channel": "Channel",
+            }.get(key.lower())
+            if tag_label:
+                add_entity(tag_label, value, extraction="tag", tag=tag)
+
+        stripped = content.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                for entity in self._extract_json_entities(json.loads(stripped)):
+                    add_entity(entity.label, entity.name, **entity.properties, extraction="json")
+            except json.JSONDecodeError:
+                pass
+
+        if "kampanya" in title.lower() or "campaign" in title.lower():
+            add_entity("Campaign", title, extraction="title")
+        if source:
+            add_entity("Source", source, extraction="source")
+
+        entities = list(by_id.values())[: max(1, getattr(self, "_entity_max_per_doc", 24))]
+        ids_by_label: dict[str, builtins.list[str]] = {}
+        for entity in entities:
+            ids_by_label.setdefault(entity.label, []).append(entity.id)
+
+        relations: builtins.list[ExtractedKnowledgeRelation] = []
+        campaign_ids = ids_by_label.get("Campaign", [])
+        for campaign_id in campaign_ids:
+            for audience_id in ids_by_label.get("Audience", []):
+                relations.append(
+                    ExtractedKnowledgeRelation(campaign_id, audience_id, "TARGETS_AUDIENCE")
+                )
+            for tone_id in ids_by_label.get("Tone", []):
+                relations.append(ExtractedKnowledgeRelation(campaign_id, tone_id, "USES_TONE"))
+            for brand_id in ids_by_label.get("Brand", []):
+                relations.append(ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND"))
+            for channel_id in ids_by_label.get("Channel", []):
+                relations.append(ExtractedKnowledgeRelation(campaign_id, channel_id, "RUNS_ON"))
+
+        for brand_id in ids_by_label.get("Brand", []):
+            for tone_id in ids_by_label.get("Tone", []):
+                relations.append(ExtractedKnowledgeRelation(brand_id, tone_id, "HAS_BRAND_VOICE"))
+
+        return entities, relations
+
+    def _upsert_document_entities(
+        self,
+        doc_id: str,
+        title: str,
+        content: str,
+        *,
+        source: str = "",
+        tags: builtins.list[str] | None = None,
+        session_id: str = "global",
+    ) -> None:
+        if not getattr(self, "_entity_extraction_enabled", True):
+            return
+        graph = self._ensure_entity_graph()
+        nodes: dict[str, dict[str, Any]] = graph["nodes"]
+        edges: builtins.list[dict[str, Any]] = graph["edges"]
+        doc_node_id = f"doc:{doc_id}"
+
+        edges[:] = [edge for edge in edges if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id]
+        nodes[doc_node_id] = {
+            "id": doc_node_id,
+            "label": "Document",
+            "name": title or doc_id,
+            "properties": {"doc_id": doc_id, "session_id": session_id, "source": source},
+        }
+
+        entities, relations = self.extract_document_entities(title, content, tags=tags, source=source)
+        entity_ids = {entity.id for entity in entities}
+        for entity in entities:
+            properties = dict(entity.properties)
+            properties.update({"session_id": session_id, "last_doc_id": doc_id})
+            nodes[entity.id] = {
+                "id": entity.id,
+                "label": entity.label,
+                "name": entity.name,
+                "properties": properties,
+            }
+            edges.append(
+                {
+                    "source": doc_node_id,
+                    "target": entity.id,
+                    "relation": "MENTIONS",
+                    "doc_id": doc_id,
+                    "session_id": session_id,
+                }
+            )
+
+        for relation in relations:
+            if relation.source not in entity_ids or relation.target not in entity_ids:
+                continue
+            edges.append(
+                {
+                    "source": relation.source,
+                    "target": relation.target,
+                    "relation": relation.relation,
+                    "doc_id": doc_id,
+                    "session_id": session_id,
+                    "properties": dict(relation.properties),
+                }
+            )
+
+        self._save_entity_graph()
+
+    def _delete_document_entities(self, doc_id: str) -> None:
+        graph = self._ensure_entity_graph()
+        nodes: dict[str, dict[str, Any]] = graph["nodes"]
+        doc_node_id = f"doc:{doc_id}"
+        nodes.pop(doc_node_id, None)
+        graph["edges"] = [edge for edge in graph["edges"] if edge.get("doc_id") != doc_id]
+        referenced = {
+            str(edge.get("source"))
+            for edge in graph["edges"]
+            if str(edge.get("source", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+        } | {
+            str(edge.get("target"))
+            for edge in graph["edges"]
+            if str(edge.get("target", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+        }
+        for node_id in list(nodes):
+            if node_id.startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")) and node_id not in referenced:
+                nodes.pop(node_id, None)
+        self._save_entity_graph()
+
+    def search_entity_graph(
+        self, query: str, *, session_id: str = "global", top_k: int = 5
+    ) -> builtins.list[dict[str, Any]]:
+        graph = self._ensure_entity_graph()
+        tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
+        if not tokens:
+            return []
+        scored: builtins.list[tuple[str, int]] = []
+        nodes: dict[str, dict[str, Any]] = graph["nodes"]
+        for node_id, node in nodes.items():
+            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            node_session = str(properties.get("session_id", "global") or "global")
+            if session_id != "global" and node_session not in {session_id, "global"}:
+                continue
+            haystack = " ".join(
+                [str(node_id), str(node.get("label", "")), str(node.get("name", ""))]
+                + [str(value) for value in properties.values()]
+            ).lower()
+            score = sum(haystack.count(token) for token in tokens)
+            if score > 0:
+                scored.append((node_id, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+
+        results: builtins.list[dict[str, Any]] = []
+        for node_id, score in scored[:top_k]:
+            relations = [
+                edge
+                for edge in graph["edges"]
+                if edge.get("source") == node_id or edge.get("target") == node_id
+            ][:8]
+            results.append({"node": nodes[node_id], "score": score, "relations": relations})
+        return results
+
     # ─────────────────────────────────────────────
     #  BELGE YÖNETİMİ & CHUNKING
     # ─────────────────────────────────────────────
@@ -1183,6 +1516,15 @@ class DocumentStore:
 
             if getattr(self, "_pgvector_available", False):
                 self._upsert_pgvector_chunks(doc_id, parent_id, session_id, title, source, chunks)
+
+            self._upsert_document_entities(
+                doc_id,
+                title,
+                content,
+                source=source,
+                tags=tags,
+                session_id=session_id,
+            )
 
         logger.info(
             "RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]",
@@ -1388,7 +1730,8 @@ class DocumentStore:
                 parent_id = self._index[doc_id].get("parent_id", doc_id)
                 self._delete_pgvector_parent(parent_id, meta.get("session_id", "global"))
 
-            # 3. Index'ten ve BM25'ten sil
+            # 3. Index'ten, BM25'ten ve ilişkisel entity graph'tan sil
+            self._delete_document_entities(doc_id)
             del self._index[doc_id]
             self._save_index()
             self._update_bm25_cache_on_delete(doc_id)
@@ -1458,10 +1801,34 @@ class DocumentStore:
             return self.explain_dependency_path(source, target)
 
         results = self._graph_index.search_related(normalized, top_k=top_k)
-        if not results:
-            return False, f"GraphRAG içinde '{query}' için ilgili modül bulunamadı."
+        entity_results = self.search_entity_graph(normalized, top_k=top_k)
+        if not results and not entity_results:
+            return False, f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi."
 
         lines = [f"[GraphRAG: {query}]", ""]
+        if entity_results:
+            lines.append("İlişkisel bellek entity sonuçları:")
+            graph = self._ensure_entity_graph()
+            graph_nodes = graph["nodes"]
+            for item in entity_results:
+                node = item["node"]
+                lines.append(
+                    f"- {node.get('label')}: {node.get('name')} "
+                    f"(score={item['score']}, id={node.get('id')})"
+                )
+                for relation in item.get("relations", [])[:4]:
+                    source_node = graph_nodes.get(str(relation.get("source")), {})
+                    target_node = graph_nodes.get(str(relation.get("target")), {})
+                    lines.append(
+                        "  "
+                        f"{source_node.get('name', relation.get('source'))} "
+                        f"-[{relation.get('relation')}]-> "
+                        f"{target_node.get('name', relation.get('target'))}"
+                    )
+            lines.append("")
+
+        if results:
+            lines.append("Kod bağımlılık grafı sonuçları:")
         for item in results:
             lines.append(f"- {item['id']} (score={item['score']})")
             neighbors_raw = item.get("neighbors") or []
@@ -1581,7 +1948,7 @@ class DocumentStore:
                         "session_id": doc_session,
                         "vector_backend": "pgvector"
                         if getattr(self, "_pgvector_available", False)
-                        else self._vector_backend,
+                        else getattr(self, "_vector_backend", "bm25"),
                     },
                 )
             )
@@ -1614,6 +1981,44 @@ class DocumentStore:
                         relation="DERIVED_FROM",
                     )
                 )
+
+        entity_graph = self._ensure_entity_graph()
+        for node_id, node in list(entity_graph["nodes"].items())[:max_items]:
+            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            node_session = str(properties.get("session_id", "global") or "global")
+            if session_id != "global" and node_session not in {session_id, "global"}:
+                continue
+            nodes.append(
+                KnowledgeGraphNode(
+                    id=f"entity:{node_id}",
+                    label=str(node.get("label") or "Entity"),
+                    properties={
+                        **properties,
+                        "entity_id": node_id,
+                        "name": str(node.get("name") or ""),
+                    },
+                )
+            )
+        entity_edge_count = 0
+        for edge in entity_graph["edges"]:
+            if entity_edge_count >= max_items:
+                break
+            edge_session = str(edge.get("session_id", "global") or "global")
+            if session_id != "global" and edge_session not in {session_id, "global"}:
+                continue
+            source_id = str(edge.get("source") or "")
+            target_id = str(edge.get("target") or "")
+            if not source_id or not target_id:
+                continue
+            entity_edge_count += 1
+            edges.append(
+                KnowledgeGraphEdge(
+                    source=f"entity:{source_id}",
+                    target=f"entity:{target_id}",
+                    relation=str(edge.get("relation") or "RELATED_TO"),
+                    properties=dict(edge.get("properties") or {}),
+                )
+            )
 
         if include_code_graph and self._graph_rag_enabled:
             self._ensure_graph_ready()
@@ -1658,7 +2063,7 @@ class DocumentStore:
             "cypher_hint": cypher_hint,
             "vector_backend": "pgvector"
             if getattr(self, "_pgvector_available", False)
-            else self._vector_backend,
+            else getattr(self, "_vector_backend", "bm25"),
         }
 
     def build_graphrag_search_plan(

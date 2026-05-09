@@ -1307,6 +1307,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `ENABLE_DISTRIBUTED_AGENT_LOCKS` / `DISTRIBUTED_AGENT_LOCK_REQUIRED` / `DISTRIBUTED_AGENT_LOCK_TTL_SECONDS` / `DISTRIBUTED_AGENT_LOCK_TIMEOUT_MS` | `true` / `false` / `1800` / `250` | Kubernetes/çoklu pod ortamında shared ajan bakım işlerini Redis lease ile tekilleştirir; production'da required mod Redis yoksa fail-open yarışını engeller |
 | `ENABLE_EVENT_WEBHOOKS` / `AUTONOMY_WEBHOOK_SECRET` / `ENABLE_SWARM_FEDERATION` / `SWARM_FEDERATION_SHARED_SECRET` | `true` / `""` / `true` / `""` | Otonom webhook ve dış swarm federation güvenlik ayarları |
 | `ENABLE_GRAPH_RAG` / `GRAPH_RAG_MAX_FILES` | `true` / `5000` | GraphRAG indeksleme aktivasyonu ve tarama üst sınırı |
+| `ENABLE_RAG_ENTITY_EXTRACTION` / `RAG_ENTITY_MAX_PER_DOC` | `true` / `24` | RAG belgelerinden kampanya/marka/hedef kitle/dil/kanal entity çıkarımı ve ilişkisel bellek limiti |
 
 ### 12.9 Docker Compose Override Değişkenleri
 
@@ -1387,9 +1388,11 @@ Projenin temel kurumsal altyapısı, swarm mimarisi, güvenlik kontrol noktalar�
 
 ### 14.1 GraphRAG ve Bilgi Grafikleri (Knowledge Graphs)
 
-- Mevcut `pgvector` + BM25 + keyword hibrit aramasına, varlıklar ve ilişkiler arasındaki bağlantıları modelleyen **graph tabanlı bellek katmanı** eklenecektir.
-- Bu katman; entity memory, prompt registry ve RAG akışlarını yalnızca benzerlik aramasıyla değil, **ilişki/topoloji tabanlı çıkarım** ile zenginleştirecektir.
-- Orta vadede `pgvector` retrieval yüzeyi, varlık/ilişki çıkarımı yapan bir Knowledge Graph katmanı ile birlikte çalışacak şekilde genişletilecek; böylece çok adımlı ve kompleks problemlerde yalnızca benzer belgeleri değil, düğümler arası bağımlılık zincirlerini de çözümleme akışına taşıyabilecektir.
+- Mevcut `pgvector` + BM25 + keyword hibrit aramasına, varlıklar ve ilişkiler arasındaki bağlantıları modelleyen **graph tabanlı bellek katmanı** eklendi.
+- Bu katman; entity memory, prompt registry ve RAG akışlarını yalnızca benzerlik aramasıyla değil, **ilişki/topoloji tabanlı çıkarım** ile zenginleştirir.
+- İlk geçişte `DocumentStore`, RAG'a eklenen içerikten kampanya, marka, hedef kitle, marka dili/ton ve kanal entity'lerini deterministik olarak çıkarır; `Campaign -> TARGETS_AUDIENCE -> Audience`, `Campaign -> USES_TONE -> Tone`, `Campaign -> PROMOTES_BRAND -> Brand` ilişkilerini taşınabilir `entity_graph.json` projection'ına yazar.
+- `build_knowledge_graph_projection(...)` çıktısı Neo4j `MERGE`/Cypher senkronizasyonuna hazır düğüm/kenar modeli üretir; PoyrazAgent `search_docs` çağrısında ilişkisel GraphRAG belleğini vektörel/BM25 sonuçlarının önüne alır.
+- Orta vadede `pgvector` retrieval yüzeyi, bu Knowledge Graph katmanı ile birlikte çalışacak şekilde genişletilecek; böylece çok adımlı ve kompleks problemlerde yalnızca benzer belgeleri değil, düğümler arası bağımlılık zincirlerini de çözümleme akışına taşıyabilecektir.
 - Olası teknoloji yönü; Neo4j benzeri bir grafik veri katmanı veya PostgreSQL üzerinde graph-benzeri ilişki indeksleriyle hibrit yaklaşım kurulmasıdır.
 - Beklenen kazanım: çok adımlı reasoning, kurumsal bilgi keşfi ve belge/kişi/sistem bağıntılarının daha doğru modellenmesi.
 

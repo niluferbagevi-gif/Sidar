@@ -158,11 +158,17 @@ class PoyrazAgent(BaseAgent):
         return str(result)
 
     async def _tool_search_docs(self, arg: str) -> str:
+        graph_result_obj: Any = self.docs.search(arg, None, "graph", "marketing")
+        graph_resolved: Any = (
+            await graph_result_obj if inspect.isawaitable(graph_result_obj) else graph_result_obj
+        )
         result_obj: Any = self.docs.search(arg, None, "auto", "marketing")
         resolved_result: Any = await result_obj if inspect.isawaitable(result_obj) else result_obj
         if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
             return "[DOCS:ERROR] reason=invalid_search_response"
         _ok, result = resolved_result
+        if isinstance(graph_resolved, tuple) and len(graph_resolved) == 2 and graph_resolved[0]:
+            return f"[GraphRAG İlişkisel Bellek]\n{graph_resolved[1]}\n\n[Vektörel/BM25 RAG]\n{result}"
         return str(result)
 
     async def _tool_publish_social(self, arg: str) -> str:

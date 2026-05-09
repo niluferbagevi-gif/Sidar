@@ -296,10 +296,16 @@ def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg, docstore=SyncDocStore)
     assert asyncio.run(agent._tool_web_search("q")) == "web:q"
     assert asyncio.run(agent._tool_fetch_url("u")) == "fetch:u"
-    assert asyncio.run(agent._tool_search_docs("k")) == "docs:k:auto:marketing"
+    assert asyncio.run(agent._tool_search_docs("k")) == (
+        "[GraphRAG İlişkisel Bellek]\ndocs:k:graph:marketing\n\n"
+        "[Vektörel/BM25 RAG]\ndocs:k:auto:marketing"
+    )
 
     agent2 = _agent(poyraz_module, fake_cfg, docstore=AsyncDocStore)
-    assert asyncio.run(agent2._tool_search_docs("k2")) == "adocs:k2:auto:marketing"
+    assert asyncio.run(agent2._tool_search_docs("k2")) == (
+        "[GraphRAG İlişkisel Bellek]\nadocs:k2:graph:marketing\n\n"
+        "[Vektörel/BM25 RAG]\nadocs:k2:auto:marketing"
+    )
 
 
 def test_search_docs_returns_error_on_invalid_search_response_shape(poyraz_module, fake_cfg):
@@ -773,7 +779,10 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
     routed = {
         "web_search|q": "web:q",
         "fetch_url|u": "fetch:u",
-        "search_docs|k": "docs:k:auto:marketing",
+        "search_docs|k": (
+            "[GraphRAG İlişkisel Bellek]\ndocs:k:graph:marketing\n\n"
+            "[Vektörel/BM25 RAG]\ndocs:k:auto:marketing"
+        ),
         "build_landing_page|brief": "LLM_RESPONSE::",
         "landing_page|brief": "LLM_RESPONSE::",
         "generate_campaign_copy|brief": "LLM_RESPONSE::",

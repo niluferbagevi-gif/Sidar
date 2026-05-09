@@ -3018,3 +3018,60 @@ async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None
     # Vector kayıt korunmalı: snippet vector kaynağından gelmeli, bm25 üzerine yazmamalı.
     assert "vector-snippet" in text
     assert "bm25-snippet" not in text
+
+
+async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.entity_graph_file = tmp_path / "entity_graph.json"
+    store._entity_graph = {"nodes": {}, "edges": []}
+    store._entity_extraction_enabled = True
+    store._entity_max_per_doc = 24
+    store._graph_rag_enabled = True
+    store._graph_ready = True
+    store._graph_index = rag.GraphIndex(tmp_path)
+
+    content = """
+    Kampanya adı: Bahar Lansmanı
+    Marka: Sidar
+    Hedef kitle: KOBİ operasyon ekipleri
+    Marka dili: güven veren ve net
+    Kanal: LinkedIn
+    """
+
+    entities, relations = store.extract_document_entities(
+        "Bahar kampanya brief",
+        content,
+        tags=["audience:B2B karar vericiler"],
+        source="memory://campaign/2026-spring",
+    )
+
+    assert {entity.label for entity in entities} >= {"Campaign", "Brand", "Audience", "Tone"}
+    assert any(relation.relation == "TARGETS_AUDIENCE" for relation in relations)
+    assert any(relation.relation == "USES_TONE" for relation in relations)
+
+    store._upsert_document_entities(
+        "doc1",
+        "Bahar kampanya brief",
+        content,
+        source="memory://campaign/2026-spring",
+        tags=["audience:B2B karar vericiler"],
+        session_id="marketing",
+    )
+
+    results = store.search_entity_graph("Bahar KOBİ güven", session_id="marketing", top_k=5)
+    assert results
+    assert any(item["node"]["label"] == "Campaign" for item in results)
+
+    ok, text = store.search_graph("Bahar KOBİ", top_k=5)
+    assert ok is True
+    assert "İlişkisel bellek entity sonuçları" in text
+    assert "Bahar Lansmanı" in text
+
+    projection = store.build_knowledge_graph_projection(
+        session_id="marketing", include_code_graph=False, limit=20
+    )
+    assert any(node.id.startswith("entity:campaign:") for node in projection["nodes"])
+    assert any(edge.relation == "TARGETS_AUDIENCE" for edge in projection["edges"])
+
+    store._delete_document_entities("doc1")
+    assert not store.search_entity_graph("Bahar", session_id="marketing", top_k=5)
