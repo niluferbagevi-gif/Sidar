@@ -1,5 +1,17 @@
+ARG UV_VERSION=0.11.12
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
 
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=.venv \
+    SIDAR_PYTHON_VERSION=3.11
+
+# Pin uv in the image so updateContent/postCreate does not spend time
+# bootstrapping it on every fresh Dev Container. The setup script still keeps
+# a fallback installer for non-standard base images.
+#
 # Keep the image Python version aligned with Sidar's default local development
 # runtime (SIDAR_PYTHON_VERSION=3.11). This avoids an extra managed-Python
 # download during postCreate on WSL/Dev Containers hosts and makes the VS Code

@@ -380,7 +380,7 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 
 ### Docker ile
 
-> **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. WSL2'de önerilen yol Docker Desktop WSL Integration'dır.
+> **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. Dev Container `initializeCommand` aşamasındaki `.devcontainer/host-preflight.sh` de Linux hostlarda eksik CLI'ı `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=auto` politikasıyla tamamlamayı dener; WSL2'de önerilen yol Docker Desktop WSL Integration'dır ve APT kurulumu için `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=always` bilinçli verilmelidir.
 
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).
 
@@ -411,7 +411,8 @@ docker compose up -d sidar-web
 Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapılandırmasını kullanır:
 
 - `UV_LINK_MODE=copy`, Codespaces overlay dosya sisteminde uv'nin hardlink denemesinden kaynaklanan `Failed to hardlink files; falling back to full copy` uyarısını önler.
-- `postCreateCommand`, `.devcontainer/setup-codespaces.sh post-create` ile `uv venv .venv` ve `uv sync --frozen --all-extras` çalıştırarak geliştirici bağımlılıkları ve opsiyonel entegrasyonları hazırlar.
+- Dev Container imajı `uv` aracını pin'li olarak içerir; `.devcontainer/setup-codespaces.sh` yine de özel imajlarda eksikse resmi bootstrap fallback'ini çalıştırır.
+- `postCreateCommand`, `.devcontainer/setup-codespaces.sh post-create` ile `uv venv .venv` ve `uv sync --frozen --all-extras` çalıştırarak geliştirici bağımlılıkları ve opsiyonel entegrasyonları hazırlar. Betik, taşınmış/yeniden oluşturulmuş workspace'lerde görülen kırık `.venv/bin/python` symlink'ini uv sync öncesinde temizleyip sanal ortamı deterministik yeniden kurar.
 - Dev Container imajı ve setup betiği, `sidar[voice]` içindeki PyAudio derlemesinin ihtiyaç duyduğu `portaudio19-dev` sistem paketini önceden sağlar; böylece `portaudio.h` eksikliği nedeniyle `uv sync --frozen --all-extras` kesilmez.
 - Ollama CLI varsayılan olarak kurulmaya çalışılır, servis `postStartCommand` ile arka planda başlatılır ve standart coding modeli `qwen2.5-coder:7b` olarak tanımlanır. Büyük model indirmesini Codespaces açılışında zorunlu kılmak istemiyorsanız varsayılan `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=0` kalır; önceden indirme için Codespaces secret/env olarak `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1` verebilirsiniz.
 - Codespaces ortamında otonom coverage kampanyası için `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full` ve `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ayarlanır. Lokal/CI quality gate ise hâlâ `.coveragerc` ve `run_tests.sh` profilinden okunur.
