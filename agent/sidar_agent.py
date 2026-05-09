@@ -33,6 +33,7 @@ from core.ci_remediation import (
     build_self_heal_patch_prompt,
     normalize_self_heal_plan,
 )
+from core.distributed_lock import DistributedLockLease, RedisDistributedLock
 from core.entity_memory import get_entity_memory
 from core.llm_client import LLMClient
 from core.memory import ConversationMemory
@@ -306,6 +307,7 @@ class SidarAgent:
         self._autonomy_lock: asyncio.Lock | None = None
         self._last_activity_ts: float = time.time()
         self._nightly_maintenance_lock: asyncio.Lock | None = None
+        self._nightly_distributed_lock: RedisDistributedLock | None = None
         self._last_nightly_maintenance_ts: float = 0.0
 
         # Tek omurga: supervisor tabanlı multi-agent
@@ -427,6 +429,63 @@ class SidarAgent:
 
     def seconds_since_last_activity(self) -> float:
         return max(0.0, time.time() - float(getattr(self, "_last_activity_ts", 0.0) or 0.0))
+
+    def _get_nightly_distributed_lock(self) -> RedisDistributedLock | None:
+        """Return Redis-backed distributed lock manager when enabled for shared jobs."""
+        if not bool(getattr(self.cfg, "ENABLE_DISTRIBUTED_AGENT_LOCKS", True)):
+            return None
+        redis_url = str(getattr(self.cfg, "REDIS_URL", "") or "").strip()
+        if not redis_url:
+            return None
+        if self._nightly_distributed_lock is None:
+            timeout_ms = max(
+                50,
+                int(getattr(self.cfg, "DISTRIBUTED_AGENT_LOCK_TIMEOUT_MS", 250) or 250),
+            )
+            self._nightly_distributed_lock = RedisDistributedLock.from_url(
+                redis_url,
+                max_connections=int(getattr(self.cfg, "REDIS_MAX_CONNECTIONS", 10) or 10),
+                timeout_seconds=timeout_ms / 1000,
+            )
+        return self._nightly_distributed_lock
+
+    async def _acquire_nightly_distributed_lease(
+        self,
+    ) -> tuple[DistributedLockLease | None, dict[str, Any] | None]:
+        """Acquire cross-pod lease for nightly maintenance or return a skip reason."""
+        lock = self._get_nightly_distributed_lock()
+        if lock is None:
+            if bool(getattr(self.cfg, "DISTRIBUTED_AGENT_LOCK_REQUIRED", False)):
+                return None, {"status": "skipped", "reason": "distributed_lock_unconfigured"}
+            return None, None
+        ttl_seconds = max(
+            60,
+            int(getattr(self.cfg, "DISTRIBUTED_AGENT_LOCK_TTL_SECONDS", 1800) or 1800),
+        )
+        try:
+            lease = await lock.acquire(
+                "sidar:locks:nightly-memory-maintenance", ttl_seconds=ttl_seconds
+            )
+        except Exception as exc:
+            logger.warning("Nightly distributed lock acquire failed: %s", exc)
+            if bool(getattr(self.cfg, "DISTRIBUTED_AGENT_LOCK_REQUIRED", False)):
+                return None, {
+                    "status": "skipped",
+                    "reason": "distributed_lock_unavailable",
+                    "error": str(exc),
+                }
+            return None, None
+        if lease is None:
+            return None, {"status": "skipped", "reason": "already_running_distributed"}
+        return lease, None
+
+    async def _release_nightly_distributed_lease(self, lease: DistributedLockLease | None) -> None:
+        if lease is None or self._nightly_distributed_lock is None:
+            return
+        try:
+            await self._nightly_distributed_lock.release(lease)
+        except Exception as exc:
+            logger.warning("Nightly distributed lock release failed: %s", exc)
 
     def _ensure_autonomy_runtime_state(self) -> None:
         if not hasattr(self, "_autonomy_history") or self._autonomy_history is None:
@@ -1151,85 +1210,99 @@ class SidarAgent:
             }
 
         async with self._nightly_maintenance_lock:
-            entity_report: dict[str, Any] = {"purged": 0, "status": "disabled"}
+            distributed_lease, distributed_skip = await self._acquire_nightly_distributed_lease()
+            if distributed_skip is not None:
+                distributed_skip.setdefault("idle_for_seconds", round(idle_for, 2))
+                return distributed_skip
+
             try:
-                entity_memory = get_entity_memory(self.cfg)
-                await entity_memory.initialize()
-                entity_report = {
-                    "status": "completed",
-                    "purged": await entity_memory.purge_expired(),
-                }
-            except Exception as exc:
-                entity_report = {"status": "failed", "error": str(exc), "purged": 0}
+                entity_report: dict[str, Any] = {"purged": 0, "status": "disabled"}
+                try:
+                    entity_memory = get_entity_memory(self.cfg)
+                    await entity_memory.initialize()
+                    entity_report = {
+                        "status": "completed",
+                        "purged": await entity_memory.purge_expired(),
+                    }
+                except Exception as exc:
+                    entity_report = {"status": "failed", "error": str(exc), "purged": 0}
 
-            memory_report = await self.memory.run_nightly_consolidation(
-                keep_recent_sessions=max(
-                    0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
-                ),
-                min_messages=max(
-                    2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
-                ),
-            )
-
-            rag_reports: list[dict[str, Any]] = []
-            keep_recent_docs = max(
-                1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
-            )
-            raw_session_ids = memory_report.get("session_ids", [])
-            session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
-            for session_id in session_ids:
-                report = await asyncio.to_thread(
-                    self.docs.consolidate_session_documents,
-                    str(session_id),
-                    keep_recent_docs=keep_recent_docs,
-                )
-                rag_reports.append(report)
-
-            removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
-            raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
-            sessions_compacted = (
-                raw_sessions_compacted
-                if isinstance(raw_sessions_compacted, int)
-                else int(raw_sessions_compacted)
-                if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
-                else 0
-            )
-            result = {
-                "status": "completed",
-                "reason": reason,
-                "idle_for_seconds": round(idle_for, 2),
-                "memory_report": memory_report,
-                "entity_report": entity_report,
-                "rag_reports": rag_reports,
-                "sessions_compacted": sessions_compacted,
-                "rag_docs_pruned": removed_docs,
-            }
-            self._last_nightly_maintenance_ts = time.time()
-            await self._append_autonomy_history(
-                {
-                    "trigger_id": f"nightly-{int(self._last_nightly_maintenance_ts)}",
-                    "source": "nightly_memory",
-                    "event_name": "memory_consolidation",
-                    "status": result["status"],
-                    "summary": (
-                        f"Nightly maintenance tamamlandı: "
-                        f"{result['sessions_compacted']} oturum sıkıştırıldı, "
-                        f"{removed_docs} RAG dokümanı budandı, "
-                        f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
+                memory_report = await self.memory.run_nightly_consolidation(
+                    keep_recent_sessions=max(
+                        0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
                     ),
-                    "payload": {
-                        "reason": reason,
-                        "idle_for_seconds": round(idle_for, 2),
-                    },
-                    "meta": {
-                        "kind": "nightly_memory_maintenance",
-                        "force": str(bool(force)).lower(),
-                    },
-                    "created_at": self._last_nightly_maintenance_ts,
-                    "completed_at": self._last_nightly_maintenance_ts,
+                    min_messages=max(
+                        2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
+                    ),
+                )
+
+                rag_reports: list[dict[str, Any]] = []
+                keep_recent_docs = max(
+                    1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
+                )
+                raw_session_ids = memory_report.get("session_ids", [])
+                session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
+                for session_id in session_ids:
+                    report = await asyncio.to_thread(
+                        self.docs.consolidate_session_documents,
+                        str(session_id),
+                        keep_recent_docs=keep_recent_docs,
+                    )
+                    rag_reports.append(report)
+
+                removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
+                raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
+                sessions_compacted = (
+                    raw_sessions_compacted
+                    if isinstance(raw_sessions_compacted, int)
+                    else int(raw_sessions_compacted)
+                    if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
+                    else 0
+                )
+                result = {
+                    "status": "completed",
+                    "reason": reason,
+                    "idle_for_seconds": round(idle_for, 2),
+                    "memory_report": memory_report,
+                    "entity_report": entity_report,
+                    "rag_reports": rag_reports,
+                    "sessions_compacted": sessions_compacted,
+                    "rag_docs_pruned": removed_docs,
+                    "distributed_lock": (
+                        {"backend": distributed_lease.backend, "key": distributed_lease.key}
+                        if distributed_lease is not None
+                        else {"backend": "local"}
+                    ),
                 }
-            )
-            return result
+                self._last_nightly_maintenance_ts = time.time()
+                await self._append_autonomy_history(
+                    {
+                        "trigger_id": f"nightly-{int(self._last_nightly_maintenance_ts)}",
+                        "source": "nightly_memory",
+                        "event_name": "memory_consolidation",
+                        "status": result["status"],
+                        "summary": (
+                            f"Nightly maintenance tamamlandı: "
+                            f"{result['sessions_compacted']} oturum sıkıştırıldı, "
+                            f"{removed_docs} RAG dokümanı budandı, "
+                            f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
+                        ),
+                        "payload": {
+                            "reason": reason,
+                            "idle_for_seconds": round(idle_for, 2),
+                        },
+                        "meta": {
+                            "kind": "nightly_memory_maintenance",
+                            "force": str(bool(force)).lower(),
+                            "distributed_lock_backend": result["distributed_lock"]["backend"],
+                        },
+                        "created_at": self._last_nightly_maintenance_ts,
+                        "completed_at": self._last_nightly_maintenance_ts,
+                    }
+                )
+                return result
+            finally:
+                await self._release_nightly_distributed_lease(distributed_lease)
 
     def get_autonomy_activity(self, limit: int = 20) -> dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""

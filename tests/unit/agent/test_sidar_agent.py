@@ -1371,6 +1371,7 @@ async def test_run_nightly_memory_maintenance_disabled_and_success_paths(
     _override_cfg(
         agent,
         ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=False,
         NIGHTLY_MEMORY_IDLE_SECONDS=60,
         NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=1,
         NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=2,
@@ -1396,6 +1397,129 @@ async def test_run_nightly_memory_maintenance_disabled_and_success_paths(
     assert result["status"] == "completed"
     assert result["entity_report"]["status"] == "completed"
     assert result["rag_reports"] == [{"removed_docs": 2}]
+
+
+async def test_run_nightly_memory_maintenance_uses_distributed_lock(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.initialize = AsyncMock()
+    agent._append_autonomy_history = AsyncMock()
+    frozen_time.tick(delta=7200.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 7200.0
+    _override_cfg(
+        agent,
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=True,
+        DISTRIBUTED_AGENT_LOCK_TTL_SECONDS=120,
+        NIGHTLY_MEMORY_IDLE_SECONDS=60,
+    )
+
+    lease = sidar_agent.DistributedLockLease(
+        key="sidar:locks:nightly-memory-maintenance",
+        token="token",
+        ttl_ms=120_000,
+    )
+
+    class FakeDistributedLock:
+        def __init__(self) -> None:
+            self.acquire = AsyncMock(return_value=lease)
+            self.release = AsyncMock(return_value=True)
+
+    fake_lock = FakeDistributedLock()
+    agent._nightly_distributed_lock = fake_lock
+
+    entity = AsyncMock()
+    entity.initialize = AsyncMock()
+    entity.purge_expired = AsyncMock(return_value=1)
+    monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: entity)
+    agent.memory = types.SimpleNamespace(
+        run_nightly_consolidation=AsyncMock(
+            return_value={"session_ids": [], "sessions_compacted": 1}
+        )
+    )
+    agent.docs = types.SimpleNamespace(
+        consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 0}
+    )
+
+    result = await agent.run_nightly_memory_maintenance(force=True)
+
+    assert result["status"] == "completed"
+    assert result["distributed_lock"] == {
+        "backend": "redis",
+        "key": "sidar:locks:nightly-memory-maintenance",
+    }
+    fake_lock.acquire.assert_awaited_once_with(
+        "sidar:locks:nightly-memory-maintenance", ttl_seconds=120
+    )
+    fake_lock.release.assert_awaited_once_with(lease)
+
+
+async def test_run_nightly_memory_maintenance_skips_when_distributed_lock_busy(
+    sidar_agent_factory,
+    frozen_time,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.initialize = AsyncMock()
+    frozen_time.tick(delta=7200.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 7200.0
+    _override_cfg(
+        agent,
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=True,
+        NIGHTLY_MEMORY_IDLE_SECONDS=60,
+    )
+
+    class BusyDistributedLock:
+        def __init__(self) -> None:
+            self.acquire = AsyncMock(return_value=None)
+            self.release = AsyncMock()
+
+    busy_lock = BusyDistributedLock()
+    agent._nightly_distributed_lock = busy_lock
+    agent.memory.run_nightly_consolidation = AsyncMock()
+
+    result = await agent.run_nightly_memory_maintenance(force=True)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "already_running_distributed"
+    busy_lock.release.assert_not_awaited()
+    agent.memory.run_nightly_consolidation.assert_not_awaited()
+
+
+async def test_required_distributed_lock_unavailable_skips_nightly_maintenance(
+    sidar_agent_factory,
+    frozen_time,
+) -> None:
+    agent = sidar_agent_factory()
+    agent.initialize = AsyncMock()
+    frozen_time.tick(delta=7200.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 7200.0
+    _override_cfg(
+        agent,
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=True,
+        DISTRIBUTED_AGENT_LOCK_REQUIRED=True,
+        NIGHTLY_MEMORY_IDLE_SECONDS=60,
+    )
+
+    class BrokenDistributedLock:
+        def __init__(self) -> None:
+            self.acquire = AsyncMock(side_effect=RuntimeError("redis-down"))
+            self.release = AsyncMock()
+
+    broken_lock = BrokenDistributedLock()
+    agent._nightly_distributed_lock = broken_lock
+    agent.memory.run_nightly_consolidation = AsyncMock()
+
+    result = await agent.run_nightly_memory_maintenance(force=True)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "distributed_lock_unavailable"
+    assert "redis-down" in result["error"]
+    agent.memory.run_nightly_consolidation.assert_not_awaited()
 
 
 async def test_get_autonomy_activity_counts(
@@ -2229,6 +2353,7 @@ async def test_nightly_maintenance_handles_entity_failure(
     _override_cfg(
         agent,
         ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=False,
         NIGHTLY_MEMORY_IDLE_SECONDS=100,
         NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=2,
         NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
