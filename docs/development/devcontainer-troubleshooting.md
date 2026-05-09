@@ -31,15 +31,18 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 - `postCreateCommand` veya `updateContentCommand` sırasında `uv sync --frozen --all-extras`
   veya Python sürüm uyuşmazlığı hatası. `.venv/bin/python -> /home/.../uv/python/...`
   gibi container dışındaki mutlak yollara bakan kırık symlink uyarıları tek başına
-  hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını ve yanlış
-  Python minor sürümünü `uv sync` öncesinde temizleyip sanal ortamı deterministik
-  yeniden kurar. Başarılı sync sonrasında `.venv/.sidar-uv-sync.sha256` dosyasına
-  bağımlılık parmak izi yazılır; `pyproject.toml`, `uv.lock`, `.python-version` ve
-  Python minor sürümü değişmediyse sonraki `updateContentCommand` çalıştırmalarında
-  `uv sync` atlanır. Bağımlılıkların zorla yenilenmesi gerekiyorsa
-  `SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync` çalıştırılmalıdır.
-  Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı dependency çözümü,
-  network veya sistem paketi çıktısında aranmalıdır.
+  hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını, yazılamayan
+  Dev Container volume sahipliğini ve yanlış Python minor sürümünü `uv sync` öncesinde
+  temizleyip sanal ortamı deterministik yeniden kurar. Dev Container yapılandırması
+  `.venv` yolunu `${localWorkspaceFolderBasename}-sidar-venv` adlı Docker volume ile
+  izole eder; bu nedenle host/WSL tarafındaki eski `.venv` symlink'i normalde artık
+  container içindeki Python ortamını gölgelemez. Başarılı sync sonrasında
+  `.venv/.sidar-uv-sync.sha256` dosyasına bağımlılık parmak izi yazılır;
+  `pyproject.toml`, `uv.lock`, `.python-version` ve Python minor sürümü değişmediyse
+  sonraki `updateContentCommand` çalıştırmalarında `uv sync` atlanır. Bağımlılıkların
+  zorla yenilenmesi gerekiyorsa `SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync`
+  çalıştırılmalıdır. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı
+  dependency çözümü, network veya sistem paketi çıktısında aranmalıdır.
 
 
 ## Docker CLI ve daemon beklentisi

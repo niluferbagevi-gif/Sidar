@@ -9,6 +9,9 @@
     "storage": "64gb",
     "gpu": "optional"
   },
+  "mounts": [
+    "source=${localWorkspaceFolderBasename}-sidar-venv,target=${containerWorkspaceFolder}/.venv,type=volume"
+  ],
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": false,

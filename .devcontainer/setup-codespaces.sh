@@ -261,6 +261,32 @@ remove_virtualenv_with_reason() {
   ok "Geçersiz sanal ortam temizlendi: ${venv_dir}"
 }
 
+
+ensure_project_environment_writable() {
+  local venv_dir="$1"
+  local current_uid current_gid
+  current_uid="$(id -u)"
+  current_gid="$(id -g)"
+
+  if [ -e "${venv_dir}" ] && [ ! -w "${venv_dir}" ]; then
+    warn "Sanal ortam yolu (${venv_dir}) mevcut ancak yazılabilir değil; Dev Container volume sahipliği düzeltiliyor."
+    if command -v sudo >/dev/null 2>&1; then
+      sudo chown -R "${current_uid}:${current_gid}" "${venv_dir}"
+      ok "Sanal ortam volume sahipliği düzeltildi: ${venv_dir}"
+    else
+      warn "sudo bulunamadı; ${venv_dir} yazma izni düzeltilemedi."
+      return 1
+    fi
+  fi
+
+  local parent_dir
+  parent_dir="$(dirname "${venv_dir}")"
+  if [ ! -w "${parent_dir}" ]; then
+    warn "Sanal ortam üst dizini yazılabilir değil: ${parent_dir}"
+    return 1
+  fi
+}
+
 remove_invalid_virtualenv() {
   local venv_dir="$1"
   local venv_python="${venv_dir}/bin/python"
@@ -329,6 +355,7 @@ sync_python_environment() {
   ensure_system_dependencies
   log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
 
+  ensure_project_environment_writable "${UV_PROJECT_ENVIRONMENT}"
   remove_invalid_virtualenv "${UV_PROJECT_ENVIRONMENT}"
 
   local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
