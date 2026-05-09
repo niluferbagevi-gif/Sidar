@@ -28,6 +28,31 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 - `postCreateCommand` sırasında `uv sync --frozen --all-extras` veya Python sürüm
   uyuşmazlığı hatası.
 
+
+## Docker CLI ve daemon beklentisi
+
+Sidar Dev Container imajı, container içinde Docker istemcisini hazır bulundurmak için
+Docker resmi APT deposundan `docker-ce-cli`, `docker-buildx-plugin` ve
+`docker-compose-plugin` paketlerini kurar. Ayrıca `devcontainer.json`, host Docker
+daemon'unu container içine güvenli şekilde kullanabilmek için
+`docker-outside-of-docker` feature'ını etkinleştirir.
+
+Bu düzenleme container içindeki `docker`, `docker buildx` ve `docker compose`
+komutlarını hazırlar; ancak imajı ilk kez oluşturmak için kullanılan host/WSL
+bağlamında yine çalışan bir Docker CLI + Docker daemon gerekir. Başka bir ifadeyle
+`docker build -f .devcontainer/Dockerfile .devcontainer --progress=plain` komutu host
+makinede `docker` binary'si yoksa proje dosyalarıyla başlatılamaz; önce Docker Desktop,
+Docker Engine veya eşdeğer runtime kurulmalıdır.
+
+Beklenen doğrulama komutları:
+
+```bash
+docker --version
+docker compose version
+docker buildx version
+bash .devcontainer/host-preflight.sh
+```
+
 ## Sidar için beklenen ortam
 
 Sidar'ın varsayılan geliştirme ortamı Python `3.11`, `uv` ve yerel coding modeli olarak

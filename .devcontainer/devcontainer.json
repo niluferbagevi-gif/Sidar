@@ -14,6 +14,10 @@
       "installZsh": false,
       "username": "vscode",
       "upgradePackages": false
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
     }
   },
   "containerEnv": {

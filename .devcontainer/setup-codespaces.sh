@@ -31,10 +31,86 @@ diagnose_devcontainer_runtime() {
       warn "docker komutu bulundu ancak daemon sürümü okunamadı; Docker Desktop/WSL entegrasyonunu kontrol edin."
     fi
   else
-    log "docker CLI container içinde yok; host Docker kontrolü VS Code Dev Containers tarafından build öncesinde yapılır."
+    warn "docker CLI container içinde yok; ensure_docker_cli adımı CLI kurulumunu deneyecek. Host Docker daemon kontrolü VS Code Dev Containers tarafından build öncesinde yapılır."
   fi
 }
 
+install_docker_apt_repository() {
+  local sudo_cmd=()
+  if [ "${EUID}" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd=(sudo)
+    else
+      warn "sudo bulunamadı; Docker APT deposu eklenemiyor."
+      return 1
+    fi
+  fi
+
+  if [ ! -r /etc/os-release ]; then
+    warn "/etc/os-release okunamadı; Docker APT deposu eklenemiyor."
+    return 1
+  fi
+
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case " ${ID:-} ${ID_LIKE:-} " in
+    *" debian "*) ;;
+    *)
+      warn "Docker CLI otomatik APT kurulumu yalnızca Debian tabanlı container için desteklenir (ID=${ID:-unknown})."
+      return 1
+      ;;
+  esac
+
+  "${sudo_cmd[@]}" apt-get update
+  "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg
+  "${sudo_cmd[@]}" install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL --retry 3 --retry-all-errors https://download.docker.com/linux/debian/gpg -o /tmp/docker.asc
+  "${sudo_cmd[@]}" install -m 0644 /tmp/docker.asc /etc/apt/keyrings/docker.asc
+  rm -f /tmp/docker.asc
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian %s stable\n' "$(dpkg --print-architecture)" "${VERSION_CODENAME}" | "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+}
+
+ensure_docker_cli() {
+  if command -v docker >/dev/null 2>&1; then
+    ok "Docker CLI hazır: $(docker --version)"
+  else
+    warn "Docker CLI bulunamadı; docker-ce-cli/buildx/compose eklentileri kurulacak."
+    if ! command -v apt-get >/dev/null 2>&1; then
+      warn "apt-get bulunamadı; Docker CLI otomatik kurulamadı."
+      return 0
+    fi
+
+    local sudo_cmd=()
+    if [ "${EUID}" -ne 0 ]; then
+      if command -v sudo >/dev/null 2>&1; then
+        sudo_cmd=(sudo)
+      else
+        warn "sudo bulunamadı; Docker CLI otomatik kurulamadı."
+        return 0
+      fi
+    fi
+
+    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+      install_docker_apt_repository || return 0
+    fi
+
+    "${sudo_cmd[@]}" apt-get update
+    "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin
+    ok "Docker CLI kuruldu: $(docker --version)"
+  fi
+
+  if docker compose version >/dev/null 2>&1; then
+    ok "Docker Compose v2 hazır: $(docker compose version)"
+  else
+    warn "Docker Compose v2 eklentisi doğrulanamadı; docker-compose.yml komutları çalışmayabilir."
+  fi
+
+  if [ -S /var/run/docker.sock ]; then
+    ok "Host Docker socket mount edildi: /var/run/docker.sock"
+  else
+    warn "Docker CLI mevcut ancak /var/run/docker.sock görünmüyor; container içinden Docker daemon erişimi için docker-outside-of-docker feature/host socket gerekir."
+  fi
+}
 
 ensure_system_dependencies() {
   local packages=(portaudio19-dev)
@@ -199,16 +275,19 @@ start_ollama_service() {
 case "${PHASE}" in
   sync)
     diagnose_devcontainer_runtime
+    ensure_docker_cli
     sync_python_environment
     ;;
   post-create)
     diagnose_devcontainer_runtime
+    ensure_docker_cli
     sync_python_environment
     install_ollama_if_requested
     start_ollama_service
     ;;
   post-start)
     diagnose_devcontainer_runtime
+    ensure_docker_cli
     start_ollama_service
     ;;
   *)
