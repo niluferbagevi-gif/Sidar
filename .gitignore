@@ -14,6 +14,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv-container/
 venv/
 env/
 # Track Sidar's project-level Python pin while keeping local venvs ignored.

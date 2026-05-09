@@ -238,6 +238,7 @@ dev = [
 exclude_dirs = [
   ".git",
   ".venv",
+  ".venv-container",
   "tests",
   "web_ui_react",
   "node_modules",
@@ -361,6 +362,7 @@ target-version = "py311"
 exclude = [
   ".git",
   ".venv",
+  ".venv-container",
   "__pycache__",
   "data",
   "logs",

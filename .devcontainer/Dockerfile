@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
 COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=.venv \
+    UV_PROJECT_ENVIRONMENT=.venv-container \
     SIDAR_PYTHON_VERSION=3.11
 
 # Pin uv in the image so updateContent/postCreate does not spend time

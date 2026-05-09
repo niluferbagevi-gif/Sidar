@@ -22,7 +22,7 @@
   },
   "containerEnv": {
     "UV_LINK_MODE": "copy",
-    "UV_PROJECT_ENVIRONMENT": ".venv",
+    "UV_PROJECT_ENVIRONMENT": ".venv-container",
     "SIDAR_PYTHON_VERSION": "3.11",
     "CODING_MODEL": "qwen2.5-coder:7b",
     "OLLAMA_REQUIRED_MODELS": "qwen2.5-coder:7b",
@@ -33,7 +33,7 @@
   },
   "remoteEnv": {
     "UV_LINK_MODE": "copy",
-    "UV_PROJECT_ENVIRONMENT": ".venv",
+    "UV_PROJECT_ENVIRONMENT": ".venv-container",
     "SIDAR_PYTHON_VERSION": "3.11"
   },
   "postCreateCommand": "bash .devcontainer/setup-codespaces.sh post-create",
@@ -41,7 +41,7 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv-container/bin/python",
         "python.terminal.activateEnvironment": true,
         "terminal.integrated.defaultProfile.linux": "bash"
       },

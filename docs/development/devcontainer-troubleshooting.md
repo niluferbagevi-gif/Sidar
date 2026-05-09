@@ -29,17 +29,36 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 - `read-configuration` sonrasında JSON/şema hatası.
 - Feature kurulumunda `apt-get update`, GPG key veya network hatası.
 - `postCreateCommand` veya `updateContentCommand` sırasında `uv sync --frozen --all-extras`
-  veya Python sürüm uyuşmazlığı hatası. `.venv/bin/python -> /home/.../uv/python/...`
+  veya Python sürüm uyuşmazlığı hatası. Dev Container içindeki proje ortamı
+  `.venv-container` olarak ayrılmıştır; WSL/host tarafındaki `.venv` bu akışta
+  yeniden kullanılmaz ve silinmez. `.venv-container/bin/python -> /home/.../uv/python/...`
   gibi container dışındaki mutlak yollara bakan kırık symlink uyarıları tek başına
   hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını ve yanlış
-  Python minor sürümünü `uv sync` öncesinde temizleyip sanal ortamı deterministik
-  yeniden kurar. Başarılı sync sonrasında `.venv/.sidar-uv-sync.sha256` dosyasına
-  bağımlılık parmak izi yazılır; `pyproject.toml`, `uv.lock`, `.python-version` ve
-  Python minor sürümü değişmediyse sonraki `updateContentCommand` çalıştırmalarında
-  `uv sync` atlanır. Bağımlılıkların zorla yenilenmesi gerekiyorsa
+  Python minor sürümünü `uv sync` öncesinde temizleyip container sanal ortamını
+  deterministik yeniden kurar. Başarılı sync sonrasında
+  `.venv-container/.sidar-uv-sync.sha256` dosyasına bağımlılık parmak izi yazılır;
+  `pyproject.toml`, `uv.lock`, `.python-version` ve Python minor sürümü değişmediyse
+  sonraki `updateContentCommand` çalıştırmalarında `uv sync` atlanır. Bağımlılıkların zorla yenilenmesi gerekiyorsa
   `SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync` çalıştırılmalıdır.
   Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı dependency çözümü,
   network veya sistem paketi çıktısında aranmalıdır.
+
+## VS Code Dev Containers uyarıları ve sanal ortam izolasyonu
+
+`InvalidDefaultArgInFrom: Default value for ARG $BASE_IMAGE...` satırı, VS Code
+Dev Containers CLI'ın container kullanıcısı/UID ayarı için ürettiği geçici
+Dockerfile katmanından gelebilir. Bu satır tek başına Sidar Dockerfile'ının veya
+proje bağımlılıklarının hatalı olduğu anlamına gelmez; build/postCreate akışının
+sonucuna bakılmalıdır.
+
+Asıl tekrar kurulum kaynağı çoğunlukla host ile container sanal ortamlarının aynı
+`.venv` dizinini paylaşmasıdır. Host WSL yolu `/home/<kullanıcı>/Sidar`, Dev
+Container workspace yolu ise `/workspaces/Sidar` olduğundan `pyvenv.cfg` ve
+`bin/python` gibi mutlak yol/symlink kayıtları uyuşmaz. Bu nedenle Sidar Dev
+Container varsayılanı `UV_PROJECT_ENVIRONMENT=.venv-container` olarak ayrılmıştır;
+VS Code Python yorumlayıcısı da `${containerWorkspaceFolder}/.venv-container/bin/python`
+yolunu kullanır. Hosttaki `.venv` yerel geliştirme için kalır, container ise
+Debian tabanlı imajdaki native bağımlılıklarla kendi ortamını kurar.
 
 
 ## Docker CLI ve daemon beklentisi
@@ -84,7 +103,7 @@ Sidar'ın varsayılan geliştirme ortamı Python `3.11`, pin'li `uv` ve yerel co
 `qwen2.5-coder:7b` kullanır. Dev Container imajı, updateContent/postCreate aşamasında
 tekrar bootstrap yapılmaması için uv binary'sini önceden içerir; setup betiğindeki
 resmi uv kurulum yolu yalnız özel veya eski imajlarda fallback olarak kalır. Dev Container
-imajı ve `.venv` kurulumu bu varsayımla aynı hizaya getirilmiştir.
+imajı ve container'a özel `.venv-container` kurulumu bu varsayımla aynı hizaya getirilmiştir.
 
 ## Hızlı kontrol komutları
 
