@@ -28,10 +28,13 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
   fail-fast davranışı istenirse `SIDAR_DEVCONTAINER_PREFLIGHT_STRICT=1` kullanılabilir.
 - `read-configuration` sonrasında JSON/şema hatası.
 - Feature kurulumunda `apt-get update`, GPG key veya network hatası.
-- `postCreateCommand` sırasında `uv sync --frozen --all-extras` veya Python sürüm
-  uyuşmazlığı hatası. `.venv/bin/python -> python` gibi kırık symlink uyarıları
-  görülürse setup betiği sanal ortamı uv sync öncesinde silip yeniden oluşturmalıdır;
-  uyarı devam ediyorsa `.venv` klasörünün workspace dışından taşınmadığını kontrol edin.
+- `postCreateCommand` veya `updateContentCommand` sırasında `uv sync --frozen --all-extras`
+  veya Python sürüm uyuşmazlığı hatası. `.venv/bin/python -> /home/.../uv/python/...`
+  gibi container dışındaki mutlak yollara bakan kırık symlink uyarıları tek başına
+  hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını ve yanlış
+  Python minor sürümünü `uv sync` öncesinde temizleyip sanal ortamı deterministik
+  yeniden kurar. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı
+  dependency çözümü, network veya sistem paketi çıktısında aranmalıdır.
 
 
 ## Docker CLI ve daemon beklentisi

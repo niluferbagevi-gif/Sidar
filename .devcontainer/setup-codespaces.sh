@@ -170,6 +170,21 @@ ensure_uv() {
   ok "uv kuruldu: $(uv --version)"
 }
 
+remove_virtualenv_with_reason() {
+  local venv_dir="$1"
+  local reason="$2"
+
+  warn "${reason}"
+  case "${venv_dir}" in
+    ""|"/"|"."|"..")
+      warn "Güvenli olmayan sanal ortam yolu temizlenmedi: ${venv_dir:-<empty>}"
+      return 1
+      ;;
+  esac
+  rm -rf "${venv_dir}"
+  ok "Geçersiz sanal ortam temizlendi: ${venv_dir}"
+}
+
 remove_invalid_virtualenv() {
   local venv_dir="$1"
   local venv_python="${venv_dir}/bin/python"
@@ -178,19 +193,59 @@ remove_invalid_virtualenv() {
     return 0
   fi
 
-  if [ -x "${venv_python}" ]; then
+  if [ ! -d "${venv_dir}" ]; then
+    remove_virtualenv_with_reason \
+      "${venv_dir}" \
+      "Sanal ortam yolu (${venv_dir}) dizin değil; yeniden oluşturulacak."
     return 0
   fi
 
   if [ -L "${venv_python}" ]; then
     local target
     target="$(readlink "${venv_python}" || true)"
-    warn "Sanal ortam (${venv_dir}) kırık Python symlink'i içeriyor (${venv_python} -> ${target:-unknown}); uv uyarısını beklemeden yeniden oluşturulacak."
-  else
-    warn "Sanal ortam (${venv_dir}) geçersiz veya eksik Python içeriyor; yeniden oluşturulacak."
+    if [ -n "${target}" ] && [[ "${target}" = /* ]] && [ ! -e "${target}" ]; then
+      remove_virtualenv_with_reason \
+        "${venv_dir}" \
+        "Sanal ortam (${venv_dir}) container dışında kalmış kırık Python symlink'i içeriyor (${venv_python} -> ${target}); uv uyarısını beklemeden yeniden oluşturulacak."
+      return 0
+    fi
   fi
 
-  rm -rf "${venv_dir}"
+  if [ ! -x "${venv_python}" ]; then
+    if [ -L "${venv_python}" ]; then
+      local target
+      target="$(readlink "${venv_python}" || true)"
+      remove_virtualenv_with_reason \
+        "${venv_dir}" \
+        "Sanal ortam (${venv_dir}) kırık Python symlink'i içeriyor (${venv_python} -> ${target:-unknown}); uv uyarısını beklemeden yeniden oluşturulacak."
+    else
+      remove_virtualenv_with_reason \
+        "${venv_dir}" \
+        "Sanal ortam (${venv_dir}) geçersiz veya eksik Python içeriyor; yeniden oluşturulacak."
+    fi
+    return 0
+  fi
+
+  local actual_version
+  actual_version="$(${venv_python} -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+  if [ "${actual_version}" != "${SIDAR_PYTHON_VERSION}" ]; then
+    remove_virtualenv_with_reason \
+      "${venv_dir}" \
+      "Sanal ortam Python sürümü ${actual_version:-unknown}; beklenen ${SIDAR_PYTHON_VERSION}. uv sync öncesinde yeniden oluşturulacak."
+    return 0
+  fi
+
+  local pyvenv_cfg="${venv_dir}/pyvenv.cfg"
+  if [ -f "${pyvenv_cfg}" ]; then
+    local cfg_home
+    cfg_home="$(awk -F= '/^home[[:space:]]*=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "${pyvenv_cfg}" || true)"
+    if [ -n "${cfg_home}" ] && [[ "${cfg_home}" = /* ]] && [ ! -e "${cfg_home}" ]; then
+      remove_virtualenv_with_reason \
+        "${venv_dir}" \
+        "Sanal ortam (${venv_dir}) taşınmış workspace'e ait görünüyor; pyvenv.cfg home yolu bulunamadı (${cfg_home}). Yeniden oluşturulacak."
+      return 0
+    fi
+  fi
 }
 
 sync_python_environment() {
