@@ -26,7 +26,9 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 - `read-configuration` sonrasında JSON/şema hatası.
 - Feature kurulumunda `apt-get update`, GPG key veya network hatası.
 - `postCreateCommand` sırasında `uv sync --frozen --all-extras` veya Python sürüm
-  uyuşmazlığı hatası.
+  uyuşmazlığı hatası. `.venv/bin/python -> python` gibi kırık symlink uyarıları
+  görülürse setup betiği sanal ortamı uv sync öncesinde silip yeniden oluşturmalıdır;
+  uyarı devam ediyorsa `.venv` klasörünün workspace dışından taşınmadığını kontrol edin.
 
 
 ## Docker CLI ve daemon beklentisi
@@ -61,9 +63,11 @@ Docker Desktop/Engine veya erişilebilir bir remote daemon yine gereklidir.
 
 ## Sidar için beklenen ortam
 
-Sidar'ın varsayılan geliştirme ortamı Python `3.11`, `uv` ve yerel coding modeli olarak
-`qwen2.5-coder:7b` kullanır. Dev Container imajı ve `.venv` kurulumu bu varsayımla aynı
-hizaya getirilmiştir.
+Sidar'ın varsayılan geliştirme ortamı Python `3.11`, pin'li `uv` ve yerel coding modeli olarak
+`qwen2.5-coder:7b` kullanır. Dev Container imajı, updateContent/postCreate aşamasında
+tekrar bootstrap yapılmaması için uv binary'sini önceden içerir; setup betiğindeki
+resmi uv kurulum yolu yalnız özel veya eski imajlarda fallback olarak kalır. Dev Container
+imajı ve `.venv` kurulumu bu varsayımla aynı hizaya getirilmiştir.
 
 ## Hızlı kontrol komutları
 

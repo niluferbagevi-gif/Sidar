@@ -170,16 +170,39 @@ ensure_uv() {
   ok "uv kuruldu: $(uv --version)"
 }
 
+remove_invalid_virtualenv() {
+  local venv_dir="$1"
+  local venv_python="${venv_dir}/bin/python"
+
+  if [ ! -e "${venv_dir}" ]; then
+    return 0
+  fi
+
+  if [ -x "${venv_python}" ]; then
+    return 0
+  fi
+
+  if [ -L "${venv_python}" ]; then
+    local target
+    target="$(readlink "${venv_python}" || true)"
+    warn "Sanal ortam (${venv_dir}) kırık Python symlink'i içeriyor (${venv_python} -> ${target:-unknown}); uv uyarısını beklemeden yeniden oluşturulacak."
+  else
+    warn "Sanal ortam (${venv_dir}) geçersiz veya eksik Python içeriyor; yeniden oluşturulacak."
+  fi
+
+  rm -rf "${venv_dir}"
+}
+
 sync_python_environment() {
   ensure_uv
   ensure_system_dependencies
   log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
 
+  remove_invalid_virtualenv "${UV_PROJECT_ENVIRONMENT}"
+
   local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
   if [ -x "${venv_python}" ]; then
     ok "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) mevcut."
-  elif [ -e "${UV_PROJECT_ENVIRONMENT}" ]; then
-    warn "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) geçersiz veya eksik Python içeriyor; uv sync yeniden oluşturacak."
   else
     log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
     uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
