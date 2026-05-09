@@ -6,7 +6,13 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=.venv-container \
-    SIDAR_PYTHON_VERSION=3.11
+    SIDAR_PYTHON_VERSION=3.11 \
+    CODING_MODEL=qwen2.5-coder:7b \
+    OLLAMA_REQUIRED_MODELS=qwen2.5-coder:7b \
+    OLLAMA_MODEL_SYNC=auto \
+    AUTONOMOUS_LOOP_COVERAGE_PROFILE=full \
+    AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign \
+    ENABLE_GPU_TESTS=1
 
 # Pin uv in the image so updateContent/postCreate does not spend time
 # bootstrapping it on every fresh Dev Container. The setup script still keeps
