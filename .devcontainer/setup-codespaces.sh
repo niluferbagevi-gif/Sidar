@@ -193,11 +193,45 @@ remove_invalid_virtualenv() {
   rm -rf "${venv_dir}"
 }
 
+ensure_virtualenv_ownership() {
+  local venv_dir="$1"
+  local expected_owner
+  local actual_owner
+  local sudo_cmd=()
+
+  expected_owner="$(id -u):$(id -g)"
+
+  if [ ! -e "${venv_dir}" ]; then
+    return 0
+  fi
+
+  actual_owner="$(stat -c '%u:%g' "${venv_dir}" 2>/dev/null || true)"
+  if [ "${actual_owner}" = "${expected_owner}" ]; then
+    ok "Sanal ortam dizini sahipliği doğru: ${venv_dir} (${actual_owner})"
+    return 0
+  fi
+
+  warn "Sanal ortam dizini sahipliği ${actual_owner:-unknown}; beklenen ${expected_owner}. Docker volume izinleri iyileştirilecek: ${venv_dir}"
+
+  if [ "${EUID}" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd=(sudo)
+    else
+      warn "sudo bulunamadı; ${venv_dir} sahipliği otomatik düzeltilemedi. Dev Container volume izinlerini manuel kontrol edin."
+      return 1
+    fi
+  fi
+
+  "${sudo_cmd[@]}" chown -R "${expected_owner}" "${venv_dir}"
+  ok "Sanal ortam dizini sahipliği düzeltildi: ${venv_dir} (${expected_owner})"
+}
+
 sync_python_environment() {
   ensure_uv
   ensure_system_dependencies
   log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
 
+  ensure_virtualenv_ownership "${UV_PROJECT_ENVIRONMENT}"
   remove_invalid_virtualenv "${UV_PROJECT_ENVIRONMENT}"
 
   local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"

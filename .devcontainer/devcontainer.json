@@ -36,6 +36,9 @@
     "UV_PROJECT_ENVIRONMENT": ".venv",
     "SIDAR_PYTHON_VERSION": "3.11"
   },
+  "mounts": [
+    "source=sidar-venv,target=${containerWorkspaceFolder}/.venv,type=volume"
+  ],
   "postCreateCommand": "bash .devcontainer/setup-codespaces.sh post-create",
   "postStartCommand": "bash .devcontainer/setup-codespaces.sh post-start",
   "customizations": {
