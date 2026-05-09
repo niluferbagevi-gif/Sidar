@@ -20,8 +20,11 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 
 - `docker version` veya `docker info` komutlarında erişim hatası ya da uzun süre
   ilerlememe. Sidar, bu aşamayı daha okunur hale getirmek için `initializeCommand`
-  içinde `.devcontainer/host-preflight.sh` çalıştırır ve Docker komutlarını timeout ile
-  doğrular. Preflight varsayılan olarak uyarı üretip akışı sürdürür; yerel makinede
+  içinde `.devcontainer/host-preflight.sh` çalıştırır ve Docker CLI/daemon durumunu timeout ile
+  doğrular. Linux hostlarda eksik CLI, `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=auto`
+  politikasıyla Docker resmi APT deposundan kurulmaya çalışılır; WSL2'de Docker Desktop
+  Integration tercih edilir ve APT kurulumu yalnız `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=always`
+  ile zorlanır. Preflight varsayılan olarak uyarı üretip akışı sürdürür; yerel makinede
   fail-fast davranışı istenirse `SIDAR_DEVCONTAINER_PREFLIGHT_STRICT=1` kullanılabilir.
 - `read-configuration` sonrasında JSON/şema hatası.
 - Feature kurulumunda `apt-get update`, GPG key veya network hatası.
@@ -49,10 +52,12 @@ Docker Engine veya eşdeğer runtime kurulmalıdır.
 Beklenen doğrulama komutları:
 
 ```bash
+# Linux hostlarda eksik Docker CLI'ı otomatik tamamlamayı dener.
+bash .devcontainer/host-preflight.sh
+
 docker --version
 docker compose version
 docker buildx version
-bash .devcontainer/host-preflight.sh
 ```
 
 Repo içi genel kurulum betiği de aynı ayrımı korur: `install_sidar.sh` Debian/Ubuntu

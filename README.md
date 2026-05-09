@@ -380,7 +380,7 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 
 ### Docker ile
 
-> **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. WSL2'de önerilen yol Docker Desktop WSL Integration'dır.
+> **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. Dev Container `initializeCommand` aşamasındaki `.devcontainer/host-preflight.sh` de Linux hostlarda eksik CLI'ı `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=auto` politikasıyla tamamlamayı dener; WSL2'de önerilen yol Docker Desktop WSL Integration'dır ve APT kurulumu için `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=always` bilinçli verilmelidir.
 
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).
 
