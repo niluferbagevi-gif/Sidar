@@ -402,6 +402,30 @@ async def _broadcast_room_payload(room: _CollaborationRoom, payload: dict[str, A
         room.participants.pop(key, None)
 
 
+async def _emit_control_room_event(
+    room_id: str,
+    *,
+    kind: str,
+    source: str,
+    content: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """REST-triggered operation/QA events are mirrored into collaboration rooms."""
+    normalized = _normalize_room_id(room_id or "ops:control")
+    room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
+    event = {
+        "id": secrets.token_hex(8),
+        "room_id": normalized,
+        "kind": kind or "status",
+        "source": source or "api",
+        "content": _mask_collaboration_text(content),
+        "payload": payload or {},
+        "ts": _collaboration_now_iso(),
+    }
+    _append_room_telemetry(room, event)
+    await _broadcast_room_payload(room, {"type": "collaboration_event", "event": event})
+
+
 async def _join_collaboration_room(
     websocket: WebSocket,
     *,
@@ -2535,6 +2559,38 @@ async def hitl_respond(
     if req is None:
         raise HTTPException(status_code=404, detail="HITL isteği bulunamadı")
     return JSONResponse({"request_id": req.request_id, "decision": req.decision.value})
+
+
+
+
+@app.websocket("/ws/hitl")
+async def websocket_hitl(websocket: WebSocket) -> Any:
+    """HITL request/decision events for operator approval panels."""
+    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
+    header_token = proto_header or ""
+    if header_token:
+        await websocket.accept(subprotocol=header_token)
+    else:
+        await websocket.accept()
+
+    agent = await _resolve_agent_instance()
+    if header_token:
+        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
+        if not ws_user:
+            await _ws_close_policy_violation(websocket, "Invalid or expired token")
+            return
+    _hitl_ws_clients.add(websocket)
+    try:
+        pending = await get_hitl_store().pending()
+        await websocket.send_json(
+            {"type": "hitl_snapshot", "pending": [item.to_dict() for item in pending]}
+        )
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _hitl_ws_clients.discard(websocket)
 
 
 @app.middleware("http")
@@ -4846,6 +4902,7 @@ class _CampaignCreateRequest(BaseModel):
 class _PoyrazToolRunRequest(BaseModel):
     tool_name: str = Field(..., min_length=1, max_length=80)
     payload: dict[str, Any] = Field(default_factory=dict)
+    room_id: str = Field(default="ops:control", max_length=120)
 
 
 class _LandingPageDraftRequest(BaseModel):
@@ -4859,6 +4916,7 @@ class _LandingPageDraftRequest(BaseModel):
     store_asset: bool = Field(default=False)
     asset_title: str = Field(default="Landing Page Taslağı", max_length=160)
     channel: str = Field(default="web", max_length=64)
+    room_id: str = Field(default="ops:control", max_length=120)
 
 
 class _CampaignCopyGenerateRequest(BaseModel):
@@ -4872,6 +4930,7 @@ class _CampaignCopyGenerateRequest(BaseModel):
     campaign_id: int | None = Field(default=None)
     store_asset: bool = Field(default=False)
     asset_title: str = Field(default="Kampanya Kopyası", max_length=160)
+    room_id: str = Field(default="ops:control", max_length=120)
 
 
 class _ServiceOperationsPlanRequest(BaseModel):
@@ -4885,6 +4944,7 @@ class _ServiceOperationsPlanRequest(BaseModel):
     notes: str = Field(default="", max_length=2000)
     persist_checklist: bool = Field(default=True)
     checklist_title: str = Field(default="Operasyon Planı", max_length=160)
+    room_id: str = Field(default="ops:control", max_length=120)
 
 
 class _CoverageAnalyzeRequest(BaseModel):
@@ -4892,6 +4952,7 @@ class _CoverageAnalyzeRequest(BaseModel):
     coveragerc: str = Field(default=".coveragerc", max_length=512)
     coverage_output: str = Field(default="")
     limit: int = Field(default=25, ge=1, le=200)
+    room_id: str = Field(default="qa:coverage", max_length=120)
 
 
 class _CoverageGenerateRequest(BaseModel):
@@ -4900,6 +4961,7 @@ class _CoverageGenerateRequest(BaseModel):
     target_path: str = Field(default="", max_length=512)
     pytest_output: str = Field(default="")
     analysis: dict[str, Any] = Field(default_factory=dict)
+    room_id: str = Field(default="qa:coverage", max_length=120)
 
 
 class _CoverageBatchRequest(BaseModel):
@@ -4908,6 +4970,7 @@ class _CoverageBatchRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
     batch_size: int = Field(default=1, ge=1, le=10)
     append: bool = Field(default=True)
+    room_id: str = Field(default="qa:coverage", max_length=120)
 
 
 _teams_mgr_instance = None
@@ -5175,9 +5238,23 @@ async def api_operations_poyraz_run(
     payload = {**dict(req.payload or {}), "tenant_id": _get_user_tenant(_user)}
     if "owner_user_id" not in payload:
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
+    await _emit_control_room_event(
+        req.room_id,
+        kind="tool_call",
+        source="poyraz",
+        content=f"Poyraz aracı başlatıldı: {tool_name}",
+        payload={"tool": tool_name},
+    )
     poyraz = await _await_if_needed(_get_poyraz_agent_instance())
     raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
     result = _decode_agent_tool_result(raw_result)
+    await _emit_control_room_event(
+        req.room_id,
+        kind="status",
+        source="poyraz",
+        content=f"Poyraz aracı tamamlandı: {tool_name}",
+        payload={"tool": tool_name, "success": bool(result.get("success", True))},
+    )
     return JSONResponse(
         {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
     )
@@ -5193,12 +5270,15 @@ async def api_operations_generate_landing_page(
     _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     payload = req.model_dump()
+    payload.pop("room_id", None)
     payload["tenant_id"] = _get_user_tenant(_user)
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="poyraz", content="Landing page üretimi başlatıldı.")
     poyraz = await _await_if_needed(_get_poyraz_agent_instance())
     raw_result = await poyraz.run_task(
         f"build_landing_page|{json.dumps(payload, ensure_ascii=False)}"
     )
     result = _decode_agent_tool_result(raw_result)
+    await _emit_control_room_event(req.room_id, kind="status", source="poyraz", content="Landing page üretimi tamamlandı.")
     return JSONResponse(
         {"success": True, "output": result.get("output", raw_result), "result": result}
     )
@@ -5214,12 +5294,15 @@ async def api_operations_generate_campaign_copy(
     _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     payload = req.model_dump()
+    payload.pop("room_id", None)
     payload["tenant_id"] = _get_user_tenant(_user)
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="poyraz", content="Kampanya kopyası üretimi başlatıldı.")
     poyraz = await _await_if_needed(_get_poyraz_agent_instance())
     raw_result = await poyraz.run_task(
         f"generate_campaign_copy|{json.dumps(payload, ensure_ascii=False)}"
     )
     result = _decode_agent_tool_result(raw_result)
+    await _emit_control_room_event(req.room_id, kind="status", source="poyraz", content="Kampanya kopyası üretimi tamamlandı.")
     return JSONResponse(
         {"success": True, "output": result.get("output", raw_result), "result": result}
     )
@@ -5235,13 +5318,22 @@ async def api_operations_plan_service(
     _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     payload = req.model_dump()
+    payload.pop("room_id", None)
     payload["tenant_id"] = _get_user_tenant(_user)
     payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="poyraz", content="Servis operasyon planı başlatıldı.")
     poyraz = await _await_if_needed(_get_poyraz_agent_instance())
     raw_result = await poyraz.run_task(
         f"plan_service_operations|{json.dumps(payload, ensure_ascii=False)}"
     )
     result = _decode_agent_tool_result(raw_result)
+    await _emit_control_room_event(
+        req.room_id,
+        kind="status",
+        source="poyraz",
+        content="Servis operasyon planı tamamlandı.",
+        payload={"success": bool(result.get("success", True))},
+    )
     return JSONResponse({"success": bool(result.get("success", True)), "result": result})
 
 
@@ -5274,10 +5366,14 @@ async def api_qa_coverage_analyze(
     _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
+    payload = req.model_dump()
+    payload.pop("room_id", None)
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="coverage", content="Coverage analizi başlatıldı.")
     raw_result = await coverage_agent._tool_analyze_coverage_report(
-        json.dumps(req.model_dump(), ensure_ascii=False)
+        json.dumps(payload, ensure_ascii=False)
     )
     result = _decode_agent_tool_result(raw_result)
+    await _emit_control_room_event(req.room_id, kind="status", source="coverage", content="Coverage analizi tamamlandı.")
     return JSONResponse({"success": True, "analysis": result, "tenant_id": _get_user_tenant(_user)})
 
 
@@ -5292,11 +5388,20 @@ async def api_qa_coverage_generate(
 ) -> JSONResponse:
     coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
     payload = req.model_dump()
+    payload.pop("room_id", None)
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="coverage", content="Coverage test adayı üretimi başlatıldı.")
     raw_candidate = await coverage_agent._tool_generate_missing_tests(
         json.dumps(payload, ensure_ascii=False)
     )
     rejection_reason = coverage_agent._candidate_rejection_reason(
         str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
+    )
+    await _emit_control_room_event(
+        req.room_id,
+        kind="status",
+        source="coverage",
+        content="Coverage test adayı kalite kontrolünden geçti." if not rejection_reason else "Coverage test adayı kalite kapısında reddedildi.",
+        payload={"quality_rejection_reason": rejection_reason},
     )
     return JSONResponse(
         {
@@ -5318,12 +5423,20 @@ async def api_qa_coverage_batch(
     _user: Any = Depends(_get_request_user),
 ) -> JSONResponse:
     coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
+    await _emit_control_room_event(req.room_id, kind="tool_call", source="coverage", content="Coverage batch iyileştirme başlatıldı.")
     result = await coverage_agent.run_autonomous_coverage_batch(
         coverage_xml=req.coverage_xml,
         coveragerc=req.coveragerc,
         limit=req.limit,
         batch_size=req.batch_size,
         append=req.append,
+    )
+    await _emit_control_room_event(
+        req.room_id,
+        kind="status",
+        source="coverage",
+        content="Coverage batch iyileştirme tamamlandı.",
+        payload={"success": bool(result.get("success", False)), "status": result.get("status", "")},
     )
     return JSONResponse(
         {

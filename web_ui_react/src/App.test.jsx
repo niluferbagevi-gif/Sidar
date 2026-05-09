@@ -13,6 +13,7 @@ vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <d
 vi.mock("./components/PromptAdminPanel.jsx", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
 vi.mock("./components/AgentManagerPanel.jsx", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
 vi.mock("./components/PluginMarketplacePanel.jsx", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
+vi.mock("./components/OperationsQaPanel.jsx", () => ({ OperationsQaPanel: () => <div>Ops QA Mock</div> }));
 
 vi.mock("./lib/api.js", async () => {
   const actual = await vi.importActual("./lib/api.js");
@@ -78,6 +79,9 @@ describe("App", () => {
 
     await user.click(screen.getByRole("link", { name: "Swarm Akışı" }));
     expect(screen.getByText("Swarm Mock")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Poyraz & Coverage" }));
+    expect(screen.getByText("Ops QA Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Tenant Admin" }));
     expect(screen.getByText("Tenant Mock")).toBeInTheDocument();

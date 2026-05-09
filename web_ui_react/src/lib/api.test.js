@@ -13,6 +13,8 @@ import {
   analyzeCoverage,
   generateCoverageCandidate,
   runCoverageBatch,
+  listHitlPending,
+  respondHitl,
 } from "./api.js";
 
 const mockFetch = (response) => {
@@ -35,6 +37,7 @@ describe("TOKEN_KEY sabiti", () => {
   it("is sidar_access_token", () => {
     expect(TOKEN_KEY).toBe("sidar_access_token");
   });
+
 });
 
 describe("getStoredToken", () => {
@@ -284,6 +287,7 @@ describe("agent API bridge helpers", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       tool_name: "create_operation_checklist",
       payload: { title: "Todo" },
+      room_id: "ops:control",
     });
     for (const [, options] of fetchMock.mock.calls) {
       expect(options.method).toBe("POST");
@@ -312,5 +316,20 @@ describe("agent API bridge helpers", () => {
       coverage_finding: { target_path: "src/a.py" },
     });
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ limit: 2 });
+  });
+
+  it("uses HITL REST endpoints", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await listHitlPending();
+    await respondHitl("req/1", { approved: true, decided_by: "tester" });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/hitl/pending");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/hitl/respond/req%2F1");
+    expect(fetchMock.mock.calls[1][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      approved: true,
+      decided_by: "tester",
+    });
   });
 });

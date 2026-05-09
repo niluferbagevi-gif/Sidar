@@ -43,11 +43,11 @@ export async function fetchJson(url, options = {}) {
   return payload;
 }
 
-export function runPoyrazOperation(toolName, payload = {}) {
+export function runPoyrazOperation(toolName, payload = {}, roomId = "ops:control") {
   return fetchJson("/api/operations/poyraz/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tool_name: toolName, payload }),
+    body: JSON.stringify({ tool_name: toolName, payload, room_id: roomId }),
   });
 }
 
@@ -104,5 +104,17 @@ export function runCoverageBatch(payload = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export function listHitlPending() {
+  return fetchJson("/api/hitl/pending");
+}
+
+export function respondHitl(requestId, payload = {}) {
+  return fetchJson(`/api/hitl/respond/${encodeURIComponent(requestId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
   });
 }
