@@ -1,5 +1,7 @@
 {
   "name": "Sidar Dev Container",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": false,
   "build": {
     "dockerfile": "Dockerfile"
   },
