@@ -15,6 +15,26 @@ log() { printf 'ℹ️  %s\n' "$*"; }
 ok() { printf '✅ %s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*"; }
 
+diagnose_devcontainer_runtime() {
+  log "Dev Container tanılama: faz=${PHASE}, workspace=${REPO_ROOT}"
+
+  if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    log "WSL ortamı algılandı: ${WSL_DISTRO_NAME}. VS Code loglarındaki ilk 'server/node' Exit code 1 kontrolleri, mevcut server yolu bulunana kadar normal fallback davranışı olabilir."
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    local docker_version
+    docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
+    if [ -n "${docker_version}" ]; then
+      ok "Docker daemon erişilebilir: ${docker_version}"
+    else
+      warn "docker komutu bulundu ancak daemon sürümü okunamadı; Docker Desktop/WSL entegrasyonunu kontrol edin."
+    fi
+  else
+    log "docker CLI container içinde yok; host Docker kontrolü VS Code Dev Containers tarafından build öncesinde yapılır."
+  fi
+}
+
 ensure_uv() {
   if command -v uv >/dev/null 2>&1; then
     ok "uv hazır: $(uv --version)"
@@ -38,7 +58,7 @@ ensure_uv() {
 
 sync_python_environment() {
   ensure_uv
-  log "Codespaces overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
+  log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
   
   # İYİLEŞTİRME: .venv klasörü kontrolü eklendi
   if [ -d "${UV_PROJECT_ENVIRONMENT}" ]; then
@@ -50,6 +70,19 @@ sync_python_environment() {
 
   log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
   uv sync --frozen --all-extras
+
+  local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
+  if [ -x "${venv_python}" ]; then
+    local actual_version
+    actual_version="$(${venv_python} -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if [ "${actual_version}" = "${SIDAR_PYTHON_VERSION}" ]; then
+      ok "Python sanal ortam sürümü uyumlu: ${actual_version}"
+    else
+      warn "Python sanal ortam sürümü ${actual_version}; beklenen ${SIDAR_PYTHON_VERSION}. Gerekirse ${UV_PROJECT_ENVIRONMENT} silinip post-create yeniden çalıştırılmalı."
+    fi
+  else
+    warn "Sanal ortam Python yorumlayıcısı bulunamadı: ${venv_python}"
+  fi
 
   if [ ! -f .env.test ] && [ -f .env.test.example ]; then
     cp .env.test.example .env.test
@@ -73,7 +106,7 @@ install_ollama_if_requested() {
     return 0
   fi
 
-  warn "Ollama CLI bulunamadı; Codespaces hazırlık aşamasında resmi Ollama kurulum betiği çalıştırılıyor."
+  warn "Ollama CLI bulunamadı; Dev Container hazırlık aşamasında resmi Ollama kurulum betiği çalıştırılıyor."
   local ollama_tmp
   ollama_tmp="$(mktemp)"
   curl -fsSL --retry 3 --retry-all-errors https://ollama.com/install.sh -o "${ollama_tmp}"
@@ -121,15 +154,21 @@ start_ollama_service() {
 }
 
 case "${PHASE}" in
+  sync)
+    diagnose_devcontainer_runtime
+    sync_python_environment
+    ;;
   post-create)
+    diagnose_devcontainer_runtime
     sync_python_environment
     install_ollama_if_requested
     start_ollama_service
     ;;
   post-start)
+    diagnose_devcontainer_runtime
     start_ollama_service
     ;;
   *)
-    warn "Bilinmeyen Codespaces setup fazı: ${PHASE}"
+    warn "Bilinmeyen Dev Container setup fazı: ${PHASE}"
     ;;
 esac

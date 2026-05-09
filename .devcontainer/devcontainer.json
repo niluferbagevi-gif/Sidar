@@ -1,5 +1,5 @@
 {
-  "name": "Sidar Codespaces",
+  "name": "Sidar Dev Container",
   "build": {
     "dockerfile": "Dockerfile"
   },
@@ -60,5 +60,8 @@
       "label": "Ollama API",
       "onAutoForward": "silent"
     }
-  }
+  },
+  "waitFor": "postCreateCommand",
+  "updateContentCommand": "bash .devcontainer/setup-codespaces.sh sync",
+  "initializeCommand": "bash .devcontainer/host-preflight.sh"
 }
