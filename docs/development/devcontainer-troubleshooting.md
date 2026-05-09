@@ -33,8 +33,18 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
   gibi container dışındaki mutlak yollara bakan kırık symlink uyarıları tek başına
   hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını ve yanlış
   Python minor sürümünü `uv sync` öncesinde temizleyip sanal ortamı deterministik
-  yeniden kurar. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı
+  yeniden kurar. Başarılı `uv sync` sonrasında `.venv/.sidar-devcontainer-sync.stamp`
+  dosyasına bağımlılık girdilerinin parmak izi yazılır; aynı Dev Containers açılışında
+  `updateContentCommand` ve `postCreateCommand` peş peşe çalışırsa ikinci sync güvenli
+  biçimde atlanır. Bağımlılıkları zorla yeniden senkronlamak için
+  `SIDAR_DEVCONTAINER_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync`
+  çalıştırılabilir. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı
   dependency çözümü, network veya sistem paketi çıktısında aranmalıdır.
+- `WARN: InvalidDefaultArgInFrom` satırı, VS Code Dev Containers CLI'ın uzak kullanıcı
+  UID/GID eşitlemesi için geçici `updateUID.Dockerfile` üretirken görülebilen upstream
+  Dockerfile lint uyarısıdır. Container sonrasında başlıyorsa Sidar imaj build hatası
+  değildir; gerçek build sorunları `Dockerfile-with-features` veya `.devcontainer/Dockerfile`
+  adımlarındaki başarısız komutlarda aranmalıdır.
 
 
 ## Docker CLI ve daemon beklentisi

@@ -10,6 +10,8 @@ export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-.venv}"
 export SIDAR_PYTHON_VERSION="${SIDAR_PYTHON_VERSION:-3.11}"
 export CODING_MODEL="${CODING_MODEL:-qwen2.5-coder:7b}"
 export OLLAMA_REQUIRED_MODELS="${OLLAMA_REQUIRED_MODELS:-${CODING_MODEL}}"
+export SIDAR_DEVCONTAINER_FORCE_UV_SYNC="${SIDAR_DEVCONTAINER_FORCE_UV_SYNC:-0}"
+export SIDAR_DEVCONTAINER_SYNC_STAMP_VERSION="1"
 
 log() { printf 'ℹ️  %s\n' "$*"; }
 ok() { printf '✅ %s\n' "$*"; }
@@ -248,6 +250,76 @@ remove_invalid_virtualenv() {
   fi
 }
 
+devcontainer_sync_fingerprint() {
+  local hasher=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    hasher="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then
+    hasher="shasum -a 256"
+  else
+    warn "sha256sum/shasum bulunamadı; uv sync cache damgası hesaplanamayacak."
+    return 1
+  fi
+
+  {
+    printf 'stamp-version=%s\n' "${SIDAR_DEVCONTAINER_SYNC_STAMP_VERSION}"
+    printf 'python=%s\n' "${SIDAR_PYTHON_VERSION}"
+    printf 'uv-link-mode=%s\n' "${UV_LINK_MODE}"
+    printf 'sync-command=uv sync --frozen --all-extras\n'
+    for file in pyproject.toml uv.lock .python-version .devcontainer/setup-codespaces.sh .devcontainer/Dockerfile; do
+      if [ -f "${file}" ]; then
+        printf -- '--- %s ---\n' "${file}"
+        cat "${file}"
+        printf '\n'
+      else
+        printf -- '--- %s missing ---\n' "${file}"
+      fi
+    done
+  } | ${hasher} | awk '{print $1}'
+}
+
+uv_sync_stamp_file() {
+  printf '%s/.sidar-devcontainer-sync.stamp' "${UV_PROJECT_ENVIRONMENT}"
+}
+
+should_run_uv_sync() {
+  local expected_fingerprint="$1"
+  local stamp_file
+  stamp_file="$(uv_sync_stamp_file)"
+
+  if [ "${SIDAR_DEVCONTAINER_FORCE_UV_SYNC}" = "1" ] || [ "${SIDAR_DEVCONTAINER_FORCE_UV_SYNC}" = "true" ]; then
+    log "SIDAR_DEVCONTAINER_FORCE_UV_SYNC=${SIDAR_DEVCONTAINER_FORCE_UV_SYNC}; uv sync zorunlu çalıştırılacak."
+    return 0
+  fi
+
+  if [ -z "${expected_fingerprint}" ]; then
+    return 0
+  fi
+
+  if [ ! -f "${stamp_file}" ]; then
+    return 0
+  fi
+
+  local current_stamp
+  current_stamp="$(cat "${stamp_file}" 2>/dev/null || true)"
+  if [ "${current_stamp}" = "${expected_fingerprint}" ]; then
+    ok "uv sync atlandı; bağımlılık girdileri değişmemiş (${stamp_file})."
+    return 1
+  fi
+
+  return 0
+}
+
+write_uv_sync_stamp() {
+  local fingerprint="$1"
+  [ -n "${fingerprint}" ] || return 0
+
+  local stamp_file
+  stamp_file="$(uv_sync_stamp_file)"
+  mkdir -p "$(dirname "${stamp_file}")"
+  printf '%s\n' "${fingerprint}" > "${stamp_file}"
+}
+
 sync_python_environment() {
   ensure_uv
   ensure_system_dependencies
@@ -263,10 +335,15 @@ sync_python_environment() {
     uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
   fi
 
-  log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
-  if ! uv sync --frozen --all-extras; then
-    warn "uv sync başarısız oldu. PyAudio derleme hatası görüyorsanız portaudio19-dev paketinin kurulu olduğundan emin olun."
-    return 1
+  local sync_fingerprint
+  sync_fingerprint="$(devcontainer_sync_fingerprint 2>/dev/null || true)"
+  if should_run_uv_sync "${sync_fingerprint}"; then
+    log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
+    if ! uv sync --frozen --all-extras; then
+      warn "uv sync başarısız oldu. PyAudio derleme hatası görüyorsanız portaudio19-dev paketinin kurulu olduğundan emin olun."
+      return 1
+    fi
+    write_uv_sync_stamp "${sync_fingerprint}"
   fi
 
   if [ -x "${venv_python}" ]; then
