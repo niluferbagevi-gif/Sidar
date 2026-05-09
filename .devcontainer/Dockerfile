@@ -1,4 +1,9 @@
-FROM mcr.microsoft.com/devcontainers/python:1-3.12-bookworm
+FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
+
+# Keep the image Python version aligned with Sidar's default local development
+# runtime (SIDAR_PYTHON_VERSION=3.11). This avoids an extra managed-Python
+# download during postCreate on WSL/Dev Containers hosts and makes the VS Code
+# interpreter path deterministic.
 
 # The upstream devcontainer image can include a preconfigured Yarn APT source.
 # When that source has a missing/rotated GPG key, Dev Container features that run
