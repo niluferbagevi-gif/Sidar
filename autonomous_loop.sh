@@ -18,6 +18,12 @@ AUTONOMOUS_COVERAGE_JSON="${AUTONOMOUS_LOOP_COVERAGE_JSON:-coverage.json}"
 AUTONOMOUS_COVERAGE_XML="${AUTONOMOUS_LOOP_COVERAGE_XML:-coverage.xml}"
 AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-10}"
 AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
+AUTONOMOUS_MUTATION_ENABLED="${AUTONOMOUS_LOOP_MUTATION_ENABLED:-1}"
+AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-2}"
+AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}}"
+AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:-uv run --with mutmut mutmut results}"
+AUTONOMOUS_MUTATION_STATS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND:-uv run --with mutmut mutmut export-cicd-stats}"
+AUTONOMOUS_MUTATION_STATS_PATH="${AUTONOMOUS_LOOP_MUTATION_STATS_PATH:-artifacts/mutmut-stats.json}"
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
@@ -93,6 +99,13 @@ if ! [[ "$LOCAL_COVERAGE_GATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "[UYARI] Yerel coverage gate değeri sayısal değil: '${LOCAL_COVERAGE_GATE}'. 90 kullanılacak."
   LOCAL_COVERAGE_GATE="90"
 fi
+if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" -lt 1 ]; then
+  echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 2 kullanılacak."
+  AUTONOMOUS_MUTATION_MAX_CHILDREN="2"
+fi
+if [ -z "${AUTONOMOUS_LOOP_MUTATION_COMMAND+x}" ]; then
+  AUTONOMOUS_MUTATION_COMMAND="uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}"
+fi
 
 if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
   # shellcheck disable=SC1091
@@ -109,6 +122,7 @@ if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
   echo "[INFO] Otonom coverage hedef dosyası: ${AUTONOMOUS_COVERAGE_TARGET_FILE}."
 fi
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
+echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
 
 read_coverage_percent() {
   local coverage_json="${1:-coverage.json}"
@@ -172,6 +186,55 @@ raise SystemExit(1)
 PY_COVERAGE_COMPARE
 }
 
+is_truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+run_mutation_quality_gate() {
+  local mutation_exit
+  local results_exit
+  local stats_exit
+
+  if ! is_truthy_flag "${AUTONOMOUS_MUTATION_ENABLED}"; then
+    echo "[MUTATION] Mutasyon testi kalite kapısı devre dışı (AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED})."
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${AUTONOMOUS_MUTATION_STATS_PATH}")"
+  echo "[MUTATION] Mutasyon testi başlatılıyor: ${AUTONOMOUS_MUTATION_COMMAND}"
+  bash -lc "${AUTONOMOUS_MUTATION_COMMAND}"
+  mutation_exit=$?
+
+  echo "[MUTATION] Mutasyon sonuç özeti: ${AUTONOMOUS_MUTATION_RESULTS_COMMAND}"
+  bash -lc "${AUTONOMOUS_MUTATION_RESULTS_COMMAND}"
+  results_exit=$?
+  if [ "${results_exit}" -ne 0 ]; then
+    echo "[MUTATION] Sonuç özeti alınamadı (exit code: ${results_exit}); ana mutasyon sonucu korunacak."
+  fi
+
+  echo "[MUTATION] CI istatistikleri yazılıyor: ${AUTONOMOUS_MUTATION_STATS_PATH}"
+  bash -lc "${AUTONOMOUS_MUTATION_STATS_COMMAND}" > "${AUTONOMOUS_MUTATION_STATS_PATH}"
+  stats_exit=$?
+  if [ "${stats_exit}" -ne 0 ]; then
+    echo "[MUTATION] Mutasyon istatistik artefaktı üretilemedi (exit code: ${stats_exit}); ana mutasyon sonucu korunacak."
+  fi
+
+  if [ "${mutation_exit}" -ne 0 ]; then
+    echo "[HATA] Mutasyon testi başarısız oldu (exit code: ${mutation_exit}). Coverage yüksek olsa bile testler davranış değişikliklerini yakalayamıyor."
+    return 1
+  fi
+
+  echo "[OK] Mutasyon testi kalite kapısı geçti."
+  return 0
+}
+
 check_autonomous_quality_gate() {
   local test_exit="$1"
   local current_percent
@@ -191,7 +254,11 @@ check_autonomous_quality_gate() {
 
   if coverage_target_reached "${current_percent}" "${AUTONOMOUS_COVERAGE_TARGET}"; then
     echo "[OK] Otonom coverage iyileştirme hedefi sağlandı: %${current_percent} >= %${AUTONOMOUS_COVERAGE_TARGET}."
-    return 0
+    if run_mutation_quality_gate; then
+      return 0
+    fi
+    echo "[UYARI] Coverage hedefi sağlandı fakat mutasyon kalite kapısı başarısız oldu; daha güçlü davranış odaklı testler gerekiyor."
+    return 4
   fi
 
   echo "[INFO] Günlük local kalite kapısı geçti (run_tests.sh exit=0; gate=%${LOCAL_COVERAGE_GATE})."

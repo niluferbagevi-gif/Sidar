@@ -190,8 +190,9 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `AUTO_HEAL_ON_FAILURE=1` olduğunda mypy başarısızlığı için `scripts.auto_heal`
   döngüsünü tetikler.
 - **Uzun otonom döngü:** `autonomous_loop.sh`, `github_upload.py -> ./run_tests.sh ->
-  kalite kapısı` sırasını çalıştırır. Test çıkışı, coverage JSON okunamaması veya
-  `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında kalma durumunda iyileştirme döngüsüne girer.
+  kalite kapısı` sırasını çalıştırır. Test çıkışı, coverage JSON okunamaması,
+  `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında kalma veya mutasyon testi gate'inin
+  davranış değişikliklerini öldürememesi durumunda iyileştirme döngüsüne girer.
 - **CLI hızlı analiz:** `AutoHandle` içindeki `.heal <log_dosyası>` komutu logu okuyup
   `build_local_failure_context(...)` ve `build_ci_remediation_payload(...)` ile
   uygulanabilir scope/validation özeti üretir; bu yol patch uygulamaz, operatöre
@@ -257,6 +258,12 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 - `autonomous_loop.sh`, kalite kapısı veya otonom iyileştirme hedefi sağlanmazsa
   `CoverageAgent` ile `coverage.xml` analizini çalıştırır, `scripts/coverage_hotspots.py`
   ile düşük coverage dosyalarını listeler ve gerekiyorsa eksik test önerisi üretir.
+- Coverage hedefi sağlandığında otonom döngü ayrıca `mutmut` tabanlı mutasyon testi
+  gate'ini çalıştırır (`AUTONOMOUS_LOOP_MUTATION_ENABLED`,
+  `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`).
+  Mutasyon testi başarısızsa coverage %100 olsa bile test kalitesi yetersiz kabul edilir;
+  örn. aritmetik operatör, branch koşulu veya hata yolu mutasyonu testler tarafından
+  öldürülmüyorsa döngü davranış odaklı test üretimi için fail-closed devam eder.
 - Coverage kaynaklı test önerileri önce trivial assertion kontrolünden geçer
   (`assert True`, boş test vb.). Ardından `ReviewerAgent` semantik onayı alınmadan
   öneri uygulanabilir kabul edilmez.

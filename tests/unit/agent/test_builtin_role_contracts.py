@@ -158,6 +158,8 @@ def test_agents_documentation_covers_self_healing_loop_contract() -> None:
         "`_restore_self_heal_backups(...)`",
         "`awaiting_hitl`",
         "`CoverageAgent` ile `coverage.xml`",
+        "`AUTONOMOUS_LOOP_MUTATION_ENABLED`",
+        "`mutmut` tabanlı mutasyon testi",
         "`ReviewerAgent` semantik onayı",
     ]
 
@@ -178,6 +180,10 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "run_autonomous_coverage_batch" in script
     assert "write_missing_tests" in script
     assert "run_post_coverage_static_heal" in script
+    assert "run_mutation_quality_gate" in script
+    assert "AUTONOMOUS_LOOP_MUTATION_ENABLED" in script
+    assert "uv run --with mutmut mutmut run" in script
+    assert "Coverage hedefi sağlandı fakat mutasyon kalite kapısı başarısız oldu" in script
     assert "Mevcut coverage artefaktları bulundu" in script
     assert "raise SystemExit(asyncio.run(main()))" in script
 
