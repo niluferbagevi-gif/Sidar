@@ -35,6 +35,30 @@ diagnose_devcontainer_runtime() {
   fi
 }
 
+docker_repo_platform() {
+  [ -r /etc/os-release ] || return 1
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case " ${ID:-} ${ID_LIKE:-} " in
+    *" ubuntu "*) printf 'ubuntu' ;;
+    *" debian "*) printf 'debian' ;;
+    *) return 1 ;;
+  esac
+}
+
+docker_repo_codename() {
+  [ -r /etc/os-release ] || return 1
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  if [ "$(docker_repo_platform 2>/dev/null || true)" = "ubuntu" ] && [ -n "${UBUNTU_CODENAME:-}" ]; then
+    printf '%s' "${UBUNTU_CODENAME}"
+  elif [ -n "${VERSION_CODENAME:-}" ]; then
+    printf '%s' "${VERSION_CODENAME}"
+  else
+    return 1
+  fi
+}
+
 install_docker_apt_repository() {
   local sudo_cmd=()
   if [ "${EUID}" -ne 0 ]; then
@@ -46,28 +70,34 @@ install_docker_apt_repository() {
     fi
   fi
 
-  if [ ! -r /etc/os-release ]; then
-    warn "/etc/os-release okunamadı; Docker APT deposu eklenemiyor."
+  local platform codename
+  platform="$(docker_repo_platform 2>/dev/null || true)"
+  codename="$(docker_repo_codename 2>/dev/null || true)"
+  if [ -z "${platform}" ] || [ -z "${codename}" ]; then
+    warn "Docker resmi APT deposu için Debian/Ubuntu platform kod adı belirlenemedi; manuel kurulum gerekir."
     return 1
   fi
 
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  case " ${ID:-} ${ID_LIKE:-} " in
-    *" debian "*) ;;
-    *)
-      warn "Docker CLI otomatik APT kurulumu yalnızca Debian tabanlı container için desteklenir (ID=${ID:-unknown})."
-      return 1
-      ;;
-  esac
-
+  log "Docker CLI resmi Docker APT deposundan kurulacak (${platform}/${codename})."
+  "${sudo_cmd[@]}" rm -f /etc/apt/sources.list.d/docker.list
   "${sudo_cmd[@]}" apt-get update
   "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg
   "${sudo_cmd[@]}" install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL --retry 3 --retry-all-errors https://download.docker.com/linux/debian/gpg -o /tmp/docker.asc
-  "${sudo_cmd[@]}" install -m 0644 /tmp/docker.asc /etc/apt/keyrings/docker.asc
-  rm -f /tmp/docker.asc
-  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian %s stable\n' "$(dpkg --print-architecture)" "${VERSION_CODENAME}" | "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+  local keyring="/etc/apt/keyrings/docker-${platform}.asc"
+  local key_tmp
+  key_tmp="$(mktemp)"
+  if ! curl -fsSL --retry 3 --retry-all-errors "https://download.docker.com/linux/${platform}/gpg" -o "${key_tmp}"; then
+    rm -f "${key_tmp}"
+    warn "Docker APT GPG anahtarı indirilemedi."
+    return 1
+  fi
+  "${sudo_cmd[@]}" install -m 0644 "${key_tmp}" "${keyring}"
+  rm -f "${key_tmp}"
+
+  printf 'deb [arch=%s signed-by=%s] https://download.docker.com/linux/%s %s stable\n' \
+    "$(dpkg --print-architecture)" "${keyring}" "${platform}" "${codename}" | \
+    "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
 }
 
 ensure_docker_cli() {
@@ -90,9 +120,7 @@ ensure_docker_cli() {
       fi
     fi
 
-    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
-      install_docker_apt_repository || return 0
-    fi
+    install_docker_apt_repository || return 0
 
     "${sudo_cmd[@]}" apt-get update
     "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin
@@ -168,6 +196,54 @@ ensure_uv() {
     return 1
   fi
   ok "uv kuruldu: $(uv --version)"
+}
+
+
+dependency_fingerprint() {
+  local files=(pyproject.toml uv.lock .python-version)
+  {
+    printf 'SIDAR_PYTHON_VERSION=%s\n' "${SIDAR_PYTHON_VERSION}"
+    printf 'UV_SYNC_COMMAND=uv sync --frozen --all-extras\n'
+    local file
+    for file in "${files[@]}"; do
+      if [ -f "${file}" ]; then
+        sha256sum "${file}"
+      else
+        printf 'missing  %s\n' "${file}"
+      fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+
+should_force_uv_sync() {
+  case "${SIDAR_FORCE_UV_SYNC:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+uv_sync_marker_path() {
+  printf '%s/.sidar-uv-sync.sha256\n' "${UV_PROJECT_ENVIRONMENT}"
+}
+
+uv_sync_is_current() {
+  local marker_path="$1"
+  local expected_fingerprint="$2"
+
+  [ -f "${marker_path}" ] || return 1
+  [ "$(cat "${marker_path}" 2>/dev/null || true)" = "${expected_fingerprint}" ]
+}
+
+record_uv_sync_fingerprint() {
+  local marker_path="$1"
+  local fingerprint="$2"
+
+  mkdir -p "$(dirname "${marker_path}")"
+  printf '%s\n' "${fingerprint}" > "${marker_path}"
 }
 
 remove_virtualenv_with_reason() {
@@ -256,17 +332,30 @@ sync_python_environment() {
   remove_invalid_virtualenv "${UV_PROJECT_ENVIRONMENT}"
 
   local venv_python="${UV_PROJECT_ENVIRONMENT}/bin/python"
+  local venv_recreated=0
   if [ -x "${venv_python}" ]; then
     ok "Sanal ortam (${UV_PROJECT_ENVIRONMENT}) mevcut."
   else
     log "Sanal ortam hazırlanıyor: uv venv --python ${SIDAR_PYTHON_VERSION} ${UV_PROJECT_ENVIRONMENT}"
     uv venv --python "${SIDAR_PYTHON_VERSION}" "${UV_PROJECT_ENVIRONMENT}"
+    venv_recreated=1
   fi
 
-  log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
-  if ! uv sync --frozen --all-extras; then
-    warn "uv sync başarısız oldu. PyAudio derleme hatası görüyorsanız portaudio19-dev paketinin kurulu olduğundan emin olun."
-    return 1
+  local sync_fingerprint
+  local sync_marker
+  sync_fingerprint="$(dependency_fingerprint)"
+  sync_marker="$(uv_sync_marker_path)"
+
+  if [ "${venv_recreated}" -eq 0 ] && ! should_force_uv_sync && uv_sync_is_current "${sync_marker}" "${sync_fingerprint}"; then
+    ok "Geliştirici ortamı güncel; uv sync atlandı (zorlamak için SIDAR_FORCE_UV_SYNC=1)."
+  else
+    log "Geliştirici ortamı senkronlanıyor: uv sync --frozen --all-extras"
+    if ! uv sync --frozen --all-extras; then
+      warn "uv sync başarısız oldu. PyAudio derleme hatası görüyorsanız portaudio19-dev paketinin kurulu olduğundan emin olun."
+      return 1
+    fi
+    record_uv_sync_fingerprint "${sync_marker}" "${sync_fingerprint}"
+    ok "uv sync parmak izi kaydedildi: ${sync_marker}"
   fi
 
   if [ -x "${venv_python}" ]; then

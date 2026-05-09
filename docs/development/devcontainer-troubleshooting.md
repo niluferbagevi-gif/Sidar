@@ -33,15 +33,24 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
   gibi container dışındaki mutlak yollara bakan kırık symlink uyarıları tek başına
   hata değildir; setup betiği bunları, eksik `pyvenv.cfg home` yollarını ve yanlış
   Python minor sürümünü `uv sync` öncesinde temizleyip sanal ortamı deterministik
-  yeniden kurar. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı
-  dependency çözümü, network veya sistem paketi çıktısında aranmalıdır.
+  yeniden kurar. Başarılı sync sonrasında `.venv/.sidar-uv-sync.sha256` dosyasına
+  bağımlılık parmak izi yazılır; `pyproject.toml`, `uv.lock`, `.python-version` ve
+  Python minor sürümü değişmediyse sonraki `updateContentCommand` çalıştırmalarında
+  `uv sync` atlanır. Bağımlılıkların zorla yenilenmesi gerekiyorsa
+  `SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync` çalıştırılmalıdır.
+  Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı dependency çözümü,
+  network veya sistem paketi çıktısında aranmalıdır.
 
 
 ## Docker CLI ve daemon beklentisi
 
 Sidar Dev Container imajı, container içinde Docker istemcisini hazır bulundurmak için
 Docker resmi APT deposundan `docker-ce-cli`, `docker-buildx-plugin` ve
-`docker-compose-plugin` paketlerini kurar. Ayrıca `devcontainer.json`, host Docker
+`docker-compose-plugin` paketlerini kurar. Setup fallback'i Debian ve Ubuntu
+tabanlı özel imajları ayırt ederek Docker APT deposunu `debian/<codename>` veya
+`ubuntu/<codename>` olarak yazar; Ubuntu `noble` gibi ortamlarda hatalı
+`download.docker.com/linux/debian noble` deposu oluşursa sonraki çalıştırmada
+eski `docker.list` dosyasını yeniler. Ayrıca `devcontainer.json`, host Docker
 daemon'unu container içine güvenli şekilde kullanabilmek için
 `docker-outside-of-docker` feature'ını etkinleştirir.
 
@@ -84,6 +93,7 @@ WSL/host veya container bağlamında aşağıdaki komutlar çalıştırılabilir
 ```bash
 bash .devcontainer/host-preflight.sh
 bash .devcontainer/setup-codespaces.sh sync
+SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync
 uv run python --version
 bash -n .devcontainer/setup-codespaces.sh
 ```
