@@ -31,3 +31,9 @@ def test_devcontainer_build_env_matches_non_secret_container_env_defaults():
 
     for name, value in container_env.items():
         assert dockerfile_env.get(name) == value, name
+
+
+def test_devcontainer_generated_log_directory_is_gitignored():
+    gitignore = _read(".gitignore").splitlines()
+
+    assert ".devcontainer/logs/" in gitignore
