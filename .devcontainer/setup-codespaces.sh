@@ -141,10 +141,10 @@ ensure_docker_cli() {
 }
 
 ensure_system_dependencies() {
-  local packages=(portaudio19-dev)
+  local packages=(portaudio19-dev zstd)
 
   if ! command -v apt-get >/dev/null 2>&1; then
-    warn "apt-get bulunamadı; PyAudio/PortAudio sistem bağımlılığı otomatik doğrulanamadı."
+    warn "apt-get bulunamadı; PyAudio/PortAudio ve Ollama/zstd sistem bağımlılıkları otomatik doğrulanamadı."
     return 0
   fi
 
@@ -157,7 +157,7 @@ ensure_system_dependencies() {
   done
 
   if [ "${#missing[@]}" -eq 0 ]; then
-    ok "Python native sistem bağımlılıkları hazır: ${packages[*]}"
+    ok "Dev Container sistem bağımlılıkları hazır: ${packages[*]}"
     return 0
   fi
 
@@ -174,7 +174,7 @@ ensure_system_dependencies() {
 
   "${sudo_cmd[@]}" apt-get update
   "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
-  ok "Python native sistem bağımlılıkları kuruldu: ${missing[*]}"
+  ok "Dev Container sistem bağımlılıkları kuruldu: ${missing[*]}"
 }
 
 ensure_uv() {
@@ -389,6 +389,16 @@ install_ollama_if_requested() {
 
   if ! command -v sudo >/dev/null 2>&1; then
     warn "sudo bulunamadı; Ollama CLI otomatik kurulamadı. Manuel kurulum: https://ollama.com/download/linux"
+    return 0
+  fi
+
+  if ! command -v zstd >/dev/null 2>&1; then
+    warn "zstd bulunamadı; resmi Ollama kurulum betiği arşiv çıkarma aşamasında başarısız olabilir. Sistem bağımlılıkları tekrar doğrulanıyor."
+    ensure_system_dependencies || return 0
+  fi
+
+  if ! command -v zstd >/dev/null 2>&1; then
+    warn "zstd hâlâ bulunamadı; Ollama CLI otomatik kurulamadı. Manuel kurulum öncesi zstd paketini kurun."
     return 0
   fi
 

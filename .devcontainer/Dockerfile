@@ -37,7 +37,9 @@ RUN rm -f \
 # `uv sync --frozen --all-extras` installs the `voice` extra, whose PyAudio
 # wheel can fall back to a local build on Linux. Provide PortAudio headers at
 # image-build time so updateContent/postCreate dependency syncs do not fail with
-# `fatal error: portaudio.h: No such file or directory`.
+# `fatal error: portaudio.h: No such file or directory`. Also install zstd
+# before postCreate so the official Ollama installer can extract its current
+# Zstandard-compressed release archives reliably.
 #
 # Install the Docker client as well. Dev Containers still require a host Docker
 # daemon to build this image, but once the workspace is running Sidar scripts and
@@ -49,6 +51,7 @@ RUN apt-get update \
         curl \
         gnupg \
         portaudio19-dev \
+        zstd \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
