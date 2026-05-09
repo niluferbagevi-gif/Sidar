@@ -53,6 +53,12 @@ docker buildx version
 bash .devcontainer/host-preflight.sh
 ```
 
+Repo içi genel kurulum betiği de aynı ayrımı korur: `install_sidar.sh` Debian/Ubuntu
+hostlarda `DOCKER_CLI_INSTALL=auto` politikasıyla eksik Docker CLI'ı tamamlamayı dener,
+`--install-docker-cli` ile kurulum zorlanabilir ve `--skip-docker-cli` ile otomatik
+kurulum kapatılabilir. Bu adım CLI/Compose araçlarını sağlar; Docker daemon için hostta
+Docker Desktop/Engine veya erişilebilir bir remote daemon yine gereklidir.
+
 ## Sidar için beklenen ortam
 
 Sidar'ın varsayılan geliştirme ortamı Python `3.11`, `uv` ve yerel coding modeli olarak

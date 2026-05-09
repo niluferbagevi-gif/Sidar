@@ -405,6 +405,144 @@ download_verified_script() {
     DOWNLOADED_SCRIPT_FILE="$script_file"
 }
 
+docker_repo_platform() {
+    if [[ ! -r /etc/os-release ]]; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    case " ${ID:-} ${ID_LIKE:-} " in
+        *" ubuntu "*) echo "ubuntu" ;;
+        *" debian "*) echo "debian" ;;
+        *) return 1 ;;
+    esac
+}
+
+docker_repo_codename() {
+    if [[ ! -r /etc/os-release ]]; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [[ "$(docker_repo_platform 2>/dev/null || true)" == "ubuntu" && -n "${UBUNTU_CODENAME:-}" ]]; then
+        echo "$UBUNTU_CODENAME"
+    elif [[ -n "${VERSION_CODENAME:-}" ]]; then
+        echo "$VERSION_CODENAME"
+    else
+        return 1
+    fi
+}
+
+install_docker_cli_from_apt() {
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        warn "Çevrimdışı modda Docker CLI APT deposundan kurulamaz; offline bundle veya manuel kurulum gerekir."
+        return 1
+    fi
+    if ! command -v apt-get &>/dev/null; then
+        warn "apt-get bulunamadı; Docker CLI otomatik kurulumu bu platformda desteklenmiyor."
+        return 1
+    fi
+    if ! command -v curl &>/dev/null; then
+        warn "curl bulunamadı; Docker APT anahtarı indirilemediği için Docker CLI kurulumu atlandı."
+        return 1
+    fi
+
+    local docker_platform=""
+    local docker_codename=""
+    docker_platform="$(docker_repo_platform 2>/dev/null || true)"
+    docker_codename="$(docker_repo_codename 2>/dev/null || true)"
+    if [[ -z "$docker_platform" || -z "$docker_codename" ]]; then
+        warn "Docker resmi APT deposu için Debian/Ubuntu platform kod adı belirlenemedi; manuel kurulum gerekir."
+        return 1
+    fi
+
+    local -a sudo_cmd=()
+    if [[ "${EUID}" -ne 0 ]]; then
+        if command -v sudo &>/dev/null; then
+            sudo_cmd=(sudo)
+        else
+            warn "sudo bulunamadı; Docker CLI paketleri otomatik kurulamadı."
+            return 1
+        fi
+    fi
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        if [[ "${#sudo_cmd[@]}" -gt 0 ]] && ! sudo -n true >/dev/null 2>&1; then
+            warn "--ci/--no-interaction modunda Docker CLI kurulumu için parolasız sudo yok. Manuel: sudo apt-get install docker-ce-cli docker-buildx-plugin docker-compose-plugin"
+            return 1
+        fi
+    fi
+
+    info "Docker CLI resmi Docker APT deposundan kuruluyor (${docker_platform}/${docker_codename})."
+    "${sudo_cmd[@]}" apt-get update
+    "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg
+    "${sudo_cmd[@]}" install -m 0755 -d /etc/apt/keyrings
+
+    local keyring="/etc/apt/keyrings/docker-${docker_platform}.asc"
+    local key_tmp=""
+    key_tmp=$(mktemp)
+    if ! curl -fsSL --retry 3 --retry-all-errors "https://download.docker.com/linux/${docker_platform}/gpg" -o "$key_tmp"; then
+        rm -f "$key_tmp"
+        warn "Docker APT GPG anahtarı indirilemedi."
+        return 1
+    fi
+    "${sudo_cmd[@]}" install -m 0644 "$key_tmp" "$keyring"
+    rm -f "$key_tmp"
+
+    printf 'deb [arch=%s signed-by=%s] https://download.docker.com/linux/%s %s stable\n' \
+        "$(dpkg --print-architecture)" "$keyring" "$docker_platform" "$docker_codename" | \
+        "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+    "${sudo_cmd[@]}" apt-get update
+    "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        docker-ce-cli docker-buildx-plugin docker-compose-plugin
+
+    if docker_cli_healthy; then
+        ok "Docker CLI kuruldu: $(docker --version)"
+    else
+        warn "Docker CLI paketleri kuruldu ancak 'docker --version' sağlıklı çalışmadı."
+        return 1
+    fi
+
+    if docker compose version &>/dev/null; then
+        ok "Docker Compose v2 hazır: $(docker compose version)"
+    else
+        warn "Docker Compose v2 eklentisi kurulum sonrası doğrulanamadı."
+    fi
+}
+
+ensure_docker_cli_available() {
+    local mode="${DOCKER_CLI_INSTALL_MODE:-auto}"
+    case "$mode" in
+        auto|always|never) ;;
+        true|yes|1) mode="always" ;;
+        false|no|0) mode="never" ;;
+        *)
+            warn "DOCKER_CLI_INSTALL_MODE=${mode} geçersiz; auto kabul edilecek. Desteklenen: auto|always|never."
+            mode="auto"
+            ;;
+    esac
+
+    if docker_cli_healthy; then
+        ok "Docker CLI hazır: $(docker --version)"
+        return 0
+    fi
+
+    if [[ "$mode" == "never" ]]; then
+        warn "Docker CLI bulunamadı/sağlıksız; DOCKER_CLI_INSTALL_MODE=never olduğu için otomatik kurulum atlandı."
+        return 1
+    fi
+
+    if [[ "$WSL2" == true && "$mode" != "always" ]]; then
+        warn "WSL2 ortamında Docker CLI bulunamadı. Öncelik Docker Desktop WSL Integration olmalı; otomatik APT kurulumu için --install-docker-cli veya DOCKER_CLI_INSTALL=always kullanın."
+        return 1
+    fi
+
+    install_docker_cli_from_apt
+}
+
 ensure_docker_daemon_running() {
     if ! docker_cli_healthy; then
         return 1
@@ -1319,6 +1457,7 @@ AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
 OFFLINE_MODE=false
 OFFLINE_PACKAGES_DIR=""
+DOCKER_CLI_INSTALL_MODE="${DOCKER_CLI_INSTALL:-auto}"
 PLAYWRIGHT_BROWSERS_MODE="auto"
 CLI_MODE_RAW=""
 CLI_ENV_RAW=""
@@ -1367,6 +1506,8 @@ for arg in "$@"; do
         --with-browsers) PLAYWRIGHT_BROWSERS_MODE="always" ;;
         --skip-browsers) PLAYWRIGHT_BROWSERS_MODE="never" ;;
         --offline|--air-gapped) OFFLINE_MODE=true ;;
+        --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
+        --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -1379,7 +1520,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
@@ -1410,6 +1551,8 @@ for arg in "$@"; do
             echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
             echo "  --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla"
             echo "  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan"
+            echo "  --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla"
+            echo "  --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla"
             echo ""
             echo "  Etkileşimsiz çevre değişkenleri:"
             echo "    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)"
@@ -1420,9 +1563,10 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
 
@@ -1465,6 +1609,11 @@ OFFLINE_MODE_RAW="$(normalize_bool "${OFFLINE_INSTALL:-${AIR_GAPPED_INSTALL:-}}"
 if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
     OFFLINE_MODE=true
 fi
+
+case "${DOCKER_CLI_INSTALL_MODE}" in
+    auto|always|never|true|false|yes|no|1|0) ;;
+    *) fail "Geçersiz DOCKER_CLI_INSTALL değeri: '${DOCKER_CLI_INSTALL_MODE}'. Desteklenen: auto|always|never" ;;
+esac
 
 PLAYWRIGHT_BROWSERS_RAW="$(normalize_bool "${INSTALL_PLAYWRIGHT_BROWSERS:-}")"
 if [[ "$PLAYWRIGHT_BROWSERS_RAW" == "true" ]]; then
@@ -1820,6 +1969,8 @@ install_system_dependencies() {
             curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
             postgresql-client-common postgresql-client
 
+        ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."
+
         info "Node.js (v${node_target_major}.x) durumu kontrol ediliyor..."
         local node_bin=""
         node_bin="$(resolve_native_binary_path node || true)"
@@ -1997,6 +2148,8 @@ ensure_prerequisites() {
     fi
 
     # Docker / Docker Compose (özet komutları için önerilir)
+    ensure_docker_cli_available || true
+
     local docker_version_check_ok=false
     local docker_version_error=""
     if command -v docker &>/dev/null; then

@@ -160,6 +160,9 @@ lora = [
 gpu = [
   "nvidia-ml-py~=12.560.30",
 ]
+# Python Docker SDK for sandbox integrations. This does not install the
+# system-level Docker CLI/daemon; use install_sidar.sh prepare-system or the
+# Dev Container feature setup for docker/buildx/compose binaries.
 sandbox = [
   "docker~=7.1.0",
 ]
