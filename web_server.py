@@ -74,7 +74,12 @@ from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from config import Config
 from core.ci_remediation import build_ci_failure_context
-from core.db import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
+from core.db import (
+    ContentAssetRecord,
+    CoverageTaskRecord,
+    MarketingCampaignRecord,
+    OperationChecklistRecord,
+)
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
 from core.llm_metrics import (
@@ -1646,6 +1651,10 @@ def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
         return ("agents", "register", "*")
     if path.startswith("/api/swarm/"):
         return ("swarm", "execute", "*")
+    if path.startswith("/api/operations/"):
+        return ("operations", "write" if request.method != "GET" else "read", "*")
+    if path.startswith("/api/qa/coverage/"):
+        return ("coverage", "write" if request.method != "GET" else "read", "*")
     if path.startswith("/admin/"):
         return ("admin", "manage", "*")
     if path.startswith("/ws/"):
@@ -4834,7 +4843,125 @@ class _CampaignCreateRequest(BaseModel):
     initial_checklists: list[_OperationChecklistCreateRequest] = Field(default_factory=list)
 
 
+class _PoyrazToolRunRequest(BaseModel):
+    tool_name: str = Field(..., min_length=1, max_length=80)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class _LandingPageDraftRequest(BaseModel):
+    brand_name: str = Field(..., min_length=1, max_length=160)
+    offer: str = Field(..., min_length=1, max_length=600)
+    audience: str = Field(..., min_length=1, max_length=400)
+    call_to_action: str = Field(..., min_length=1, max_length=160)
+    tone: str = Field(default="professional", max_length=64)
+    sections: list[str] = Field(default_factory=list)
+    campaign_id: int | None = Field(default=None)
+    store_asset: bool = Field(default=False)
+    asset_title: str = Field(default="Landing Page Taslağı", max_length=160)
+    channel: str = Field(default="web", max_length=64)
+
+
+class _CampaignCopyGenerateRequest(BaseModel):
+    campaign_name: str = Field(..., min_length=1, max_length=160)
+    objective: str = Field(..., min_length=1, max_length=400)
+    audience: str = Field(..., min_length=1, max_length=400)
+    channels: list[str] = Field(default_factory=list)
+    offer: str = Field(default="", max_length=600)
+    tone: str = Field(default="professional", max_length=64)
+    call_to_action: str = Field(default="", max_length=160)
+    campaign_id: int | None = Field(default=None)
+    store_asset: bool = Field(default=False)
+    asset_title: str = Field(default="Kampanya Kopyası", max_length=160)
+
+
+class _ServiceOperationsPlanRequest(BaseModel):
+    campaign_id: int | None = Field(default=None)
+    campaign_name: str = Field(default="", max_length=160)
+    service_name: str = Field(default="", max_length=160)
+    audience: str = Field(default="", max_length=400)
+    menu_plan: dict[str, list[str]] = Field(default_factory=dict)
+    vendor_assignments: dict[str, str] = Field(default_factory=dict)
+    timeline: list[str] = Field(default_factory=list)
+    notes: str = Field(default="", max_length=2000)
+    persist_checklist: bool = Field(default=True)
+    checklist_title: str = Field(default="Operasyon Planı", max_length=160)
+
+
+class _CoverageAnalyzeRequest(BaseModel):
+    coverage_xml: str = Field(default="coverage.xml", max_length=512)
+    coveragerc: str = Field(default=".coveragerc", max_length=512)
+    coverage_output: str = Field(default="")
+    limit: int = Field(default=25, ge=1, le=200)
+
+
+class _CoverageGenerateRequest(BaseModel):
+    coverage_finding: dict[str, Any] = Field(default_factory=dict)
+    coveragerc: dict[str, Any] = Field(default_factory=dict)
+    target_path: str = Field(default="", max_length=512)
+    pytest_output: str = Field(default="")
+    analysis: dict[str, Any] = Field(default_factory=dict)
+
+
+class _CoverageBatchRequest(BaseModel):
+    coverage_xml: str = Field(default="coverage.xml", max_length=512)
+    coveragerc: str = Field(default=".coveragerc", max_length=512)
+    limit: int = Field(default=10, ge=1, le=100)
+    batch_size: int = Field(default=1, ge=1, le=10)
+    append: bool = Field(default=True)
+
+
 _teams_mgr_instance = None
+_poyraz_agent_instance: Any | None = None
+_coverage_agent_instance: Any | None = None
+
+
+async def _get_poyraz_agent_instance() -> Any:
+    """Return a reusable PoyrazAgent for REST operations endpoints."""
+    global _poyraz_agent_instance
+    if _poyraz_agent_instance is None:
+        from agent.roles.poyraz_agent import PoyrazAgent
+
+        _poyraz_agent_instance = PoyrazAgent(config=cfg)
+    return _poyraz_agent_instance
+
+
+async def _get_coverage_agent_instance() -> Any:
+    """Return a reusable CoverageAgent for QA/Coverage REST endpoints."""
+    global _coverage_agent_instance
+    if _coverage_agent_instance is None:
+        from agent.roles.coverage_agent import CoverageAgent
+
+        _coverage_agent_instance = CoverageAgent(config=cfg)
+    return _coverage_agent_instance
+
+
+def _decode_agent_tool_result(raw_result: Any) -> dict[str, Any]:
+    """Normalize agent tool output for API clients without hiding plain-text output."""
+    if isinstance(raw_result, dict):
+        return raw_result
+    text_result = str(raw_result or "")
+    try:
+        parsed = json.loads(text_result)
+    except json.JSONDecodeError:
+        return {"success": bool(text_result.strip()), "output": text_result}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"success": True, "output": parsed}
+
+
+def _serialize_coverage_task(record: CoverageTaskRecord) -> dict[str, Any]:
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "requester_role": str(getattr(record, "requester_role", "") or ""),
+        "command": str(getattr(record, "command", "") or ""),
+        "status": str(getattr(record, "status", "") or ""),
+        "target_path": str(getattr(record, "target_path", "") or ""),
+        "suggested_test_path": str(getattr(record, "suggested_test_path", "") or ""),
+        "review_payload_json": str(getattr(record, "review_payload_json", "{}") or "{}"),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
 
 
 def _get_teams_manager() -> Any:
@@ -5019,6 +5146,192 @@ async def api_operations_add_checklist(
         owner_user_id=str(getattr(_user, "id", "") or ""),
     )
     return JSONResponse({"success": True, "checklist": _serialize_operation_checklist(checklist)})
+
+
+@app.post(
+    "/api/operations/poyraz/run",
+    summary="Poyraz operasyon aracını çalıştır",
+    tags=["Operations"],
+)
+async def api_operations_poyraz_run(
+    req: _PoyrazToolRunRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    """React/REST istemcileri için PoyrazAgent araçlarına yapılandırılmış köprü."""
+    allowed_tools = {
+        "build_landing_page",
+        "generate_campaign_copy",
+        "create_marketing_campaign",
+        "store_content_asset",
+        "create_operation_checklist",
+        "plan_service_operations",
+        "ingest_video_insights",
+    }
+    tool_name = req.tool_name.strip()
+    if tool_name not in allowed_tools:
+        raise HTTPException(
+            status_code=400, detail="Bu Poyraz aracı REST operasyon köprüsünde desteklenmiyor."
+        )
+    payload = {**dict(req.payload or {}), "tenant_id": _get_user_tenant(_user)}
+    if "owner_user_id" not in payload:
+        payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
+    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
+    raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
+    result = _decode_agent_tool_result(raw_result)
+    return JSONResponse(
+        {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
+    )
+
+
+@app.post(
+    "/api/operations/landing-page",
+    summary="Poyraz landing page taslağı üret",
+    tags=["Operations"],
+)
+async def api_operations_generate_landing_page(
+    req: _LandingPageDraftRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    payload = req.model_dump()
+    payload["tenant_id"] = _get_user_tenant(_user)
+    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
+    raw_result = await poyraz.run_task(
+        f"build_landing_page|{json.dumps(payload, ensure_ascii=False)}"
+    )
+    result = _decode_agent_tool_result(raw_result)
+    return JSONResponse(
+        {"success": True, "output": result.get("output", raw_result), "result": result}
+    )
+
+
+@app.post(
+    "/api/operations/campaign-copy",
+    summary="Poyraz kampanya kopyası üret",
+    tags=["Operations"],
+)
+async def api_operations_generate_campaign_copy(
+    req: _CampaignCopyGenerateRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    payload = req.model_dump()
+    payload["tenant_id"] = _get_user_tenant(_user)
+    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
+    raw_result = await poyraz.run_task(
+        f"generate_campaign_copy|{json.dumps(payload, ensure_ascii=False)}"
+    )
+    result = _decode_agent_tool_result(raw_result)
+    return JSONResponse(
+        {"success": True, "output": result.get("output", raw_result), "result": result}
+    )
+
+
+@app.post(
+    "/api/operations/service-plan",
+    summary="Poyraz servis operasyon planı üret",
+    tags=["Operations"],
+)
+async def api_operations_plan_service(
+    req: _ServiceOperationsPlanRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    payload = req.model_dump()
+    payload["tenant_id"] = _get_user_tenant(_user)
+    payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
+    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
+    raw_result = await poyraz.run_task(
+        f"plan_service_operations|{json.dumps(payload, ensure_ascii=False)}"
+    )
+    result = _decode_agent_tool_result(raw_result)
+    return JSONResponse({"success": bool(result.get("success", True)), "result": result})
+
+
+@app.get(
+    "/api/qa/coverage/tasks",
+    summary="Coverage görev geçmişini listele",
+    tags=["QA", "Coverage"],
+)
+async def api_qa_coverage_tasks(
+    status: str = "",
+    limit: int = 50,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    agent = await _resolve_agent_instance()
+    tasks = await agent.memory.db.list_coverage_tasks(
+        tenant_id=_get_user_tenant(_user), status=status or None, limit=limit
+    )
+    return JSONResponse(
+        {"success": True, "tasks": [_serialize_coverage_task(item) for item in tasks]}
+    )
+
+
+@app.post(
+    "/api/qa/coverage/analyze",
+    summary="Coverage raporunu analiz et",
+    tags=["QA", "Coverage"],
+)
+async def api_qa_coverage_analyze(
+    req: _CoverageAnalyzeRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
+    raw_result = await coverage_agent._tool_analyze_coverage_report(
+        json.dumps(req.model_dump(), ensure_ascii=False)
+    )
+    result = _decode_agent_tool_result(raw_result)
+    return JSONResponse({"success": True, "analysis": result, "tenant_id": _get_user_tenant(_user)})
+
+
+@app.post(
+    "/api/qa/coverage/generate",
+    summary="Coverage bulgusu için test adayı üret",
+    tags=["QA", "Coverage"],
+)
+async def api_qa_coverage_generate(
+    req: _CoverageGenerateRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
+    payload = req.model_dump()
+    raw_candidate = await coverage_agent._tool_generate_missing_tests(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    rejection_reason = coverage_agent._candidate_rejection_reason(
+        str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
+    )
+    return JSONResponse(
+        {
+            "success": not bool(rejection_reason),
+            "candidate": str(raw_candidate or ""),
+            "quality_rejection_reason": rejection_reason,
+            "tenant_id": _get_user_tenant(_user),
+        }
+    )
+
+
+@app.post(
+    "/api/qa/coverage/batch",
+    summary="CoverageAgent otonom batch iyileştirme çalıştır",
+    tags=["QA", "Coverage"],
+)
+async def api_qa_coverage_batch(
+    req: _CoverageBatchRequest,
+    _user: Any = Depends(_get_request_user),
+) -> JSONResponse:
+    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
+    result = await coverage_agent.run_autonomous_coverage_batch(
+        coverage_xml=req.coverage_xml,
+        coveragerc=req.coveragerc,
+        limit=req.limit,
+        batch_size=req.batch_size,
+        append=req.append,
+    )
+    return JSONResponse(
+        {
+            "success": bool(result.get("success", False)),
+            "result": result,
+            "tenant_id": _get_user_tenant(_user),
+        }
+    )
 
 
 # ─────────────────────────────────────────────

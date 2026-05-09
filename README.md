@@ -417,6 +417,7 @@ Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapıla
 - Ollama CLI varsayılan olarak kurulmaya çalışılır, servis `postStartCommand` ile arka planda başlatılır ve standart coding modeli `qwen2.5-coder:7b` olarak tanımlanır. Büyük model indirmesini Codespaces açılışında zorunlu kılmak istemiyorsanız varsayılan `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=0` kalır; önceden indirme için Codespaces secret/env olarak `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1` verebilirsiniz.
 - Codespaces ortamında otonom coverage kampanyası için `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full` ve `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ayarlanır. Lokal/CI quality gate ise hâlâ `.coveragerc` ve `run_tests.sh` profilinden okunur.
 - CoverageAgent otonom test yazımında yalnız LLM Reviewer kararına güvenmez; AST tabanlı kalite kapısı `assert True`, sabit karşılaştırma, import-only smoke test, hedef modülle ilişkisiz lokal hesap ve hedef çağrısına bağlanmayan assertion içeren adayları fail-closed reddeder.
+- React SPA için Poyraz operasyonları ve QA coverage akışları artık script çağrılarına bağlı değildir: `/api/operations/landing-page`, `/api/operations/campaign-copy`, `/api/operations/service-plan`, `/api/operations/poyraz/run` ve `/api/qa/coverage/*` FastAPI köprüleri ajan araçlarını REST üzerinden çalıştırır.
 - `hostRequirements.gpu=optional` GPU'lu Codespaces makinesi seçilebilen ortamlarda donanım hızlandırmayı görünür kılar; CPU-only makinede `run_tests.sh` `nvidia-smi` bulamazsa GPU testlerini güvenli şekilde atlar.
 
 Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerine GitHub Codespaces secrets/repository secrets kullanın. Secret değerleri gerektiğinde Codespaces ortam değişkeni olarak gelir; `.env.test.example` yalnız güvenli yerel varsayılanlar içindir.
@@ -609,7 +610,7 @@ Sidar/
 ├── docker/                 # Prometheus + Grafana provisioning dosyaları
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
-├── web_server.py           # 62 REST endpoint + `/ws/chat` + `/ws/voice`
+├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
 ├── PROJE_RAPORU.md         # Mimari + kalite raporu

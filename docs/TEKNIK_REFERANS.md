@@ -54,7 +54,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
 - **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
-- **`web_server.py`**: FastAPI kontrol düzlemi 62 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
+- **`web_server.py`**: FastAPI kontrol düzlemi 86 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
 - **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
 - **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
 - **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.
@@ -159,7 +159,7 @@ Rate-limit katmanı Redis erişemezse local bellek fallback mekanizmasıyla çal
 
 ### 3.2 REST endpoint envanteri (tam)
 
-Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **62 REST endpoint** bulunmaktadır; bu turda proaktif otonomi ve federation yüzeyleri de envantere eklenmiştir.
+Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **86 REST endpoint** bulunmaktadır; bu turda proaktif otonomi ve federation yüzeyleri de envantere eklenmiştir.
 
 | Method | Path | Not |
 |---|---|---|
@@ -222,6 +222,14 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/api/integrations/jira/issue` | Jira issue oluştur |
 | GET | `/api/integrations/jira/issues` | Jira issue ara (JQL) |
 | POST | `/api/integrations/teams/send` | Teams mesaj gönder |
+| POST | `/api/operations/landing-page` | PoyrazAgent landing page taslağı üretir |
+| POST | `/api/operations/campaign-copy` | PoyrazAgent kampanya kopyası üretir |
+| POST | `/api/operations/service-plan` | PoyrazAgent servis operasyon planı üretir |
+| POST | `/api/operations/poyraz/run` | İzinli PoyrazAgent operasyon aracını REST üzerinden çalıştırır |
+| GET | `/api/qa/coverage/tasks` | Coverage görev geçmişini listeler |
+| POST | `/api/qa/coverage/analyze` | CoverageAgent rapor analizi yapar |
+| POST | `/api/qa/coverage/generate` | Coverage bulgusu için kalite kapılı test adayı üretir |
+| POST | `/api/qa/coverage/batch` | CoverageAgent otonom batch iyileştirme akışını çalıştırır |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
 | POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature`) |
 

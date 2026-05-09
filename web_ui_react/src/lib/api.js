@@ -42,3 +42,67 @@ export async function fetchJson(url, options = {}) {
   }
   return payload;
 }
+
+export function runPoyrazOperation(toolName, payload = {}) {
+  return fetchJson("/api/operations/poyraz/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tool_name: toolName, payload }),
+  });
+}
+
+export function generateLandingPage(payload) {
+  return fetchJson("/api/operations/landing-page", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function generateCampaignCopy(payload) {
+  return fetchJson("/api/operations/campaign-copy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function planServiceOperations(payload) {
+  return fetchJson("/api/operations/service-plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function listCoverageTasks(params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson(`/api/qa/coverage/tasks${suffix}`);
+}
+
+export function analyzeCoverage(payload = {}) {
+  return fetchJson("/api/qa/coverage/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generateCoverageCandidate(payload = {}) {
+  return fetchJson("/api/qa/coverage/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function runCoverageBatch(payload = {}) {
+  return fetchJson("/api/qa/coverage/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

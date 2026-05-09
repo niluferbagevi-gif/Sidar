@@ -5,6 +5,14 @@ import {
   setStoredToken,
   buildAuthHeaders,
   fetchJson,
+  runPoyrazOperation,
+  generateLandingPage,
+  generateCampaignCopy,
+  planServiceOperations,
+  listCoverageTasks,
+  analyzeCoverage,
+  generateCoverageCandidate,
+  runCoverageBatch,
 } from "./api.js";
 
 const mockFetch = (response) => {
@@ -246,5 +254,63 @@ describe("fetchJson — hata yanıtları", () => {
 
     mockFetch(response);
     await expect(fetchJson("/api/broken-response")).rejects.toThrow("ok değeri okunamadı");
+  });
+});
+
+
+describe("agent API bridge helpers", () => {
+  function mockJsonFetch() {
+    return mockFetch({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({ success: true }),
+    });
+  }
+
+  it("posts Poyraz operation payloads to operation endpoints", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await runPoyrazOperation("create_operation_checklist", { title: "Todo" });
+    await generateLandingPage({ brand_name: "Sidar" });
+    await generateCampaignCopy({ campaign_name: "Launch" });
+    await planServiceOperations({ campaign_name: "Launch" });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/operations/poyraz/run",
+      "/api/operations/landing-page",
+      "/api/operations/campaign-copy",
+      "/api/operations/service-plan",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      tool_name: "create_operation_checklist",
+      payload: { title: "Todo" },
+    });
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options.method).toBe("POST");
+      expect(options.headers["Content-Type"]).toBe("application/json");
+    }
+  });
+
+  it("uses QA coverage REST endpoints", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await listCoverageTasks({ status: "tests_written", limit: 5 });
+    await analyzeCoverage({ limit: 3 });
+    await generateCoverageCandidate({ coverage_finding: { target_path: "src/a.py" } });
+    await runCoverageBatch({ limit: 2 });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/qa/coverage/tasks?status=tests_written&limit=5",
+    );
+    expect(fetchMock.mock.calls.slice(1).map(([url]) => url)).toEqual([
+      "/api/qa/coverage/analyze",
+      "/api/qa/coverage/generate",
+      "/api/qa/coverage/batch",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ limit: 3 });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+      coverage_finding: { target_path: "src/a.py" },
+    });
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ limit: 2 });
   });
 });

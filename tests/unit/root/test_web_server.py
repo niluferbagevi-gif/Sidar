@@ -1861,9 +1861,7 @@ def test_validate_plugin_source_passes_when_call_func_is_neither_name_nor_simple
     # `obj.attr.attr()` -> func: Attribute(value=Attribute(...))
     web_server._validate_plugin_source("import math\nmath.sqrt.__call__(4)\n")
     # `getattr(x, 'y')()` -> func: Call(...)
-    web_server._validate_plugin_source(
-        "def make():\n    return lambda: 1\n\nmake()()\n"
-    )
+    web_server._validate_plugin_source("def make():\n    return lambda: 1\n\nmake()()\n")
     # subscript çağrısı: `funcs[0]()`
     web_server._validate_plugin_source("funcs = []\n# noqa: defensive subscript example\n")
 
@@ -3121,6 +3119,115 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
     fallback = await web_server.spa_fallback("deep/link")
     assert fallback.status_code == 200
     assert b"fallback" in fallback.body
+
+
+@pytest.mark.asyncio
+async def test_operations_and_qa_agent_api_bridges(monkeypatch):
+    user = SimpleNamespace(id="u-api", tenant_id="tenant-api")
+    poyraz_calls = []
+
+    class _Poyraz:
+        async def run_task(self, prompt):
+            poyraz_calls.append(prompt)
+            if prompt.startswith("plan_service_operations|"):
+                return json.dumps({"success": True, "service_plan": {"items": []}})
+            return "Poyraz output"
+
+    monkeypatch.setattr(web_server, "_get_poyraz_agent_instance", lambda: _Poyraz())
+
+    landing = await web_server.api_operations_generate_landing_page(
+        web_server._LandingPageDraftRequest(
+            brand_name="Sidar",
+            offer="Demo",
+            audience="KOBİ",
+            call_to_action="Başla",
+        ),
+        _user=user,
+    )
+    campaign_copy = await web_server.api_operations_generate_campaign_copy(
+        web_server._CampaignCopyGenerateRequest(
+            campaign_name="Launch",
+            objective="Lead",
+            audience="KOBİ",
+            channels=["instagram"],
+        ),
+        _user=user,
+    )
+    service_plan = await web_server.api_operations_plan_service(
+        web_server._ServiceOperationsPlanRequest(campaign_name="Launch", service_name="Setup"),
+        _user=user,
+    )
+    tool_run = await web_server.api_operations_poyraz_run(
+        web_server._PoyrazToolRunRequest(
+            tool_name="create_operation_checklist",
+            payload={"title": "Todo", "items": ["a"]},
+        ),
+        _user=user,
+    )
+
+    assert landing.status_code == 200
+    assert b"Poyraz output" in landing.body
+    assert campaign_copy.status_code == 200
+    assert service_plan.status_code == 200
+    assert tool_run.status_code == 200
+    assert all('"tenant_id": "tenant-api"' in call for call in poyraz_calls)
+    assert any("owner_user_id" in call for call in poyraz_calls)
+
+    class _Coverage:
+        async def _tool_analyze_coverage_report(self, raw):
+            payload = json.loads(raw)
+            return json.dumps({"summary": "ok", "limit": payload["limit"], "findings": []})
+
+        async def _tool_generate_missing_tests(self, raw):
+            payload = json.loads(raw)
+            assert payload["coverage_finding"]["target_path"] == "src/a.py"
+            return "from src.a import compute\n\ndef test_a():\n    result = compute()\n    assert result == 'a'"
+
+        def _candidate_rejection_reason(self, _candidate, finding=None):
+            return "" if finding and finding.get("target_path") == "src/a.py" else "bad"
+
+        async def run_autonomous_coverage_batch(self, **kwargs):
+            return {"success": True, "status": "batch_completed", "kwargs": kwargs}
+
+    monkeypatch.setattr(web_server, "_get_coverage_agent_instance", lambda: _Coverage())
+
+    analyze = await web_server.api_qa_coverage_analyze(
+        web_server._CoverageAnalyzeRequest(limit=3), _user=user
+    )
+    generate = await web_server.api_qa_coverage_generate(
+        web_server._CoverageGenerateRequest(coverage_finding={"target_path": "src/a.py"}),
+        _user=user,
+    )
+    batch = await web_server.api_qa_coverage_batch(
+        web_server._CoverageBatchRequest(limit=2, batch_size=1), _user=user
+    )
+
+    assert b'"limit":3' in analyze.body
+    assert b'"success":true' in generate.body
+    assert b'"batch_completed"' in batch.body
+
+    class _DB:
+        async def list_coverage_tasks(self, **kwargs):
+            assert kwargs["tenant_id"] == "tenant-api"
+            return [
+                SimpleNamespace(
+                    id=1,
+                    tenant_id="tenant-api",
+                    requester_role="coverage",
+                    command="pytest",
+                    status="tests_written",
+                    target_path="src/a.py",
+                    suggested_test_path="tests/test_a.py",
+                    review_payload_json="{}",
+                )
+            ]
+
+    monkeypatch.setattr(
+        web_server, "_get_agent_instance", lambda: SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+    )
+    tasks = await web_server.api_qa_coverage_tasks(_user=user)
+    assert b'"tasks"' in tasks.body
+    assert b'"src/a.py"' in tasks.body
 
 
 @pytest.mark.asyncio
