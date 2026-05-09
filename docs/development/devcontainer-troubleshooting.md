@@ -18,7 +18,11 @@ Aşağıdaki satırlar tek başına hata kabul edilmez:
 
 Gerçek sorun ararken şu satırlara odaklanılmalıdır:
 
-- `docker version` veya `docker info` komutlarında erişim hatası.
+- `docker version` veya `docker info` komutlarında erişim hatası ya da uzun süre
+  ilerlememe. Sidar, bu aşamayı daha okunur hale getirmek için `initializeCommand`
+  içinde `.devcontainer/host-preflight.sh` çalıştırır ve Docker komutlarını timeout ile
+  doğrular. Preflight varsayılan olarak uyarı üretip akışı sürdürür; yerel makinede
+  fail-fast davranışı istenirse `SIDAR_DEVCONTAINER_PREFLIGHT_STRICT=1` kullanılabilir.
 - `read-configuration` sonrasında JSON/şema hatası.
 - Feature kurulumunda `apt-get update`, GPG key veya network hatası.
 - `postCreateCommand` sırasında `uv sync --frozen --all-extras` veya Python sürüm
@@ -32,11 +36,11 @@ hizaya getirilmiştir.
 
 ## Hızlı kontrol komutları
 
-Container içinde aşağıdaki komutlar çalıştırılabilir:
+WSL/host veya container bağlamında aşağıdaki komutlar çalıştırılabilir:
 
 ```bash
+bash .devcontainer/host-preflight.sh
 bash .devcontainer/setup-codespaces.sh sync
 uv run python --version
 bash -n .devcontainer/setup-codespaces.sh
 ```
-

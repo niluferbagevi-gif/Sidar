@@ -62,5 +62,6 @@
     }
   },
   "waitFor": "postCreateCommand",
-  "updateContentCommand": "bash .devcontainer/setup-codespaces.sh sync"
+  "updateContentCommand": "bash .devcontainer/setup-codespaces.sh sync",
+  "initializeCommand": "bash .devcontainer/host-preflight.sh"
 }
