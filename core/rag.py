@@ -1329,7 +1329,8 @@ class DocumentStore:
         scored: builtins.list[tuple[str, int]] = []
         nodes: dict[str, dict[str, Any]] = graph["nodes"]
         for node_id, node in nodes.items():
-            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            raw_properties = node.get("properties")
+            properties: dict[str, Any] = raw_properties if isinstance(raw_properties, dict) else {}
             node_session = str(properties.get("session_id", "global") or "global")
             if session_id != "global" and node_session not in {session_id, "global"}:
                 continue

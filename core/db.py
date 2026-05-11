@@ -373,12 +373,16 @@ class Database:
         columns = self._message_columns_sql()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
+            # session_id sütunu PostgreSQL'de UUID tipindedir; doğrudan text[] ile
+            # karşılaştırmak ``operator does not exist: uuid = text`` hatasına yol açar.
+            # Bu yüzden hem girdi metinlerini ``uuid[]``'a hem de sütunu ``text``'e
+            # çevirerek SQLite şemasıyla uyumlu bir karşılaştırma sağlıyoruz.
             async with self._pg_pool.acquire() as conn:
                 rows = await conn.fetch(
                     f"""
                     SELECT {columns}
                     FROM messages
-                    WHERE session_id = ANY($1::text[])
+                    WHERE session_id::text = ANY($1::text[])
                     ORDER BY session_id ASC, created_at ASC, id ASC
                     """,  # nosec B608 - columns sabit whitelist'ten üretilir.
                     normalized_ids,

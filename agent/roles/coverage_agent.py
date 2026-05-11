@@ -533,7 +533,7 @@ class CoverageAgent(BaseAgent):
                                 target_derived_names.add(target.id)
                 elif isinstance(child, ast.AnnAssign):
                     value = child.value
-                    value_has_target_call = bool(value) and any(
+                    value_has_target_call = value is not None and any(
                         isinstance(item, ast.Call)
                         and cls._call_references_target(
                             item,

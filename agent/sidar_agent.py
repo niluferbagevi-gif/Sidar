@@ -1259,7 +1259,7 @@ class SidarAgent:
                     if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
                     else 0
                 )
-                result = {
+                result: dict[str, Any] = {
                     "status": "completed",
                     "reason": reason,
                     "idle_for_seconds": round(idle_for, 2),
