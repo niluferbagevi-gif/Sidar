@@ -384,7 +384,7 @@ class Database:
                     FROM messages
                     WHERE session_id::text = ANY($1::text[])
                     ORDER BY session_id ASC, created_at ASC, id ASC
-                    """,  # nosec B608 - columns sabit whitelist'ten üretilir.
+                    """,  # nosec B608  # columns sabit whitelist'ten üretilir.
                     normalized_ids,
                 )
             return list(rows)
@@ -400,7 +400,7 @@ class Database:
                 FROM messages
                 WHERE session_id IN ({placeholders})
                 ORDER BY session_id ASC, created_at ASC, id ASC
-                """,  # nosec B608 - columns/placeholders iç kaynaklıdır.
+                """,  # nosec B608  # columns/placeholders iç kaynaklıdır.
                 normalized_ids,
             )
             return cur.fetchall()
@@ -460,7 +460,7 @@ class Database:
                     if "database is locked" not in str(exc).lower() or attempt == 3:
                         raise
                     await asyncio.sleep(
-                        0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311 - güvenlik değil jitter/backoff amaçlıdır.
+                        0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
                     )
                 except Exception:
                     # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa
@@ -1233,7 +1233,7 @@ class Database:
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(
-                f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
+                f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
             )
             row = _sqlite_fetchone(cur)
             current = int((row["v"] if row else 0) or 0)
@@ -1256,7 +1256,7 @@ class Database:
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
             )
             current = await conn.fetchval(
-                f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608 - tablo adı sistem içi sabittir.
+                f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
             )
             current = int(current or 0)
             if current >= self.target_schema_version:

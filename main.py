@@ -34,7 +34,7 @@ RESET = "\033[0m"
 class DummyConfig:
     AI_PROVIDER = "ollama"
     ACCESS_LEVEL = "full"
-    WEB_HOST = "0.0.0.0"  # nosec B104 - geliştirme/Docker erişimi için bilinçli varsayılan.
+    WEB_HOST = "0.0.0.0"  # nosec B104  # geliştirme/Docker erişimi için bilinçli varsayılan.
     WEB_PORT = 7860
     CODING_MODEL = "qwen2.5-coder:7b"
     GEMINI_API_KEY = ""
@@ -269,7 +269,7 @@ def _stream_pipe(
 
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
     """Child process çıktısını canlı izleyerek (stdout/stderr) bellek dostu şekilde loglar."""
-    process = subprocess.Popen(  # nosec B603 - komut listesi launcher tarafından güvenli şekilde üretilir.
+    process = subprocess.Popen(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
         cmd,
         cwd=os.path.dirname(__file__) or ".",
         stdout=subprocess.PIPE,
@@ -393,8 +393,8 @@ def run_wizard() -> int:
         extra_args["host"] = ask_text(
             "\nWeb Sunucu Host IP'si",
             _safe_text(
-                getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104 - networkte servis için bilinçli fallback.
-                "0.0.0.0",  # nosec B104 - networkte servis için bilinçli fallback.
+                getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104  # networkte servis için bilinçli fallback.
+                "0.0.0.0",  # nosec B104  # networkte servis için bilinçli fallback.
             ),
         )
         extra_args["port"] = ask_text(
@@ -434,7 +434,7 @@ def execute_command(
                 print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
             return return_code
 
-        subprocess.run(  # nosec B603 - komut listesi launcher tarafından güvenli şekilde üretilir.
+        subprocess.run(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
             cmd, check=True, cwd=os.path.dirname(__file__) or "."
         )
         return 0
@@ -518,8 +518,8 @@ def main() -> None:
         or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
         "host": args.host
         or _safe_text(
-            getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104 - networkte servis için bilinçli fallback.
-            "0.0.0.0",  # nosec B104 - networkte servis için bilinçli fallback.
+            getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104  # networkte servis için bilinçli fallback.
+            "0.0.0.0",  # nosec B104  # networkte servis için bilinçli fallback.
         ),
         "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }

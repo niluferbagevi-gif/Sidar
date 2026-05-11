@@ -364,7 +364,7 @@ class SystemHealthManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
-            )  # nosec B603 - sabit ve kullanıcı girdisi içermeyen komut.
+            )  # nosec B603  # sabit ve kullanıcı girdisi içermeyen komut.
             version = result.stdout.strip().split("\n")[0]
             if version:
                 return version

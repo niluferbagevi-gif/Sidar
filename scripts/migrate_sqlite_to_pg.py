@@ -38,13 +38,13 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            f"SELECT * FROM {table}"  # nosec B608 - tablo adı kontrollü TABLES listesinden gelir.
+            f"SELECT * FROM {table}"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
         ).fetchall()
         if not rows:
             cols = [
                 r[1]
                 for r in conn.execute(
-                    f"PRAGMA table_info({table})"  # nosec B608 - tablo adı kontrollü TABLES listesinden gelir.
+                    f"PRAGMA table_info({table})"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
                 ).fetchall()
             ]
             return cols, []
