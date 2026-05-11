@@ -60,9 +60,7 @@ async def load_image_as_base64(
     limit = max(1, int(max_bytes or _DEFAULT_MAX_BYTES))
     if len(raw) > limit:
         mb = len(raw) / (1024 * 1024)
-        raise ValueError(
-            f"Görsel çok büyük: {mb:.1f} MB (limit: {limit / 1024 / 1024:.0f} MB)"
-        )
+        raise ValueError(f"Görsel çok büyük: {mb:.1f} MB (limit: {limit / 1024 / 1024:.0f} MB)")
 
     return base64.b64encode(raw).decode("utf-8"), mime_type
 
@@ -228,8 +226,7 @@ class VisionPipeline:
         self._provider: str = getattr(llm_client, "provider", "openai")
         self.enabled: bool = bool(getattr(config, "ENABLE_VISION", True))
         self.max_image_bytes: int = int(
-            getattr(config, "VISION_MAX_IMAGE_BYTES", _DEFAULT_MAX_BYTES)
-            or _DEFAULT_MAX_BYTES
+            getattr(config, "VISION_MAX_IMAGE_BYTES", _DEFAULT_MAX_BYTES) or _DEFAULT_MAX_BYTES
         )
 
     async def mockup_to_code(
@@ -251,9 +248,7 @@ class VisionPipeline:
 
         try:
             if image_path:
-                b64, mime = await load_image_as_base64(
-                    image_path, max_bytes=self.max_image_bytes
-                )
+                b64, mime = await load_image_as_base64(image_path, max_bytes=self.max_image_bytes)
             elif image_bytes:
                 b64, mime = load_image_from_bytes(
                     image_bytes, mime_type, max_bytes=self.max_image_bytes
@@ -266,9 +261,7 @@ class VisionPipeline:
         except (FileNotFoundError, ValueError) as exc:
             return {"success": False, "reason": str(exc)}
 
-        prompt = build_mockup_prompt(
-            framework, css_framework, language, extra_instructions
-        )
+        prompt = build_mockup_prompt(framework, css_framework, language, extra_instructions)
         messages = build_vision_messages(self._provider, prompt, b64, mime)
 
         try:
@@ -301,9 +294,7 @@ class VisionPipeline:
 
         try:
             if image_path:
-                b64, mime = await load_image_as_base64(
-                    image_path, max_bytes=self.max_image_bytes
-                )
+                b64, mime = await load_image_as_base64(image_path, max_bytes=self.max_image_bytes)
             elif image_bytes:
                 b64, mime = load_image_from_bytes(
                     image_bytes, mime_type, max_bytes=self.max_image_bytes

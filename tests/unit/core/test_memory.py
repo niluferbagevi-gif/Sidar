@@ -460,14 +460,10 @@ def test_delete_non_active_session_and_nightly_skipped_report_branch(mem):
     asyncio.run(scenario())
 
 
-def test_init_keeps_explicit_database_url_when_not_placeholder(
-    monkeypatch, tmp_path: Path
-):
+def test_init_keeps_explicit_database_url_when_not_placeholder(monkeypatch, tmp_path: Path):
     """Branch 84->89: should_use_memory_default False olduğunda DATABASE_URL korunmalı."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
-    explicit_url = "sqlite+aiosqlite:///" + str(tmp_path / "explicit-test.db").replace(
-        "\\", "/"
-    )
+    explicit_url = "sqlite+aiosqlite:///" + str(tmp_path / "explicit-test.db").replace("\\", "/")
     mem = ConversationMemory(base_dir=tmp_path, database_url=explicit_url)
     assert mem.cfg.DATABASE_URL == explicit_url
 
@@ -478,6 +474,7 @@ def test_add_returns_early_when_session_creation_yields_empty_id(mem):
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u-add", "alice")
+
         # create_session monkeypatch: aktif kullanıcı ataması korunur ama
         # active_session_id boş bırakılır, böylece add() line 217'den döner.
         async def _create_empty_session(_title: str = "Yeni Sohbet") -> str:

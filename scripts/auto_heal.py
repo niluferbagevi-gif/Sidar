@@ -337,7 +337,9 @@ async def _run(args: argparse.Namespace) -> int:
     cfg = Config()
     cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
     cfg.CODING_MODEL = _select_auto_heal_model(cfg.CODING_MODEL, args.source, args.model)
-    cfg.DATABASE_URL = _resolve_auto_heal_database_url(log_path, getattr(args, "database_url", None))
+    cfg.DATABASE_URL = _resolve_auto_heal_database_url(
+        log_path, getattr(args, "database_url", None)
+    )
     memory_backend = _configure_auto_heal_memory_backend(cfg, str(cfg.DATABASE_URL))
     agent = SidarAgent(config=cfg)
     initialization_warning = await _initialize_agent_soft_dependency(agent)

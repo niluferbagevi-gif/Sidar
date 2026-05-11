@@ -166,9 +166,7 @@ def test_build_mockup_prompt_defaults():
 
 
 def test_build_mockup_prompt_custom():
-    prompt = build_mockup_prompt(
-        framework="Vue", css_framework="Bootstrap", language="JavaScript"
-    )
+    prompt = build_mockup_prompt(framework="Vue", css_framework="Bootstrap", language="JavaScript")
     assert "Vue" in prompt
     assert "Bootstrap" in prompt
     assert "JavaScript" in prompt
@@ -307,9 +305,7 @@ async def test_pipeline_analyze_from_bytes():
     pipeline, llm = _make_pipeline()
     llm.chat.return_value = "Bu bir analiz."
     raw = b"\x89PNG\r\n"
-    result = await pipeline.analyze(
-        image_bytes=raw, mime_type="image/png", analysis_type="general"
-    )
+    result = await pipeline.analyze(image_bytes=raw, mime_type="image/png", analysis_type="general")
     assert result["success"] is True
     assert result["analysis"] == "Bu bir analiz."
     assert result["analysis_type"] == "general"

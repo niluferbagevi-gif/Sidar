@@ -2139,9 +2139,7 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid6_module_lacks_callable_uuid
     fake_uuid6.uuid7 = "not-callable-attribute"
     monkeypatch.setitem(sys.modules, "uuid6", fake_uuid6)
 
-    monkeypatch.setattr(
-        uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000222")
-    )
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000222"))
 
     assert _new_entity_id() == "00000000-0000-4000-8000-000000000222"
 
@@ -2171,10 +2169,7 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
     cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
     cfg.DB_DEGRADED_SQLITE_URL = "sqlite+aiosqlite:////tmp/configured-degraded.db"
     db = Database(cfg=cfg)
-    assert (
-        db._postgres_degraded_sqlite_url()
-        == "sqlite+aiosqlite:////tmp/configured-degraded.db"
-    )
+    assert db._postgres_degraded_sqlite_url() == "sqlite+aiosqlite:////tmp/configured-degraded.db"
 
 
 def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:

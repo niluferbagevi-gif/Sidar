@@ -1197,6 +1197,7 @@ def test_normalize_test_candidate_verdict_string_argument_without_verdict_keys()
 
 def test_review_test_candidate_returns_fail_closed_when_call_llm_raises(reviewer, caplog):
     """Lines 223-236: call_llm exception attığında reviewer fail-closed reason döner."""
+
     async def boom(*_args, **_kwargs):
         raise RuntimeError("LLM down")
 
@@ -1219,6 +1220,7 @@ def test_review_test_candidate_returns_fail_closed_when_call_llm_raises(reviewer
 
 def test_review_test_candidate_handles_normalize_returning_non_dict(reviewer):
     """Line 252: _normalize_test_candidate_verdict dict dışı dönerse verdict={} olur."""
+
     async def fake_call_llm(*_args, **_kwargs):
         return json.dumps({"approved": True, "reason": "ok"})
 

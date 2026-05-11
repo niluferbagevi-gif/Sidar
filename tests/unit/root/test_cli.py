@@ -456,6 +456,7 @@ def test_main_interactive_mode_initializes_and_enters_loop(monkeypatch):
     assert agent.active_user_calls == [(42, "cli")]
     assert entered["count"] == 1
 
+
 def test_main_applies_cli_overrides_before_critical_validation(monkeypatch):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
@@ -485,6 +486,7 @@ def test_main_applies_cli_overrides_before_critical_validation(monkeypatch):
     cli.main()
 
     assert created["cfg"].seen_during_validation == ("sandbox", "openai", "m1")
+
 
 def test_main_skips_overrides_when_args_are_none(monkeypatch):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)

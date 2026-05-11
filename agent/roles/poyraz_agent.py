@@ -168,7 +168,9 @@ class PoyrazAgent(BaseAgent):
             return "[DOCS:ERROR] reason=invalid_search_response"
         _ok, result = resolved_result
         if isinstance(graph_resolved, tuple) and len(graph_resolved) == 2 and graph_resolved[0]:
-            return f"[GraphRAG İlişkisel Bellek]\n{graph_resolved[1]}\n\n[Vektörel/BM25 RAG]\n{result}"
+            return (
+                f"[GraphRAG İlişkisel Bellek]\n{graph_resolved[1]}\n\n[Vektörel/BM25 RAG]\n{result}"
+            )
         return str(result)
 
     async def _tool_publish_social(self, arg: str) -> str:

@@ -1865,17 +1865,13 @@ def test_run_pytest_and_collect_skips_internal_blank_lines(manager, monkeypatch)
     assert result["command"] == "pytest -q tests/unit/managers"
 
 
-def test_try_docker_cli_fallback_returns_false_when_docker_binary_missing(
-    manager, monkeypatch
-):
+def test_try_docker_cli_fallback_returns_false_when_docker_binary_missing(manager, monkeypatch):
     """Line 308: shutil.which docker bulamazsa fallback False dönmeli."""
     monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
     assert manager._try_docker_cli_fallback() is False
 
 
-def test_audit_project_records_validation_errors_for_invalid_syntax(
-    manager, tmp_path
-):
+def test_audit_project_records_validation_errors_for_invalid_syntax(manager, tmp_path):
     """Line 1826: validate_python_syntax False döndüğünde hata raporda yer almalı."""
     bad = tmp_path / "broken.py"
     bad.write_text("def x(:\n    return 1\n", encoding="utf-8")

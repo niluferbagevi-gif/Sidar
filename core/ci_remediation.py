@@ -420,10 +420,7 @@ def build_local_failure_context(
         f"{normalized_source} yerel kalite kapısında hata bulundu "
         f"({len(failure_lines)} kayıt, {len(suspected_targets)} dosya)."
         if has_actionable_failure
-        else (
-            f"{normalized_source} yerel kalite kapısı temiz görünüyor "
-            f"(0 kayıt, 0 dosya)."
-        )
+        else (f"{normalized_source} yerel kalite kapısı temiz görünüyor " f"(0 kayıt, 0 dosya).")
     )
     local_scope_limit = max(
         1,

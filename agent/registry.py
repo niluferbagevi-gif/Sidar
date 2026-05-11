@@ -48,6 +48,7 @@ class AgentCatalog:
         registration so external/plugin roles are not marked built-in by
         accident. Built-in role modules must pass ``is_builtin=True`` explicitly.
         """
+
         def _decorator(agent_cls: type) -> type:
             role = getattr(agent_cls, "ROLE_NAME", agent_cls.__name__.lower().replace("agent", ""))
             cls.register_type(

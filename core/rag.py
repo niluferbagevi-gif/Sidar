@@ -1168,8 +1168,12 @@ class DocumentStore:
             if not name:
                 return
             entity_id = self._entity_id(label, name)
-            current = dict(by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties)
-            current.update({key: value for key, value in properties.items() if value not in (None, "")})
+            current = dict(
+                by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties
+            )
+            current.update(
+                {key: value for key, value in properties.items() if value not in (None, "")}
+            )
             by_id[entity_id] = ExtractedKnowledgeEntity(
                 id=entity_id,
                 label=label,
@@ -1227,7 +1231,9 @@ class DocumentStore:
             for tone_id in ids_by_label.get("Tone", []):
                 relations.append(ExtractedKnowledgeRelation(campaign_id, tone_id, "USES_TONE"))
             for brand_id in ids_by_label.get("Brand", []):
-                relations.append(ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND"))
+                relations.append(
+                    ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND")
+                )
             for channel_id in ids_by_label.get("Channel", []):
                 relations.append(ExtractedKnowledgeRelation(campaign_id, channel_id, "RUNS_ON"))
 
@@ -1254,7 +1260,11 @@ class DocumentStore:
         edges: builtins.list[dict[str, Any]] = graph["edges"]
         doc_node_id = f"doc:{doc_id}"
 
-        edges[:] = [edge for edge in edges if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id]
+        edges[:] = [
+            edge
+            for edge in edges
+            if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id
+        ]
         nodes[doc_node_id] = {
             "id": doc_node_id,
             "label": "Document",
@@ -1262,7 +1272,9 @@ class DocumentStore:
             "properties": {"doc_id": doc_id, "session_id": session_id, "source": source},
         }
 
-        entities, relations = self.extract_document_entities(title, content, tags=tags, source=source)
+        entities, relations = self.extract_document_entities(
+            title, content, tags=tags, source=source
+        )
         entity_ids = {entity.id for entity in entities}
         for entity in entities:
             properties = dict(entity.properties)
@@ -1308,14 +1320,23 @@ class DocumentStore:
         referenced = {
             str(edge.get("source"))
             for edge in graph["edges"]
-            if str(edge.get("source", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+            if str(edge.get("source", "")).startswith(
+                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+            )
         } | {
             str(edge.get("target"))
             for edge in graph["edges"]
-            if str(edge.get("target", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+            if str(edge.get("target", "")).startswith(
+                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+            )
         }
         for node_id in list(nodes):
-            if node_id.startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")) and node_id not in referenced:
+            if (
+                node_id.startswith(
+                    ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+                )
+                and node_id not in referenced
+            ):
                 nodes.pop(node_id, None)
         self._save_entity_graph()
 
@@ -1804,7 +1825,10 @@ class DocumentStore:
         results = self._graph_index.search_related(normalized, top_k=top_k)
         entity_results = self.search_entity_graph(normalized, top_k=top_k)
         if not results and not entity_results:
-            return False, f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi."
+            return (
+                False,
+                f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi.",
+            )
 
         lines = [f"[GraphRAG: {query}]", ""]
         if entity_results:

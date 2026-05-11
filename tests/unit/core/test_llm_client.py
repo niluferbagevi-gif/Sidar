@@ -2889,9 +2889,7 @@ async def test_gemini_non_stream_error_returns_fallback_message_without_ending_s
         _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=True)
     )
 
-    out = await c.chat(
-        [{"role": "user", "content": "u"}], stream=False, json_mode=False
-    )
+    out = await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     payload = json.loads(out)
     assert payload["tool"] == "final_answer"
     assert "non-stream-fail" in payload["argument"]

@@ -106,7 +106,6 @@ def test_resolve_auto_heal_database_url_honors_cli_and_env(
     )
 
 
-
 def test_configure_auto_heal_memory_backend_uses_bm25_for_sqlite_pgvector() -> None:
     cfg = types.SimpleNamespace(RAG_VECTOR_BACKEND="pgvector")
 
@@ -130,7 +129,10 @@ def test_redact_database_url_masks_password() -> None:
         _redact_database_url("postgresql+asyncpg://sidar:secret@localhost:5432/sidar")
         == "postgresql+asyncpg://sidar:***@localhost:5432/sidar"
     )
-    assert _redact_database_url("sqlite+aiosqlite:///tmp/db.sqlite") == "sqlite+aiosqlite:///tmp/db.sqlite"
+    assert (
+        _redact_database_url("sqlite+aiosqlite:///tmp/db.sqlite")
+        == "sqlite+aiosqlite:///tmp/db.sqlite"
+    )
 
 
 def test_redact_database_url_returns_text_when_no_scheme_separator() -> None:
@@ -211,7 +213,6 @@ def test_select_auto_heal_model_honors_requested_model() -> None:
     )
 
 
-
 def test_build_scope_queue_returns_empty_when_scope_paths_are_blank() -> None:
     assert _build_scope_queue({"scope_paths": ["", "  "]}, batch_size=0) == []
 
@@ -241,6 +242,7 @@ def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines(
     assert "Hedef kapsam için tip hataları düzeltilecek: pkg/a.py" in diagnosis
     assert "Batch retry 2/2" in diagnosis
     assert "Hedef hata satırları" not in diagnosis
+
 
 def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
     queue = _build_scope_queue(
@@ -708,7 +710,6 @@ def test_run_skips_clean_mypy_output_without_targets(
     assert payload["status"] == "skipped"
     assert payload["queue_size"] == 0
     assert "mypy temiz" in payload["reason"]
-
 
 
 def test_run_persists_final_json_result_when_output_is_requested(

@@ -15,10 +15,14 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_migrations", lambda: DoctorCheck("migrations", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_agent_catalog", lambda: DoctorCheck("catalog", "pass", "ok"))
-    monkeypatch.setattr(doctor, "check_supervisor_routing", lambda: DoctorCheck("routing", "pass", "ok"))
+    monkeypatch.setattr(
+        doctor, "check_supervisor_routing", lambda: DoctorCheck("routing", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_websocket_routes", lambda: DoctorCheck("ws", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_gpu", lambda: checks[1])
-    monkeypatch.setattr(doctor, "check_model", lambda smoke=True: DoctorCheck("model", "pass", "ok"))
+    monkeypatch.setattr(
+        doctor, "check_model", lambda smoke=True: DoctorCheck("model", "pass", "ok")
+    )
 
     output = tmp_path / "doctor.json"
     report = doctor.run_doctor_report(output_path=output)
@@ -29,7 +33,9 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
 
 
 def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
+    monkeypatch.setattr(
+        doctor.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None
+    )
     monkeypatch.setattr(doctor, "_run_command", lambda cmd, timeout=20: (0, "NVIDIA Test GPU"))
 
     check = doctor.check_gpu()
@@ -64,8 +70,12 @@ def test_websocket_check_falls_back_to_static_routes(monkeypatch, tmp_path):
 def test_migration_parser_identifies_head(tmp_path, monkeypatch):
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
-    (versions / "0001_first.py").write_text("revision = 'a'\ndown_revision = None\n", encoding="utf-8")
-    (versions / "0002_second.py").write_text("revision = 'b'\ndown_revision = 'a'\n", encoding="utf-8")
+    (versions / "0001_first.py").write_text(
+        "revision = 'a'\ndown_revision = None\n", encoding="utf-8"
+    )
+    (versions / "0002_second.py").write_text(
+        "revision = 'b'\ndown_revision = 'a'\n", encoding="utf-8"
+    )
     monkeypatch.setattr(doctor, "migrations_path", lambda: tmp_path / "migrations")
 
     revisions, down_revisions = doctor._parse_migration_revisions()

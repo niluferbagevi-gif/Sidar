@@ -303,7 +303,9 @@ class AccessPolicy(Base):
             "action",
             name="uq_access_policies_user_tenant_resource_action",
         ),
-        sa.Index("idx_access_policies_user_tenant", "user_id", "tenant_id", "resource_type", "action"),
+        sa.Index(
+            "idx_access_policies_user_tenant", "user_id", "tenant_id", "resource_type", "action"
+        ),
     )
 
     id: Mapped[int] = mapped_column(sa.BigInteger(), primary_key=True, autoincrement=True)
