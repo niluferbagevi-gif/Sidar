@@ -89,6 +89,41 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_agent_event_bus_tasks() -> Generator[None, None, None]:
+    """Process-genelinde paylaşılan AgentEventBus singleton'ının her test sonrası
+    arta kalan asyncio task'larını temizler.
+
+    Aksi halde testler arası event loop kapanışında "Task was destroyed but it
+    is pending" uyarısı `pytest.PytestUnraisableExceptionWarning` ile testleri
+    fail edebilir (xdist worker'larında özellikle görülür).
+    """
+
+    yield
+
+    bus_module = sys.modules.get("agent.core.event_stream")
+    bus = getattr(bus_module, "_BUS", None) if bus_module is not None else None
+    if bus is None:
+        return
+
+    for attr in ("_redis_listener_task", "_rabbit_listener_task", "_kafka_listener_task"):
+        task = getattr(bus, attr, None)
+        if task is None or task.done():
+            setattr(bus, attr, None)
+            continue
+        task_loop = getattr(task, "get_loop", lambda: None)()
+        if task_loop is None or task_loop.is_closed():
+            # Loop kapandığı için task await edilemez; referansı düşür ki GC
+            # uyarı yaymadan toplayabilsin.
+            setattr(bus, attr, None)
+            continue
+        try:
+            task.cancel()
+        except RuntimeError:
+            pass
+        setattr(bus, attr, None)
+
+
 # Not: `cli` modülünü burada global olarak import etmiyoruz.
 # Böylece pytest-cov ölçümü başlamadan önce `cli.py` yüklenip
 # "already-imported" kaynaklı kapsama sapması oluşturmaz.

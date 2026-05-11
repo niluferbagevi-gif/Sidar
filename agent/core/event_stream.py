@@ -508,13 +508,30 @@ class AgentEventBus:
             self.unsubscribe(sid)
 
     async def _cleanup_redis(self) -> None:
-        if self._redis_listener_task is not None and not self._redis_listener_task.done():
-            cancel = getattr(self._redis_listener_task, "cancel", None)
-            with contextlib.suppress(RuntimeError):
-                if callable(cancel):
-                    cancel()
-            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
-                await self._redis_listener_task
+        task = self._redis_listener_task
+        if task is not None and not task.done():
+            cancel = getattr(task, "cancel", None)
+            get_loop = getattr(task, "get_loop", None)
+            task_loop = get_loop() if callable(get_loop) else None
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if task_loop is None or task_loop is current_loop:
+                with contextlib.suppress(RuntimeError):
+                    if callable(cancel):
+                        cancel()
+                with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                    await task
+            else:
+                # Task belongs to a different (likely closed) loop; cancel without awaiting
+                # so it does not raise "Task was destroyed but it is pending".
+                if not getattr(task_loop, "is_closed", lambda: True)() and callable(cancel):
+                    with contextlib.suppress(RuntimeError):
+                        task_loop.call_soon_threadsafe(cancel)
+                elif callable(cancel):
+                    with contextlib.suppress(RuntimeError):
+                        cancel()
         self._redis_listener_task = None
 
         if self._redis_client is not None:

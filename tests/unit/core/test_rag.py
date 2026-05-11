@@ -2524,7 +2524,7 @@ async def test_document_store_recursive_chunk_text_forced_fallback_split(
         )
     )
     store._pgvector_embed_texts = lambda _t: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
-    sys.modules["sqlalchemy"] = SimpleNamespace(text=lambda s: s)
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
     assert store._fetch_pgvector("q", 2, "s1") == []
 
 
