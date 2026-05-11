@@ -29,7 +29,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import bleach as _bleach
 from opentelemetry import trace as _otel_trace
@@ -557,7 +557,7 @@ def embed_texts_for_semantic_cache(
 ) -> builtins.list[builtins.list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache as _embed
 
-    return _embed(texts, cfg=cfg)
+    return cast(builtins.list[builtins.list[float]], _embed(texts, cfg=cfg))
 
 
 def _build_embedding_function(
@@ -1090,6 +1090,14 @@ class DocumentStore:
             graph["edges"] = []
         return graph
 
+    @staticmethod
+    def _entity_node_properties(node: dict[str, Any]) -> dict[str, Any]:
+        """Entity graph node properties değerini mypy için kesin dict tipine daraltır."""
+        raw_properties = node.get("properties")
+        if not isinstance(raw_properties, dict):
+            return {}
+        return cast(dict[str, Any], raw_properties)
+
     def _extract_json_entities(
         self, payload: Any, prefix: str = ""
     ) -> builtins.list[ExtractedKnowledgeEntity]:
@@ -1168,8 +1176,12 @@ class DocumentStore:
             if not name:
                 return
             entity_id = self._entity_id(label, name)
-            current = dict(by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties)
-            current.update({key: value for key, value in properties.items() if value not in (None, "")})
+            current = dict(
+                by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties
+            )
+            current.update(
+                {key: value for key, value in properties.items() if value not in (None, "")}
+            )
             by_id[entity_id] = ExtractedKnowledgeEntity(
                 id=entity_id,
                 label=label,
@@ -1227,7 +1239,9 @@ class DocumentStore:
             for tone_id in ids_by_label.get("Tone", []):
                 relations.append(ExtractedKnowledgeRelation(campaign_id, tone_id, "USES_TONE"))
             for brand_id in ids_by_label.get("Brand", []):
-                relations.append(ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND"))
+                relations.append(
+                    ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND")
+                )
             for channel_id in ids_by_label.get("Channel", []):
                 relations.append(ExtractedKnowledgeRelation(campaign_id, channel_id, "RUNS_ON"))
 
@@ -1254,7 +1268,11 @@ class DocumentStore:
         edges: builtins.list[dict[str, Any]] = graph["edges"]
         doc_node_id = f"doc:{doc_id}"
 
-        edges[:] = [edge for edge in edges if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id]
+        edges[:] = [
+            edge
+            for edge in edges
+            if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id
+        ]
         nodes[doc_node_id] = {
             "id": doc_node_id,
             "label": "Document",
@@ -1262,7 +1280,9 @@ class DocumentStore:
             "properties": {"doc_id": doc_id, "session_id": session_id, "source": source},
         }
 
-        entities, relations = self.extract_document_entities(title, content, tags=tags, source=source)
+        entities, relations = self.extract_document_entities(
+            title, content, tags=tags, source=source
+        )
         entity_ids = {entity.id for entity in entities}
         for entity in entities:
             properties = dict(entity.properties)
@@ -1308,14 +1328,23 @@ class DocumentStore:
         referenced = {
             str(edge.get("source"))
             for edge in graph["edges"]
-            if str(edge.get("source", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+            if str(edge.get("source", "")).startswith(
+                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+            )
         } | {
             str(edge.get("target"))
             for edge in graph["edges"]
-            if str(edge.get("target", "")).startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:"))
+            if str(edge.get("target", "")).startswith(
+                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+            )
         }
         for node_id in list(nodes):
-            if node_id.startswith(("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")) and node_id not in referenced:
+            if (
+                node_id.startswith(
+                    ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
+                )
+                and node_id not in referenced
+            ):
                 nodes.pop(node_id, None)
         self._save_entity_graph()
 
@@ -1329,7 +1358,7 @@ class DocumentStore:
         scored: builtins.list[tuple[str, int]] = []
         nodes: dict[str, dict[str, Any]] = graph["nodes"]
         for node_id, node in nodes.items():
-            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            properties = self._entity_node_properties(node)
             node_session = str(properties.get("session_id", "global") or "global")
             if session_id != "global" and node_session not in {session_id, "global"}:
                 continue
@@ -1803,7 +1832,10 @@ class DocumentStore:
         results = self._graph_index.search_related(normalized, top_k=top_k)
         entity_results = self.search_entity_graph(normalized, top_k=top_k)
         if not results and not entity_results:
-            return False, f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi."
+            return (
+                False,
+                f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi.",
+            )
 
         lines = [f"[GraphRAG: {query}]", ""]
         if entity_results:
@@ -1984,7 +2016,7 @@ class DocumentStore:
 
         entity_graph = self._ensure_entity_graph()
         for node_id, node in list(entity_graph["nodes"].items())[:max_items]:
-            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            properties = self._entity_node_properties(node)
             node_session = str(properties.get("session_id", "global") or "global")
             if session_id != "global" and node_session not in {session_id, "global"}:
                 continue

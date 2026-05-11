@@ -1272,9 +1272,11 @@ async def test_document_store_init_backends_and_import_checks(
     monkeypatch.setattr(
         importlib,
         "import_module",
-        lambda name: (_ for _ in ()).throw(ImportError())
-        if name == "missing.mod"
-        else original_import_module(name),
+        lambda name: (
+            (_ for _ in ()).throw(ImportError())
+            if name == "missing.mod"
+            else original_import_module(name)
+        ),
     )
     assert store._check_import("json") is True
     assert store._check_import("missing.mod") is False
@@ -3062,6 +3064,14 @@ async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_p
     assert results
     assert any(item["node"]["label"] == "Campaign" for item in results)
 
+    store._entity_graph["nodes"]["campaign:malformed"] = {
+        "id": "campaign:malformed",
+        "label": "Campaign",
+        "name": "Bozuk Özellik",
+        "properties": None,
+    }
+    assert store.search_entity_graph("Bozuk", session_id="marketing", top_k=5)
+
     ok, text = store.search_graph("Bahar KOBİ", top_k=5)
     assert ok is True
     assert "İlişkisel bellek entity sonuçları" in text
@@ -3071,6 +3081,7 @@ async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_p
         session_id="marketing", include_code_graph=False, limit=20
     )
     assert any(node.id.startswith("entity:campaign:") for node in projection["nodes"])
+    assert any(node.id == "entity:campaign:malformed" for node in projection["nodes"])
     assert any(edge.relation == "TARGETS_AUDIENCE" for edge in projection["edges"])
 
     store._delete_document_entities("doc1")
