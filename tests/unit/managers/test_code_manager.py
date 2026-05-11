@@ -137,6 +137,7 @@ def test_build_and_execute_docker_cli_command(manager, monkeypatch):
 
 
 def test_try_docker_cli_fallback(manager, monkeypatch):
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1435,6 +1436,7 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
     assert ok and "KIRPILDI" in out
 
     # _try_docker_cli_fallback error / non-zero return branches
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(
         subprocess,
         "run",
