@@ -26,6 +26,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sidar
+      # scripts/load_test_db_pool.py ve cutover pytest dilimi Config() doğrulamasında
+      # bu anahtarı zorunlu tutar; CI'a özel deterministik bir değer kullanılır.
+      JWT_SECRET_KEY: ci-jwt-secret-for-migration-cutover-checks-only
 
     steps:
       - name: Checkout
