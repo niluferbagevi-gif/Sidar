@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OperationsQaPanel } from "./OperationsQaPanel.jsx";
 
@@ -230,7 +230,9 @@ describe("OperationsQaPanel — WebSocket olay akışı", () => {
     render(<OperationsQaPanel />);
 
     expect(webSocketOptions.onRoomEvent).toBeTypeOf("function");
-    webSocketOptions.onRoomEvent({ id: "evt-1", source: "ops", kind: "status", content: "Hazır", ts: "2026-05-11T08:00:00Z" });
+    act(() => {
+      webSocketOptions.onRoomEvent({ id: "evt-1", source: "ops", kind: "status", content: "Hazır", ts: "2026-05-11T08:00:00Z" });
+    });
 
     expect(await screen.findByText("ops · status")).toBeInTheDocument();
     expect(screen.getByText("Hazır")).toBeInTheDocument();
@@ -241,9 +243,68 @@ describe("OperationsQaPanel — WebSocket olay akışı", () => {
 
   it("onStatus ve onError WS geri çağrıları durum bannerlarını günceller", async () => {
     render(<OperationsQaPanel />);
-    webSocketOptions.onStatus("Bağlandı");
-    webSocketOptions.onError("WS koptu");
+    act(() => {
+      webSocketOptions.onStatus("Bağlandı");
+      webSocketOptions.onError("WS koptu");
+    });
     expect(await screen.findByText("Bağlandı")).toBeInTheDocument();
     expect(await screen.findByText("WS koptu")).toBeInTheDocument();
+  });
+});
+
+describe("OperationsQaPanel — Coverage formu alanları", () => {
+  it("Coverage analizi alanları kontrollü güncellenir", async () => {
+    const user = userEvent.setup();
+    apiMocks.analyzeCoverage.mockResolvedValue({ ok: true });
+    render(<OperationsQaPanel />);
+
+    const xmlInputs = screen.getAllByRole("textbox", { name: "coverage_xml" });
+    const coverageXmlInput = xmlInputs[0];
+    const coveragercInputs = screen.getAllByRole("textbox", { name: "coveragerc" });
+    const coveragercInput = coveragercInputs[0];
+    const limitInputs = screen.getAllByRole("spinbutton", { name: "limit" });
+    const limitInput = limitInputs[0];
+
+    await user.clear(coverageXmlInput);
+    await user.type(coverageXmlInput, "alt-coverage.xml");
+    await user.clear(coveragercInput);
+    await user.type(coveragercInput, ".coveragerc-alt");
+    await user.clear(limitInput);
+    await user.type(limitInput, "25");
+
+    await user.click(screen.getByRole("button", { name: "Analiz et" }));
+
+    await waitFor(() => expect(apiMocks.analyzeCoverage).toHaveBeenCalledTimes(1));
+    const payload = apiMocks.analyzeCoverage.mock.calls[0][0];
+    expect(payload.coverage_xml).toBe("alt-coverage.xml");
+    expect(payload.coveragerc).toBe(".coveragerc-alt");
+    expect(payload.limit).toBe(25);
+  });
+
+  it("Coverage batch sayısal alanları kontrollü güncellenir", async () => {
+    const user = userEvent.setup();
+    apiMocks.runCoverageBatch.mockResolvedValue({ ok: true });
+    render(<OperationsQaPanel />);
+
+    const xmlInputs = screen.getAllByRole("textbox", { name: "coverage_xml" });
+    const batchXmlInput = xmlInputs[xmlInputs.length - 1];
+    const limitInputs = screen.getAllByRole("spinbutton", { name: "limit" });
+    const batchLimitInput = limitInputs[limitInputs.length - 1];
+    const batchSizeInput = screen.getByRole("spinbutton", { name: "batch_size" });
+
+    await user.clear(batchXmlInput);
+    await user.type(batchXmlInput, "batch-coverage.xml");
+    await user.clear(batchLimitInput);
+    await user.type(batchLimitInput, "7");
+    await user.clear(batchSizeInput);
+    await user.type(batchSizeInput, "3");
+
+    await user.click(screen.getByRole("button", { name: "Batch çalıştır" }));
+
+    await waitFor(() => expect(apiMocks.runCoverageBatch).toHaveBeenCalledTimes(1));
+    const payload = apiMocks.runCoverageBatch.mock.calls[0][0];
+    expect(payload.coverage_xml).toBe("batch-coverage.xml");
+    expect(payload.limit).toBe(7);
+    expect(payload.batch_size).toBe(3);
   });
 });

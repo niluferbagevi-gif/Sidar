@@ -12,14 +12,6 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
 
-const safeJson = (value, fallback = {}) => {
-  try {
-    return JSON.parse(value || "{}");
-  } catch {
-    return fallback;
-  }
-};
-
 export function OperationsQaPanel() {
   const [activeRoom, setActiveRoom] = useState(OPS_ROOM_ID);
   const [events, setEvents] = useState([]);
@@ -208,7 +200,7 @@ export function OperationsQaPanel() {
 
       <div className="card">
         <h3>Son REST Çıktısı</h3>
-        <pre className="code-block">{JSON.stringify(output || safeJson("{}"), null, 2)}</pre>
+        <pre className="code-block">{JSON.stringify(output || {}, null, 2)}</pre>
       </div>
     </section>
   );
