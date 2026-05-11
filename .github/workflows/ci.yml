@@ -14,6 +14,45 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sidar
+          POSTGRES_PASSWORD: sidar
+          POSTGRES_DB: sidar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sidar"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      AUTO_DOCKER_TEST_SERVICES: "0"
+      AUTO_PREPARE_TEST_DB: "0"
+      SMOKE_SKIP_EXTERNAL_INFRA: "0"
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: sidar
+      POSTGRES_PASSWORD: sidar
+      POSTGRES_DB: sidar
+      TEST_DATABASE_NAME: sidar_test
+      TEST_DATABASE_USER: sidar
+      TEST_DATABASE_PASSWORD: sidar
+      DATABASE_URL: postgresql+asyncpg://sidar:sidar@localhost:5432/sidar_test
+      REDIS_URL: redis://localhost:6379/0
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,6 +117,16 @@ jobs:
 
       - name: Run deterministic LLM quality gate
         run: uv run pytest -q --no-cov -m quality_gate tests/quality/test_llm_quality_gate.py
+
+      - name: Prepare isolated test database (sidar_test) + Alembic upgrade
+        env:
+          PGPASSWORD: sidar
+        run: |
+          psql -h localhost -U sidar -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS sidar_test WITH (FORCE);" \
+            -c "CREATE DATABASE sidar_test;" \
+            -c "GRANT ALL PRIVILEGES ON DATABASE sidar_test TO sidar;"
+          uv run alembic upgrade head
 
       - name: Run test suite (single pass + coverage gate)
         env:
