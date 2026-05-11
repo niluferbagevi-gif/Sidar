@@ -60,10 +60,10 @@ jobs:
           npm ci
           npm run lint
 
-      - name: Run SAST gates (Bandit + Safety)
+      - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run bandit -c pyproject.toml -q -r .
-          uv run safety check --full-report
+          uv run --with pip-audit pip-audit --timeout 30
 
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh
