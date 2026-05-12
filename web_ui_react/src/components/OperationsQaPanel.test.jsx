@@ -26,6 +26,12 @@ vi.mock("../hooks/useWebSocket.js", () => ({
 
 const resolved = (payload) => Promise.resolve(payload);
 
+async function renderOperationsQaPanel() {
+  const view = render(<OperationsQaPanel />);
+  await waitFor(() => expect(apiMocks.listHitlPending).toHaveBeenCalled());
+  return view;
+}
+
 beforeEach(() => {
   apiMocks.analyzeCoverage.mockReset();
   apiMocks.generateCampaignCopy.mockReset();
@@ -40,21 +46,21 @@ beforeEach(() => {
 
 describe("OperationsQaPanel — başlangıç render", () => {
   it("paneli ve oda anahtarını oluşturur", async () => {
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     expect(screen.getByText("Poyraz & Coverage Kontrol Paneli")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Oda: ops:control/i })).toBeInTheDocument();
     await waitFor(() => expect(apiMocks.listHitlPending).toHaveBeenCalled());
   });
 
-  it("WS durum chip'ini gösterir", () => {
+  it("WS durum chip'ini gösterir", async () => {
     wsState.status = "disconnected";
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     expect(screen.getByText("WS: disconnected")).toBeInTheDocument();
   });
 
   it("oda değiştirme butonu aktif odayı değiştirir", async () => {
     const user = userEvent.setup();
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     const toggle = screen.getByRole("button", { name: /Oda: ops:control/i });
     await user.click(toggle);
     expect(screen.getByRole("button", { name: /Oda: qa:coverage/i })).toBeInTheDocument();
@@ -67,7 +73,7 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("Landing page formu generateLandingPage çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true, page: "<html/>" });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await user.click(screen.getByRole("button", { name: "Landing üret" }));
 
@@ -81,7 +87,7 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("kampanya kopyası kanalları virgülle parse eder", async () => {
     const user = userEvent.setup();
     apiMocks.generateCampaignCopy.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await user.click(screen.getByRole("button", { name: "Kopya üret" }));
 
@@ -94,7 +100,7 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("Coverage analizi formu analyzeCoverage çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.analyzeCoverage.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await user.click(screen.getByRole("button", { name: "Analiz et" }));
 
@@ -108,7 +114,7 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("Coverage batch formu runCoverageBatch çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.runCoverageBatch.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await user.click(screen.getByRole("button", { name: "Batch çalıştır" }));
 
@@ -122,7 +128,7 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("REST hatasını banner olarak gösterir", async () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockRejectedValue(new Error("Landing patladı"));
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await user.click(screen.getByRole("button", { name: "Landing üret" }));
 
@@ -135,7 +141,7 @@ describe("OperationsQaPanel — form girdileri", () => {
   it("Landing form alanları kontrollü güncellenir", async () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     const offerInputs = screen.getAllByRole("textbox", { name: "offer" });
     const landingOffer = offerInputs[0];
     await user.clear(landingOffer);
@@ -149,7 +155,7 @@ describe("OperationsQaPanel — form girdileri", () => {
   it("Coverage batch append checkbox değiştirilebilir", async () => {
     const user = userEvent.setup();
     apiMocks.runCoverageBatch.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     const appendCheckbox = screen.getByRole("checkbox", { name: /append/i });
     expect(appendCheckbox).toBeChecked();
     await user.click(appendCheckbox);
@@ -175,9 +181,10 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
     apiMocks.respondHitl.mockResolvedValue({ ok: true });
 
     const user = userEvent.setup();
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     expect(await screen.findByText("approve_landing")).toBeInTheDocument();
+    expect(screen.getByText(/preview/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Onayla" }));
 
     await waitFor(() => expect(apiMocks.respondHitl).toHaveBeenCalledWith("req-1", expect.objectContaining({
@@ -195,7 +202,7 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
     apiMocks.respondHitl.mockResolvedValue({ ok: true });
 
     const user = userEvent.setup();
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     expect(await screen.findByText("rollback")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reddet" }));
@@ -210,7 +217,7 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
   it("HITL yenileme butonu listHitlPending'i yeniden çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.listHitlPending.mockResolvedValue({ pending: [] });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     await waitFor(() => expect(apiMocks.listHitlPending).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "Yenile" }));
@@ -219,15 +226,32 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
 
   it("HITL listesi hatasını banner'a yansıtır", async () => {
     apiMocks.listHitlPending.mockRejectedValueOnce(new Error("HITL alınamadı"));
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     expect(await screen.findByText("HITL alınamadı")).toBeInTheDocument();
+  });
+
+  it("pending alanı eksik HITL yanıtını boş liste olarak işler", async () => {
+    apiMocks.listHitlPending.mockResolvedValueOnce({});
+    await renderOperationsQaPanel();
+    expect(screen.getByText("Bekleyen HITL isteği yok.")).toBeInTheDocument();
+  });
+
+  it("payload alanı eksik HITL öğelerini boş JSON olarak render eder", async () => {
+    apiMocks.listHitlPending.mockResolvedValueOnce({
+      pending: [{ request_id: "req-empty-payload", action: "audit", description: "Kontrol" }],
+    });
+
+    await renderOperationsQaPanel();
+
+    expect(await screen.findByText("audit")).toBeInTheDocument();
+    expect(screen.getAllByText("{}")).toHaveLength(2);
   });
 });
 
 describe("OperationsQaPanel — WebSocket olay akışı", () => {
   it("gelen olayları listeye ekler ve temizleme butonu sıfırlar", async () => {
     const user = userEvent.setup();
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
 
     expect(webSocketOptions.onRoomEvent).toBeTypeOf("function");
     act(() => {
@@ -241,8 +265,30 @@ describe("OperationsQaPanel — WebSocket olay akışı", () => {
     expect(screen.getByText("Henüz durum olayı yok.")).toBeInTheDocument();
   });
 
+  it("eksik alanlı WS olayları için varsayılan başlık ve boş içerik üretir", async () => {
+    await renderOperationsQaPanel();
+
+    act(() => {
+      webSocketOptions.onRoomEvent({ ts: "2026-05-11T09:00:00Z" });
+    });
+
+    expect(await screen.findByText("api · status")).toBeInTheDocument();
+    expect(screen.getByText("2026-05-11T09:00:00Z")).toBeInTheDocument();
+  });
+
+  it("zaman damgası eksik WS olaylarını boş ts ile render eder", async () => {
+    await renderOperationsQaPanel();
+
+    act(() => {
+      webSocketOptions.onRoomEvent({ id: "evt-no-ts", source: "ops", kind: "notice", content: "TS yok" });
+    });
+
+    expect(await screen.findByText("ops · notice")).toBeInTheDocument();
+    expect(screen.getByText("TS yok")).toBeInTheDocument();
+  });
+
   it("onStatus ve onError WS geri çağrıları durum bannerlarını günceller", async () => {
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     act(() => {
       webSocketOptions.onStatus("Bağlandı");
     });
@@ -258,7 +304,7 @@ describe("OperationsQaPanel — Coverage form alanları", () => {
   it("Coverage analiz formu kontrollü güncellenir", async () => {
     const user = userEvent.setup();
     apiMocks.analyzeCoverage.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     const xmlInputs = screen.getAllByDisplayValue("coverage.xml");
     const rcInputs = screen.getAllByDisplayValue(".coveragerc");
     const limitInputs = screen.getAllByDisplayValue("10");
@@ -279,7 +325,7 @@ describe("OperationsQaPanel — Coverage form alanları", () => {
   it("Coverage batch formu kontrollü güncellenir", async () => {
     const user = userEvent.setup();
     apiMocks.runCoverageBatch.mockResolvedValue({ ok: true });
-    render(<OperationsQaPanel />);
+    await renderOperationsQaPanel();
     const xmlInputs = screen.getAllByDisplayValue("coverage.xml");
     const limitInputs = screen.getAllByDisplayValue("5");
     const batchSizeInputs = screen.getAllByDisplayValue("1");

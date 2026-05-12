@@ -332,4 +332,51 @@ describe("agent API bridge helpers", () => {
       decided_by: "tester",
     });
   });
+
+  it("serializes default empty operation payloads", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await generateLandingPage();
+    await generateCampaignCopy();
+    await planServiceOperations();
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/operations/landing-page",
+      "/api/operations/campaign-copy",
+      "/api/operations/service-plan",
+    ]);
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options.method).toBe("POST");
+      expect(JSON.parse(options.body)).toEqual({});
+    }
+  });
+
+  it("omits QA coverage query string when filters are absent", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await listCoverageTasks();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/qa/coverage/tasks",
+      expect.objectContaining({ headers: {} }),
+    );
+  });
+
+  it("serializes default empty HITL response payload", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await respondHitl("req-empty");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/hitl/respond/req-empty");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({});
+  });
+
+  it("serializes null HITL response payload as an empty object", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await respondHitl("req-null", null);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/hitl/respond/req-null");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({});
+  });
 });
