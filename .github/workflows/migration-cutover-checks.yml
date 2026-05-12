@@ -99,10 +99,27 @@ jobs:
 
       - name: Run PostgreSQL pool load smoke (50 concurrent)
         run: |
+          set -o pipefail
+          mkdir -p artifacts
           uv run python scripts/load_test_db_pool.py \
             --database-url "$DATABASE_URL" \
             --concurrency 50 \
-            --requests 300
+            --requests 300 2>&1 | tee artifacts/pool_load_test.log
+
+      - name: Print pool load test log on failure
+        if: failure()
+        run: |
+          echo "=== pool_load_test.log (last 200 lines) ==="
+          tail -n 200 artifacts/pool_load_test.log || true
+
+      - name: Upload pool load test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pool-load-test-log
+          path: artifacts/pool_load_test.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Verify Swarm + Active Learning production cutover slice
         run: |
