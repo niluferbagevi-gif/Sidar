@@ -136,6 +136,88 @@ def test_build_and_execute_docker_cli_command(manager, monkeypatch):
     assert ok and "REPL Çıktısı" in out
 
 
+def test_docker_token_sanitizers_reject_unsafe_values():
+    assert (
+        cm._sanitize_docker_token(
+            "256m", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
+        )
+        == "256m"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            "--privileged", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
+        )
+        == "256m"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            "256m; rm -rf /", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
+        )
+        == "256m"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            "", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
+        )
+        == "256m"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            None, pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
+        )
+        == "256m"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            "0.5", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus"
+        )
+        == "0.5"
+    )
+    assert (
+        cm._sanitize_docker_token(
+            "abc", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus"
+        )
+        == "0.5"
+    )
+
+
+def test_docker_network_and_image_sanitizers():
+    assert cm._sanitize_docker_network("none") == "none"
+    assert cm._sanitize_docker_network("HOST") == "host"
+    assert cm._sanitize_docker_network("--privileged") == "none"
+    assert cm._sanitize_docker_network("") == "none"
+    assert cm._sanitize_docker_network(None) == "none"
+
+    assert cm._sanitize_docker_image("python:3.11-alpine") == "python:3.11-alpine"
+    assert cm._sanitize_docker_image("ghcr.io/foo/bar:1.0") == "ghcr.io/foo/bar:1.0"
+    assert cm._sanitize_docker_image("--privileged") == "python:3.11-alpine"
+    assert cm._sanitize_docker_image("bad image") == "python:3.11-alpine"
+    assert cm._sanitize_docker_image("") == "python:3.11-alpine"
+    assert cm._sanitize_docker_image(None) == "python:3.11-alpine"
+
+
+def test_build_docker_cli_command_rejects_flag_injection(manager):
+    manager.docker_image = "--privileged"
+    cmd = manager._build_docker_cli_command(
+        "print(1)",
+        {
+            "memory": "--privileged",
+            "cpus": "$(rm -rf /)",
+            "pids_limit": -1,
+            "network_mode": "--privileged",
+            "timeout": 1,
+        },
+    )
+    assert cmd[0] == "docker" and cmd[1] == "run"
+    assert "--memory=256m" in cmd
+    assert "--cpus=0.5" in cmd
+    assert "--pids-limit=64" in cmd
+    assert "--network=none" in cmd
+    assert "python:3.11-alpine" in cmd
+    for token in cmd[3:]:
+        assert not (token.startswith("--privileged") or "$(" in token)
+
+
 def test_try_docker_cli_fallback(manager, monkeypatch):
     monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(

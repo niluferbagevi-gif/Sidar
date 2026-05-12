@@ -576,6 +576,34 @@ _shutdown_cleanup_done = False
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
 
+_SAFE_PS_PATHS: tuple[str, ...] = ("/bin/ps", "/usr/bin/ps", "/sbin/ps", "/usr/sbin/ps")
+
+
+def _resolve_safe_ps_binary() -> str | None:
+    """Yalnızca sistem-yönetimi dizinlerindeki bilinen ps ikilisini döndürür.
+
+    SAST (Bandit B603/B607): subprocess çağrılırken `ps` ikilisinin PATH
+    üzerinden alınması, ortam değişkeni manipülasyonuyla rastgele bir ikilinin
+    çalıştırılmasına yol açabilir. Bu helper, ikiliyi yalnızca whitelist'teki
+    absolute path'lerden çözer.
+    """
+    for candidate in _SAFE_PS_PATHS:
+        try:
+            p = Path(candidate)
+            if p.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        except Exception:  # nosec B112
+            # Adayın stat/access kontrolü başarısızsa sessizce sıradakine geçilir.
+            continue
+    try:
+        which_path = shutil.which("ps")
+    except Exception:
+        which_path = None
+    if which_path and which_path in _SAFE_PS_PATHS:
+        return which_path
+    return None
+
+
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
     pids: list[int] = []
@@ -593,10 +621,15 @@ def _list_child_ollama_pids() -> list[int]:
         if os.name == "nt":
             return []
 
+    # Güvenlik (SAST B603/B607): ps ikilisi PATH manipülasyonuna karşı yalnızca
+    # sistem-yönetimi dizinlerindeki bilinen absolute path'lerden çözülür.
+    ps_binary = _resolve_safe_ps_binary()
+    if ps_binary is None:
+        return []
+
     try:
-        ps_binary = shutil.which("ps") or "/bin/ps"
         raw = subprocess.check_output(  # nosec B603
-            [ps_binary, "-eo", "pid=,ppid=,comm=,args="],  # nosec B607
+            [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
             stderr=subprocess.DEVNULL,
         )
     except Exception:

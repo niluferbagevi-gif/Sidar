@@ -3344,6 +3344,25 @@ def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch)
     assert web_server._reap_child_processes_nonblocking() == 0
 
 
+def test_resolve_safe_ps_binary_accepts_whitelisted_only(monkeypatch, tmp_path):
+    # /tmp altındaki rastgele bir ikili kabul edilmemeli (SAST B603 hardening).
+    bogus = tmp_path / "ps"
+    bogus.write_text("#!/bin/sh\necho hi\n")
+    bogus.chmod(0o755)
+    monkeypatch.setattr(web_server.shutil, "which", lambda _name: str(bogus))
+    monkeypatch.setattr(web_server, "_SAFE_PS_PATHS", ("/nonexistent/ps",))
+    assert web_server._resolve_safe_ps_binary() is None
+
+
+def test_resolve_safe_ps_binary_returns_existing_whitelisted_path(monkeypatch, tmp_path):
+    fake_ps = tmp_path / "ps"
+    fake_ps.write_text("#!/bin/sh\necho hi\n")
+    fake_ps.chmod(0o755)
+    monkeypatch.setattr(web_server, "_SAFE_PS_PATHS", (str(fake_ps),))
+    monkeypatch.setattr(web_server.shutil, "which", lambda _name: None)
+    assert web_server._resolve_safe_ps_binary() == str(fake_ps)
+
+
 def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monkeypatch):
     monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 77))
     original_import = __import__

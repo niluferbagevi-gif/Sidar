@@ -66,6 +66,60 @@ def _to_int(value: object, default: int) -> int:
         return default
 
 
+_DOCKER_MEMORY_RE = re.compile(r"^\d+(\.\d+)?[bkmgBKMG]?$")
+_DOCKER_CPUS_RE = re.compile(r"^\d+(\.\d+)?$")
+_DOCKER_NETWORK_ALLOWED = frozenset({"none", "bridge", "host", "container:default"})
+_DOCKER_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@\-]*$")
+
+
+def _sanitize_docker_token(
+    value: object, *, pattern: re.Pattern[str], default: str, kind: str
+) -> str:
+    """Docker CLI argümanına eklenecek token'i sterilize eder.
+
+    SAST (Bandit B603): subprocess.run liste argümanı `shell=False` ile çağrılsa da
+    konfigürasyondan gelen değerler önce doğrulanmalı; aksi halde "--privileged"
+    gibi flag-injection denemeleri docker CLI tarafından parse edilebilir.
+    """
+    candidate = str(value if value is not None else "").strip()
+    if not candidate or candidate.startswith("-") or not pattern.fullmatch(candidate):
+        logger.warning(
+            "Güvensiz docker %s değeri reddedildi (%r) → varsayılan %r kullanılacak.",
+            kind,
+            candidate,
+            default,
+        )
+        return default
+    return candidate
+
+
+def _sanitize_docker_network(value: object) -> str:
+    candidate = str(value if value is not None else "").strip().lower()
+    if candidate not in _DOCKER_NETWORK_ALLOWED:
+        logger.warning(
+            "Güvensiz docker network değeri reddedildi (%r) → 'none' kullanılacak.",
+            candidate,
+        )
+        return "none"
+    return candidate
+
+
+def _sanitize_docker_image(value: object) -> str:
+    candidate = str(value if value is not None else "").strip()
+    if (
+        not candidate
+        or candidate.startswith("-")
+        or not _DOCKER_IMAGE_RE.fullmatch(candidate)
+        or any(ch.isspace() for ch in candidate)
+    ):
+        logger.warning(
+            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-alpine' kullanılacak.",
+            candidate,
+        )
+        return "python:3.11-alpine"
+    return candidate
+
+
 def _encode_lsp_message(payload: dict[str, Any]) -> bytes:
     body = json.dumps(payload).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
@@ -236,16 +290,35 @@ class CodeManager:
         }
 
     def _build_docker_cli_command(self, code: str, limits: dict[str, object]) -> list[str]:
-        """Docker CLI ile sandbox çalıştırma komutunu oluşturur."""
+        """Docker CLI ile sandbox çalıştırma komutunu oluşturur.
+
+        Güvenlik notu (SAST B603): subprocess.run list-argümanlarıyla `shell=False`
+        çalıştırılır, ancak konfigürasyondan gelen değerler docker CLI tarafından
+        flag/argüman olarak yorumlanabilir. Bu yüzden her değer önce sterilize edilir.
+        """
+        safe_memory = _sanitize_docker_token(
+            limits.get("memory"),
+            pattern=_DOCKER_MEMORY_RE,
+            default="256m",
+            kind="memory",
+        )
+        safe_cpus = _sanitize_docker_token(
+            limits.get("cpus"), pattern=_DOCKER_CPUS_RE, default="0.5", kind="cpus"
+        )
+        safe_pids = _to_int(limits.get("pids_limit"), 64)
+        if safe_pids < 1:
+            safe_pids = 64
+        safe_network = _sanitize_docker_network(limits.get("network_mode"))
+        safe_image = _sanitize_docker_image(self.docker_image)
         return [
             "docker",
             "run",
             "--rm",
-            f"--memory={limits['memory']}",
-            f"--cpus={limits['cpus']}",
-            f"--pids-limit={limits['pids_limit']}",
-            f"--network={limits['network_mode']}",
-            self.docker_image,
+            f"--memory={safe_memory}",
+            f"--cpus={safe_cpus}",
+            f"--pids-limit={safe_pids}",
+            f"--network={safe_network}",
+            safe_image,
             "python",
             "-c",
             code,
