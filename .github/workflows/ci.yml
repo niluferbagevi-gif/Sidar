@@ -136,7 +136,23 @@ jobs:
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
           BENCHMARK_TREND_WINDOW: "15"
           BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
-        run: uv run bash run_tests.sh
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          uv run bash run_tests.sh 2>&1 | tee artifacts/test_run.log
+
+      - name: Upload run_tests.sh full log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-run-log
+          path: artifacts/test_run.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Print last 300 lines of test_run.log on failure
+        if: failure()
+        run: tail -n 300 artifacts/test_run.log || true
 
       - name: Upload Backend Coverage Report
         if: always()
