@@ -19,11 +19,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 MANIFEST_NAME = "manifest.json"
 DEFAULT_SECTIONS = ("wheels", "npm", "ollama", "system", "uv")
+
+
+def _io_error(action: str, path: Path, exc: OSError) -> str:
+    return f"{action} {path}: {exc.strerror or exc}"
 
 
 def sha256_file(path: Path) -> str:
@@ -59,7 +64,11 @@ def verify_manifest(root: Path) -> list[str]:
     if not manifest_path.is_file():
         return [f"missing manifest: {manifest_path}"]
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [_io_error("could not read manifest", manifest_path, exc)]
+    try:
+        manifest = json.loads(manifest_text)
     except json.JSONDecodeError as exc:
         return [f"invalid manifest JSON: {exc}"]
 
@@ -83,26 +92,42 @@ def verify_manifest(root: Path) -> list[str]:
         if not path.is_file():
             errors.append(f"missing file: {rel}")
             continue
-        actual = sha256_file(path)
+        try:
+            actual = sha256_file(path)
+        except OSError as exc:
+            errors.append(_io_error(f"could not read file {rel}", path, exc))
+            continue
         if actual != expected:
             errors.append(f"sha256 mismatch for {rel}: expected={expected} actual={actual}")
     return errors
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build/verify Sidar offline bundle manifest")
     parser.add_argument("command", choices=("create", "verify"))
     parser.add_argument("bundle_dir", nargs="?", default="offline_packages")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     root = Path(args.bundle_dir)
     if args.command == "create":
-        manifest = build_manifest(root)
-        root.mkdir(parents=True, exist_ok=True)
-        (root / MANIFEST_NAME).write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            manifest = build_manifest(root)
+        except OSError as exc:
+            print(
+                f"offline manifest creation failed: {_io_error('could not read bundle files under', root, exc)}"
+            )
+            return 1
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            (root / MANIFEST_NAME).write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(
+                f"offline manifest creation failed: {_io_error('could not write manifest', root / MANIFEST_NAME, exc)}"
+            )
+            return 1
         print(f"wrote {root / MANIFEST_NAME} ({len(manifest['files'])} files)")
         return 0
 
