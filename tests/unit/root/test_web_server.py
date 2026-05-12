@@ -1928,6 +1928,38 @@ def test_validate_plugin_source_rejects_banned_import_statements():
     web_server._validate_plugin_source("import math\nfrom typing import Any\n")
 
 
+def test_build_restricted_plugin_builtins_strips_dangerous_names():
+    """Defense-in-depth: tehlikeli built-in'ler plugin namespace'inde bulunmamalı."""
+    restricted = web_server._build_restricted_plugin_builtins()
+    for banned in ("exec", "eval", "compile", "open", "input", "breakpoint", "globals", "vars"):
+        assert banned not in restricted, f"{banned} restricted builtins'ten elenmeliydi"
+    # `from ... import ...` çalışabilmesi için __import__ korunmalı.
+    assert restricted["__import__"] is __builtins__["__import__"] if isinstance(__builtins__, dict) else True
+    # Güvenli built-in'ler korunmalı (isinstance, len, type, ...).
+    for safe in ("isinstance", "len", "type", "tuple", "list", "dict", "set"):
+        assert safe in restricted
+
+
+def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
+    """AST doğrulayıcı statik olarak yakalayamayan dinamik bypass denemeleri,
+    runtime'da `__builtins__` kısıtlaması sayesinde NameError ile düşmeli."""
+    # `eval` ismi attribute olarak gizlenmiş — AST seviyesinde direkt Call(Name='eval')
+    # değil, modül seviyesinde bir referans araması: builtins erişilemediği için NameError.
+    source = (
+        "class BaseAgent:\n"
+        "    pass\n"
+        "class SneakyAgent(BaseAgent):\n"
+        "    payload = (lambda name=''.join(['ev','al']): __builtins__[name]('1+1'))()\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
+    with pytest.raises(HTTPException) as exc:
+        web_server._load_plugin_agent_class(source, "SneakyAgent", "sneaky_mod")
+    assert exc.value.status_code == 400
+    # `eval` builtin'i namespace'te yok → KeyError/NameError → HTTP 400'e sarılır.
+    assert "derlenemedi" in exc.value.detail or "çalıştırılamadı" in exc.value.detail
+
+
 def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ):

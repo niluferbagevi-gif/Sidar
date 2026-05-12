@@ -1924,6 +1924,39 @@ def _plugin_source_filename(module_label: str) -> str:
     return f"<sidar-plugin:{safe_label}>"
 
 
+_PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
+    {
+        "exec",
+        "eval",
+        "compile",
+        "open",
+        "input",
+        "breakpoint",
+        "globals",
+        "vars",
+        "memoryview",
+    }
+)
+
+
+def _build_restricted_plugin_builtins() -> dict[str, Any]:
+    """Plugin exec'i için tehlikeli built-in'leri elenmiş bir __builtins__ haritası üretir.
+
+    AST doğrulayıcı statik olarak `exec`, `eval`, `compile`, `__import__`, `open`, `input`
+    çağrılarını engeller; bu fonksiyon ise runtime'da bu sembolleri tamamen erişilmez
+    kılarak defense-in-depth sağlar. `from ... import ...` deyiminin çalışabilmesi için
+    `__import__` builtin'i korunur (zararlı kök modül listesi yine AST seviyesinde
+    engellenir).
+    """
+    safe: dict[str, Any] = {}
+    for name in dir(builtins):
+        if name in _PLUGIN_BANNED_BUILTINS:
+            continue
+        safe[name] = getattr(builtins, name)
+    safe["__import__"] = builtins.__import__
+    return safe
+
+
 def _validate_plugin_source(source_code: str) -> None:
     """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
     try:
@@ -2002,7 +2035,13 @@ def _load_plugin_agent_class(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
 
-    namespace = {"__name__": module_label}
+    # Defense-in-depth: AST doğrulamasının yanında runtime namespace'ini de daraltıyoruz.
+    # Tehlikeli built-in'ler (`exec`, `eval`, `compile`, `open`, `input`, `breakpoint`, ...)
+    # plugin koduna sızdırılmadığı için statik kontrol bypass edilse bile çağrı yapılamaz.
+    namespace: dict[str, Any] = {
+        "__name__": module_label,
+        "__builtins__": _build_restricted_plugin_builtins(),
+    }
     try:
         exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
     except HTTPException:
