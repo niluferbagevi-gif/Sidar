@@ -521,3 +521,82 @@ def test_main_skips_overrides_when_args_are_none(monkeypatch):
     assert cfg.AI_PROVIDER == "ollama"
     assert cfg.CODING_MODEL == "qwen2.5-coder:7b"
     assert cfg.CLI_FAST_MODE is False
+
+
+def test_run_doctor_command_prints_report_and_returns_status(monkeypatch, capsys, tmp_path):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    import core.doctor as doctor
+
+    calls = []
+
+    def fake_report(output_path):
+        calls.append(output_path)
+        return {"overall_status": "warn", "checks": [{"name": "uv", "status": "pass"}]}
+
+    monkeypatch.setattr(doctor, "run_doctor_report", fake_report)
+    output_path = tmp_path / "doctor.json"
+
+    assert cli._run_doctor_command(str(output_path)) == 0
+    out = capsys.readouterr().out
+
+    assert calls == [output_path]
+    assert "Sidar Doctor overall_status=warn" in out
+    assert f"Rapor: {output_path}" in out
+    assert '"overall_status": "warn"' in out
+
+    monkeypatch.setattr(
+        doctor,
+        "run_doctor_report",
+        lambda output_path: {"overall_status": "fail", "checks": []},
+    )
+    assert cli._run_doctor_command(str(output_path)) == 1
+
+
+def test_main_doctor_subcommand_parses_output_and_exits(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    calls = []
+    monkeypatch.setattr(cli, "_run_doctor_command", lambda output: calls.append(output) or 7)
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "doctor", "--output", "custom.json"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 7
+    assert calls == ["custom.json"]
+
+
+def test_main_doctor_subcommand_rejects_invalid_arguments(monkeypatch, capsys):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "doctor", "--unknown"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 2
+    assert "unrecognized arguments: --unknown" in capsys.readouterr().err
+
+
+def test_main_doctor_flag_runs_after_default_config_parse(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    monkeypatch.setattr(cli, "Config", _FakeConfig)
+    monkeypatch.setattr(cli, "_run_doctor_command", lambda: 3)
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "--doctor"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 3
+
+
+def test_main_surfaces_broken_config_initialization(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+
+    class _BrokenConfig(_FakeConfig):
+        def __init__(self):
+            raise RuntimeError("config file is broken")
+
+    monkeypatch.setattr(cli, "Config", _BrokenConfig)
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "--status"])
+
+    with pytest.raises(RuntimeError, match="config file is broken"):
+        cli.main()
