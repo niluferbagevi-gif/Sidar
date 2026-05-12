@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 import main
-from main import _safe_choice, _safe_port, _safe_text, build_command
+from main import _safe_choice, _safe_host, _safe_port, _safe_text, build_command
 
 
 class _FakeStreamingPipe(io.StringIO):
@@ -203,6 +203,21 @@ def test_safe_text_and_port_normalization() -> None:
 
 def test_safe_text_returns_default_for_none() -> None:
     assert _safe_text(None, default="fallback") == "fallback"
+
+
+def test_safe_host_validates_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
+
+    assert _safe_host("127.0.0.1") == "127.0.0.1"
+    assert _safe_host("0.0.0.0") == "0.0.0.0"
+    assert _safe_host("bad host!") == "127.0.0.1"
+
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    assert _safe_host("0.0.0.0") == "127.0.0.1"
+
+    monkeypatch.setenv("SIDAR_ALLOW_PUBLIC_BIND", "true")
+    assert _safe_host("0.0.0.0") == "0.0.0.0"
 
 
 def test_build_command_rejects_invalid_provider_level_and_log() -> None:

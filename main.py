@@ -34,7 +34,9 @@ RESET = "\033[0m"
 class DummyConfig:
     AI_PROVIDER = "ollama"
     ACCESS_LEVEL = "full"
-    WEB_HOST = "0.0.0.0"  # nosec B104  # geliştirme/Docker erişimi için bilinçli varsayılan.
+    # Varsayılan olarak yalnız loopback'e bağlan; harici erişim WEB_HOST env
+    # değişkeni veya CLI --host argümanıyla bilinçli şekilde açılır.
+    WEB_HOST = "127.0.0.1"
     WEB_PORT = 7860
     CODING_MODEL = "qwen2.5-coder:7b"
     GEMINI_API_KEY = ""
@@ -155,6 +157,25 @@ def _safe_port(value: object, default: str = "7860") -> str:
     except (TypeError, ValueError):
         return default
     return str(port) if 1 <= port <= 65535 else default
+
+
+def _safe_host(value: object, default: str = "127.0.0.1") -> str:
+    """Config/env kökenli host değerlerini `ipaddress` tabanlı doğrulayıcıdan geçirir.
+
+    Geçersiz veya üretim profilinde reddedilen değerlerde güvenli yerel
+    fallback (`127.0.0.1`) döner; böylece `# nosec B104` ile bypass yapmak
+    yerine politika tek bir noktada uygulanır.
+    """
+    from core.utils.network_validation import validate_bind_host
+
+    candidate = _safe_text(value, default)
+    try:
+        return validate_bind_host(candidate)
+    except ValueError:
+        try:
+            return validate_bind_host(default)
+        except ValueError:
+            return "127.0.0.1"
 
 
 def preflight(provider: str) -> None:
@@ -392,10 +413,7 @@ def run_wizard() -> int:
     elif mode == "web":
         extra_args["host"] = ask_text(
             "\nWeb Sunucu Host IP'si",
-            _safe_text(
-                getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104  # networkte servis için bilinçli fallback.
-                "0.0.0.0",  # nosec B104  # networkte servis için bilinçli fallback.
-            ),
+            _safe_host(getattr(cfg, "WEB_HOST", "127.0.0.1"), "127.0.0.1"),
         )
         extra_args["port"] = ask_text(
             "Web Sunucu Portu",
@@ -517,10 +535,7 @@ def main() -> None:
         "model": args.model
         or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
         "host": args.host
-        or _safe_text(
-            getattr(cfg, "WEB_HOST", "0.0.0.0"),  # nosec B104  # networkte servis için bilinçli fallback.
-            "0.0.0.0",  # nosec B104  # networkte servis için bilinçli fallback.
-        ),
+        or _safe_host(getattr(cfg, "WEB_HOST", "127.0.0.1"), "127.0.0.1"),
         "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }
 

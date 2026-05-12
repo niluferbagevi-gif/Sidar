@@ -4180,7 +4180,7 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
 
 def test_main_handles_non_callable_initialize_attribute(monkeypatch):
     class _Args:
-        host = ""
+        host = "127.0.0.1"
         port = 9193
         level = None
         provider = None
@@ -4209,9 +4209,50 @@ def test_main_handles_non_callable_initialize_attribute(monkeypatch):
     monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentNoInit())
     web_server.main()
 
-    assert run_calls[-1][1]["host"] == ""
+    assert run_calls[-1][1]["host"] == "127.0.0.1"
     assert run_calls[-1][1]["port"] == 9193
     assert run_calls[-1][1]["log_level"] == "debug"
+
+
+def test_main_rejects_wildcard_host_in_production(monkeypatch):
+    class _Args:
+        host = "0.0.0.0"
+        port = 9194
+        level = None
+        provider = None
+        log = "info"
+
+    class _Parser:
+        def add_argument(self, *_, **__):
+            return None
+
+        def parse_known_args(self):
+            return _Args(), []
+
+    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+    monkeypatch.setattr(
+        web_server,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: None),
+    )
+    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: SimpleNamespace(VERSION="x"))
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        web_server.main()
+    assert exc.value.code == 2
+
+    monkeypatch.setenv("SIDAR_ALLOW_PUBLIC_BIND", "true")
+    run_calls: list[tuple] = []
+    monkeypatch.setattr(
+        web_server,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
+    )
+    web_server.main()
+    assert run_calls[-1][1]["host"] == "0.0.0.0"
 
 
 @pytest.mark.asyncio

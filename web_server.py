@@ -87,6 +87,10 @@ from core.llm_metrics import (
     reset_current_metrics_user_id,
     set_current_metrics_user_id,
 )
+from core.utils.network_validation import (
+    is_unspecified_bind,
+    validate_bind_host,
+)
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 
@@ -5951,7 +5955,16 @@ def main() -> None:
         )
         _agent = None
 
-    display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host  # nosec B104
+    # B104 bypass yerine: bind adresini `ipaddress` tabanlı doğrulayıcıdan geçir.
+    # Üretim profilinde (SIDAR_ENV=production) 0.0.0.0 / :: değerleri açık onay
+    # (SIDAR_ALLOW_PUBLIC_BIND=true) olmadan reddedilir.
+    try:
+        validated_host = validate_bind_host(args.host)
+    except ValueError as exc:
+        logger.critical("Web sunucusu güvenlik politikasına takıldı: %s", exc)
+        raise SystemExit(2) from exc
+    args.host = validated_host
+    display_host = "localhost" if is_unspecified_bind(validated_host) else validated_host
     agent_version = getattr(_agent, "VERSION", "") if _agent is not None else ""
     version_label = f"v{agent_version}" if agent_version else f"v{getattr(cfg, 'VERSION', '?')}"
 

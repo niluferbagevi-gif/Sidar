@@ -4405,7 +4405,7 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
 
 def test_main_handles_non_callable_initialize_attribute(monkeypatch):
     class _Args:
-        host = ""
+        host = "127.0.0.1"
         port = 9193
         level = None
         provider = None
@@ -4434,7 +4434,7 @@ def test_main_handles_non_callable_initialize_attribute(monkeypatch):
     monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentNoInit())
     web_server.main()
 
-    assert run_calls[-1][1]["host"] == ""
+    assert run_calls[-1][1]["host"] == "127.0.0.1"
     assert run_calls[-1][1]["port"] == 9193
     assert run_calls[-1][1]["log_level"] == "debug"
 

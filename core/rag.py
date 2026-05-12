@@ -35,6 +35,7 @@ import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
 from config import Config
+from core.utils.network_validation import is_local_only_host
 
 _BLEACH_AVAILABLE = True
 
@@ -170,11 +171,9 @@ class GraphIndex:
         if value.startswith(("ws://", "wss://", "http://", "https://")):
             parsed = urllib.parse.urlparse(value)
             hostname = (parsed.hostname or "").lower()
-            if hostname and hostname not in {
-                "localhost",
-                "127.0.0.1",
-                "0.0.0.0",  # nosec B104
-            }:
+            # B104 bypass yerine: hostname'in gerçekten yerel (loopback ya da
+            # unspecified) olduğunu `ipaddress` tabanlı doğrulayıcıyla kontrol et.
+            if hostname and not is_local_only_host(hostname):
                 return None
             value = parsed.path or "/"
         if not value.startswith("/"):
