@@ -80,6 +80,14 @@ bağlamında yine çalışan bir Docker CLI + Docker daemon gerekir. Başka bir 
 makinede `docker` binary'si yoksa proje dosyalarıyla başlatılamaz; önce Docker Desktop,
 Docker Engine veya eşdeğer runtime kurulmalıdır.
 
+WSL2 üzerinde kurulum loglarının başında Docker CLI bulunamadı veya daemon yanıt vermedi
+uyarısı görülüp ilerleyen adımlarda Docker motoruna erişilebiliyorsa bu genellikle Docker
+Desktop ile WSL dağıtımı arasındaki kısa senkronizasyon gecikmesidir. Bu durumda kalıcı
+bir proje hatası varsaymadan önce Docker Desktop **Settings → Resources → WSL Integration**
+ekranında kullanılan Ubuntu dağıtımının açık kaldığını doğrulayın. `sidar-gpu` ve
+`sidar-web-gpu` gibi GPU servislerini yönetmeden önce gerekirse Docker Desktop'ı yeniden
+başlatıp WSL oturumunda `wsl --shutdown` sonrası yeni terminal açın.
+
 Beklenen doğrulama komutları:
 
 ```bash

@@ -383,6 +383,8 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 
 > **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. Dev Container `initializeCommand` aşamasındaki `.devcontainer/host-preflight.sh` de Linux hostlarda eksik CLI'ı `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=auto` politikasıyla tamamlamayı dener; WSL2'de önerilen yol Docker Desktop WSL Integration'dır ve APT kurulumu için `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=always` bilinçli verilmelidir.
 
+> **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
+
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).
 
 > **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
