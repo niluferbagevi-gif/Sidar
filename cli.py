@@ -356,6 +356,7 @@ def main() -> None:
     agent = SidarAgent(cfg)
 
     if args.status:
+
         async def _status_flow() -> None:
             try:
                 await agent.initialize()

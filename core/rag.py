@@ -70,7 +70,12 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
         )
     if any(
         marker in text
-        for marker in ("connection refused", "could not connect", "server closed", "connection failed")
+        for marker in (
+            "connection refused",
+            "could not connect",
+            "server closed",
+            "connection failed",
+        )
     ):
         return (
             "PostgreSQL/pgvector bağlantısı kurulamadı. Veritabanı servisinin çalıştığını, "

@@ -192,9 +192,7 @@ def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypa
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
-    monkeypatch.setenv(
-        "DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other"
-    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other")
 
     check = doctor.check_database_env()
 
