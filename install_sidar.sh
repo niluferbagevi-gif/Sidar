@@ -239,6 +239,47 @@ docker_cli_healthy() {
     return 0
 }
 
+# WSL2: Windows tarafındaki docker.exe çalışıyorsa Docker Desktop daemon ayakta demektir.
+# WSL integration kapalıyken bile Windows tarafı yanıt verir; bu iki durumu ayırt etmek için kullanılır.
+docker_desktop_windows_responsive() {
+    command -v docker.exe &>/dev/null || return 1
+    docker.exe info &>/dev/null
+}
+
+# Docker Desktop'ı Windows tarafından sessizce başlatmayı dener.
+attempt_launch_docker_desktop() {
+    local launcher=""
+    if [[ -x "/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe" ]]; then
+        launcher="/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe"
+    elif command -v docker.exe &>/dev/null; then
+        # Tek başına docker.exe daemon başlatmaz; yine de gui'yi tetiklemek için fallback.
+        launcher="$(command -v docker.exe)"
+    fi
+    [[ -z "$launcher" ]] && return 1
+
+    info "Docker Desktop arka planda başlatılıyor..."
+    # nohup + & ile WSL tarafında engellemesin; çıktıyı yut.
+    nohup "$launcher" >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    return 0
+}
+
+# Docker CLI sağlıklı olana kadar polling ile bekler (varsayılan 90sn, 3sn aralıklarla).
+wait_for_docker_cli_ready() {
+    local max_wait_seconds="${1:-90}"
+    local poll_interval_seconds="${2:-3}"
+    local elapsed=0
+
+    while (( elapsed < max_wait_seconds )); do
+        if docker_cli_healthy 2>/dev/null; then
+            return 0
+        fi
+        sleep "$poll_interval_seconds"
+        elapsed=$((elapsed + poll_interval_seconds))
+    done
+    return 1
+}
+
 is_windows_interop_binary_path() {
     local bin_path="${1:-}"
     [[ -z "$bin_path" ]] && return 1
@@ -2214,20 +2255,43 @@ ensure_prerequisites() {
         # Eğer Windows'ta kurulu değilse net bir şekilde hata verip kurulumu iptal et
         if [[ "$docker_desktop_installed" == false ]]; then
             fail "Docker Desktop sisteminizde hiç bulunamadı, lütfen önce Windows'a kurun."
-        else
-            # Windows'ta kurulu ama WSL2'de çalışmıyorsa entegrasyon bozuktur
-            warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
-            info "Lütfen şu adımları uygulayın:"
-            echo "  1. Windows'ta Docker Desktop'ı açın."
-            echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-            echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
-            echo ""
-            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+        fi
 
-            # Kullanıcıdan onay sonrası tekrar doğrula
-            if ! docker_cli_healthy; then
-                fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+        # Docker Desktop kurulu — daemon çalışıyor mu yoksa sadece WSL entegrasyonu mu kapalı?
+        local desktop_daemon_up=false
+        if docker_desktop_windows_responsive; then
+            desktop_daemon_up=true
+        fi
+
+        if [[ "$desktop_daemon_up" == true ]]; then
+            warn "Docker Desktop çalışıyor ancak WSL integration bu dağıtım için kapalı görünüyor."
+            info "Lütfen şu adımları uygulayın:"
+            echo "  1. Docker Desktop > Settings > Resources > WSL Integration"
+            echo "  2. Bu dağıtımın anahtarını aktif edin ve 'Apply & restart' butonuna tıklayın."
+        else
+            warn "Docker Desktop kurulu ancak çalışmıyor. Otomatik başlatma denenecek."
+            if attempt_launch_docker_desktop; then
+                info "Docker Desktop başlatma sinyali gönderildi; daemon hazır olana kadar beklenecek."
+            else
+                warn "Docker Desktop otomatik başlatılamadı; Windows tarafında elle açın."
             fi
+        fi
+
+        # NO_INTERACTION modunda kullanıcıyı bekletmek yerine polling ile dene, başarısızsa fail.
+        if [[ "$NO_INTERACTION" == true ]]; then
+            info "Non-interactive mod: Docker CLI hazır olana kadar otomatik bekleniyor (maks 120sn)..."
+            if ! wait_for_docker_cli_ready 120 3; then
+                fail "Docker hâlâ kullanılamıyor (non-interactive mod). WSL integration veya Docker Desktop daemon hazır olduktan sonra kurulumu yeniden çalıştırın."
+            fi
+        else
+            echo ""
+            read -r -p "Hazır olduğunuzda devam etmek için [ENTER] tuşuna basın (otomatik polling yapılacak)..."
+
+            info "Docker CLI hazır olana kadar bekleniyor (maks 90sn, 3sn aralıklarla)..."
+            if ! wait_for_docker_cli_ready 90 3; then
+                fail "Docker hâlâ kullanılamıyor. Entegrasyonu tamamladıktan sonra kurulumu tekrar çalıştırın."
+            fi
+            ok "Docker CLI hazır."
         fi
     fi
 
