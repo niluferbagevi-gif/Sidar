@@ -140,6 +140,21 @@ ensure_test_dotenv() {
 
 ensure_test_dotenv
 
+cleanup_zone_identifier_artifacts() {
+  if [ "${CLEAN_ZONE_IDENTIFIER_ARTIFACTS:-1}" != "1" ]; then
+    echo "ℹ️ Zone.Identifier temizliği devre dışı (CLEAN_ZONE_IDENTIFIER_ARTIFACTS=${CLEAN_ZONE_IDENTIFIER_ARTIFACTS:-0})."
+    return 0
+  fi
+
+  echo "🧹 Windows Zone.Identifier yan dosyaları temizleniyor..."
+  if ! uv run python scripts/cleanup_zone_identifier.py --root .; then
+    echo "❌ Zone.Identifier temizliği başarısız oldu."
+    return 1
+  fi
+}
+
+cleanup_zone_identifier_artifacts || exit 1
+
 run_precommit_autofix || exit 1
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
@@ -763,12 +778,52 @@ PY
   fi
 }
 
+update_progressive_coverage_gate() {
+  if [ "${COVERAGE_RATCHET_ENABLED:-1}" != "1" ]; then
+    echo "ℹ️ Coverage ratcheting devre dışı (COVERAGE_RATCHET_ENABLED=${COVERAGE_RATCHET_ENABLED:-0})."
+    return 0
+  fi
+
+  if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
+    echo "ℹ️ Pytest/coverage kalite kapısı geçmediği için coverage ratchet atlandı."
+    return 0
+  fi
+
+  if [ ! -f "coverage.json" ]; then
+    echo "⚠️ coverage.json bulunamadı; coverage ratchet uygulanamadı."
+    return 0
+  fi
+
+  echo "📈 Coverage ratcheting kontrolü çalıştırılıyor (step=${COVERAGE_RATCHET_STEP:-5}, min=${COVERAGE_RATCHET_MIN_GATE:-5}, max=${COVERAGE_RATCHET_MAX_GATE:-100})..."
+  if uv run python scripts/coverage_ratchet.py \
+    --coveragerc .coveragerc \
+    --coverage-json coverage.json \
+    --step "${COVERAGE_RATCHET_STEP:-5}" \
+    --min-gate "${COVERAGE_RATCHET_MIN_GATE:-5}" \
+    --max-gate "${COVERAGE_RATCHET_MAX_GATE:-100}"; then
+    DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY_RATCHET_GATE'
+from configparser import ConfigParser
+from pathlib import Path
+
+cfg = ConfigParser()
+cfg.read(Path(".coveragerc"))
+print(cfg.get("report", "fail_under", fallback="5"))
+PY_RATCHET_GATE
+)"
+    COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"
+  else
+    echo "❌ Coverage ratcheting başarısız oldu."
+    BACKEND_EXIT_CODE=1
+  fi
+}
+
 # 1) Backend kalite akışı (3 faz):
 #    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
 if ensure_uv_available && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
+  update_progressive_coverage_gate
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
   BACKEND_EXIT_CODE=1
