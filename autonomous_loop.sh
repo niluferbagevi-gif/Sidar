@@ -123,6 +123,10 @@ if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
 fi
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
 echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
+if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then
+  echo "[INFO] AUTONOMOUS_LOOP_PRINT_CONFIG=1 verildi; otonom döngü başlatılmadan yapılandırma doğrulaması tamamlandı."
+  exit 0
+fi
 
 read_coverage_percent() {
   local coverage_json="${1:-coverage.json}"

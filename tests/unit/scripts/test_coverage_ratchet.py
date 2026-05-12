@@ -23,6 +23,10 @@ def test_compute_next_gate_never_decreases_existing_gate() -> None:
     assert compute_next_gate(84.9, 90, step=5, min_gate=5) == 90
 
 
+def test_default_one_percent_step_promotes_high_coverage_without_exact_lock() -> None:
+    assert compute_next_gate(99.04, 95, min_gate=5) == 99
+
+
 def test_ratchet_coverage_gate_updates_coveragerc_preserving_comments(tmp_path: Path) -> None:
     coveragerc = tmp_path / ".coveragerc"
     coverage_json = tmp_path / "coverage.json"
@@ -36,16 +40,16 @@ def test_ratchet_coverage_gate_updates_coveragerc_preserving_comments(tmp_path: 
 
     assert result.updated is True
     assert result.current_gate == 5
-    assert result.target_gate == 20
-    assert read_fail_under(coveragerc) == 20
+    assert result.target_gate == 23
+    assert read_fail_under(coveragerc) == 23
     assert "show_missing = True" in coveragerc.read_text(encoding="utf-8")
 
 
-def test_ratchet_coverage_gate_leaves_gate_when_not_improved(tmp_path: Path) -> None:
+def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(tmp_path: Path) -> None:
     coveragerc = tmp_path / ".coveragerc"
     coverage_json = tmp_path / "coverage.json"
     coveragerc.write_text("[report]\nfail_under = 30\n", encoding="utf-8")
-    _write_coverage_json(coverage_json, 31.1)
+    _write_coverage_json(coverage_json, 30.9)
 
     result = ratchet_coverage_gate(coveragerc_path=coveragerc, coverage_json_path=coverage_json)
 
