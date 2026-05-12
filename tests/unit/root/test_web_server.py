@@ -6957,6 +6957,160 @@ async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_websocket_hitl_accepts_without_token_sends_snapshot_and_cleans_up(monkeypatch):
+    pending_items = [SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})]
+
+    class _Store:
+        async def pending(self):
+            return pending_items
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {}
+            self.accepted_subprotocols = []
+            self.sent = []
+            self.receive_count = 0
+
+        async def accept(self, subprotocol=None):
+            self.accepted_subprotocols.append(subprotocol)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive_text(self):
+            self.receive_count += 1
+            raise web_server.WebSocketDisconnect()
+
+    async def _resolve_agent():
+        return SimpleNamespace()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "get_hitl_store", lambda: _Store())
+
+    ws = _Ws()
+    await web_server.websocket_hitl(ws)
+
+    assert ws.accepted_subprotocols == [None]
+    assert ws.sent == [{"type": "hitl_snapshot", "pending": [{"request_id": "req-1"}]}]
+    assert ws.receive_count == 1
+    assert ws not in web_server._hitl_ws_clients
+
+
+@pytest.mark.asyncio
+async def test_websocket_hitl_rejects_invalid_header_token(monkeypatch):
+    closes = []
+
+    class _Ws:
+        headers = {"sec-websocket-protocol": "bad-token"}
+
+        def __init__(self):
+            self.accepted_subprotocols = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted_subprotocols.append(subprotocol)
+
+    async def _resolve_agent():
+        return SimpleNamespace()
+
+    async def _resolve_user(_agent, token):
+        assert token == "bad-token"
+        return None
+
+    async def _close(websocket, reason):
+        closes.append((websocket, reason))
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_ws_close_policy_violation", _close)
+
+    ws = _Ws()
+    await web_server.websocket_hitl(ws)
+
+    assert ws.accepted_subprotocols == ["bad-token"]
+    assert closes == [(ws, "Invalid or expired token")]
+    assert ws not in web_server._hitl_ws_clients
+
+
+@pytest.mark.asyncio
+async def test_websocket_hitl_accepts_valid_header_token_and_cleans_up(monkeypatch):
+    class _Store:
+        async def pending(self):
+            return []
+
+    class _Ws:
+        headers = {"sec-websocket-protocol": "good-token"}
+
+        def __init__(self):
+            self.accepted_subprotocols = []
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted_subprotocols.append(subprotocol)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive_text(self):
+            raise web_server.WebSocketDisconnect()
+
+    async def _resolve_agent():
+        return SimpleNamespace()
+
+    def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return SimpleNamespace(id="u1", role="operator")
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "get_hitl_store", lambda: _Store())
+
+    ws = _Ws()
+    await web_server.websocket_hitl(ws)
+
+    assert ws.accepted_subprotocols == ["good-token"]
+    assert ws.sent == [{"type": "hitl_snapshot", "pending": []}]
+    assert ws not in web_server._hitl_ws_clients
+
+
+def test_agent_singleton_factories_cache_instances(monkeypatch):
+    created = []
+
+    class _Poyraz:
+        def __init__(self, config):
+            self.config = config
+            created.append(("poyraz", config))
+
+    class _Coverage:
+        def __init__(self, config):
+            self.config = config
+            created.append(("coverage", config))
+
+    monkeypatch.setattr(web_server, "_poyraz_agent_instance", None)
+    monkeypatch.setattr(web_server, "_coverage_agent_instance", None)
+    monkeypatch.setitem(
+        sys.modules, "agent.roles.poyraz_agent", SimpleNamespace(PoyrazAgent=_Poyraz)
+    )
+    monkeypatch.setitem(
+        sys.modules, "agent.roles.coverage_agent", SimpleNamespace(CoverageAgent=_Coverage)
+    )
+
+    async def _exercise():
+        poyraz_first = await web_server._get_poyraz_agent_instance()
+        poyraz_second = await web_server._get_poyraz_agent_instance()
+        coverage_first = await web_server._get_coverage_agent_instance()
+        coverage_second = await web_server._get_coverage_agent_instance()
+        return poyraz_first, poyraz_second, coverage_first, coverage_second
+
+    poyraz_first, poyraz_second, coverage_first, coverage_second = asyncio.run(_exercise())
+
+    assert poyraz_first is poyraz_second
+    assert coverage_first is coverage_second
+    assert poyraz_first.config is web_server.cfg
+    assert coverage_first.config is web_server.cfg
+    assert created == [("poyraz", web_server.cfg), ("coverage", web_server.cfg)]
+
+
+@pytest.mark.asyncio
 async def test_file_content_covers_security_dir_and_size_guards(tmp_path, monkeypatch):
     fake_root = tmp_path / "root"
     fake_root.mkdir()
