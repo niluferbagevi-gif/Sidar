@@ -726,7 +726,14 @@ OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
 
 # Veritabanı (v3.0.0+)
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/sidar # Boş bırakılırsa SQLite kullanılır
+# POSTGRES_PASSWORD ile DATABASE_URL içindeki parola birebir aynı olmalıdır;
+# aksi halde PostgreSQL `password authentication failed for user "sidar"` döndürür.
+POSTGRES_DB=sidar
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
+DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@localhost:5432/sidar
+# Docker Compose servisleri için: postgresql+asyncpg://sidar:<POSTGRES_PASSWORD>@postgres:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@postgres:5432/sidar
 
 # Güvenlik
 ACCESS_LEVEL=sandbox            # restricted | sandbox | full

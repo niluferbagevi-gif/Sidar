@@ -166,14 +166,49 @@ def test_database_env_fails_for_weak_passwords_and_legacy_container_url(monkeypa
     assert "POSTGRES_PASSWORD is weak" in check.message
     assert "legacy default password" in check.message
     assert check.details["scheme"] == "postgresql"
+    assert check.details["container_scheme"] == "postgresql"
+
+
+def test_database_env_fails_when_database_url_password_differs_from_postgres_password(
+    monkeypatch,
+):
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "b" * 24 + "@localhost:5432/sidar")
+    monkeypatch.setenv(
+        "SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@db:5432/sidar"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "DATABASE_URL password does not match POSTGRES_PASSWORD" in check.message
+    assert check.details["postgres_user_set"] is True
+    assert check.details["postgres_db_set"] is True
+
+
+def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypatch):
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "warn"
+    assert "DATABASE_URL database name does not match POSTGRES_DB" in check.message
 
 
 def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "b" * 24)
-    monkeypatch.setenv(
-        "SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:" + "c" * 24 + "@db/sidar"
-    )
+    password = "a" * 24
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", f"postgresql://sidar:{password}@db/sidar")
 
     check = doctor.check_database_env()
 

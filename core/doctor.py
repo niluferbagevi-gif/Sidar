@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from sidar_assets.paths import migrations_path
 
@@ -105,21 +105,79 @@ def check_uv() -> DoctorCheck:
     )
 
 
+def _is_postgres_url(parsed: Any) -> bool:
+    return bool(parsed and str(parsed.scheme).startswith("postgresql"))
+
+
+def _database_name(parsed: Any) -> str:
+    return str(getattr(parsed, "path", "") or "").lstrip("/").split("/", 1)[0]
+
+
+def _validate_postgres_env_sync(
+    *,
+    label: str,
+    parsed: Any,
+    postgres_user: str,
+    postgres_password: str,
+    postgres_db: str,
+) -> tuple[list[str], list[str]]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    if not _is_postgres_url(parsed):
+        return failures, warnings
+
+    url_user = unquote(str(getattr(parsed, "username", "") or ""))
+    url_password = unquote(str(getattr(parsed, "password", "") or ""))
+    url_db = _database_name(parsed)
+
+    if _is_weak_secret(url_password):
+        failures.append(f"{label} contains an empty or weak database password")
+    if postgres_user and url_user and url_user != postgres_user:
+        failures.append(f"{label} user does not match POSTGRES_USER")
+    if postgres_password and url_password and url_password != postgres_password:
+        failures.append(
+            f"{label} password does not match POSTGRES_PASSWORD; PostgreSQL may reject authentication"
+        )
+    if postgres_db and url_db and url_db != postgres_db:
+        warnings.append(f"{label} database name does not match POSTGRES_DB")
+    return failures, warnings
+
+
 def check_database_env() -> DoctorCheck:
     database_url = os.getenv("DATABASE_URL", "").strip()
     container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    postgres_user = os.getenv("POSTGRES_USER", "").strip()
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
+    postgres_db = os.getenv("POSTGRES_DB", "").strip()
     parsed = urlparse(database_url) if database_url else None
-    db_password = parsed.password if parsed else ""
+    container_parsed = urlparse(container_url) if container_url else None
 
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
         warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
-    elif parsed and parsed.scheme.startswith("postgresql") and _is_weak_secret(db_password):
-        failures.append("DATABASE_URL contains an empty or weak database password")
+    else:
+        sync_failures, sync_warnings = _validate_postgres_env_sync(
+            label="DATABASE_URL",
+            parsed=parsed,
+            postgres_user=postgres_user,
+            postgres_password=postgres_password,
+            postgres_db=postgres_db,
+        )
+        failures.extend(sync_failures)
+        warnings.extend(sync_warnings)
     if postgres_password and _is_weak_secret(postgres_password):
         failures.append("POSTGRES_PASSWORD is weak")
+    if container_url:
+        container_failures, container_warnings = _validate_postgres_env_sync(
+            label="SIDAR_CONTAINER_DATABASE_URL",
+            parsed=container_parsed,
+            postgres_user=postgres_user,
+            postgres_password=postgres_password,
+            postgres_db=postgres_db,
+        )
+        failures.extend(container_failures)
+        warnings.extend(container_warnings)
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 
@@ -132,8 +190,11 @@ def check_database_env() -> DoctorCheck:
         {
             "database_url_set": bool(database_url),
             "container_database_url_set": bool(container_url),
+            "postgres_user_set": bool(postgres_user),
             "postgres_password_set": bool(postgres_password),
+            "postgres_db_set": bool(postgres_db),
             "scheme": parsed.scheme if parsed else "",
+            "container_scheme": container_parsed.scheme if container_parsed else "",
         },
     )
 
