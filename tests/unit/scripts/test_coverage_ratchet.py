@@ -45,7 +45,9 @@ def test_ratchet_coverage_gate_updates_coveragerc_preserving_comments(tmp_path: 
     assert "show_missing = True" in coveragerc.read_text(encoding="utf-8")
 
 
-def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(tmp_path: Path) -> None:
+def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(
+    tmp_path: Path,
+) -> None:
     coveragerc = tmp_path / ".coveragerc"
     coverage_json = tmp_path / "coverage.json"
     coveragerc.write_text("[report]\nfail_under = 30\n", encoding="utf-8")

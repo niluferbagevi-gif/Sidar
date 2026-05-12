@@ -642,7 +642,9 @@ class Database:
             elif is_pool_error or "pool" in error_text:
                 reason = "PostgreSQL bağlantı havuzu kullanılamıyor"
             else:
-                reason = _postgres_user_action_message("PostgreSQL bağlantı havuzu oluşturulamadı", exc)
+                reason = _postgres_user_action_message(
+                    "PostgreSQL bağlantı havuzu oluşturulamadı", exc
+                )
             await self._enter_degraded_mode(reason, exc)
 
     async def close(self) -> None:

@@ -7,7 +7,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _run_autonomous_loop_config(*, profile: str, operation_profile: str = "coverage-campaign") -> str:
+def _run_autonomous_loop_config(
+    *, profile: str, operation_profile: str = "coverage-campaign"
+) -> str:
     env = os.environ.copy()
     env.update(
         {

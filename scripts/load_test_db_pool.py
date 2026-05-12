@@ -44,7 +44,25 @@ async def run_load_test(
     await db.connect()
     try:
         if db._backend != "postgresql":
-            raise RuntimeError("Bu test yalnızca PostgreSQL backend ile çalışır.")
+            degraded_reason = getattr(db, "degraded_reason", None)
+            degraded_mode = getattr(db, "degraded_mode", None)
+            redacted_url = (
+                db._redact_database_url(database_url)
+                if hasattr(db, "_redact_database_url")
+                else "<redaction unavailable>"
+            )
+            print(
+                "POOL_LOAD_TEST_BACKEND_MISMATCH "
+                f"backend={db._backend} degraded_mode={degraded_mode} "
+                f"primary_url={redacted_url} "
+                f"degraded_reason={degraded_reason!r}",
+                flush=True,
+            )
+            raise RuntimeError(
+                "Bu test yalnızca PostgreSQL backend ile çalışır. "
+                f"Aktif backend: {db._backend}, degraded_mode={degraded_mode}, "
+                f"reason={degraded_reason!r}"
+            )
 
         sem = asyncio.Semaphore(max(1, concurrency))
 
