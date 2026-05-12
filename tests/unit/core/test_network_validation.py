@@ -133,10 +133,7 @@ def test_validate_bind_host_blocks_wildcard_in_production() -> None:
 
 
 def test_validate_bind_host_allows_wildcard_in_production_with_flag() -> None:
-    assert (
-        nv.validate_bind_host("0.0.0.0", env="production", allow_public=True)
-        == "0.0.0.0"
-    )
+    assert nv.validate_bind_host("0.0.0.0", env="production", allow_public=True) == "0.0.0.0"
 
 
 def test_validate_bind_host_uses_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:

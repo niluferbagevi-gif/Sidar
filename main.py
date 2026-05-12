@@ -534,8 +534,7 @@ def main() -> None:
     extra_args = {
         "model": args.model
         or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
-        "host": args.host
-        or _safe_host(getattr(cfg, "WEB_HOST", "127.0.0.1"), "127.0.0.1"),
+        "host": args.host or _safe_host(getattr(cfg, "WEB_HOST", "127.0.0.1"), "127.0.0.1"),
         "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }
 

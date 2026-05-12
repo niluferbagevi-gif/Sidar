@@ -22,9 +22,7 @@ LOOPBACK_HOSTNAMES: frozenset[str] = frozenset(
 
 # RFC 1123 uyumlu temel hostname düzeni (DNS lookup yapmaz, yalnızca sözdizimi).
 _HOSTNAME_RE = re.compile(
-    r"^(?=.{1,253}$)"
-    r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)"
-    r"(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$"
+    r"^(?=.{1,253}$)" r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)" r"(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$"
 )
 
 
@@ -124,16 +122,12 @@ def validate_bind_host(
         ip = ipaddress.ip_address(candidate)
     except ValueError:
         if not is_valid_hostname(candidate):
-            raise ValueError(
-                f"Bind host geçersiz IP veya hostname biçiminde: {host!r}"
-            ) from None
+            raise ValueError(f"Bind host geçersiz IP veya hostname biçiminde: {host!r}") from None
         return raw
 
     if ip.is_unspecified:
         production = is_production_env(env)
-        public_allowed = (
-            allow_public if allow_public is not None else is_public_bind_allowed()
-        )
+        public_allowed = allow_public if allow_public is not None else is_public_bind_allowed()
         if production and not public_allowed:
             raise ValueError(
                 "SIDAR_ENV=production iken tüm arayüzlere bağlanmak (0.0.0.0/::) "
