@@ -87,6 +87,7 @@ pgdata/
 redis_data/
 
 # OS
+*:Zone.Identifier
 .DS_Store
 .DS_Store?
 ._*
