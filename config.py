@@ -1,6 +1,6 @@
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: v5.2.0 (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
+Sürüm: `sidar_version.PRODUCT_VERSION` üzerinden merkezi olarak çözülür.
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -16,6 +16,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from sidar_version import PRODUCT_VERSION
 
 # ═══════════════════════════════════════════════════════════════
 # UYARI FİLTRELERİ
@@ -391,13 +393,15 @@ def check_hardware() -> HardwareInfo:
 
 class Config:
     """
-    Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: v5.2.0
+    Sidar Merkezi Yapılandırma Sınıfı.
+
+    Sürüm değeri `sidar_version.PRODUCT_VERSION` üzerinden paket metadata'sı / pyproject
+    kaynaklı tek merkezden alınır.
     """
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str = "5.2.0"
+    VERSION: str = PRODUCT_VERSION
     DEBUG_MODE: bool = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = (
         True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.

@@ -11,7 +11,9 @@ from importlib import import_module
 from types import ModuleType
 from typing import Any
 
-__version__ = "2.7.0"
+from sidar_version import PRODUCT_VERSION
+
+__version__ = PRODUCT_VERSION
 
 
 def _optional_import(module_name: str, attr_name: str) -> Any:
