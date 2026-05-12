@@ -1930,11 +1930,13 @@ def test_validate_plugin_source_rejects_banned_import_statements():
 
 def test_build_restricted_plugin_builtins_strips_dangerous_names():
     """Defense-in-depth: tehlikeli built-in'ler plugin namespace'inde bulunmamalı."""
+    import builtins as _b
+
     restricted = web_server._build_restricted_plugin_builtins()
     for banned in ("exec", "eval", "compile", "open", "input", "breakpoint", "globals", "vars"):
         assert banned not in restricted, f"{banned} restricted builtins'ten elenmeliydi"
     # `from ... import ...` çalışabilmesi için __import__ korunmalı.
-    assert restricted["__import__"] is __builtins__["__import__"] if isinstance(__builtins__, dict) else True
+    assert restricted["__import__"] is _b.__import__
     # Güvenli built-in'ler korunmalı (isinstance, len, type, ...).
     for safe in ("isinstance", "len", "type", "tuple", "list", "dict", "set"):
         assert safe in restricted
