@@ -140,6 +140,21 @@ ensure_test_dotenv() {
 
 ensure_test_dotenv
 
+cleanup_zone_identifier_artifacts() {
+  if [ "${CLEAN_ZONE_IDENTIFIER_ARTIFACTS:-1}" != "1" ]; then
+    echo "ℹ️ Zone.Identifier temizliği devre dışı (CLEAN_ZONE_IDENTIFIER_ARTIFACTS=${CLEAN_ZONE_IDENTIFIER_ARTIFACTS:-0})."
+    return 0
+  fi
+
+  echo "🧹 Windows Zone.Identifier yan dosyaları temizleniyor..."
+  if ! uv run python scripts/cleanup_zone_identifier.py --root .; then
+    echo "❌ Zone.Identifier temizliği başarısız oldu."
+    return 1
+  fi
+}
+
+cleanup_zone_identifier_artifacts || exit 1
+
 run_precommit_autofix || exit 1
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
