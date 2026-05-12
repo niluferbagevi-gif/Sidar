@@ -68,7 +68,7 @@ def compute_next_gate(
     measured_coverage: float,
     current_gate: float,
     *,
-    step: float = 5.0,
+    step: float = 1.0,
     min_gate: float = 5.0,
     max_gate: float = 100.0,
 ) -> float:
@@ -136,7 +136,7 @@ def ratchet_coverage_gate(
     *,
     coveragerc_path: Path,
     coverage_json_path: Path,
-    step: float = 5.0,
+    step: float = 1.0,
     min_gate: float = 5.0,
     max_gate: float = 100.0,
 ) -> RatchetResult:
@@ -166,7 +166,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Coverage gate ratcheting helper for Sidar.")
     parser.add_argument("--coveragerc", default=".coveragerc", type=Path)
     parser.add_argument("--coverage-json", default="coverage.json", type=Path)
-    parser.add_argument("--step", default=5.0, type=float)
+    parser.add_argument(
+        "--step",
+        default=1.0,
+        type=float,
+        help="Coverage gate ratchet step in percentage points (default: 1).",
+    )
     parser.add_argument("--min-gate", default=5.0, type=float)
     parser.add_argument("--max-gate", default=100.0, type=float)
     return parser

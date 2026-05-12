@@ -794,11 +794,11 @@ update_progressive_coverage_gate() {
     return 0
   fi
 
-  echo "📈 Coverage ratcheting kontrolü çalıştırılıyor (step=${COVERAGE_RATCHET_STEP:-5}, min=${COVERAGE_RATCHET_MIN_GATE:-5}, max=${COVERAGE_RATCHET_MAX_GATE:-100})..."
+  echo "📈 Coverage ratcheting kontrolü çalıştırılıyor (step=${COVERAGE_RATCHET_STEP:-1}, min=${COVERAGE_RATCHET_MIN_GATE:-5}, max=${COVERAGE_RATCHET_MAX_GATE:-100})..."
   if uv run python scripts/coverage_ratchet.py \
     --coveragerc .coveragerc \
     --coverage-json coverage.json \
-    --step "${COVERAGE_RATCHET_STEP:-5}" \
+    --step "${COVERAGE_RATCHET_STEP:-1}" \
     --min-gate "${COVERAGE_RATCHET_MIN_GATE:-5}" \
     --max-gate "${COVERAGE_RATCHET_MAX_GATE:-100}"; then
     DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY_RATCHET_GATE'
