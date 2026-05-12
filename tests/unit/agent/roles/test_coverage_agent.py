@@ -1627,3 +1627,203 @@ async def test_run_task_routes_autonomous_batch_heal_prefix(tmp_path, fake_cover
     result = await agent.run_task("autonomous_batch_heal|{}")
     assert result == "TOOL:autonomous_batch_heal:{}"
     assert captured == [("autonomous_batch_heal", "{}")]
+
+
+async def test_target_import_alias_parser_handles_patch_and_unexpected_shapes():
+    """CoverageAgent import parser should tolerate odd AST shapes and patch styles."""
+    import ast
+
+    tree = ast.parse(
+        """
+import importlib
+import pkg.mod
+from other.mod import unrelated
+from pkg.mod import func as imported_func
+from pkg.mod import *
+module_alias = importlib.import_module("pkg.mod")
+(tuple_alias, other_alias) = importlib.import_module("pkg.mod")
+patch("pkg.mod.service")
+patch.object("pkg.mod.worker")
+mock.patch("other.mod.service")
+some_obj.method("pkg.mod.not_a_patch")
+"""
+    )
+
+    empty_aliases, empty_symbols, empty_patches = CoverageAgent._collect_target_import_aliases(
+        tree, ""
+    )
+    assert (empty_aliases, empty_symbols, empty_patches) == (set(), set(), set())
+
+    module_aliases, imported_symbols, patch_targets = CoverageAgent._collect_target_import_aliases(
+        tree, "pkg.mod"
+    )
+
+    assert module_aliases == {"pkg", "module_alias"}
+    assert imported_symbols == {"imported_func"}
+    assert patch_targets == {"pkg.mod.service", "pkg.mod.worker"}
+
+
+async def test_root_name_and_import_only_assertion_edge_cases():
+    """AST helper branches should classify subscript/call roots and import-only asserts."""
+    import ast
+
+    chained_call = ast.parse("pkg.factory()['client'].method()").body[0].value
+    assert CoverageAgent._root_name(chained_call) == "pkg"
+
+    module_aliases = {"module"}
+    compare_assert = ast.parse("assert module is not None").body[0]
+    getattr_compare_assert = ast.parse("assert getattr(module, '__name__') == 'pkg.mod'").body[0]
+    hasattr_assert = ast.parse("assert hasattr(module, 'run')").body[0]
+    unrelated_assert = ast.parse("assert value == 1").body[0]
+
+    assert CoverageAgent._is_import_only_assertion(
+        compare_assert, module_aliases=module_aliases, target_module="pkg.mod"
+    )
+    assert CoverageAgent._is_import_only_assertion(
+        getattr_compare_assert, module_aliases=module_aliases, target_module="pkg.mod"
+    )
+    assert CoverageAgent._is_import_only_assertion(
+        hasattr_assert, module_aliases=module_aliases, target_module="pkg.mod"
+    )
+    assert not CoverageAgent._is_import_only_assertion(
+        unrelated_assert, module_aliases=module_aliases, target_module="pkg.mod"
+    )
+
+
+async def test_candidate_rejection_accepts_annotated_target_result_assertion():
+    """Annotated assignments from target calls should count as target-coupled behavior."""
+    candidate = (
+        "from src.service import compute\n\n"
+        "def test_annotated_target_result():\n"
+        "    result: str = compute()\n"
+        "    assert result == 'ok'\n"
+    )
+
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            candidate, finding={"target_path": "src/service.py", "summary": "branch gap"}
+        )
+        == ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_generate_missing_tests_falls_back_for_unexpected_llm_format(
+    tmp_path, fake_coverage_code_manager
+):
+    """Unexpected non-code LLM output should be rejected and replaced by a safe template."""
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    async def fake_llm(*_args, **_kwargs):
+        return {"unexpected": ["not", "python", "test", "code"]}
+
+    agent.call_llm = fake_llm
+    generated = await agent._tool_generate_missing_tests(
+        json.dumps(
+            {
+                "coverage_finding": {
+                    "target_path": "src/service.py",
+                    "missing_lines": [10],
+                    "summary": "missing edge branch",
+                },
+                "coveragerc": {},
+            }
+        )
+    )
+
+    assert "CoverageAgent blocked weak generated test" in generated
+    assert "LLM idea: {'unexpected': ['not', 'python', 'test', 'code']}" in generated
+    assert "def test_" not in generated
+
+
+async def test_remaining_target_quality_branches_and_safe_name_fragment(
+    tmp_path, fake_coverage_code_manager
+):
+    """Exercise fail-closed quality branches for unusual AST and trivial write candidates."""
+    import ast
+
+    weird_call_tree = ast.parse("(factory())('value')")
+    aliases, symbols, patches = CoverageAgent._collect_target_import_aliases(
+        weird_call_tree, "pkg.mod"
+    )
+    assert (aliases, symbols, patches) == (set(), set(), set())
+
+    non_import_only_call = ast.parse("assert hasattr(other_module, 'run')").body[0]
+    assert not CoverageAgent._is_import_only_assertion(
+        non_import_only_call, module_aliases={"module"}, target_module="pkg.mod"
+    )
+
+    assert CoverageAgent._safe_test_name_fragment("!!!.py") == "generated"
+
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    ok, message, details = agent._validate_generated_test_before_write(
+        suggested_test_path="tests/test_trivial.py",
+        generated_test="def test_trivial():\n    assert True\n",
+        append=False,
+    )
+    assert ok is False
+    assert "kalite kapısından geçemedi" in message
+    assert details["quality_rejection_reason"] == "generated_candidate_trivial_or_missing_assertion"
+
+
+async def test_target_behavior_rejects_imported_constant_without_target_call():
+    """Imported target symbols without a target call should not count as behavioral coverage."""
+    candidate = (
+        "from src.service import VALUE\n\n"
+        "def test_imported_constant_only():\n"
+        "    assert VALUE == 'ok'\n"
+    )
+
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            candidate, finding={"target_path": "src/service.py", "summary": "line gap"}
+        )
+        == "generated_candidate_import_only_contract"
+    )
+
+
+async def test_target_behavior_handles_non_name_assignments_and_pytest_raises():
+    """Tuple assignments and exception-path tests should exercise target coupling branches."""
+    tuple_assignment_candidate = (
+        "from src.service import compute\n\n"
+        "def test_tuple_assignment_then_direct_target_assert():\n"
+        "    result, other = compute()\n"
+        "    assert compute() == ('ok', 'extra')\n"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            tuple_assignment_candidate,
+            finding={"target_path": "src/service.py", "summary": "branch gap"},
+        )
+        == ""
+    )
+
+    exception_candidate = (
+        "import pytest\n"
+        "from src.service import explode\n\n"
+        "def test_target_exception_path():\n"
+        "    with pytest.raises(ValueError):\n"
+        "        explode()\n"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            exception_candidate,
+            finding={"target_path": "src/service.py", "summary": "missing exception branch"},
+        )
+        == ""
+    )
+
+    non_name_annassign_candidate = (
+        "from src.service import compute\n\n"
+        "def test_subscript_annotation_direct_assert():\n"
+        "    values = [None]\n"
+        "    values[0]: str = compute()\n"
+        "    assert compute() == 'ok'\n"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            non_name_annassign_candidate,
+            finding={"target_path": "src/service.py", "summary": "branch gap"},
+        )
+        == ""
+    )
