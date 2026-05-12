@@ -163,3 +163,177 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
         assert orphan_count == 0
     finally:
         await db.close()
+
+
+def _packaged_alembic_config(database_url: str) -> Config:
+    """Build an Alembic config that exercises packaged sidar_assets migrations."""
+    from sidar_assets.paths import migrations_path
+
+    alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+    alembic_cfg.set_main_option("script_location", str(migrations_path()))
+    return alembic_cfg
+
+
+@pytest.mark.integration
+def test_packaged_alembic_head_preserves_seed_data_and_downgrades_to_base(tmp_path, monkeypatch):
+    """Packaged migrations keep baseline data valid while moving to head and back to base."""
+    db_path = (tmp_path / "packaged_seeded_roundtrip.db").resolve()
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    alembic_cfg = _packaged_alembic_config(db_url)
+
+    command.upgrade(alembic_cfg, "0001_baseline_schema")
+    engine = create_engine(db_url)
+    user_id = "11111111-1111-1111-1111-111111111111"
+    session_id = "22222222-2222-2222-2222-222222222222"
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                """
+                INSERT INTO users (id, username, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, "seed-user", "hash", "admin", "2026-05-12 00:00:00"),
+            )
+            conn.exec_driver_sql(
+                """
+                INSERT INTO sessions (id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    "seed-session",
+                    "2026-05-12 00:01:00",
+                    "2026-05-12 00:01:00",
+                ),
+            )
+            conn.exec_driver_sql(
+                """
+                INSERT INTO messages (id, session_id, role, content, tokens_used, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (1, session_id, "user", "hello", 7, "2026-05-12 00:02:00"),
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(alembic_cfg, "head")
+
+    engine = create_engine(db_url)
+    try:
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+        assert {
+            "users",
+            "sessions",
+            "messages",
+            "prompt_registry",
+            "audit_logs",
+            "marketing_campaigns",
+            "access_policies",
+        }.issubset(table_names)
+        assert "tenant_id" in {column["name"] for column in inspector.get_columns("users")}
+        assert "idx_access_policies_user_tenant" in {
+            index["name"] for index in inspector.get_indexes("access_policies")
+        }
+
+        with engine.begin() as conn:
+            user_row = (
+                conn.exec_driver_sql(
+                    "SELECT username, role, tenant_id FROM users WHERE id = ?", (user_id,)
+                )
+                .mappings()
+                .one()
+            )
+            assert dict(user_row) == {
+                "username": "seed-user",
+                "role": "admin",
+                "tenant_id": "default",
+            }
+            message_row = (
+                conn.exec_driver_sql(
+                    "SELECT content, tokens_used FROM messages WHERE session_id = ?", (session_id,)
+                )
+                .mappings()
+                .one()
+            )
+            assert dict(message_row) == {"content": "hello", "tokens_used": 7}
+            assert conn.exec_driver_sql("SELECT COUNT(*) FROM prompt_registry").scalar_one() >= 1
+            conn.exec_driver_sql(
+                """
+                INSERT INTO access_policies (
+                    id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    1,
+                    user_id,
+                    "default",
+                    "session",
+                    session_id,
+                    "read",
+                    "allow",
+                    "2026-05-12 00:03:00",
+                    "2026-05-12 00:03:00",
+                ),
+            )
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "base")
+
+    engine = create_engine(db_url)
+    try:
+        downgraded_tables = set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+    assert downgraded_tables in (set(), {"alembic_version"})
+
+
+@pytest.mark.integration
+def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
+    """Repeated packaged upgrade-head/downgrade-base cycles do not leave conflicting objects."""
+    db_path = (tmp_path / "packaged_repeatable_roundtrip.db").resolve()
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    alembic_cfg = _packaged_alembic_config(db_url)
+
+    expected_head_tables = {
+        "users",
+        "auth_tokens",
+        "user_quotas",
+        "provider_usage_daily",
+        "sessions",
+        "messages",
+        "schema_versions",
+        "prompt_registry",
+        "audit_logs",
+        "marketing_campaigns",
+        "content_assets",
+        "operation_checklists",
+        "coverage_tasks",
+        "coverage_findings",
+        "access_policies",
+        "alembic_version",
+    }
+
+    for _ in range(2):
+        command.upgrade(alembic_cfg, "head")
+        engine = create_engine(db_url)
+        try:
+            table_names = set(inspect(engine).get_table_names())
+            assert expected_head_tables.issubset(table_names)
+        finally:
+            engine.dispose()
+
+        command.downgrade(alembic_cfg, "base")
+        engine = create_engine(db_url)
+        try:
+            table_names = set(inspect(engine).get_table_names())
+            assert table_names in (set(), {"alembic_version"})
+        finally:
+            engine.dispose()
