@@ -156,27 +156,19 @@ def test_docker_token_sanitizers_reject_unsafe_values():
         == "256m"
     )
     assert (
-        cm._sanitize_docker_token(
-            "", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
-        )
+        cm._sanitize_docker_token("", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory")
         == "256m"
     )
     assert (
-        cm._sanitize_docker_token(
-            None, pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
-        )
+        cm._sanitize_docker_token(None, pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory")
         == "256m"
     )
     assert (
-        cm._sanitize_docker_token(
-            "0.5", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus"
-        )
+        cm._sanitize_docker_token("0.5", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus")
         == "0.5"
     )
     assert (
-        cm._sanitize_docker_token(
-            "abc", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus"
-        )
+        cm._sanitize_docker_token("abc", pattern=cm._DOCKER_CPUS_RE, default="0.5", kind="cpus")
         == "0.5"
     )
 
