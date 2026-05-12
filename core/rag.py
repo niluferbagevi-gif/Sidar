@@ -43,6 +43,51 @@ logger = logging.getLogger(__name__)
 list = builtins.list
 
 
+def _pgvector_failure_action_message(exc: BaseException) -> str:
+    """pgvector başlatma hatasını kullanıcıya yönelik, fallback odaklı mesaja çevir."""
+
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(
+        marker in text
+        for marker in (
+            "password authentication failed",
+            "authentication failed",
+            "invalid password",
+            "28p01",
+            "permission denied",
+            "auth",
+        )
+    ):
+        return (
+            "PostgreSQL/pgvector bağlantısı başarısız (yetki/parola hatası). "
+            ".env dosyanızdaki DATABASE_URL ve POSTGRES_PASSWORD değerlerini kontrol edin. "
+            "RAG için BM25 fallback aktif edildi."
+        )
+    if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
+        return (
+            "PostgreSQL/pgvector bağlantısı zaman aşımına uğradı. Veritabanı servisinin "
+            "çalıştığını ve DATABASE_URL host/port bilgisini kontrol edin. BM25 fallback aktif edildi."
+        )
+    if any(
+        marker in text
+        for marker in ("connection refused", "could not connect", "server closed", "connection failed")
+    ):
+        return (
+            "PostgreSQL/pgvector bağlantısı kurulamadı. Veritabanı servisinin çalıştığını, "
+            "container ağını ve DATABASE_URL değerini kontrol edin. BM25 fallback aktif edildi."
+        )
+    if "extension" in text or "vector" in text:
+        return (
+            "PostgreSQL bağlantısı açıldı ancak pgvector hazırlığı tamamlanamadı. "
+            "Veritabanında `CREATE EXTENSION IF NOT EXISTS vector;` ve Alembic migrasyonlarını "
+            "kontrol edin. BM25 fallback aktif edildi."
+        )
+    return (
+        "pgvector backend başlatılamadı. PostgreSQL bağlantısı, pgvector extension ve "
+        "DATABASE_URL ayarlarını kontrol edin. BM25 fallback aktif edildi."
+    )
+
+
 class GraphIndex:
     """Kod tabanı içi modül, endpoint ve çağrı ilişkilerini yönlü grafik olarak tutar."""
 
@@ -929,7 +974,8 @@ class DocumentStore:
                 self._pg_embedding_model_name,
             )
         except Exception as exc:
-            logger.error("pgvector başlatma hatası: %s", exc)
+            logger.warning(_pgvector_failure_action_message(exc))
+            logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
             self._pgvector_available = False
 
     def _pgvector_embed_texts(

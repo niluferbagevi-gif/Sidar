@@ -29,6 +29,65 @@ _ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
 _T = TypeVar("_T")
 
 
+def _postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:
+    """PostgreSQL hatasını kullanıcıya yönelik, sır sızdırmayan aksiyon mesajına çevir."""
+
+    combined = f"{type(exc).__name__ if exc else ''} {reason} {exc or ''}".lower()
+    if any(
+        marker in combined
+        for marker in (
+            "password authentication failed",
+            "authentication failed",
+            "invalid password",
+            "28p01",
+            "permission denied",
+            "auth",
+        )
+    ):
+        return (
+            "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
+            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
+            "POSTGRES_PASSWORD değerlerinin aynı olduğundan emin olun. "
+            "SQLite degraded mode aktif edildi."
+        )
+    if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):
+        return (
+            "PostgreSQL bağlantısı zaman aşımına uğradı. Veritabanı servisinin çalıştığını, "
+            "host/port değerlerini ve ağ erişimini kontrol edin. SQLite degraded mode aktif edildi."
+        )
+    if any(
+        marker in combined
+        for marker in (
+            "connection refused",
+            "could not connect",
+            "server closed",
+            "connection failed",
+            "connection reset",
+            "bağlantı",
+        )
+    ):
+        return (
+            "PostgreSQL bağlantısı kurulamadı veya bağlantı koptu. Veritabanı servisinin "
+            "çalıştığını, DATABASE_URL host/port bilgisini ve container ağını kontrol edin. "
+            "SQLite degraded mode aktif edildi."
+        )
+    if "asyncpg" in combined:
+        return (
+            "PostgreSQL bağlantısı için asyncpg bağımlılığı kullanılamıyor. "
+            "Kurulumu `uv sync --all-extras` ile tamamlayın veya postgres extras kurulumunu doğrulayın. "
+            "SQLite degraded mode aktif edildi."
+        )
+    if "pool" in combined:
+        return (
+            "PostgreSQL bağlantı havuzu oluşturulamadı. DB_POOL_SIZE, POSTGRES_MAX_CONNECTIONS "
+            "ve veritabanı erişimini kontrol edin. SQLite degraded mode aktif edildi."
+        )
+    return (
+        "PostgreSQL bağlantısı başarısız. .env içindeki DATABASE_URL/POSTGRES_* değerlerini "
+        "ve veritabanı servis durumunu kontrol edin. SQLite degraded mode aktif edildi."
+    )
+
+
 @dataclass
 class UserRecord:
     id: str
@@ -542,10 +601,10 @@ class Database:
 
         fallback_url = self._postgres_degraded_sqlite_url()
         logger.warning(
-            "PostgreSQL bağlantısı kurulamadı; Sidar degraded mode ile SQLite fallback kullanacak: primary=%s fallback=%s reason=%s",
+            "%s primary=%s fallback=%s",
+            _postgres_user_action_message(reason, exc),
             self._redact_database_url(self.primary_database_url),
             self._redact_database_url(fallback_url),
-            reason,
         )
         self.degraded_mode = True
         self.degraded_reason = reason
@@ -579,11 +638,11 @@ class Database:
             is_pool_error = bool(pool_error_type and isinstance(exc, pool_error_type))
             error_text = str(exc).lower()
             if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
-                reason = f"PostgreSQL bağlantı havuzu zaman aşımına uğradı: {exc}"
+                reason = "PostgreSQL bağlantı havuzu zaman aşımına uğradı"
             elif is_pool_error or "pool" in error_text:
-                reason = f"PostgreSQL bağlantı havuzu kullanılamıyor: {exc}"
+                reason = "PostgreSQL bağlantı havuzu kullanılamıyor"
             else:
-                reason = f"PostgreSQL bağlantı havuzu oluşturulamadı: {exc}"
+                reason = _postgres_user_action_message("PostgreSQL bağlantı havuzu oluşturulamadı", exc)
             await self._enter_degraded_mode(reason, exc)
 
     async def close(self) -> None:

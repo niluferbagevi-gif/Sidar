@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import importlib.util
 import json
+import logging
 import sqlite3
 import sys
 import types
@@ -1437,7 +1438,8 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
     await generic_db._connect_postgresql()
     assert generic_db.degraded_mode is True
     assert generic_db._backend == "sqlite"
-    assert "connection failed" in generic_db.degraded_reason
+    assert "SQLite degraded mode aktif edildi" in generic_db.degraded_reason
+    assert "DATABASE_URL host/port" in generic_db.degraded_reason
 
 
 @pytest.mark.asyncio
@@ -1462,7 +1464,38 @@ async def test_connect_postgresql_connection_drop_enters_degraded_mode(
     assert db.degraded_mode is True
     assert db._backend == "sqlite"
     assert db._sqlite_conn is not None
-    assert "server closed" in db.degraded_reason
+    assert "SQLite degraded mode aktif edildi" in db.degraded_reason
+    assert "container ağını" in db.degraded_reason
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_auth_failure_logs_actionable_warning_without_raw_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path
+) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+
+    async def _raise_auth(**_kwargs):
+        raise RuntimeError(
+            'password authentication failed for user "sidar"; DETAIL: matched pg_hba.conf'
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_auth, PoolError=RuntimeError),
+    )
+    caplog.set_level(logging.WARNING, logger="core.db")
+
+    await db._connect_postgresql()
+
+    assert db.degraded_mode is True
+    assert "yetki/parola hatası" in caplog.text
+    assert ".env dosyanızdaki DATABASE_URL" in caplog.text
+    assert "SQLite degraded mode aktif edildi" in caplog.text
+    assert "sidar:***@localhost" in caplog.text
+    assert "password authentication failed" not in caplog.text
+    assert "pg_hba" not in caplog.text
 
 
 @pytest.mark.asyncio
