@@ -465,30 +465,6 @@ raise SystemExit(asyncio.run(main()))
 PY_COVERAGE_AGENT
 }
 
-run_post_coverage_static_heal() {
-  local ruff_exit
-  local mypy_exit
-
-  echo "[HEAL] CoverageAgent sonrası hızlı statik kontrol: uv run ruff check ."
-  uv run ruff check .
-  ruff_exit=$?
-  if [ "${ruff_exit}" -ne 0 ]; then
-    echo "[HEAL] ruff check sorun bildirdi (exit code: ${ruff_exit}); run_tests.sh öncesi akış devam edecek."
-  fi
-
-  mkdir -p artifacts
-  echo "[HEAL] CoverageAgent sonrası hızlı mypy kontrolü: uv run mypy ."
-  uv run mypy . > artifacts/mypy_errors.log 2>&1
-  mypy_exit=$?
-  if [ "${mypy_exit}" -eq 0 ]; then
-    echo "Success: no issues found" > artifacts/mypy_errors.log
-    echo "[HEAL] Hızlı mypy kontrolü temiz."
-    return 0
-  fi
-
-  echo "[HEAL] Hızlı mypy kontrolü hata buldu; scripts/auto_heal.py tetikleniyor."
-  uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
-}
 
 run_github_upload() {
   uv run python github_upload.py
@@ -518,7 +494,6 @@ run_preflight_quality_gate() {
         echo "[PREFLIGHT] CoverageAgent status=blocked_by_reviewer; manuel test yazılması gerekiyor. Otonom döngü başlatılmayacak."
         exit 1
       fi
-      run_post_coverage_static_heal || true
     fi
   else
     echo "[PREFLIGHT 1/3] Coverage artefaktı eksik (${AUTONOMOUS_COVERAGE_JSON}/${AUTONOMOUS_COVERAGE_XML}); önce ./run_tests.sh ile üretilecek."
@@ -585,20 +560,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
         echo "[HEAL] Manuel test yazılması gerekiyor; gereksiz remediation tekrarları durduruluyor."
         exit 1
       fi
-      run_post_coverage_static_heal || true
       if [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
         uv run python scripts/coverage_hotspots.py --xml "${AUTONOMOUS_COVERAGE_XML}" --top 20 --root . || true
-      fi
-
-      if [ -f "artifacts/mypy_errors.log" ]; then
-        if grep -qi "Success: no issues found" "artifacts/mypy_errors.log"; then
-          echo "[HEAL] Mypy log'u temiz; auto_heal adımı atlandı."
-        else
-          echo "[HEAL] Local self-heal tetikleniyor (scripts/auto_heal.py)."
-          uv run python scripts/auto_heal.py --log artifacts/mypy_errors.log --source mypy --hitl-approve yes || true
-        fi
-      else
-        echo "[HEAL] artifacts/mypy_errors.log bulunamadı; auto_heal adımı atlandı."
       fi
 
       echo "[HEAL] Testler tekrar çalıştırılıyor..."
