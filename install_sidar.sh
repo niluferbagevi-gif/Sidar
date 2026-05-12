@@ -224,19 +224,38 @@ validate_downloaded_script_file() {
 docker_cli_healthy() {
     command -v docker &>/dev/null || return 1
 
-    local docker_out=""
-    local docker_rc=0
-    docker_out="$(docker --version 2>&1)" || docker_rc=$?
-    if [[ "$docker_rc" -ne 0 ]]; then
-        if [[ "$docker_rc" -eq 135 ]] || [[ "$docker_out" == *"Bus error"* ]]; then
-            warn "Docker CLI Bus error veriyor. WSL2 Docker Desktop entegrasyonunu yeniden etkinleştirip WSL'i yeniden başlatın."
-        elif [[ "$docker_out" == *"Input/output error"* ]]; then
-            warn "Docker CLI Input/output error veriyor. WSL mount/entegrasyon durumu bozulmuş olabilir."
-        fi
-        return 1
+    local retries="${DOCKER_CLI_HEALTH_RETRIES:-6}"
+    local delay_seconds="${DOCKER_CLI_HEALTH_RETRY_DELAY:-2}"
+    if [[ ! "$retries" =~ ^[0-9]+$ ]] || (( retries < 1 )); then
+        retries=6
+    fi
+    if [[ ! "$delay_seconds" =~ ^[0-9]+$ ]]; then
+        delay_seconds=2
     fi
 
-    return 0
+    local attempt=1
+    local docker_out=""
+    local docker_rc=0
+
+    while (( attempt <= retries )); do
+        docker_rc=0
+        docker_out="$(docker --version 2>&1)" || docker_rc=$?
+        if [[ "$docker_rc" -eq 0 ]]; then
+            return 0
+        fi
+
+        if (( attempt < retries )); then
+            sleep "$delay_seconds"
+        fi
+        ((attempt += 1))
+    done
+
+    if [[ "$docker_rc" -eq 135 ]] || [[ "$docker_out" == *"Bus error"* ]]; then
+        warn "Docker CLI Bus error veriyor. WSL2 Docker Desktop entegrasyonunu yeniden etkinleştirip WSL'i yeniden başlatın."
+    elif [[ "$docker_out" == *"Input/output error"* ]]; then
+        warn "Docker CLI Input/output error veriyor. WSL mount/entegrasyon durumu bozulmuş olabilir."
+    fi
+    return 1
 }
 
 is_windows_interop_binary_path() {
@@ -2187,17 +2206,9 @@ ensure_prerequisites() {
         warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
-    # Python 3.11 kontrolü (uv venv için sistem Python denetimi)
-    if command -v python3 &>/dev/null; then
-        PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
-        PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
-        PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
-        if [[ "$PY_MAJOR" -eq 3 && "$PY_MINOR" -eq 11 ]]; then
-            ok "Python $PY_VER (sistem)"
-        else
-            warn "Sistem Python'u $PY_VER — yalnızca Python $PYTHON_VERSION desteklenir."
-        fi
-    fi
+    # Sistem Python sürümü artık doğrulanmaz: uv, gerekli Python sürümünü izole
+    # ortam için kendisi çözer/indirir ve proje sürümünü .python-version veya
+    # pyproject.toml üzerinden setup_python_env içinde uygular.
 
     if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
