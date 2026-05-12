@@ -217,6 +217,12 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
 
 
 def interactive_loop(agent: SidarAgent) -> None:
+    """Geri uyumluluk için ince sarmalayıcı.
+
+    Yeni ana akış (``main()``) artık tek bir ``asyncio.run()`` çağrısı
+    içinden ``_run_interactive_session`` kullanır; bu sarmalayıcı sadece
+    eski testler/çağırıcılar bozulmasın diye burada tutuluyor.
+    """
     asyncio.run(_interactive_loop_async(agent))
 
 
@@ -224,6 +230,40 @@ async def _ensure_cli_memory_user(agent: SidarAgent) -> None:
     """CLI oturumları için varsayılan bir kullanıcı bağlamı hazırlar."""
     user = await agent.memory.db.ensure_user("cli")
     await agent.memory.set_active_user(user.id, user.username)
+
+
+async def _shutdown_agent(agent: SidarAgent) -> None:
+    """Asyncpg pool ve SQLite bağlantılarını mevcut event loop'ta kapatır.
+
+    asyncpg bağlantıları oluşturuldukları event loop'a kilitlidir — havuzu
+    yaratıldığı loop dışında kapatmaya çalışmak `InterfaceError` üretir.
+    Bu yardımcı, kapanışın her zaman doğru loop içinden çağrılmasını sağlar.
+    """
+    try:
+        db = getattr(getattr(agent, "memory", None), "db", None)
+        if db is not None and callable(getattr(db, "close", None)):
+            await db.close()
+    except Exception:  # pragma: no cover - shutdown best-effort
+        logging.exception("Veritabanı kapatılırken hata")
+
+
+async def _run_interactive_session(agent: SidarAgent) -> None:
+    """Tüm CLI yaşam döngüsünü tek event loop içinde yürütür.
+
+    Önceki sürümde `asyncio.run()` üç ayrı çağrı ile kullanılıyordu
+    (initialize, ensure_user, interactive_loop). Her çağrı yeni bir
+    event loop oluşturduğundan, asyncpg connection pool ilk loop'a
+    bağlı kalıyor; ikinci loop'tan kullanıldığında
+    `Task got Future attached to a different loop` ve ardından
+    `InterfaceError: another operation is in progress` hataları
+    yükseliyordu. Tek bir loop kullanarak bu kök nedeni gideriyoruz.
+    """
+    try:
+        await agent.initialize()
+        await _ensure_cli_memory_user(agent)
+        await _interactive_loop_async(agent)
+    finally:
+        await _shutdown_agent(agent)
 
 
 # ─────────────────────────────────────────────
@@ -316,20 +356,29 @@ def main() -> None:
     agent = SidarAgent(cfg)
 
     if args.status:
-        asyncio.run(agent.initialize())
-        print(agent.status())
+        async def _status_flow() -> None:
+            try:
+                await agent.initialize()
+                print(agent.status())
+            finally:
+                await _shutdown_agent(agent)
+
+        asyncio.run(_status_flow())
         return
 
     if args.command:
         # Komut modunda init + kullanıcı bağlamı + yanıt zincirini
-        # tek timeout penceresinde çalıştır.
+        # tek timeout penceresinde, tek event loop içinde çalıştır.
         async def _run_command_with_setup() -> None:
-            await agent.initialize()
-            await _ensure_cli_memory_user(agent)
-            print("Sidar > ", end="", flush=True)
-            async for chunk in agent.respond(args.command):
-                print(chunk, end="", flush=True)
-            print()
+            try:
+                await agent.initialize()
+                await _ensure_cli_memory_user(agent)
+                print("Sidar > ", end="", flush=True)
+                async for chunk in agent.respond(args.command):
+                    print(chunk, end="", flush=True)
+                print()
+            finally:
+                await _shutdown_agent(agent)
 
         command_timeout = max(5, int(getattr(cfg, "CLI_COMMAND_TIMEOUT", 25) or 25))
         try:
@@ -338,9 +387,11 @@ def main() -> None:
             print(f"\nSidar > ⚠ Komut zaman aşımına uğradı ({command_timeout}s).")
         return
 
-    asyncio.run(agent.initialize())
-    asyncio.run(_ensure_cli_memory_user(agent))
-    interactive_loop(agent)
+    # İnteraktif mod: initialize + ensure_user + REPL hepsi aynı event loop'ta.
+    try:
+        asyncio.run(_run_interactive_session(agent))
+    except KeyboardInterrupt:
+        print("\nSidar > Görüşürüz. ✓")
 
 
 if __name__ == "__main__":
