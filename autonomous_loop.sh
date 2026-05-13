@@ -27,6 +27,11 @@ AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:
 AUTONOMOUS_MUTATION_STATS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND:-uv run --with mutmut mutmut export-cicd-stats}"
 AUTONOMOUS_MUTATION_STATS_PATH="${AUTONOMOUS_LOOP_MUTATION_STATS_PATH:-artifacts/mutmut-stats.json}"
 AUTONOMOUS_TEST_STATIC_ANALYSIS="${AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS:-0}"
+AUTONOMOUS_SKIP_UPLOAD="${AUTONOMOUS_LOOP_SKIP_UPLOAD:-0}"
+AUTONOMOUS_AUTO_HEAL_ENABLED="${AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED:-1}"
+AUTONOMOUS_AUTO_HEAL_HITL_APPROVE="${AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE:-no}"
+AUTONOMOUS_TEST_FAILURE_LOG="${AUTONOMOUS_LOOP_TEST_FAILURE_LOG:-artifacts/autonomous_loop_test_failure.log}"
+AUTONOMOUS_AUTO_HEAL_RESULT_PATH="${AUTONOMOUS_LOOP_AUTO_HEAL_RESULT_PATH:-artifacts/autonomous_loop_auto_heal_result.json}"
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
@@ -114,6 +119,14 @@ case "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" in
     AUTONOMOUS_TEST_STATIC_ANALYSIS="0"
     ;;
 esac
+case "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" in
+  yes|no|y|n|evet|hayır|e|h|true|false|1|0)
+    ;;
+  *)
+    echo "[UYARI] AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı: '${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}'. Fail-closed için 'no' kullanılacak."
+    AUTONOMOUS_AUTO_HEAL_HITL_APPROVE="no"
+    ;;
+esac
 if [ -z "${AUTONOMOUS_LOOP_MUTATION_COMMAND+x}" ]; then
   AUTONOMOUS_MUTATION_COMMAND="uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}"
 fi
@@ -136,6 +149,8 @@ fi
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
 echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
 echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; mypy yalnız tam run_tests.sh kalite kapısında çalışır."
+echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
+echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
 if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then
   echo "[INFO] AUTONOMOUS_LOOP_PRINT_CONFIG=1 verildi; otonom döngü başlatılmadan yapılandırma doğrulaması tamamlandı."
   exit 0
@@ -486,15 +501,53 @@ PY_COVERAGE_AGENT
 
 
 run_github_upload() {
+  if is_truthy_flag "${AUTONOMOUS_SKIP_UPLOAD}"; then
+    echo "[UPLOAD] AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}; github_upload.py adımı atlandı."
+    return 0
+  fi
   uv run python github_upload.py
 }
 
+_capture_quality_command() {
+  local log_path="$1"
+  shift
+  mkdir -p "$(dirname "${log_path}")"
+  "$@" 2>&1 | tee "${log_path}"
+  return "${PIPESTATUS[0]}"
+}
+
 run_full_quality_tests() {
-  ./run_tests.sh
+  _capture_quality_command \
+    "${AUTONOMOUS_TEST_FAILURE_LOG}" \
+    env CI=true AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh
 }
 
 run_autonomous_quality_tests() {
-  env RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh
+  _capture_quality_command \
+    "${AUTONOMOUS_TEST_FAILURE_LOG}" \
+    env RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh
+}
+
+run_auto_heal_for_test_failure() {
+  local source="${1:-pytest}"
+  local log_path="${AUTONOMOUS_TEST_FAILURE_LOG}"
+
+  if ! is_truthy_flag "${AUTONOMOUS_AUTO_HEAL_ENABLED}"; then
+    echo "[HEAL] Auto-heal devre dışı (AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED})."
+    return 1
+  fi
+  if [ ! -s "${log_path}" ]; then
+    echo "[HEAL] Auto-heal log dosyası yok veya boş: ${log_path}"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}")"
+  echo "[HEAL] Self-heal tetikleniyor: source=${source}, log=${log_path}, output=${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}"
+  uv run python -m scripts.auto_heal \
+    --log "${log_path}" \
+    --source "${source}" \
+    --hitl-approve "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" \
+    --output "${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}"
 }
 
 run_preflight_quality_gate() {
@@ -579,6 +632,11 @@ for ((i=1; i<=ITERATIONS; i++)); do
 
     healed=0
     for ((retry=1; retry<=AUTO_REMEDIATION_MAX_RETRIES; retry++)); do
+      if [ "$test_exit" -ne 0 ]; then
+        echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: test kırılması için self-heal"
+        run_auto_heal_for_test_failure pytest || true
+      fi
+
       echo "[HEAL] Deneme $retry/$AUTO_REMEDIATION_MAX_RETRIES: coverage analizi ve otonom öneri"
       run_coverage_agent
       coverage_agent_exit=$?
