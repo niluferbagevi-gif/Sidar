@@ -225,7 +225,7 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   COVERAGE_FAIL_UNDER="90"
 fi
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (pytest --cov-fail-under ile .coveragerc fail_under değerini override eder)"
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
@@ -680,8 +680,10 @@ PY
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
   # her çağrıda kesin yüklenmesi garanti edilir.
   # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
-  # Sadece fail-under eşiği gerektiğinde CLI'dan override edilir.
-  local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  # Faz bazlı pytest-cov raporları .coveragerc fail_under değerini kullanarak
+  # erken başarısız olmasın diye burada 0 ile nötrlenir; asıl kalite kapısı
+  # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
+  local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under=0)
 
   if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
@@ -735,9 +737,6 @@ PY
       skip_next=1
       continue
     fi
-    if [[ "${arg}" == --cov-fail-under=* ]]; then
-      continue
-    fi
     filtered_phase2_cmd+=("${arg}")
   done
   # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
@@ -758,8 +757,8 @@ PY
   if [ ! -f ".coverage" ] && [ "${BACKEND_EXIT_CODE}" -eq 0 ]; then
     if compgen -G ".coverage.*" > /dev/null; then
       echo "ℹ️ .coverage bulunamadı fakat .coverage.* shard dosyaları tespit edildi. coverage combine deneniyor..."
-      if python -m coverage combine && python -m coverage html -d htmlcov && python -m coverage xml -o coverage.xml; then
-        echo "✅ coverage combine başarılı; raporlar yeniden üretildi."
+      if uv run python -m coverage combine; then
+        echo "✅ coverage combine başarılı; final rapor üretimi bir sonraki adımda yapılacak."
       else
         echo "❌ coverage combine başarısız oldu. Paralel testlerde coverage verisi toparlanamadı."
         BACKEND_EXIT_CODE=1
@@ -770,11 +769,51 @@ PY
     fi
   fi
 
+  enforce_combined_coverage_gate
+
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
     open_artifact "htmlcov/index.html"
   else
     echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
+  fi
+}
+
+enforce_combined_coverage_gate() {
+  if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
+    echo "ℹ️ Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı."
+    return 0
+  fi
+
+  if [ ! -f ".coverage" ]; then
+    echo "⚠️ Final coverage quality gate çalıştırılamadı: .coverage bulunamadı."
+    BACKEND_EXIT_CODE=1
+    return 0
+  fi
+
+  echo "📊 Final birleşik coverage raporları yenileniyor..."
+  if ! uv run python -m coverage html -d htmlcov; then
+    echo "❌ Coverage HTML raporu üretilemedi."
+    BACKEND_EXIT_CODE=1
+    return 0
+  fi
+  if ! uv run python -m coverage xml -o coverage.xml; then
+    echo "❌ Coverage XML raporu üretilemedi."
+    BACKEND_EXIT_CODE=1
+    return 0
+  fi
+  if ! uv run python -m coverage json -o coverage.json; then
+    echo "❌ Coverage JSON raporu üretilemedi."
+    BACKEND_EXIT_CODE=1
+    return 0
+  fi
+
+  echo "🧪 Final coverage quality gate doğrulanıyor: coverage report --fail-under=${COVERAGE_FAIL_UNDER}"
+  if uv run python -m coverage report --fail-under="${COVERAGE_FAIL_UNDER}"; then
+    echo "✅ Final coverage quality gate geçti (eşik: ${COVERAGE_FAIL_UNDER})."
+  else
+    echo "❌ Final coverage quality gate başarısız oldu (eşik: ${COVERAGE_FAIL_UNDER})."
+    BACKEND_EXIT_CODE=1
   fi
 }
 
