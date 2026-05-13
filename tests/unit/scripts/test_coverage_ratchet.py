@@ -29,6 +29,14 @@ def test_default_one_percent_step_promotes_high_coverage_without_exact_lock() ->
     assert compute_next_gate(99.04, 95, min_gate=5) == 99
 
 
+def test_coarse_five_percent_step_keeps_gate_at_reached_floor() -> None:
+    assert compute_next_gate(99.04, 95, step=5, min_gate=5) == 95
+
+
+def test_hundredth_percent_step_locks_to_measured_coverage() -> None:
+    assert compute_next_gate(99.04, 95, step=0.01, min_gate=5) == 99.04
+
+
 def test_ratchet_coverage_gate_updates_coveragerc_preserving_comments(tmp_path: Path) -> None:
     coveragerc = tmp_path / ".coveragerc"
     coverage_json = tmp_path / "coverage.json"

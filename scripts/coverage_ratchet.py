@@ -3,7 +3,10 @@
 The local and CI coverage gate is stored in ``.coveragerc`` under
 ``[report] fail_under``.  This helper reads the latest coverage.py JSON report
 and raises that gate to the highest configured step that has already been
-reached, without ever lowering the existing threshold.
+reached, without ever lowering the existing threshold.  The default one-point
+step is intentionally for the daily local/CI quality gate; autonomous coverage
+improvement campaigns should be controlled with their own target/profile
+environment variables instead of shrinking this ratchet step.
 """
 
 from __future__ import annotations

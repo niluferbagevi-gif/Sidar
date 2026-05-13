@@ -7,7 +7,7 @@ Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre *
 - Proje kökünde ol:
   - `cd ~/Sidar`
 - Testlerden sonra `coverage.xml` üretilmiş olmalı.
-- Backend tarafında coverage hedefi (`--cov-fail-under=90`) aktif.
+- Backend tarafında coverage hedefi `.coveragerc` içindeki güncel `fail_under` değeri veya açıkça verilen `COVERAGE_FAIL_UNDER` ile aktiftir.
 
 > Not: Gönderdiğin çıktıda backend toplam coverage `%40.11`, frontend `%91.55` görünüyor. Sorun backend tarafındaki coverage açığıdır.
 
@@ -19,13 +19,13 @@ Supervisor yönlendirmesi şu anahtar kelimeleri görünce görevi coverage ajan
 Bu yüzden doğrudan aşağıdaki gibi komutlar verebilirsin:
 
 ```bash
-python cli.py -c 'coverage açığını analiz et ve eksik test üret'
+uv run python cli.py -c 'coverage açığını analiz et ve eksik test üret'
 ```
 
 veya interaktif modda:
 
 ```bash
-python cli.py
+uv run python cli.py
 # sonra prompt:
 coverage.xml üzerinden eksik testleri üret
 ```
@@ -37,7 +37,7 @@ coverage.xml üzerinden eksik testleri üret
 ### Aşama A — Coverage raporunu analiz et
 
 ```bash
-python cli.py -c 'analyze_coverage_report|{"coverage_xml":"coverage.xml","coveragerc":".coveragerc","limit":10}'
+uv run python cli.py -c 'analyze_coverage_report|{"coverage_xml":"coverage.xml","coveragerc":".coveragerc","limit":10}'
 ```
 
 Bu komut sana şunları döndürür:
@@ -50,7 +50,7 @@ Bu komut sana şunları döndürür:
 Örnek: `core/llm_client.py` için test ürettirme
 
 ```bash
-python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
+uv run python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
 ```
 
 > Kritik kural (fixture uyumu): `generate_missing_tests` promptuna mutlaka ortak fixture kullanım direktifi ekleyin.  
@@ -65,7 +65,7 @@ Eksik testleri üretirken unittest.mock yerine conftest.py içinde bulunan fake_
 Pratik örnek:
 
 ```bash
-python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"extra_instructions":"Eksik testleri üretirken unittest.mock yerine conftest.py içinde bulunan fake_llm_response, fake_event_stream, agent_factory, fake_social_api ve fake_db_session fixture'larını kullan. Kendi mock objeni oluşturma.","coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
+uv run python cli.py -c 'generate_missing_tests|{"coverage_finding":{"target_path":"core/llm_client.py","missing_lines":[235,236],"missing_branches":["240:50% (1/2)"]},"extra_instructions":"Eksik testleri üretirken unittest.mock yerine conftest.py içinde bulunan fake_llm_response, fake_event_stream, agent_factory, fake_social_api ve fake_db_session fixture'larını kullan. Kendi mock objeni oluşturma.","coveragerc":{"run":{"include":"core/*"},"report":{"omit":"tests/*"}}}'
 ```
 
 ### Aşama C — Üretilen testi hedef dosyaya yaz
@@ -73,7 +73,7 @@ Geçici veya ad-hoc (örn: `_coverage_x.py`) dosyalar oluşturmak proje kurallar
 
 Örnek:
 ```bash
-python cli.py -c 'write_missing_tests|{"suggested_test_path":"tests/unit/core/test_llm_client.py","generated_test":"def test_x():\n    assert True","append":true}'
+uv run python cli.py -c 'write_missing_tests|{"suggested_test_path":"tests/unit/core/test_llm_client.py","generated_test":"def test_x():\n    assert True","append":true}'
 ```
 
 ---
@@ -83,7 +83,7 @@ python cli.py -c 'write_missing_tests|{"suggested_test_path":"tests/unit/core/te
 Aşağıdaki gibi tek prompt da verebilirsin; agent pytest çalıştırır, bulgu çıkarır, test üretir ve önerilen dosyaya yazar:
 
 ```bash
-python cli.py -c '{"command":"pytest --cov-fail-under=90","cwd":"."}'
+uv run python cli.py -c '{"command":"./run_tests.sh","cwd":"."}'
 ```
 
 Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu ilerlemek için 3 aşamalı prefix akışı daha doğrudur.
@@ -96,14 +96,14 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER` (bugün `%90`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%98`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; başarısızsa değişiklik merge/PR öncesi düzeltilir. |
 | CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER` | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Merge engelleyici CI profilidir; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
 
 `./autonomous_loop.sh`, CI kalite kapısını değiştirmez; `run_tests.sh` ve `.coveragerc`
 üzerindeki eşikler aynen korunur. Loglarda artık `local gate` ve `otonom hedef` ayrı
-yazılır: testler `%90` eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
+yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
 
 Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için profillenebilir:
@@ -124,6 +124,38 @@ ezer. Örneğin `AUTONOMOUS_LOOP_COVERAGE_TARGET=99.5 ./autonomous_loop.sh` doğ
 değiştirmez; loglarda çalışmanın `daily-local`, `autonomous-improvement`, `ci-required`
 veya `coverage-campaign` bağlamında etiketlenmesini sağlar.
 
+### 4.2) Coverage ratchet step neyi kontrol eder?
+
+`COVERAGE_RATCHET_STEP`, otonom coverage hedefi değildir; `run_tests.sh` sonunda
+`.coveragerc` içindeki günlük kalite kapısının kaç yüzde puanlık basamaklarla yukarı
+taşınacağını belirler. Hesaplama `scripts/coverage_ratchet.py` içindeki
+`compute_next_gate(...)` fonksiyonunda ölçülen coverage'ı aşağıdaki formülle ulaşılan
+basamağa yuvarlar ve mevcut gate'i asla düşürmez:
+
+```python
+reached_step = math.floor(measured_coverage / step) * step
+```
+
+Örnek: ölçülen coverage `%99.04`, mevcut gate `%95` ise sonuçlar şöyledir:
+
+| `COVERAGE_RATCHET_STEP` | Yeni gate | Kullanım önerisi |
+| ---: | ---: | --- |
+| `5` | `%95` | Güvenli ama bu proje için kaba; `%99.04` ölçümü gate'e yansımaz. |
+| `1` | `%99` | Varsayılan/günlük kullanım için önerilen denge. |
+| `0.5` | `%99` | Kampanya dışı kullanımda `1` ile benzer, daha sık ratchet eder. |
+| `0.1` | `%99` | Kontrollü coverage kampanyalarında geçici kullanılabilir. |
+| `0.01` | `%99.04` | Önerilmez; küçük ortam/test dalgalanmalarında gate'i kırılganlaştırır. |
+
+Bu nedenle günlük local/CI kalite kapısı için önerilen kullanım:
+
+```bash
+COVERAGE_RATCHET_STEP=1 ./run_tests.sh
+```
+
+Coverage kampanyası veya otonom ajan iyileştirme koşusunda hedefi step ile değil,
+`AUTONOMOUS_LOOP_COVERAGE_TARGET` veya `AUTONOMOUS_LOOP_COVERAGE_PROFILE` ile yönetin.
+`short` profil `%99.8`, `full` profil `%100` hedefler.
+
 ## 5) Pratik öneri (senin mevcut çıktına göre)
 
 Senin loguna göre hızlı kazanım için düşük coverage ve nispeten izole modüllerden başla:
@@ -139,8 +171,8 @@ Büyük dosyalar (`web_server.py`, `core/rag.py`, `core/db.py`) tek seferde yük
 Her üretimden sonra:
 
 ```bash
-pytest -q tests/unit/core/test_llm_client.py
-pytest --cov-fail-under=90
+uv run pytest -q tests/unit/core/test_llm_client.py
+./run_tests.sh
 ```
 
 Eğer testler geçiyor ama coverage artmıyorsa:
@@ -150,7 +182,7 @@ Eğer testler geçiyor ama coverage artmıyorsa:
 
 ## 7) Sık yapılan hata
 
-Coverage agent’in kendi coverage’inin `%81` olması, projenin toplam `%90` olduğu anlamına gelmez. Toplam değer tüm backend dosyalarının ağırlıklı toplamıdır.
+Coverage agent’in kendi coverage’inin `%81` olması, projenin toplam coverage değerinin güncel local gate ile aynı olduğu anlamına gelmez. Toplam değer tüm backend dosyalarının ağırlıklı toplamıdır.
 
 ---
 

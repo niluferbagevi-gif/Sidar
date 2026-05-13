@@ -256,8 +256,10 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 - Coverage eşikleri operasyonel olarak ayrıdır: günlük local kalite kapısı
   `run_tests.sh` / `.coveragerc` / `COVERAGE_FAIL_UNDER` üzerinden stabil eşik
-  (varsayılan `%90`) kullanır; CI zorunlu gate `TEST_PROFILE=ci` ile ayrı
-  profildir; `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom
+  kullanır; `.coveragerc` güncel `fail_under` değerinin tek doğruluk
+  kaynağıdır ve `COVERAGE_RATCHET_STEP` varsayılanı `%1` puanlık dengeli
+  basamaklarla bu eşiği yalnızca yukarı taşır. CI zorunlu gate `TEST_PROFILE=ci`
+  ile ayrı profildir; `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom
   iyileştirme hedefi** olarak izler. `%99.8` altında kalmak, testler ve local
   gate geçiyorsa CI/local başarısızlığı değil CoverageAgent döngüsünün devam
   edeceği anlamına gelir. Planlı/manual coverage kampanyaları

@@ -18,8 +18,8 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 
 ### Mevcut kalite geçidi ile hizalama (zorunlu not)
 
-- Repo’daki `.coveragerc` ayarına göre güncel global kalite geçidi `fail_under = 90` olarak uygulanır.
-- `run_tests.sh` içinde de varsayılan eşik `COVERAGE_FAIL_UNDER=90` olarak tanımlıdır.
+- Repo’daki günlük/CI global kalite geçidinin doğruluk kaynağı `.coveragerc` içindeki güncel `fail_under` değeridir; bu revizyonda değer `%98`'dir.
+- `run_tests.sh`, açık `COVERAGE_FAIL_UNDER` verilmemişse `.coveragerc` değerini okur ve başarılı test koşusundan sonra `COVERAGE_RATCHET_STEP` varsayılanı `%1` puan olacak şekilde gate’i yalnızca yukarı ratchet eder.
 - Bazı üst seviye raporlarda `%100` kalite geçidi ifadesi geçse bile, **çalışan teknik doğruluk kaynağı** CI çalıştırdığı dosyalardır (`.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`).
 - Bu nedenle aşağıdaki “kademeli hedefler”, global gate’in alternatifi değil; **modül bazlı iyileştirme hedefi** olarak yorumlanmalıdır.
 
@@ -235,20 +235,20 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
 - PR pipeline:
   - `pytest -m "not slow"` ile hızlı unit + kritik integration
   - değişen dosyalara hedefli coverage raporu (line + branch)
-  - global quality gate: coverage `%90` altına düşerse fail
+  - global quality gate: coverage `.coveragerc` / `COVERAGE_FAIL_UNDER` altına düşerse fail
 - Nightly pipeline:
   - full suite (`pytest`)
   - coverage trend karşılaştırması
   - flaky test raporu
 
-Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygulanmalı (mevcut global gate `%90` ile uyumlu):
+Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygulanmalı (mevcut global gate `.coveragerc` ile uyumlu):
 - Faz 1: `%70`
 - Faz 2: `%80`
 - Faz 3: `%90+`
 - Faz 4: risk-temelli hedef coverage (modül kritikliğine göre farklı eşik)
 
 Önemli:
-- Bu fazlar global `%90` gate’i düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
+- Bu fazlar global `.coveragerc` gate’ini düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
 - Eğer gelecekte teknik kaynaklar (`.coveragerc` + CI) gerçekten `%100` gate’e yükseltilirse, bu fazlar doğrudan `%100` hedefli yeniden kalibre edilmelidir.
 
 ---
@@ -276,7 +276,7 @@ Her sprintte aşağıdaki tablo güncellenmelidir:
 
 Bu plan, mevcut repo durumu ile çapraz kontrol edilerek güncellenmiştir:
 
-- Global gate bugün için `%90` (`.coveragerc` + `run_tests.sh`).
+- Global gate bugün için `.coveragerc` içindeki `%98` değeridir; `run_tests.sh` bunu `COVERAGE_FAIL_UNDER` override edilmediği sürece okur.
 - `%100 enforced` ifadesi taşıyan raporlar, teknik konfigürasyonla çelişiyorsa referans değil bilgilendirme olarak değerlendirilmelidir.
 - `omit` kapsamı plan içine açık operasyon kuralı olarak eklenmiştir.
 - v5.x ile gelen kritik `core/*` modülleri test öncelik matrisine dahil edilmiştir.
