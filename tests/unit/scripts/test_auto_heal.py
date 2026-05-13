@@ -230,6 +230,24 @@ def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
     )
 
 
+def test_extract_scope_error_lines_includes_pytest_failures() -> None:
+    log_text = """FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift
+tests/unit/core/test_doctor.py:44: AttributeError: missing status
+other.py:1: AssertionError: ignored
+"""
+
+    lines = _extract_scope_error_lines(
+        log_text,
+        scope_paths=["tests/unit/core/test_doctor.py"],
+        limit=5,
+    )
+
+    assert lines == [
+        "FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift",
+        "tests/unit/core/test_doctor.py:44: AttributeError: missing status",
+    ]
+
+
 def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines() -> None:
     diagnosis = _build_attempt_diagnosis(
         base_diagnosis="",
@@ -239,7 +257,7 @@ def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines(
         total_attempts=2,
     )
 
-    assert "Hedef kapsam için tip hataları düzeltilecek: pkg/a.py" in diagnosis
+    assert "Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: pkg/a.py" in diagnosis
     assert "Batch retry 2/2" in diagnosis
     assert "Hedef hata satırları" not in diagnosis
 

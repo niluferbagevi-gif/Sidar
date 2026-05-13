@@ -25,7 +25,7 @@ _TARGET_PATTERN = re.compile(
     r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
 )
 _ROOT_CAUSE_PATTERN = re.compile(
-    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
+    r"""(?P<line>.*?(?:AssertionError|AttributeError|ModuleNotFoundError|ImportError|TypeError|ValueError|RuntimeError|SyntaxError|NameError|timeout|timed out|failed|FAILED|Traceback|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
     re.IGNORECASE,
 )
 _MYPY_ERROR_LINE_PATTERN = re.compile(
@@ -236,11 +236,17 @@ def _build_diagnostic_hints(
     hints: list[str] = []
     if suspected_targets:
         hints.append(f"İlk inceleme hedefleri: {', '.join(suspected_targets)}")
-    if "pytest" in failure_summary.lower() or "assert" in log_excerpt.lower():
+    lowered_summary = failure_summary.lower()
+    lowered_excerpt = log_excerpt.lower()
+    if "pytest" in lowered_summary or "assert" in lowered_excerpt:
         hints.append("Test assertion drift veya beklenen çıktı değişimi olabilir.")
-    if "timeout" in failure_summary.lower():
+    if "attributeerror" in lowered_excerpt or "has no attribute" in lowered_excerpt:
+        hints.append(
+            "Eksik/yeniden adlandırılmış attribute veya mock fixture uyumsuzluğu olabilir."
+        )
+    if "timeout" in lowered_summary:
         hints.append("Timeout / yarış durumu / dış bağımlılık gecikmesi araştırılmalı.")
-    if "import" in log_excerpt.lower() or "module" in log_excerpt.lower():
+    if "import" in lowered_excerpt or "module" in lowered_excerpt:
         hints.append(
             "Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli."
         )
@@ -397,6 +403,13 @@ def build_local_failure_context(
         line = raw_line.strip()
         if not line:
             continue
+
+        for path in _extract_suspected_targets(line):
+            normalized_path = path.lstrip("./")
+            if normalized_path and normalized_path not in seen_paths:
+                seen_paths.add(normalized_path)
+                suspected_targets.append(normalized_path)
+
         match = _MYPY_ERROR_LINE_PATTERN.match(line)
         if match:
             path = str(match.group("path") or "").strip().lstrip("./")
@@ -407,8 +420,28 @@ def build_local_failure_context(
             message = str(match.group("message") or "").strip()
             failure_lines.append(f"{path}:{match.group('line')} {message} [{code or 'mypy'}]")
             continue
-        if _ROOT_CAUSE_PATTERN.match(line) and not root_cause_hint:
-            root_cause_hint = _trim_text(line, 220)
+
+        root_cause_match = _ROOT_CAUSE_PATTERN.match(line)
+        if root_cause_match:
+            compact_line = _trim_text(line, 220)
+            if not root_cause_hint:
+                root_cause_hint = compact_line
+            if any(
+                token in line.lower()
+                for token in (
+                    "assertionerror",
+                    "attributeerror",
+                    "modulenotfounderror",
+                    "importerror",
+                    "typeerror",
+                    "valueerror",
+                    "runtimeerror",
+                    "failed",
+                    "traceback",
+                    "timeout",
+                )
+            ):
+                failure_lines.append(compact_line)
 
     has_actionable_failure = bool(failure_lines)
     if not has_actionable_failure and root_cause_hint:

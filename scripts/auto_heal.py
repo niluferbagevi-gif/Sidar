@@ -223,7 +223,9 @@ def _extract_scope_error_lines(
         if not any(path in normalized_line for path in normalized_paths):
             continue
         if not re.search(
-            r"\berror\b|mypy|type|incompatible|no-untyped-def", normalized_line, re.IGNORECASE
+            r"\berror\b|mypy|type|incompatible|no-untyped-def|assertion|attribute|failed|failure|traceback",
+            normalized_line,
+            re.IGNORECASE,
         ):
             continue
         seen.add(line)
@@ -246,7 +248,9 @@ def _build_attempt_diagnosis(
     ]
     scope_display = ", ".join(scope_paths) or "-"
     if not diagnosis_lines:
-        diagnosis_lines = [f"Hedef kapsam için tip hataları düzeltilecek: {scope_display}"]
+        diagnosis_lines = [
+            f"Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: {scope_display}"
+        ]
     guidance = (
         f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: {scope_display}. "
         "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen satırlardan seç."

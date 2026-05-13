@@ -853,6 +853,36 @@ def test_build_local_failure_context_respects_local_scope_limit_env(
     assert ctx["suspected_targets"] == ["core/a.py", "core/b.py", "core/c.py"]
 
 
+def test_build_local_failure_context_parses_pytest_assertion_and_attribute_targets() -> None:
+    log_text = """
+    FAILED tests/unit/core/test_doctor.py::test_doctor_status - AssertionError: expected healthy
+    tests/unit/root/test_cli.py:42: AttributeError: 'Namespace' object has no attribute 'doctor'
+    core/doctor.py:88: in run_check
+    E   AttributeError: 'Doctor' object has no attribute 'status'
+    """
+
+    ctx = ci.build_local_failure_context(log_text, source="pytest", log_path="artifacts/pytest.log")
+
+    assert ctx["workflow_name"] == "local_pytest"
+    assert ctx["conclusion"] == "failure"
+    assert "tests/unit/core/test_doctor.py" in ctx["suspected_targets"]
+    assert "tests/unit/root/test_cli.py" in ctx["suspected_targets"]
+    assert "core/doctor.py" in ctx["suspected_targets"]
+    assert "AttributeError" in ctx["root_cause_hint"] or "AssertionError" in ctx["root_cause_hint"]
+    assert any("attribute" in hint.lower() for hint in ctx["diagnostic_hints"])
+
+
+def test_extract_validation_commands_targets_pytest_failure_files() -> None:
+    context = ci.build_local_failure_context(
+        "FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift",
+        source="pytest",
+    )
+
+    commands = ci._extract_validation_commands(context, "")
+
+    assert "pytest -q tests/unit/core/test_doctor.py" in commands
+
+
 def test_summarize_mypy_log_returns_structured_signal() -> None:
     log_text = "\n".join(
         [
