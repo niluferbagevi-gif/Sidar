@@ -22,6 +22,9 @@ env/
 
 # uv
 .uv/
+# Dev Container fingerprints
+.sidar-ollama.sha256
+
 
 # Environment variables
 .env

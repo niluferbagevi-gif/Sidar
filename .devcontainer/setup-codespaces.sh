@@ -263,6 +263,170 @@ record_uv_sync_fingerprint() {
   printf '%s\n' "${fingerprint}" > "${marker_path}"
 }
 
+
+normalize_ollama_required_models() {
+  printf '%s\n' "${OLLAMA_REQUIRED_MODELS:-}" | tr ',' '\n' | awk '{$1=$1}; NF {print}' | sort -u
+}
+
+ollama_version_fingerprint_value() {
+  if command -v ollama >/dev/null 2>&1; then
+    ollama --version 2>/dev/null | head -n 1 || printf 'installed-version-unknown\n'
+  else
+    printf 'missing\n'
+  fi
+}
+
+ollama_setup_marker_path() {
+  printf '%s/.sidar-ollama.sha256\n' "${REPO_ROOT}"
+}
+
+ollama_setup_fingerprint() {
+  {
+    printf 'SIDAR_CODESPACES_INSTALL_OLLAMA=%s\n' "${SIDAR_CODESPACES_INSTALL_OLLAMA:-1}"
+    printf 'SIDAR_CODESPACES_PULL_OLLAMA_MODELS=%s\n' "${SIDAR_CODESPACES_PULL_OLLAMA_MODELS:-0}"
+    printf 'OLLAMA_VERSION=%s\n' "$(ollama_version_fingerprint_value)"
+    printf 'OLLAMA_BINARY_PATH=%s\n' "$(command -v ollama 2>/dev/null || printf 'missing')"
+    printf 'OLLAMA_REQUIRED_MODELS_NORMALIZED:\n'
+    normalize_ollama_required_models
+    printf 'OLLAMA_REQUIRED_MODEL_INVENTORY:\n'
+    ollama_required_model_inventory
+  } | sha256sum | awk '{print $1}'
+}
+
+
+ollama_required_model_inventory() {
+  if ! command -v ollama >/dev/null 2>&1; then
+    printf '%s\n' 'ollama=missing'
+    return 0
+  fi
+
+  local model_list=""
+  model_list="$(ollama list 2>/dev/null || true)"
+
+  local model
+  while IFS= read -r model; do
+    [ -n "${model}" ] || continue
+    local model_base="${model%%:*}"
+    local model_id
+    model_id="$(printf '%s\n' "${model_list}" | awk -v model="${model}" -v base="${model_base}" '
+      NR == 1 && $1 == "NAME" { next }
+      $1 == model || $1 == base { print $2; found=1; exit }
+      END { if (!found) exit 1 }
+    ' || true)"
+    if [ -n "${model_id}" ]; then
+      printf '%s=present:%s\n' "${model}" "${model_id}"
+    else
+      printf '%s=missing\n' "${model}"
+    fi
+  done < <(normalize_ollama_required_models)
+}
+
+ollama_setup_is_current() {
+  local marker_path="$1"
+  local expected_fingerprint="$2"
+
+  [ -f "${marker_path}" ] || return 1
+  [ "$(cat "${marker_path}" 2>/dev/null || true)" = "${expected_fingerprint}" ]
+}
+
+record_ollama_setup_fingerprint() {
+  local marker_path="$1"
+  local fingerprint="$2"
+
+  printf '%s\n' "${fingerprint}" > "${marker_path}"
+}
+
+should_force_ollama_setup() {
+  case "${SIDAR_FORCE_OLLAMA_SETUP:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ollama_pull_models_enabled() {
+  case "${SIDAR_CODESPACES_PULL_OLLAMA_MODELS:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ollama_list_has_model() {
+  local model="$1"
+  local model_list="$2"
+  local model_base="${model%%:*}"
+
+  printf '%s\n' "${model_list}" | awk -v model="${model}" -v base="${model_base}" '
+    NR == 1 && $1 == "NAME" { next }
+    $1 == model { found=1 }
+    $1 == base { found=1 }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
+sync_requested_ollama_models() {
+  if ! command -v ollama >/dev/null 2>&1; then
+    warn "Ollama CLI yok; model parmak izi ve model senkronizasyonu atlandı."
+    return 1
+  fi
+
+  local models=()
+  local model
+  while IFS= read -r model; do
+    [ -n "${model}" ] && models+=("${model}")
+  done < <(normalize_ollama_required_models)
+
+  if [ "${#models[@]}" -eq 0 ]; then
+    log "OLLAMA_REQUIRED_MODELS boş; model indirme kontrolü gerekmiyor."
+    return 0
+  fi
+
+  local model_list=""
+  model_list="$(ollama list 2>/dev/null || true)"
+
+  local missing=()
+  for model in "${models[@]}"; do
+    if ollama_list_has_model "${model}" "${model_list}"; then
+      ok "Ollama modeli hazır: ${model}"
+    else
+      missing+=("${model}")
+    fi
+  done
+
+  if [ "${#missing[@]}" -eq 0 ]; then
+    ok "Ollama model parmak izi kapsamındaki modeller hazır: ${models[*]}"
+    return 0
+  fi
+
+  if ! ollama_pull_models_enabled; then
+    warn "Eksik Ollama modelleri var ancak başlangıçta indirme kapalı: ${missing[*]} (SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1 ile etkinleştirin)."
+    return 1
+  fi
+
+  local pulled_any=0
+  for model in "${missing[@]}"; do
+    log "Ollama modeli indiriliyor: ${model}"
+    if ollama pull "${model}"; then
+      ok "Ollama modeli indirildi: ${model}"
+      pulled_any=1
+    else
+      warn "Model indirilemedi: ${model}"
+      return 1
+    fi
+  done
+
+  if [ "${pulled_any}" -eq 1 ]; then
+    ok "Ollama model senkronizasyonu tamamlandı."
+  fi
+}
+
 remove_virtualenv_with_reason() {
   local venv_dir="$1"
   local reason="$2"
@@ -453,17 +617,24 @@ start_ollama_service() {
     sleep 2
   fi
 
-  if [ "${SIDAR_CODESPACES_PULL_OLLAMA_MODELS:-0}" = "1" ] || [ "${SIDAR_CODESPACES_PULL_OLLAMA_MODELS:-0}" = "true" ]; then
-    IFS=',' read -r -a models <<< "${OLLAMA_REQUIRED_MODELS}"
-    for model in "${models[@]}"; do
-      model="${model## }"
-      model="${model%% }"
-      [ -n "${model}" ] || continue
-      log "Ollama modeli indiriliyor: ${model}"
-      ollama pull "${model}" || warn "Model indirilemedi: ${model}"
-    done
+  local ollama_marker
+  local ollama_fingerprint
+  ollama_marker="$(ollama_setup_marker_path)"
+  ollama_fingerprint="$(ollama_setup_fingerprint)"
+
+  if ! should_force_ollama_setup && ollama_setup_is_current "${ollama_marker}" "${ollama_fingerprint}"; then
+    ok "Ollama yapılandırması güncel; binary/model senkronizasyonu atlandı (zorlamak için SIDAR_FORCE_OLLAMA_SETUP=1)."
+    return 0
+  fi
+
+  log "Ollama yapılandırma parmak izi değişti veya eksik; binary ve model durumu doğrulanıyor."
+  if sync_requested_ollama_models; then
+    ollama_fingerprint="$(ollama_setup_fingerprint)"
+    record_ollama_setup_fingerprint "${ollama_marker}" "${ollama_fingerprint}"
+    ok "Ollama yapılandırma parmak izi kaydedildi: ${ollama_marker}"
   else
-    log "Model indirme başlangıçta kapalı (SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1 ile etkinleştirin). Gerektiğinde run_tests.sh OLLAMA_AUTO_PULL_MISSING politikasını kullanır."
+    warn "Ollama yapılandırma parmak izi kaydedilmedi; eksik modeller veya erişilemeyen servis düzeltildikten sonra yeniden deneyin."
+    log "Gerektiğinde run_tests.sh OLLAMA_AUTO_PULL_MISSING politikasını kullanır."
   fi
 }
 
