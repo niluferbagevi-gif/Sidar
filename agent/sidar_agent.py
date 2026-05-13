@@ -805,6 +805,7 @@ class SidarAgent:
         human_approval: bool | None = None,
     ) -> dict[str, Any]:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
+        execution: dict[str, Any]
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
             execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
             remediation["self_heal_execution"] = execution

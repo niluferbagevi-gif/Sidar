@@ -78,7 +78,7 @@ def test_parse_args_applies_optional_defaults(
     assert args.model is None
     assert args.hitl_approve is None
     assert args.batch_retries == 2
-    assert args.scope_log_lines == 30
+    assert args.scope_log_lines == auto_heal.DEFAULT_SCOPE_LOG_LINES
     assert args.database_url is None
     assert args.output is None
 
@@ -402,7 +402,7 @@ def test_run_returns_1_when_log_file_missing(
         model=None,
         hitl_approve=None,
         batch_retries=2,
-        scope_log_lines=30,
+        scope_log_lines=auto_heal.DEFAULT_SCOPE_LOG_LINES,
     )
 
     rc = asyncio.run(_run(args))
@@ -469,7 +469,7 @@ def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
         model=None,
         hitl_approve=None,
         batch_retries=2,
-        scope_log_lines=30,
+        scope_log_lines=auto_heal.DEFAULT_SCOPE_LOG_LINES,
     )
     monkeypatch.setattr("scripts.auto_heal._parse_args", lambda: parsed)
 
@@ -751,7 +751,7 @@ def test_run_skips_clean_mypy_output_without_targets(
         model=None,
         hitl_approve=None,
         batch_retries=2,
-        scope_log_lines=30,
+        scope_log_lines=auto_heal.DEFAULT_SCOPE_LOG_LINES,
     )
 
     rc = asyncio.run(_run(args))

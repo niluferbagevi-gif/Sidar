@@ -219,9 +219,10 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
    `autonomous_batches`, `needs_human_approval`, `max_auto_attempts` ve adım
    durumlarını taşır.
 3. **Kapsam daraltma:** `scripts/auto_heal.py`, hedef dosyaları batch'lere böler; her
-   batch için sadece ilgili log satırlarını prompt'a ekler. `SidarAgent` tarafında
-   `_resolve_self_heal_scope_batches(...)` ve `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı
-   sınırlamayı runtime'da korur.
+   batch için sadece ilgili log satırlarını prompt'a ekler. Varsayılan `--scope-log-lines`
+   değeri 12 tutulur; amaç özellikle 7B yerel modellerde patch planı üretimini bozan log
+   gürültüsünü azaltmaktır. `SidarAgent` tarafında `_resolve_self_heal_scope_batches(...)`
+   ve `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı sınırlamayı runtime'da korur.
 4. **Patch üretimi:** `SidarAgent._build_self_heal_plan(...)`, dosya snapshot'ları ve
    remediation loop ile LLM'den yalnızca JSON patch planı ister. Plan,
    `normalize_self_heal_plan(...)` ile scope dışı dosya, fazla operasyon ve geçersiz
@@ -235,7 +236,8 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 7. **Tekrar:** `autonomous_loop.sh` en fazla `AUTONOMOUS_LOOP_REMEDIATION_RETRIES`
    denemesi yapar ve bu değer sonsuz döngü riskine karşı 2 ile sınırlandırılır.
    `scripts/auto_heal.py` tarafında `--batch-retries` her batch için ek plan/uygulama
-   denemelerini yönetir.
+   denemelerini yönetir; `SELF_HEAL_PLAN_MAX_RETRIES` varsayılanı 4'tür ve LLM patch planı
+   üretiminde kısa bağlamla birkaç kontrollü deneme yapılmasını sağlar.
 
 #### 2.5.3 Onay, risk ve güvenlik sınırları
 

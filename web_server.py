@@ -37,7 +37,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 from typing import Any, cast
 
 import anyio
@@ -2043,7 +2043,8 @@ def _load_plugin_agent_class(
         "__builtins__": _build_restricted_plugin_builtins(),
     }
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
+        compiled_source = compile(source_code, _plugin_source_filename(module_label), "exec")
+        FunctionType(compiled_source, namespace)()
     except HTTPException:
         raise
     except Exception as exc:

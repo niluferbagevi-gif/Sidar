@@ -12,6 +12,9 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
+DEFAULT_SCOPE_LOG_LINES = 12
+
+
 MYPY_SELF_HEAL_REFERENCE = """\
 Mypy quick-fix referansı:
 - [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici olarak dar kapsamlı
@@ -66,8 +69,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scope-log-lines",
         type=int,
-        default=30,
-        help="Her batch prompt'una eklenecek hedefe özgü hata satırı limiti (varsayılan: 30).",
+        default=DEFAULT_SCOPE_LOG_LINES,
+        help=(
+            "Her batch prompt'una eklenecek hedefe özgü hata satırı limiti "
+            f"(varsayılan: {DEFAULT_SCOPE_LOG_LINES})."
+        ),
     )
     parser.add_argument(
         "--database-url",
