@@ -322,7 +322,11 @@ def test_parse_browser_and_remediation_helpers():
 
 
 def test_dynamic_build_and_run(reviewer, monkeypatch):
-    async def fake_call_llm(*_args, **_kwargs):
+    async def fake_call_llm(messages, system_prompt=None, **_kwargs):
+        assert "tests/conftest.py" in messages[0]["content"]
+        assert "fake_llm_response" in messages[0]["content"]
+        assert system_prompt == ReviewerAgent.TEST_GENERATION_PROMPT
+        assert "tests/conftest.py" in system_prompt
         return "```python\ndef test_ok():\n    assert True\n```"
 
     reviewer.call_llm = fake_call_llm

@@ -20,6 +20,7 @@ from scripts.auto_heal import (
     _run,
     _run_self_heal_attempt,
     _select_auto_heal_model,
+    _wants_interactive_hitl_prompt,
     main,
 )
 
@@ -196,9 +197,12 @@ def test_parse_approval_value_accepts_en_boolean_aliases() -> None:
     assert _parse_approval_value("0") is False
 
 
-def test_parse_approval_value_returns_none_for_unknown() -> None:
+def test_parse_approval_value_returns_none_for_unknown_and_prompt() -> None:
     assert _parse_approval_value(None) is None
     assert _parse_approval_value("") is None
+    assert _parse_approval_value("prompt") is None
+    assert _wants_interactive_hitl_prompt("prompt") is True
+    assert _wants_interactive_hitl_prompt("yes") is False
     assert _parse_approval_value("maybe") is None
 
 
@@ -230,6 +234,24 @@ def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
     )
 
 
+def test_extract_scope_error_lines_includes_pytest_failures() -> None:
+    log_text = """FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift
+tests/unit/core/test_doctor.py:44: AttributeError: missing status
+other.py:1: AssertionError: ignored
+"""
+
+    lines = _extract_scope_error_lines(
+        log_text,
+        scope_paths=["tests/unit/core/test_doctor.py"],
+        limit=5,
+    )
+
+    assert lines == [
+        "FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift",
+        "tests/unit/core/test_doctor.py:44: AttributeError: missing status",
+    ]
+
+
 def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines() -> None:
     diagnosis = _build_attempt_diagnosis(
         base_diagnosis="",
@@ -239,7 +261,7 @@ def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines(
         total_attempts=2,
     )
 
-    assert "Hedef kapsam için tip hataları düzeltilecek: pkg/a.py" in diagnosis
+    assert "Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: pkg/a.py" in diagnosis
     assert "Batch retry 2/2" in diagnosis
     assert "Hedef hata satırları" not in diagnosis
 
@@ -314,6 +336,35 @@ def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
 
     assert result["status"] == "applied"
     assert len(agent.calls) == 2
+    assert agent.calls[1]["human_approval"] is True
+
+
+def test_run_self_heal_attempt_prompt_value_uses_interactive_prompt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agent = _FakeAgent(
+        [
+            {"status": "awaiting_hitl", "summary": "needs approval"},
+            {"status": "applied", "summary": "done"},
+        ]
+    )
+    args = argparse.Namespace(hitl_approve="prompt")
+    monkeypatch.setattr("scripts.auto_heal._prompt_hitl_approval", lambda: True)
+
+    result = asyncio.run(
+        _run_self_heal_attempt(
+            agent=agent,
+            context={},
+            diagnosis="diag",
+            remediation={"remediation_loop": {"hitl_reasons": ["syntax_error"]}},
+            args=args,
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert result["status"] == "applied"
+    assert "syntax_error" in out
+    assert "değeri anlaşılamadı" not in out
     assert agent.calls[1]["human_approval"] is True
 
 

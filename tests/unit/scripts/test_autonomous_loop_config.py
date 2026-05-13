@@ -64,3 +64,39 @@ def test_autonomous_loop_rejects_invalid_static_analysis_override() -> None:
 
     assert "AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS 0 veya 1 olmalı" in output
     assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
+
+
+def test_autonomous_loop_prints_upload_and_auto_heal_controls() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={
+            "AUTONOMOUS_LOOP_SKIP_UPLOAD": "1",
+            "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "no",
+            "AUTONOMOUS_LOOP_TEST_FAILURE_LOG": "artifacts/test-loop.log",
+        },
+    )
+
+    assert "Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=1" in output
+    assert "Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=1" in output
+    assert "HITL=no" in output
+    assert "log=artifacts/test-loop.log" in output
+
+
+def test_autonomous_loop_accepts_interactive_hitl_prompt_mode() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "prompt"},
+    )
+
+    assert "HITL=prompt" in output
+    assert "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı" not in output
+
+
+def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "maybe"},
+    )
+
+    assert "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı" in output
+    assert "HITL=no" in output

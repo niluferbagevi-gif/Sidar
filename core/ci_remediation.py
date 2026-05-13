@@ -14,6 +14,8 @@ import re
 import shlex
 from typing import Any
 
+from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
+
 _CI_FAILURE_CONCLUSIONS = {
     "failure",
     "timed_out",
@@ -25,7 +27,7 @@ _TARGET_PATTERN = re.compile(
     r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
 )
 _ROOT_CAUSE_PATTERN = re.compile(
-    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
+    r"""(?P<line>.*?(?:AssertionError|AttributeError|ModuleNotFoundError|ImportError|TypeError|ValueError|RuntimeError|SyntaxError|NameError|timeout|timed out|failed|FAILED|Traceback|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
     re.IGNORECASE,
 )
 _MYPY_ERROR_LINE_PATTERN = re.compile(
@@ -236,11 +238,17 @@ def _build_diagnostic_hints(
     hints: list[str] = []
     if suspected_targets:
         hints.append(f"İlk inceleme hedefleri: {', '.join(suspected_targets)}")
-    if "pytest" in failure_summary.lower() or "assert" in log_excerpt.lower():
+    lowered_summary = failure_summary.lower()
+    lowered_excerpt = log_excerpt.lower()
+    if "pytest" in lowered_summary or "assert" in lowered_excerpt:
         hints.append("Test assertion drift veya beklenen çıktı değişimi olabilir.")
-    if "timeout" in failure_summary.lower():
+    if "attributeerror" in lowered_excerpt or "has no attribute" in lowered_excerpt:
+        hints.append(
+            "Eksik/yeniden adlandırılmış attribute veya mock fixture uyumsuzluğu olabilir."
+        )
+    if "timeout" in lowered_summary:
         hints.append("Timeout / yarış durumu / dış bağımlılık gecikmesi araştırılmalı.")
-    if "import" in log_excerpt.lower() or "module" in log_excerpt.lower():
+    if "import" in lowered_excerpt or "module" in lowered_excerpt:
         hints.append(
             "Import zinciri ve GraphRAG etki analizi ile bağımlı modüller kontrol edilmeli."
         )
@@ -397,6 +405,13 @@ def build_local_failure_context(
         line = raw_line.strip()
         if not line:
             continue
+
+        for path in _extract_suspected_targets(line):
+            normalized_path = path.lstrip("./")
+            if normalized_path and normalized_path not in seen_paths:
+                seen_paths.add(normalized_path)
+                suspected_targets.append(normalized_path)
+
         match = _MYPY_ERROR_LINE_PATTERN.match(line)
         if match:
             path = str(match.group("path") or "").strip().lstrip("./")
@@ -407,8 +422,28 @@ def build_local_failure_context(
             message = str(match.group("message") or "").strip()
             failure_lines.append(f"{path}:{match.group('line')} {message} [{code or 'mypy'}]")
             continue
-        if _ROOT_CAUSE_PATTERN.match(line) and not root_cause_hint:
-            root_cause_hint = _trim_text(line, 220)
+
+        root_cause_match = _ROOT_CAUSE_PATTERN.match(line)
+        if root_cause_match:
+            compact_line = _trim_text(line, 220)
+            if not root_cause_hint:
+                root_cause_hint = compact_line
+            if any(
+                token in line.lower()
+                for token in (
+                    "assertionerror",
+                    "attributeerror",
+                    "modulenotfounderror",
+                    "importerror",
+                    "typeerror",
+                    "valueerror",
+                    "runtimeerror",
+                    "failed",
+                    "traceback",
+                    "timeout",
+                )
+            ):
+                failure_lines.append(compact_line)
 
     has_actionable_failure = bool(failure_lines)
     if not has_actionable_failure and root_cause_hint:
@@ -534,6 +569,8 @@ def build_self_heal_patch_prompt(
         "- Sadece `patch` aksiyonu üret; dosyayı tamamen yeniden yazma.\n"
         "- `target` mevcut dosyada birebir bulunmalı; minimal diff üret.\n"
         "- Patch öncesi/sonrası deterministik olmalı.\n"
+        "- Test dosyası patch'lerinde ortak fixture kuralını uygula: "
+        f"{SHARED_TEST_FIXTURE_GUIDANCE}\n"
         "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash run_tests.sh dışına çıkma.\n\n"
         "Mypy odaklı ek kurallar:\n"
         "- Eğer hata türü mypy ise, öncelik sırası: parse edilebilir hata satırı -> ilgili dosya snapshotı -> diagnosis.\n"
@@ -799,10 +836,22 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         1,
         int(os.getenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "5") or "5"),
     )
-    needs_human_approval = (
-        any(keyword in combined_text for keyword in high_risk_keywords)
-        or len(suspected_targets) > scope_hitl_threshold
-    )
+    hitl_reasons: list[str] = []
+    if "syntaxerror" in combined_text:
+        hitl_reasons.append("syntax_error")
+    if any(keyword in combined_text for keyword in ("modulenotfounderror", "importerror")):
+        hitl_reasons.append("import_or_dependency_failure")
+    if "timeout" in combined_text:
+        hitl_reasons.append("timeout_or_flaky_runtime")
+    if any(keyword in combined_text for keyword in ("typeerror", "valueerror")):
+        hitl_reasons.append("runtime_type_or_value_error")
+    if len(suspected_targets) > scope_hitl_threshold:
+        hitl_reasons.append(
+            f"scope_exceeds_threshold:{len(suspected_targets)}>{scope_hitl_threshold}"
+        )
+    if not hitl_reasons and any(keyword in combined_text for keyword in high_risk_keywords):
+        hitl_reasons.append("high_risk_failure_signal")
+    needs_human_approval = bool(hitl_reasons)
     missing_modules = sorted(
         {
             match.group("module").strip()
@@ -865,6 +914,17 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "status": status,
         "mode": mode,
         "needs_human_approval": needs_human_approval,
+        "hitl_reasons": hitl_reasons,
+        "hitl_policy": {
+            "scope_threshold": scope_hitl_threshold,
+            "approval_required_for": [
+                "syntax_error",
+                "import_or_dependency_failure",
+                "timeout_or_flaky_runtime",
+                "runtime_type_or_value_error",
+                "scope_exceeds_threshold",
+            ],
+        },
         "max_auto_attempts": 1 if needs_human_approval else 2,
         "scope_paths": suspected_targets,
         "failed_jobs": failed_jobs[:6],
@@ -891,7 +951,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
                 "name": "handoff",
                 "status": "pending",
                 "detail": (
-                    "Riskli remediation önce HITL onayına gidecek."
+                    f"Riskli remediation önce HITL onayına gidecek. Nedenler: {', '.join(hitl_reasons) or '-'}"
                     if needs_human_approval
                     else "Doğrulama sonrası PR/proposal güncellenecek."
                 ),
@@ -899,12 +959,17 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         ],
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets)} dosya, "
-            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
+            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}, "
+            f"hitl_reasons={', '.join(hitl_reasons) or '-'}."
         ),
         "operator_guidance": (
             "Bekleyen HITL kaydını reject/cancel ederek remediation'ı modül bazlı batch'lerle yeniden başlatın."
             if needs_human_approval and batched_scope
-            else ""
+            else (
+                "Riskli self-heal planı için terminalde onay verin veya scripts.auto_heal --hitl-approve yes/no kullanın."
+                if needs_human_approval
+                else ""
+            )
         ),
     }
 

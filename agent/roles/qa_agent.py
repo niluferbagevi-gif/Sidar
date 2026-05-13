@@ -13,6 +13,7 @@ from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 from config import Config
 from core.ci_remediation import build_ci_remediation_payload
+from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 from managers.code_manager import CodeManager
 from managers.security import SecurityManager
 
@@ -30,6 +31,7 @@ class QAAgent(BaseAgent):
     TEST_GENERATION_PROMPT = (
         "Sen kıdemli bir Python test mühendisisin. Yalnızca çalıştırılabilir pytest kodu üret. "
         "Ağ erişimi, rastgelelik ve dış servis bağımlılıkları kullanma. "
+        f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Yanıtında markdown çiti veya açıklama olmasın."
     )
 
@@ -147,6 +149,7 @@ class QAAgent(BaseAgent):
             f"Coverage fail_under: {coverage['fail_under']}\n"
             f"Coverage omit: {', '.join(coverage['omit']) or '-'}\n\n"
             "Aşağıdaki bağlama göre eksik senaryoları kapsayan pytest testleri yaz.\n"
+            f"[ORTAK_FIXTURE_KURALI]\n{SHARED_TEST_FIXTURE_GUIDANCE}\n"
             f"[BAGLAM]\n{context.strip()}"
         )
         raw_output = await self.call_llm(

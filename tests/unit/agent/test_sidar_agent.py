@@ -1191,6 +1191,7 @@ async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(
         "remediation_loop": {
             "status": "planned",
             "needs_human_approval": True,
+            "hitl_reasons": ["scope_exceeds_threshold:4>3"],
             "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
         }
     }
@@ -1198,6 +1199,7 @@ async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(
         ci_context={}, diagnosis="x", remediation=remediation
     )
     assert awaiting["status"] == "awaiting_hitl"
+    assert awaiting["hitl_reasons"] == ["scope_exceeds_threshold:4>3"]
     assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
 
     remediation = {
