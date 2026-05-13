@@ -12,8 +12,28 @@ from core.db import Database
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _touch_sqlite_database(db_url: str) -> None:
+    """Open and dispose a synchronous SQLite engine in one worker thread."""
+    engine = create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("SELECT 1")
+    finally:
+        engine.dispose()
+
+
+def _sqlite_table_names(db_url: str) -> set[str]:
+    """Inspect SQLite tables and dispose the engine before returning."""
+    engine = create_engine(db_url)
+    try:
+        return set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.integration
-def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     """Run alembic migrations end-to-end on a temporary SQLite database."""
     db_path = (tmp_path / "test_migration.db").resolve()
     db_url = f"sqlite:////{db_path.as_posix().lstrip('/')}"
@@ -25,32 +45,23 @@ def test_alembic_migrations_up_and_down(tmp_path, monkeypatch):
     alembic_cfg.set_main_option("sqlalchemy.url", async_db_url)
     alembic_cfg.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
 
-    command.upgrade(alembic_cfg, "head")
+    # Alembic's env.py drives async engines with asyncio.run(...).  Execute the
+    # blocking command in a worker thread so this pytest-asyncio test keeps its
+    # loop clean and all sync SQLAlchemy engines are disposed on their owner
+    # thread before control returns to the async test.
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     # Driver bağlantısını kesinleştirip dosya oluşturmayı fiziksel olarak tetikle.
-    bootstrap_engine = create_engine(db_url)
-    try:
-        with bootstrap_engine.begin() as conn:
-            conn.exec_driver_sql("SELECT 1")
-    finally:
-        bootstrap_engine.dispose()
+    await asyncio.to_thread(_touch_sqlite_database, db_url)
     assert db_path.exists(), "SQLite database file should be created after upgrade."
 
-    engine = create_engine(db_url)
-    try:
-        upgraded_tables = set(inspect(engine).get_table_names())
-    finally:
-        engine.dispose()
+    upgraded_tables = await asyncio.to_thread(_sqlite_table_names, db_url)
 
     assert "alembic_version" in upgraded_tables
     assert len(upgraded_tables) > 1, "Expected schema tables to exist after upgrade."
 
-    command.downgrade(alembic_cfg, "base")
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "base")
 
-    downgraded_engine = create_engine(db_url)
-    try:
-        downgraded_tables = set(inspect(downgraded_engine).get_table_names())
-    finally:
-        downgraded_engine.dispose()
+    downgraded_tables = await asyncio.to_thread(_sqlite_table_names, db_url)
 
     # Alembic SQLite'da base downgrade sonrası yalnızca version tablosunu bırakabilir.
     assert downgraded_tables in (set(), {"alembic_version"})
