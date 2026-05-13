@@ -1351,7 +1351,7 @@ class CodeManager:
                     "Komut (ilk 200 kar): %.200s",
                     command,
                 )
-                result = subprocess.run(  # nosec B603
+                result = subprocess.run(
                     command,
                     shell=True,  # nosec B602
                     capture_output=True,
