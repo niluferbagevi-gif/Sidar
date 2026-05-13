@@ -193,10 +193,13 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `AUTO_HEAL_ON_FAILURE=1` olduğunda mypy başarısızlığı için `scripts.auto_heal`
   döngüsünü tetikler.
 - **Uzun otonom döngü:** `autonomous_loop.sh`, önce tam `./run_tests.sh` kalite
-  kapısını çalıştırır; sonraki otonom tekrar/remediation testlerinde varsayılan olarak
+  kapısını çalıştırır; sonraki otonom tekrar/remediation testlerinde varsayılan
+  `AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid` modu ile
   `RUN_STATIC_ANALYSIS=0 AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh` kullanır. Böylece
   `run_tests.sh` içindeki mypy kapısı başlangıç doğrulaması olarak korunur, fakat
-  uzun döngü hata veren pytest senaryolarını onarmaya ve coverage artırmaya odaklanır.
+  uzun döngü fazladan mypy/self-heal katmanı nedeniyle bloke olmadan hata veren pytest
+  senaryolarını onarmaya ve coverage artırmaya odaklanır. Bilinçli olarak tekrarlı
+  statik analiz istenirse `AUTONOMOUS_LOOP_REMEDIATION_MODE=full` seçilmelidir.
   Test çıkışı, coverage JSON okunamaması, `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında
   kalma veya mutasyon testi gate'inin davranış değişikliklerini öldürememesi durumunda
   iyileştirme döngüsüne girer.
