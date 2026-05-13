@@ -426,7 +426,6 @@ run_static_analysis_gates() {
 resolve_benchmark_compare_target() {
   local requested_name="${1:-baseline}"
   local latest_file=""
-  local basename_without_ext=""
 
   BENCHMARK_COMPARE_SELECTOR=""
   BENCHMARK_COMPARE_FILE=""
@@ -445,13 +444,12 @@ resolve_benchmark_compare_target() {
     return 1
   fi
 
-  basename_without_ext="$(basename "${latest_file}" .json)"
-  if [[ "${basename_without_ext}" =~ ^[0-9]+_(.+)$ ]]; then
-    BENCHMARK_COMPARE_SELECTOR="${BASH_REMATCH[1]}"
-  else
-    BENCHMARK_COMPARE_SELECTOR="${basename_without_ext}"
-  fi
+  # pytest-benchmark alias çözümlemesi bazı nested .benchmarks
+  # yerleşimlerinde etiketi (örn. "baseline") dosyaya eşleyemeyebiliyor.
+  # Bu nedenle karşılaştırma hedefini deterministik olarak bulduğumuz JSON
+  # dosyasının tam path'iyle geçiriyoruz.
   BENCHMARK_COMPARE_FILE="${latest_file}"
+  BENCHMARK_COMPARE_SELECTOR="${latest_file}"
   return 0
 }
 

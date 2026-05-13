@@ -44,6 +44,9 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
+    assert 'BENCHMARK_COMPARE_FILE="${latest_file}"' in script
+    assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
+    assert 'BASH_REMATCH' not in script[script.index("resolve_benchmark_compare_target()") :]
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
