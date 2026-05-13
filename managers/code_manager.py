@@ -886,6 +886,49 @@ class CodeManager:
             ]
         )
 
+    @staticmethod
+    def _command_requires_uv_tooling(command: str) -> bool:
+        """Komutun sandbox içinde uv tabanlı proje araçlarına ihtiyaç duyup duymadığını belirle."""
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            parts = command.split()
+        lowered = [part.lower() for part in parts]
+        return any(
+            part == "uv"
+            or part.endswith("/uv")
+            or part.endswith("run_tests.sh")
+            or part.endswith("autonomous_loop.sh")
+            for part in lowered
+        )
+
+    def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
+        """Test/uv komutlarında proje test imajını, diğerlerinde normal sandbox imajını seç."""
+        if image:
+            return image
+        if self._command_requires_uv_tooling(command):
+            return self.docker_test_image
+        return self.docker_image
+
+    def _build_shell_preflight_command(self, command: str) -> str:
+        """Sandbox shell komutları için PATH ve uv varlığı pre-flight koruması ekle."""
+        preflight = [
+            "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
+        ]
+        if self._command_requires_uv_tooling(command):
+            preflight.extend(
+                [
+                    "if ! command -v uv >/dev/null 2>&1; then",
+                    "  echo 'uv bulunamadı: sandbox imajında uv önceden kurulu olmalı. '"
+                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar-ai:latest '"
+                    "'olarak ayarlayın veya imaja /bin/uv ekleyin.' >&2",
+                    "  exit 127",
+                    "fi",
+                ]
+            )
+        preflight.append(command)
+        return "\n".join(preflight)
+
     def run_shell_in_sandbox(
         self,
         command: str,
@@ -910,7 +953,8 @@ class CodeManager:
             return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
 
         limits = self._resolve_sandbox_limits()
-        safe_image = _sanitize_docker_image(image or self.docker_image)
+        safe_image = _sanitize_docker_image(self._select_shell_sandbox_image(command, image))
+        sandbox_command = self._build_shell_preflight_command(command)
         docker_cmd = [
             docker_bin,
             "run",
@@ -931,7 +975,7 @@ class CodeManager:
         if runtime:
             docker_cmd.extend(["--runtime", runtime])
 
-        docker_cmd.extend([safe_image, "-lc", command])
+        docker_cmd.extend([safe_image, "-lc", sandbox_command])
 
         try:
             result = subprocess.run(  # nosec B603

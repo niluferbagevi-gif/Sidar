@@ -19,6 +19,13 @@ def test_main_dockerfile_defaults_to_python_311_runtime():
     assert "python:3.12" not in dockerfile
 
 
+def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
+    dockerfile = _read("Dockerfile")
+
+    assert "COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/" in dockerfile
+    assert "RUN uv --version && uvx --version" in dockerfile
+
+
 def test_compose_cpu_builds_use_python_311_base_image():
     compose = _read("docker-compose.yml")
 

@@ -662,8 +662,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Sandbox pytest doğrulamaları `pytest: not found` hatasına düşmemek için önce
 > `/workspace/.venv/bin/python`, ardından proje Dockerfile imajındaki `/app/.venv/bin/python`
 > ve son olarak container içi `python`/`uv sync --frozen --extra dev` pre-flight yolunu dener.
-> Coverage/QA ajanları için önerilen kalıcı ayar: `docker build -t sidar-ai:latest .` sonrası
-> `.env` içinde `DOCKER_TEST_IMAGE=sidar-ai:latest` kullanmaktır.
+> `bash run_tests.sh` gibi regresyon komutları ayrıca sandbox içinde `uv` binary'si gerektirir;
+> proje Dockerfile'ı `/bin/uv` ve `/bin/uvx` kopyasını build sırasında doğrular. Coverage/QA ajanları
+> için önerilen kalıcı ayar: `docker build -t sidar-ai:latest .` sonrası `.env` içinde
+> `DOCKER_TEST_IMAGE=sidar-ai:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,

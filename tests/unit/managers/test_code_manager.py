@@ -357,6 +357,29 @@ def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
     assert "sidar-ai:test" in calls["cmd"]
 
 
+def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
+    manager, tmp_path, monkeypatch
+):
+    manager.docker_test_image = "sidar-ai:test"
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, out = manager.run_shell_in_sandbox("bash run_tests.sh", cwd=str(tmp_path))
+
+    assert ok and out == "ok"
+    assert "sidar-ai:test" in calls["cmd"]
+    shell_payload = calls["cmd"][-1]
+    assert "command -v uv" in shell_payload
+    assert "uv bulunamadı" in shell_payload
+    assert "bash run_tests.sh" in shell_payload
+
+
 def test_analyze_pytest_output_and_run_pytest_collect(manager, monkeypatch):
     sample = """managers/code_manager.py  100 10 90% 1-2, 5->7
 ___ test_fail ___
