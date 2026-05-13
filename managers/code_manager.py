@@ -70,6 +70,7 @@ _DOCKER_MEMORY_RE = re.compile(r"^\d+(\.\d+)?[bkmgBKMG]?$")
 _DOCKER_CPUS_RE = re.compile(r"^\d+(\.\d+)?$")
 _DOCKER_NETWORK_ALLOWED = frozenset({"none", "bridge", "host", "container:default"})
 _DOCKER_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@\-]*$")
+_PROJECT_TEST_IMAGE_CANDIDATES = ("sidar-ai:latest", "sidar-ai-gpu:latest")
 
 
 def _sanitize_docker_token(
@@ -199,10 +200,13 @@ class CodeManager:
             or os.getenv("DOCKER_IMAGE", "")
             or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
         )
-        self.docker_test_image: str = str(
-            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", ""))
-            or self.docker_image
+        configured_test_image = str(
+            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", "")) or ""
+        ).strip()
+        self._docker_test_image_explicit = bool(os.getenv("DOCKER_TEST_IMAGE", "").strip()) or (
+            bool(configured_test_image) and configured_test_image != self.docker_image
         )
+        self.docker_test_image: str = configured_test_image or self.docker_image
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
             if docker_exec_timeout is not None
@@ -231,6 +235,7 @@ class CodeManager:
         self.docker_available = False
         self.docker_client: Any | None = None
         self._init_docker()
+        self._autodetect_project_test_image()
 
     def _resolve_runtime(self) -> str:
         runtime = self.docker_runtime
@@ -458,6 +463,51 @@ class CodeManager:
                 "Hata: %s",
                 first_err,
             )
+
+    def _docker_image_exists(self, image: str) -> bool:
+        """Docker daemon'da verilen imajın mevcut olup olmadığını SDK/CLI ile kontrol et."""
+        safe_image = _sanitize_docker_image(image)
+        if safe_image != image:
+            return False
+
+        if self.docker_client is not None:
+            images_api = getattr(self.docker_client, "images", None)
+            get_image = getattr(images_api, "get", None)
+            if callable(get_image):
+                try:
+                    get_image(safe_image)
+                    return True
+                except Exception:
+                    return False
+
+        docker_bin = shutil.which("docker")
+        if not docker_bin:
+            return False
+        try:
+            result = subprocess.run(  # nosec B603
+                [docker_bin, "image", "inspect", safe_image],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=str(self.base_dir),
+            )
+        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
+
+    def _autodetect_project_test_image(self) -> None:
+        """DOCKER_TEST_IMAGE açık verilmediyse proje test imajını daemon'dan otomatik seç."""
+        if self._docker_test_image_explicit or not self.docker_available:
+            return
+
+        for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
+            if self._docker_image_exists(candidate):
+                self.docker_test_image = candidate
+                logger.info(
+                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
+                    candidate,
+                )
+                return
 
     # ─────────────────────────────────────────────
     #  DOSYA OKUMA

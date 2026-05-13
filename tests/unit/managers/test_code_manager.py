@@ -2229,3 +2229,73 @@ def test_audit_project_records_validation_errors_for_invalid_syntax(manager, tmp
     assert "Sidar Denetim Raporu" in report
     assert "broken.py" in report
     assert "Geçerli" in report
+
+
+def test_autodetect_project_test_image_prefers_sdk_candidate(manager, monkeypatch):
+    calls = []
+
+    class FakeImages:
+        def get(self, image):
+            calls.append(image)
+            if image == "sidar-ai:latest":
+                return object()
+            raise RuntimeError("missing")
+
+    manager.docker_available = True
+    manager.docker_client = SimpleNamespace(images=FakeImages())
+    manager.docker_test_image = manager.docker_image
+    manager._docker_test_image_explicit = False
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai:latest"
+    assert calls == ["sidar-ai:latest"]
+
+
+def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager, monkeypatch):
+    inspected = []
+    manager.docker_available = True
+    manager.docker_client = None
+    manager.docker_test_image = manager.docker_image
+    manager._docker_test_image_explicit = False
+    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+
+    def fake_run(cmd, **kwargs):
+        inspected.append(cmd)
+        return SimpleNamespace(returncode=0 if cmd[-1] == "sidar-ai-gpu:latest" else 1)
+
+    monkeypatch.setattr(cm.subprocess, "run", fake_run)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai-gpu:latest"
+    assert [cmd[-1] for cmd in inspected] == ["sidar-ai:latest", "sidar-ai-gpu:latest"]
+
+
+def test_autodetect_project_test_image_respects_explicit_override(manager, monkeypatch):
+    manager.docker_available = True
+    manager.docker_test_image = "custom:test"
+    manager._docker_test_image_explicit = True
+    monkeypatch.setattr(
+        manager,
+        "_docker_image_exists",
+        lambda _image: pytest.fail("explicit DOCKER_TEST_IMAGE should not be probed"),
+    )
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "custom:test"
+
+
+def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(manager, monkeypatch):
+    manager.docker_available = True
+    manager.docker_client = None
+    manager.docker_test_image = manager.docker_image
+    manager._docker_test_image_explicit = False
+    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(cm.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1))
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == manager.docker_image

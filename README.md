@@ -667,6 +667,8 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > proje Dockerfile'ı `/bin/uv` ve `/bin/uvx` kopyasını build sırasında doğrular. Coverage/QA ajanları
 > için önerilen kalıcı ayar: `docker build -t sidar-ai:latest .` sonrası `.env` içinde
 > `DOCKER_TEST_IMAGE=sidar-ai:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
+> `DOCKER_TEST_IMAGE` açık verilmediyse `CodeManager`, Docker daemon erişimi olduğunda
+> `sidar-ai:latest` ve `sidar-ai-gpu:latest` imajlarını otomatik test imajı adayı olarak dener.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
