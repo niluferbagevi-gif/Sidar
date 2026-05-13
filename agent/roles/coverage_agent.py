@@ -115,6 +115,35 @@ class CoverageAgent(BaseAgent):
             for index in range(0, len(capped_findings), normalized_batch_size)
         ]
 
+    @staticmethod
+    def _cap_autonomous_finding_scope(
+        finding: dict[str, Any],
+        *,
+        max_missing_lines: int = 25,
+        max_missing_branches: int = 10,
+    ) -> dict[str, Any]:
+        """Otonom test üretiminde tek adayın bağlamını mikro kapsama dilimine indirger."""
+        capped = dict(finding)
+        line_limit = max(1, int(max_missing_lines or 25))
+        branch_limit = max(1, int(max_missing_branches or 10))
+        missing_lines = list(capped.get("missing_lines", []) or [])
+        missing_branches = list(capped.get("missing_branches", []) or [])
+        capped["missing_lines"] = missing_lines[:line_limit]
+        capped["missing_branches"] = missing_branches[:branch_limit]
+        if len(missing_lines) > line_limit or len(missing_branches) > branch_limit:
+            capped["autonomous_scope_cap"] = {
+                "max_missing_lines": line_limit,
+                "max_missing_branches": branch_limit,
+                "original_missing_lines": len(missing_lines),
+                "original_missing_branches": len(missing_branches),
+            }
+            capped["summary"] = (
+                f"{capped.get('summary', '')} "
+                f"autonomous_scope_capped(lines={line_limit}/{len(missing_lines)}, "
+                f"branches={branch_limit}/{len(missing_branches)})"
+            ).strip()
+        return capped
+
     def _resolve_repo_path(self, path_value: str) -> Path:
         """Repo base dizinine göre path çözer; mutlak pathleri olduğu gibi korur."""
         raw_path = Path(str(path_value or "").strip())
@@ -1111,12 +1140,14 @@ class CoverageAgent(BaseAgent):
         *,
         coverage_xml: str = "coverage.xml",
         coveragerc: str = ".coveragerc",
-        limit: int = 10,
+        limit: int = 3,
         batch_size: int = 1,
         append: bool = True,
         reviewer_gate: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+        max_missing_lines_per_finding: int = 25,
+        max_missing_branches_per_finding: int = 10,
     ) -> dict[str, Any]:
-        """Coverage bulgularını çoklu batch kuyruğunda üretip write_missing_tests ile yazar."""
+        """Coverage bulgularını mikro batch kuyruğunda üretip write_missing_tests ile yazar."""
         analysis_raw = await self._tool_analyze_coverage_report(
             json.dumps(
                 {"coverage_xml": coverage_xml, "coveragerc": coveragerc, "limit": limit},
@@ -1136,10 +1167,15 @@ class CoverageAgent(BaseAgent):
                     finding.get("suggested_test_path")
                     or self._suggest_test_path(str(finding.get("target_path", "") or ""))
                 )
+                scoped_finding = self._cap_autonomous_finding_scope(
+                    finding,
+                    max_missing_lines=max_missing_lines_per_finding,
+                    max_missing_branches=max_missing_branches_per_finding,
+                )
                 generated = await self._tool_generate_missing_tests(
                     json.dumps(
                         {
-                            "coverage_finding": finding,
+                            "coverage_finding": scoped_finding,
                             "coveragerc": analysis.get("coveragerc", {}),
                         },
                         ensure_ascii=False,
@@ -1261,9 +1297,15 @@ class CoverageAgent(BaseAgent):
         result = await self.run_autonomous_coverage_batch(
             coverage_xml=str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml"),
             coveragerc=str(payload.get("coveragerc", ".coveragerc") or ".coveragerc"),
-            limit=int(payload.get("limit", 10) or 10),
+            limit=int(payload.get("limit", 3) or 3),
             batch_size=int(payload.get("batch_size", 1) or 1),
             append=bool(payload.get("append", True)),
+            max_missing_lines_per_finding=int(
+                payload.get("max_missing_lines_per_finding", 25) or 25
+            ),
+            max_missing_branches_per_finding=int(
+                payload.get("max_missing_branches_per_finding", 10) or 10
+            ),
         )
         return json.dumps(result, ensure_ascii=False)
 

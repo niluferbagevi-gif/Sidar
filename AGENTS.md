@@ -267,6 +267,15 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 - `autonomous_loop.sh`, kalite kapısı veya otonom iyileştirme hedefi sağlanmazsa
   `CoverageAgent` ile `coverage.xml` analizini çalıştırır, `scripts/coverage_hotspots.py`
   ile düşük coverage dosyalarını listeler ve gerekiyorsa eksik test önerisi üretir.
+  Otonom test üretimi mikro kapsamla sınırlandırılır: varsayılan
+  `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3`,
+  `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`,
+  `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25` ve
+  `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10` değerleri tek döngüde
+  ajan bağlamına çok geniş coverage boşluğu yüklenmesini engeller. `%5` gibi geniş
+  artışlar tek ajan denemesi hedefi olarak kullanılmamalı; `%0.5-%1` aralığı
+  normal otonom ilerleme, `%0.1` ise `%99+` kritik eşiklerde kontrollü coverage
+  kampanyası için tercih edilmelidir.
 - Coverage hedefi sağlandığında otonom döngü ayrıca `mutmut` tabanlı mutasyon testi
   gate'ini çalıştırır (`AUTONOMOUS_LOOP_MUTATION_ENABLED`,
   `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`).

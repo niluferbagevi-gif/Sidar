@@ -474,6 +474,32 @@ async def test_autonomous_coverage_batch_writes_multiple_findings(
     assert fake_coverage_code_manager.write_generated_test.await_count == 2
 
 
+
+async def test_cap_autonomous_finding_scope_limits_context() -> None:
+    finding = {
+        "target_path": "core/rag.py",
+        "summary": "large gap",
+        "missing_lines": list(range(1, 101)),
+        "missing_branches": [f"{line}:50%" for line in range(1, 21)],
+    }
+
+    capped = CoverageAgent._cap_autonomous_finding_scope(
+        finding,
+        max_missing_lines=25,
+        max_missing_branches=10,
+    )
+
+    assert capped["missing_lines"] == list(range(1, 26))
+    assert capped["missing_branches"] == [f"{line}:50%" for line in range(1, 11)]
+    assert capped["autonomous_scope_cap"] == {
+        "max_missing_lines": 25,
+        "max_missing_branches": 10,
+        "original_missing_lines": 100,
+        "original_missing_branches": 20,
+    }
+    assert finding["missing_lines"] == list(range(1, 101))
+
+
 @pytest.mark.asyncio
 async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
     agent = make_agent(tmp_path, fake_coverage_code_manager)
@@ -1601,6 +1627,8 @@ async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
             "limit": 5,
             "batch_size": 2,
             "append": False,
+            "max_missing_lines_per_finding": 12,
+            "max_missing_branches_per_finding": 4,
         }
     )
     out = await agent._tool_autonomous_batch_heal(payload)
@@ -1611,6 +1639,8 @@ async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
     assert captured["limit"] == 5
     assert captured["batch_size"] == 2
     assert captured["append"] is False
+    assert captured["max_missing_lines_per_finding"] == 12
+    assert captured["max_missing_branches_per_finding"] == 4
 
 
 @pytest.mark.asyncio

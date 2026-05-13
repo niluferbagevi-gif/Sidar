@@ -16,8 +16,10 @@ AUTONOMOUS_OPERATION_PROFILE="${AUTONOMOUS_LOOP_OPERATION_PROFILE:-autonomous-im
 AUTONOMOUS_COVERAGE_TARGET_FILE="${AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE:-}"
 AUTONOMOUS_COVERAGE_JSON="${AUTONOMOUS_LOOP_COVERAGE_JSON:-coverage.json}"
 AUTONOMOUS_COVERAGE_XML="${AUTONOMOUS_LOOP_COVERAGE_XML:-coverage.xml}"
-AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-10}"
+AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-3}"
 AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
+AUTONOMOUS_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES:-25}"
+AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES:-10}"
 AUTONOMOUS_MUTATION_ENABLED="${AUTONOMOUS_LOOP_MUTATION_ENABLED:-1}"
 AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-2}"
 AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}}"
@@ -125,6 +127,7 @@ echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 echo "[INFO] Coverage operasyon profili: ${AUTONOMOUS_OPERATION_PROFILE}."
 echo "[INFO] Günlük local kalite kapısı: run_tests.sh / .coveragerc / COVERAGE_FAIL_UNDER => %${LOCAL_COVERAGE_GATE}."
 echo "[INFO] Otonom coverage iyileştirme hedefi: AUTONOMOUS_LOOP_COVERAGE_PROFILE=${AUTONOMOUS_COVERAGE_PROFILE} => %${AUTONOMOUS_COVERAGE_TARGET}."
+echo "[INFO] CoverageAgent mikro kapsamı: limit=${AUTONOMOUS_COVERAGE_AGENT_LIMIT}, batch_size=${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}, max_missing_lines=${AUTONOMOUS_COVERAGE_MAX_MISSING_LINES}, max_missing_branches=${AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES}."
 echo "[INFO] CI zorunlu gate ayrı profildir: CI=true TEST_PROFILE=ci ./run_tests.sh (AUTONOMOUS_LOOP hedefi CI gate değildir)."
 echo "[INFO] Coverage kampanyası manuel/planlı çalışmadır: AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ile görünür etiketlenebilir."
 if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
@@ -290,6 +293,8 @@ run_coverage_agent() {
   AUTONOMOUS_LOOP_COVERAGE_XML="${AUTONOMOUS_COVERAGE_XML}" \
   AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_COVERAGE_AGENT_LIMIT}" \
   AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}" \
+  AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_COVERAGE_MAX_MISSING_LINES}" \
+  AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES}" \
     uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
@@ -420,8 +425,10 @@ async def main() -> int:
     cfg = Config()
     agent = CoverageAgent(config=cfg)
     coverage_xml = os.getenv("AUTONOMOUS_LOOP_COVERAGE_XML", "coverage.xml")
-    limit = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT", "10") or "10")
+    limit = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT", "3") or "3")
     batch_size = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE", "1") or "1")
+    max_missing_lines = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES", "25") or "25")
+    max_missing_branches = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES", "10") or "10")
 
     async def reviewer_gate(candidate: str, finding: dict) -> bool:
         static_rejection_reason = _static_candidate_rejection_reason(candidate, finding)
@@ -444,6 +451,8 @@ async def main() -> int:
         batch_size=batch_size,
         append=True,
         reviewer_gate=reviewer_gate,
+        max_missing_lines_per_finding=max_missing_lines,
+        max_missing_branches_per_finding=max_missing_branches,
     )
     result = _update_reviewer_block_state(result)
     print(f"[CoverageAgent] {result.get('summary', 'coverage batch analizi tamamlandı.')}")

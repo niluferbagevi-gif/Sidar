@@ -156,6 +156,45 @@ Coverage kampanyası veya otonom ajan iyileştirme koşusunda hedefi step ile de
 `AUTONOMOUS_LOOP_COVERAGE_TARGET` veya `AUTONOMOUS_LOOP_COVERAGE_PROFILE` ile yönetin.
 `short` profil `%99.8`, `full` profil `%100` hedefler.
 
+### 4.3) Otonom test yazım ajanı için mikro kapsam sınırı
+
+Arkadaşınızın `%5` uyarısı, bu repodaki **ratchet step** varsayılanı için artık
+uygulanmış durumda: `run_tests.sh` ve `scripts/coverage_ratchet.py` günlük gate'i
+varsayılan `%1` puanlık basamaklarla yükseltiyor. Ancak otonom test yazımında ikinci
+bir risk daha var: CoverageAgent'a tek denemede çok fazla eksik satır/finding vermek.
+
+Bu nedenle otonom döngü artık mikro kapsamla çalışır:
+
+| Ayar | Varsayılan | Neyi sınırlar? |
+| --- | ---: | --- |
+| `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT` | `3` | Tek CoverageAgent çağrısında ele alınacak dosya/finding sayısı. |
+| `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE` | `1` | Aynı anda işlenecek finding sayısı; context yükünü düşük tutar. |
+| `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES` | `25` | Tek test adayına verilecek eksik satır sayısı. |
+| `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES` | `10` | Tek test adayına verilecek eksik branch sayısı. |
+
+Bu ayrım önemlidir:
+
+- `COVERAGE_RATCHET_STEP=1`, günlük kalite kapısını ölçüme yaklaştırmak için dengeli
+  varsayılandır.
+- `%5` tek otonom test üretim denemesi için geniş/agresif kabul edilir; 21.5k+ LOC
+  yüzeyinde yaklaşık bin satırlık davranış alanını aynı bağlama yükleyebilir.
+- `%0.5-%1` normal otonom ilerleme için sağlıklı aralıktır.
+- `%99+` gibi kritik eşiklerde, kontrollü coverage kampanyasında `COVERAGE_RATCHET_STEP=0.1`
+  ve yukarıdaki mikro kapsam limitleri birlikte kullanılabilir.
+- Nihai hedef yine ratchet step ile değil `AUTONOMOUS_LOOP_COVERAGE_PROFILE` veya
+  `AUTONOMOUS_LOOP_COVERAGE_TARGET` ile yönetilmelidir.
+
+Örnek kontrollü kritik eşik koşusu:
+
+```bash
+COVERAGE_RATCHET_STEP=0.1 \
+AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign \
+AUTONOMOUS_LOOP_COVERAGE_PROFILE=short \
+AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3 \
+AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25 \
+./autonomous_loop.sh
+```
+
 ## 5) Pratik öneri (senin mevcut çıktına göre)
 
 Senin loguna göre hızlı kazanım için düşük coverage ve nispeten izole modüllerden başla:
