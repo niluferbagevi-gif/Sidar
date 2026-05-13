@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.coverage_ratchet import (
     compute_next_gate,
     ratchet_coverage_gate,
@@ -56,3 +58,82 @@ def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reache
     assert result.updated is False
     assert result.target_gate == 30
     assert read_fail_under(coveragerc) == 30
+
+
+def test_parse_percentage_rejects_invalid_and_clamps() -> None:
+    from scripts.coverage_ratchet import _parse_percentage
+
+    assert _parse_percentage("150%", field_name="x") == 100.0
+    for value in (None, "not-a-number", float("inf"), -0.1):
+        with pytest.raises(ValueError):
+            _parse_percentage(value, field_name="x")
+
+
+def test_read_total_coverage_validates_totals_and_display_fallback(tmp_path: Path) -> None:
+    from scripts.coverage_ratchet import read_total_coverage
+
+    coverage_json = tmp_path / "coverage.json"
+    coverage_json.write_text(json.dumps({"totals": {"percent_covered_display": "42.50"}}), encoding="utf-8")
+    assert read_total_coverage(coverage_json) == 42.5
+
+    coverage_json.write_text(json.dumps({"totals": []}), encoding="utf-8")
+    with pytest.raises(ValueError, match="totals alanı"):
+        read_total_coverage(coverage_json)
+
+    coverage_json.write_text(json.dumps({"totals": {"covered_lines": 1}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="percent_covered"):
+        read_total_coverage(coverage_json)
+
+
+def test_compute_next_gate_validates_step_and_gate_order() -> None:
+    with pytest.raises(ValueError, match="step"):
+        compute_next_gate(10, 5, step=0)
+    with pytest.raises(ValueError, match="min_gate"):
+        compute_next_gate(10, 5, min_gate=90, max_gate=80)
+    assert compute_next_gate(99.9, 95, step=0.5, max_gate=99) == 99
+
+
+def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_path: Path) -> None:
+    from scripts.coverage_ratchet import write_fail_under
+
+    coveragerc = tmp_path / ".coveragerc"
+    coveragerc.write_text("[report]\nshow_missing = True\n[html]\ndirectory = htmlcov\n", encoding="utf-8")
+    write_fail_under(coveragerc, 12.5)
+    assert "fail_under = 12.5\n[html]" in coveragerc.read_text(encoding="utf-8")
+
+    coveragerc.write_text("[run]\nbranch = True", encoding="utf-8")
+    write_fail_under(coveragerc, 7)
+    assert coveragerc.read_text(encoding="utf-8").endswith("\n[report]\nfail_under = 7\n")
+
+
+def test_main_prints_updated_and_unchanged_results(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from scripts.coverage_ratchet import main
+
+    coveragerc = tmp_path / ".coveragerc"
+    coverage_json = tmp_path / "coverage.json"
+    coveragerc.write_text("[report]\nfail_under = 5\n", encoding="utf-8")
+    _write_coverage_json(coverage_json, 10.1)
+
+    assert main(["--coveragerc", str(coveragerc), "--coverage-json", str(coverage_json)]) == 0
+    assert "Coverage gate ratcheted" in capsys.readouterr().out
+
+    assert main(["--coveragerc", str(coveragerc), "--coverage-json", str(coverage_json)]) == 0
+    assert "Coverage gate unchanged" in capsys.readouterr().out
+
+
+def test_write_fail_under_appends_to_report_at_end(tmp_path: Path) -> None:
+    from scripts.coverage_ratchet import write_fail_under
+
+    coveragerc = tmp_path / ".coveragerc"
+    coveragerc.write_text("[run]\nbranch = True\n\n[report]\n", encoding="utf-8")
+    write_fail_under(coveragerc, 8)
+    assert coveragerc.read_text(encoding="utf-8").endswith("[report]\nfail_under = 8\n")
+
+
+def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_path: Path) -> None:
+    from scripts.coverage_ratchet import write_fail_under
+
+    coveragerc = tmp_path / ".coveragerc"
+    coveragerc.write_text("[run]\nbranch = True\n", encoding="utf-8")
+    write_fail_under(coveragerc, 9)
+    assert "\n[report]\nfail_under = 9\n" in coveragerc.read_text(encoding="utf-8")

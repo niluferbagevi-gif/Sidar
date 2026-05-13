@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import importlib
+import json
 import os
 import sys
 import threading
@@ -3088,3 +3089,226 @@ async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_p
 
     store._delete_document_entities("doc1")
     assert not store.search_entity_graph("Bahar", session_id="marketing", top_k=5)
+
+
+async def test_pgvector_failure_action_message_specific_branches() -> None:
+    assert "zaman aşımı" in rag._pgvector_failure_action_message(TimeoutError("timed out"))
+    assert "bağlantısı kurulamadı" in rag._pgvector_failure_action_message(
+        ConnectionError("connection refused")
+    )
+    assert "pgvector hazırlığı" in rag._pgvector_failure_action_message(
+        RuntimeError("extension vector is missing")
+    )
+
+
+async def test_entity_graph_loading_normalization_and_json_extraction_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    graph_file = tmp_path / "entity_graph.json"
+    store.entity_graph_file = graph_file
+    graph_file.write_text(
+        json.dumps({"nodes": {"brand:sidar": {"label": "Brand"}}, "edges": {"bad": "shape"}}),
+        encoding="utf-8",
+    )
+
+    loaded = store._load_entity_graph()
+    assert loaded["nodes"] == {"brand:sidar": {"label": "Brand"}}
+    assert loaded["edges"] == ["bad"]
+
+    graph_file.write_text("{broken", encoding="utf-8")
+    assert store._load_entity_graph() == {"nodes": {}, "edges": []}
+
+    store._entity_graph = {"nodes": [], "edges": {}}
+    ensured = store._ensure_entity_graph()
+    assert ensured == {"nodes": {}, "edges": []}
+
+    assert len(store._entity_slug("!!!")) == 12
+    assert store._extract_json_entities({"campaign": "Launch", "nested": {"brand": "Sidar"}})
+    assert store._extract_json_entities([{"platform": "LinkedIn"}])[0].label == "Channel"
+
+
+async def test_extract_document_entities_json_tags_empty_and_invalid_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+
+    empty_entities, empty_relations = store.extract_document_entities("", "   ", tags=["badtag"])
+    assert empty_entities == []
+    assert empty_relations == []
+
+    entities, relations = store.extract_document_entities(
+        "Plain title",
+        json.dumps(
+            {
+                "campaign": "JSON Launch",
+                "brand": "Sidar",
+                "target_audience": "Developers",
+                "brand_voice": "Confident",
+                "platform": "LinkedIn",
+            }
+        ),
+        tags=["channel:Newsletter", "ignored"],
+        source="https://example.com/campaign",
+    )
+    labels = {entity.label for entity in entities}
+    assert {"Campaign", "Brand", "Audience", "Tone", "Channel", "Source"} <= labels
+    assert {relation.relation for relation in relations} >= {
+        "TARGETS_AUDIENCE",
+        "PROMOTES_BRAND",
+        "USES_TONE",
+        "RUNS_ON",
+        "HAS_BRAND_VOICE",
+    }
+
+    invalid_json_entities, _ = store.extract_document_entities("", "{not-json", tags=[])
+    assert invalid_json_entities == []
+
+
+async def test_upsert_and_search_entity_graph_edge_filter_branches(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.entity_graph_file = tmp_path / "entity_graph.json"
+    store._entity_graph = {"nodes": {}, "edges": []}
+    store._entity_extraction_enabled = False
+    store._upsert_document_entities("skip", "Title", "campaign: x")
+    assert store._entity_graph == {"nodes": {}, "edges": []}
+
+    store._entity_extraction_enabled = True
+    store._entity_graph = {
+        "nodes": {},
+        "edges": [
+            {
+                "source": "campaign:missing",
+                "target": "audience:missing",
+                "relation": "BROKEN",
+                "doc_id": "doc1",
+            }
+        ],
+    }
+    store._upsert_document_entities(
+        "doc1",
+        "Campaign doc",
+        "campaign: Valid\naudience: Builders",
+        session_id="s1",
+    )
+    assert all(edge.get("relation") != "BROKEN" for edge in store._entity_graph["edges"])
+    assert store.search_entity_graph("", session_id="s1") == []
+    store._entity_graph["nodes"]["brand:other"] = {
+        "label": "Brand",
+        "name": "Other",
+        "properties": {"session_id": "other"},
+    }
+    results = store.search_entity_graph("Other", session_id="s1")
+    assert results == []
+
+
+async def test_knowledge_graph_projection_entity_filters_and_limits(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._index = {
+        "doc-other": {"title": "Other", "source": "", "session_id": "other"},
+        "doc-s1": {"title": "Doc", "source": "src", "session_id": "s1"},
+    }
+    store._pgvector_available = True
+    store._graph_rag_enabled = False
+    store._entity_graph = {
+        "nodes": {
+            "campaign:keep": {
+                "label": "Campaign",
+                "name": "Keep",
+                "properties": {"session_id": "s1"},
+            },
+            "brand:global": {"label": "Brand", "name": "Global", "properties": {}},
+            "campaign:skip": {
+                "label": "Campaign",
+                "name": "Skip",
+                "properties": {"session_id": "other"},
+            },
+        },
+        "edges": [
+            {"source": "campaign:skip", "target": "brand:global", "session_id": "other"},
+            {"source": "", "target": "brand:global", "session_id": "s1"},
+            {"source": "campaign:keep", "target": "brand:global", "session_id": "s1"},
+            {"source": "campaign:keep", "target": "brand:global", "session_id": "s1"},
+        ],
+    }
+
+    projection = store.build_knowledge_graph_projection(
+        session_id="s1", include_code_graph=False, limit=1
+    )
+
+    node_ids = {node.id for node in projection["nodes"]}
+    assert "doc:doc-other" not in node_ids
+    assert "entity:campaign:skip" not in node_ids
+    assert "entity:campaign:keep" in node_ids
+    assert "entity:brand:global" not in node_ids
+    assert not any(edge.relation == "CONTAINS_DOCUMENT" for edge in projection["edges"])
+    assert sum(edge.source == "entity:campaign:keep" for edge in projection["edges"]) == 1
+
+
+async def test_entity_extraction_empty_values_and_invalid_relation_skip(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+    # Empty JSON list and empty cleaned campaign value cover recursion/no-op branches.
+    assert store._extract_json_entities([]) == []
+    assert store._extract_json_entities({"campaign": "---"}) == []
+    entities, relations = store.extract_document_entities("", "Campaign: ---", tags=["unknown:value"])
+    assert entities == []
+    assert relations == []
+
+    store.entity_graph_file = tmp_path / "entity_graph.json"
+    store._entity_graph = {"nodes": {}, "edges": []}
+    store._entity_extraction_enabled = True
+    valid_entity = rag.ExtractedKnowledgeEntity("campaign:valid", "Campaign", "Valid")
+    invalid_relation = rag.ExtractedKnowledgeRelation(
+        "campaign:valid", "audience:missing", "TARGETS_AUDIENCE"
+    )
+    store.extract_document_entities = lambda *_a, **_kw: ([valid_entity], [invalid_relation])  # type: ignore[method-assign]
+
+    store._upsert_document_entities("doc-invalid", "Title", "Content")
+
+    assert all(edge.get("relation") != "TARGETS_AUDIENCE" for edge in store._entity_graph["edges"])
+
+
+async def test_entity_graph_load_rejects_non_dict_and_projection_skips_session_nodes(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store.entity_graph_file = tmp_path / "entity_graph.json"
+    store.entity_graph_file.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+    assert store._load_entity_graph() == {"nodes": {}, "edges": []}
+
+    store._index = {}
+    store._graph_rag_enabled = False
+    store._entity_graph = {
+        "nodes": {
+            "campaign:skip": {
+                "label": "Campaign",
+                "name": "Skip",
+                "properties": {"session_id": "other"},
+            },
+            "campaign:keep": {
+                "label": "Campaign",
+                "name": "Keep",
+                "properties": {"session_id": "s1"},
+            },
+        },
+        "edges": [],
+    }
+
+    projection = store.build_knowledge_graph_projection(
+        session_id="s1", include_code_graph=False, limit=2
+    )
+    node_ids = {node.id for node in projection["nodes"]}
+    assert "entity:campaign:skip" not in node_ids
+    assert "entity:campaign:keep" in node_ids
+
+
+async def test_entity_extraction_ignores_blank_regex_capture_and_scalar_json_payload(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+
+    entities, _ = store.extract_document_entities("", "campaign: \nbrand: Sidar", tags=[])
+
+    labels = [entity.label for entity in entities]
+    assert "Brand" in labels
+    assert "Campaign" in labels
+    assert store._extract_json_entities("plain scalar") == []
