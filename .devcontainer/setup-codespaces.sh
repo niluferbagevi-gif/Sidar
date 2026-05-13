@@ -7,6 +7,7 @@ cd "${REPO_ROOT}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-.venv-container}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/home/vscode/.cache/uv}"
 export SIDAR_PYTHON_VERSION="${SIDAR_PYTHON_VERSION:-3.11}"
 export CODING_MODEL="${CODING_MODEL:-qwen2.5-coder:7b}"
 export OLLAMA_REQUIRED_MODELS="${OLLAMA_REQUIRED_MODELS:-${CODING_MODEL}}"
@@ -177,6 +178,22 @@ ensure_system_dependencies() {
   ok "Dev Container sistem bağımlılıkları kuruldu: ${missing[*]}"
 }
 
+ensure_container_uv_cache_dir() {
+  if mkdir -p "${UV_CACHE_DIR}" 2>/dev/null; then
+    ok "uv önbellek dizini hazır: ${UV_CACHE_DIR}"
+  else
+    warn "uv önbellek dizini oluşturulamadı veya yazılamıyor: ${UV_CACHE_DIR}. Bind mount izinlerini kontrol edin."
+    return 1
+  fi
+
+  if [ -w "${UV_CACHE_DIR}" ]; then
+    ok "uv önbellek dizini yazılabilir: ${UV_CACHE_DIR}"
+  else
+    warn "uv önbellek dizini yazılabilir değil: ${UV_CACHE_DIR}. uv sync paketleri yeniden indirmek zorunda kalabilir veya başarısız olabilir."
+    return 1
+  fi
+}
+
 ensure_uv() {
   if command -v uv >/dev/null 2>&1; then
     ok "uv hazır: $(uv --version)"
@@ -325,9 +342,10 @@ remove_invalid_virtualenv() {
 }
 
 sync_python_environment() {
+  ensure_container_uv_cache_dir || true
   ensure_uv
   ensure_system_dependencies
-  log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}."
+  log "Dev Container overlay dosya sistemi için UV_LINK_MODE=${UV_LINK_MODE}, UV_CACHE_DIR=${UV_CACHE_DIR}."
 
   remove_invalid_virtualenv "${UV_PROJECT_ENVIRONMENT}"
 

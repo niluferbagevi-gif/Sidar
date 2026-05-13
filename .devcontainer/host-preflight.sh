@@ -144,6 +144,21 @@ verify_docker_cli_plugins() {
   fi
 }
 
+ensure_host_uv_cache_dir() {
+  if [ -z "${HOME:-}" ]; then
+    warn "HOME belirlenemedi; Dev Container uv cache bind mount kaynağı doğrulanamadı."
+    return 0
+  fi
+
+  local cache_dir="${HOME}/.cache/uv"
+
+  if mkdir -p "${cache_dir}" 2>/dev/null; then
+    ok "Host uv önbellek dizini hazır: ${cache_dir}"
+  else
+    warn "Host uv önbellek dizini oluşturulamadı: ${cache_dir}. Dev Container bind mount kaynak yolu için elle oluşturmanız gerekebilir."
+  fi
+}
+
 run_with_timeout() {
   local label="$1"
   shift
@@ -178,6 +193,8 @@ if [ -n "${WSL_DISTRO_NAME:-}" ]; then
 else
   log "WSL_DISTRO_NAME boş; Linux host veya Codespaces benzeri ortam olabilir."
 fi
+
+ensure_host_uv_cache_dir
 
 preflight_failed=0
 

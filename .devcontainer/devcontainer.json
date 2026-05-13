@@ -29,12 +29,14 @@
     "OLLAMA_MODEL_SYNC": "auto",
     "AUTONOMOUS_LOOP_COVERAGE_PROFILE": "full",
     "AUTONOMOUS_LOOP_OPERATION_PROFILE": "coverage-campaign",
-    "ENABLE_GPU_TESTS": "1"
+    "ENABLE_GPU_TESTS": "1",
+    "UV_CACHE_DIR": "/home/vscode/.cache/uv"
   },
   "remoteEnv": {
     "UV_LINK_MODE": "copy",
     "UV_PROJECT_ENVIRONMENT": ".venv-container",
-    "SIDAR_PYTHON_VERSION": "3.11"
+    "SIDAR_PYTHON_VERSION": "3.11",
+    "UV_CACHE_DIR": "/home/vscode/.cache/uv"
   },
   "postCreateCommand": "bash .devcontainer/setup-codespaces.sh post-create",
   "postStartCommand": "bash .devcontainer/setup-codespaces.sh post-start",
@@ -67,5 +69,8 @@
   },
   "waitFor": "postCreateCommand",
   "updateContentCommand": "bash .devcontainer/setup-codespaces.sh sync",
-  "initializeCommand": "bash .devcontainer/host-preflight.sh"
+  "initializeCommand": "bash .devcontainer/host-preflight.sh",
+  "mounts": [
+    "source=${localEnv:HOME}/.cache/uv,target=/home/vscode/.cache/uv,type=bind,consistency=cached"
+  ]
 }

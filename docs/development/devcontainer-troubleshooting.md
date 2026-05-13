@@ -40,7 +40,13 @@ Gerçek sorun ararken şu satırlara odaklanılmalıdır:
   `pyproject.toml`, `uv.lock`, `.python-version` ve Python minor sürümü değişmediyse
   sonraki `updateContentCommand` çalıştırmalarında `uv sync` atlanır. Bağımlılıkların zorla yenilenmesi gerekiyorsa
   `SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync` çalıştırılmalıdır.
-  Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı dependency çözümü,
+  Dev Container ayrıca host/WSL uv paket önbelleğini `${localEnv:HOME}/.cache/uv` ->
+  `/home/vscode/.cache/uv` bind mount'u ile paylaşır ve `UV_CACHE_DIR` değerini bu
+  hedefe sabitler. Bu paylaşım sanal ortam izolasyonunu bozmaz; yalnızca indirilmiş
+  wheel/sdist arşivlerinin yeniden kullanılmasını sağlar. İlk konteyner kurulumunda
+  paketler host önbelleğinde yoksa indirme yine beklenen davranıştır; aynı hostta
+  konteyner silinip yeniden oluşturulduğunda büyük paketlerin tekrar indirilmesi
+  azalmalıdır. Bu uyarıdan sonra `uv sync` başarısız oluyorsa asıl hata satırı dependency çözümü,
   network veya sistem paketi çıktısında aranmalıdır.
 
 ## VS Code Dev Containers uyarıları ve sanal ortam izolasyonu
