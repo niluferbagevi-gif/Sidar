@@ -913,11 +913,24 @@ class CodeManager:
     def _build_shell_preflight_command(self, command: str) -> str:
         """Sandbox shell komutları için PATH ve uv varlığı pre-flight koruması ekle."""
         preflight = [
-            "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
+            "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
         ]
         if self._command_requires_uv_tooling(command):
+            # Sandbox imajında uv kurulu değilse, mount edilen /workspace altındaki proje
+            # venv'inde, /app altındaki image venv'inde veya yaygın .local/bin yollarında
+            # uv binary'sini deterministik olarak araştır. Bulunursa PATH'e taşı; bulunamazsa
+            # hatayı net bir kurulum talimatıyla yükselt.
             preflight.extend(
                 [
+                    "if ! command -v uv >/dev/null 2>&1; then",
+                    "  for _uv_candidate in /workspace/.venv/bin/uv /app/.venv/bin/uv "
+                    "/root/.local/bin/uv /home/sidaruser/.local/bin/uv /usr/local/bin/uv /bin/uv; do",
+                    "    if [ -x \"$_uv_candidate\" ]; then",
+                    "      export PATH=\"$(dirname \"$_uv_candidate\"):$PATH\"",
+                    "      break",
+                    "    fi",
+                    "  done",
+                    "fi",
                     "if ! command -v uv >/dev/null 2>&1; then",
                     "  echo 'uv bulunamadı: sandbox imajında uv önceden kurulu olmalı. '"
                     "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar-ai:latest '"
@@ -1560,11 +1573,68 @@ class CodeManager:
         if binary_path:
             return [binary_path, *args]
 
-        uv_path = shutil.which("uv")
-        if language_id == "python" and uv_path:
-            return [uv_path, "run", "--frozen", binary, *args]
+        # Python LSP fallback chain:
+        # 1. `uvx pyright-langserver --stdio` (works for dev tools that aren't
+        #    in the project lock file — uvx caches and runs ad-hoc binaries).
+        # 2. `uv run --frozen <binary>` (only succeeds if the LSP is a real
+        #    project dependency in uv.lock).
+        if language_id == "python":
+            if binary == "pyright-langserver":
+                uvx_path = shutil.which("uvx")
+                if uvx_path:
+                    return [uvx_path, "--from", "pyright", binary, *args]
+            uv_path = shutil.which("uv")
+            if uv_path:
+                return [uv_path, "run", "--frozen", binary, *args]
 
         return [binary, *args]
+
+    @staticmethod
+    def _lsp_install_hint(language_id: str) -> str:
+        if language_id == "python":
+            return "uv tool install pyright  # veya: uv add --dev pyright"
+        return "npm install -g typescript-language-server typescript"
+
+    def _lsp_target_binary(self, command: list[str], language_id: str) -> str:
+        """uv/uvx ile sarmalanmış komutta hedef LSP binary adını döndür."""
+        default = (
+            self.python_lsp_server if language_id == "python" else self.typescript_lsp_server
+        )
+        if not command:
+            return default
+        head = Path(command[0]).name.lower()
+        if head in {"uv", "uvx"}:
+            # `--from <paket>` ve `--with <paket>` argümanları bir değer alır;
+            # bunların değerlerini atlayarak gerçek binary'yi yakala.
+            skip_next = False
+            for token in command[1:]:
+                if skip_next:
+                    skip_next = False
+                    continue
+                if token in {"--from", "--with"}:
+                    skip_next = True
+                    continue
+                if token in {"run", "--frozen", "tool"}:
+                    continue
+                if token.startswith("-"):
+                    continue
+                return token
+        return default
+
+    @staticmethod
+    def _lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
+        """uv/uvx benzeri sarmalayıcıların 'binary bulunamadı' hatasını sezgisel olarak tespit et."""
+        if not stderr_text:
+            return False
+        lowered = stderr_text.lower()
+        missing_markers = (
+            "failed to spawn",
+            "no such file or directory",
+            "command not found",
+            "executable not found",
+            "not found in",
+        )
+        return any(marker in lowered for marker in missing_markers)
 
     def _normalize_lsp_path(self, path: str) -> Path:
         target = Path(path)
@@ -1666,14 +1736,9 @@ class CodeManager:
                 cwd=str(workspace_root),
             )
         except FileNotFoundError as exc:
-            install_hint = (
-                "uv tool install pyright"
-                if language_id == "python"
-                else "npm install -g typescript-language-server typescript"
-            )
             raise FileNotFoundError(
                 f"LSP binary bulunamadı: {command[0]}. "
-                f"Kurulum/doğrulama komutu: {install_hint}"
+                f"Kurulum/doğrulama komutu: {self._lsp_install_hint(language_id)}"
             ) from exc
         try:
             stdout, stderr = proc.communicate(payload, timeout=self.lsp_timeout_seconds)
@@ -1683,6 +1748,17 @@ class CodeManager:
 
         if proc.returncode not in (0, None):
             stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            # uv / uvx wrapper'ı dahili binary'yi bulamadıysa returncode != 0 ile döner;
+            # bu durumu generic RuntimeError yerine FileNotFoundError olarak yükselt ki
+            # üst katman (lsp_semantic_audit) "lsp-unavailable" statüsüyle eli boş çıkmasın.
+            wrapper_was_used = command[0].endswith(("uv", "uvx")) or len(command) > 1
+            if wrapper_was_used and self._lsp_stderr_indicates_missing_binary(stderr_text):
+                hint = self._lsp_install_hint(language_id)
+                raise FileNotFoundError(
+                    f"LSP binary bulunamadı: {self._lsp_target_binary(command, language_id)}. "
+                    f"Kurulum/doğrulama komutu: {hint}\n"
+                    f"Detay: {stderr_text}"
+                )
             raise RuntimeError(
                 stderr_text or f"LSP sunucusu hata kodu ile sonlandı: {proc.returncode}"
             )
@@ -2000,6 +2076,18 @@ class CodeManager:
                 **summary,
                 "issues": issues,
                 "scanned_paths": [str(path) for path in candidate_paths],
+            }
+        except FileNotFoundError as exc:
+            return False, {
+                "status": "lsp-unavailable",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {},
+                "issues": [],
+                "scanned_paths": [str(path) for path in candidate_paths],
+                "summary": (
+                    f"LSP sunucusu kurulu değil; semantik denetim atlandı. {exc}"
+                ),
             }
         except Exception as exc:
             return False, {

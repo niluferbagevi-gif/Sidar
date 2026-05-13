@@ -232,6 +232,12 @@ def test_lsp_summary_variants_and_normalize_path():
     assert ReviewerAgent._summarize_lsp_diagnostics("LSP diagnostics temiz")["status"] == "clean"
     assert ReviewerAgent._summarize_lsp_diagnostics("bildirimi dönmedi")["status"] == "no-signal"
     assert ReviewerAgent._summarize_lsp_diagnostics("hatası: boom")["status"] == "tool-error"
+    unavailable = ReviewerAgent._summarize_lsp_diagnostics(
+        "LSP sunucusu kurulu değil; semantik denetim atlandı."
+    )
+    assert unavailable["status"] == "lsp-unavailable"
+    assert unavailable["decision"] == "APPROVE"
+    assert unavailable["risk"] == "düşük"
     issues = ReviewerAgent._summarize_lsp_diagnostics("x severity=1\ny severity=2\nz severity=3")
     assert issues["decision"] == "REJECT"
     only_info = ReviewerAgent._summarize_lsp_diagnostics("z severity=4")

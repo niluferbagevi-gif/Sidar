@@ -551,6 +551,122 @@ def test_resolve_lsp_command_falls_back_to_uv_run_for_python(manager, monkeypatc
     assert cmd == ["/usr/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"]
 
 
+def test_resolve_lsp_command_prefers_uvx_for_pyright(manager, monkeypatch):
+    """`uvx` mevcutsa pyright-langserver için `uv run --frozen` yerine uvx tercih edilmeli."""
+
+    def fake_which(binary):
+        if binary == "uvx":
+            return "/usr/bin/uvx"
+        if binary == "uv":
+            return "/usr/bin/uv"
+        return None
+
+    monkeypatch.setattr(cm.shutil, "which", fake_which)
+    monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
+
+    cmd = manager._resolve_lsp_command("python")
+
+    assert cmd == ["/usr/bin/uvx", "--from", "pyright", "pyright-langserver", "--stdio"]
+
+
+def test_lsp_stderr_indicates_missing_binary_detection(manager):
+    detect = manager._lsp_stderr_indicates_missing_binary
+    assert detect("error: Failed to spawn: `pyright-langserver --stdio`") is True
+    assert detect("No such file or directory (os error 2)") is True
+    assert detect("bash: pyright: command not found") is True
+    assert detect("") is False
+    assert detect("Diagnostics yayınlandı: 3 warning") is False
+
+
+def test_lsp_target_binary_extracts_from_wrapper(manager):
+    assert (
+        manager._lsp_target_binary(
+            ["/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"],
+            "python",
+        )
+        == "pyright-langserver"
+    )
+    assert (
+        manager._lsp_target_binary(
+            ["/bin/uvx", "--from", "pyright", "pyright-langserver", "--stdio"],
+            "python",
+        )
+        == "pyright-langserver"
+    )
+    # uv/uvx olmadan doğrudan binary çağrısı için varsayılan dönmeli
+    assert (
+        manager._lsp_target_binary(["/usr/bin/pyright-langserver", "--stdio"], "python")
+        == "pyright-langserver"
+    )
+    # Boş komut güvenli fallback üretmeli
+    assert manager._lsp_target_binary([], "typescript") == "typescript-language-server"
+
+
+def test_lsp_install_hint_per_language(manager):
+    assert "pyright" in manager._lsp_install_hint("python")
+    assert "typescript-language-server" in manager._lsp_install_hint("typescript")
+
+
+def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(
+    manager, tmp_path, monkeypatch
+):
+    """uv/uvx sarmalayıcısı binary'i bulamadığında audit `lsp-unavailable` statüsü dönmeli."""
+    py_file = tmp_path / "sample.py"
+    py_file.write_text("value = 1\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    def raise_missing(**_kwargs):
+        raise FileNotFoundError("LSP binary bulunamadı: pyright-langserver. Kurulum: uv tool install pyright")
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", raise_missing)
+
+    ok, audit = manager.lsp_semantic_audit([str(py_file)])
+
+    assert ok is False
+    assert audit["status"] == "lsp-unavailable"
+    assert audit["decision"] == "APPROVE"
+    assert audit["risk"] == "düşük"
+    assert "kurulu değil" in audit["summary"]
+
+
+def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(
+    manager, tmp_path, monkeypatch
+):
+    """uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
+    py_file = tmp_path / "sample.py"
+    py_file.write_text("value = 1\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    monkeypatch.setattr(
+        manager,
+        "_resolve_lsp_command",
+        lambda _lang: ["/usr/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"],
+    )
+
+    class DummyProc:
+        def __init__(self):
+            self.returncode = 2
+
+        def communicate(self, _payload, timeout=None):  # noqa: ARG002
+            stderr = (
+                b"error: Failed to spawn: `pyright-langserver --stdio`\n"
+                b"  Caused by: No such file or directory (os error 2)\n"
+            )
+            return b"", stderr
+
+        def kill(self):  # pragma: no cover - timeout path not exercised here
+            pass
+
+    monkeypatch.setattr(cm.subprocess, "Popen", lambda *_a, **_k: DummyProc())
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        manager._run_lsp_sequence(primary_path=py_file, request_method=None)
+
+    message = str(exc_info.value)
+    assert "pyright-langserver" in message
+    assert "uv tool install pyright" in message
+
+
 def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
     py = tmp_path / "x.py"
     py.write_text("value = 1\n", encoding="utf-8")

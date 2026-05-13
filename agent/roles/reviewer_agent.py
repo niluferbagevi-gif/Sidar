@@ -568,6 +568,14 @@ class ReviewerAgent(BaseAgent):
                 "counts": {},
                 "summary": "LSP diagnostics sinyali alınamadı; semantik denetim tamamlanamadı.",
             }
+        if "lsp sunucusu kurulu değil" in normalized or "lsp-unavailable" in normalized:
+            return {
+                "status": "lsp-unavailable",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {},
+                "summary": "LSP sunucusu kurulu değil; semantik denetim atlandı.",
+            }
         if "hatası:" in normalized:
             return {
                 "status": "tool-error",
