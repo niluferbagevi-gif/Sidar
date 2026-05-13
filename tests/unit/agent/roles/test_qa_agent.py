@@ -208,6 +208,9 @@ def test_tool_methods(qa):
 def test_generate_and_build_plan(qa, monkeypatch):
     async def fake_llm(messages, system_prompt, temperature):
         assert "Hedef modül: src/a.py" in messages[0]["content"]
+        assert "tests/conftest.py" in messages[0]["content"]
+        assert "fake_llm_response" in messages[0]["content"]
+        assert "tests/conftest.py" in system_prompt
         assert system_prompt == QAAgent.TEST_GENERATION_PROMPT
         assert temperature == 0.1
         return "```python\ndef test_x():\n    assert True\n```"

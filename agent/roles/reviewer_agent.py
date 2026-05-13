@@ -17,6 +17,7 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentCatalog
 from config import Config
 from core.rag import DocumentStore
+from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 from managers.browser_manager import BrowserManager
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
@@ -42,6 +43,7 @@ class ReviewerAgent(BaseAgent):
         "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca ham pytest "
         "test kodu üret. Yanıtında açıklama, markdown çiti veya ek anlatım olmasın. "
         "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere odaklanmalıdır. "
+        f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Dinamik import gerekiyorsa standart kütüphane ile güvenli yaklaşım kullan."
     )
 
@@ -332,6 +334,7 @@ class ReviewerAgent(BaseAgent):
             "- En az 1 test fonksiyonu olsun.\n"
             "- Gerekiyorsa importları sen ekle.\n"
             "- Ağ erişimi, rastgelelik veya dış servis kullanma.\n"
+            f"- {SHARED_TEST_FIXTURE_GUIDANCE}\n"
             "- Yanıt sadece çalıştırılabilir Python kodu olsun.\n\n"
             f"[KOD_BAGLAMI]\n{context[:6000]}"
         )

@@ -50,8 +50,8 @@ def _parse_args() -> argparse.Namespace:
         "--hitl-approve",
         help=(
             "Riskli self-heal planı için insan onayı. "
-            "Kabul edilen değerler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0. "
-            "Verilmezse etkileşimli sorulur."
+            "Kabul edilen değerler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0 veya prompt. "
+            "Verilmezse ya da prompt verilirse etkileşimli sorulur."
         ),
     )
     parser.add_argument(
@@ -153,13 +153,17 @@ async def _initialize_agent_soft_dependency(agent: Any) -> str | None:
 
 def _parse_approval_value(value: str | None) -> bool | None:
     normalized = str(value or "").strip().lower()
-    if not normalized:
+    if not normalized or normalized in {"prompt", "ask", "interactive"}:
         return None
     if normalized in {"1", "true", "yes", "y", "evet", "e"}:
         return True
     if normalized in {"0", "false", "no", "n", "hayır", "hayir", "h"}:
         return False
     return None
+
+
+def _wants_interactive_hitl_prompt(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"", "prompt", "ask", "interactive"}
 
 
 def _prompt_hitl_approval() -> bool:
@@ -223,7 +227,9 @@ def _extract_scope_error_lines(
         if not any(path in normalized_line for path in normalized_paths):
             continue
         if not re.search(
-            r"\berror\b|mypy|type|incompatible|no-untyped-def", normalized_line, re.IGNORECASE
+            r"\berror\b|mypy|type|incompatible|no-untyped-def|assertion|attribute|failed|failure|traceback",
+            normalized_line,
+            re.IGNORECASE,
         ):
             continue
         seen.add(line)
@@ -246,7 +252,9 @@ def _build_attempt_diagnosis(
     ]
     scope_display = ", ".join(scope_paths) or "-"
     if not diagnosis_lines:
-        diagnosis_lines = [f"Hedef kapsam için tip hataları düzeltilecek: {scope_display}"]
+        diagnosis_lines = [
+            f"Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: {scope_display}"
+        ]
     guidance = (
         f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: {scope_display}. "
         "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen satırlardan seç."
@@ -275,11 +283,20 @@ async def _run_self_heal_attempt(
     if str(execution.get("status") or "") != "awaiting_hitl":
         return cast(dict[str, Any], execution)
 
+    loop = dict((remediation or {}).get("remediation_loop") or {})
+    hitl_reasons = [str(item) for item in list(loop.get("hitl_reasons") or []) if str(item)]
+    reason_text = ", ".join(hitl_reasons) or "riskli remediation"
+    print(f"⚠ Riskli self-heal planı HITL onayı bekliyor. Nedenler: {reason_text}")
+
     approved = _parse_approval_value(args.hitl_approve)
-    if approved is None and args.hitl_approve is not None:
+    if (
+        approved is None
+        and args.hitl_approve is not None
+        and not _wants_interactive_hitl_prompt(args.hitl_approve)
+    ):
         print(
             "⚠ --hitl-approve değeri anlaşılamadı. "
-            "Kabul edilenler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0."
+            "Kabul edilenler: yes/no, y/n, evet/hayır, e/h, true/false, 1/0 veya prompt."
         )
     approved = approved if approved is not None else _prompt_hitl_approval()
     return cast(

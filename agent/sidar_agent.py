@@ -825,6 +825,7 @@ class SidarAgent:
                 execution = {
                     "status": "rejected",
                     "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
+                    "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
                 }
                 remediation["remediation_loop"] = remediation_loop
                 remediation["self_heal_execution"] = execution
@@ -847,6 +848,7 @@ class SidarAgent:
                 execution = {
                     "status": "awaiting_hitl",
                     "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
+                    "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
                 }
                 remediation["remediation_loop"] = remediation_loop
                 remediation["self_heal_execution"] = execution

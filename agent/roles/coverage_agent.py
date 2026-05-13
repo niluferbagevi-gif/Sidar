@@ -21,6 +21,7 @@ import defusedxml.ElementTree as ET
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 from config import Config
+from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 
 
 @AgentCatalog.register(
@@ -40,6 +41,7 @@ class CoverageAgent(BaseAgent):
 
     TEST_GENERATION_PROMPT = (
         "Yalnızca çalıştırılabilir pytest kodu üret. Ağ erişimi veya dış servis bağımlılığı kullanma. "
+        f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Yanıtında markdown çiti kullanma."
     )
 
@@ -380,6 +382,20 @@ class CoverageAgent(BaseAgent):
         return False
 
     @staticmethod
+    def _uses_direct_mock_creation(tree: ast.AST) -> bool:
+        forbidden_names = {"Mock", "MagicMock", "AsyncMock", "patch"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "unittest.mock":
+                if any(alias.name in forbidden_names or alias.name == "*" for alias in node.names):
+                    return True
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in forbidden_names:
+                    return True
+                if isinstance(node.func, ast.Attribute) and node.func.attr in forbidden_names:
+                    return True
+        return False
+
+    @staticmethod
     def _finding_mentions_exception_path(finding: dict[str, Any] | None) -> bool:
         if not isinstance(finding, dict):
             return False
@@ -670,6 +686,8 @@ class CoverageAgent(BaseAgent):
 
         if has_tautological_mock_called_assertion:
             return "generated_candidate_tautological_mock_assertion"
+        if CoverageAgent._uses_direct_mock_creation(tree):
+            return "generated_candidate_direct_mock_creation_instead_of_shared_fixture"
         if CoverageAgent._uses_mocking(tree) and not CoverageAgent._has_mock_call_verification(
             tree
         ):
@@ -922,8 +940,9 @@ class CoverageAgent(BaseAgent):
             "- Her test fonksiyonu en az 1 anlamlı assertion içermeli.\n"
             "- Assertion, hedef modülden çağrılan fonksiyon/metot sonucuna bağlanmalı; "
             "sadece import, module is not None, __name__ veya ilgisiz lokal hesap kontrolü YASAK.\n"
-            "- Dış servis çağrılarını unittest.mock ile taklit et ve mock beklentilerini assert_called*/awaited* ile doğrula.\n"
-            "- Gerekirse fixture kullan.\n"
+            "- Dış servis/LLM/DB/event/agent bağımlılıklarında tests/conftest.py ortak fixture'larını kullan; "
+            "unittest.mock ile yeni Mock/MagicMock/AsyncMock nesnesi üretme.\n"
+            f"- {SHARED_TEST_FIXTURE_GUIDANCE}\n"
             "- Hem başarılı hem hata (exception/edge-case) akışları için test üret.\n"
             "- Eksik satır/branch'lere doğrudan tetikleyici çağrılar yaz.\n"
             "- Sadece Python test kodu döndür."
