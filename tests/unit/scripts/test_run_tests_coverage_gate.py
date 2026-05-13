@@ -34,3 +34,25 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage html -d htmlcov" in gate_function
     assert "uv run python -m coverage xml -o coverage.xml" in gate_function
     assert "uv run python -m coverage json -o coverage.json" in gate_function
+
+
+def test_run_tests_enables_benchmark_compare_by_default() -> None:
+    script = _script()
+
+    assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
+    assert "resolve_benchmark_compare_target()" in script
+    assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
+    assert 'find .benchmarks -type f -name "*.json"' in script
+    assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
+    assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
+
+
+def test_env_examples_enable_benchmark_compare() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+
+    for content in (env_example, env_test_example):
+        assert "BENCHMARK_ENABLE_COMPARE=1" in content
+        assert "BENCHMARK_COMPARE_REQUIRED=1" in content
+        assert "BENCHMARK_COMPARE_NAME=baseline" in content

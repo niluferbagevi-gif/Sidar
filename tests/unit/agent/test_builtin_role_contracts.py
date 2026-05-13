@@ -168,6 +168,18 @@ def test_agents_documentation_covers_self_healing_loop_contract() -> None:
         assert fragment in docs
 
 
+def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
+    script = (_repo_root() / "run_tests.sh").read_text(encoding="utf-8")
+
+    assert 'AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"' in script
+    assert 'AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"' in script
+    assert 'AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"' in script
+    assert (
+        'uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --batch-retries "${AUTO_HEAL_BATCH_RETRIES}"'
+        in script
+    )
+
+
 def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     script = (_repo_root() / "autonomous_loop.sh").read_text(encoding="utf-8")
 
@@ -181,7 +193,9 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "run_autonomous_coverage_batch" in script
     assert "write_missing_tests" in script
     assert "run_autonomous_quality_tests" in script
-    assert 'RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0' in script
+    assert (
+        'RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0' in script
+    )
     assert "run_mutation_quality_gate" in script
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED" in script
     assert "uv run --with mutmut mutmut run" in script

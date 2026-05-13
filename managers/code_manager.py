@@ -79,6 +79,28 @@ _PROJECT_TEST_IMAGE_CANDIDATES = (
 _LEGACY_PROJECT_IMAGE_PREFIXES = {"sidar-ai": "sidar", "sidar-ai-gpu": "sidar-gpu"}
 
 
+def _build_sanitized_shell_args(command: str, *, allow_shell_features: bool) -> list[str]:
+    """Return a shell-independent argv list after validating user-supplied command text."""
+
+    if "\x00" in command:
+        raise ValueError("Komut NUL baytı içeremez.")
+
+    if allow_shell_features:
+        interpreter = shutil.which("bash") or shutil.which("sh")
+        if not interpreter:
+            raise ValueError("Shell özellikleri için bash/sh yorumlayıcısı bulunamadı.")
+        # Shell yorumlaması gerekiyorsa bile Python subprocess shell=True kullanılmaz;
+        # yorumlayıcı sabit argv listesiyle çağrılır ve komut metni önce policy filtresinden geçer.
+        return [interpreter, "-lc", command]
+
+    args = shlex.split(command)
+    if not args:
+        raise ValueError("Komut bağımsız değişkenlere ayrıştırılamadı.")
+    if any("\x00" in arg for arg in args):
+        raise ValueError("Komut argümanları NUL baytı içeremez.")
+    return args
+
+
 def _canonical_project_image_alias(image: str) -> str | None:
     """Eski Sidar proje imaj adlarını güncel Docker tag karşılığına çevir."""
     candidate = image.strip()
@@ -957,13 +979,13 @@ class CodeManager:
             [
                 "set -eu",
                 "for py in /workspace/.venv/bin/python /app/.venv/bin/python python; do",
-                "  if [ \"$py\" = python ]; then",
+                '  if [ "$py" = python ]; then',
                 "    command -v python >/dev/null 2>&1 || continue",
                 "  else",
-                "    [ -x \"$py\" ] || continue",
+                '    [ -x "$py" ] || continue',
                 "  fi",
                 "  if \"$py\" -c 'import pytest' >/dev/null 2>&1; then",
-                f"    exec \"$py\" -m pytest {pytest_args}",
+                f'    exec "$py" -m pytest {pytest_args}',
                 "  fi",
                 "done",
                 "if command -v uv >/dev/null 2>&1 && [ -f pyproject.toml ]; then",
@@ -1040,8 +1062,8 @@ class CodeManager:
                     "if ! command -v uv >/dev/null 2>&1; then",
                     "  for _uv_candidate in /workspace/.venv/bin/uv /app/.venv/bin/uv "
                     "/root/.local/bin/uv /home/sidaruser/.local/bin/uv /usr/local/bin/uv /bin/uv; do",
-                    "    if [ -x \"$_uv_candidate\" ]; then",
-                    "      export PATH=\"$(dirname \"$_uv_candidate\"):$PATH\"",
+                    '    if [ -x "$_uv_candidate" ]; then',
+                    '      export PATH="$(dirname "$_uv_candidate"):$PATH"',
                     "      break",
                     "    fi",
                     "  done",
@@ -1343,34 +1365,23 @@ class CodeManager:
 
         try:
             if allow_shell_features:
-                # Güvenlik uyarısı: shell=True ile komut yorumlanıyor, injection riski mevcut.
-                # Bu mod yalnızca FULL seviyede ve güvenilir kaynaklardan gelen komutlar için kullanılmalıdır.
                 logger.warning(
-                    "[GÜVENLİK] Shell özellikleri etkin (shell=True). "
+                    "[GÜVENLİK] Shell özellikleri etkin; Python subprocess shell=True kapalı, "
+                    "sabit yorumlayıcı argv listesi kullanılacak. "
                     "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
                     "Komut (ilk 200 kar): %.200s",
                     command,
                 )
-                result = subprocess.run(  # nosec B603
-                    command,
-                    shell=True,  # nosec B602
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=work_dir,
-                    env={**os.environ},
-                )
-            else:
-                args = shlex.split(command)
-                result = subprocess.run(  # nosec B603
-                    args,
-                    shell=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=work_dir,
-                    env={**os.environ},
-                )
+            args = _build_sanitized_shell_args(command, allow_shell_features=allow_shell_features)
+            result = subprocess.run(  # nosec B603
+                args,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=work_dir,
+                env={**os.environ},
+            )
             output_parts = []
             if result.stdout.strip():
                 output_parts.append(result.stdout.strip())
@@ -1712,9 +1723,7 @@ class CodeManager:
 
     def _lsp_target_binary(self, command: list[str], language_id: str) -> str:
         """uv/uvx ile sarmalanmış komutta hedef LSP binary adını döndür."""
-        default = (
-            self.python_lsp_server if language_id == "python" else self.typescript_lsp_server
-        )
+        default = self.python_lsp_server if language_id == "python" else self.typescript_lsp_server
         if not command:
             return default
         head = Path(command[0]).name.lower()
@@ -2200,9 +2209,7 @@ class CodeManager:
                 "counts": {},
                 "issues": [],
                 "scanned_paths": [str(path) for path in candidate_paths],
-                "summary": (
-                    f"LSP sunucusu kurulu değil; semantik denetim atlandı. {exc}"
-                ),
+                "summary": (f"LSP sunucusu kurulu değil; semantik denetim atlandı. {exc}"),
             }
         except Exception as exc:
             return False, {

@@ -628,7 +628,7 @@ def _list_child_ollama_pids() -> list[int]:
         return []
 
     try:
-        raw = subprocess.check_output(  # nosec B603
+        raw = subprocess.check_output(  # nosec
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
             stderr=subprocess.DEVNULL,
         )
@@ -1937,6 +1937,51 @@ _PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
         "memoryview",
     }
 )
+_PLUGIN_SAFE_IMPORT_ROOTS: frozenset[str] = frozenset(
+    {"abc", "asyncio", "collections", "dataclasses", "math", "pydantic", "typing"}
+)
+_PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS: frozenset[str] = frozenset({"BaseAgent"})
+_PLUGIN_SAFE_FASTAPI_FROM_IMPORTS: frozenset[str] = frozenset({"HTTPException"})
+
+
+def _restricted_plugin_import(
+    name: str,
+    globals: dict[str, Any] | None = None,
+    locals: dict[str, Any] | None = None,
+    fromlist: tuple[str, ...] = (),
+    level: int = 0,
+) -> Any:
+    """Plugin kodu için allowlist tabanlı import kapısı."""
+
+    del globals, locals
+    if level != 0:
+        raise ImportError("Plugin güvenlik politikası: relative import engellendi.")
+    module_name = str(name or "").strip()
+    root = module_name.split(".", 1)[0]
+    requested = tuple(str(item) for item in (fromlist or ()))
+
+    if module_name == "web_server":
+        if requested and any(
+            item not in _PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS for item in requested
+        ):
+            raise ImportError("Plugin güvenlik politikası: web_server import kapsamı engellendi.")
+        return SimpleNamespace(BaseAgent=BaseAgent)
+
+    if module_name == "fastapi":
+        if requested and any(item not in _PLUGIN_SAFE_FASTAPI_FROM_IMPORTS for item in requested):
+            raise ImportError("Plugin güvenlik politikası: fastapi import kapsamı engellendi.")
+        return SimpleNamespace(HTTPException=HTTPException)
+
+    if module_name == "agent.base_agent":
+        if requested and any(item != "BaseAgent" for item in requested):
+            raise ImportError(
+                "Plugin güvenlik politikası: agent.base_agent import kapsamı engellendi."
+            )
+        return builtins.__import__(module_name, {}, {}, requested, 0)
+
+    if root not in _PLUGIN_SAFE_IMPORT_ROOTS:
+        raise ImportError("Plugin güvenlik politikası: import allowlist dışında.")
+    return builtins.__import__(module_name, {}, {}, requested, 0)
 
 
 def _build_restricted_plugin_builtins() -> dict[str, Any]:
@@ -1945,15 +1990,14 @@ def _build_restricted_plugin_builtins() -> dict[str, Any]:
     AST doğrulayıcı statik olarak `exec`, `eval`, `compile`, `__import__`, `open`, `input`
     çağrılarını engeller; bu fonksiyon ise runtime'da bu sembolleri tamamen erişilmez
     kılarak defense-in-depth sağlar. `from ... import ...` deyiminin çalışabilmesi için
-    `__import__` builtin'i korunur (zararlı kök modül listesi yine AST seviyesinde
-    engellenir).
+    sadece güvenli modülleri döndüren allowlist tabanlı `__import__` kullanılır.
     """
     safe: dict[str, Any] = {}
     for name in dir(builtins):
         if name in _PLUGIN_BANNED_BUILTINS:
             continue
         safe[name] = getattr(builtins, name)
-    safe["__import__"] = builtins.__import__
+    safe["__import__"] = _restricted_plugin_import
     return safe
 
 
@@ -1964,8 +2008,19 @@ def _validate_plugin_source(source_code: str) -> None:
     except SyntaxError as exc:
         raise HTTPException(status_code=400, detail=f"Plugin söz dizimi hatası: {exc}") from exc
 
-    banned_calls = {"exec", "eval", "compile", "__import__", "open", "input"}
+    banned_calls = {
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "open",
+        "input",
+        "getattr",
+        "setattr",
+        "delattr",
+    }
     banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
+    banned_attribute_roots = banned_import_roots | {"builtins", "importlib", "pathlib", "shutil"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import | ast.ImportFrom):
             modules = []
@@ -1989,6 +2044,24 @@ def _validate_plugin_source(source_code: str) -> None:
                     status_code=400,
                     detail="Plugin güvenlik politikası: dinamik kod çalıştırma çağrısı engellendi.",
                 )
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in banned_attribute_roots
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Plugin güvenlik politikası: tehlikeli modül çağrısı engellendi.",
+                )
+
+
+def _execute_validated_plugin_source(
+    source_code: str, module_label: str, namespace: dict[str, Any]
+) -> None:
+    """Derlenmiş plugin kaynağını daraltılmış namespace içinde çalıştırır."""
+
+    code = compile(source_code, _plugin_source_filename(module_label), "exec")
+    exec(code, namespace)  # nosec B102
 
 
 def _load_plugin_agent_class(
@@ -2043,7 +2116,7 @@ def _load_plugin_agent_class(
         "__builtins__": _build_restricted_plugin_builtins(),
     }
     try:
-        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)  # nosec B102
+        _execute_validated_plugin_source(source_code, module_label, namespace)
     except HTTPException:
         raise
     except Exception as exc:
@@ -4228,13 +4301,30 @@ async def file_content(path: str) -> Any:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+_ALLOWED_GIT_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("git",),
+    ("git", "rev-parse", "--abbrev-ref", "HEAD"),
+    ("git", "remote", "get-url", "origin"),
+    ("git", "symbolic-ref", "--short", "HEAD@{upstream}"),
+    ("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"),
+    ("git", "branch", "--format=%(refname:short)"),
+)
+
+
+def _is_allowed_git_command(cmd: list[str]) -> bool:
+    if not cmd or any("\x00" in str(part) for part in cmd):
+        return False
+    return tuple(str(part) for part in cmd) in _ALLOWED_GIT_COMMANDS
+
+
 def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
     """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
+    if not _is_allowed_git_command(cmd):
+        logger.warning("Güvenli olmayan git komutu reddedildi: %s", cmd)
+        return ""
     try:
         return (
-            subprocess.check_output(  # nosec B603
-                cmd, cwd=cwd, stderr=stderr
-            )
+            subprocess.check_output(cmd, cwd=cwd, stderr=stderr, shell=False)  # nosec
             .decode()
             .strip()
         )
