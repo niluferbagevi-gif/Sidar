@@ -5,13 +5,13 @@
 # Sürüm: 5.2.0  (GPU & CPU destekli çift mod)
 #
 #  CPU modu (varsayılan):
-#    docker build -t sidar-ai .
+#    docker build -t sidar:latest .
 #
 #  GPU modu (NVIDIA CUDA 13.0 — RTX 30xx/40xx, Driver ≥595):
 #    docker build \
 #      --build-arg BASE_IMAGE=nvidia/cuda:13.0.0-runtime-ubuntu22.04 \
 #      --build-arg GPU_ENABLED=true \
-#      -t sidar-ai-gpu .
+#      -t sidar-gpu:latest .
 #
 #  WSL2 + Docker GPU notu:
 #    Windows tarafında NVIDIA Driver (≥595.x) kurulu olmalı.
@@ -93,7 +93,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN uv run python -c "import shutil; assert shutil.which('pyright-langserver'), 'pyright-langserver missing'; assert shutil.which('pyright'), 'pyright missing'"
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
-# Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .
+# Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar:latest .
 ARG PRECACHE_RAG_MODEL=false
 ARG RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
 RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \

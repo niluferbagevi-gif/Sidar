@@ -70,7 +70,26 @@ _DOCKER_MEMORY_RE = re.compile(r"^\d+(\.\d+)?[bkmgBKMG]?$")
 _DOCKER_CPUS_RE = re.compile(r"^\d+(\.\d+)?$")
 _DOCKER_NETWORK_ALLOWED = frozenset({"none", "bridge", "host", "container:default"})
 _DOCKER_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@\-]*$")
-_PROJECT_TEST_IMAGE_CANDIDATES = ("sidar-ai:latest", "sidar-ai-gpu:latest")
+_PROJECT_TEST_IMAGE_CANDIDATES = (
+    "sidar:latest",
+    "sidar-gpu:latest",
+    "sidar-ai:latest",
+    "sidar-ai-gpu:latest",
+)
+_LEGACY_PROJECT_IMAGE_PREFIXES = {"sidar-ai": "sidar", "sidar-ai-gpu": "sidar-gpu"}
+
+
+def _canonical_project_image_alias(image: str) -> str | None:
+    """Eski Sidar proje imaj adlarını güncel Docker tag karşılığına çevir."""
+    candidate = image.strip()
+    if not candidate:
+        return None
+
+    repository, separator, tag = candidate.partition(":")
+    canonical_repository = _LEGACY_PROJECT_IMAGE_PREFIXES.get(repository)
+    if canonical_repository is None:
+        return None
+    return f"{canonical_repository}:{tag or 'latest'}"
 
 
 def _sanitize_docker_token(
@@ -496,8 +515,31 @@ class CodeManager:
         return result.returncode == 0
 
     def _autodetect_project_test_image(self) -> None:
-        """DOCKER_TEST_IMAGE açık verilmediyse proje test imajını daemon'dan otomatik seç."""
-        if self._docker_test_image_explicit or not self.docker_available:
+        """Docker daemon'da bulunan Sidar test imajını güvenli biçimde seç.
+
+        Güncel proje imaj adı ``sidar:latest``tir. Eski dokümantasyon veya .env
+        dosyalarından gelen ``sidar-ai``/``sidar-ai-gpu`` değerleri yalnızca aynı
+        imaj gerçekten lokalde varsa kullanılır; aksi halde lokalde bulunan güncel
+        ``sidar``/``sidar-gpu`` tag'ine yönlendirilir. Bu akış Docker Hub'dan
+        yanlış ``sidar-ai`` pull denemesini engeller.
+        """
+        if not self.docker_available:
+            return
+
+        canonical_alias = _canonical_project_image_alias(self.docker_test_image)
+        if self._docker_test_image_explicit:
+            if not canonical_alias:
+                return
+            if self._docker_image_exists(self.docker_test_image):
+                return
+            if self._docker_image_exists(canonical_alias):
+                logger.warning(
+                    "DOCKER_TEST_IMAGE eski Sidar imaj adını gösteriyor (%s) ancak bu imaj "
+                    "lokalde yok; bulunan güncel imaj kullanılacak: %s",
+                    self.docker_test_image,
+                    canonical_alias,
+                )
+                self.docker_test_image = canonical_alias
             return
 
         for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
@@ -1006,7 +1048,7 @@ class CodeManager:
                     "fi",
                     "if ! command -v uv >/dev/null 2>&1; then",
                     "  echo 'uv bulunamadı: sandbox imajında uv önceden kurulu olmalı. '"
-                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar-ai:latest '"
+                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest '"
                     "'olarak ayarlayın veya imaja /bin/uv ekleyin.' >&2",
                     "  exit 127",
                     "fi",

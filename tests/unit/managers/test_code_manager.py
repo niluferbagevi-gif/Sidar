@@ -350,17 +350,17 @@ def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    ok, out = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path), image="sidar-ai:test")
+    ok, out = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path), image="sidar:test")
     assert ok and out == "ok"
     assert "--entrypoint" in calls["cmd"]
     assert calls["cmd"][calls["cmd"].index("--entrypoint") + 1] == "sh"
-    assert "sidar-ai:test" in calls["cmd"]
+    assert "sidar:test" in calls["cmd"]
 
 
 def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
     manager, tmp_path, monkeypatch
 ):
-    manager.docker_test_image = "sidar-ai:test"
+    manager.docker_test_image = "sidar:test"
     monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
     calls = {}
 
@@ -373,7 +373,7 @@ def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
     ok, out = manager.run_shell_in_sandbox("bash run_tests.sh", cwd=str(tmp_path))
 
     assert ok and out == "ok"
-    assert "sidar-ai:test" in calls["cmd"]
+    assert "sidar:test" in calls["cmd"]
     shell_payload = calls["cmd"][-1]
     assert "command -v uv" in shell_payload
     assert "uv bulunamadı" in shell_payload
@@ -452,7 +452,7 @@ def test_pytest_preflight_prefers_project_and_image_venvs(manager):
 
 
 def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypatch):
-    manager.docker_test_image = "sidar-ai:test"
+    manager.docker_test_image = "sidar:test"
     calls = {}
 
     def fake_run_shell(command, cwd=None, image=None):
@@ -467,7 +467,7 @@ def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypat
 
     assert result["success"] is True
     assert result["command"] == "pytest -q tests/unit/foo.py"
-    assert calls["image"] == "sidar-ai:test"
+    assert calls["image"] == "sidar:test"
     assert "/workspace/.venv/bin/python" in calls["command"]
     assert "pytest bulunamadı" in calls["command"]
 
@@ -480,7 +480,7 @@ def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeyp
 
 
 def test_shell_sandbox_routes_bare_pytest_through_test_image_preflight(manager, monkeypatch):
-    manager.docker_test_image = "sidar-ai:test"
+    manager.docker_test_image = "sidar:test"
     calls = {}
 
     monkeypatch.setattr(
@@ -500,14 +500,14 @@ def test_shell_sandbox_routes_bare_pytest_through_test_image_preflight(manager, 
 
     assert ok is True
     assert output == "1 passed"
-    assert "sidar-ai:test" in calls["cmd"]
+    assert "sidar:test" in calls["cmd"]
     sandbox_script = calls["cmd"][-1]
     assert 'exec "$py" -m pytest -q tests/unit/foo.py' in sandbox_script
     assert "uv sync --frozen --all-extras" in sandbox_script
 
 
 def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, monkeypatch):
-    manager.docker_test_image = "sidar-ai:test"
+    manager.docker_test_image = "sidar:test"
     calls = {}
 
     monkeypatch.setattr(
@@ -524,7 +524,7 @@ def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, mo
 
     assert ok is True
     assert output == "ok"
-    assert "sidar-ai:test" in calls["cmd"]
+    assert "sidar:test" in calls["cmd"]
     assert "uv bulunamadı" in calls["cmd"][-1]
 
 
@@ -2231,13 +2231,13 @@ def test_audit_project_records_validation_errors_for_invalid_syntax(manager, tmp
     assert "Geçerli" in report
 
 
-def test_autodetect_project_test_image_prefers_sdk_candidate(manager, monkeypatch):
+def test_autodetect_project_test_image_prefers_canonical_sdk_candidate(manager, monkeypatch):
     calls = []
 
     class FakeImages:
         def get(self, image):
             calls.append(image)
-            if image == "sidar-ai:latest":
+            if image == "sidar:latest":
                 return object()
             raise RuntimeError("missing")
 
@@ -2249,8 +2249,8 @@ def test_autodetect_project_test_image_prefers_sdk_candidate(manager, monkeypatc
 
     manager._autodetect_project_test_image()
 
-    assert manager.docker_test_image == "sidar-ai:latest"
-    assert calls == ["sidar-ai:latest"]
+    assert manager.docker_test_image == "sidar:latest"
+    assert calls == ["sidar:latest"]
 
 
 def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager, monkeypatch):
@@ -2263,14 +2263,32 @@ def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager,
 
     def fake_run(cmd, **kwargs):
         inspected.append(cmd)
-        return SimpleNamespace(returncode=0 if cmd[-1] == "sidar-ai-gpu:latest" else 1)
+        return SimpleNamespace(returncode=0 if cmd[-1] == "sidar-gpu:latest" else 1)
 
     monkeypatch.setattr(cm.subprocess, "run", fake_run)
 
     manager._autodetect_project_test_image()
 
-    assert manager.docker_test_image == "sidar-ai-gpu:latest"
-    assert [cmd[-1] for cmd in inspected] == ["sidar-ai:latest", "sidar-ai-gpu:latest"]
+    assert manager.docker_test_image == "sidar-gpu:latest"
+    assert [cmd[-1] for cmd in inspected] == ["sidar:latest", "sidar-gpu:latest"]
+
+
+def test_autodetect_project_test_image_remaps_missing_legacy_explicit_image(manager, monkeypatch):
+    checked = []
+    manager.docker_available = True
+    manager.docker_test_image = "sidar-ai:latest"
+    manager._docker_test_image_explicit = True
+
+    def fake_exists(image):
+        checked.append(image)
+        return image == "sidar:latest"
+
+    monkeypatch.setattr(manager, "_docker_image_exists", fake_exists)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar:latest"
+    assert checked == ["sidar-ai:latest", "sidar:latest"]
 
 
 def test_autodetect_project_test_image_respects_explicit_override(manager, monkeypatch):

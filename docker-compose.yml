@@ -49,6 +49,7 @@ services:
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
     profiles: ["cpu"]
+    image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
     build:
       context: .
       args:
@@ -102,6 +103,7 @@ services:
   #   sudo apt-get install -y nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker
   sidar-gpu:
     profiles: ["gpu"]
+    image: ${SIDAR_GPU_DOCKER_IMAGE:-sidar-gpu:latest}
     build:
       context: .
       args:
