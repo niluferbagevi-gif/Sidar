@@ -1759,6 +1759,14 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
     manager._run_lsp_sequence(primary_path=py, request_method=None, extra_open_files=[txt])
     assert b"textDocument/didOpen" in captured["payload"] and b"a.txt" not in captured["payload"]
 
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
+    with pytest.raises(FileNotFoundError, match="uv tool install pyright"):
+        manager._run_lsp_sequence(primary_path=py, request_method=None)
+
     # _extract_lsp_result branch where message has id but not request_id and no method
     result, notes = manager._extract_lsp_result([{"id": 5, "result": 1}], request_id=2)
     assert result is None and notes == []

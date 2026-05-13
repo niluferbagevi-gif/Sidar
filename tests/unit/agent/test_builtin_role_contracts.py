@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -267,6 +268,9 @@ def test_install_script_defaults_match_terminology_standards() -> None:
     assert 'CODE_MOD="qwen2.5-coder:7b"' in script
     assert 'CODE_MOD="qwen2.5-coder:3b"' not in script
     assert "uv run pytest" in script
+    assert "install_pyright_lsp_tool" in script
+    assert "uv tool install pyright" in script
+    assert "pyright-langserver" in script
     # Eski ürün adı kullanıcıya görünen mesajda geçmemelidir; legacy yakalama korunur.
     assert "*lotus*" in script
     assert "'lotus' referansı" not in script
@@ -329,7 +333,13 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
     assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
     assert "uv run pytest" in text_by_file["install_sidar.sh"]
+    assert "uv tool install pyright" in text_by_file["install_sidar.sh"]
+    assert "uv tool install pyright" in text_by_file["README.md"]
     assert "uv run alembic upgrade head" in text_by_file["README.md"]
+
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["dependencies"]
+    assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["optional-dependencies"]["dev"]
 
     forbidden_terms = [
         "Lot" "us",
