@@ -875,13 +875,13 @@ class CodeManager:
                 "  fi",
                 "done",
                 "if command -v uv >/dev/null 2>&1 && [ -f pyproject.toml ]; then",
-                "  uv sync --frozen --extra dev >/tmp/sidar-uv-sync.log 2>&1 && exec uv run pytest "
+                "  uv sync --frozen --all-extras >/tmp/sidar-uv-sync.log 2>&1 && exec uv run pytest "
                 f"{pytest_args}",
                 "  cat /tmp/sidar-uv-sync.log >&2 || true",
                 "fi",
                 "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
                 "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
-                "'ya da uv sync --frozen --extra dev ile .venv hazırlayın.' >&2",
+                "'ya da uv sync --frozen --all-extras ile .venv hazırlayın.' >&2",
                 "exit 127",
             ]
         )
@@ -897,9 +897,12 @@ class CodeManager:
         return any(
             part == "uv"
             or part.endswith("/uv")
+            or part == "pytest"
+            or part.endswith("/pytest")
+            or (part == "python" and lowered[index + 1 : index + 3] == ["-m", "pytest"])
             or part.endswith("run_tests.sh")
             or part.endswith("autonomous_loop.sh")
-            for part in lowered
+            for index, part in enumerate(lowered)
         )
 
     def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
@@ -910,8 +913,28 @@ class CodeManager:
             return self.docker_test_image
         return self.docker_image
 
+    @staticmethod
+    def _command_invokes_pytest(command: str) -> bool:
+        """Komutun doğrudan pytest çalıştırıp çalıştırmadığını güvenli biçimde belirle."""
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            parts = command.split()
+        lowered = [part.lower() for part in parts]
+        if not lowered:
+            return False
+        return (
+            lowered[0] == "pytest"
+            or lowered[0].endswith("/pytest")
+            or lowered[:3] == ["python", "-m", "pytest"]
+            or lowered[:3] == ["uv", "run", "pytest"]
+        )
+
     def _build_shell_preflight_command(self, command: str) -> str:
-        """Sandbox shell komutları için PATH ve uv varlığı pre-flight koruması ekle."""
+        """Sandbox shell komutları için PATH ve uv/pytest pre-flight koruması ekle."""
+        if self._command_invokes_pytest(command):
+            return self._build_pytest_preflight_command(command)
+
         preflight = [
             "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
         ]
@@ -1574,18 +1597,18 @@ class CodeManager:
             return [binary_path, *args]
 
         # Python LSP fallback chain:
-        # 1. `uvx pyright-langserver --stdio` (works for dev tools that aren't
-        #    in the project lock file — uvx caches and runs ad-hoc binaries).
-        # 2. `uv run --frozen <binary>` (only succeeds if the LSP is a real
-        #    project dependency in uv.lock).
+        # 1. `uv run --frozen <binary>` uses the repo-locked pyright dev dependency
+        #    and avoids ad-hoc downloads when the executable is absent from PATH.
+        # 2. `uvx --from pyright <binary>` is the global-tool fallback for systems
+        #    that have uvx but have not synced the project environment yet.
         if language_id == "python":
+            uv_path = shutil.which("uv")
+            if uv_path:
+                return [uv_path, "run", "--frozen", binary, *args]
             if binary == "pyright-langserver":
                 uvx_path = shutil.which("uvx")
                 if uvx_path:
                     return [uvx_path, "--from", "pyright", binary, *args]
-            uv_path = shutil.which("uv")
-            if uv_path:
-                return [uv_path, "run", "--frozen", binary, *args]
 
         return [binary, *args]
 

@@ -90,6 +90,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --all-extras --no-install-project
+RUN uv run python -c "import shutil; assert shutil.which('pyright-langserver'), 'pyright-langserver missing'; assert shutil.which('pyright'), 'pyright missing'"
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
 # Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .

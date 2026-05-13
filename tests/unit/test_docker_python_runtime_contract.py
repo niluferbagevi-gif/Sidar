@@ -26,6 +26,13 @@ def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
     assert "RUN uv --version && uvx --version" in dockerfile
 
 
+def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
+    dockerfile = _read("Dockerfile")
+
+    assert "shutil.which('pyright-langserver')" in dockerfile
+    assert "shutil.which('pyright')" in dockerfile
+
+
 def test_compose_cpu_builds_use_python_311_base_image():
     compose = _read("docker-compose.yml")
 

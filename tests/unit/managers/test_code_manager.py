@@ -446,7 +446,7 @@ def test_pytest_preflight_prefers_project_and_image_venvs(manager):
 
     assert "/workspace/.venv/bin/python" in command
     assert "/app/.venv/bin/python" in command
-    assert "uv sync --frozen --extra dev" in command
+    assert "uv sync --frozen --all-extras" in command
     assert "exec pytest" not in command
     assert "-m pytest -q tests/unit/foo.py" in command
 
@@ -477,6 +477,55 @@ def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeyp
     result = manager.run_pytest_and_collect("   ")
     assert result["success"] is True
     assert result["command"] == "pytest -q"
+
+
+def test_shell_sandbox_routes_bare_pytest_through_test_image_preflight(manager, monkeypatch):
+    manager.docker_test_image = "sidar-ai:test"
+    calls = {}
+
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0, stdout="1 passed", stderr="")
+
+    monkeypatch.setattr(cm.subprocess, "run", fake_run)
+
+    ok, output = manager.run_shell_in_sandbox(
+        "pytest -q tests/unit/foo.py", cwd=str(manager.base_dir)
+    )
+
+    assert ok is True
+    assert output == "1 passed"
+    assert "sidar-ai:test" in calls["cmd"]
+    sandbox_script = calls["cmd"][-1]
+    assert 'exec "$py" -m pytest -q tests/unit/foo.py' in sandbox_script
+    assert "uv sync --frozen --all-extras" in sandbox_script
+
+
+def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, monkeypatch):
+    manager.docker_test_image = "sidar-ai:test"
+    calls = {}
+
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(cm.subprocess, "run", fake_run)
+
+    ok, output = manager.run_shell_in_sandbox("bash run_tests.sh", cwd=str(manager.base_dir))
+
+    assert ok is True
+    assert output == "ok"
+    assert "sidar-ai:test" in calls["cmd"]
+    assert "uv bulunamadı" in calls["cmd"][-1]
 
 
 def test_run_shell_paths(manager, monkeypatch, tmp_path):
@@ -551,8 +600,8 @@ def test_resolve_lsp_command_falls_back_to_uv_run_for_python(manager, monkeypatc
     assert cmd == ["/usr/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"]
 
 
-def test_resolve_lsp_command_prefers_uvx_for_pyright(manager, monkeypatch):
-    """`uvx` mevcutsa pyright-langserver için `uv run --frozen` yerine uvx tercih edilmeli."""
+def test_resolve_lsp_command_prefers_locked_uv_run_before_uvx(manager, monkeypatch):
+    """Repo-locked pyright dependency should be preferred over ad-hoc uvx downloads."""
 
     def fake_which(binary):
         if binary == "uvx":
@@ -560,6 +609,18 @@ def test_resolve_lsp_command_prefers_uvx_for_pyright(manager, monkeypatch):
         if binary == "uv":
             return "/usr/bin/uv"
         return None
+
+    monkeypatch.setattr(cm.shutil, "which", fake_which)
+    monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
+
+    cmd = manager._resolve_lsp_command("python")
+
+    assert cmd == ["/usr/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"]
+
+
+def test_resolve_lsp_command_uses_uvx_when_uv_is_unavailable(manager, monkeypatch):
+    def fake_which(binary):
+        return "/usr/bin/uvx" if binary == "uvx" else None
 
     monkeypatch.setattr(cm.shutil, "which", fake_which)
     monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
