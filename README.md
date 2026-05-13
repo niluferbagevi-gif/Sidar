@@ -690,10 +690,13 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
 > Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
 > ile sabitler.
-> Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
-> benchmark fazı quality gate olarak zorunlu çalışır. Gecikme hassas akışlar için
-> periyodik olarak `bash run_tests.sh` veya
-> `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
+> Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` ve
+> `BENCHMARK_ENABLE_COMPARE=1` olarak ayarlanmıştır; benchmark fazı quality gate olarak
+> zorunlu çalışır ve `.benchmarks` altında kayıtlı en güncel `baseline` serisiyle
+> otomatik karşılaştırılır. İlk baseline henüz yoksa karşılaştırma uyarıyla atlanır;
+> baseline bulunmasını zorunlu kılmak için `BENCHMARK_COMPARE_REQUIRED=1` kullanın.
+> Gecikme hassas akışlar için periyodik olarak `bash run_tests.sh` veya
+> `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json --benchmark-compare=baseline`
 > komutlarından biriyle regresyon takibi yapın.
 >
 > Geliştirme tarafında yardımcı komutlar da uv standardına taşınmalıdır
