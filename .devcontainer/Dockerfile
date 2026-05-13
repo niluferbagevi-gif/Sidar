@@ -6,6 +6,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=.venv-container \
+    UV_CACHE_DIR=/home/vscode/.cache/uv \
     SIDAR_PYTHON_VERSION=3.11 \
     CODING_MODEL=qwen2.5-coder:7b \
     OLLAMA_REQUIRED_MODELS=qwen2.5-coder:7b \
