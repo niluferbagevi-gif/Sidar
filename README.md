@@ -109,6 +109,7 @@
 - `managers/code_manager.py` içinde Pyright ve TypeScript Language Server Protocol entegrasyonu
 - Reviewer ajanı için `lsp_diagnostics` tabanlı anlamsal kalite kapısı ve regresyon sinyali
 - Sözdizimi denetiminin ötesine geçerek symbol/reference düzeyinde daha güvenilir kod inceleme akışı
+- Pyright LSP binary gereksinimi `pyright-langserver --stdio` olarak doğrulanır; `pyproject.toml` içindeki `pyright>=1.1.409,<2.0.0` kaydı `uv sync --frozen --all-extras` ile proje ortamına kurulur. `install_sidar.sh sync-deps` ve Dev Container post-create/sync akışı binary yine bulunamazsa `uv tool install pyright` fallback'ini çalıştırır.
 
 ### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
@@ -266,6 +267,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - Python 3.11 (`>=3.11, <3.12`)
 - Not: Python 3.13 ile bağımlılık çözümü başarısız olabilir (ör. SQLAlchemy kurulamadığı için `ModuleNotFoundError`).
 - `ffmpeg` (multimodal video/ses ayrıştırma için zorunlu sistem bağımlılığı)
+- `pyright-langserver` (Pyright LSP diagnostics için `pyproject.toml` üzerinden `uv sync --frozen --all-extras` ile kurulur; gerekirse `uv tool install pyright` fallback'i kullanılır)
 - `psutil` (sistem sağlık ölçümleri ve child-process cleanup akışları için Python bağımlılığı; `pyproject.toml` içinde tanımlı)
 - İsteğe bağlı: Docker, Ollama, PostgreSQL/pgvector, Playwright tarayıcıları
 
@@ -282,7 +284,8 @@ uv sync --frozen --all-extras
 > Kilitli ve platformlar arası deterministik çözüm için kaynak dosya `uv.lock` kabul edilir.
 > Sidar geliştirme standardında paket ve komut yönetimi `uv` ile yapılır: kurulum için
 > `uv sync --frozen --all-extras`, çalıştırma için `uv run ...`, ek paket ihtiyacında `uv pip install ...`
-> kullanılmalıdır. `dev` extras self-healing için standart kurulumun parçasıdır; `install_sidar.sh`
+> kullanılmalıdır. Pyright LSP proje bağımlılıklarına pin'lidir; ortam dışı CLI fallback gerektiğinde
+> standart komut `uv tool install pyright` şeklindedir. `dev` extras self-healing için standart kurulumun parçasıdır; `install_sidar.sh`
 > geliştirme araçlarını varsayılan akıştan çıkarmaz. Yerel coding modeli standardı Ollama üzerinde
 > `qwen2.5-coder:7b` olarak hedeflenir.
 

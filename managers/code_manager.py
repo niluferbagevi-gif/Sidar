@@ -1510,7 +1510,15 @@ class CodeManager:
                 cwd=str(workspace_root),
             )
         except FileNotFoundError as exc:
-            raise FileNotFoundError(f"LSP binary bulunamadı: {command[0]}") from exc
+            install_hint = (
+                "uv tool install pyright"
+                if language_id == "python"
+                else "npm install -g typescript-language-server typescript"
+            )
+            raise FileNotFoundError(
+                f"LSP binary bulunamadı: {command[0]}. "
+                f"Kurulum/doğrulama komutu: {install_hint}"
+            ) from exc
         try:
             stdout, stderr = proc.communicate(payload, timeout=self.lsp_timeout_seconds)
         except subprocess.TimeoutExpired as exc:

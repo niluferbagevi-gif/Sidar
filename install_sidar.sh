@@ -2420,6 +2420,7 @@ setup_python_env() {
 setup_uv() {
     step "uv Paket Yöneticisi"
     export UV_PROGRESS_BAR=on
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if ! command -v uv &>/dev/null; then
         local uv_install_script=""
@@ -2484,6 +2485,36 @@ install_python_deps() {
     fi
 
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
+}
+
+# ── 5.1 Pyright LSP aracını kur/doğrula ─────────────────────────────────────
+install_pyright_lsp_tool() {
+    step "Pyright LSP Aracı"
+
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+    if command -v pyright-langserver &>/dev/null; then
+        ok "Pyright LSP hazır: $(command -v pyright-langserver)"
+        return
+    fi
+
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        warn "Çevrimdışı modda pyright-langserver bulunamadı; LSP diagnostics için çevrimiçi ortamda 'uv tool install pyright' çalıştırın veya offline tool cache sağlayın."
+        return
+    fi
+
+    info "Pyright LSP kuruluyor: uv tool install pyright"
+    if ! uv tool install pyright; then
+        warn "uv tool install pyright başarısız oldu; ajan LSP diagnostics özelliği için manuel kurulum gerekir."
+        return
+    fi
+
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    if command -v pyright-langserver &>/dev/null; then
+        ok "Pyright LSP kuruldu: $(command -v pyright-langserver)"
+    else
+        warn "Pyright kuruldu ancak pyright-langserver PATH üzerinde bulunamadı; ~/.local/bin PATH ayarını kontrol edin."
+    fi
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -5175,6 +5206,7 @@ run_sync_deps_phase() {
     setup_uv
     setup_python_env
     install_python_deps
+    install_pyright_lsp_tool
     verify_torch_cuda
     ok "sync-deps fazı tamamlandı."
 }
@@ -5277,6 +5309,7 @@ main() {
         setup_uv
         setup_python_env
         install_python_deps
+        install_pyright_lsp_tool
         verify_torch_cuda
     else
         info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."

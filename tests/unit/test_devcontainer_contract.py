@@ -37,3 +37,13 @@ def test_devcontainer_generated_log_directory_is_gitignored():
     gitignore = _read(".gitignore").splitlines()
 
     assert ".devcontainer/logs/" in gitignore
+
+
+def test_devcontainer_bootstraps_pyright_lsp_tool_with_uv_tool_install():
+    setup_script = _read(".devcontainer/setup-codespaces.sh")
+
+    assert "ensure_pyright_lsp_tool" in setup_script
+    assert "uv tool install pyright" in setup_script
+    assert "pyright-langserver" in setup_script
+    assert "${REPO_ROOT}/${UV_PROJECT_ENVIRONMENT}/bin" in setup_script
+    assert "${HOME}/.local/bin" in setup_script

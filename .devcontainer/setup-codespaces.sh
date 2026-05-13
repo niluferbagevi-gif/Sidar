@@ -10,6 +10,7 @@ export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-.venv-container}"
 export SIDAR_PYTHON_VERSION="${SIDAR_PYTHON_VERSION:-3.11}"
 export CODING_MODEL="${CODING_MODEL:-qwen2.5-coder:7b}"
 export OLLAMA_REQUIRED_MODELS="${OLLAMA_REQUIRED_MODELS:-${CODING_MODEL}}"
+export PATH="${REPO_ROOT}/${UV_PROJECT_ENVIRONMENT}/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
 log() { printf 'ℹ️  %s\n' "$*"; }
 ok() { printf '✅ %s\n' "$*"; }
@@ -198,6 +199,30 @@ ensure_uv() {
   ok "uv kuruldu: $(uv --version)"
 }
 
+ensure_pyright_lsp_tool() {
+  if command -v pyright-langserver >/dev/null 2>&1; then
+    ok "Pyright LSP hazır: $(command -v pyright-langserver)"
+    return 0
+  fi
+
+  ensure_uv || {
+    warn "Pyright LSP kurulamadı; uv bulunamadı. Manuel komut: uv tool install pyright"
+    return 0
+  }
+
+  log "Pyright LSP aracı kuruluyor: uv tool install pyright"
+  if uv tool install pyright; then
+    export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+    if command -v pyright-langserver >/dev/null 2>&1; then
+      ok "Pyright LSP kuruldu: $(command -v pyright-langserver)"
+    else
+      warn "uv tool install pyright tamamlandı ancak pyright-langserver PATH üzerinde görünmüyor; ~/.local/bin PATH ayarını kontrol edin."
+    fi
+  else
+    warn "uv tool install pyright başarısız oldu; LSP diagnostics için manuel kurulum gerekir."
+  fi
+}
+
 
 dependency_fingerprint() {
   local files=(pyproject.toml uv.lock .python-version)
@@ -369,6 +394,8 @@ sync_python_environment() {
   else
     warn "Sanal ortam Python yorumlayıcısı bulunamadı: ${venv_python}"
   fi
+
+  ensure_pyright_lsp_tool
 
   if [ ! -f .env.test ] && [ -f .env.test.example ]; then
     cp .env.test.example .env.test
