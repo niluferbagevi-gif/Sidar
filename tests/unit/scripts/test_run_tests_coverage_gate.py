@@ -36,23 +36,25 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage json -o coverage.json" in gate_function
 
 
-def test_run_tests_enables_benchmark_compare_by_default() -> None:
+def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creation() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
-    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
+    assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
+    assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
-def test_env_examples_enable_benchmark_compare() -> None:
+def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
     for content in (env_example, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
-        assert "BENCHMARK_COMPARE_REQUIRED=1" in content
+        assert "BENCHMARK_COMPARE_REQUIRED=0" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content

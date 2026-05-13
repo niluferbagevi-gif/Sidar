@@ -691,7 +691,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
 > ile sabitler.
 > Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
-> benchmark fazı quality gate olarak zorunlu çalışır. Gecikme hassas akışlar için
+> benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
+> ilk koşu `--benchmark-save=baseline` ile baseline üretir ve `--benchmark-compare` eklemeden
+> tamamlanır; baseline yokluğunu fail etmek isteyen sıkı CI hatları
+> `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Gecikme hassas akışlar için
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.

@@ -203,7 +203,7 @@ PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
-BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"
+BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
@@ -933,8 +933,10 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
+      echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
       if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
         echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
+        echo "ℹ️ İlk kurulum/yerel bootstrap için BENCHMARK_COMPARE_REQUIRED=0 kullanın veya önce benchmark baseline üretin."
         BENCHMARK_EXIT_CODE=1
       fi
     fi
