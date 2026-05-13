@@ -222,6 +222,8 @@ async def test_build_dynamic_prompt():
     assert "def target():" in prompt
     assert "'assert True' veya tautolojik kontroller YASAK" in prompt
     assert "Her test fonksiyonu en az 1 anlamlı assertion içermeli" in prompt
+    assert "tests/conftest.py" in prompt
+    assert "fake_db_session" in prompt
 
 
 @pytest.mark.asyncio
@@ -472,7 +474,6 @@ async def test_autonomous_coverage_batch_writes_multiple_findings(
     assert result["batch_count"] == 2
     assert [item["status"] for item in result["results"]] == ["tests_written", "tests_written"]
     assert fake_coverage_code_manager.write_generated_test.await_count == 2
-
 
 
 async def test_cap_autonomous_finding_scope_limits_context() -> None:
@@ -1157,8 +1158,17 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
             "    service = Mock(return_value=1)\n"
             "    assert service() == 1"
         )
-        == "generated_candidate_mock_without_call_assertion"
+        == "generated_candidate_direct_mock_creation_instead_of_shared_fixture"
     )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "def test_mocker_without_call_verification(mocker):\n"
+            "    service = mocker.Mock(return_value=1)\n"
+            "    assert service() == 1"
+        )
+        == "generated_candidate_direct_mock_creation_instead_of_shared_fixture"
+    )
+
     assert (
         CoverageAgent._candidate_rejection_reason(
             "def test_exception_path_without_raises():\n"

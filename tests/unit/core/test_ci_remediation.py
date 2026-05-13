@@ -281,6 +281,8 @@ def test_build_self_heal_patch_prompt_limits_snapshots_and_embeds_data() -> None
     )
     assert prompt.startswith("[SELF_HEAL_PLAN]")
     assert "tests/t1.py" in prompt
+    assert "tests/conftest.py" in prompt
+    assert "fake_llm_response" in prompt
     assert prompt.count("[FILE]") == 6
 
 

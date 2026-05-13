@@ -14,6 +14,8 @@ import re
 import shlex
 from typing import Any
 
+from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
+
 _CI_FAILURE_CONCLUSIONS = {
     "failure",
     "timed_out",
@@ -567,6 +569,8 @@ def build_self_heal_patch_prompt(
         "- Sadece `patch` aksiyonu üret; dosyayı tamamen yeniden yazma.\n"
         "- `target` mevcut dosyada birebir bulunmalı; minimal diff üret.\n"
         "- Patch öncesi/sonrası deterministik olmalı.\n"
+        "- Test dosyası patch'lerinde ortak fixture kuralını uygula: "
+        f"{SHARED_TEST_FIXTURE_GUIDANCE}\n"
         "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash run_tests.sh dışına çıkma.\n\n"
         "Mypy odaklı ek kurallar:\n"
         "- Eğer hata türü mypy ise, öncelik sırası: parse edilebilir hata satırı -> ilgili dosya snapshotı -> diagnosis.\n"
