@@ -121,6 +121,8 @@ class _InteractiveAgent:
 
 
 class _MainFlowAgent:
+    VERSION = "5.2.0"
+
     def __init__(self, cfg):
         self.cfg = cfg
         self.memory = SimpleNamespace(
@@ -440,13 +442,13 @@ def test_main_interactive_mode_initializes_and_enters_loop(monkeypatch):
 
     entered = {"count": 0}
 
-    def _fake_interactive_loop(agent):
+    async def _fake_interactive_loop_async(agent):
         entered["count"] += 1
         assert agent is created["agent"]
 
     monkeypatch.setattr(cli, "Config", _DefaultConfig)
     monkeypatch.setattr(cli, "SidarAgent", _agent_factory)
-    monkeypatch.setattr(cli, "interactive_loop", _fake_interactive_loop)
+    monkeypatch.setattr(cli, "_interactive_loop_async", _fake_interactive_loop_async)
     monkeypatch.setattr(cli.sys, "argv", ["cli.py"])
     cli.main()
 
