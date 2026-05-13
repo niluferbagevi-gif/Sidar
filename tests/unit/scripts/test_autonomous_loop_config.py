@@ -100,3 +100,44 @@ def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
 
     assert "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı" in output
     assert "HITL=no" in output
+
+
+def test_autonomous_loop_defaults_to_hybrid_remediation_mode() -> None:
+    output = _run_autonomous_loop_config(profile="short")
+
+    assert "Otonom remediation modu: AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid" in output
+    assert "Hibrit remediation modu:" in output
+    assert "RUN_STATIC_ANALYSIS=0 AUTO_HEAL_ON_FAILURE=0" in output
+
+
+def test_autonomous_loop_hybrid_forces_static_analysis_off() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "1"},
+    )
+
+    assert "tekrarlı mypy/self-heal blokajını önlemek" in output
+    assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
+
+
+def test_autonomous_loop_full_remediation_allows_static_analysis_override() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={
+            "AUTONOMOUS_LOOP_REMEDIATION_MODE": "full",
+            "AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "1",
+        },
+    )
+
+    assert "Otonom remediation modu: AUTONOMOUS_LOOP_REMEDIATION_MODE=full" in output
+    assert "Full remediation modu: otonom test tekrarlarında RUN_STATIC_ANALYSIS=1" in output
+
+
+def test_autonomous_loop_rejects_invalid_remediation_mode() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_REMEDIATION_MODE": "mypy-loop"},
+    )
+
+    assert "AUTONOMOUS_LOOP_REMEDIATION_MODE hybrid, tests-only veya full olmalı" in output
+    assert "Otonom remediation modu: AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid" in output
