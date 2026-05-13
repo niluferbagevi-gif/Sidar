@@ -305,6 +305,88 @@ def test_packaged_alembic_head_preserves_seed_data_and_downgrades_to_base(tmp_pa
 
 
 @pytest.mark.integration
+def test_packaged_alembic_stepwise_downgrade_removes_revision_objects(tmp_path, monkeypatch):
+    """Packaged migrations can roll back one revision at a time without orphaned tables/columns."""
+    db_path = (tmp_path / "packaged_stepwise_rollback.db").resolve()
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    alembic_cfg = _packaged_alembic_config(db_url)
+
+    command.upgrade(alembic_cfg, "head")
+    engine = create_engine(db_url)
+    try:
+        inspector = inspect(engine)
+        head_tables = set(inspector.get_table_names())
+        assert "access_policies" in head_tables
+        assert "tenant_id" in {column["name"] for column in inspector.get_columns("users")}
+        assert {
+            "marketing_campaigns",
+            "content_assets",
+            "operation_checklists",
+            "coverage_tasks",
+            "coverage_findings",
+            "audit_logs",
+            "prompt_registry",
+        }.issubset(head_tables)
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "0005_pgvector_hnsw_index")
+    engine = create_engine(db_url)
+    try:
+        inspector = inspect(engine)
+        downgraded_tables = set(inspector.get_table_names())
+        assert "access_policies" not in downgraded_tables
+        assert "tenant_id" not in {column["name"] for column in inspector.get_columns("users")}
+        assert "marketing_campaigns" in downgraded_tables
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "0003_audit_trail")
+    engine = create_engine(db_url)
+    try:
+        downgraded_tables = set(inspect(engine).get_table_names())
+        assert {
+            "marketing_campaigns",
+            "content_assets",
+            "operation_checklists",
+            "coverage_tasks",
+            "coverage_findings",
+        }.isdisjoint(downgraded_tables)
+        assert "audit_logs" in downgraded_tables
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "0002_prompt_registry")
+    engine = create_engine(db_url)
+    try:
+        downgraded_tables = set(inspect(engine).get_table_names())
+        assert "audit_logs" not in downgraded_tables
+        assert "prompt_registry" in downgraded_tables
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "0001_baseline_schema")
+    engine = create_engine(db_url)
+    try:
+        downgraded_tables = set(inspect(engine).get_table_names())
+        assert "prompt_registry" not in downgraded_tables
+        assert "users" in downgraded_tables
+        assert "sessions" in downgraded_tables
+    finally:
+        engine.dispose()
+
+    command.downgrade(alembic_cfg, "base")
+    engine = create_engine(db_url)
+    try:
+        downgraded_tables = set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+    assert downgraded_tables in (set(), {"alembic_version"})
+
+
+@pytest.mark.integration
 def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
     """Repeated packaged upgrade-head/downgrade-base cycles do not leave conflicting objects."""
     db_path = (tmp_path / "packaged_repeatable_roundtrip.db").resolve()
