@@ -66,6 +66,31 @@ def test_autonomous_loop_rejects_invalid_static_analysis_override() -> None:
     assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
 
 
+def test_autonomous_loop_hybrid_mode_ignores_static_analysis_override() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "1"},
+    )
+
+    assert "AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid" in output
+    assert "Hibrit otonom döngüde tekrar eden mypy/statik analiz kapalıdır" in output
+    assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
+
+
+def test_autonomous_loop_full_static_mode_allows_static_analysis_override() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={
+            "AUTONOMOUS_LOOP_REMEDIATION_MODE": "full-static",
+            "AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "1",
+        },
+    )
+
+    assert "AUTONOMOUS_LOOP_REMEDIATION_MODE=full-static" in output
+    assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=1" in output
+    assert "Hibrit otonom döngüde" not in output
+
+
 def test_autonomous_loop_prints_upload_and_auto_heal_controls() -> None:
     output = _run_autonomous_loop_config(
         profile="short",

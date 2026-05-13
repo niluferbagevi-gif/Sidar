@@ -26,6 +26,7 @@ AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with m
 AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:-uv run --with mutmut mutmut results}"
 AUTONOMOUS_MUTATION_STATS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND:-uv run --with mutmut mutmut export-cicd-stats}"
 AUTONOMOUS_MUTATION_STATS_PATH="${AUTONOMOUS_LOOP_MUTATION_STATS_PATH:-artifacts/mutmut-stats.json}"
+AUTONOMOUS_REMEDIATION_MODE="${AUTONOMOUS_LOOP_REMEDIATION_MODE:-hybrid}"
 AUTONOMOUS_TEST_STATIC_ANALYSIS="${AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS:-0}"
 AUTONOMOUS_SKIP_UPLOAD="${AUTONOMOUS_LOOP_SKIP_UPLOAD:-0}"
 AUTONOMOUS_AUTO_HEAL_ENABLED="${AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED:-1}"
@@ -111,6 +112,14 @@ if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUT
   echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 2 kullanılacak."
   AUTONOMOUS_MUTATION_MAX_CHILDREN="2"
 fi
+case "${AUTONOMOUS_REMEDIATION_MODE}" in
+  hybrid|full-static)
+    ;;
+  *)
+    echo "[UYARI] AUTONOMOUS_LOOP_REMEDIATION_MODE hybrid veya full-static olmalı. Hibrit mod kullanılacak."
+    AUTONOMOUS_REMEDIATION_MODE="hybrid"
+    ;;
+esac
 case "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" in
   0|1)
     ;;
@@ -119,6 +128,10 @@ case "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" in
     AUTONOMOUS_TEST_STATIC_ANALYSIS="0"
     ;;
 esac
+if [ "${AUTONOMOUS_REMEDIATION_MODE}" = "hybrid" ] && [ "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" != "0" ]; then
+  echo "[UYARI] Hibrit otonom döngüde tekrar eden mypy/statik analiz kapalıdır; AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS=1 yok sayıldı."
+  AUTONOMOUS_TEST_STATIC_ANALYSIS="0"
+fi
 case "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" in
   yes|no|y|n|evet|hayır|e|h|true|false|1|0|prompt|ask|interactive)
     ;;
@@ -146,9 +159,10 @@ echo "[INFO] Coverage kampanyası manuel/planlı çalışmadır: AUTONOMOUS_LOOP
 if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
   echo "[INFO] Otonom coverage hedef dosyası: ${AUTONOMOUS_COVERAGE_TARGET_FILE}."
 fi
+echo "[INFO] Otonom remediation modu: AUTONOMOUS_LOOP_REMEDIATION_MODE=${AUTONOMOUS_REMEDIATION_MODE}."
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
 echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
-echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; mypy yalnız tam run_tests.sh kalite kapısında çalışır."
+echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; hibrit modda mypy yalnız ön kontrol run_tests.sh kalite kapısında çalışır."
 echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
 echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
 if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then

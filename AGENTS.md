@@ -190,13 +190,19 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 - **Yerel kalite kapısı:** `run_tests.sh`, statik analizde önce `ruff check .`
   çalıştırır, ardından `mypy` çıktısını `artifacts/mypy_errors.log` dosyasına yazar.
-  `AUTO_HEAL_ON_FAILURE=1` olduğunda mypy başarısızlığı için `scripts.auto_heal`
-  döngüsünü tetikler.
+  `AUTO_HEAL_ON_FAILURE=1` açıkça verildiğinde mypy başarısızlığı için `scripts.auto_heal`
+  döngüsünü tetikler; varsayılan akış mypy hatasını raporlar ancak yerel modelle zorunlu patch
+  planı üretmeye çalışarak kalite kapısını bloke etmez. Açıkça opt-in yapılan mypy self-heal
+  çalıştırmalarında `AUTO_HEAL_BATCH_RETRIES=0` varsayılanı kullanılır; daha fazla yerel model
+  patch-plan denemesi yalnız bilinçli override ile açılmalıdır.
 - **Uzun otonom döngü:** `autonomous_loop.sh`, önce tam `./run_tests.sh` kalite
-  kapısını çalıştırır; sonraki otonom tekrar/remediation testlerinde varsayılan olarak
-  `RUN_STATIC_ANALYSIS=0 AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh` kullanır. Böylece
+  kapısını çalıştırır; varsayılan `AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid` modunda sonraki
+  otonom tekrar/remediation testlerinde `RUN_STATIC_ANALYSIS=0 AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh`
+  kullanır ve `AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS=1` override değerini yok sayar. Böylece
   `run_tests.sh` içindeki mypy kapısı başlangıç doğrulaması olarak korunur, fakat
-  uzun döngü hata veren pytest senaryolarını onarmaya ve coverage artırmaya odaklanır.
+  uzun döngü qwen2.5-coder:7b ile tekrar tekrar mypy patch planı üretmeye çalışmak yerine
+  hata veren pytest senaryolarını onarmaya ve coverage artırmaya odaklanır. Zorunlu statik analiz
+  tekrarı yalnız bilinçli `AUTONOMOUS_LOOP_REMEDIATION_MODE=full-static` profiliyle açılmalıdır.
   Test çıkışı, coverage JSON okunamaması, `AUTONOMOUS_LOOP_COVERAGE_TARGET` altında
   kalma veya mutasyon testi gate'inin davranış değişikliklerini öldürememesi durumunda
   iyileştirme döngüsüne girer.

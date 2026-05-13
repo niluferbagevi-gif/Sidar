@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -805,6 +805,7 @@ class SidarAgent:
         human_approval: bool | None = None,
     ) -> dict[str, Any]:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
+        execution: dict[str, Any]
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
             execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
             remediation["self_heal_execution"] = execution
@@ -822,11 +823,14 @@ class SidarAgent:
                     status="rejected",
                     detail="HITL onayı reddedildi; self-heal uygulanmadı.",
                 )
-                execution = {
-                    "status": "rejected",
-                    "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
-                    "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                }
+                execution = cast(
+                    dict[str, Any],
+                    {
+                        "status": "rejected",
+                        "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
+                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
+                    },
+                )
                 remediation["remediation_loop"] = remediation_loop
                 remediation["self_heal_execution"] = execution
                 return execution
@@ -845,11 +849,14 @@ class SidarAgent:
                     status="awaiting_hitl",
                     detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
                 )
-                execution = {
-                    "status": "awaiting_hitl",
-                    "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
-                    "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                }
+                execution = cast(
+                    dict[str, Any],
+                    {
+                        "status": "awaiting_hitl",
+                        "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
+                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
+                    },
+                )
                 remediation["remediation_loop"] = remediation_loop
                 remediation["self_heal_execution"] = execution
                 return execution

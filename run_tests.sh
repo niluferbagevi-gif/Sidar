@@ -202,15 +202,16 @@ fi
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
-BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-0}"
-BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
+BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
+BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
-AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-1}"
-AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-12}"
+AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"
+AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"
+AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 
@@ -412,7 +413,7 @@ run_static_analysis_gates() {
       auto_heal_prompt_done=1
     fi
     echo "⚠️ Mypy hataları tespit edildi. Otonom iyileştirme döngüsü başlatılıyor... (deneme $((attempt + 1))/${AUTO_HEAL_MAX_ATTEMPTS})"
-    if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --output "${AUTO_HEAL_RESULT_PATH}"; then
+    if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --batch-retries "${AUTO_HEAL_BATCH_RETRIES}" --output "${AUTO_HEAL_RESULT_PATH}"; then
       echo "❌ Otonom ajan düzeltme planını uygulayamadı. Sonuç artefaktı: ${AUTO_HEAL_RESULT_PATH}"
       BACKEND_EXIT_CODE=1
       return 1
@@ -420,6 +421,38 @@ run_static_analysis_gates() {
     echo "✅ Otonom iyileştirme tamamlandı. Sonuç artefaktı: ${AUTO_HEAL_RESULT_PATH}. Mypy yeniden çalıştırılıyor..."
     attempt=$((attempt + 1))
   done
+}
+
+resolve_benchmark_compare_target() {
+  local requested_name="${1:-baseline}"
+  local latest_file=""
+  local basename_without_ext=""
+
+  BENCHMARK_COMPARE_SELECTOR=""
+  BENCHMARK_COMPARE_FILE=""
+
+  if [ ! -d ".benchmarks" ]; then
+    return 1
+  fi
+
+  if [ "${requested_name}" = "latest" ]; then
+    latest_file="$(find .benchmarks -type f -name "*.json" -print 2>/dev/null | sort -V | tail -n 1)"
+  else
+    latest_file="$(find .benchmarks -type f -name "*_${requested_name}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+  fi
+
+  if [ -z "${latest_file}" ]; then
+    return 1
+  fi
+
+  basename_without_ext="$(basename "${latest_file}" .json)"
+  if [[ "${basename_without_ext}" =~ ^[0-9]+_(.+)$ ]]; then
+    BENCHMARK_COMPARE_SELECTOR="${BASH_REMATCH[1]}"
+  else
+    BENCHMARK_COMPARE_SELECTOR="${basename_without_ext}"
+  fi
+  BENCHMARK_COMPARE_FILE="${latest_file}"
+  return 0
 }
 
 run_security_analysis_gates() {
@@ -895,9 +928,9 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   )
 
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
-    if compgen -G ".benchmarks/*/*_${BENCHMARK_COMPARE_NAME}.json" > /dev/null; then
-      echo "📈 Benchmark karşılaştırması etkin (--benchmark-compare=${BENCHMARK_COMPARE_NAME})."
-      benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_NAME}")
+    if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+      echo "📈 Benchmark karşılaştırması etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
+      benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
