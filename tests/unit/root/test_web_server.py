@@ -1860,7 +1860,7 @@ def test_validate_plugin_source_passes_when_call_func_is_neither_name_nor_simple
     """Branch 1881->1883: ne ast.Name ne ast.Attribute(Name) olan çağrılar engellenmemeli."""
     # `obj.attr.attr()` -> func: Attribute(value=Attribute(...))
     web_server._validate_plugin_source("import math\nmath.sqrt.__call__(4)\n")
-    # `getattr(x, 'y')()` -> func: Call(...)
+    # Callable-returning expressions remain valid, but dynamic getattr is blocked separately.
     web_server._validate_plugin_source("def make():\n    return lambda: 1\n\nmake()()\n")
     # subscript çağrısı: `funcs[0]()`
     web_server._validate_plugin_source("funcs = []\n# noqa: defensive subscript example\n")
@@ -1935,11 +1935,20 @@ def test_build_restricted_plugin_builtins_strips_dangerous_names():
     restricted = web_server._build_restricted_plugin_builtins()
     for banned in ("exec", "eval", "compile", "open", "input", "breakpoint", "globals", "vars"):
         assert banned not in restricted, f"{banned} restricted builtins'ten elenmeliydi"
-    # `from ... import ...` çalışabilmesi için __import__ korunmalı.
-    assert restricted["__import__"] is _b.__import__
+    # `from ... import ...` çalışabilmesi için yalnız allowlist tabanlı import kapısı korunmalı.
+    assert restricted["__import__"] is web_server._restricted_plugin_import
+    assert restricted["__import__"] is not _b.__import__
     # Güvenli built-in'ler korunmalı (isinstance, len, type, ...).
     for safe in ("isinstance", "len", "type", "tuple", "list", "dict", "set"):
         assert safe in restricted
+
+
+def test_validate_plugin_source_rejects_dynamic_getattr_bypass():
+    with pytest.raises(HTTPException) as exc:
+        web_server._validate_plugin_source("getattr(__builtins__, '__import__')('os')")
+
+    assert exc.value.status_code == 400
+    assert "dinamik kod" in exc.value.detail
 
 
 def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
@@ -1959,6 +1968,22 @@ def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
         web_server._load_plugin_agent_class(source, "SneakyAgent", "sneaky_mod")
     assert exc.value.status_code == 400
     # `eval` builtin'i namespace'te yok → KeyError/NameError → HTTP 400'e sarılır.
+    assert "derlenemedi" in exc.value.detail or "çalıştırılamadı" in exc.value.detail
+
+
+def test_load_plugin_agent_class_runtime_blocks_import_allowlist_bypass():
+    source = (
+        "class BaseAgent:\n"
+        "    pass\n"
+        "class SneakyAgent(BaseAgent):\n"
+        "    payload = __builtins__['__import__']('os')\n"
+        "    async def respond(self, prompt):\n"
+        "        yield prompt\n"
+    )
+    with pytest.raises(HTTPException) as exc:
+        web_server._load_plugin_agent_class(source, "SneakyAgent", "sneaky_import_mod")
+
+    assert exc.value.status_code == 400
     assert "derlenemedi" in exc.value.detail or "çalıştırılamadı" in exc.value.detail
 
 
@@ -2480,8 +2505,17 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
     )
     web_server._verify_hmac_signature(b"{}", "secret", valid, label="sig")
 
-    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *a, **k: b"main\n")
+    calls = []
+
+    def _fake_check_output(*args, **kwargs):
+        calls.append((args, kwargs))
+        return b"main\n"
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", _fake_check_output)
     assert web_server._git_run(["git"], ".") == "main"
+    assert calls[0][1]["shell"] is False
+    assert web_server._git_run(["git", "status"], ".") == ""
+    assert len(calls) == 1
 
     def _raise(*_args, **_kwargs):
         raise RuntimeError("boom")

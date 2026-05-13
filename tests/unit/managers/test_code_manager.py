@@ -463,7 +463,9 @@ def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypat
 
     monkeypatch.setattr(manager, "run_shell_in_sandbox", fake_run_shell)
 
-    result = manager.run_pytest_and_collect("pytest -q tests/unit/foo.py", cwd=str(manager.base_dir))
+    result = manager.run_pytest_and_collect(
+        "pytest -q tests/unit/foo.py", cwd=str(manager.base_dir)
+    )
 
     assert result["success"] is True
     assert result["command"] == "pytest -q tests/unit/foo.py"
@@ -526,6 +528,55 @@ def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, mo
     assert output == "ok"
     assert "sidar:test" in calls["cmd"]
     assert "uv bulunamadı" in calls["cmd"][-1]
+
+
+def test_run_shell_uses_shell_false_and_sanitized_args(manager, monkeypatch, tmp_path):
+    manager.security.shell_ok = True
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, output = manager.run_shell("echo safe", cwd=str(tmp_path))
+
+    assert ok is True
+    assert output == "ok"
+    assert calls[0][0][0] == ["echo", "safe"]
+    assert calls[0][1]["shell"] is False
+
+
+def test_run_shell_shell_features_use_fixed_interpreter_without_shell_true(
+    manager, monkeypatch, tmp_path
+):
+    manager.security.shell_ok = True
+    calls = []
+
+    monkeypatch.setattr(cm.shutil, "which", lambda name: f"/bin/{name}" if name == "bash" else None)
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, output = manager.run_shell("echo safe | cat", cwd=str(tmp_path), allow_shell_features=True)
+
+    assert ok is True
+    assert output == "ok"
+    assert calls[0][0][0] == ["/bin/bash", "-lc", "echo safe | cat"]
+    assert calls[0][1]["shell"] is False
+
+
+def test_run_shell_rejects_nul_bytes(manager):
+    manager.security.shell_ok = True
+
+    ok, msg = manager.run_shell("echo safe\x00oops")
+
+    assert ok is False
+    assert "NUL" in msg
 
 
 def test_run_shell_paths(manager, monkeypatch, tmp_path):
@@ -668,16 +719,16 @@ def test_lsp_install_hint_per_language(manager):
     assert "typescript-language-server" in manager._lsp_install_hint("typescript")
 
 
-def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(
-    manager, tmp_path, monkeypatch
-):
+def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(manager, tmp_path, monkeypatch):
     """uv/uvx sarmalayıcısı binary'i bulamadığında audit `lsp-unavailable` statüsü dönmeli."""
     py_file = tmp_path / "sample.py"
     py_file.write_text("value = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
 
     def raise_missing(**_kwargs):
-        raise FileNotFoundError("LSP binary bulunamadı: pyright-langserver. Kurulum: uv tool install pyright")
+        raise FileNotFoundError(
+            "LSP binary bulunamadı: pyright-langserver. Kurulum: uv tool install pyright"
+        )
 
     monkeypatch.setattr(manager, "_run_lsp_sequence", raise_missing)
 
@@ -690,9 +741,7 @@ def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(
     assert "kurulu değil" in audit["summary"]
 
 
-def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(
-    manager, tmp_path, monkeypatch
-):
+def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(manager, tmp_path, monkeypatch):
     """uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
     py_file = tmp_path / "sample.py"
     py_file.write_text("value = 1\n", encoding="utf-8")
@@ -2259,7 +2308,9 @@ def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager,
     manager.docker_client = None
     manager.docker_test_image = manager.docker_image
     manager._docker_test_image_explicit = False
-    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
 
     def fake_run(cmd, **kwargs):
         inspected.append(cmd)
@@ -2311,7 +2362,9 @@ def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(ma
     manager.docker_client = None
     manager.docker_test_image = manager.docker_image
     manager._docker_test_image_explicit = False
-    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
     monkeypatch.setattr(cm.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1))
 
     manager._autodetect_project_test_image()
