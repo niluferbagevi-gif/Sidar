@@ -109,7 +109,7 @@
 - `managers/code_manager.py` içinde Pyright ve TypeScript Language Server Protocol entegrasyonu
 - Reviewer ajanı için `lsp_diagnostics` tabanlı anlamsal kalite kapısı ve regresyon sinyali
 - Sözdizimi denetiminin ötesine geçerek symbol/reference düzeyinde daha güvenilir kod inceleme akışı
-- Pyright LSP binary gereksinimi `pyright-langserver --stdio` olarak doğrulanır; `pyproject.toml` içindeki `pyright>=1.1.409,<2.0.0` kaydı `uv sync --frozen --all-extras` ile proje ortamına kurulur. `install_sidar.sh sync-deps` ve Dev Container post-create/sync akışı binary yine bulunamazsa `uv tool install pyright` fallback'ini çalıştırır.
+- Pyright LSP binary gereksinimi `pyright-langserver --stdio` olarak doğrulanır; `pyproject.toml` içindeki `pyright>=1.1.409,<2.0.0` kaydı `uv sync --frozen --all-extras` ile proje ortamına kurulur. `CodeManager` PATH dışında aktif/proje `.venv` ve `~/.local/bin` adaylarını da tarar; binary yine bulunamazsa Python LSP için `uv run --frozen pyright-langserver --stdio` runtime fallback'i kullanılır. `install_sidar.sh sync-deps` ve Dev Container post-create/sync akışı binary yine bulunamazsa `uv tool install pyright` fallback'ini çalıştırır.
 
 ### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı

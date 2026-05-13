@@ -1397,6 +1397,50 @@ class CodeManager:
             return "typescript"
         return None
 
+    def _candidate_lsp_executable_paths(self, binary: str) -> list[Path]:
+        """PATH dışında kalan proje/uv sanal ortamı LSP binary adaylarını döndür."""
+        suffixes = [""]
+        if os.name == "nt" and not binary.lower().endswith((".exe", ".cmd", ".bat")):
+            suffixes = [".cmd", ".exe", ".bat", ""]
+
+        candidate_dirs: list[Path] = []
+        for env_path in (os.getenv("VIRTUAL_ENV"), os.getenv("CONDA_PREFIX")):
+            if env_path:
+                candidate_dirs.append(Path(env_path) / ("Scripts" if os.name == "nt" else "bin"))
+
+        candidate_dirs.extend(
+            [
+                self.base_dir / ".venv" / ("Scripts" if os.name == "nt" else "bin"),
+                Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin"),
+                Path.home() / ".local" / "bin",
+            ]
+        )
+
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+        for candidate_dir in candidate_dirs:
+            for suffix in suffixes:
+                candidate = candidate_dir / f"{binary}{suffix}"
+                if candidate not in seen:
+                    candidates.append(candidate)
+                    seen.add(candidate)
+        return candidates
+
+    def _resolve_lsp_executable(self, binary: str) -> str | None:
+        """LSP binary'sini PATH, aktif venv ve proje .venv içinde deterministik çöz."""
+        binary_path = shutil.which(binary)
+        if binary_path:
+            return binary_path
+
+        binary_candidate = Path(binary)
+        if binary_candidate.parent != Path(".") and binary_candidate.exists():
+            return str(binary_candidate)
+
+        for candidate in self._candidate_lsp_executable_paths(binary):
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return None
+
     def _resolve_lsp_command(self, language_id: str) -> list[str]:
         if language_id == "python":
             binary = self.python_lsp_server
@@ -1407,8 +1451,15 @@ class CodeManager:
         else:
             raise ValueError(f"LSP desteklenmeyen dil: {language_id}")
 
-        binary_path = shutil.which(binary)
-        return [binary_path or binary, *args]
+        binary_path = self._resolve_lsp_executable(binary)
+        if binary_path:
+            return [binary_path, *args]
+
+        uv_path = shutil.which("uv")
+        if language_id == "python" and uv_path:
+            return [uv_path, "run", "--frozen", binary, *args]
+
+        return [binary, *args]
 
     def _normalize_lsp_path(self, path: str) -> Path:
         target = Path(path)

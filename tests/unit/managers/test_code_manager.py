@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import importlib
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -461,6 +462,33 @@ def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
     assert "syntax_checks" in metrics
     assert "CodeManager" in manager.status()
     assert "<CodeManager" in repr(manager)
+
+
+def test_resolve_lsp_command_uses_project_venv_when_path_missing(manager, tmp_path, monkeypatch):
+    monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / ".venv"))
+    manager.base_dir = tmp_path
+    bin_dir = tmp_path / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+    bin_dir.mkdir(parents=True)
+    executable = bin_dir / ("pyright-langserver.cmd" if os.name == "nt" else "pyright-langserver")
+    executable.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    cmd = manager._resolve_lsp_command("python")
+
+    assert cmd == [str(executable), "--stdio"]
+
+
+def test_resolve_lsp_command_falls_back_to_uv_run_for_python(manager, monkeypatch):
+    def fake_which(binary):
+        return "/usr/bin/uv" if binary == "uv" else None
+
+    monkeypatch.setattr(cm.shutil, "which", fake_which)
+    monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
+
+    cmd = manager._resolve_lsp_command("python")
+
+    assert cmd == ["/usr/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"]
 
 
 def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
