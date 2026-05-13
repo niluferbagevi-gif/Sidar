@@ -540,6 +540,28 @@ class AgentEventBus:
             with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
                 await task
 
+    async def _await_redis_close_result(self, maybe_awaitable: Any) -> None:
+        if inspect.isawaitable(maybe_awaitable):
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await maybe_awaitable
+
+    async def _close_redis_client(self, redis_client: Any) -> None:
+        close_async = getattr(redis_client, "aclose", None)
+        if callable(close_async):
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await self._await_redis_close_result(close_async())
+        else:
+            close_sync = getattr(redis_client, "close", None)
+            if callable(close_sync):
+                with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                    await self._await_redis_close_result(close_sync())
+
+        connection_pool = getattr(redis_client, "connection_pool", None)
+        disconnect = getattr(connection_pool, "disconnect", None)
+        if callable(disconnect):
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await self._await_redis_close_result(disconnect())
+
     async def _cleanup_redis(self) -> None:
         await self._cancel_background_task(self._redis_listener_task)
         self._redis_listener_task = None
@@ -547,16 +569,7 @@ class AgentEventBus:
         self._redis_bootstrap_task = None
 
         if self._redis_client is not None:
-            with contextlib.suppress(Exception):
-                close_async = getattr(self._redis_client, "aclose", None)
-                if callable(close_async):
-                    await close_async()
-                else:
-                    close_sync = getattr(self._redis_client, "close", None)
-                    if callable(close_sync):
-                        maybe_awaitable = close_sync()
-                        if inspect.isawaitable(maybe_awaitable):
-                            await maybe_awaitable
+            await self._close_redis_client(self._redis_client)
 
         self._redis_client = None
         self._redis_loop = None
