@@ -597,7 +597,7 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
-    DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+    DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
         "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]

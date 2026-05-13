@@ -82,7 +82,10 @@ ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
+# Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
+# çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \

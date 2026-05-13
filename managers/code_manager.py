@@ -113,10 +113,10 @@ def _sanitize_docker_image(value: object) -> str:
         or any(ch.isspace() for ch in candidate)
     ):
         logger.warning(
-            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-alpine' kullanılacak.",
+            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-slim' kullanılacak.",
             candidate,
         )
-        return "python:3.11-alpine"
+        return "python:3.11-slim"
     return candidate
 
 
@@ -197,7 +197,11 @@ class CodeManager:
         self.docker_image: str = str(
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
-            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
+        )
+        self.docker_test_image: str = str(
+            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", ""))
+            or self.docker_image
         )
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
@@ -318,8 +322,9 @@ class CodeManager:
             f"--cpus={safe_cpus}",
             f"--pids-limit={safe_pids}",
             f"--network={safe_network}",
-            safe_image,
+            "--entrypoint",
             "python",
+            safe_image,
             "-c",
             code,
         ]
@@ -667,16 +672,16 @@ class CodeManager:
         try:
             import docker  # noqa: F401
 
-            # Kodu konteynere komut satırı argümanı olarak gönderiyoruz
-            # 'python -c "kod"' formatında çalışacak
-            command = ["python", "-c", code]
-
+            # Kodu konteynere komut satırı argümanı olarak gönderiyoruz.
+            # ENTRYPOINT override, proje Dockerfile'ındaki uygulama entrypoint'inin
+            # kısa REPL doğrulamalarını yutmasını engeller.
             sandbox_limits = self._resolve_sandbox_limits()
 
             # Konteyneri başlat (Arka planda ayrılmış olarak)
             run_kwargs = {
                 "image": self.docker_image,
-                "command": command,
+                "entrypoint": "python",
+                "command": ["-c", code],
                 "detach": True,
                 "remove": False,
                 "working_dir": tempfile.gettempdir(),
@@ -832,10 +837,103 @@ class CodeManager:
     #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
     # ─────────────────────────────────────────────
 
+    @staticmethod
+    def _extract_pytest_args(command: str) -> list[str]:
+        """Normalize edilmiş pytest komutundan yalnızca pytest argümanlarını çıkar."""
+        parts = shlex.split(command)
+        if not parts:
+            return ["-q"]
+        lowered = [part.lower() for part in parts]
+        if len(lowered) >= 3 and lowered[0] == "uv" and lowered[1] == "run":
+            try:
+                pytest_index = lowered.index("pytest", 2)
+            except ValueError:
+                return ["-q"]
+            return parts[pytest_index + 1 :] or ["-q"]
+        if len(lowered) >= 3 and lowered[0] == "python" and lowered[1] == "-m":
+            return parts[3:] or ["-q"]
+        if lowered[0] == "pytest":
+            return parts[1:] or ["-q"]
+        return ["-q"]
+
+    def _build_pytest_preflight_command(self, command: str) -> str:
+        """Sandbox içinde pytest yoksa proje/image venv veya uv üzerinden bootstrap et."""
+        pytest_args = " ".join(shlex.quote(arg) for arg in self._extract_pytest_args(command))
+        if not pytest_args:
+            pytest_args = "-q"
+        return "\n".join(
+            [
+                "set -eu",
+                "for py in /workspace/.venv/bin/python /app/.venv/bin/python python; do",
+                "  if [ \"$py\" = python ]; then",
+                "    command -v python >/dev/null 2>&1 || continue",
+                "  else",
+                "    [ -x \"$py\" ] || continue",
+                "  fi",
+                "  if \"$py\" -c 'import pytest' >/dev/null 2>&1; then",
+                f"    exec \"$py\" -m pytest {pytest_args}",
+                "  fi",
+                "done",
+                "if command -v uv >/dev/null 2>&1 && [ -f pyproject.toml ]; then",
+                "  uv sync --frozen --extra dev >/tmp/sidar-uv-sync.log 2>&1 && exec uv run pytest "
+                f"{pytest_args}",
+                "  cat /tmp/sidar-uv-sync.log >&2 || true",
+                "fi",
+                "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
+                "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
+                "'ya da uv sync --frozen --extra dev ile .venv hazırlayın.' >&2",
+                "exit 127",
+            ]
+        )
+
+    @staticmethod
+    def _command_requires_uv_tooling(command: str) -> bool:
+        """Komutun sandbox içinde uv tabanlı proje araçlarına ihtiyaç duyup duymadığını belirle."""
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            parts = command.split()
+        lowered = [part.lower() for part in parts]
+        return any(
+            part == "uv"
+            or part.endswith("/uv")
+            or part.endswith("run_tests.sh")
+            or part.endswith("autonomous_loop.sh")
+            for part in lowered
+        )
+
+    def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
+        """Test/uv komutlarında proje test imajını, diğerlerinde normal sandbox imajını seç."""
+        if image:
+            return image
+        if self._command_requires_uv_tooling(command):
+            return self.docker_test_image
+        return self.docker_image
+
+    def _build_shell_preflight_command(self, command: str) -> str:
+        """Sandbox shell komutları için PATH ve uv varlığı pre-flight koruması ekle."""
+        preflight = [
+            "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
+        ]
+        if self._command_requires_uv_tooling(command):
+            preflight.extend(
+                [
+                    "if ! command -v uv >/dev/null 2>&1; then",
+                    "  echo 'uv bulunamadı: sandbox imajında uv önceden kurulu olmalı. '"
+                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar-ai:latest '"
+                    "'olarak ayarlayın veya imaja /bin/uv ekleyin.' >&2",
+                    "  exit 127",
+                    "fi",
+                ]
+            )
+        preflight.append(command)
+        return "\n".join(preflight)
+
     def run_shell_in_sandbox(
         self,
         command: str,
         cwd: str | None = None,
+        image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde shell yetkisine ihtiyaç duymadan çalıştırır."""
         if not self.security.can_execute():
@@ -855,6 +953,8 @@ class CodeManager:
             return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
 
         limits = self._resolve_sandbox_limits()
+        safe_image = _sanitize_docker_image(self._select_shell_sandbox_image(command, image))
+        sandbox_command = self._build_shell_preflight_command(command)
         docker_cmd = [
             docker_bin,
             "run",
@@ -867,13 +967,15 @@ class CodeManager:
             f"{work_dir}:/workspace",
             "-w",
             "/workspace",
+            "--entrypoint",
+            "sh",
         ]
 
         runtime = self._resolve_runtime()
         if runtime:
             docker_cmd.extend(["--runtime", runtime])
 
-        docker_cmd.extend([self.docker_image, "sh", "-lc", command])
+        docker_cmd.extend([safe_image, "-lc", sandbox_command])
 
         try:
             result = subprocess.run(  # nosec B603
@@ -1032,7 +1134,10 @@ class CodeManager:
                 "analysis": self.analyze_pytest_output(""),
             }
 
-        ok, output = self.run_shell_in_sandbox(normalized, cwd=cwd)
+        sandbox_command = self._build_pytest_preflight_command(normalized)
+        ok, output = self.run_shell_in_sandbox(
+            sandbox_command, cwd=cwd, image=self.docker_test_image
+        )
         return {
             "success": ok,
             "command": normalized,
@@ -1397,6 +1502,50 @@ class CodeManager:
             return "typescript"
         return None
 
+    def _candidate_lsp_executable_paths(self, binary: str) -> list[Path]:
+        """PATH dışında kalan proje/uv sanal ortamı LSP binary adaylarını döndür."""
+        suffixes = [""]
+        if os.name == "nt" and not binary.lower().endswith((".exe", ".cmd", ".bat")):
+            suffixes = [".cmd", ".exe", ".bat", ""]
+
+        candidate_dirs: list[Path] = []
+        for env_path in (os.getenv("VIRTUAL_ENV"), os.getenv("CONDA_PREFIX")):
+            if env_path:
+                candidate_dirs.append(Path(env_path) / ("Scripts" if os.name == "nt" else "bin"))
+
+        candidate_dirs.extend(
+            [
+                self.base_dir / ".venv" / ("Scripts" if os.name == "nt" else "bin"),
+                Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin"),
+                Path.home() / ".local" / "bin",
+            ]
+        )
+
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+        for candidate_dir in candidate_dirs:
+            for suffix in suffixes:
+                candidate = candidate_dir / f"{binary}{suffix}"
+                if candidate not in seen:
+                    candidates.append(candidate)
+                    seen.add(candidate)
+        return candidates
+
+    def _resolve_lsp_executable(self, binary: str) -> str | None:
+        """LSP binary'sini PATH, aktif venv ve proje .venv içinde deterministik çöz."""
+        binary_path = shutil.which(binary)
+        if binary_path:
+            return binary_path
+
+        binary_candidate = Path(binary)
+        if binary_candidate.parent != Path(".") and binary_candidate.exists():
+            return str(binary_candidate)
+
+        for candidate in self._candidate_lsp_executable_paths(binary):
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return None
+
     def _resolve_lsp_command(self, language_id: str) -> list[str]:
         if language_id == "python":
             binary = self.python_lsp_server
@@ -1407,8 +1556,15 @@ class CodeManager:
         else:
             raise ValueError(f"LSP desteklenmeyen dil: {language_id}")
 
-        binary_path = shutil.which(binary)
-        return [binary_path or binary, *args]
+        binary_path = self._resolve_lsp_executable(binary)
+        if binary_path:
+            return [binary_path, *args]
+
+        uv_path = shutil.which("uv")
+        if language_id == "python" and uv_path:
+            return [uv_path, "run", "--frozen", binary, *args]
+
+        return [binary, *args]
 
     def _normalize_lsp_path(self, path: str) -> Path:
         target = Path(path)

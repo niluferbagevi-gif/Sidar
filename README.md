@@ -53,7 +53,7 @@
 - JSON doğrulama
 - Dosya yamalama (`patch_file` — sadece değişen satırlar)
 - Dizin listeleme ve proje denetimi (`audit`)
-- **Docker REPL Sandbox**: `python:3.11-alpine` içinde ağ/RAM/CPU kısıtlı izole kod çalıştırma (10 sn timeout)
+- **Docker REPL Sandbox**: `python:3.11-slim` veya `DOCKER_TEST_IMAGE` ile proje Dockerfile'ından build edilmiş Sidar imajı içinde ağ/RAM/CPU kısıtlı izole kod/pytest doğrulama
 - Metrik takibi (okunan/yazılan/doğrulanan)
 
 ### OpenClaw Güvenlik Sistemi (SecurityManager)
@@ -109,7 +109,7 @@
 - `managers/code_manager.py` içinde Pyright ve TypeScript Language Server Protocol entegrasyonu
 - Reviewer ajanı için `lsp_diagnostics` tabanlı anlamsal kalite kapısı ve regresyon sinyali
 - Sözdizimi denetiminin ötesine geçerek symbol/reference düzeyinde daha güvenilir kod inceleme akışı
-- Pyright LSP binary gereksinimi `pyright-langserver --stdio` olarak doğrulanır; `pyproject.toml` içindeki `pyright>=1.1.409,<2.0.0` kaydı `uv sync --frozen --all-extras` ile proje ortamına kurulur. `install_sidar.sh sync-deps` ve Dev Container post-create/sync akışı binary yine bulunamazsa `uv tool install pyright` fallback'ini çalıştırır.
+- Pyright LSP binary gereksinimi `pyright-langserver --stdio` olarak doğrulanır; `pyproject.toml` içindeki `pyright>=1.1.409,<2.0.0` kaydı `uv sync --frozen --all-extras` ile proje ortamına kurulur. `CodeManager` PATH dışında aktif/proje `.venv` ve `~/.local/bin` adaylarını da tarar; binary yine bulunamazsa Python LSP için `uv run --frozen pyright-langserver --stdio` runtime fallback'i kullanılır. `install_sidar.sh sync-deps` ve Dev Container post-create/sync akışı binary yine bulunamazsa `uv tool install pyright` fallback'ini çalıştırır.
 
 ### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
@@ -658,6 +658,14 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 >
 > Not: `source .venv/bin/activate` zorunlu değildir. `uv run`, repo kökündeki uv ortamını
 > kendiliğinden kullanır.
+>
+> Sandbox pytest doğrulamaları `pytest: not found` hatasına düşmemek için önce
+> `/workspace/.venv/bin/python`, ardından proje Dockerfile imajındaki `/app/.venv/bin/python`
+> ve son olarak container içi `python`/`uv sync --frozen --extra dev` pre-flight yolunu dener.
+> `bash run_tests.sh` gibi regresyon komutları ayrıca sandbox içinde `uv` binary'si gerektirir;
+> proje Dockerfile'ı `/bin/uv` ve `/bin/uvx` kopyasını build sırasında doğrular. Coverage/QA ajanları
+> için önerilen kalıcı ayar: `docker build -t sidar-ai:latest .` sonrası `.env` içinde
+> `DOCKER_TEST_IMAGE=sidar-ai:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
