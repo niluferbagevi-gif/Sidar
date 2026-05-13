@@ -2,8 +2,23 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from core import doctor
 from core.doctor import DoctorCheck
+
+
+@pytest.fixture(autouse=True)
+def _isolate_database_env(monkeypatch):
+    """Keep doctor database checks independent from shell/.env defaults."""
+    for name in (
+        "DATABASE_URL",
+        "SIDAR_CONTAINER_DATABASE_URL",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_DB",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path):
