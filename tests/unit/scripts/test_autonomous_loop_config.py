@@ -7,7 +7,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _run_autonomous_loop_config(*, profile: str, operation_profile: str = "coverage-campaign") -> str:
+def _run_autonomous_loop_config(
+    *,
+    profile: str,
+    operation_profile: str = "coverage-campaign",
+    extra_env: dict[str, str] | None = None,
+) -> str:
     env = os.environ.copy()
     env.update(
         {
@@ -16,6 +21,8 @@ def _run_autonomous_loop_config(*, profile: str, operation_profile: str = "cover
             "AUTONOMOUS_LOOP_PRINT_CONFIG": "1",
         }
     )
+    if extra_env:
+        env.update(extra_env)
     completed = subprocess.run(
         ["bash", "autonomous_loop.sh"],
         cwd=REPO_ROOT,
@@ -41,3 +48,19 @@ def test_coverage_campaign_full_profile_targets_100_percent() -> None:
     assert "Coverage operasyon profili: coverage-campaign." in output
     assert "AUTONOMOUS_LOOP_COVERAGE_PROFILE=full => %100" in output
     assert "AUTONOMOUS_LOOP_PRINT_CONFIG=1" in output
+
+
+def test_autonomous_loop_disables_repeated_static_analysis_by_default() -> None:
+    output = _run_autonomous_loop_config(profile="short")
+
+    assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
+
+
+def test_autonomous_loop_rejects_invalid_static_analysis_override() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "sometimes"},
+    )
+
+    assert "AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS 0 veya 1 olmalı" in output
+    assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output

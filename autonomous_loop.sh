@@ -24,6 +24,7 @@ AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with m
 AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:-uv run --with mutmut mutmut results}"
 AUTONOMOUS_MUTATION_STATS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND:-uv run --with mutmut mutmut export-cicd-stats}"
 AUTONOMOUS_MUTATION_STATS_PATH="${AUTONOMOUS_LOOP_MUTATION_STATS_PATH:-artifacts/mutmut-stats.json}"
+AUTONOMOUS_TEST_STATIC_ANALYSIS="${AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS:-0}"
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
@@ -103,6 +104,14 @@ if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUT
   echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 2 kullanılacak."
   AUTONOMOUS_MUTATION_MAX_CHILDREN="2"
 fi
+case "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" in
+  0|1)
+    ;;
+  *)
+    echo "[UYARI] AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS 0 veya 1 olmalı. Otonom döngü için 0 kullanılacak."
+    AUTONOMOUS_TEST_STATIC_ANALYSIS="0"
+    ;;
+esac
 if [ -z "${AUTONOMOUS_LOOP_MUTATION_COMMAND+x}" ]; then
   AUTONOMOUS_MUTATION_COMMAND="uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}"
 fi
@@ -123,6 +132,7 @@ if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
 fi
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
 echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
+echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; mypy yalnız tam run_tests.sh kalite kapısında çalışır."
 if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then
   echo "[INFO] AUTONOMOUS_LOOP_PRINT_CONFIG=1 verildi; otonom döngü başlatılmadan yapılandırma doğrulaması tamamlandı."
   exit 0
@@ -470,6 +480,14 @@ run_github_upload() {
   uv run python github_upload.py
 }
 
+run_full_quality_tests() {
+  ./run_tests.sh
+}
+
+run_autonomous_quality_tests() {
+  env RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh
+}
+
 run_preflight_quality_gate() {
   local test_exit
   local gate_exit
@@ -499,8 +517,8 @@ run_preflight_quality_gate() {
     echo "[PREFLIGHT 1/3] Coverage artefaktı eksik (${AUTONOMOUS_COVERAGE_JSON}/${AUTONOMOUS_COVERAGE_XML}); önce ./run_tests.sh ile üretilecek."
   fi
 
-  echo "[PREFLIGHT 2/3] Test: ./run_tests.sh"
-  ./run_tests.sh
+  echo "[PREFLIGHT 2/3] Test: ./run_tests.sh (tam kalite kapısı; statik analiz dahil)"
+  run_full_quality_tests
   test_exit=$?
 
   echo "[PREFLIGHT 3/3] Kontrol: Test çıkış kodu = $test_exit; local gate = %${LOCAL_COVERAGE_GATE}; otonom hedef = %${AUTONOMOUS_COVERAGE_TARGET}"
@@ -540,8 +558,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
     exit "$upload_exit"
   fi
 
-  echo "[2/3] Test: ./run_tests.sh"
-  ./run_tests.sh
+  echo "[2/3] Test: RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS} AUTO_HEAL_ON_FAILURE=0 ./run_tests.sh"
+  run_autonomous_quality_tests
   test_exit=$?
 
   echo "[3/3] Kontrol: Test çıkış kodu = $test_exit; local gate = %${LOCAL_COVERAGE_GATE}; otonom hedef = %${AUTONOMOUS_COVERAGE_TARGET}"
@@ -564,8 +582,8 @@ for ((i=1; i<=ITERATIONS; i++)); do
         uv run python scripts/coverage_hotspots.py --xml "${AUTONOMOUS_COVERAGE_XML}" --top 20 --root . || true
       fi
 
-      echo "[HEAL] Testler tekrar çalıştırılıyor..."
-      ./run_tests.sh
+      echo "[HEAL] Testler tekrar çalıştırılıyor (statik analiz/mypy tekrarı yok)..."
+      run_autonomous_quality_tests
       test_exit=$?
       check_autonomous_quality_gate "$test_exit"
       gate_exit=$?

@@ -179,7 +179,8 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "ReviewerAgent semantik onay vermedi" in script
     assert "run_autonomous_coverage_batch" in script
     assert "write_missing_tests" in script
-    assert "run_post_coverage_static_heal" in script
+    assert "run_autonomous_quality_tests" in script
+    assert 'RUN_STATIC_ANALYSIS="${AUTONOMOUS_TEST_STATIC_ANALYSIS}" AUTO_HEAL_ON_FAILURE=0' in script
     assert "run_mutation_quality_gate" in script
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED" in script
     assert "uv run --with mutmut mutmut run" in script
