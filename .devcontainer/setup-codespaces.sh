@@ -276,6 +276,22 @@ ollama_version_fingerprint_value() {
   fi
 }
 
+ollama_binary_sha256_fingerprint_value() {
+  local binary_path
+  binary_path="$(command -v ollama 2>/dev/null || true)"
+  if [ -z "${binary_path}" ]; then
+    printf 'missing\n'
+    return 0
+  fi
+
+  if [ ! -r "${binary_path}" ]; then
+    printf 'unreadable:%s\n' "${binary_path}"
+    return 0
+  fi
+
+  sha256sum "${binary_path}" | awk '{print $1}'
+}
+
 ollama_setup_marker_path() {
   printf '%s/.sidar-ollama.sha256\n' "${REPO_ROOT}"
 }
@@ -286,6 +302,7 @@ ollama_setup_fingerprint() {
     printf 'SIDAR_CODESPACES_PULL_OLLAMA_MODELS=%s\n' "${SIDAR_CODESPACES_PULL_OLLAMA_MODELS:-0}"
     printf 'OLLAMA_VERSION=%s\n' "$(ollama_version_fingerprint_value)"
     printf 'OLLAMA_BINARY_PATH=%s\n' "$(command -v ollama 2>/dev/null || printf 'missing')"
+    printf 'OLLAMA_BINARY_SHA256=%s\n' "$(ollama_binary_sha256_fingerprint_value)"
     printf 'OLLAMA_REQUIRED_MODELS_NORMALIZED:\n'
     normalize_ollama_required_models
     printf 'OLLAMA_REQUIRED_MODEL_INVENTORY:\n'
