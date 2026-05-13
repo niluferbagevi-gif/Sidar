@@ -199,10 +199,11 @@ class CodeManager:
             or os.getenv("DOCKER_IMAGE", "")
             or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
         )
-        self.docker_test_image: str = str(
-            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", ""))
-            or self.docker_image
-        )
+        _explicit_test_image = str(
+            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", "")) or ""
+        ).strip()
+        self._docker_test_image_explicit = bool(_explicit_test_image)
+        self.docker_test_image: str = _explicit_test_image or self.docker_image
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
             if docker_exec_timeout is not None
@@ -376,6 +377,7 @@ class CodeManager:
             self.docker_client = candidate
             self.docker_available = True
             logger.info("Docker bağlantısı WSL2 socket ile kuruldu: %s", socket_path)
+            self._autodetect_project_test_image()
             return True
         return False
 
@@ -403,6 +405,7 @@ class CodeManager:
         logger.info(
             "Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi."
         )
+        self._autodetect_project_test_image()
         return True
 
     @staticmethod
@@ -413,6 +416,67 @@ class CodeManager:
         if isinstance(docker_exception, type) and issubclass(docker_exception, BaseException):
             return (docker_exception, OSError, ValueError)
         return (OSError, ValueError)
+
+    def _autodetect_project_test_image(self) -> None:
+        """Kullanıcı DOCKER_TEST_IMAGE'i açıkça ayarlamadıysa, yerel Docker daemon'da
+        proje Dockerfile'ından build edilmiş bir Sidar imajı varsa onu test imajı olarak seç.
+
+        Bu, run_tests.sh / pytest gibi `uv` ve `pytest` gerektiren komutların sandbox
+        içinde başarısız olmasını (`pytest: not found`, `uv bulunamadı`) önler.
+        """
+        if self._docker_test_image_explicit:
+            return
+        if not self.docker_available:
+            return
+
+        candidates = [
+            str(getattr(self.cfg, "DOCKER_PROJECT_TEST_IMAGE", "") or "").strip(),
+            "sidar-ai:latest",
+            "sidar-ai-gpu:latest",
+        ]
+        candidates = [c for c in candidates if c]
+
+        for candidate in candidates:
+            if self._docker_image_available(candidate):
+                if candidate != self.docker_test_image:
+                    logger.info(
+                        "Proje test imajı tespit edildi; DOCKER_TEST_IMAGE açıkça verilmediği için "
+                        "otomatik olarak '%s' kullanılacak (önceki: '%s').",
+                        candidate,
+                        self.docker_test_image,
+                    )
+                self.docker_test_image = candidate
+                return
+
+    def _docker_image_available(self, image: str) -> bool:
+        """Verilen imajın yerel Docker daemon'da mevcut olup olmadığını döndürür."""
+        if not image:
+            return False
+        if self.docker_client is not None:
+            try:
+                images_api = getattr(self.docker_client, "images", None)
+                if images_api is None:
+                    return False
+                listing = images_api.list(name=image)
+                return bool(listing)
+            except Exception as exc:  # pragma: no cover - defansif log
+                logger.debug("Docker SDK images.list başarısız (%s): %s", image, exc)
+                return False
+
+        docker_bin = shutil.which("docker")
+        if not docker_bin:
+            return False
+        try:
+            result = subprocess.run(  # nosec B603
+                [docker_bin, "image", "inspect", image],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=str(self.base_dir),
+            )
+        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
 
     def _init_docker(self) -> None:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
@@ -430,6 +494,7 @@ class CodeManager:
             self.docker_client = client
             self.docker_available = True
             logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
+            self._autodetect_project_test_image()
         except ImportError:
             if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
                 return
