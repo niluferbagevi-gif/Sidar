@@ -72,7 +72,7 @@ def manager(tmp_path, monkeypatch):
         },
     )
     m = cm.CodeManager(
-        sec, tmp_path, docker_image="python:3.11-alpine", docker_exec_timeout=1, cfg=cfg
+        sec, tmp_path, docker_image="python:3.11-slim", docker_exec_timeout=1, cfg=cfg
     )
     m.docker_available = False
     m.docker_client = None
@@ -181,12 +181,12 @@ def test_docker_network_and_image_sanitizers():
     assert cm._sanitize_docker_network("") == "none"
     assert cm._sanitize_docker_network(None) == "none"
 
-    assert cm._sanitize_docker_image("python:3.11-alpine") == "python:3.11-alpine"
+    assert cm._sanitize_docker_image("python:3.11-slim") == "python:3.11-slim"
     assert cm._sanitize_docker_image("ghcr.io/foo/bar:1.0") == "ghcr.io/foo/bar:1.0"
-    assert cm._sanitize_docker_image("--privileged") == "python:3.11-alpine"
-    assert cm._sanitize_docker_image("bad image") == "python:3.11-alpine"
-    assert cm._sanitize_docker_image("") == "python:3.11-alpine"
-    assert cm._sanitize_docker_image(None) == "python:3.11-alpine"
+    assert cm._sanitize_docker_image("--privileged") == "python:3.11-slim"
+    assert cm._sanitize_docker_image("bad image") == "python:3.11-slim"
+    assert cm._sanitize_docker_image("") == "python:3.11-slim"
+    assert cm._sanitize_docker_image(None) == "python:3.11-slim"
 
 
 def test_build_docker_cli_command_rejects_flag_injection(manager):
@@ -206,7 +206,7 @@ def test_build_docker_cli_command_rejects_flag_injection(manager):
     assert "--cpus=0.5" in cmd
     assert "--pids-limit=64" in cmd
     assert "--network=none" in cmd
-    assert "python:3.11-alpine" in cmd
+    assert "python:3.11-slim" in cmd
     for token in cmd[3:]:
         assert not (token.startswith("--privileged") or "$(" in token)
 
@@ -342,13 +342,19 @@ def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
     assert not ok and "Docker CLI bulunamadı" in msg
 
     monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: SimpleNamespace(returncode=0, stdout="ok", stderr=""),
-    )
-    ok, out = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ok, out = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path), image="sidar-ai:test")
     assert ok and out == "ok"
+    assert "--entrypoint" in calls["cmd"]
+    assert calls["cmd"][calls["cmd"].index("--entrypoint") + 1] == "sh"
+    assert "sidar-ai:test" in calls["cmd"]
 
 
 def test_analyze_pytest_output_and_run_pytest_collect(manager, monkeypatch):
@@ -410,6 +416,37 @@ def test_run_pytest_and_collect_accepts_uv_run_pytest(manager, monkeypatch):
 
     assert result["success"] is True
     assert result["command"] == "uv run pytest -q tests/unit/test_candidate.py"
+
+
+def test_pytest_preflight_prefers_project_and_image_venvs(manager):
+    command = manager._build_pytest_preflight_command("uv run pytest -q tests/unit/foo.py")
+
+    assert "/workspace/.venv/bin/python" in command
+    assert "/app/.venv/bin/python" in command
+    assert "uv sync --frozen --extra dev" in command
+    assert "exec pytest" not in command
+    assert "-m pytest -q tests/unit/foo.py" in command
+
+
+def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypatch):
+    manager.docker_test_image = "sidar-ai:test"
+    calls = {}
+
+    def fake_run_shell(command, cwd=None, image=None):
+        calls["command"] = command
+        calls["cwd"] = cwd
+        calls["image"] = image
+        return True, "1 passed"
+
+    monkeypatch.setattr(manager, "run_shell_in_sandbox", fake_run_shell)
+
+    result = manager.run_pytest_and_collect("pytest -q tests/unit/foo.py", cwd=str(manager.base_dir))
+
+    assert result["success"] is True
+    assert result["command"] == "pytest -q tests/unit/foo.py"
+    assert calls["image"] == "sidar-ai:test"
+    assert "/workspace/.venv/bin/python" in calls["command"]
+    assert "pytest bulunamadı" in calls["command"]
 
 
 def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeypatch):

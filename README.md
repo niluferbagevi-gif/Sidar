@@ -53,7 +53,7 @@
 - JSON doğrulama
 - Dosya yamalama (`patch_file` — sadece değişen satırlar)
 - Dizin listeleme ve proje denetimi (`audit`)
-- **Docker REPL Sandbox**: `python:3.11-alpine` içinde ağ/RAM/CPU kısıtlı izole kod çalıştırma (10 sn timeout)
+- **Docker REPL Sandbox**: `python:3.11-slim` veya `DOCKER_TEST_IMAGE` ile proje Dockerfile'ından build edilmiş Sidar imajı içinde ağ/RAM/CPU kısıtlı izole kod/pytest doğrulama
 - Metrik takibi (okunan/yazılan/doğrulanan)
 
 ### OpenClaw Güvenlik Sistemi (SecurityManager)
@@ -658,6 +658,12 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 >
 > Not: `source .venv/bin/activate` zorunlu değildir. `uv run`, repo kökündeki uv ortamını
 > kendiliğinden kullanır.
+>
+> Sandbox pytest doğrulamaları `pytest: not found` hatasına düşmemek için önce
+> `/workspace/.venv/bin/python`, ardından proje Dockerfile imajındaki `/app/.venv/bin/python`
+> ve son olarak container içi `python`/`uv sync --frozen --extra dev` pre-flight yolunu dener.
+> Coverage/QA ajanları için önerilen kalıcı ayar: `docker build -t sidar-ai:latest .` sonrası
+> `.env` içinde `DOCKER_TEST_IMAGE=sidar-ai:latest` kullanmaktır.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,

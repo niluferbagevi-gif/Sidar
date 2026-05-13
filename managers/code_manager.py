@@ -113,10 +113,10 @@ def _sanitize_docker_image(value: object) -> str:
         or any(ch.isspace() for ch in candidate)
     ):
         logger.warning(
-            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-alpine' kullanılacak.",
+            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-slim' kullanılacak.",
             candidate,
         )
-        return "python:3.11-alpine"
+        return "python:3.11-slim"
     return candidate
 
 
@@ -197,7 +197,11 @@ class CodeManager:
         self.docker_image: str = str(
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
-            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
+        )
+        self.docker_test_image: str = str(
+            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", ""))
+            or self.docker_image
         )
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
@@ -318,8 +322,9 @@ class CodeManager:
             f"--cpus={safe_cpus}",
             f"--pids-limit={safe_pids}",
             f"--network={safe_network}",
-            safe_image,
+            "--entrypoint",
             "python",
+            safe_image,
             "-c",
             code,
         ]
@@ -667,16 +672,16 @@ class CodeManager:
         try:
             import docker  # noqa: F401
 
-            # Kodu konteynere komut satırı argümanı olarak gönderiyoruz
-            # 'python -c "kod"' formatında çalışacak
-            command = ["python", "-c", code]
-
+            # Kodu konteynere komut satırı argümanı olarak gönderiyoruz.
+            # ENTRYPOINT override, proje Dockerfile'ındaki uygulama entrypoint'inin
+            # kısa REPL doğrulamalarını yutmasını engeller.
             sandbox_limits = self._resolve_sandbox_limits()
 
             # Konteyneri başlat (Arka planda ayrılmış olarak)
             run_kwargs = {
                 "image": self.docker_image,
-                "command": command,
+                "entrypoint": "python",
+                "command": ["-c", code],
                 "detach": True,
                 "remove": False,
                 "working_dir": tempfile.gettempdir(),
@@ -832,10 +837,60 @@ class CodeManager:
     #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
     # ─────────────────────────────────────────────
 
+    @staticmethod
+    def _extract_pytest_args(command: str) -> list[str]:
+        """Normalize edilmiş pytest komutundan yalnızca pytest argümanlarını çıkar."""
+        parts = shlex.split(command)
+        if not parts:
+            return ["-q"]
+        lowered = [part.lower() for part in parts]
+        if len(lowered) >= 3 and lowered[0] == "uv" and lowered[1] == "run":
+            try:
+                pytest_index = lowered.index("pytest", 2)
+            except ValueError:
+                return ["-q"]
+            return parts[pytest_index + 1 :] or ["-q"]
+        if len(lowered) >= 3 and lowered[0] == "python" and lowered[1] == "-m":
+            return parts[3:] or ["-q"]
+        if lowered[0] == "pytest":
+            return parts[1:] or ["-q"]
+        return ["-q"]
+
+    def _build_pytest_preflight_command(self, command: str) -> str:
+        """Sandbox içinde pytest yoksa proje/image venv veya uv üzerinden bootstrap et."""
+        pytest_args = " ".join(shlex.quote(arg) for arg in self._extract_pytest_args(command))
+        if not pytest_args:
+            pytest_args = "-q"
+        return "\n".join(
+            [
+                "set -eu",
+                "for py in /workspace/.venv/bin/python /app/.venv/bin/python python; do",
+                "  if [ \"$py\" = python ]; then",
+                "    command -v python >/dev/null 2>&1 || continue",
+                "  else",
+                "    [ -x \"$py\" ] || continue",
+                "  fi",
+                "  if \"$py\" -c 'import pytest' >/dev/null 2>&1; then",
+                f"    exec \"$py\" -m pytest {pytest_args}",
+                "  fi",
+                "done",
+                "if command -v uv >/dev/null 2>&1 && [ -f pyproject.toml ]; then",
+                "  uv sync --frozen --extra dev >/tmp/sidar-uv-sync.log 2>&1 && exec uv run pytest "
+                f"{pytest_args}",
+                "  cat /tmp/sidar-uv-sync.log >&2 || true",
+                "fi",
+                "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
+                "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
+                "'ya da uv sync --frozen --extra dev ile .venv hazırlayın.' >&2",
+                "exit 127",
+            ]
+        )
+
     def run_shell_in_sandbox(
         self,
         command: str,
         cwd: str | None = None,
+        image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde shell yetkisine ihtiyaç duymadan çalıştırır."""
         if not self.security.can_execute():
@@ -855,6 +910,7 @@ class CodeManager:
             return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
 
         limits = self._resolve_sandbox_limits()
+        safe_image = _sanitize_docker_image(image or self.docker_image)
         docker_cmd = [
             docker_bin,
             "run",
@@ -867,13 +923,15 @@ class CodeManager:
             f"{work_dir}:/workspace",
             "-w",
             "/workspace",
+            "--entrypoint",
+            "sh",
         ]
 
         runtime = self._resolve_runtime()
         if runtime:
             docker_cmd.extend(["--runtime", runtime])
 
-        docker_cmd.extend([self.docker_image, "sh", "-lc", command])
+        docker_cmd.extend([safe_image, "-lc", command])
 
         try:
             result = subprocess.run(  # nosec B603
@@ -1032,7 +1090,10 @@ class CodeManager:
                 "analysis": self.analyze_pytest_output(""),
             }
 
-        ok, output = self.run_shell_in_sandbox(normalized, cwd=cwd)
+        sandbox_command = self._build_pytest_preflight_command(normalized)
+        ok, output = self.run_shell_in_sandbox(
+            sandbox_command, cwd=cwd, image=self.docker_test_image
+        )
         return {
             "success": ok,
             "command": normalized,
