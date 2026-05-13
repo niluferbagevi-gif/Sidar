@@ -82,6 +82,16 @@ def test_autonomous_loop_prints_upload_and_auto_heal_controls() -> None:
     assert "log=artifacts/test-loop.log" in output
 
 
+def test_autonomous_loop_accepts_interactive_hitl_prompt_mode() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "prompt"},
+    )
+
+    assert "HITL=prompt" in output
+    assert "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı" not in output
+
+
 def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
     output = _run_autonomous_loop_config(
         profile="short",

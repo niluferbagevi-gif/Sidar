@@ -836,10 +836,22 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         1,
         int(os.getenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "5") or "5"),
     )
-    needs_human_approval = (
-        any(keyword in combined_text for keyword in high_risk_keywords)
-        or len(suspected_targets) > scope_hitl_threshold
-    )
+    hitl_reasons: list[str] = []
+    if "syntaxerror" in combined_text:
+        hitl_reasons.append("syntax_error")
+    if any(keyword in combined_text for keyword in ("modulenotfounderror", "importerror")):
+        hitl_reasons.append("import_or_dependency_failure")
+    if "timeout" in combined_text:
+        hitl_reasons.append("timeout_or_flaky_runtime")
+    if any(keyword in combined_text for keyword in ("typeerror", "valueerror")):
+        hitl_reasons.append("runtime_type_or_value_error")
+    if len(suspected_targets) > scope_hitl_threshold:
+        hitl_reasons.append(
+            f"scope_exceeds_threshold:{len(suspected_targets)}>{scope_hitl_threshold}"
+        )
+    if not hitl_reasons and any(keyword in combined_text for keyword in high_risk_keywords):
+        hitl_reasons.append("high_risk_failure_signal")
+    needs_human_approval = bool(hitl_reasons)
     missing_modules = sorted(
         {
             match.group("module").strip()
@@ -902,6 +914,17 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "status": status,
         "mode": mode,
         "needs_human_approval": needs_human_approval,
+        "hitl_reasons": hitl_reasons,
+        "hitl_policy": {
+            "scope_threshold": scope_hitl_threshold,
+            "approval_required_for": [
+                "syntax_error",
+                "import_or_dependency_failure",
+                "timeout_or_flaky_runtime",
+                "runtime_type_or_value_error",
+                "scope_exceeds_threshold",
+            ],
+        },
         "max_auto_attempts": 1 if needs_human_approval else 2,
         "scope_paths": suspected_targets,
         "failed_jobs": failed_jobs[:6],
@@ -928,7 +951,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
                 "name": "handoff",
                 "status": "pending",
                 "detail": (
-                    "Riskli remediation önce HITL onayına gidecek."
+                    f"Riskli remediation önce HITL onayına gidecek. Nedenler: {', '.join(hitl_reasons) or '-'}"
                     if needs_human_approval
                     else "Doğrulama sonrası PR/proposal güncellenecek."
                 ),
@@ -936,12 +959,17 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         ],
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets)} dosya, "
-            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
+            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}, "
+            f"hitl_reasons={', '.join(hitl_reasons) or '-'}."
         ),
         "operator_guidance": (
             "Bekleyen HITL kaydını reject/cancel ederek remediation'ı modül bazlı batch'lerle yeniden başlatın."
             if needs_human_approval and batched_scope
-            else ""
+            else (
+                "Riskli self-heal planı için terminalde onay verin veya scripts.auto_heal --hitl-approve yes/no kullanın."
+                if needs_human_approval
+                else ""
+            )
         ),
     }
 

@@ -120,7 +120,7 @@ case "${AUTONOMOUS_TEST_STATIC_ANALYSIS}" in
     ;;
 esac
 case "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" in
-  yes|no|y|n|evet|hayır|e|h|true|false|1|0)
+  yes|no|y|n|evet|hayır|e|h|true|false|1|0|prompt|ask|interactive)
     ;;
   *)
     echo "[UYARI] AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı: '${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}'. Fail-closed için 'no' kullanılacak."
@@ -543,11 +543,20 @@ run_auto_heal_for_test_failure() {
 
   mkdir -p "$(dirname "${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}")"
   echo "[HEAL] Self-heal tetikleniyor: source=${source}, log=${log_path}, output=${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}"
-  uv run python -m scripts.auto_heal \
-    --log "${log_path}" \
-    --source "${source}" \
-    --hitl-approve "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" \
+  local cmd=(
+    uv run python -m scripts.auto_heal
+    --log "${log_path}"
+    --source "${source}"
     --output "${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}"
+  )
+  if [ "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" = "prompt" ] || \
+    [ "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" = "ask" ] || \
+    [ "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}" = "interactive" ]; then
+    echo "[HEAL] HITL modu etkileşimli; scripts.auto_heal terminalden onay isteyecek."
+  else
+    cmd+=(--hitl-approve "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}")
+  fi
+  "${cmd[@]}"
 }
 
 run_preflight_quality_gate() {

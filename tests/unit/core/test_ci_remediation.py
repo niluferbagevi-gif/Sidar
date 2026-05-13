@@ -705,9 +705,28 @@ def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
     assert result["needs_human_approval"] is True
     assert result["mode"] == "self_heal_with_hitl_batched"
     assert result["operator_guidance"]
+    assert any(
+        str(reason).startswith("scope_exceeds_threshold") for reason in result["hitl_reasons"]
+    )
+    assert result["hitl_policy"]["scope_threshold"] == 3
     assert result["autonomous_batches"]
     assert len(result["scope_paths"]) == 5
     assert len(result["failed_jobs"]) == 6
+
+
+def test_build_remediation_loop_syntax_error_requires_hitl() -> None:
+    context = {
+        "suspected_targets": ["core/broken.py"],
+        "failed_jobs": ["tests"],
+        "failure_summary": "SyntaxError: invalid syntax",
+        "log_excerpt": "",
+    }
+
+    result = ci.build_remediation_loop(context, "SyntaxError: invalid syntax")
+
+    assert result["needs_human_approval"] is True
+    assert "syntax_error" in result["hitl_reasons"]
+    assert "--hitl-approve yes/no" in result["operator_guidance"]
 
 
 def test_build_remediation_loop_large_scope_respects_env_threshold(
