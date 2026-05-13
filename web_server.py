@@ -1924,6 +1924,20 @@ def _plugin_source_filename(module_label: str) -> str:
     return f"<sidar-plugin:{safe_label}>"
 
 
+MAX_PLUGIN_SOURCE_BYTES = 128 * 1024
+_PLUGIN_BANNED_DUNDER_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "__base__",
+        "__bases__",
+        "__class__",
+        "__closure__",
+        "__code__",
+        "__dict__",
+        "__globals__",
+        "__mro__",
+        "__subclasses__",
+    }
+)
 _PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
     {
         "exec",
@@ -1959,6 +1973,8 @@ def _build_restricted_plugin_builtins() -> dict[str, Any]:
 
 def _validate_plugin_source(source_code: str) -> None:
     """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
+    if len(source_code.encode("utf-8", errors="ignore")) > MAX_PLUGIN_SOURCE_BYTES:
+        raise HTTPException(status_code=413, detail="Plugin kaynağı boyut limiti aşıldı.")
     try:
         tree = ast.parse(source_code, mode="exec")
     except SyntaxError as exc:
@@ -1978,6 +1994,11 @@ def _validate_plugin_source(source_code: str) -> None:
                     status_code=400,
                     detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
                 )
+        if isinstance(node, ast.Attribute) and node.attr in _PLUGIN_BANNED_DUNDER_ATTRIBUTES:
+            raise HTTPException(
+                status_code=400,
+                detail="Plugin güvenlik politikası: tehlikeli dunder attribute erişimi engellendi.",
+            )
         if isinstance(node, ast.Call):
             fn_name = ""
             if isinstance(node.func, ast.Name):
@@ -4229,11 +4250,12 @@ async def file_content(path: str) -> Any:
 
 
 def _git_run(cmd: list[str], cwd: str, stderr: int = subprocess.DEVNULL) -> str:
-    """Senkron git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
+    """Senkron ve salt-okunur git alt süreci çalıştırır. asyncio.to_thread() ile çağrılmalı."""
     try:
+        safe_cmd = _validate_git_command_args(cmd)
         return (
             subprocess.check_output(  # nosec B603
-                cmd, cwd=cwd, stderr=stderr
+                safe_cmd, cwd=cwd, stderr=stderr, shell=False
             )
             .decode()
             .strip()
@@ -4301,6 +4323,34 @@ async def git_branches() -> Any:
 
 
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9/_.-]+$")
+_GIT_ALLOWED_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("git", "rev-parse", "--abbrev-ref", "HEAD"),
+    ("git", "remote", "get-url", "origin"),
+    ("git", "symbolic-ref", "--short", "HEAD@{upstream}"),
+    ("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"),
+    ("git", "branch", "--format=%(refname:short)"),
+)
+
+
+def _is_safe_git_branch_name(branch_name: str) -> bool:
+    return (
+        bool(branch_name)
+        and bool(_BRANCH_RE.fullmatch(branch_name))
+        and not branch_name.startswith("-")
+        and not branch_name.endswith("/")
+        and ".." not in branch_name
+        and "//" not in branch_name
+        and "@{" not in branch_name
+    )
+
+
+def _validate_git_command_args(cmd: list[str]) -> list[str]:
+    sanitized = [str(part).strip() for part in cmd]
+    if any(not part or "\x00" in part for part in sanitized):
+        raise ValueError("Geçersiz git komutu argümanı.")
+    if tuple(sanitized) not in _GIT_ALLOWED_COMMANDS:
+        raise ValueError("Git komutu izin verilen salt-okunur komut listesinde değil.")
+    return sanitized
 
 
 @app.post("/set-branch")
@@ -4310,11 +4360,14 @@ async def set_branch(request: Request) -> Any:
     branch_name = body.get("branch", "").strip()
     if not branch_name:
         return JSONResponse({"success": False, "error": "Dal adı boş."}, status_code=400)
-    if not _BRANCH_RE.match(branch_name):
+    if not _is_safe_git_branch_name(branch_name):
         return JSONResponse(
             {
                 "success": False,
-                "error": "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir.",
+                "error": (
+                    "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir; "
+                    "değer '-' ile başlayamaz, '..', '//', '@{' içeremez veya '/' ile bitemez."
+                ),
             },
             status_code=400,
         )
@@ -4323,9 +4376,10 @@ async def set_branch(request: Request) -> Any:
     try:
         await asyncio.to_thread(
             subprocess.check_output,
-            ["git", "checkout", branch_name],
+            ["git", "checkout", "--", branch_name],
             cwd=_root,
             stderr=subprocess.STDOUT,
+            shell=False,
         )
         return JSONResponse({"success": True, "branch": branch_name})
     except subprocess.CalledProcessError as exc:

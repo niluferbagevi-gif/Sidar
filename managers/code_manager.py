@@ -1285,13 +1285,13 @@ class CodeManager:
 
         Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
         - Varsayılan modda `shell=False` ve `shlex.split(...)` kullanır.
-        - Pipe/redirect gibi shell operatörleri için `allow_shell_features=True` gerekir.
+        - Pipe/redirect gibi shell operatörleri güvenlik nedeniyle çalıştırılmaz; komutlar shell=False ile argüman listesi olarak yürütülür.
         - 60 saniyelik zaman aşımı koruması vardır.
 
         Args:
             command: Çalıştırılacak komut
             cwd: Çalışma dizini (None ise base_dir kullanılır)
-            allow_shell_features: True ise shell operatörleri (|, >, &&, vb.) aktif edilir.
+            allow_shell_features: Geriye dönük uyumluluk parametresi; shell operatörleri yine de engellenir.
 
         Returns:
             (başarı, çıktı_veya_hata)
@@ -1308,16 +1308,29 @@ class CodeManager:
 
         work_dir = cwd or str(self.base_dir)
 
-        shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
-        uses_shell_features = any(token in command for token in shell_meta_chars)
-        if uses_shell_features and not allow_shell_features:
+        try:
+            args = shlex.split(command)
+        except ValueError as exc:
+            return False, f"⚠ Komut ayrıştırılamadı: {exc}"
+        if not args:
+            return False, "⚠ Çalıştırılacak komut belirtilmedi."
+        if any("\x00" in arg for arg in args) or args[0].startswith("-"):
+            return False, "⛔ Engellendi: geçersiz subprocess argümanı algılandı."
+
+        try:
+            shell_tokens = list(shlex.shlex(command, posix=True, punctuation_chars=True))
+        except ValueError as exc:
+            return False, f"⚠ Komut ayrıştırılamadı: {exc}"
+        shell_control_tokens = {"|", "||", "&", "&&", ";", ";;", ">", ">>", "<", "<<", "2>", "2>>"}
+        uses_shell_features = any(token in shell_control_tokens for token in shell_tokens)
+        if uses_shell_features:
             return False, (
                 "⚠ Komut shell operatörleri içeriyor (|, >, &&, vb.).\n"
-                "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
-                "Gerekliyse allow_shell_features=True ile tekrar deneyin."
+                "Güvenlik için run_shell artık shell=True kullanmaz; komutu shell bağımsız "
+                "argüman listesiyle çalıştırılacak tek bir programa indirgemelisiniz."
             )
 
-        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle
+        # Defense-in-depth: shell=False yolunda bile yıkıcı komut kalıplarını engelle
         _BLOCKED_SHELL_PATTERNS = (
             "rm -rf /",
             "rm -fr /",
@@ -1332,45 +1345,24 @@ class CodeManager:
             "shred /dev/",
             "wipefs /dev/",
         )
-        if allow_shell_features:
-            cmd_lower = command.lower()
-            for _pat in _BLOCKED_SHELL_PATTERNS:
-                if _pat in cmd_lower:
-                    return False, (
-                        f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_pat!r}). "
-                        "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
-                    )
+        cmd_lower = command.lower()
+        for _pat in _BLOCKED_SHELL_PATTERNS:
+            if _pat in cmd_lower:
+                return False, (
+                    f"⛔ Engellendi: tehlikeli komut kalıbı algılandı ({_pat!r}). "
+                    "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
+                )
 
         try:
-            if allow_shell_features:
-                # Güvenlik uyarısı: shell=True ile komut yorumlanıyor, injection riski mevcut.
-                # Bu mod yalnızca FULL seviyede ve güvenilir kaynaklardan gelen komutlar için kullanılmalıdır.
-                logger.warning(
-                    "[GÜVENLİK] Shell özellikleri etkin (shell=True). "
-                    "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
-                    "Komut (ilk 200 kar): %.200s",
-                    command,
-                )
-                result = subprocess.run(  # nosec B603
-                    command,
-                    shell=True,  # nosec B602
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=work_dir,
-                    env={**os.environ},
-                )
-            else:
-                args = shlex.split(command)
-                result = subprocess.run(  # nosec B603
-                    args,
-                    shell=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=work_dir,
-                    env={**os.environ},
-                )
+            result = subprocess.run(
+                args,
+                shell=False,  # nosec B603
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=work_dir,
+                env={**os.environ},
+            )
             output_parts = []
             if result.stdout.strip():
                 output_parts.append(result.stdout.strip())
