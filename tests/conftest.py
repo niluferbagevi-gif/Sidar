@@ -89,39 +89,24 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
-@pytest.fixture(autouse=True)
-def _reset_global_agent_event_bus_tasks() -> Generator[None, None, None]:
-    """Process-genelinde paylaşılan AgentEventBus singleton'ının her test sonrası
-    arta kalan asyncio task'larını temizler.
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
+    """Her testten sonra process-global AgentEventBus runtime state'ini kapatır.
 
-    Aksi halde testler arası event loop kapanışında "Task was destroyed but it
-    is pending" uyarısı `pytest.PytestUnraisableExceptionWarning` ile testleri
-    fail edebilir (xdist worker'larında özellikle görülür).
+    `agent.core.event_stream` modülü `_BUS` singleton'ını process genelinde tutar,
+    pytest-asyncio ise testler için function-scope event loop oluşturur.  Redis /
+    RabbitMQ / Kafka listener veya bootstrap task'ları loop kapanmadan await edilmezse
+    sonraki testlerde `Task was destroyed but it is pending` ve un-awaited Redis
+    connection uyarıları `filterwarnings = error` nedeniyle suite'i düşürebilir.
     """
 
     yield
 
     bus_module = sys.modules.get("agent.core.event_stream")
     bus = getattr(bus_module, "_BUS", None) if bus_module is not None else None
-    if bus is None:
-        return
-
-    for attr in ("_redis_listener_task", "_rabbit_listener_task", "_kafka_listener_task"):
-        task = getattr(bus, attr, None)
-        if task is None or task.done():
-            setattr(bus, attr, None)
-            continue
-        task_loop = getattr(task, "get_loop", lambda: None)()
-        if task_loop is None or task_loop.is_closed():
-            # Loop kapandığı için task await edilemez; referansı düşür ki GC
-            # uyarı yaymadan toplayabilsin.
-            setattr(bus, attr, None)
-            continue
-        try:
-            task.cancel()
-        except RuntimeError:
-            pass
-        setattr(bus, attr, None)
+    reset_runtime_state = getattr(bus, "reset_runtime_state", None)
+    if callable(reset_runtime_state):
+        await reset_runtime_state()
 
 
 # Not: `cli` modülünü burada global olarak import etmiyoruz.

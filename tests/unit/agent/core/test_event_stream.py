@@ -657,6 +657,63 @@ def test_cleanup_redis_handles_cancel_and_close() -> None:
     assert bus._redis_client is None
 
 
+def test_reset_runtime_state_closes_global_resources_and_clears_state() -> None:
+    bus = AgentEventBus()
+
+    class _AwaitableTask:
+        def __init__(self) -> None:
+            self.cancel_called = False
+
+        def done(self) -> bool:
+            return False
+
+        def cancel(self) -> None:
+            self.cancel_called = True
+
+        def __await__(self):
+            async def _inner():
+                raise asyncio.CancelledError()
+
+            return _inner().__await__()
+
+    redis_task = _AwaitableTask()
+    redis_bootstrap_task = _AwaitableTask()
+    rabbit_bootstrap_task = _AwaitableTask()
+    kafka_bootstrap_task = _AwaitableTask()
+    dlq_flush_task = _AwaitableTask()
+
+    sid, queue = bus.subscribe()
+    bus._buffered_events[sid] = deque(maxlen=2)
+    bus._redis_client = DummyRedis()
+    bus._redis_listener_task = redis_task
+    bus._redis_bootstrap_task = redis_bootstrap_task
+    bus._redis_available = True
+    bus._rabbit_bootstrap_task = rabbit_bootstrap_task
+    bus._rabbit_available = True
+    bus._kafka_bootstrap_task = kafka_bootstrap_task
+    bus._kafka_available = True
+    bus._dlq_persist_flush_task = dlq_flush_task
+    bus._remote_circuit_consecutive_failures = 3
+    bus._remote_circuit_open_until = time.time() + 60
+
+    asyncio.run(bus.reset_runtime_state())
+
+    assert queue.empty() is True
+    assert redis_task.cancel_called is True
+    assert redis_bootstrap_task.cancel_called is True
+    assert rabbit_bootstrap_task.cancel_called is True
+    assert kafka_bootstrap_task.cancel_called is True
+    assert dlq_flush_task.cancel_called is True
+    assert bus._redis_client is None
+    assert bus._subscribers == {}
+    assert bus._buffered_events == {}
+    assert bus._redis_available is None
+    assert bus._rabbit_available is None
+    assert bus._kafka_available is None
+    assert bus._remote_circuit_consecutive_failures == 0
+    assert bus._remote_circuit_open_until == 0.0
+
+
 def test_cleanup_redis_without_client_or_listener() -> None:
     bus = AgentEventBus()
     asyncio.run(bus._cleanup_redis())

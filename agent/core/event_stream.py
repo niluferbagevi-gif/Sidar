@@ -507,32 +507,44 @@ class AgentEventBus:
         for sid in dropped_subscribers:
             self.unsubscribe(sid)
 
-    async def _cleanup_redis(self) -> None:
-        task = self._redis_listener_task
-        if task is not None and not task.done():
-            cancel = getattr(task, "cancel", None)
-            get_loop = getattr(task, "get_loop", None)
-            task_loop = get_loop() if callable(get_loop) else None
-            try:
-                current_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                current_loop = None
-            if task_loop is None or task_loop is current_loop:
-                with contextlib.suppress(RuntimeError):
-                    if callable(cancel):
-                        cancel()
-                with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
-                    await task
-            else:
-                # Task belongs to a different (likely closed) loop; cancel without awaiting
-                # so it does not raise "Task was destroyed but it is pending".
-                if not getattr(task_loop, "is_closed", lambda: True)() and callable(cancel):
-                    with contextlib.suppress(RuntimeError):
+    async def _cancel_background_task(self, task: asyncio.Task[Any] | None) -> None:
+        if task is None or task.done():
+            return
+
+        current_task = asyncio.current_task()
+        if task is current_task:
+            # Listener cleanup can be triggered from inside the listener itself.
+            # Awaiting or cancelling the current task would either deadlock or
+            # short-circuit resource cleanup.
+            return
+
+        cancel = getattr(task, "cancel", None)
+        get_loop = getattr(task, "get_loop", None)
+        task_loop = get_loop() if callable(get_loop) else None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if callable(cancel):
+            with contextlib.suppress(RuntimeError):
+                if task_loop is not None and task_loop is not current_loop:
+                    if not getattr(task_loop, "is_closed", lambda: True)():
                         task_loop.call_soon_threadsafe(cancel)
-                elif callable(cancel):
-                    with contextlib.suppress(RuntimeError):
+                    else:
                         cancel()
+                else:
+                    cancel()
+
+        if task_loop is None or task_loop is current_loop:
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
+                await task
+
+    async def _cleanup_redis(self) -> None:
+        await self._cancel_background_task(self._redis_listener_task)
         self._redis_listener_task = None
+        await self._cancel_background_task(self._redis_bootstrap_task)
+        self._redis_bootstrap_task = None
 
         if self._redis_client is not None:
             with contextlib.suppress(Exception):
@@ -550,11 +562,10 @@ class AgentEventBus:
         self._redis_loop = None
 
     async def _cleanup_rabbit(self) -> None:
-        if self._rabbit_listener_task is not None and not self._rabbit_listener_task.done():
-            self._rabbit_listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
-                await self._rabbit_listener_task
+        await self._cancel_background_task(self._rabbit_listener_task)
         self._rabbit_listener_task = None
+        await self._cancel_background_task(self._rabbit_bootstrap_task)
+        self._rabbit_bootstrap_task = None
 
         if self._rabbit_channel is not None:
             with contextlib.suppress(Exception):
@@ -572,11 +583,10 @@ class AgentEventBus:
         self._rabbit_connection = None
 
     async def _cleanup_kafka(self) -> None:
-        if self._kafka_listener_task is not None and not self._kafka_listener_task.done():
-            self._kafka_listener_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, RuntimeError, Exception):
-                await self._kafka_listener_task
+        await self._cancel_background_task(self._kafka_listener_task)
         self._kafka_listener_task = None
+        await self._cancel_background_task(self._kafka_bootstrap_task)
+        self._kafka_bootstrap_task = None
 
         if self._kafka_consumer is not None:
             with contextlib.suppress(Exception):
@@ -587,6 +597,33 @@ class AgentEventBus:
             with contextlib.suppress(Exception):
                 await self._kafka_producer.stop()
         self._kafka_producer = None
+
+    async def reset_runtime_state(self) -> None:
+        """Close remote resources and clear per-loop state between isolated runs.
+
+        Test suites create and tear down many event loops in one Python process while
+        this module exposes a process-global bus instance.  A listener or flush task
+        that survives its originating loop can later surface as unraisable
+        ``Task was destroyed but it is pending`` / un-awaited connection warnings.
+        Resetting runtime state makes the singleton safe to reuse without changing
+        subscription or publish semantics in production.
+        """
+
+        await self._cancel_background_task(self._dlq_persist_flush_task)
+        self._dlq_persist_flush_task = None
+        if self._dlq_persist_pending:
+            with contextlib.suppress(Exception):
+                await self._flush_dead_letter_persist_queue()
+        await self._cleanup_redis()
+        await self._cleanup_rabbit()
+        await self._cleanup_kafka()
+        self._subscribers.clear()
+        self._buffered_events.clear()
+        self._redis_available = None
+        self._rabbit_available = None
+        self._kafka_available = None
+        self._remote_circuit_consecutive_failures = 0
+        self._remote_circuit_open_until = 0.0
 
     async def _ensure_redis_loop_compatibility(self) -> None:
         if self._backend != "redis":
