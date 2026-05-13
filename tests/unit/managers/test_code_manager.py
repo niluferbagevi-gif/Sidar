@@ -540,6 +540,9 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
     ok, msg = manager.run_shell("rm -rf /tmp/x", allow_shell_features=True)
     assert not ok and "Engellendi" in msg
 
+    ok, msg = manager.run_shell("echo 1 | cat", allow_shell_features=True)
+    assert not ok and "shell=True kullanmaz" in msg
+
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1266,14 +1269,20 @@ def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
     manager.max_output_chars = 8
     manager.security.shell_ok = True
 
-    # allow_shell_features True branch
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="1234567890", stderr=""),
-    )
-    ok, msg = manager.run_shell("echo a | cat", allow_shell_features=True)
+    run_calls = []
+
+    def _fake_run(*args, **kwargs):
+        run_calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="1234567890", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    ok, msg = manager.run_shell("python -c 'print(1234567890)'", allow_shell_features=True)
     assert ok and "KIRPILDI" in msg
+    assert run_calls[-1][1]["shell"] is False
+    assert run_calls[-1][0][0] == ["python", "-c", "print(1234567890)"]
+
+    ok, msg = manager.run_shell("echo a | cat", allow_shell_features=True)
+    assert not ok and "shell=True kullanmaz" in msg
 
     # blocked shell pattern branch iteration
     ok, msg = manager.run_shell("rm -rf /tmp", allow_shell_features=True)

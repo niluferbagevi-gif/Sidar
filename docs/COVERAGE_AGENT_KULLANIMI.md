@@ -115,8 +115,13 @@ Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için p
 | Dosya | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=file AUTONOMOUS_LOOP_COVERAGE_TARGET_FILE=agent/roles/coverage_agent.py AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ./autonomous_loop.sh` | hedef dosyada `%100` | Belirli bir dosyayı kapatmaya odaklanır; toplam coverage yerine `coverage.json` içindeki dosya özetini okur. |
 
 Bu eşleşmeyi gerçek döngüyü başlatmadan doğrulamak için aynı komutlara
-`AUTONOMOUS_LOOP_PRINT_CONFIG=1` eklenebilir; betik çözümlenen operasyon profilini ve
-hedef yüzdeyi loglayıp test/iyileştirme adımlarına geçmeden çıkar.
+`AUTONOMOUS_LOOP_PRINT_CONFIG=1` eklenebilir; betik çözümlenen operasyon profilini,
+remediation modunu ve hedef yüzdeyi loglayıp test/iyileştirme adımlarına geçmeden çıkar.
+Varsayılan `AUTONOMOUS_LOOP_REMEDIATION_MODE=hybrid` modu, preflight'ta tam
+`run_tests.sh` kalite kapısını korur; remediation tekrarlarında ise
+`RUN_STATIC_ANALYSIS=0 AUTO_HEAL_ON_FAILURE=0` kullanarak ana betikte zaten kapsanan
+fazladan mypy/self-heal katmanını atlar. Tekrarlı statik analiz özellikle istenirse
+`AUTONOMOUS_LOOP_REMEDIATION_MODE=full` kullanılmalıdır.
 
 Geriye dönük uyumluluk için `AUTONOMOUS_LOOP_COVERAGE_TARGET` verilirse profil hedefini
 ezer. Örneğin `AUTONOMOUS_LOOP_COVERAGE_TARGET=99.5 ./autonomous_loop.sh` doğrudan
