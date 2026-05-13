@@ -380,6 +380,79 @@ def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
     assert "bash run_tests.sh" in shell_payload
 
 
+def test_autodetect_project_test_image_prefers_sidar_image(manager):
+    manager.docker_image = "python:3.11-slim"
+    manager.docker_test_image = "python:3.11-slim"
+    manager._docker_test_image_explicit = False
+    manager.docker_available = True
+
+    fake_image = SimpleNamespace()
+
+    class _FakeImages:
+        def __init__(self):
+            self.queries: list[str] = []
+
+        def list(self, name=None):
+            self.queries.append(name)
+            return [fake_image] if name == "sidar-ai:latest" else []
+
+    images_api = _FakeImages()
+    manager.docker_client = SimpleNamespace(images=images_api)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai:latest"
+    assert "sidar-ai:latest" in images_api.queries
+
+
+def test_autodetect_project_test_image_respects_explicit_override(manager):
+    manager.docker_test_image = "my-custom:latest"
+    manager._docker_test_image_explicit = True
+    manager.docker_available = True
+
+    class _FakeImages:
+        def list(self, name=None):  # pragma: no cover - explicit override must short-circuit
+            raise AssertionError("autodetect should not query Docker when explicit")
+
+    manager.docker_client = SimpleNamespace(images=_FakeImages())
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "my-custom:latest"
+
+
+def test_autodetect_project_test_image_noop_when_docker_unavailable(manager):
+    manager.docker_test_image = "python:3.11-slim"
+    manager._docker_test_image_explicit = False
+    manager.docker_available = False
+    manager.docker_client = None
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "python:3.11-slim"
+
+
+def test_autodetect_project_test_image_falls_back_to_docker_cli(manager, monkeypatch):
+    manager.docker_test_image = "python:3.11-slim"
+    manager._docker_test_image_explicit = False
+    manager.docker_available = True
+    manager.docker_client = None  # CLI fallback mode
+
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+    inspected: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        inspected.append(cmd)
+        rc = 0 if cmd[-1] == "sidar-ai:latest" else 1
+        return SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai:latest"
+    assert any("sidar-ai:latest" in cmd for cmd in inspected)
+
+
 def test_analyze_pytest_output_and_run_pytest_collect(manager, monkeypatch):
     sample = """managers/code_manager.py  100 10 90% 1-2, 5->7
 ___ test_fail ___
