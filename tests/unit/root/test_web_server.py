@@ -1866,6 +1866,17 @@ def test_validate_plugin_source_passes_when_call_func_is_neither_name_nor_simple
     web_server._validate_plugin_source("funcs = []\n# noqa: defensive subscript example\n")
 
 
+def test_validate_plugin_source_rejects_large_source_and_dunder_escape():
+    with pytest.raises(HTTPException) as too_large:
+        web_server._validate_plugin_source("x = 1\n" * (web_server.MAX_PLUGIN_SOURCE_BYTES // 4))
+    assert too_large.value.status_code == 413
+
+    with pytest.raises(HTTPException) as dunder_access:
+        web_server._validate_plugin_source("class X: pass\nX.__mro__\n")
+    assert dunder_access.value.status_code == 400
+    assert "dunder attribute" in dunder_access.value.detail
+
+
 def test_load_plugin_agent_class_skips_missing_base_agent_module(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -7163,6 +7174,30 @@ async def test_file_content_covers_security_dir_and_size_guards(tmp_path, monkey
     assert too_big.status_code == 413
 
 
+def test_git_run_rejects_non_whitelisted_commands(monkeypatch):
+    calls = []
+
+    def _fake_check_output(*args, **kwargs):
+        calls.append((args, kwargs))
+        return b"unsafe"
+
+    monkeypatch.setattr(web_server.subprocess, "check_output", _fake_check_output)
+
+    assert web_server._git_run(["git", "status"], ".") == ""
+    assert calls == []
+
+    assert web_server._git_run(["git", "rev-parse", "--abbrev-ref", "HEAD"], ".") == "unsafe"
+    assert calls[-1][1]["shell"] is False
+
+
+def test_safe_git_branch_name_rejects_flag_and_ref_injection():
+    assert web_server._is_safe_git_branch_name("feature/safe-1")
+    assert not web_server._is_safe_git_branch_name("--detach")
+    assert not web_server._is_safe_git_branch_name("feature/../main")
+    assert not web_server._is_safe_git_branch_name("feature//@{bad}")
+    assert not web_server._is_safe_git_branch_name("feature/")
+
+
 @pytest.mark.asyncio
 async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
     empty_name = await web_server.set_branch(_JsonRequest({"branch": "   "}))
@@ -7174,7 +7209,7 @@ async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
     def _raise_checkout(*_args, **_kwargs):
         raise web_server.subprocess.CalledProcessError(
             returncode=1,
-            cmd=["git", "checkout", "feature/x"],
+            cmd=["git", "checkout", "--", "feature/x"],
             output=b"checkout failed",
         )
 

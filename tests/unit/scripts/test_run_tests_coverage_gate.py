@@ -34,3 +34,20 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage html -d htmlcov" in gate_function
     assert "uv run python -m coverage xml -o coverage.xml" in gate_function
     assert "uv run python -m coverage json -o coverage.json" in gate_function
+
+
+def test_run_tests_enables_benchmark_compare_by_default() -> None:
+    script = _script()
+
+    assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
+    assert '--benchmark-compare="${BENCHMARK_COMPARE_NAME}"' in script
+
+
+def test_env_examples_enable_benchmark_compare() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+
+    assert "BENCHMARK_ENABLE_COMPARE=1" in env_example
+    assert "BENCHMARK_COMPARE_NAME=baseline" in env_example
+    assert "BENCHMARK_ENABLE_COMPARE=1" in env_test_example
+    assert "BENCHMARK_COMPARE_NAME=baseline" in env_test_example
