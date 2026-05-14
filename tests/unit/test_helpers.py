@@ -28,9 +28,11 @@ def test_make_test_config_uses_spec_set_with_full_app_config(
         AI_PROVIDER = "ollama"
         OLLAMA_URL = "http://localhost:11434"
         OLLAMA_CONTEXT_MAX_CHARS = 12000
+        OLLAMA_KEEP_ALIVE = "30m"
         LLM_MAX_RETRIES = 1
         LLM_RETRY_BASE_DELAY = 0.1
         LLM_RETRY_MAX_DELAY = 0.2
+        SWARM_TASK_TIMEOUT_SECONDS = 60
         ENABLE_SEMANTIC_CACHE = True
         SEMANTIC_CACHE_THRESHOLD = 0.9
         SEMANTIC_CACHE_TTL = 60
