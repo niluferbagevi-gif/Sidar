@@ -32,9 +32,8 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Run mutmut campaign
-        run: |
-          MUTMUT_MAX_CHILDREN="${MUTMUT_MAX_CHILDREN:-$(python -c 'import os; print(max(1, os.cpu_count() or 2))')}"
-          uv run --with mutmut mutmut run --max-children "${MUTMUT_MAX_CHILDREN}"
+        # 2'den 4'e yükseltildi (lokalde autonomous_loop.sh varsayılanı 8).
+        run: uv run --with mutmut mutmut run --max-children 4
 
       - name: Print mutation summary
         if: always()

@@ -58,3 +58,11 @@ def test_all_setup_python_steps_in_workflows_use_311():
     for workflow_path in workflow_paths:
         versions = _setup_python_versions(workflow_path.read_text())
         assert all(version == PYTHON_MAJOR_MINOR for version in versions), workflow_path.name
+
+
+def test_weekly_mutation_workflow_uses_balanced_mutmut_parallelism():
+    workflow = (WORKFLOW_DIR / "weekly-mutation-and-critical-tests.yml").read_text()
+
+    assert "mutmut run --max-children 4" in workflow
+    assert "MUTMUT_MAX_CHILDREN" not in workflow
+    assert "os.cpu_count" not in workflow

@@ -287,8 +287,9 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 - Coverage hedefi sağlandığında otonom döngü ayrıca `mutmut` tabanlı mutasyon testi
   gate'ini çalıştırır (`AUTONOMOUS_LOOP_MUTATION_ENABLED`,
   `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`).
-  `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN` verilmezse otonom döngü 8 paralel mutmut
-  child süreciyle mutasyon kampanyasını hızlandırır; donanıma göre açık override yapılabilir.
+  `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN` verilmezse lokal otonom döngü 8 paralel mutmut
+  child süreciyle mutasyon kampanyasını hızlandırır; haftalık GitHub Actions mutasyon
+  kampanyası runner kaynak dengesini korumak için `--max-children 4` kullanır.
   Mutasyon testi başarısızsa coverage %100 olsa bile test kalitesi yetersiz kabul edilir;
   örn. aritmetik operatör, branch koşulu veya hata yolu mutasyonu testler tarafından
   öldürülmüyorsa döngü davranış odaklı test üretimi için fail-closed devam eder.
