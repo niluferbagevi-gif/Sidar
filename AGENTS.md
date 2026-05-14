@@ -278,7 +278,7 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`,
   `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25`,
   `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10` ve
-  `AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES=web_server.py,main.py` değerleri tek döngüde
+  `AUTONOMOUS_LOOP_EXCLUDE_FILES=web_server.py,main.py,gui_launcher.py,cli.py` değerleri tek döngüde
   ajan bağlamına çok geniş coverage boşluğu veya yan etkili launcher/API giriş noktası
   yüklenmesini engeller. `%5` gibi geniş
   artışlar tek ajan denemesi hedefi olarak kullanılmamalı; `%0.5-%1` aralığı
@@ -287,8 +287,8 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 - Coverage hedefi sağlandığında otonom döngü ayrıca `mutmut` tabanlı mutasyon testi
   gate'ini çalıştırır (`AUTONOMOUS_LOOP_MUTATION_ENABLED`,
   `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`).
-  `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN` verilmezse otonom döngü kullanılabilir CPU
-  çekirdeği sayısını seçerek mutasyon kampanyasını paralelleştirir.
+  `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN` verilmezse otonom döngü 8 paralel mutmut
+  child süreciyle mutasyon kampanyasını hızlandırır; donanıma göre açık override yapılabilir.
   Mutasyon testi başarısızsa coverage %100 olsa bile test kalitesi yetersiz kabul edilir;
   örn. aritmetik operatör, branch koşulu veya hata yolu mutasyonu testler tarafından
   öldürülmüyorsa döngü davranış odaklı test üretimi için fail-closed devam eder.

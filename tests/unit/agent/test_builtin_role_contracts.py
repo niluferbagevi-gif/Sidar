@@ -192,7 +192,7 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     assert "ReviewerAgent semantik onay vermedi" in script
     assert "run_autonomous_coverage_batch" in script
     assert "write_missing_tests" in script
-    assert "AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES" in script
+    assert "AUTONOMOUS_LOOP_EXCLUDE_FILES" in script
     assert "exclude_files=exclude_files" in script
     assert "run_autonomous_quality_tests" in script
     assert (
@@ -200,7 +200,7 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     )
     assert "run_mutation_quality_gate" in script
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED" in script
-    assert "DEFAULT_MUTATION_MAX_CHILDREN" in script
+    assert 'AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-8}"' in script
     assert "uv run --with mutmut mutmut run" in script
     assert "Coverage hedefi sağlandı fakat mutasyon kalite kapısı başarısız oldu" in script
     assert "Mevcut coverage artefaktları bulundu" in script
