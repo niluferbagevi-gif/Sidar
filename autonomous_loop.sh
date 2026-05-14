@@ -9,6 +9,24 @@ if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB
   export UV_LINK_MODE=copy
 fi
 
+
+detect_default_mutation_children() {
+  local detected
+  detected="$(python - <<'PY_MUTATION_CHILDREN'
+import os
+
+count = os.cpu_count() or 2
+print(max(1, count))
+PY_MUTATION_CHILDREN
+)"
+  if ! [[ "${detected}" =~ ^[0-9]+$ ]] || [ "${detected}" -lt 1 ]; then
+    detected="2"
+  fi
+  echo "${detected}"
+}
+
+DEFAULT_MUTATION_MAX_CHILDREN="$(detect_default_mutation_children)"
+
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
 AUTONOMOUS_COVERAGE_PROFILE="${AUTONOMOUS_LOOP_COVERAGE_PROFILE:-short}"
@@ -20,8 +38,9 @@ AUTONOMOUS_COVERAGE_AGENT_LIMIT="${AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT:-3}"
 AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE:-1}"
 AUTONOMOUS_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES:-25}"
 AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES:-10}"
+AUTONOMOUS_COVERAGE_EXCLUDE_FILES="${AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES:-web_server.py,main.py}"
 AUTONOMOUS_MUTATION_ENABLED="${AUTONOMOUS_LOOP_MUTATION_ENABLED:-1}"
-AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-2}"
+AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-${DEFAULT_MUTATION_MAX_CHILDREN}}"
 AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}}"
 AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:-uv run --with mutmut mutmut results}"
 AUTONOMOUS_MUTATION_STATS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND:-uv run --with mutmut mutmut export-cicd-stats}"
@@ -109,8 +128,8 @@ if ! [[ "$LOCAL_COVERAGE_GATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   LOCAL_COVERAGE_GATE="90"
 fi
 if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" -lt 1 ]; then
-  echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 2 kullanılacak."
-  AUTONOMOUS_MUTATION_MAX_CHILDREN="2"
+  echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. ${DEFAULT_MUTATION_MAX_CHILDREN} kullanılacak."
+  AUTONOMOUS_MUTATION_MAX_CHILDREN="${DEFAULT_MUTATION_MAX_CHILDREN}"
 fi
 case "${AUTONOMOUS_REMEDIATION_MODE}" in
   hybrid|full-static)
@@ -161,7 +180,8 @@ if [ -n "${AUTONOMOUS_COVERAGE_TARGET_FILE}" ]; then
 fi
 echo "[INFO] Otonom remediation modu: AUTONOMOUS_LOOP_REMEDIATION_MODE=${AUTONOMOUS_REMEDIATION_MODE}."
 echo "[INFO] Otonom coverage metriği '${AUTONOMOUS_COVERAGE_JSON}' üzerinden okunacak."
-echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
+echo "[INFO] CoverageAgent exclude listesi: AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES='${AUTONOMOUS_COVERAGE_EXCLUDE_FILES}'."
+echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED}; max_children=${AUTONOMOUS_MUTATION_MAX_CHILDREN}; komut='${AUTONOMOUS_MUTATION_COMMAND}'."
 echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; hibrit modda mypy yalnız ön kontrol run_tests.sh kalite kapısında çalışır."
 echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
 echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
@@ -324,6 +344,7 @@ run_coverage_agent() {
   AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}" \
   AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_COVERAGE_MAX_MISSING_LINES}" \
   AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES}" \
+  AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES="${AUTONOMOUS_COVERAGE_EXCLUDE_FILES}" \
     uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
@@ -458,6 +479,11 @@ async def main() -> int:
     batch_size = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE", "1") or "1")
     max_missing_lines = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES", "25") or "25")
     max_missing_branches = int(os.getenv("AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES", "10") or "10")
+    exclude_files = [
+        item.strip()
+        for item in os.getenv("AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES", "").split(",")
+        if item.strip()
+    ]
 
     async def reviewer_gate(candidate: str, finding: dict) -> bool:
         static_rejection_reason = _static_candidate_rejection_reason(candidate, finding)
@@ -482,6 +508,7 @@ async def main() -> int:
         reviewer_gate=reviewer_gate,
         max_missing_lines_per_finding=max_missing_lines,
         max_missing_branches_per_finding=max_missing_branches,
+        exclude_files=exclude_files,
     )
     result = _update_reviewer_block_state(result)
     print(f"[CoverageAgent] {result.get('summary', 'coverage batch analizi tamamlandı.')}")

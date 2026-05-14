@@ -118,6 +118,36 @@ class CoverageAgent(BaseAgent):
         ]
 
     @staticmethod
+    def _normalize_exclude_files(exclude_files: list[str] | str | None) -> list[str]:
+        """Otonom coverage kuyruğu için boş değerleri ayıklanmış exclude listesi üretir."""
+        if exclude_files is None:
+            return []
+        if isinstance(exclude_files, str):
+            raw_items = exclude_files.split(",")
+        else:
+            raw_items = [str(item) for item in exclude_files]
+        return [item.strip().lstrip("./") for item in raw_items if item and item.strip()]
+
+    @staticmethod
+    def _is_excluded_coverage_target(target_path: str, exclude_files: list[str]) -> bool:
+        """Coverage hedefinin exclude kuralıyla eşleşip eşleşmediğini belirler."""
+        normalized_target = str(target_path or "").strip().lstrip("./")
+        if not normalized_target:
+            return False
+        target_parts = Path(normalized_target).parts
+        for exclude_file in exclude_files:
+            normalized_exclude = str(exclude_file or "").strip().lstrip("./")
+            if not normalized_exclude:
+                continue
+            if normalized_target == normalized_exclude or normalized_target.endswith(
+                f"/{normalized_exclude}"
+            ):
+                return True
+            if "/" not in normalized_exclude and normalized_exclude in target_parts:
+                return True
+        return False
+
+    @staticmethod
     def _cap_autonomous_finding_scope(
         finding: dict[str, Any],
         *,
@@ -1165,6 +1195,7 @@ class CoverageAgent(BaseAgent):
         reviewer_gate: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
         max_missing_lines_per_finding: int = 25,
         max_missing_branches_per_finding: int = 10,
+        exclude_files: list[str] | str | None = None,
     ) -> dict[str, Any]:
         """Coverage bulgularını mikro batch kuyruğunda üretip write_missing_tests ile yazar."""
         analysis_raw = await self._tool_analyze_coverage_report(
@@ -1177,6 +1208,30 @@ class CoverageAgent(BaseAgent):
         findings = [
             item for item in list(analysis.get("findings", []) or []) if isinstance(item, dict)
         ]
+        original_findings_count = len(findings)
+        normalized_exclude_files = self._normalize_exclude_files(exclude_files)
+        excluded_findings: list[dict[str, Any]] = []
+        if normalized_exclude_files:
+            actionable_findings: list[dict[str, Any]] = []
+            for finding in findings:
+                target_path = str(finding.get("target_path", "") or "")
+                if self._is_excluded_coverage_target(target_path, normalized_exclude_files):
+                    excluded_findings.append(
+                        {
+                            "target_path": target_path,
+                            "suggested_test_path": str(
+                                finding.get("suggested_test_path", "") or ""
+                            ),
+                        }
+                    )
+                    logging.info(
+                        "[CoverageAgent] Coverage hedefi exclude listesinde olduğu için "
+                        "otonom kuyruktan çıkarıldı: %s",
+                        target_path,
+                    )
+                    continue
+                actionable_findings.append(finding)
+            findings = actionable_findings
         batches = self._build_finding_batches(findings, batch_size=batch_size, max_findings=limit)
         results: list[dict[str, Any]] = []
 
@@ -1302,17 +1357,28 @@ class CoverageAgent(BaseAgent):
                     }
                 )
 
+        status = "batch_completed"
+        if not findings:
+            status = "no_actionable_findings" if excluded_findings else "no_gaps_detected"
+
         return {
             "success": any(item.get("success") for item in results) if results else True,
-            "status": "no_gaps_detected" if not findings else "batch_completed",
+            "status": status,
             "summary": analysis.get("summary", ""),
             "total_findings": len(findings),
+            "original_total_findings": original_findings_count,
+            "excluded_findings_count": len(excluded_findings),
+            "excluded_findings": excluded_findings,
+            "exclude_files": normalized_exclude_files,
             "batch_count": len(batches),
             "results": results,
         }
 
     async def _tool_autonomous_batch_heal(self, arg: str) -> str:
         payload = self._parse_payload(arg)
+        exclude_files = self._normalize_exclude_files(
+            payload.get("exclude_files") if "exclude_files" in payload else None
+        )
         result = await self.run_autonomous_coverage_batch(
             coverage_xml=str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml"),
             coveragerc=str(payload.get("coveragerc", ".coveragerc") or ".coveragerc"),
@@ -1325,6 +1391,7 @@ class CoverageAgent(BaseAgent):
             max_missing_branches_per_finding=int(
                 payload.get("max_missing_branches_per_finding", 10) or 10
             ),
+            exclude_files=exclude_files,
         )
         return json.dumps(result, ensure_ascii=False)
 

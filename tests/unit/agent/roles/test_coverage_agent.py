@@ -926,6 +926,85 @@ async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
 
 
 @pytest.mark.asyncio
+async def test_autonomous_coverage_batch_excludes_configured_targets(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+    findings = [
+        {"target_path": "web_server.py", "suggested_test_path": "tests/test_web_server.py"},
+        {"target_path": "src/domain.py", "suggested_test_path": "tests/test_domain.py"},
+        {"target_path": "tools/main.py", "suggested_test_path": "tests/tools/test_main.py"},
+    ]
+    generated_targets: list[str] = []
+
+    async def fake_analyze(_arg):
+        return json.dumps({"summary": "mixed gaps", "coveragerc": {}, "findings": findings})
+
+    async def fake_generate(arg):
+        target_path = json.loads(arg)["coverage_finding"]["target_path"]
+        generated_targets.append(target_path)
+        return (
+            "from src.domain import compute\n\n"
+            "def test_domain_generated():\n"
+            "    result = compute()\n"
+            "    assert result == 'ok'\n"
+        )
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fake_generate)
+
+    result = await agent.run_autonomous_coverage_batch(
+        limit=10,
+        batch_size=1,
+        exclude_files=["web_server.py", "main.py"],
+    )
+
+    assert result["status"] == "batch_completed"
+    assert result["original_total_findings"] == 3
+    assert result["total_findings"] == 1
+    assert result["excluded_findings_count"] == 2
+    assert result["exclude_files"] == ["web_server.py", "main.py"]
+    assert [item["target_path"] for item in result["excluded_findings"]] == [
+        "web_server.py",
+        "tools/main.py",
+    ]
+    assert generated_targets == ["src/domain.py"]
+    assert result["results"][0]["target_path"] == "src/domain.py"
+    assert fake_coverage_code_manager.write_generated_test.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_autonomous_coverage_batch_reports_no_actionable_when_all_excluded(
+    tmp_path, fake_coverage_code_manager, monkeypatch
+):
+    agent = make_agent(tmp_path, fake_coverage_code_manager)
+
+    async def fake_analyze(_arg):
+        return json.dumps(
+            {
+                "summary": "only side-effectful gaps",
+                "coveragerc": {},
+                "findings": [{"target_path": "./main.py"}],
+            }
+        )
+
+    async def fail_generate(_arg):  # pragma: no cover - çağrılmaması beklenir.
+        raise AssertionError("excluded finding should not reach generation")
+
+    monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
+    monkeypatch.setattr(agent, "_tool_generate_missing_tests", fail_generate)
+
+    result = await agent.run_autonomous_coverage_batch(exclude_files=" main.py ")
+
+    assert result["success"] is True
+    assert result["status"] == "no_actionable_findings"
+    assert result["total_findings"] == 0
+    assert result["original_total_findings"] == 1
+    assert result["excluded_findings_count"] == 1
+    fake_coverage_code_manager.write_generated_test.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_autonomous_batch_reviewer_gate_reject_payload(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
@@ -1639,6 +1718,7 @@ async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
             "append": False,
             "max_missing_lines_per_finding": 12,
             "max_missing_branches_per_finding": 4,
+            "exclude_files": "web_server.py, main.py",
         }
     )
     out = await agent._tool_autonomous_batch_heal(payload)
@@ -1651,6 +1731,7 @@ async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
     assert captured["append"] is False
     assert captured["max_missing_lines_per_finding"] == 12
     assert captured["max_missing_branches_per_finding"] == 4
+    assert captured["exclude_files"] == ["web_server.py", "main.py"]
 
 
 @pytest.mark.asyncio

@@ -32,7 +32,9 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Run mutmut campaign
-        run: uv run --with mutmut mutmut run --max-children 2
+        run: |
+          MUTMUT_MAX_CHILDREN="${MUTMUT_MAX_CHILDREN:-$(python -c 'import os; print(max(1, os.cpu_count() or 2))')}"
+          uv run --with mutmut mutmut run --max-children "${MUTMUT_MAX_CHILDREN}"
 
       - name: Print mutation summary
         if: always()
