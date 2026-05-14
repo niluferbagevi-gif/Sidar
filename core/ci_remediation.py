@@ -56,6 +56,8 @@ _AUTO_INSTALL_TYPE_STUBS: dict[str, str] = {
 }
 _RUFF_RULE_SELECTOR_PATTERN = re.compile(r"^[A-Z]+\d*$")
 _DEFAULT_RUFF_UNSAFE_FIX_SELECTORS = ("I", "UP")
+_RUFF_UNSAFE_FIX_ARG = "--unsafe-fixes"
+_CURRENT_DIR_TARGET = "."
 
 
 def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
@@ -95,9 +97,9 @@ def build_ruff_autofix_command(
     Varsayılan akış yalnız Ruff güvenli fixlerini çalıştırır. `--unsafe-fixes`, ancak
     açıkça istenirse ve sınırlı selector listesiyle birlikte komuta eklenir.
     """
-    normalized_target = str(target or ".").strip()
+    normalized_target = str(target or _CURRENT_DIR_TARGET).strip()
     if not normalized_target or normalized_target.startswith("/") or ".." in normalized_target:
-        normalized_target = "."
+        normalized_target = _CURRENT_DIR_TARGET
 
     command = ["uv", "run", "ruff", "check", "--fix"]
     if unsafe_fixes:
@@ -105,7 +107,7 @@ def build_ruff_autofix_command(
             unsafe_selectors if unsafe_selectors is not None else _DEFAULT_RUFF_UNSAFE_FIX_SELECTORS
         )
         if selectors:
-            command.extend(["--unsafe-fixes", "--select", ",".join(selectors)])
+            command.extend([_RUFF_UNSAFE_FIX_ARG, "--select", ",".join(selectors)])
     command.append(normalized_target)
     return " ".join(command)
 
@@ -125,31 +127,31 @@ def _is_allowed_ruff_command(parts: list[str]) -> bool:
     selected_rules: list[str] = []
     index = 0
     while index < len(args):
-        token = args[index]
-        if token == "--unsafe-fixes":
+        arg = args[index]
+        if arg == _RUFF_UNSAFE_FIX_ARG:
             unsafe_requested = True
             index += 1
             continue
-        if token in {"--select", "--extend-select"}:
+        if arg in {"--select", "--extend-select"}:
             if index + 1 >= len(args):
                 return False
             selected_rules.extend(_normalize_ruff_rule_selectors(args[index + 1]))
             index += 2
             continue
-        if token.startswith("--select=") or token.startswith("--extend-select="):
-            selected_rules.extend(_normalize_ruff_rule_selectors(token.split("=", 1)[1]))
+        if arg.startswith("--select=") or arg.startswith("--extend-select="):
+            selected_rules.extend(_normalize_ruff_rule_selectors(arg.split("=", 1)[1]))
             index += 1
             continue
-        if token in {"--fix", "--diff", "--show-fixes", "--exit-zero", "--statistics"}:
+        if arg in {"--fix", "--diff", "--show-fixes", "--exit-zero", "--statistics"}:
             index += 1
             continue
-        if token.startswith("-"):
+        if arg.startswith("-"):
             return False
         if (
-            token == "."
-            or token.startswith("tests/")
-            or token.startswith("core/")
-            or token.endswith(".py")
+            arg == _CURRENT_DIR_TARGET
+            or arg.startswith("tests/")
+            or arg.startswith("core/")
+            or arg.endswith(".py")
         ):
             index += 1
             continue
@@ -179,15 +181,15 @@ def _is_allowed_validation_command(command: str) -> bool:
     if not parts:
         return False
 
-    def _is_allowed_pytest_arg(token: str) -> bool:
+    def _is_allowed_pytest_arg(arg: str) -> bool:
         return (
-            token == "."  # nosec B105  # bu parola değil, pytest path argümanı doğrulamasıdır.
-            or token.startswith("-")
-            or token.startswith("tests/")
-            or token.startswith("test/")
-            or token.startswith("./")
-            or token.endswith(".py")
-            or "/" in token
+            arg == _CURRENT_DIR_TARGET
+            or arg.startswith("-")
+            or arg.startswith("tests/")
+            or arg.startswith("test/")
+            or arg.startswith("./")
+            or arg.endswith(".py")
+            or "/" in arg
         )
 
     if parts[0] == "pytest":
