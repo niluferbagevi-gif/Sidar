@@ -2370,3 +2370,69 @@ def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(ma
     manager._autodetect_project_test_image()
 
     assert manager.docker_test_image == manager.docker_image
+
+
+def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(manager) -> None:
+    def raise_connection_error(_image: str) -> None:
+        raise ConnectionError("docker daemon unavailable")
+
+    manager.docker_client = SimpleNamespace(images=SimpleNamespace(get=raise_connection_error))
+
+    assert manager._docker_image_exists("sidar:latest") is False
+
+
+def test_docker_image_exists_returns_false_when_cli_inspect_times_out(manager, monkeypatch) -> None:
+    manager.docker_client = None
+    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+
+    def raise_timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="docker image inspect sidar:latest", timeout=5)
+
+    monkeypatch.setattr(cm.subprocess, "run", raise_timeout)
+
+    assert manager._docker_image_exists("sidar:latest") is False
+
+
+def test_command_requires_uv_tooling_handles_malformed_shell_command() -> None:
+    assert cm.CodeManager._command_requires_uv_tooling('"unterminated pytest -q') is True
+    assert cm.CodeManager._command_requires_uv_tooling('"unterminated echo ok') is False
+
+
+def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> None:
+    assert (
+        manager._lsp_target_binary(
+            ["/bin/uvx", "--from", "pyright", "--with", "types", "run", "--frozen", "--stdio"],
+            "python",
+        )
+        == "pyright-langserver"
+    )
+
+
+def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(manager, monkeypatch) -> None:
+    manager.docker_client = SimpleNamespace(
+        images=SimpleNamespace(get=lambda _image: pytest.fail("unsafe image must not be probed"))
+    )
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: pytest.fail("CLI must not be probed"))
+
+    assert manager._docker_image_exists("sidar:latest;rm -rf /") is False
+
+
+def test_docker_image_exists_falls_back_false_when_sdk_get_is_not_callable(
+    manager, monkeypatch
+) -> None:
+    manager.docker_client = SimpleNamespace(images=SimpleNamespace(get="not-callable"))
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
+
+    assert manager._docker_image_exists("sidar:latest") is False
+
+
+def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) -> None:
+    with pytest.raises(ValueError, match="bağımsız değişkenlere"):
+        cm._build_sanitized_shell_args("   ", allow_shell_features=False)
+
+    with pytest.raises(ValueError, match="NUL"):
+        cm._build_sanitized_shell_args("python\x00 -V", allow_shell_features=False)
+
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
+    with pytest.raises(ValueError, match="yorumlayıcısı"):
+        cm._build_sanitized_shell_args("echo ok", allow_shell_features=True)
