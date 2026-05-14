@@ -86,8 +86,21 @@ run_precommit_autofix() {
     return 0
   fi
 
-  echo "🧹 Pre-commit autofix: ruff check --fix --unsafe-fixes ."
-  if ! uv run ruff check --fix --unsafe-fixes .; then
+  local ruff_autofix_cmd=(uv run ruff check --fix)
+  local unsafe_fixes="${RUFF_AUTOFIX_UNSAFE:-0}"
+  local unsafe_rules="${RUFF_AUTOFIX_UNSAFE_RULES:-I,UP}"
+  if [ "${unsafe_fixes}" = "1" ]; then
+    if [ -z "${unsafe_rules}" ]; then
+      echo "⚠️ RUFF_AUTOFIX_UNSAFE=1 ancak RUFF_AUTOFIX_UNSAFE_RULES boş; unsafe fixler atlanıyor."
+    else
+      ruff_autofix_cmd+=(--unsafe-fixes --select "${unsafe_rules}")
+      echo "⚠️ Ruff unsafe fixleri sınırlı selector listesiyle çalışacak: ${unsafe_rules}"
+    fi
+  fi
+  ruff_autofix_cmd+=(.)
+
+  echo "🧹 Pre-commit autofix: ${ruff_autofix_cmd[*]}"
+  if ! "${ruff_autofix_cmd[@]}"; then
     echo "❌ Ruff autofix sonrası lint kontrolleri başarısız. Testler durduruldu."
     return 1
   fi

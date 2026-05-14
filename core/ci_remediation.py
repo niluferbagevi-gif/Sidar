@@ -54,6 +54,116 @@ _AUTO_INSTALL_TYPE_STUBS: dict[str, str] = {
     "dateutil": "types-python-dateutil",
     "requests": "types-requests",
 }
+_RUFF_RULE_SELECTOR_PATTERN = re.compile(r"^[A-Z]+\d*$")
+_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS = ("I", "UP")
+
+
+def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
+    """Ruff rule selector değerlerini shell-safe, virgülle ayrılmış listeye dönüştürür."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = re.split(r"[\s,]+", value.strip())
+    else:
+        raw_items = [str(item).strip() for item in value]
+
+    selectors: list[str] = []
+    for item in raw_items:
+        selector = str(item or "").strip().upper()
+        if not selector or not _RUFF_RULE_SELECTOR_PATTERN.fullmatch(selector):
+            continue
+        if selector not in selectors:
+            selectors.append(selector)
+    return selectors
+
+
+def _configured_ruff_unsafe_selectors() -> list[str]:
+    env_value = os.getenv("RUFF_AUTOFIX_UNSAFE_RULES")
+    if env_value is None:
+        return _normalize_ruff_rule_selectors(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
+    return _normalize_ruff_rule_selectors(env_value)
+
+
+def build_ruff_autofix_command(
+    *,
+    unsafe_fixes: bool = False,
+    unsafe_selectors: Any = None,
+    target: str = ".",
+) -> str:
+    """Ruff autofix komutunu false-positive riskini azaltacak şekilde üretir.
+
+    Varsayılan akış yalnız Ruff güvenli fixlerini çalıştırır. `--unsafe-fixes`, ancak
+    açıkça istenirse ve sınırlı selector listesiyle birlikte komuta eklenir.
+    """
+    normalized_target = str(target or ".").strip()
+    if not normalized_target or normalized_target.startswith("/") or ".." in normalized_target:
+        normalized_target = "."
+
+    command = ["uv", "run", "ruff", "check", "--fix"]
+    if unsafe_fixes:
+        selectors = _normalize_ruff_rule_selectors(
+            unsafe_selectors if unsafe_selectors is not None else _DEFAULT_RUFF_UNSAFE_FIX_SELECTORS
+        )
+        if selectors:
+            command.extend(["--unsafe-fixes", "--select", ",".join(selectors)])
+    command.append(normalized_target)
+    return " ".join(command)
+
+
+def _ruff_unsafe_selector_allowed(selector: str, allowed_selectors: list[str]) -> bool:
+    return any(selector == allowed or selector.startswith(allowed) for allowed in allowed_selectors)
+
+
+def _is_allowed_ruff_command(parts: list[str]) -> bool:
+    if parts[:4] != ["uv", "run", "ruff", "check"]:
+        return False
+    args = parts[4:]
+    if not args:
+        return True
+
+    unsafe_requested = False
+    selected_rules: list[str] = []
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--unsafe-fixes":
+            unsafe_requested = True
+            index += 1
+            continue
+        if token in {"--select", "--extend-select"}:
+            if index + 1 >= len(args):
+                return False
+            selected_rules.extend(_normalize_ruff_rule_selectors(args[index + 1]))
+            index += 2
+            continue
+        if token.startswith("--select=") or token.startswith("--extend-select="):
+            selected_rules.extend(_normalize_ruff_rule_selectors(token.split("=", 1)[1]))
+            index += 1
+            continue
+        if token in {"--fix", "--diff", "--show-fixes", "--exit-zero", "--statistics"}:
+            index += 1
+            continue
+        if token.startswith("-"):
+            return False
+        if (
+            token == "."
+            or token.startswith("tests/")
+            or token.startswith("core/")
+            or token.endswith(".py")
+        ):
+            index += 1
+            continue
+        return False
+
+    if unsafe_requested:
+        allowed_selectors = _configured_ruff_unsafe_selectors()
+        if not selected_rules:
+            return False
+        if not all(
+            _ruff_unsafe_selector_allowed(rule, allowed_selectors) for rule in selected_rules
+        ):
+            return False
+    return True
 
 
 def _is_allowed_validation_command(command: str) -> bool:
@@ -88,6 +198,8 @@ def _is_allowed_validation_command(command: str) -> bool:
         return all(re.fullmatch(r"[\w./-]+", token) for token in parts[2:])
     if parts[:3] == ["uv", "pip", "install"] and len(parts) >= 4:
         return all(re.fullmatch(r"[A-Za-z0-9_.-]+", token) for token in parts[3:])
+    if _is_allowed_ruff_command(parts):
+        return True
     return False
 
 
@@ -873,6 +985,19 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             if match.group("pkg").strip()
         }
     )
+    ruff_failure_detected = "ruff" in combined_text
+    unsafe_selectors = _configured_ruff_unsafe_selectors()
+    autofix_commands = [build_ruff_autofix_command()] if ruff_failure_detected else []
+    unsafe_autofix_policy = {
+        "unsafe_fixes_default": False,
+        "unsafe_fixes_env": "RUFF_AUTOFIX_UNSAFE=1",
+        "unsafe_rule_selectors_env": "RUFF_AUTOFIX_UNSAFE_RULES",
+        "allowed_unsafe_selectors": unsafe_selectors,
+        "guidance": (
+            "Ruff --unsafe-fixes yalnız açık operatör tercihiyle ve sınırlı selector listesiyle "
+            "çalıştırılmalıdır; varsayılan self-heal yalnız güvenli --fix uygular."
+        ),
+    }
     bootstrap_commands: list[str] = []
     for module_name in missing_modules:
         package_name = _AUTO_INSTALL_PACKAGES.get(module_name)
@@ -930,6 +1055,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "failed_jobs": failed_jobs[:6],
         "validation_commands": effective_validation_commands,
         "bootstrap_commands": bootstrap_commands,
+        "autofix_commands": autofix_commands,
+        "unsafe_autofix_policy": unsafe_autofix_policy,
         "autonomous_batches": autonomous_batches,
         "steps": [
             {

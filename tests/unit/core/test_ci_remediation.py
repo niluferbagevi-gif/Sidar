@@ -25,6 +25,49 @@ def test_is_allowed_validation_command(command: str, expected: bool) -> None:
     assert ci._is_allowed_validation_command(command) is expected
 
 
+def test_build_ruff_autofix_command_defaults_to_safe_fix_only() -> None:
+    command = ci.build_ruff_autofix_command()
+
+    assert command == "uv run ruff check --fix ."
+    assert "--unsafe-fixes" not in command
+
+
+def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
+    command = ci.build_ruff_autofix_command(unsafe_fixes=True, unsafe_selectors="I,UP034 bad;rm")
+
+    assert command == "uv run ruff check --fix --unsafe-fixes --select I,UP034 ."
+
+
+def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> None:
+    assert ci._is_allowed_validation_command("uv run ruff check --fix .") is True
+    assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
+    assert (
+        ci._is_allowed_validation_command(
+            "uv run ruff check --fix --unsafe-fixes --select I,UP tests/unit/core/test_ci_remediation.py"
+        )
+        is True
+    )
+    assert (
+        ci._is_allowed_validation_command(
+            "uv run ruff check --fix --unsafe-fixes --select B tests/unit/core/test_ci_remediation.py"
+        )
+        is False
+    )
+
+
+def test_is_allowed_validation_command_respects_empty_ruff_unsafe_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUFF_AUTOFIX_UNSAFE_RULES", "")
+
+    assert (
+        ci._is_allowed_validation_command(
+            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+        )
+        is False
+    )
+
+
 def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -741,6 +784,22 @@ def test_build_remediation_loop_large_scope_respects_env_threshold(
     }
     result = ci.build_remediation_loop(context, "ok")
     assert result["needs_human_approval"] is True
+
+
+def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
+    context = {
+        "suspected_targets": ["core/ci_remediation.py"],
+        "failed_jobs": ["lint"],
+        "failure_summary": "ruff check failed",
+        "log_excerpt": "uv run ruff check .",
+    }
+
+    result = ci.build_remediation_loop(context, "ruff lint failure")
+
+    assert result["autofix_commands"] == ["uv run ruff check --fix ."]
+    assert result["unsafe_autofix_policy"]["unsafe_fixes_default"] is False
+    assert result["unsafe_autofix_policy"]["allowed_unsafe_selectors"] == ["I", "UP"]
+    assert "--unsafe-fixes" in result["unsafe_autofix_policy"]["guidance"]
 
 
 def test_build_remediation_loop_ignores_unknown_auto_install_modules() -> None:
