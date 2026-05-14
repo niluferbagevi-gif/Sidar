@@ -217,6 +217,31 @@ def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypa
     assert "DATABASE_URL database name does not match POSTGRES_DB" in check.message
 
 
+def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/sidar.db")
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    check = doctor.check_database_env()
+
+    assert check.status == "pass"
+    assert check.details["scheme"] == "sqlite"
+
+
+def test_database_env_fails_when_database_url_user_differs_from_postgres_user(monkeypatch):
+    password = "a" * 24
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://other:{password}@localhost:5432/sidar")
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "DATABASE_URL user does not match POSTGRES_USER" in check.message
+
+
 def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
     password = "a" * 24
     monkeypatch.setenv("POSTGRES_USER", "sidar")
@@ -240,6 +265,19 @@ def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
 
     assert check.status == "fail"
     assert check.message == "no Alembic migration revisions found"
+
+
+def test_parse_migration_revisions_ignores_files_without_revision(monkeypatch, tmp_path):
+    versions = tmp_path / "migrations" / "versions"
+    versions.mkdir(parents=True)
+    (versions / "README.py").write_text("# helper without alembic metadata\n", encoding="utf-8")
+    (versions / "0001.py").write_text("revision = 'base'\ndown_revision = None\n", encoding="utf-8")
+    monkeypatch.setattr(doctor, "migrations_path", lambda: tmp_path / "migrations")
+
+    revisions, down_revisions = doctor._parse_migration_revisions()
+
+    assert revisions == ["base"]
+    assert down_revisions == []
 
 
 def test_migrations_pass_and_warn_based_on_alembic_head(monkeypatch, tmp_path):
@@ -446,6 +484,65 @@ def test_gpu_check_uses_torch_fallback_and_records_torch_errors(monkeypatch):
     failed = doctor.check_gpu()
     assert failed.status == "warn"
     assert failed.details["torch_error"] == "torch unavailable"
+
+
+def test_gpu_check_falls_back_to_torch_when_nvidia_smi_is_unhealthy(monkeypatch):
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+    )
+    monkeypatch.setattr(doctor, "_run_command", lambda cmd, timeout=20: (1, "driver offline"))
+    original_import = __import__
+
+    class Cuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(index):
+            return f"Fallback-GPU-{index}"
+
+    def torch_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "torch":
+            return type("TorchModule", (), {"cuda": Cuda})()
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", torch_import)
+
+    check = doctor.check_gpu()
+
+    assert check.status == "pass"
+    assert check.details["source"] == "torch"
+    assert check.details["devices"] == ["Fallback-GPU-0"]
+    assert check.details["run_gpu_stress"] is True
+
+
+def test_gpu_check_reports_warn_when_torch_cuda_is_unavailable(monkeypatch):
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    original_import = __import__
+
+    class Cuda:
+        @staticmethod
+        def is_available():
+            return False
+
+    def torch_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "torch":
+            return type("TorchModule", (), {"cuda": Cuda})()
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", torch_import)
+
+    check = doctor.check_gpu()
+
+    assert check.status == "warn"
+    assert check.details == {"detected": False, "run_gpu_stress": False}
 
 
 def test_ollama_base_url_normalizes_api_suffix(monkeypatch):

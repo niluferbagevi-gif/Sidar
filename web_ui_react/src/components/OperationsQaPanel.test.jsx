@@ -152,6 +152,25 @@ describe("OperationsQaPanel — form girdileri", () => {
     expect(apiMocks.generateLandingPage.mock.calls[0][0].offer).toBe("Yeni teklif");
   });
 
+  it("Kampanya form alanları kontrollü güncellenir", async () => {
+    const user = userEvent.setup();
+    apiMocks.generateCampaignCopy.mockResolvedValue({ ok: true });
+    await renderOperationsQaPanel();
+    const campaignName = screen.getByRole("textbox", { name: "campaign_name" });
+    const campaignOffer = screen.getAllByRole("textbox", { name: "offer" })[1];
+
+    await user.clear(campaignName);
+    await user.type(campaignName, "Yeni kampanya");
+    await user.clear(campaignOffer);
+    await user.type(campaignOffer, "Yeni kampanya teklifi");
+    await user.click(screen.getByRole("button", { name: "Kopya üret" }));
+
+    await waitFor(() => expect(apiMocks.generateCampaignCopy).toHaveBeenCalled());
+    const payload = apiMocks.generateCampaignCopy.mock.calls[0][0];
+    expect(payload.campaign_name).toBe("Yeni kampanya");
+    expect(payload.offer).toBe("Yeni kampanya teklifi");
+  });
+
   it("Coverage batch append checkbox değiştirilebilir", async () => {
     const user = userEvent.setup();
     apiMocks.runCoverageBatch.mockResolvedValue({ ok: true });
