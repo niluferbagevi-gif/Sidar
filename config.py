@@ -514,6 +514,7 @@ class Config:
     # ─── ReAct Döngüsü ───────────────────────────────────────
     MAX_REACT_STEPS: int = get_int_env("MAX_REACT_STEPS", 10)
     REACT_TIMEOUT: int = get_int_env("REACT_TIMEOUT", 60)
+    SWARM_TASK_TIMEOUT_SECONDS: int = get_int_env("SWARM_TASK_TIMEOUT_SECONDS", REACT_TIMEOUT)
     SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 

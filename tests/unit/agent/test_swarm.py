@@ -945,3 +945,42 @@ def test_swarm_execute_task_is_isolated(monkeypatch):
 
     assert result.status == "success"
     assert result.summary == "isolated-ok"
+
+
+def test_execute_task_times_out_hanging_handle_agent(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS=0.001, SWARM_TASK_MAX_RETRIES=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _HangingHandleAgent:
+        async def handle(self, _envelope):
+            await __import__("asyncio").sleep(1)
+            return TaskResult(task_id="late", status="success", summary="late")
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _HangingHandleAgent())
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "failed"
+    assert "Swarm task timeout exceeded" in result.summary
+    assert orch._active_agents == {}
+
+
+def test_execute_task_times_out_hanging_legacy_run_task_agent(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS=0.001, SWARM_TASK_MAX_RETRIES=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _HangingRunTaskAgent:
+        async def run_task(self, _goal):
+            await __import__("asyncio").sleep(1)
+            return "late"
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _HangingRunTaskAgent())
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "failed"
+    assert "Swarm task timeout exceeded" in result.summary

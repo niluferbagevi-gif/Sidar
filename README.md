@@ -774,6 +774,7 @@ MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
 # Zaman Aşımı
 OLLAMA_TIMEOUT=30
 REACT_TIMEOUT=60
+SWARM_TASK_TIMEOUT_SECONDS=60   # Swarm ajan handle/run_task deadlock koruması
 
 # Web Arama
 TAVILY_API_KEY=                 # Tavily kullanılacaksa (öncelikli)

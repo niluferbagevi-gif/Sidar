@@ -693,6 +693,18 @@ class SwarmOrchestrator:
         started_at = time.monotonic()
         max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
+        task_timeout = max(
+            0.001,
+            float(
+                getattr(
+                    self.cfg,
+                    "SWARM_TASK_TIMEOUT_SECONDS",
+                    getattr(self.cfg, "REACT_TIMEOUT", 60),
+                )
+                or getattr(self.cfg, "REACT_TIMEOUT", 60)
+                or 60
+            ),
+        )
         max_hops = max(1, int(getattr(self.cfg, "SWARM_MAX_HANDOFF_HOPS", 4) or 4))
         route_trace = list(_route_trace or [])
         handoff_chain = list(_handoff_chain or [])
@@ -793,9 +805,11 @@ class SwarmOrchestrator:
                     handle_fn = getattr(agent, "handle", None)
                     run_task_fn = getattr(agent, "run_task", None)
                     if callable(handle_fn):
-                        result = await handle_fn(envelope)
+                        result = await asyncio.wait_for(handle_fn(envelope), timeout=task_timeout)
                     elif callable(run_task_fn):
-                        legacy_summary = await run_task_fn(envelope.goal)
+                        legacy_summary = await asyncio.wait_for(
+                            run_task_fn(envelope.goal), timeout=task_timeout
+                        )
                         result = TaskResult(
                             task_id=envelope.task_id,
                             status="success",
@@ -807,6 +821,10 @@ class SwarmOrchestrator:
                             f"Ajan '{spec.role_name}' ne handle ne de run_task metodu sağlıyor."
                         )
                     break
+                except TimeoutError as exc:
+                    raise TimeoutError(
+                        f"Swarm task timeout exceeded ({task_timeout:.3f}s)."
+                    ) from exc
                 except Exception as exc:  # pragma: no cover - branch specific tests verify behavior
                     last_exc = exc
                     if attempt >= max_retries:

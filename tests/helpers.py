@@ -26,6 +26,7 @@ def make_test_config(**overrides: Any) -> MagicMock:
         "LLM_MAX_RETRIES": 2,
         "LLM_RETRY_BASE_DELAY": 0.01,
         "LLM_RETRY_MAX_DELAY": 0.02,
+        "SWARM_TASK_TIMEOUT_SECONDS": 60,
         "ENABLE_SEMANTIC_CACHE": True,
         "SEMANTIC_CACHE_THRESHOLD": 0.9,
         "SEMANTIC_CACHE_TTL": 60,
