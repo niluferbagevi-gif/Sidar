@@ -128,7 +128,13 @@ def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
 
 
 def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut() -> None:
-    output = _run_autonomous_loop_config(profile="short")
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={
+            "AUTONOMOUS_LOOP_MUTATION_ENABLED": "1",
+            "AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN": "8",
+        },
+    )
 
     assert (
         "CoverageAgent exclude listesi: "
