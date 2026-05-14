@@ -171,7 +171,7 @@ Bu nedenle otonom döngü artık mikro kapsamla çalışır:
 | `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE` | `1` | Aynı anda işlenecek finding sayısı; context yükünü düşük tutar. |
 | `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES` | `25` | Tek test adayına verilecek eksik satır sayısı. |
 | `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES` | `10` | Tek test adayına verilecek eksik branch sayısı. |
-| `AUTONOMOUS_LOOP_EXCLUDE_FILES` | `web_server.py,main.py,gui_launcher.py,cli.py` | Yan etkili/launcher dosyalarını otonom üretim kuyruğundan çıkarır. |
+| `AUTONOMOUS_LOOP_EXCLUDE_FILES` | `web_server.py,main.py,gui_launcher.py,cli.py` | Yan etkili/launcher dosyalarını otonom üretim kuyruğundan çıkarır; dosya adı, repo-göreli yol, dizin prefix'i ve glob deseni desteklenir. |
 
 Bu ayrım önemlidir:
 

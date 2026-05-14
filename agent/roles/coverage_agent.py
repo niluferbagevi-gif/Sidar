@@ -6,6 +6,7 @@ import ast
 import asyncio
 import configparser
 import contextlib
+import fnmatch
 import hashlib
 import inspect
 import json
@@ -130,7 +131,13 @@ class CoverageAgent(BaseAgent):
 
     @staticmethod
     def _is_excluded_coverage_target(target_path: str, exclude_files: list[str]) -> bool:
-        """Coverage hedefinin exclude kuralıyla eşleşip eşleşmediğini belirler."""
+        """Coverage hedefinin exclude kuralıyla eşleşip eşleşmediğini belirler.
+
+        Kurallar dosya adı (``web_server.py``), repo-göreli yol (``agent/core/foo.py``),
+        dizin prefix'i (``agent/core`` veya ``agent/core/``) ya da glob deseni
+        (``agent/core/*.py``) olabilir. Böylece otonom döngü yan etkili giriş
+        noktalarını ve karmaşık entegrasyon katmanlarını deterministik şekilde atlar.
+        """
         normalized_target = str(target_path or "").strip().lstrip("./")
         if not normalized_target:
             return False
@@ -139,11 +146,16 @@ class CoverageAgent(BaseAgent):
             normalized_exclude = str(exclude_file or "").strip().lstrip("./")
             if not normalized_exclude:
                 continue
-            if normalized_target == normalized_exclude or normalized_target.endswith(
-                f"/{normalized_exclude}"
+            exclude_prefix = normalized_exclude.rstrip("/")
+            if fnmatch.fnmatchcase(normalized_target, normalized_exclude):
+                return True
+            if normalized_target == exclude_prefix or normalized_target.startswith(
+                f"{exclude_prefix}/"
             ):
                 return True
-            if "/" not in normalized_exclude and normalized_exclude in target_parts:
+            if normalized_target.endswith(f"/{exclude_prefix}"):
+                return True
+            if "/" not in exclude_prefix and exclude_prefix in target_parts:
                 return True
         return False
 

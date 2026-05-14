@@ -125,3 +125,19 @@ def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
 
     assert "AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE anlaşılamadı" in output
     assert "HITL=no" in output
+
+
+def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut() -> None:
+    output = _run_autonomous_loop_config(profile="short")
+
+    assert (
+        "CoverageAgent exclude listesi: "
+        "AUTONOMOUS_LOOP_EXCLUDE_FILES='web_server.py,main.py,gui_launcher.py,cli.py'"
+        in output
+    )
+    assert (
+        "Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=1; max_children=8"
+        in output
+    )
+    assert "uv run --with mutmut mutmut run --max-children 8" in output
+

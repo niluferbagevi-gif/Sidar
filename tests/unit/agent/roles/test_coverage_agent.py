@@ -925,6 +925,19 @@ async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
     fake_coverage_code_manager.write_generated_test.assert_not_awaited()
 
 
+async def test_coverage_exclude_target_supports_paths_directories_and_globs() -> None:
+    excludes = CoverageAgent._normalize_exclude_files(
+        "web_server.py, agent/core/, integrations/*.py, ./tools/main.py"
+    )
+
+    assert CoverageAgent._is_excluded_coverage_target("web_server.py", excludes) is True
+    assert CoverageAgent._is_excluded_coverage_target("src/web_server.py", excludes) is True
+    assert CoverageAgent._is_excluded_coverage_target("agent/core/event_bus.py", excludes) is True
+    assert CoverageAgent._is_excluded_coverage_target("integrations/slack.py", excludes) is True
+    assert CoverageAgent._is_excluded_coverage_target("tools/main.py", excludes) is True
+    assert CoverageAgent._is_excluded_coverage_target("src/domain.py", excludes) is False
+
+
 @pytest.mark.asyncio
 async def test_autonomous_coverage_batch_excludes_configured_targets(
     tmp_path, fake_coverage_code_manager, monkeypatch

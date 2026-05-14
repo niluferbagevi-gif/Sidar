@@ -280,7 +280,8 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10` ve
   `AUTONOMOUS_LOOP_EXCLUDE_FILES=web_server.py,main.py,gui_launcher.py,cli.py` değerleri tek döngüde
   ajan bağlamına çok geniş coverage boşluğu veya yan etkili launcher/API giriş noktası
-  yüklenmesini engeller. `%5` gibi geniş
+  yüklenmesini engeller; bu liste dosya adı, repo-göreli yol, dizin prefix'i ve glob
+  deseni kabul eder. `%5` gibi geniş
   artışlar tek ajan denemesi hedefi olarak kullanılmamalı; `%0.5-%1` aralığı
   normal otonom ilerleme, `%0.1` ise `%99+` kritik eşiklerde kontrollü coverage
   kampanyası için tercih edilmelidir.
