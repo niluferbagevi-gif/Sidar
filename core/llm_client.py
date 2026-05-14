@@ -551,6 +551,9 @@ class OllamaClient(BaseLLMClient):
             "stream": stream,
             "options": options,
         }
+        keep_alive = str(_setting(self.config, "OLLAMA_KEEP_ALIVE", "")).strip()
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
         if json_mode:
             payload.update(self.json_mode_config())
 

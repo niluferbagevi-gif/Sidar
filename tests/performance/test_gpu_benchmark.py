@@ -42,6 +42,7 @@ _LATENCY_BUDGET_S: int = _gpu_smoke._env_int(
 )
 _MIN_TOKENS_PER_SEC: float = float(os.getenv("GPU_BENCH_MIN_TOKENS_PER_SEC", "10.0"))
 _OLLAMA_BASE_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434").removesuffix("/api")
+_OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m").strip()
 _PREWARM_REQUESTS: int = _gpu_smoke._env_int(
     "GPU_BENCH_PREWARM_REQUESTS", 3, min_value=1, max_value=12
 )
@@ -113,6 +114,7 @@ def _make_ollama_client() -> OllamaClient:
         OLLAMA_URL="http://localhost:11434",
         OLLAMA_TIMEOUT=_TIMEOUT,
         CODING_MODEL=_MODEL,
+        OLLAMA_KEEP_ALIVE=_OLLAMA_KEEP_ALIVE,
     )
     return OllamaClient(cfg)
 
@@ -154,6 +156,12 @@ async def _prepare_client(client: OllamaClient, http: httpx.AsyncClient) -> None
         )
 
 
+def _apply_keep_alive(payload: dict[str, object]) -> dict[str, object]:
+    if _OLLAMA_KEEP_ALIVE:
+        payload["keep_alive"] = _OLLAMA_KEEP_ALIVE
+    return payload
+
+
 def _ollama_options() -> dict[str, int | float]:
     """GPU throughput dalgalanmasını azaltmak için tek noktadan Ollama opsiyonları."""
     return {
@@ -176,7 +184,7 @@ async def _chat_content(prompt: str, http: httpx.AsyncClient) -> str:
         "stream": False,
         "options": _ollama_options(),
     }
-    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
+    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=_apply_keep_alive(payload))
     resp.raise_for_status()
     data = resp.json()
     return str(data.get("message", {}).get("content", ""))
@@ -224,7 +232,7 @@ async def _chat_with_metrics(prompt: str, http: httpx.AsyncClient) -> _Inference
         "stream": False,
         "options": _ollama_options(),
     }
-    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=payload)
+    resp = await http.post(f"{_OLLAMA_BASE_URL}/api/chat", json=_apply_keep_alive(payload))
     resp.raise_for_status()
     data = resp.json()
     return _InferenceMetrics(
@@ -247,7 +255,7 @@ async def _first_token_seconds(prompt: str, http: httpx.AsyncClient) -> float:
         "options": _ollama_options(),
     }
     started_at = time.perf_counter()
-    async with http.stream("POST", f"{_OLLAMA_BASE_URL}/api/chat", json=payload) as resp:
+    async with http.stream("POST", f"{_OLLAMA_BASE_URL}/api/chat", json=_apply_keep_alive(payload)) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
             if not line.strip():
@@ -308,6 +316,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     ), f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
     stddev_s: float = benchmark.stats["stddev"]
     iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
+    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
     benchmark.extra_info["latency_stddev_ms"] = round(stddev_s * 1000, 3)
     benchmark.extra_info["latency_iqr_ms"] = round(iqr_s * 1000, 3)
     if mean_s > 0:
@@ -336,6 +345,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
     num_parallel = _ollama_num_parallel()
     benchmark.extra_info["ollama_num_parallel"] = num_parallel
+    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
     benchmark.extra_info["benchmark_concurrency"] = _CONCURRENCY
     if _CONCURRENCY > 0:
         benchmark.extra_info["parallel_saturation_percent"] = round(
@@ -498,6 +508,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
         loop.run_until_complete(_prepare_client(client, http))
 
         runtime_profile = loop.run_until_complete(_model_runtime_profile(http))
+        benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
         benchmark.extra_info["quantization_level"] = runtime_profile["quantization_level"]
         benchmark.extra_info["architecture"] = runtime_profile["architecture"]
 
@@ -587,6 +598,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     assert result > 0.0, "TTFT sıfır döndü; streaming yanıt alınamadı."
     assert result <= _TTFT_BUDGET_S, f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
     mean_ttft: float = benchmark.stats["mean"]
+    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
     assert (
         mean_ttft <= _TTFT_BUDGET_S

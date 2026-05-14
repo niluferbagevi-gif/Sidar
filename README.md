@@ -361,7 +361,7 @@ cp .env.example .env
 ```bash
 # Resmi Linux kurulumu: https://ollama.com/download/linux
 ollama pull qwen2.5-coder:7b
-OLLAMA_NUM_PARALLEL=4 ollama serve
+OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 ```
 
 > Güvenlik notu: `install_sidar.sh` varsayılan olarak uzaktan kurulum scripti çalıştırmaz.
@@ -388,7 +388,7 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 
-> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4).
+> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir.
 
 > **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
 > Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
@@ -740,6 +740,7 @@ AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
 CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
 OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
+OLLAMA_KEEP_ALIVE=30m          # TTFT cold-start outlier'larını azaltmak için modeli sıcak tutar
 TEXT_MODEL=llama3.1:8b
 GEMINI_API_KEY=                 # Gemini kullanılacaksa
 OPENAI_API_KEY=                 # OpenAI kullanılacaksa

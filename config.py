@@ -94,6 +94,7 @@ class LLMClientSettings(BaseSettings):
     LITELLM_TIMEOUT: int = 60
     OLLAMA_URL: str = "http://localhost:11434/api"
     OLLAMA_TIMEOUT: int = 600
+    OLLAMA_KEEP_ALIVE: str = "30m"
     OLLAMA_CONTEXT_MAX_CHARS: int = 12000
     OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
     CODING_MODEL: str = "qwen2.5-coder:7b"
@@ -447,6 +448,7 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
+    OLLAMA_KEEP_ALIVE: str = LLM_SETTINGS.OLLAMA_KEEP_ALIVE
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     CODING_MODEL: str = LLM_SETTINGS.CODING_MODEL
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")

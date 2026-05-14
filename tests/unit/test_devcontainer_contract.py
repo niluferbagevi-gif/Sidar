@@ -39,6 +39,12 @@ def test_devcontainer_generated_log_directory_is_gitignored():
     assert ".devcontainer/logs/" in gitignore
 
 
+def test_devcontainer_starts_ollama_with_keep_alive_default():
+    setup_script = _read(".devcontainer/setup-codespaces.sh")
+
+    assert 'OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}" nohup ollama serve' in setup_script
+
+
 def test_devcontainer_bootstraps_pyright_lsp_tool_with_uv_tool_install():
     setup_script = _read(".devcontainer/setup-codespaces.sh")
 

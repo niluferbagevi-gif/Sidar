@@ -476,7 +476,7 @@ start_ollama_service() {
   else
     log "Ollama servisi arka planda başlatılıyor (${base_url})."
     mkdir -p .devcontainer/logs
-    nohup ollama serve > .devcontainer/logs/ollama.log 2>&1 &
+    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}" nohup ollama serve > .devcontainer/logs/ollama.log 2>&1 &
     sleep 2
   fi
 

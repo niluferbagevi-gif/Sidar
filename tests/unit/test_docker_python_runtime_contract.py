@@ -41,6 +41,13 @@ def test_compose_cpu_builds_use_python_311_base_image():
     assert "python:3.12-slim" not in compose
 
 
+def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
+    compose = _read("docker-compose.yml")
+
+    assert "OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}" in compose
+    assert "OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}" in compose
+
+
 def test_prod_staging_helm_values_do_not_pin_python_312_images():
     helm_files = [
         *ROOT.glob("helm/sidar/values*.yaml"),

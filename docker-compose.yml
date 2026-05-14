@@ -41,6 +41,7 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
     ports:
       - "11434:11434"
     volumes:

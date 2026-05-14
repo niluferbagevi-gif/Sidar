@@ -1007,6 +1007,48 @@ async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(
 
 
 @pytest.mark.asyncio
+async def test_ollama_client_chat_sends_keep_alive_to_reduce_cold_start_outliers(
+    mock_config, respx_mock_router
+) -> None:
+    cfg = mock_config(
+        CODING_MODEL="m1",
+        OLLAMA_URL="http://x/api",
+        OLLAMA_TIMEOUT=30,
+        OLLAMA_KEEP_ALIVE="45m",
+        ENABLE_TRACING=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    route = respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    _ = await client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False)
+
+    payload = json.loads(route.calls.last.request.content.decode("utf-8"))
+    assert payload["keep_alive"] == "45m"
+
+
+@pytest.mark.asyncio
+async def test_ollama_client_chat_omits_blank_keep_alive(mock_config, respx_mock_router) -> None:
+    cfg = mock_config(
+        CODING_MODEL="m1",
+        OLLAMA_URL="http://x/api",
+        OLLAMA_TIMEOUT=30,
+        OLLAMA_KEEP_ALIVE="   ",
+        ENABLE_TRACING=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    route = respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    _ = await client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False)
+
+    payload = json.loads(route.calls.last.request.content.decode("utf-8"))
+    assert "keep_alive" not in payload
+
+
+@pytest.mark.asyncio
 async def test_ollama_client_chat_does_not_send_num_gpu_when_use_gpu_disabled(
     mock_config, respx_mock_router
 ) -> None:

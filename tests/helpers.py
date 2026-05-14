@@ -22,6 +22,7 @@ def make_test_config(**overrides: Any) -> MagicMock:
         "AI_PROVIDER": "ollama",
         "OLLAMA_URL": "http://localhost:11434",
         "OLLAMA_CONTEXT_MAX_CHARS": 12000,
+        "OLLAMA_KEEP_ALIVE": "30m",
         "LLM_MAX_RETRIES": 2,
         "LLM_RETRY_BASE_DELAY": 0.01,
         "LLM_RETRY_MAX_DELAY": 0.02,
