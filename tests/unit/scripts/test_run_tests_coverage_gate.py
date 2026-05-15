@@ -79,6 +79,14 @@ def test_env_examples_document_redis_connection_pool_limits() -> None:
     assert "REDIS_MAX_CONNECTIONS=5" in env_test_example
 
 
+def test_env_example_uses_loopback_web_host_by_default() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "WEB_HOST=127.0.0.1" in env_example
+    assert "WEB_HOST=0.0.0.0" not in env_example
+    assert "production/container için bilinçli override" in env_example
+
+
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
