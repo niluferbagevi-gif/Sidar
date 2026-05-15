@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
@@ -46,6 +47,38 @@ def _setup_logging(level: str) -> None:
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
     logging.getLogger().setLevel(log_level)
+
+
+def _format_doctor_summary(report: dict[str, Any]) -> str:
+    """Render a compact, actionable doctor summary for the interactive CLI."""
+    lines = [f"Sidar Doctor overall_status={report.get('overall_status', 'unknown')}"]
+    checks = report.get("checks", [])
+    if isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            status = str(check.get("status", "warn") or "warn")
+            if status == "pass":
+                continue
+            icon = {"warn": "⚠", "fail": "❌"}.get(status, "ℹ️")
+            name = check.get("name", "doctor")
+            message = check.get("message", "")
+            lines.append(f"{icon} Doctor/{name}: {message}")
+            details = check.get("details", {})
+            if isinstance(details, dict):
+                for command in details.get("recommended_commands", [])[:3]:
+                    lines.append(f"   • Komut: {command}")
+    return "\n".join(lines)
+
+
+def _run_doctor_summary(output_path: str = "artifacts/install/doctor.json") -> str:
+    """Run doctor and return a short CLI-friendly summary."""
+    from core.doctor import run_doctor_report
+
+    path = Path(output_path)
+    report = run_doctor_report(output_path=path, include_model_smoke=False)
+    summary = _format_doctor_summary(report)
+    return f"{summary}\nRapor: {path}"
 
 
 # ─────────────────────────────────────────────
@@ -88,6 +121,7 @@ Komutlar:
   /reset      — Konuşma belleğini temizle (alias)
   .audit      — Proje denetimini çalıştır
   .health     — Sistem sağlık raporu
+  .doctor     — Doctor sağlık raporu üret ve özetle
   .gpu        — GPU belleğini optimize et
   .github     — GitHub bağlantı durumu
   .level      — Mevcut erişim seviyesini göster
@@ -153,7 +187,10 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     print(f"  Belge Deposu    : {docs_status}")
     if "pgvector (pasif)" in docs_status:
         print(
-            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+            "  RAG Uyarısı     : pgvector pasif; `.doctor` veya `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+        )
+        print(
+            "  DB İpucu        : auth/parola uyarısı varsa önce `uv run python -m scripts.sync_postgres_password --dry-run` komutuyla planı doğrulayın."
         )
     if "RAG: 0 belge" in docs_status:
         print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")
@@ -188,6 +225,9 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             continue
         elif user_input.lower() == ".health":
             print(agent.health.full_report())
+            continue
+        elif user_input.lower() == ".doctor":
+            print(_run_doctor_summary())
             continue
         elif user_input.lower() == ".gpu":
             print(agent.health.optimize_gpu_memory())
