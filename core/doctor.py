@@ -143,6 +143,35 @@ def _validate_postgres_env_sync(
     return failures, warnings
 
 
+def _validate_database_url_pair_sync(
+    *,
+    database_parsed: Any,
+    container_parsed: Any,
+) -> tuple[list[str], list[str]]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    if not (_is_postgres_url(database_parsed) and _is_postgres_url(container_parsed)):
+        return failures, warnings
+
+    database_user = unquote(str(getattr(database_parsed, "username", "") or ""))
+    container_user = unquote(str(getattr(container_parsed, "username", "") or ""))
+    database_password = unquote(str(getattr(database_parsed, "password", "") or ""))
+    container_password = unquote(str(getattr(container_parsed, "password", "") or ""))
+    database_name = _database_name(database_parsed)
+    container_name = _database_name(container_parsed)
+
+    if database_user and container_user and database_user != container_user:
+        failures.append("DATABASE_URL user does not match SIDAR_CONTAINER_DATABASE_URL user")
+    if database_password and container_password and database_password != container_password:
+        failures.append(
+            "DATABASE_URL password does not match SIDAR_CONTAINER_DATABASE_URL password; "
+            "local and Docker PostgreSQL authentication will drift"
+        )
+    if database_name and container_name and database_name != container_name:
+        warnings.append("DATABASE_URL database name does not match SIDAR_CONTAINER_DATABASE_URL")
+    return failures, warnings
+
+
 def check_database_env() -> DoctorCheck:
     database_url = os.getenv("DATABASE_URL", "").strip()
     container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
@@ -178,6 +207,13 @@ def check_database_env() -> DoctorCheck:
         )
         failures.extend(container_failures)
         warnings.extend(container_warnings)
+    if database_url and container_url:
+        pair_failures, pair_warnings = _validate_database_url_pair_sync(
+            database_parsed=parsed,
+            container_parsed=container_parsed,
+        )
+        failures.extend(pair_failures)
+        warnings.extend(pair_warnings)
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 

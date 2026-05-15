@@ -1172,6 +1172,7 @@ async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_er
 
     assert "yetki/parola hatası" in msg
     assert "DATABASE_URL" in msg
+    assert "SIDAR_CONTAINER_DATABASE_URL" in msg
     assert "POSTGRES_PASSWORD" in msg
     assert "BM25 fallback aktif edildi" in msg
     assert "password authentication failed" not in msg
@@ -3101,7 +3102,9 @@ async def test_pgvector_failure_action_message_specific_branches() -> None:
     )
 
 
-async def test_entity_graph_loading_normalization_and_json_extraction_branches(tmp_path: Path) -> None:
+async def test_entity_graph_loading_normalization_and_json_extraction_branches(
+    tmp_path: Path,
+) -> None:
     store = _make_store_stub(tmp_path)
     graph_file = tmp_path / "entity_graph.json"
     store.entity_graph_file = graph_file
@@ -3126,7 +3129,9 @@ async def test_entity_graph_loading_normalization_and_json_extraction_branches(t
     assert store._extract_json_entities([{"platform": "LinkedIn"}])[0].label == "Channel"
 
 
-async def test_extract_document_entities_json_tags_empty_and_invalid_branches(tmp_path: Path) -> None:
+async def test_extract_document_entities_json_tags_empty_and_invalid_branches(
+    tmp_path: Path,
+) -> None:
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
 
@@ -3248,7 +3253,9 @@ async def test_entity_extraction_empty_values_and_invalid_relation_skip(tmp_path
     # Empty JSON list and empty cleaned campaign value cover recursion/no-op branches.
     assert store._extract_json_entities([]) == []
     assert store._extract_json_entities({"campaign": "---"}) == []
-    entities, relations = store.extract_document_entities("", "Campaign: ---", tags=["unknown:value"])
+    entities, relations = store.extract_document_entities(
+        "", "Campaign: ---", tags=["unknown:value"]
+    )
     assert entities == []
     assert relations == []
 

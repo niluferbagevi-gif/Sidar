@@ -203,13 +203,46 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert check.details["postgres_db_set"] is True
 
 
+def test_database_env_fails_when_local_and_container_passwords_drift_without_postgres_password(
+    monkeypatch,
+):
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("POSTGRES_USER", raising=False)
+    monkeypatch.delenv("POSTGRES_DB", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+    monkeypatch.setenv(
+        "SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:" + "b" * 24 + "@postgres:5432/sidar"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert (
+        "DATABASE_URL password does not match SIDAR_CONTAINER_DATABASE_URL password"
+        in check.message
+    )
+
+
+def test_database_env_warns_when_local_and_container_database_names_drift(monkeypatch):
+    password = "a" * 24
+    monkeypatch.delenv("POSTGRES_DB", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+    monkeypatch.setenv(
+        "SIDAR_CONTAINER_DATABASE_URL", f"postgresql://sidar:{password}@postgres:5432/sidar_ci"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "warn"
+    assert "DATABASE_URL database name does not match SIDAR_CONTAINER_DATABASE_URL" in check.message
+
+
 def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypatch):
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
-    monkeypatch.setenv(
-        "DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other"
-    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other")
 
     check = doctor.check_database_env()
 
