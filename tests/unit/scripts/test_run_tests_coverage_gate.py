@@ -60,6 +60,24 @@ def test_env_examples_document_postgres_host_consistently() -> None:
         assert "POSTGRES_HOST=localhost" in content
 
 
+def test_development_env_keeps_postgres_password_single_source() -> None:
+    content = Path(".env.development.example").read_text(encoding="utf-8")
+
+    assert content.count("replace-with-a-strong-24-plus-character-password") == 1
+    assert "DATABASE_URL=postgresql" not in content
+    assert "SIDAR_CONTAINER_DATABASE_URL=postgresql" not in content
+    assert "SELF_HEAL_DATABASE_URL=postgresql" not in content
+    assert "POSTGRES_* bileşenlerinden otomatik türetir" in content
+
+
+def test_docker_compose_derives_database_url_from_postgres_components() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "SIDAR_CONTAINER_DATABASE_URL" not in compose
+    assert compose.count("POSTGRES_HOST=postgres") == 4
+    assert compose.count("DATABASE_URL=") == 4
+
+
 def test_env_examples_do_not_use_legacy_google_api_key_for_gemini() -> None:
     for env_path in (".env.example", ".env.development.example", ".env.test.example"):
         content = Path(env_path).read_text(encoding="utf-8")
