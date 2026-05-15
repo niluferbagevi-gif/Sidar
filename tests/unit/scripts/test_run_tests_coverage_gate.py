@@ -78,6 +78,36 @@ def test_env_example_has_production_required_secret_checklist() -> None:
         assert f"{secret_name}=" in env_example
 
 
+def test_modular_env_example_fragments_reconstruct_canonical_template() -> None:
+    fragment_dir = Path(".env.example.d")
+    fragments = sorted(fragment_dir.glob("[0-9][0-9]-*.env"))
+    canonical = Path(".env.example").read_text(encoding="utf-8").replace("\r\n", "\n")
+    reconstructed = "".join(
+        fragment.read_text(encoding="utf-8").replace("\r\n", "\n") for fragment in fragments
+    )
+
+    assert [fragment.name for fragment in fragments] == [
+        "00-header.env",
+        "01-llm-access.env",
+        "02-agent-runtime.env",
+        "03-data-observability.env",
+        "04-security-sandbox-web.env",
+        "05-autonomy-learning-multimodal.env",
+        "06-integrations.env",
+    ]
+    assert reconstructed == canonical
+    assert all(
+        len(fragment.read_text(encoding="utf-8").splitlines()) <= 260 for fragment in fragments
+    )
+
+
+def test_modular_env_example_readme_documents_concatenation_workflow() -> None:
+    readme = Path(".env.example.d/README.md").read_text(encoding="utf-8")
+
+    assert "cat .env.example.d/[0-9][0-9]-*.env > .env" in readme
+    assert "canonical template" in readme
+
+
 def test_env_examples_document_postgres_host_consistently() -> None:
     for env_path in (".env.example", ".env.development.example", ".env.test.example"):
         content = Path(env_path).read_text(encoding="utf-8")
