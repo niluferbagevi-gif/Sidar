@@ -19,7 +19,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: sidar
-          POSTGRES_PASSWORD: sidar
+          POSTGRES_PASSWORD: sidar_test_only
           POSTGRES_DB: sidar
         ports:
           - 5432:5432
@@ -45,12 +45,12 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_USER: sidar
-      POSTGRES_PASSWORD: sidar
+      POSTGRES_PASSWORD: sidar_test_only
       POSTGRES_DB: sidar
       TEST_DATABASE_NAME: sidar_test
       TEST_DATABASE_USER: sidar
-      TEST_DATABASE_PASSWORD: sidar
-      DATABASE_URL: postgresql+asyncpg://sidar:sidar@localhost:5432/sidar_test
+      TEST_DATABASE_PASSWORD: sidar_test_only
+      DATABASE_URL: postgresql+asyncpg://sidar:sidar_test_only@localhost:5432/sidar_test
       REDIS_URL: redis://localhost:6379/0
 
     steps:
@@ -120,7 +120,7 @@ jobs:
 
       - name: Prepare isolated test database (sidar_test) + Alembic upgrade
         env:
-          PGPASSWORD: sidar
+          PGPASSWORD: sidar_test_only
         run: |
           psql -h localhost -U sidar -d postgres -v ON_ERROR_STOP=1 \
             -c "DROP DATABASE IF EXISTS sidar_test WITH (FORCE);" \

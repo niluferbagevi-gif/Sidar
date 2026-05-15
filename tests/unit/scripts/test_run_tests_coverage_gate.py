@@ -85,6 +85,19 @@ def test_env_examples_document_postgres_host_consistently() -> None:
         assert "POSTGRES_HOST=localhost" in content
 
 
+def test_test_postgres_password_is_test_only_not_default_project_name() -> None:
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+    run_tests = Path("run_tests.sh").read_text(encoding="utf-8")
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "POSTGRES_PASSWORD=sidar_test_only" in env_test_example
+    assert "POSTGRES_PASSWORD=sidar\n" not in env_test_example
+    assert "POSTGRES_PASSWORD:-sidar_test_only" in run_tests
+    assert "POSTGRES_PASSWORD: sidar_test_only" in ci_workflow
+    assert "TEST_DATABASE_PASSWORD: sidar_test_only" in ci_workflow
+    assert "sidar:sidar@localhost" not in ci_workflow
+
+
 def test_development_env_keeps_postgres_password_single_source() -> None:
     content = Path(".env.development.example").read_text(encoding="utf-8")
 
