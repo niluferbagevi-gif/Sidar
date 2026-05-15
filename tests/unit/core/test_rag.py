@@ -1171,9 +1171,10 @@ async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_er
     )
 
     assert "yetki/parola hatası" in msg
-    assert "DATABASE_URL" in msg
-    assert "SIDAR_CONTAINER_DATABASE_URL" in msg
+    assert "POSTGRES_USER" in msg
     assert "POSTGRES_PASSWORD" in msg
+    assert "POSTGRES_HOST" in msg
+    assert "POSTGRES_DB" in msg
     assert "BM25 fallback aktif edildi" in msg
     assert "password authentication failed" not in msg
     assert "raw driver text" not in msg

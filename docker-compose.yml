@@ -76,7 +76,7 @@ services:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
+      - POSTGRES_HOST=postgres
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
 
@@ -137,7 +137,7 @@ services:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
+      - POSTGRES_HOST=postgres
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       - USE_GPU=true
@@ -204,7 +204,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
+      - POSTGRES_HOST=postgres
 
     env_file:
       - .env
@@ -272,7 +272,7 @@ services:
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:?Set SIDAR_CONTAINER_DATABASE_URL with a strong database password in .env}
+      - POSTGRES_HOST=postgres
 
     env_file:
       - .env

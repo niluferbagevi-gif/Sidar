@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -141,6 +142,47 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     if not value:
         return default
     return [item.strip() for item in value.split(separator) if item.strip()]
+
+
+def _postgres_env_value(key: str, default: str, *, preserve_blank: bool = False) -> str:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    value = raw.strip()
+    if preserve_blank:
+        return value
+    return value or default
+
+
+def build_postgres_database_url(*, host: str | None = None) -> str:
+    """Build the Sidar PostgreSQL DSN from root POSTGRES_* variables."""
+
+    scheme = os.getenv("POSTGRES_DSN_SCHEME", "postgresql+asyncpg").strip() or "postgresql+asyncpg"
+    user = quote(_postgres_env_value("POSTGRES_USER", "sidar"), safe="")
+    password = quote(_postgres_env_value("POSTGRES_PASSWORD", "sidar", preserve_blank=True), safe="")
+    resolved_host = quote(host or _postgres_env_value("POSTGRES_HOST", "localhost"), safe="")
+    port = _postgres_env_value("POSTGRES_PORT", "5432")
+    database = quote(_postgres_env_value("POSTGRES_DB", "sidar"), safe="")
+    return f"{scheme}://{user}:{password}@{resolved_host}:{port}/{database}"
+
+
+def resolve_database_url() -> str:
+    """Resolve DATABASE_URL, deriving it from POSTGRES_* roots when no override exists."""
+
+    explicit = os.getenv("DATABASE_URL", "").strip()
+    if explicit:
+        return explicit
+    return build_postgres_database_url()
+
+
+def resolve_container_database_url() -> str:
+    """Resolve the Docker-internal PostgreSQL DSN without requiring it in .env."""
+
+    explicit = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    if explicit:
+        return explicit
+    container_host = os.getenv("SIDAR_CONTAINER_POSTGRES_HOST", "postgres").strip() or "postgres"
+    return build_postgres_database_url(host=container_host)
 
 
 def get_db_pool_size_default() -> int:
@@ -542,9 +584,8 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
-    )
+    DATABASE_URL: str = resolve_database_url()
+    SIDAR_CONTAINER_DATABASE_URL: str = resolve_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True

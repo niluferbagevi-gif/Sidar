@@ -19,6 +19,9 @@ def _isolate_database_env(monkeypatch):
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
         "POSTGRES_DB",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "SIDAR_CONTAINER_POSTGRES_HOST",
         "RAG_VECTOR_BACKEND",
         "ENABLE_GRAPH_RAG",
         "RAG_DIR",
@@ -177,6 +180,23 @@ def test_database_env_warns_without_url(monkeypatch):
 
     assert check.status == "warn"
     assert check.details["database_url_set"] is False
+
+
+def test_database_env_derives_urls_from_postgres_roots(monkeypatch):
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_HOST", "localhost")
+    monkeypatch.setenv("POSTGRES_PORT", "5432")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    check = doctor.check_database_env()
+
+    assert check.status == "pass"
+    assert check.details["database_url_set"] is True
+    assert check.details["database_url_derived"] is True
+    assert check.details["container_database_url_derived"] is True
+    assert check.details["scheme"] == "postgresql+asyncpg"
+    assert check.details["container_scheme"] == "postgresql+asyncpg"
 
 
 def test_database_env_fails_for_weak_passwords_and_legacy_container_url(monkeypatch):

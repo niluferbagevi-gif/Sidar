@@ -63,6 +63,43 @@ def test_get_db_pool_size_default_respects_postgres_and_hard_cap(monkeypatch):
     assert config.get_db_pool_size_default() == 12
 
 
+
+def test_resolve_database_url_derives_from_postgres_roots(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss word")
+    monkeypatch.setenv("POSTGRES_HOST", "db.local")
+    monkeypatch.setenv("POSTGRES_PORT", "6543")
+    monkeypatch.setenv("POSTGRES_DB", "sidar-db")
+
+    assert (
+        config.resolve_database_url()
+        == "postgresql+asyncpg://sidar%20user:p%40ss%20word@db.local:6543/sidar-db"
+    )
+
+
+def test_resolve_database_url_keeps_explicit_override(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///tmp/sidar.db")
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "ignored")
+
+    assert config.resolve_database_url() == "sqlite+aiosqlite:///tmp/sidar.db"
+
+
+def test_resolve_container_database_url_uses_postgres_service_host(monkeypatch):
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
+    monkeypatch.setenv("POSTGRES_HOST", "localhost")
+    monkeypatch.setenv("POSTGRES_PORT", "5432")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    assert (
+        config.resolve_container_database_url()
+        == "postgresql+asyncpg://sidar:secret@postgres:5432/sidar"
+    )
+
+
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
     original = config.Config.AI_PROVIDER
     config.Config.AI_PROVIDER = "ollama"

@@ -46,8 +46,9 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
     ):
         return (
             "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
-            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
-            "POSTGRES_PASSWORD değerlerinin aynı olduğundan emin olun. "
+            ".env dosyanızdaki POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, "
+            "POSTGRES_PORT ve POSTGRES_DB kök değişkenlerini kontrol edin; "
+            "stale DATABASE_URL override tutmayın. "
             "SQLite degraded mode aktif edildi."
         )
     if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):

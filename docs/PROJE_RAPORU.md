@@ -1214,7 +1214,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///data/sidar.db` | Kalıcı bellek, kullanıcı, tenant-policy, audit ve pgvector için ana DB bağlantısı |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` | `sidar` / `sidar` / `localhost` / `5432` / `sidar` | `DATABASE_URL` değerinin DRY biçimde türetildiği kök PostgreSQL bağlantı ayarları |
 | `DB_POOL_SIZE` / `DB_SCHEMA_VERSION_TABLE` / `DB_SCHEMA_TARGET_VERSION` | `5` / `schema_versions` / `1` | Bağlantı havuzu ve şema sürümleme ayarları |
 | `RAG_DIR` | `data/rag` | Yerel belge deposu dizini; Chroma tabanlı kurulumlarda veri kökü olarak kullanılır |
 | `RAG_TOP_K` / `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` / `RAG_FILE_THRESHOLD` | `3` / `1000` / `200` / `20000` | Hibrit arama ve chunking ayarları |
@@ -1222,7 +1222,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `PGVECTOR_TABLE` / `PGVECTOR_EMBEDDING_DIM` / `PGVECTOR_EMBEDDING_MODEL` | `rag_embeddings` / `384` / `all-MiniLM-L6-v2` | PostgreSQL/pgvector tarafında embedding tablo ve model ayarları |
 | `MEMORY_ENCRYPTION_KEY` | `""` | Bellek kayıtlarını Fernet ile şifrelemek için opsiyonel anahtar |
 
-> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` ve şema versiyon anahtarları çalışma zamanı ile `.env.example` şablonunda senkronize tutulur.
+> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` çalışma zamanında `POSTGRES_*` köklerinden türetilir; `.env.example` şablonunda tam DSN satırı tutulmaz.
 
 ### 12.4 Anlamsal Önbellek, Redis ve Event Bus
 
