@@ -7,6 +7,7 @@ opaque installation phase.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -107,6 +108,49 @@ def check_uv() -> DoctorCheck:
 
 def _is_postgres_url(parsed: Any) -> bool:
     return bool(parsed and str(parsed.scheme).startswith("postgresql"))
+
+
+def _normalize_postgres_dsn(database_url: str) -> str:
+    return str(database_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
+def _redact_url(database_url: str) -> str:
+    text = str(database_url or "").strip()
+    if not text or "://" not in text:
+        return text
+    scheme, rest = text.split("://", 1)
+    if "@" not in rest:
+        return text
+    credentials, host_part = rest.split("@", 1)
+    if ":" not in credentials:
+        return text
+    username = credentials.split(":", 1)[0]
+    return f"{scheme}://{username}:***@{host_part}"
+
+
+def _redact_exception_text(exc: BaseException, *, database_url: str = "") -> str:
+    text = str(exc)
+    candidates = {database_url, _normalize_postgres_dsn(database_url), _redact_url(database_url)}
+    for candidate in sorted((value for value in candidates if value), key=len, reverse=True):
+        text = text.replace(candidate, _redact_url(candidate))
+    return text
+
+
+def _get_bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _load_json_object(path: Path) -> dict[str, Any]:
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
 
 
 def _database_name(parsed: Any) -> str:
@@ -233,6 +277,151 @@ def check_database_env() -> DoctorCheck:
             "container_scheme": container_parsed.scheme if container_parsed else "",
         },
     )
+
+
+async def _probe_postgres_connectivity(
+    database_url: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    import asyncpg
+
+    conn = await asyncio.wait_for(
+        asyncpg.connect(dsn=_normalize_postgres_dsn(database_url)),
+        timeout=timeout_seconds,
+    )
+    try:
+        one = await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=timeout_seconds)
+        vector_installed = await asyncio.wait_for(
+            conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')"),
+            timeout=timeout_seconds,
+        )
+        return {"select_1": one == 1, "pgvector_extension_installed": bool(vector_installed)}
+    finally:
+        await conn.close()
+
+
+def check_database_connectivity() -> DoctorCheck:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    parsed = urlparse(database_url) if database_url else None
+    details: dict[str, Any] = {
+        "database_url_set": bool(database_url),
+        "database_url": _redact_url(database_url),
+        "scheme": parsed.scheme if parsed else "",
+        "recommended_commands": [
+            "docker compose ps postgres",
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+        ],
+    }
+    if not database_url:
+        return DoctorCheck(
+            "database_connectivity",
+            "warn",
+            "DATABASE_URL is not set; PostgreSQL connectivity smoke was skipped",
+            details,
+        )
+    if not _is_postgres_url(parsed):
+        return DoctorCheck(
+            "database_connectivity",
+            "pass",
+            "non-PostgreSQL DATABASE_URL configured; PostgreSQL connectivity smoke skipped",
+            details,
+        )
+
+    timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
+    details["timeout_seconds"] = timeout_seconds
+    try:
+        probe = asyncio.run(
+            _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
+        )
+        details.update(probe)
+    except ModuleNotFoundError as exc:
+        details["error"] = _redact_exception_text(exc, database_url=database_url)
+        return DoctorCheck(
+            "database_connectivity",
+            "warn",
+            "asyncpg is unavailable; run `uv sync --all-extras` before PostgreSQL smoke checks",
+            details,
+        )
+    except Exception as exc:
+        details["error"] = _redact_exception_text(exc, database_url=database_url)
+        details["error_type"] = type(exc).__name__
+        return DoctorCheck(
+            "database_connectivity",
+            "warn",
+            "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and pgvector/BM25 fallback may be used",
+            details,
+        )
+
+    if os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() == "pgvector" and not details.get(
+        "pgvector_extension_installed"
+    ):
+        return DoctorCheck(
+            "database_connectivity",
+            "warn",
+            "PostgreSQL is reachable, but pgvector extension is not installed yet",
+            details,
+        )
+    return DoctorCheck(
+        "database_connectivity",
+        "pass",
+        "PostgreSQL connectivity smoke passed",
+        details,
+    )
+
+
+def check_rag_readiness() -> DoctorCheck:
+    vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() or "chroma"
+    graph_enabled = _get_bool_env("ENABLE_GRAPH_RAG", True)
+    rag_dir = Path(os.getenv("RAG_DIR", "data/rag"))
+    if not rag_dir.is_absolute():
+        rag_dir = BASE_DIR / rag_dir
+
+    index = _load_json_object(rag_dir / "index.json")
+    entity_graph = _load_json_object(rag_dir / "entity_graph.json")
+    entity_nodes = entity_graph.get("nodes", {}) if isinstance(entity_graph, dict) else {}
+    entity_edges = entity_graph.get("edges", []) if isinstance(entity_graph, dict) else []
+    document_count = len(index)
+    entity_node_count = len(entity_nodes) if isinstance(entity_nodes, dict) else 0
+    entity_edge_count = len(entity_edges) if isinstance(entity_edges, list) else 0
+
+    details: dict[str, Any] = {
+        "vector_backend": vector_backend,
+        "graph_rag_enabled": graph_enabled,
+        "rag_dir": str(rag_dir),
+        "document_count": document_count,
+        "entity_node_count": entity_node_count,
+        "entity_edge_count": entity_edge_count,
+        "bm25_fallback": "SQLite FTS5",
+        "recommended_commands": [
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+            "docker compose ps postgres",
+        ],
+    }
+
+    failures: list[str] = []
+    warnings: list[str] = []
+    if vector_backend == "pgvector":
+        database_check = check_database_env()
+        details["database_env_status"] = database_check.status
+        if database_check.status == "fail":
+            failures.append(
+                "pgvector backend is configured but database environment parity failed; semantic RAG will fall back to BM25"
+            )
+    if not graph_enabled:
+        warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
+    if document_count == 0:
+        warnings.append(
+            "RAG has no indexed documents yet; searches will rely on code graph/keyword/BM25 only"
+        )
+    if entity_node_count == 0 and graph_enabled:
+        warnings.append(
+            "GraphRAG entity memory is empty until documents are indexed or entity extraction runs"
+        )
+
+    status = "fail" if failures else ("warn" if warnings else "pass")
+    message = "; ".join(failures or warnings or ["RAG readiness looks healthy"])
+    return DoctorCheck("rag_readiness", status, message, details)
 
 
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
@@ -454,6 +643,8 @@ def run_doctor_report(
     checks = [
         check_uv(),
         check_database_env(),
+        check_database_connectivity(),
+        check_rag_readiness(),
         check_migrations(),
         check_agent_catalog(),
         check_supervisor_routing(),
