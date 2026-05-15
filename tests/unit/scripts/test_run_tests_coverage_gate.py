@@ -61,3 +61,27 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
         assert "BENCHMARK_ENABLE_COMPARE=true" in content
         assert "BENCHMARK_COMPARE_REQUIRED=false" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
+
+
+def test_dev_and_test_env_examples_keep_database_password_single_source() -> None:
+    dev_env = Path(".env.development.example").read_text(encoding="utf-8")
+    test_env = Path(".env.test.example").read_text(encoding="utf-8")
+
+    assert "OLLAMA_NUM_PARALLEL=4" in dev_env
+    assert "POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password" in dev_env
+    assert "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}" not in dev_env
+    assert "Bu dosyada tam DSN veya ek parola kopyası tutmayın" in dev_env
+
+    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" in test_env
+    assert "POSTGRES_PASSWORD=sidar\n" not in test_env
+    assert "postgresql+asyncpg://USER:PASSWORD@HOST:PORT/NAME" not in test_env
+    assert "GOOGLE_API_KEY" not in test_env
+    assert "OLLAMA_NUM_PARALLEL=4" in test_env
+
+
+def test_run_tests_uses_secure_test_password_default_and_redacts_dsn_log() -> None:
+    script = _script()
+
+    assert 'POSTGRES_PASSWORD:-sidar_test_secure_pw' in script
+    assert 'echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"' not in script
+    assert "Test veritabanı bağlantısı ayarlandı: user=${test_db_user}" in script
