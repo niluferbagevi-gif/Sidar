@@ -363,7 +363,7 @@ def test_database_connectivity_auth_failure_reports_volume_remediation_and_redac
     assert "Docker volume already existed" in check.message
     assert check.details["failure_category"] == "authentication"
     assert any("older password" in hint for hint in check.details["root_cause_hints"])
-    assert any("ALTER USER" in cmd for cmd in check.details["recommended_commands"])
+    assert any("sync_postgres_password --apply" in cmd for cmd in check.details["recommended_commands"])
     assert password not in check.details["error"]
     assert "postgresql+asyncpg://sidar:" not in check.details["error"]
 

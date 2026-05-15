@@ -239,6 +239,55 @@ async def test_interactive_loop_covers_commands_and_standard_response(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_interactive_loop_doctor_command_runs_summary(monkeypatch, capsys):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    agent = _InteractiveAgent(provider="ollama")
+    calls = []
+
+    async def fake_to_thread(_fn, _prompt):
+        if not calls:
+            calls.append("doctor")
+            return ".doctor"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(cli, "_run_doctor_summary", lambda: "DOCTOR:WARN")
+
+    await cli._interactive_loop_async(agent)
+    output = capsys.readouterr().out
+
+    assert "DOCTOR:WARN" in output
+
+
+def test_format_doctor_summary_includes_warn_commands(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+
+    summary = cli._format_doctor_summary(
+        {
+            "overall_status": "warn",
+            "checks": [
+                {"name": "uv", "status": "pass", "message": "ok"},
+                {
+                    "name": "database_connectivity",
+                    "status": "warn",
+                    "message": "auth failed",
+                    "details": {
+                        "recommended_commands": [
+                            "docker compose ps postgres",
+                            "uv run python -m scripts.sync_postgres_password --dry-run",
+                        ]
+                    },
+                },
+            ],
+        }
+    )
+
+    assert "overall_status=warn" in summary
+    assert "Doctor/database_connectivity" in summary
+    assert "sync_postgres_password --dry-run" in summary
+
+
+@pytest.mark.asyncio
 async def test_interactive_loop_prints_rag_action_hints(monkeypatch, capsys):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(provider="ollama", use_gpu=True)

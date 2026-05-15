@@ -145,6 +145,7 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
     text = f"{type(exc).__name__} {exc}".lower()
     common_commands = [
         "docker compose ps postgres",
+        "uv run python -m scripts.sync_postgres_password --dry-run",
         "uv run python -m core.doctor artifacts/install/doctor.json",
     ]
     if any(
@@ -172,12 +173,12 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                 ],
                 "remediation_steps": [
                     "Compare POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, DATABASE_URL and SIDAR_CONTAINER_DATABASE_URL in .env.",
-                    "If the env values are correct but auth still fails, run ALTER USER for the existing PostgreSQL user or reset the PostgreSQL volume in development only.",
+                    "If the env values are correct but auth still fails, preview and apply the password sync helper for the existing PostgreSQL user.",
                     "Restart PostgreSQL and rerun `uv run python -m core.doctor artifacts/install/doctor.json`.",
                 ],
                 "recommended_commands": common_commands
                 + [
-                    "docker compose exec postgres psql -U postgres -d postgres -c \"ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';\"",
+                    "uv run python -m scripts.sync_postgres_password --apply",
                     "# development only: docker compose down && docker volume rm <sidar_postgres_data> && docker compose up -d postgres",
                 ],
             },
@@ -445,6 +446,7 @@ def check_database_connectivity() -> DoctorCheck:
         "scheme": parsed.scheme if parsed else "",
         "recommended_commands": [
             "docker compose ps postgres",
+            "uv run python -m scripts.sync_postgres_password --dry-run",
             "uv run python -m core.doctor artifacts/install/doctor.json",
         ],
     }
