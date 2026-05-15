@@ -46,11 +46,18 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert 'find .benchmarks -type f -name "*.json"' in script
     assert 'BENCHMARK_COMPARE_FILE="${latest_file}"' in script
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
-    assert 'BASH_REMATCH' not in script[script.index("resolve_benchmark_compare_target()") :]
+    assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+
+
+def test_env_examples_document_postgres_host_consistently() -> None:
+    for env_path in (".env.example", ".env.development.example", ".env.test.example"):
+        content = Path(env_path).read_text(encoding="utf-8")
+
+        assert "POSTGRES_HOST=localhost" in content
 
 
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:

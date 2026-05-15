@@ -41,6 +41,27 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+def test_build_database_url_from_env_prefers_explicit_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///custom.db")
+    monkeypatch.setenv("POSTGRES_HOST", "db.internal")
+
+    assert config.build_database_url_from_env() == "sqlite+aiosqlite:///custom.db"
+
+
+def test_build_database_url_from_env_uses_postgres_components(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret@value")
+    monkeypatch.setenv("POSTGRES_HOST", "postgres")
+    monkeypatch.setenv("POSTGRES_PORT", "6543")
+    monkeypatch.setenv("POSTGRES_DB", "sidar db")
+
+    assert (
+        config.build_database_url_from_env()
+        == "postgresql+asyncpg://sidar%20user:secret%40value@postgres:6543/sidar%20db"
+    )
+
+
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "3")
     monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "60")

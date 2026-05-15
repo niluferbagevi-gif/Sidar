@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -141,6 +142,23 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     if not value:
         return default
     return [item.strip() for item in value.split(separator) if item.strip()]
+
+
+def build_database_url_from_env() -> str:
+    """DATABASE_URL yoksa POSTGRES_* bileşenlerinden async PostgreSQL URL'i üretir."""
+    explicit_database_url = os.getenv("DATABASE_URL", "").strip()
+    if explicit_database_url:
+        return explicit_database_url
+
+    postgres_user = quote(os.getenv("POSTGRES_USER", "sidar").strip() or "sidar", safe="")
+    postgres_password = quote(os.getenv("POSTGRES_PASSWORD", "sidar").strip() or "sidar", safe="")
+    postgres_host = os.getenv("POSTGRES_HOST", "localhost").strip() or "localhost"
+    postgres_port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    postgres_db = quote(os.getenv("POSTGRES_DB", "sidar").strip() or "sidar", safe="")
+    return (
+        f"postgresql+asyncpg://{postgres_user}:{postgres_password}"
+        f"@{postgres_host}:{postgres_port}/{postgres_db}"
+    )
 
 
 def get_db_pool_size_default() -> int:
@@ -542,9 +560,7 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
-    )
+    DATABASE_URL: str = build_database_url_from_env()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
