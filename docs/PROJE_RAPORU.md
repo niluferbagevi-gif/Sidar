@@ -1284,7 +1284,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `DOCKER_MEM_LIMIT` / `DOCKER_NETWORK_DISABLED` / `DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` / `SANDBOX_NETWORK` / `SANDBOX_PIDS_LIMIT` / `SANDBOX_TIMEOUT` | `256m` / `0.5` / `none` / `64` / `10` | `config.py::SANDBOX_LIMITS` sözlüğüne beslenen detaylı çalışma kotaları |
 | `WEB_HOST` / `WEB_PORT` / `WEB_GPU_PORT` | `0.0.0.0` / `7860` / `7861` | Web sunucusunun bind adresi ve portları |
-| `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `0/false` | HuggingFace model erişimi ve offline cache davranışı |
+| `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `false` | HuggingFace model erişimi ve offline cache davranışı |
 | `JUDGE_ENABLED` / `JUDGE_MODEL` / `JUDGE_PROVIDER` / `JUDGE_SAMPLE_RATE` | `false` / `""` / `ollama` / `0.2` | LLM-as-a-Judge kalite değerlendirme hattı |
 | `ENABLE_COST_ROUTING` ve `COST_ROUTING_*` | `false` / eşik ve model varsayılanları | Basit/karmaşık sorgular için maliyet odaklı model yönlendirmesi |
 | `ENABLE_ENTITY_MEMORY` / `ENTITY_MEMORY_TTL_DAYS` / `ENTITY_MEMORY_MAX_PER_USER` | `true` / `90` / `100` | Entity/persona memory kalıcılığı |

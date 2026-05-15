@@ -215,8 +215,8 @@ fi
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
-BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
-BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
+BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-true}"
+BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-false}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
@@ -233,6 +233,17 @@ FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
 DOCKER_TEST_SERVICES_STARTED=0
 DOCKER_COMPOSE_CMD=()
+
+is_truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
@@ -587,7 +598,7 @@ prepare_test_database() {
   local test_db_host="${POSTGRES_HOST:-localhost}"
   local admin_db_user="${POSTGRES_ADMIN_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_port="${POSTGRES_PORT:-5432}"
-  local reset_test_db="${RESET_TEST_DATABASE:-1}"
+  local reset_test_db="${RESET_TEST_DATABASE:-true}"
 
   if [ "${AUTO_PREPARE_TEST_DB:-1}" != "1" ]; then
     echo "ℹ️ AUTO_PREPARE_TEST_DB=0 verildi; test veritabanı hazırlığı atlanıyor."
@@ -615,8 +626,8 @@ prepare_test_database() {
     return 1
   fi
 
-  if [ "${reset_test_db}" = "1" ]; then
-    echo "♻️ RESET_TEST_DATABASE=1; test veritabanı sıfırlanıyor: ${test_db_name}"
+  if is_truthy_flag "${reset_test_db}"; then
+    echo "♻️ RESET_TEST_DATABASE=${reset_test_db}; test veritabanı sıfırlanıyor: ${test_db_name}"
     if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
       -U "${test_db_user}" -d postgres \
       -v ON_ERROR_STOP=1 \
@@ -938,21 +949,21 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
   )
 
-  if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
+  if is_truthy_flag "${BENCHMARK_ENABLE_COMPARE}"; then
     if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
       echo "📈 Benchmark karşılaştırması etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
-      if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
-        echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
-        echo "ℹ️ İlk kurulum/yerel bootstrap için BENCHMARK_COMPARE_REQUIRED=0 kullanın veya önce benchmark baseline üretin."
+      if is_truthy_flag "${BENCHMARK_COMPARE_REQUIRED}"; then
+        echo "❌ BENCHMARK_COMPARE_REQUIRED=${BENCHMARK_COMPARE_REQUIRED} iken karşılaştırma için baseline bulunamadı."
+        echo "ℹ️ İlk kurulum/yerel bootstrap için BENCHMARK_COMPARE_REQUIRED=false kullanın veya önce benchmark baseline üretin."
         BENCHMARK_EXIT_CODE=1
       fi
     fi
   else
-    echo "ℹ️ Benchmark karşılaştırması devre dışı (BENCHMARK_ENABLE_COMPARE=0)."
+    echo "ℹ️ Benchmark karşılaştırması devre dışı (BENCHMARK_ENABLE_COMPARE=${BENCHMARK_ENABLE_COMPARE})."
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then

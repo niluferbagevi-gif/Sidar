@@ -933,7 +933,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
             "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
     fi
 
-    local strict_postgres_reset_on_password_change="${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-0}}"
+    local strict_postgres_reset_on_password_change
+    strict_postgres_reset_on_password_change="$(normalize_bool "${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-false}}")"
 
     case "${should_reset:-E}" in
         E|e)
@@ -1021,10 +1022,10 @@ maybe_reset_postgres_volume_after_password_hardening() {
 
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
-        if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
+        if [[ "$strict_postgres_reset_on_password_change" == "true" ]]; then
             return 1
         fi
-        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
+        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=true veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=true ayarlanırsa bu durumda fail edilir)."
         return 0
     fi
     return 0
