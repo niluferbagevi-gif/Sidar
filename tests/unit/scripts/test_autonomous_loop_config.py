@@ -131,7 +131,7 @@ def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut()
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={
-            "AUTONOMOUS_LOOP_MUTATION_ENABLED": "1",
+            "AUTONOMOUS_LOOP_MUTATION_ENABLED": "true",
             "AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN": "8",
         },
     )
@@ -142,8 +142,18 @@ def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut()
         in output
     )
     assert (
-        "Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=1; max_children=8"
+        "Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=true; max_children=8"
         in output
     )
     assert "uv run --with mutmut mutmut run --max-children 8" in output
 
+
+
+def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
+    output = _run_autonomous_loop_config(
+        profile="short",
+        extra_env={"AUTONOMOUS_LOOP_MUTATION_ENABLED": "1"},
+    )
+
+    assert "AUTONOMOUS_LOOP_MUTATION_ENABLED true/false olmalı" in output
+    assert "AUTONOMOUS_LOOP_MUTATION_ENABLED=false" in output

@@ -2496,6 +2496,7 @@ install_python_deps() {
     fi
 
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
+    ensure_env_file_secrets_after_uv_sync
 }
 
 # ── 5.1 Pyright LSP aracını kur/doğrula ─────────────────────────────────────
@@ -3520,6 +3521,31 @@ report_env_api_key_status() {
     done
 }
 
+ensure_env_file_secrets_after_uv_sync() {
+    local env_file="$SCRIPT_DIR/.env"
+    local example_file="$SCRIPT_DIR/.env.example"
+
+    # uv venv / uv sync tamamlanır tamamlanmaz temel .env dosyasını hazırla.
+    # Bu adım bilinçli olarak interaktif değildir; kullanıcıyı manuel secret
+    # üretme yükünden kurtarır ve sonraki setup_env_file doğrulamasına sağlam
+    # başlangıç değerleri bırakır.
+    if [[ ! -f "$env_file" ]]; then
+        if [[ -f "$example_file" ]]; then
+            cp "$example_file" "$env_file"
+            ok ".env dosyası uv sync sonrası .env.example üzerinden oluşturuldu."
+        else
+            : > "$env_file"
+            warn ".env.example bulunamadı; boş .env oluşturuldu ve secret alanları eklenecek."
+        fi
+    elif [[ ! -s "$env_file" && -f "$example_file" ]]; then
+        cp "$example_file" "$env_file"
+        ok "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu."
+    fi
+
+    ensure_sidar_env_default "$env_file"
+    ensure_auto_secrets "$env_file"
+}
+
 # ── Otomatik Secret Üretimi ────────────────────────────────────────────────
 # Güvenlik anahtarlarını (API_KEY, JWT_SECRET_KEY, MEMORY_ENCRYPTION_KEY vb.)
 # .env boşsa veya bilinen güvensiz örnekse otomatik üretir.
@@ -3533,7 +3559,7 @@ ensure_auto_secrets() {
         local val
         val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
               | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
-        [[ -z "$val" ]] && return 0
+        is_weak_secret_value "$val" && return 0
         local bad
         for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
         return 1
@@ -3579,6 +3605,18 @@ except Exception:
     pass
 PY
     }
+
+    # ── POSTGRES_PASSWORD ────────────────────────────────────────────────────
+    if _is_missing_or_insecure "POSTGRES_PASSWORD" \
+        "change-me-to-a-strong-password" "replace-with-a-strong-24-plus-character-password"; then
+        local _v; _v=$(_gen_urlsafe 24)
+        if [[ -n "$_v" ]]; then
+            _write_secret "POSTGRES_PASSWORD" "$_v"
+            ok ".env: POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "POSTGRES_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
     if _is_missing_or_insecure "API_KEY" \
@@ -3765,7 +3803,7 @@ is_weak_secret_value() {
     local value="${1:-}"
     [[ -n "${value//[[:space:]]/}" ]] || return 0
     case "${value,,}" in
-        sidar|admin|password|changeme|change_me|secret|default|test|example|postgres|root|123456|12345678)
+        sidar|admin|password|changeme|change_me|change-me*|replace-with-*|secret|default|test|example|postgres|root|123456|12345678)
             return 0
             ;;
     esac

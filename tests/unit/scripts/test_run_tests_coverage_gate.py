@@ -68,6 +68,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "SIDAR_RABBITMQ_URL=" in env_advanced
     assert "SIDAR_KAFKA_BOOTSTRAP_SERVERS=" in env_advanced
     assert "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED=true" in env_advanced
+    assert "AUTONOMOUS_LOOP_MUTATION_ENABLED=true" in env_advanced
     assert "ENABLE_LORA_TRAINING=false" in env_advanced
     assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_advanced
 
@@ -103,3 +104,22 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
     assert "DATABASE_URL=postgresql" not in env_test_example
     assert "TEST_DATABASE_URL=" not in env_test_example
     assert "izole test DATABASE_URL değerini çalışma zamanında üretir" in env_test_example
+
+
+def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "ensure_env_file_secrets_after_uv_sync" in script
+    assert 'ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."' in script
+    assert "ensure_env_file_secrets_after_uv_sync" in script[
+        script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")
+    ]
+    assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
+    assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
+
+
+def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "change-me*|replace-with-*" in script
+    assert 'is_weak_secret_value "$val" && return 0' in script
