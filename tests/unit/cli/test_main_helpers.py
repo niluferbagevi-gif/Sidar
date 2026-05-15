@@ -236,6 +236,52 @@ def test_build_command_cli_non_ollama_omits_model() -> None:
     assert "--model" not in cmd
 
 
+def test_launcher_doctor_preflight_prints_actionable_guidance(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: SimpleNamespace(
+            name="database_env", status="pass", message="db env ok", details={}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_database_connectivity",
+        lambda: SimpleNamespace(
+            name="database_connectivity",
+            status="warn",
+            message="auth failed",
+            details={
+                "root_cause_hints": ["old volume password"],
+                "remediation_steps": ["run ALTER USER"],
+                "recommended_commands": ["docker compose ps postgres"],
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_readiness",
+        lambda: SimpleNamespace(
+            name="rag_readiness",
+            status="warn",
+            message="RAG empty",
+            details={"recommended_commands": ["belge ekle <url>"]},
+        ),
+    )
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert "Doctor/database_connectivity" in output
+    assert "old volume password" in output
+    assert "run ALTER USER" in output
+    assert "belge ekle <url>" in output
+
+
 def test_preflight_reports_existing_env_and_database_url_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

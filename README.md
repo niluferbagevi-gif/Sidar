@@ -303,7 +303,7 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
-`sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+`sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir ve indeks boşsa CLI'daki `belge ekle <url>` komutunu hatırlatır. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
@@ -748,8 +748,11 @@ OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
 
 # Veritabanı (v3.0.0+)
-# POSTGRES_PASSWORD ile DATABASE_URL içindeki parola birebir aynı olmalıdır;
-# aksi halde PostgreSQL `password authentication failed for user "sidar"` döndürür.
+# POSTGRES_PASSWORD ile DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL içindeki parola
+# birebir aynı olmalıdır; aksi halde PostgreSQL `password authentication failed for user "sidar"`
+# döndürür. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
+# mevcut kullanıcı parolasını ALTER USER ile eşitleyin veya sadece geliştirme ortamında volume'ü
+# sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
 POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password

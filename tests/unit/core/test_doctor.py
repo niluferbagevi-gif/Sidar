@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 import pytest
 
@@ -17,6 +19,10 @@ def _isolate_database_env(monkeypatch):
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
         "POSTGRES_DB",
+        "RAG_VECTOR_BACKEND",
+        "ENABLE_GRAPH_RAG",
+        "RAG_DIR",
+        "HEALTHCHECK_CONNECT_TIMEOUT_MS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -28,6 +34,10 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
     ]
     monkeypatch.setattr(doctor, "check_uv", lambda: checks[0])
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
+    monkeypatch.setattr(
+        doctor, "check_database_connectivity", lambda: DoctorCheck("db_conn", "pass", "ok")
+    )
+    monkeypatch.setattr(doctor, "check_rag_readiness", lambda: DoctorCheck("rag", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_migrations", lambda: DoctorCheck("migrations", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_agent_catalog", lambda: DoctorCheck("catalog", "pass", "ok"))
     monkeypatch.setattr(
@@ -203,13 +213,46 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert check.details["postgres_db_set"] is True
 
 
+def test_database_env_fails_when_local_and_container_passwords_drift_without_postgres_password(
+    monkeypatch,
+):
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("POSTGRES_USER", raising=False)
+    monkeypatch.delenv("POSTGRES_DB", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+    monkeypatch.setenv(
+        "SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:" + "b" * 24 + "@postgres:5432/sidar"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert (
+        "DATABASE_URL password does not match SIDAR_CONTAINER_DATABASE_URL password"
+        in check.message
+    )
+
+
+def test_database_env_warns_when_local_and_container_database_names_drift(monkeypatch):
+    password = "a" * 24
+    monkeypatch.delenv("POSTGRES_DB", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+    monkeypatch.setenv(
+        "SIDAR_CONTAINER_DATABASE_URL", f"postgresql://sidar:{password}@postgres:5432/sidar_ci"
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "warn"
+    assert "DATABASE_URL database name does not match SIDAR_CONTAINER_DATABASE_URL" in check.message
+
+
 def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypatch):
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
-    monkeypatch.setenv(
-        "DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other"
-    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other")
 
     check = doctor.check_database_env()
 
@@ -254,6 +297,139 @@ def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
 
     assert check.status == "pass"
     assert check.message == "database environment looks secure"
+
+
+def test_database_connectivity_passes_and_redacts_password(monkeypatch):
+    class _Conn:
+        async def fetchval(self, query):
+            if "pg_extension" in query:
+                return True
+            return 1
+
+        async def close(self):
+            return None
+
+    async def _connect(dsn):
+        assert dsn == "postgresql://sidar:secretpasswordsecretpassword@localhost:5432/sidar"
+        return _Conn()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://sidar:secretpasswordsecretpassword@localhost:5432/sidar",
+    )
+    monkeypatch.setenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "1000")
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "pass"
+    assert check.details["select_1"] is True
+    assert check.details["pgvector_extension_installed"] is True
+    assert "secretpassword" not in check.details["database_url"]
+
+
+def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
+    async def _connect(dsn):
+        raise ConnectionRefusedError("db down")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert "container/service is running" in check.message
+    assert check.details["failure_category"] == "connection"
+    assert check.details["error_type"] == "ConnectionRefusedError"
+    assert "docker compose ps postgres" in check.details["recommended_commands"]
+
+
+def test_database_connectivity_auth_failure_reports_volume_remediation_and_redacts(
+    monkeypatch,
+):
+    password = "secretpasswordsecretpassword"
+
+    async def _connect(dsn):
+        raise RuntimeError(f"password authentication failed for {dsn} with password={password}")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv(
+        "DATABASE_URL", f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar"
+    )
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert "Docker volume already existed" in check.message
+    assert check.details["failure_category"] == "authentication"
+    assert any("older password" in hint for hint in check.details["root_cause_hints"])
+    assert any("ALTER USER" in cmd for cmd in check.details["recommended_commands"])
+    assert password not in check.details["error"]
+    assert "postgresql+asyncpg://sidar:" not in check.details["error"]
+
+
+async def test_run_coro_sync_works_inside_running_event_loop() -> None:
+    async def _value() -> int:
+        return 7
+
+    assert doctor._run_coro_sync(_value()) == 7
+
+
+def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch):
+    class _Conn:
+        async def fetchval(self, query):
+            if "pg_extension" in query:
+                return False
+            return 1
+
+        async def close(self):
+            return None
+
+    async def _connect(dsn):
+        return _Conn()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert "pgvector extension is not installed" in check.message
+
+
+def test_rag_readiness_warns_for_empty_index_and_entity_graph(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "warn"
+    assert check.details["document_count"] == 0
+    assert "no indexed documents" in check.message
+    assert "entity memory is empty" in check.message
+    assert "belge ekle <url>" in check.details["recommended_commands"]
+
+
+def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
+    (rag_dir / "entity_graph.json").write_text(
+        '{"nodes": {"brand:x": {"label": "Brand"}}, "edges": []}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "b" * 24 + "@localhost:5432/sidar")
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "fail"
+    assert "database environment parity failed" in check.message
+    assert check.details["database_env_status"] == "fail"
 
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):

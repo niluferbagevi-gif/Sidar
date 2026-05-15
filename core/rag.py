@@ -60,8 +60,8 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
     ):
         return (
             "PostgreSQL/pgvector bağlantısı başarısız (yetki/parola hatası). "
-            ".env dosyanızdaki DATABASE_URL ve POSTGRES_PASSWORD değerlerini kontrol edin. "
-            "RAG için BM25 fallback aktif edildi."
+            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD "
+            "değerlerini kontrol edin. RAG için BM25 fallback aktif edildi."
         )
     if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
         return (
@@ -70,7 +70,12 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
         )
     if any(
         marker in text
-        for marker in ("connection refused", "could not connect", "server closed", "connection failed")
+        for marker in (
+            "connection refused",
+            "could not connect",
+            "server closed",
+            "connection failed",
+        )
     ):
         return (
             "PostgreSQL/pgvector bağlantısı kurulamadı. Veritabanı servisinin çalıştığını, "

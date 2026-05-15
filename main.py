@@ -178,6 +178,54 @@ def _safe_host(value: object, default: str = "127.0.0.1") -> str:
             return "127.0.0.1"
 
 
+def _doctor_status_icon(status: str) -> str:
+    return {"pass": "✅", "warn": "⚠", "fail": "❌"}.get(status, "ℹ️")
+
+
+def _print_doctor_check_summary(check: Any) -> None:
+    status = str(getattr(check, "status", "warn") or "warn")
+    name = str(getattr(check, "name", "doctor") or "doctor")
+    message = str(getattr(check, "message", "") or "")
+    details = getattr(check, "details", {}) or {}
+    color = GREEN if status == "pass" else (RED if status == "fail" else YELLOW)
+    print(f"{color}{_doctor_status_icon(status)} Doctor/{name}: {message}{RESET}")
+
+    hints = details.get("root_cause_hints") if isinstance(details, dict) else None
+    if isinstance(hints, list):
+        for hint in hints[:3]:
+            print(f"{YELLOW}   • Olası neden: {hint}{RESET}")
+
+    steps = details.get("remediation_steps") if isinstance(details, dict) else None
+    if isinstance(steps, list):
+        for step in steps[:2]:
+            print(f"{YELLOW}   • Çözüm: {step}{RESET}")
+
+    commands = details.get("recommended_commands") if isinstance(details, dict) else None
+    if isinstance(commands, list) and status in {"warn", "fail"}:
+        for command in commands[:3]:
+            print(f"{CYAN}   • Komut: {command}{RESET}")
+
+
+def _run_launcher_doctor_preflight() -> None:
+    try:
+        from core.doctor import (
+            check_database_connectivity,
+            check_database_env,
+            check_rag_readiness,
+        )
+    except Exception as exc:  # pragma: no cover - defensive launcher path
+        logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
+        return
+
+    print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
+    for check_func in (check_database_env, check_database_connectivity, check_rag_readiness):
+        try:
+            _print_doctor_check_summary(check_func())
+        except Exception as exc:  # pragma: no cover - defensive launcher path
+            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
+            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
+
+
 def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
@@ -195,6 +243,8 @@ def preflight(provider: str) -> None:
         logger.warning("DATABASE_URL tanımlı değil; varsayılan SQLite fallback kullanılacak.")
     elif "://" not in database_url:
         logger.warning("DATABASE_URL beklenen şema biçiminde değil: %s", database_url)
+
+    _run_launcher_doctor_preflight()
 
     if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
         message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."

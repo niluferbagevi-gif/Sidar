@@ -149,7 +149,14 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
         f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
     )
     print(f"  Paket Bilgi     : {agent.pkg.status()}")
-    print(f"  Belge Deposu    : {agent.docs.status()}")
+    docs_status = agent.docs.status()
+    print(f"  Belge Deposu    : {docs_status}")
+    if "pgvector (pasif)" in docs_status:
+        print(
+            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+        )
+    if "RAG: 0 belge" in docs_status:
+        print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")
     print("\n  '.help' yazarak komut listesini görebilirsiniz.\n")
 
     while True:
@@ -356,6 +363,7 @@ def main() -> None:
     agent = SidarAgent(cfg)
 
     if args.status:
+
         async def _status_flow() -> None:
             try:
                 await agent.initialize()
