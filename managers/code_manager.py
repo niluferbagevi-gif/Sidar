@@ -216,8 +216,7 @@ class CodeManager:
             getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or ""
         ).strip()
         self.docker_allowed_runtimes = list(
-            getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
-            or [""]
+            getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["runc", "runsc", "kata-runtime"]) or []
         )
         self.docker_microvm_mode = (
             str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
@@ -284,6 +283,9 @@ class CodeManager:
             runtime = "runsc"
         elif self.docker_microvm_mode in ("kata", "firecracker") and not runtime:
             runtime = "kata-runtime"
+
+        if not runtime:
+            return ""
 
         if runtime not in self.docker_allowed_runtimes:
             logger.warning(

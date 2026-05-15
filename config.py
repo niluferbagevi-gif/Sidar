@@ -636,7 +636,7 @@ class Config:
     DOCKER_TEST_IMAGE: str = os.getenv("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
-        "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
+        "DOCKER_ALLOWED_RUNTIMES", ["runc", "runsc", "kata-runtime"]
     )
     DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
     DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")

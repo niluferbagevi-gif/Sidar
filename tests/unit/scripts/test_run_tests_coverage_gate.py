@@ -95,6 +95,13 @@ def test_env_example_uses_single_web_scrape_character_limit_name() -> None:
     assert "deprecation fallback" in env_example
 
 
+def test_env_example_docker_allowed_runtimes_has_no_empty_entry() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_example
+    assert "DOCKER_ALLOWED_RUNTIMES=,runc" not in env_example
+
+
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")

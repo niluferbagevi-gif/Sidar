@@ -59,6 +59,15 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+def test_docker_allowed_runtime_defaults_do_not_include_empty_name(monkeypatch):
+    monkeypatch.delenv("DOCKER_ALLOWED_RUNTIMES", raising=False)
+
+    runtimes = config.get_list_env("DOCKER_ALLOWED_RUNTIMES", ["runc", "runsc", "kata-runtime"])
+
+    assert runtimes == ["runc", "runsc", "kata-runtime"]
+    assert "" not in runtimes
+
+
 def test_get_web_scrape_max_chars_prefers_new_env_without_warning(monkeypatch, caplog):
     monkeypatch.setenv("WEB_SCRAPE_MAX_CHARS", "9000")
     monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "3000")
