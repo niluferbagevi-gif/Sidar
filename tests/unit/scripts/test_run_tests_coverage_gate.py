@@ -85,3 +85,36 @@ def test_run_tests_uses_secure_test_password_default_and_redacts_dsn_log() -> No
     assert 'POSTGRES_PASSWORD:-sidar_test_secure_pw' in script
     assert 'echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"' not in script
     assert "Test veritabanı bağlantısı ayarlandı: user=${test_db_user}" in script
+
+
+def test_env_parity_checker_scans_runtime_source_dirs_and_supports_ignore_list() -> None:
+    script = Path("scripts/check_env_parity.sh").read_text(encoding="utf-8")
+
+    assert '"$PROJECT_ROOT/config.py"' in script
+    for source_dir in (
+        '"$PROJECT_ROOT/agent"',
+        '"$PROJECT_ROOT/core"',
+        '"$PROJECT_ROOT/managers"',
+        '"$PROJECT_ROOT/scripts"',
+    ):
+        assert source_dir in script
+    assert "--ignore KEY" in script
+    assert "EXTRA_IGNORE_KEYS" in script
+    assert "PYTEST_CURRENT_TEST" in script
+
+
+def test_env_parity_templates_document_expanded_runtime_keys() -> None:
+    advanced_env = Path(".env.advanced.example").read_text(encoding="utf-8")
+    base_env = Path(".env.example").read_text(encoding="utf-8")
+
+    for key in (
+        "AUTH_BENCH_P95_BUDGET_MS=950",
+        "AUTH_BENCH_P99_BUDGET_MS=1200",
+        "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES=",
+        "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE=5",
+        "SIDAR_EVENT_BUS_CB_OPEN_SECONDS=15.0",
+        "SIDAR_DOCKER_IMAGE=",
+        "GRAPH_RAG_MAX_FILES=5000",
+    ):
+        assert key in advanced_env
+    assert "SIDAR_ALLOW_PUBLIC_BIND=false" in base_env
