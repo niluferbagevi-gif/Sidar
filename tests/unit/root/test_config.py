@@ -33,6 +33,14 @@ def test_llm_client_settings_uses_gemini_api_key_only(monkeypatch):
     assert settings.GEMINI_API_KEY == ""
 
 
+def test_llm_client_settings_reads_redis_max_connections(monkeypatch):
+    monkeypatch.setenv("REDIS_MAX_CONNECTIONS", "77")
+
+    settings = config.LLMClientSettings(_env_file=None)
+
+    assert settings.REDIS_MAX_CONNECTIONS == 77
+
+
 def test_get_int_float_and_list_env_parsing(monkeypatch):
     monkeypatch.setenv("INT_OK", "42")
     monkeypatch.setenv("INT_BAD", "abc")
