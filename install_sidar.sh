@@ -933,7 +933,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
             "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
     fi
 
-    local strict_postgres_reset_on_password_change="${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-0}}"
+    local strict_postgres_reset_on_password_change
+    strict_postgres_reset_on_password_change="$(normalize_bool "${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-false}}")"
 
     case "${should_reset:-E}" in
         E|e)
@@ -1021,10 +1022,10 @@ maybe_reset_postgres_volume_after_password_hardening() {
 
     warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
     if [[ "$reset_attempted" == true ]]; then
-        if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
+        if [[ "$strict_postgres_reset_on_password_change" == "true" ]]; then
             return 1
         fi
-        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
+        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=true veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=true ayarlanırsa bu durumda fail edilir)."
         return 0
     fi
     return 0
@@ -1542,7 +1543,7 @@ for arg in "$@"; do
             echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
-  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
+  --i-understand-full-access  SIDAR_ACCESS_LEVEL=full için açık risk onayı"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
@@ -3057,33 +3058,32 @@ harden_database_credentials() {
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                        local db_host_port="${db_host_and_name%%/*}"
+                        local db_host="${db_host_port%%:*}"
+                        local db_port="5432"
+                        local db_name_for_roots="${db_host_and_name#*/}"
+                        if [[ "$db_host_port" == *:* ]]; then
+                            db_port="${db_host_port##*:}"
+                        fi
+                        db_name_for_roots="${db_name_for_roots%%\?*}"
+                        [[ -n "$db_name_for_roots" && "$db_name_for_roots" != "$db_host_and_name" ]] || db_name_for_roots="sidar"
 
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        local db_name_for_container="${db_host_and_name#*/}"
-                        db_name_for_container="${db_name_for_container%%\?*}"
-                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
-                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                        else
-                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                        fi
+                        sed -i '/^POSTGRES_HOST=/d' "$env_file"
+                        sed -i '/^POSTGRES_PORT=/d' "$env_file"
+                        sed -i '/^POSTGRES_USER=/d' "$env_file"
+                        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+                        sed -i '/^POSTGRES_DB=/d' "$env_file"
+                        sed -i '/^DATABASE_URL=/d' "$env_file"
+                        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+                        {
+                            echo "POSTGRES_HOST=${db_host:-localhost}"
+                            echo "POSTGRES_PORT=${db_port:-5432}"
+                            echo "POSTGRES_USER=${db_user}"
+                            echo "POSTGRES_PASSWORD=${generated_password}"
+                            echo "POSTGRES_DB=${db_name_for_roots}"
+                        } >> "$env_file"
                         DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        ok ".env: zayıf legacy DATABASE_URL kaldırıldı; POSTGRES_* kökleri güvenli parola ile güncellendi."
                         info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                         if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                             local detected_pg_volume=""
@@ -3098,7 +3098,7 @@ harden_database_credentials() {
                 else
                     warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                    warn "Parolayı manuel güncellemek isterseniz POSTGRES_PASSWORD kök değişkenini değiştirin; stale DATABASE_URL override tutmayın."
                 fi
                 ;;
         esac
@@ -3118,33 +3118,36 @@ sync_postgres_env_with_database_url() {
         local db_user="${BASH_REMATCH[2]}"
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_host_port="${db_host_and_name%%/*}"
+        local db_host="${db_host_port%%:*}"
+        local db_port="5432"
         local db_name="${db_host_and_name#*/}"
 
-        # Host kısmında "/" yoksa varsayılan adı koru.
+        if [[ "$db_host_port" == *:* ]]; then
+            db_port="${db_host_port##*:}"
+        fi
         if [[ "$db_name" == "$db_host_and_name" ]]; then
             db_name="sidar"
         fi
-
-        # Olası query string'i temizle.
         db_name="${db_name%%\?*}"
 
-        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
+        # Legacy tam DSN satırlarını kaldırıp DRY POSTGRES_* köklerini tek kaynak yap.
+        sed -i '/^POSTGRES_HOST=/d' "$env_file"
+        sed -i '/^POSTGRES_PORT=/d' "$env_file"
         sed -i '/^POSTGRES_USER=/d' "$env_file"
         sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
         sed -i '/^POSTGRES_DB=/d' "$env_file"
         sed -i '/^DATABASE_URL=/d' "$env_file"
-
-        local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
         sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
         {
+            echo "POSTGRES_HOST=${db_host:-localhost}"
+            echo "POSTGRES_PORT=${db_port:-5432}"
             echo "POSTGRES_USER=${db_user}"
             echo "POSTGRES_PASSWORD=${db_password}"
             echo "POSTGRES_DB=${db_name}"
-            echo "DATABASE_URL=${db_url}"
-            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
         } >> "$env_file"
 
-        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
+        ok ".env: legacy DATABASE_URL kök POSTGRES_* değişkenlerine dönüştürüldü; tam DSN satırları kaldırıldı."
     fi
 }
 
@@ -3152,22 +3155,21 @@ write_generated_default_database_url() {
     local env_file="$1"
     local generated_password=""
     generated_password=$(generate_secure_token 24)
-    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
+    [[ -n "$generated_password" ]] || fail "POSTGRES_PASSWORD için güçlü parola üretilemedi."
 
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
-    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
-
+    sed -i '/^POSTGRES_HOST=/d' "$env_file"
+    sed -i '/^POSTGRES_PORT=/d' "$env_file"
     sed -i '/^POSTGRES_USER=/d' "$env_file"
     sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
     sed -i '/^POSTGRES_DB=/d' "$env_file"
     sed -i '/^DATABASE_URL=/d' "$env_file"
     sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
     {
+        echo "POSTGRES_HOST=localhost"
+        echo "POSTGRES_PORT=5432"
         echo "POSTGRES_USER=sidar"
         echo "POSTGRES_PASSWORD=${generated_password}"
         echo "POSTGRES_DB=sidar"
-        echo "DATABASE_URL=${local_db_url}"
-        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
     } >> "$env_file"
     DB_PASSWORD_HARDENED=true
 }
@@ -3184,21 +3186,21 @@ ensure_database_url_defaults() {
 
     if [[ -z "$current_db_url" ]]; then
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+        ok ".env: POSTGRES_* kökleri güçlü rastgele PostgreSQL parolasıyla hazırlandı."
         return
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        ok ".env: SQLite DATABASE_URL kaldırıldı; POSTGRES_* kökleri güçlü parolayla hazırlandı."
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
         warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+        ok ".env: eski ürün adına ait DATABASE_URL kaldırıldı; Sidar POSTGRES_* kökleri hazırlandı."
     fi
 }
 
@@ -3539,6 +3541,11 @@ ensure_auto_secrets() {
         return 1
     }
 
+    _key_exists() {
+        local key="$1"
+        grep -q "^${key}=" "$env_file" 2>/dev/null
+    }
+
     # Üretilen değeri .env'e yazar (varsa günceller, yoksa satır ekler)
     _write_secret() {
         local key="$1" val="$2"
@@ -3580,45 +3587,60 @@ except Exception:
 PY
     }
 
+    # ── POSTGRES_PASSWORD ───────────────────────────────────────────────────
+    if _is_missing_or_insecure "POSTGRES_PASSWORD" \
+        "sidar" "postgres" "replace-with-a-strong-24-plus-character-password"; then
+        local _v; _v=$(_gen_urlsafe 32)
+        if [[ -n "$_v" ]]; then
+            _write_secret "POSTGRES_PASSWORD" "$_v"
+            ok ".env: POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "POSTGRES_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
+    if _is_missing_or_insecure "SIDAR_API_KEY" \
         "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
-            _write_secret "API_KEY" "$_v"
-            ok ".env: API_KEY otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_API_KEY" "$_v"
+            ok ".env: SIDAR_API_KEY otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
+    if _is_missing_or_insecure "SIDAR_JWT_SECRET_KEY" \
         "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
-            _write_secret "JWT_SECRET_KEY" "$_v"
-            ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_JWT_SECRET_KEY" "$_v"
+            ok ".env: SIDAR_JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
+    if _is_missing_or_insecure "SIDAR_MEMORY_ENCRYPTION_KEY" \
         "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
-            _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
-            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
+            _write_secret "SIDAR_MEMORY_ENCRYPTION_KEY" "$_v"
+            ok ".env: SIDAR_MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
         else
-            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
+            warn "SIDAR_MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
         fi
     fi
 
     # ── Hex tabanlı webhook/federation secret'lar ─────────────────────────────
     _auto_hex_secret() {
         local key="$1" bits="${2:-64}"; shift 2
+        if ! _key_exists "$key"; then
+            return
+        fi
         if _is_missing_or_insecure "$key" "$@"; then
             local _v; _v=$(_gen_hex "$bits")
             if [[ -n "$_v" ]]; then
@@ -3637,8 +3659,8 @@ PY
     _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
         "69df1db55791dd991a3197958f5fce4ea0ed47e3"
 
-    # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
-    if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
+    # ── GRAFANA_ADMIN_PASSWORD (yalnız .env.advanced içinde etkinse) ──────────
+    if _key_exists "GRAFANA_ADMIN_PASSWORD" && _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "GRAFANA_ADMIN_PASSWORD" "$_v"
@@ -3649,15 +3671,15 @@ PY
     fi
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
-    # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
+    # /metrics uçlarını koruyan Bearer token; .env.advanced içinde etkinleştirilir.
+    if _key_exists "SIDAR_METRICS_TOKEN" && _is_missing_or_insecure "SIDAR_METRICS_TOKEN" \
         "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
-            _write_secret "METRICS_TOKEN" "$_v"
-            ok ".env: METRICS_TOKEN otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_METRICS_TOKEN" "$_v"
+            ok ".env: SIDAR_METRICS_TOKEN otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 }
@@ -3776,19 +3798,19 @@ is_weak_secret_value() {
 validate_required_security_profile() {
     local env_file="$1"
     local api_key memory_key access_level db_password database_url pg_password grafana_password
-    api_key="$(get_env_value "$env_file" API_KEY)"
-    memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
-    access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
+    api_key="$(get_sidar_env_value "$env_file" SIDAR_API_KEY API_KEY)"
+    memory_key="$(get_sidar_env_value "$env_file" SIDAR_MEMORY_ENCRYPTION_KEY MEMORY_ENCRYPTION_KEY)"
+    access_level="$(get_sidar_env_value "$env_file" SIDAR_ACCESS_LEVEL ACCESS_LEVEL)"
     database_url="$(get_env_value "$env_file" DATABASE_URL)"
     pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
     grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
 
     if is_weak_secret_value "$api_key"; then
-        fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
     fi
 
     if [[ -z "$memory_key" ]]; then
-        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY boş. Geçerli Fernet anahtarı zorunludur."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_MEMORY_ENCRYPTION_KEY boş. Geçerli Fernet anahtarı zorunludur."
     fi
     if ! python3 - "$memory_key" <<'PYFERNET'
 import sys
@@ -3796,11 +3818,11 @@ from cryptography.fernet import Fernet
 Fernet(sys.argv[1].encode())
 PYFERNET
     then
-        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY geçerli Fernet anahtarı değil."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_MEMORY_ENCRYPTION_KEY geçerli Fernet anahtarı değil."
     fi
 
     if [[ "${access_level,,}" == "full" && "$ALLOW_FULL_ACCESS" != true ]]; then
-        fail "ACCESS_LEVEL=full yalnız açık onayla kullanılabilir. Riskleri kabul ediyorsanız --i-understand-full-access bayrağını verin."
+        fail "SIDAR_ACCESS_LEVEL=full yalnız açık onayla kullanılabilir. Riskleri kabul ediyorsanız --i-understand-full-access bayrağını verin."
     fi
 
     db_password="$(python3 - "$database_url" <<'PYDB' 2>/dev/null || true
@@ -3817,8 +3839,8 @@ PYDB
     if is_weak_secret_value "$pg_password"; then
         fail ".env güvenlik doğrulaması başarısız: POSTGRES_PASSWORD boş veya zayıf."
     fi
-    if is_weak_secret_value "$grafana_password"; then
-        fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
+    if [[ -n "$grafana_password" ]] && is_weak_secret_value "$grafana_password"; then
+        fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD zayıf. Observability profili için güçlü bir değer tanımlayın."
     fi
 }
 

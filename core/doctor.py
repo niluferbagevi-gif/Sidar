@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from sidar_assets.paths import migrations_path
 
@@ -111,6 +111,46 @@ def _is_postgres_url(parsed: Any) -> bool:
     return bool(parsed and str(parsed.scheme).startswith("postgresql"))
 
 
+def _postgres_root_value(key: str, default: str = "") -> str:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip()
+
+
+def _postgres_roots_available() -> bool:
+    return all(_postgres_root_value(key) for key in ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"))
+
+
+def _build_postgres_database_url(*, host: str | None = None) -> str:
+    scheme = _postgres_root_value("POSTGRES_DSN_SCHEME", "postgresql+asyncpg") or "postgresql+asyncpg"
+    user = quote(_postgres_root_value("POSTGRES_USER", "sidar") or "sidar", safe="")
+    password = quote(_postgres_root_value("POSTGRES_PASSWORD", ""), safe="")
+    resolved_host = quote(host or (_postgres_root_value("POSTGRES_HOST", "localhost") or "localhost"), safe="")
+    port = _postgres_root_value("POSTGRES_PORT", "5432") or "5432"
+    database = quote(_postgres_root_value("POSTGRES_DB", "sidar") or "sidar", safe="")
+    return f"{scheme}://{user}:{password}@{resolved_host}:{port}/{database}"
+
+
+def _resolve_database_url_from_roots() -> tuple[str, bool]:
+    explicit = os.getenv("DATABASE_URL", "").strip()
+    if explicit:
+        return explicit, False
+    if not _postgres_roots_available():
+        return "", False
+    return _build_postgres_database_url(), True
+
+
+def _resolve_container_database_url_from_roots() -> tuple[str, bool]:
+    explicit = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    if explicit:
+        return explicit, False
+    if not _postgres_roots_available():
+        return "", False
+    host = os.getenv("SIDAR_CONTAINER_POSTGRES_HOST", "postgres").strip() or "postgres"
+    return _build_postgres_database_url(host=host), True
+
+
 def _normalize_postgres_dsn(database_url: str) -> str:
     return str(database_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
 
@@ -159,19 +199,19 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         )
     ):
         return (
-            "PostgreSQL authentication failed; verify DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/POSTGRES_PASSWORD parity. "
+            "PostgreSQL authentication failed; verify POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB roots and any explicit DATABASE_URL override. "
             "If a Docker volume already existed, sync the stored PostgreSQL user password or reset the dev volume. "
             "Sidar will enter SQLite degraded mode and pgvector will fall back to BM25.",
             {
                 "failure_category": "authentication",
                 "root_cause_hints": [
                     "DATABASE_URL password does not match POSTGRES_PASSWORD",
-                    "SIDAR_CONTAINER_DATABASE_URL uses different credentials than DATABASE_URL",
+                    "explicit database URL overrides use different credentials than POSTGRES_* roots",
                     "PostgreSQL Docker volume was initialized with an older password",
                     "sidar user exists with a different password in PostgreSQL",
                 ],
                 "remediation_steps": [
-                    "Compare POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, DATABASE_URL and SIDAR_CONTAINER_DATABASE_URL in .env.",
+                    "Compare POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB in .env; remove stale DATABASE_URL overrides unless intentionally needed.",
                     "If the env values are correct but auth still fails, run ALTER USER for the existing PostgreSQL user or reset the PostgreSQL volume in development only.",
                     "Restart PostgreSQL and rerun `uv run python -m core.doctor artifacts/install/doctor.json`.",
                 ],
@@ -330,8 +370,8 @@ def _validate_database_url_pair_sync(
 
 
 def check_database_env() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    database_url, database_url_derived = _resolve_database_url_from_roots()
+    container_url, container_url_derived = _resolve_container_database_url_from_roots()
     postgres_user = os.getenv("POSTGRES_USER", "").strip()
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     postgres_db = os.getenv("POSTGRES_DB", "").strip()
@@ -341,7 +381,7 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
+        warnings.append("DATABASE_URL could not be derived; set POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB")
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",
@@ -382,7 +422,9 @@ def check_database_env() -> DoctorCheck:
         message,
         {
             "database_url_set": bool(database_url),
+            "database_url_derived": database_url_derived,
             "container_database_url_set": bool(container_url),
+            "container_database_url_derived": container_url_derived,
             "postgres_user_set": bool(postgres_user),
             "postgres_password_set": bool(postgres_password),
             "postgres_db_set": bool(postgres_db),
@@ -437,11 +479,12 @@ async def _probe_postgres_connectivity(
 
 
 def check_database_connectivity() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url, database_url_derived = _resolve_database_url_from_roots()
     parsed = urlparse(database_url) if database_url else None
     details: dict[str, Any] = {
         "database_url_set": bool(database_url),
         "database_url": _redact_url(database_url),
+        "database_url_derived": database_url_derived,
         "scheme": parsed.scheme if parsed else "",
         "recommended_commands": [
             "docker compose ps postgres",
@@ -452,7 +495,7 @@ def check_database_connectivity() -> DoctorCheck:
         return DoctorCheck(
             "database_connectivity",
             "warn",
-            "DATABASE_URL is not set; PostgreSQL connectivity smoke was skipped",
+            "DATABASE_URL could not be derived; PostgreSQL connectivity smoke was skipped",
             details,
         )
     if not _is_postgres_url(parsed):

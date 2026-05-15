@@ -1321,8 +1321,8 @@ class CodeManager:
         if not self.security.can_run_shell():
             return False, (
                 "[OpenClaw] Kabuk komutu çalıştırma yetkisi yok.\n"
-                "Shell erişimi yalnızca ACCESS_LEVEL=full modunda aktiftir.\n"
-                "Değiştirmek için: .env → ACCESS_LEVEL=full"
+                "Shell erişimi yalnızca SIDAR_ACCESS_LEVEL=full modunda aktiftir.\n"
+                "Değiştirmek için: .env → SIDAR_ACCESS_LEVEL=full"
             )
 
         if not command or not command.strip():

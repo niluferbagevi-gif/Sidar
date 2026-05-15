@@ -41,6 +41,34 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+
+def test_sidar_env_prefixed_values_take_precedence(monkeypatch):
+    monkeypatch.setenv("ACCESS_LEVEL", "restricted")
+    monkeypatch.setenv("SIDAR_ACCESS_LEVEL", "sandbox")
+    monkeypatch.setenv("RATE_LIMIT_CHAT", "10")
+    monkeypatch.setenv("SIDAR_RATE_LIMIT_CHAT", "42")
+
+    assert config.get_sidar_env("ACCESS_LEVEL", "full") == "sandbox"
+    assert config.get_sidar_int_env("RATE_LIMIT_CHAT", 20) == 42
+
+
+def test_sidar_env_legacy_fallback_remains_supported(monkeypatch):
+    monkeypatch.setenv("ACCESS_LEVEL", "restricted")
+    monkeypatch.delenv("SIDAR_ACCESS_LEVEL", raising=False)
+    monkeypatch.setenv("RATE_LIMIT_CHAT", "11")
+    monkeypatch.delenv("SIDAR_RATE_LIMIT_CHAT", raising=False)
+
+    assert config.get_sidar_env("ACCESS_LEVEL", "full") == "restricted"
+    assert config.get_sidar_int_env("RATE_LIMIT_CHAT", 20) == 11
+
+
+def test_sidar_env_blank_prefixed_value_falls_back_to_legacy(monkeypatch):
+    monkeypatch.setenv("SIDAR_API_KEY", "")
+    monkeypatch.setenv("API_KEY", "legacy-key")
+
+    assert config.get_sidar_env("API_KEY", "") == "legacy-key"
+
+
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "3")
     monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "60")
@@ -61,6 +89,43 @@ def test_get_db_pool_size_default_respects_postgres_and_hard_cap(monkeypatch):
 
     # min(CPU*per_core=128, pg-reserve=15, hard_cap=12) => 12
     assert config.get_db_pool_size_default() == 12
+
+
+
+def test_resolve_database_url_derives_from_postgres_roots(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss word")
+    monkeypatch.setenv("POSTGRES_HOST", "db.local")
+    monkeypatch.setenv("POSTGRES_PORT", "6543")
+    monkeypatch.setenv("POSTGRES_DB", "sidar-db")
+
+    assert (
+        config.resolve_database_url()
+        == "postgresql+asyncpg://sidar%20user:p%40ss%20word@db.local:6543/sidar-db"
+    )
+
+
+def test_resolve_database_url_keeps_explicit_override(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///tmp/sidar.db")
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "ignored")
+
+    assert config.resolve_database_url() == "sqlite+aiosqlite:///tmp/sidar.db"
+
+
+def test_resolve_container_database_url_uses_postgres_service_host(monkeypatch):
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
+    monkeypatch.setenv("POSTGRES_HOST", "localhost")
+    monkeypatch.setenv("POSTGRES_PORT", "5432")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    assert (
+        config.resolve_container_database_url()
+        == "postgresql+asyncpg://sidar:secret@postgres:5432/sidar"
+    )
 
 
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
@@ -1226,5 +1291,5 @@ def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
-    with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
+    with pytest.raises(ValueError, match="SIDAR_JWT_SECRET_KEY boş bırakılamaz"):
         config.Config()

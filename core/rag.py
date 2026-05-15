@@ -60,8 +60,9 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
     ):
         return (
             "PostgreSQL/pgvector bağlantısı başarısız (yetki/parola hatası). "
-            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD "
-            "değerlerini kontrol edin. RAG için BM25 fallback aktif edildi."
+            ".env dosyanızdaki POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, "
+            "POSTGRES_PORT ve POSTGRES_DB kök değişkenlerini kontrol edin; "
+            "stale DATABASE_URL override tutmayın. RAG için BM25 fallback aktif edildi."
         )
     if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
         return (
