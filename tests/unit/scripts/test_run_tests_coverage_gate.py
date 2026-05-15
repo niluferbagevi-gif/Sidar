@@ -81,3 +81,25 @@ def test_primary_env_example_stays_minimal_for_new_users() -> None:
     assert "GOOGLE_API_KEY" not in env_example
     assert "GOOGLE_SEARCH_API_KEY" not in env_example
     assert "BENCHMARK_ENABLE_COMPARE" not in env_example
+
+
+def test_development_env_derives_database_urls_from_single_postgres_password() -> None:
+    env_development = Path(".env.development.example").read_text(encoding="utf-8")
+
+    assert "POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password" in env_development
+    assert env_development.count("replace-with-a-strong-24-plus-character-password") == 1
+    assert "DATABASE_URL=postgresql" not in env_development
+    assert "SIDAR_CONTAINER_DATABASE_URL=postgresql" not in env_development
+    assert "SELF_HEAL_DATABASE_URL=postgresql" not in env_development
+    assert "POSTGRES_CONTAINER_HOST=postgres" in env_development
+    assert "OLLAMA_NUM_PARALLEL=4" in env_development
+
+
+def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+
+    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" in env_test_example
+    assert "POSTGRES_PASSWORD=sidar\n" not in env_test_example
+    assert "DATABASE_URL=postgresql" not in env_test_example
+    assert "TEST_DATABASE_URL=" not in env_test_example
+    assert "izole test DATABASE_URL değerini çalışma zamanında üretir" in env_test_example
