@@ -191,12 +191,12 @@
 
 ### ✅ Bellek Şifreleme (Fernet)
 
-- `MEMORY_ENCRYPTION_KEY` tanımlandığında oturum dosyaları diskte şifrelenir.
+- `SIDAR_MEMORY_ENCRYPTION_KEY` tanımlandığında oturum dosyaları diskte şifrelenir.
 - Hassas ortamlarda varsayılan JSON saklama yerine şifreli depolama önerilir.
 - Anahtar üretimi için örnek komut:
 
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+sidar generate-keys
 ```
 
 ---
@@ -300,10 +300,29 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 ./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
 ./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
 ./install_sidar.sh doctor              # sadece doctor raporu
+sidar init                             # minimal .env.example -> .env + güvenli temel secret üretimi
+sidar init --with-advanced             # ayrıca .env.advanced.example -> .env.advanced oluşturur
+sidar generate-keys                    # mevcut .env içindeki boş/zayıf temel Sidar secret'larını doldurur
+sidar generate-keys --with-advanced    # .env ve .env.advanced secret'larını birlikte doldurur
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
-`sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir ve indeks boşsa CLI'daki `belge ekle <url>` komutunu hatırlatır. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+`sidar init`, artık kısa ve ürkütmeyen `.env.example` dosyasını `.env` olarak kopyalar;
+bu dosyada yalnız sistemi ayağa kaldırmak için gereken AI sağlayıcısı, PostgreSQL kökleri,
+web/API güvenliği ve temel sandbox ayarları tutulur. Boş/zayıf temel Sidar-managed alanlar
+otomatik doldurulur: `POSTGRES_PASSWORD`, `SIDAR_API_KEY`, `SIDAR_JWT_SECRET_KEY` ve
+`SIDAR_MEMORY_ENCRYPTION_KEY`. LoRA/QLoRA eğitimi, Slack/Jira/Teams webhook'ları,
+OpenTelemetry/Jaeger, Swarm federasyonu, multimodal/voice ve gelişmiş sandbox limitleri gibi
+opsiyonel ayarlar `.env.advanced.example` içinde gruplanır. Bu dosyayı etkinleştirmek için
+`sidar init --with-advanced` komutunu kullanın veya elle `.env.advanced` olarak kopyalayın;
+`config.py` mevcutsa `.env` sonrasında `.env.advanced` dosyasını otomatik yükler.
+`sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini yapar;
+`--with-advanced` verilirse `.env.advanced` içindeki webhook/federation secret'ları,
+`GRAFANA_ADMIN_PASSWORD` ve `SIDAR_METRICS_TOKEN` gibi ileri seviye secret'lar da doldurulur.
+`--force` verilirse mevcut Sidar-managed secret'lar yeniden üretilir. Harici sağlayıcı
+anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY` vb.) otomatik üretilmez.
+
+`sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` ve `POSTGRES_DB` kök değişkenlerinden local/container DSN'lerini türetir; yalnız açık `DATABASE_URL` override verilmişse bunu köklerle karşılaştırır ve parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir ve indeks boşsa CLI'daki `belge ekle <url>` komutunu hatırlatır. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
@@ -424,7 +443,7 @@ Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapıla
 - Dev Container imajı ve setup betiği, resmi Ollama kurulum betiğinin güncel Zstandard sıkıştırmalı arşivleri açabilmesi için `zstd` paketini de hazırlar; böylece postCreate aşaması `ERROR: This version requires zstd for extraction` hatasıyla kesilmez.
 - Ollama CLI varsayılan olarak kurulmaya çalışılır, servis `postStartCommand` ile arka planda başlatılır ve standart coding modeli `qwen2.5-coder:7b` olarak tanımlanır. Büyük model indirmesini Codespaces açılışında zorunlu kılmak istemiyorsanız varsayılan `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=0` kalır; önceden indirme için Codespaces secret/env olarak `SIDAR_CODESPACES_PULL_OLLAMA_MODELS=1` verebilirsiniz.
 - Codespaces ortamında otonom coverage kampanyası için `AUTONOMOUS_LOOP_COVERAGE_PROFILE=full` ve `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ayarlanır. Lokal/CI quality gate ise hâlâ `.coveragerc` ve `run_tests.sh` profilinden okunur.
-- Otonom döngü coverage hedefi sağlandıktan sonra lokal varsayılan olarak `uv run --with mutmut mutmut run --max-children 8` mutasyon testi gate'ini çalıştırır; haftalık GitHub Actions mutasyon kampanyası runner dengesini korumak için `--max-children 4` kullanır. `AUTONOMOUS_LOOP_MUTATION_ENABLED=0` ile bilinçli devre dışı bırakılabilir; `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`, `AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND`, `AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND` ve `AUTONOMOUS_LOOP_MUTATION_STATS_PATH` ile lokal kampanya komutu/artefaktı ayarlanabilir. Gate başarısızsa coverage %100 olsa bile testler davranış mutasyonlarını öldüremediği için otonom iyileştirme döngüsü fail-closed devam eder.
+- Otonom döngü coverage hedefi sağlandıktan sonra lokal varsayılan olarak `uv run --with mutmut mutmut run --max-children 8` mutasyon testi gate'ini çalıştırır; haftalık GitHub Actions mutasyon kampanyası runner dengesini korumak için `--max-children 4` kullanır. `AUTONOMOUS_LOOP_MUTATION_ENABLED=false` ile bilinçli devre dışı bırakılabilir; `AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN`, `AUTONOMOUS_LOOP_MUTATION_COMMAND`, `AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND`, `AUTONOMOUS_LOOP_MUTATION_STATS_COMMAND` ve `AUTONOMOUS_LOOP_MUTATION_STATS_PATH` ile lokal kampanya komutu/artefaktı ayarlanabilir. Gate başarısızsa coverage %100 olsa bile testler davranış mutasyonlarını öldüremediği için otonom iyileştirme döngüsü fail-closed devam eder.
 - CoverageAgent otonom test yazımında varsayılan `AUTONOMOUS_LOOP_EXCLUDE_FILES=web_server.py,main.py,gui_launcher.py,cli.py` listesiyle yan etkili launcher/API giriş noktalarını test üretim kuyruğuna almadan filtreler; aynı değişken dosya adı, repo-göreli yol, dizin prefix'i veya glob deseni kabul eder. Böylece hibrit onarım modu tekrar eden `review_rejected` döngüleri yerine iş mantığı dosyalarına odaklanır.
 - CoverageAgent otonom test yazımında yalnız LLM Reviewer kararına güvenmez; AST tabanlı kalite kapısı `assert True`, sabit karşılaştırma, import-only smoke test, hedef modülle ilişkisiz lokal hesap ve hedef çağrısına bağlanmayan assertion içeren adayları fail-closed reddeder.
 - React SPA için Poyraz operasyonları ve QA coverage akışları artık script çağrılarına bağlı değildir: `/api/operations/landing-page`, `/api/operations/campaign-copy`, `/api/operations/service-plan`, `/api/operations/poyraz/run` ve `/api/qa/coverage/*` FastAPI köprüleri ajan araçlarını REST üzerinden çalıştırır; `/ops-qa` paneli bu REST tetiklerini WebSocket oda telemetrisi ve HITL onay kuyruğuyla birlikte izler.
@@ -695,7 +714,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
 > ilk koşu `--benchmark-save=baseline` ile baseline üretir ve `--benchmark-compare` eklemeden
 > tamamlanır; baseline yokluğunu fail etmek isteyen sıkı CI hatları
-> `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Gecikme hassas akışlar için
+> `BENCHMARK_COMPARE_REQUIRED=true` kullanabilir. Gecikme hassas akışlar için
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.
@@ -748,32 +767,32 @@ OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
 
 # Veritabanı (v3.0.0+)
-# POSTGRES_PASSWORD ile DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL içindeki parola
-# birebir aynı olmalıdır; aksi halde PostgreSQL `password authentication failed for user "sidar"`
-# döndürür. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
+# DATABASE_URL config.py tarafından aşağıdaki POSTGRES_* kök değişkenlerinden türetilir.
+# Docker Compose uygulama servisleri POSTGRES_HOST=postgres override'ı ile aynı köklerden
+# container içi bağlantıyı üretir; .env içinde ayrıca DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL
+# tutmayın. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
 # mevcut kullanıcı parolasını ALTER USER ile eşitleyin veya sadece geliştirme ortamında volume'ü
 # sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
 POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
-DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@localhost:5432/sidar
-# Docker Compose servisleri için: postgresql+asyncpg://sidar:<POSTGRES_PASSWORD>@postgres:5432/sidar
-SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@postgres:5432/sidar
 
 # Güvenlik
-ACCESS_LEVEL=sandbox            # restricted | sandbox | full
+SIDAR_ACCESS_LEVEL=sandbox            # restricted | sandbox | full
 
 # GitHub
 GITHUB_TOKEN=
 GITHUB_REPO=kullanici/depo
 
 # Web Sunucu
-WEB_HOST=0.0.0.0
-WEB_PORT=7860
+SIDAR_WEB_HOST=0.0.0.0
+SIDAR_WEB_PORT=7860
 
 # Bellek & Oturum
-MAX_MEMORY_TURNS=20
-MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
+SIDAR_MAX_MEMORY_TURNS=20
+SIDAR_MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
 
 # Zaman Aşımı
 OLLAMA_TIMEOUT=30

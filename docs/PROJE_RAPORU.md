@@ -1214,7 +1214,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///data/sidar.db` | Kalıcı bellek, kullanıcı, tenant-policy, audit ve pgvector için ana DB bağlantısı |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` | `sidar` / `sidar` / `localhost` / `5432` / `sidar` | `DATABASE_URL` değerinin DRY biçimde türetildiği kök PostgreSQL bağlantı ayarları |
 | `DB_POOL_SIZE` / `DB_SCHEMA_VERSION_TABLE` / `DB_SCHEMA_TARGET_VERSION` | `5` / `schema_versions` / `1` | Bağlantı havuzu ve şema sürümleme ayarları |
 | `RAG_DIR` | `data/rag` | Yerel belge deposu dizini; Chroma tabanlı kurulumlarda veri kökü olarak kullanılır |
 | `RAG_TOP_K` / `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` / `RAG_FILE_THRESHOLD` | `3` / `1000` / `200` / `20000` | Hibrit arama ve chunking ayarları |
@@ -1222,7 +1222,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `PGVECTOR_TABLE` / `PGVECTOR_EMBEDDING_DIM` / `PGVECTOR_EMBEDDING_MODEL` | `rag_embeddings` / `384` / `all-MiniLM-L6-v2` | PostgreSQL/pgvector tarafında embedding tablo ve model ayarları |
 | `MEMORY_ENCRYPTION_KEY` | `""` | Bellek kayıtlarını Fernet ile şifrelemek için opsiyonel anahtar |
 
-> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` ve şema versiyon anahtarları çalışma zamanı ile `.env.example` şablonunda senkronize tutulur.
+> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` çalışma zamanında `POSTGRES_*` köklerinden türetilir; `.env.example` şablonunda tam DSN satırı tutulmaz.
 
 ### 12.4 Anlamsal Önbellek, Redis ve Event Bus
 
@@ -1284,7 +1284,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `DOCKER_MEM_LIMIT` / `DOCKER_NETWORK_DISABLED` / `DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` / `SANDBOX_NETWORK` / `SANDBOX_PIDS_LIMIT` / `SANDBOX_TIMEOUT` | `256m` / `0.5` / `none` / `64` / `10` | `config.py::SANDBOX_LIMITS` sözlüğüne beslenen detaylı çalışma kotaları |
 | `WEB_HOST` / `WEB_PORT` / `WEB_GPU_PORT` | `0.0.0.0` / `7860` / `7861` | Web sunucusunun bind adresi ve portları |
-| `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `0/false` | HuggingFace model erişimi ve offline cache davranışı |
+| `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `false` | HuggingFace model erişimi ve offline cache davranışı |
 | `JUDGE_ENABLED` / `JUDGE_MODEL` / `JUDGE_PROVIDER` / `JUDGE_SAMPLE_RATE` | `false` / `""` / `ollama` / `0.2` | LLM-as-a-Judge kalite değerlendirme hattı |
 | `ENABLE_COST_ROUTING` ve `COST_ROUTING_*` | `false` / eşik ve model varsayılanları | Basit/karmaşık sorgular için maliyet odaklı model yönlendirmesi |
 | `ENABLE_ENTITY_MEMORY` / `ENTITY_MEMORY_TTL_DAYS` / `ENTITY_MEMORY_MAX_PER_USER` | `true` / `90` / `100` | Entity/persona memory kalıcılığı |
