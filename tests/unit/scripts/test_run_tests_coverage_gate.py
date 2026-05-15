@@ -53,11 +53,31 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
-def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
-    env_example = Path(".env.example").read_text(encoding="utf-8")
+def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
+    env_advanced = Path(".env.advanced").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
-    for content in (env_example, env_test_example):
+    for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
+
+    assert "Override hiyerarşisi" in env_advanced
+    assert "AUTONOMOUS_LOOP_COVERAGE_XML=coverage.xml" in env_advanced
+    assert "SIDAR_EVENT_BUS_BACKEND=redis" in env_advanced
+    assert "SIDAR_RABBITMQ_URL=" in env_advanced
+    assert "SIDAR_KAFKA_BOOTSTRAP_SERVERS=" in env_advanced
+    assert "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED=true" in env_advanced
+    assert "ENABLE_LORA_TRAINING=false" in env_advanced
+    assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_advanced
+
+
+def test_primary_env_example_stays_minimal_for_new_users() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert len(env_example.splitlines()) <= 50
+    assert "DATABASE_URL=" not in env_example
+    assert "SIDAR_CONTAINER_DATABASE_URL=" not in env_example
+    assert "GOOGLE_API_KEY" not in env_example
+    assert "GOOGLE_SEARCH_API_KEY" not in env_example
+    assert "BENCHMARK_ENABLE_COMPARE" not in env_example
