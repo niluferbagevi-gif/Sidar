@@ -3244,6 +3244,7 @@ collect_api_keys_interactive() {
         SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
         JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
         TEAMS_WEBHOOK_URL
+        SIDAR_WEB_HOST TRUSTED_PROXIES
     )
     local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
 
@@ -3255,6 +3256,7 @@ collect_api_keys_interactive() {
         "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL"
         "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_DEFAULT_PROJECT"
         "Microsoft Teams|TEAMS_WEBHOOK_URL"
+        "Ağ / Ters Proxy (opsiyonel)|SIDAR_WEB_HOST,TRUSTED_PROXIES"
     )
 
     _key_label() {
@@ -3277,6 +3279,8 @@ collect_api_keys_interactive() {
             JIRA_TOKEN)            echo "Jira API Token" ;;
             JIRA_DEFAULT_PROJECT)  echo "Jira Proje Anahtarı (örn: SID)" ;;
             TEAMS_WEBHOOK_URL)     echo "Microsoft Teams Webhook URL" ;;
+            SIDAR_WEB_HOST)        echo "Web UI Dinleme Adresi (0.0.0.0 / 127.0.0.1) [opt]" ;;
+            TRUSTED_PROXIES)       echo "Güvenilen Ters Proxy IP/CIDR listesi (virgülle) [opt]" ;;
             *)                     echo "$1" ;;
         esac
     }
