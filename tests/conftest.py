@@ -84,9 +84,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Gemini/Google istemci yolları için testte güvenli sahte anahtarlar tanımlar."""
+    """LLM istemci yolları için testte güvenli sahte Gemini anahtarı tanımlar."""
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test_key"))
-    monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
 @pytest_asyncio.fixture(autouse=True)

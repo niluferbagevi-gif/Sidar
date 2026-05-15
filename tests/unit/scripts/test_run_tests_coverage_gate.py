@@ -60,6 +60,16 @@ def test_env_examples_document_postgres_host_consistently() -> None:
         assert "POSTGRES_HOST=localhost" in content
 
 
+def test_env_examples_do_not_use_legacy_google_api_key_for_gemini() -> None:
+    for env_path in (".env.example", ".env.development.example", ".env.test.example"):
+        content = Path(env_path).read_text(encoding="utf-8")
+
+        assert "GOOGLE_API_KEY=" not in content
+
+    assert "GEMINI_API_KEY=" in Path(".env.example").read_text(encoding="utf-8")
+    assert "GEMINI_API_KEY=" in Path(".env.test.example").read_text(encoding="utf-8")
+
+
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")

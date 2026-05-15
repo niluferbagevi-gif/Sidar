@@ -24,6 +24,15 @@ def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_llm_client_settings_uses_gemini_api_key_only(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-google-key")
+
+    settings = config.LLMClientSettings(_env_file=None)
+
+    assert settings.GEMINI_API_KEY == ""
+
+
 def test_get_int_float_and_list_env_parsing(monkeypatch):
     monkeypatch.setenv("INT_OK", "42")
     monkeypatch.setenv("INT_BAD", "abc")
