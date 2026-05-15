@@ -87,7 +87,7 @@ class _InteractiveAgent:
         )
         self.pkg = SimpleNamespace(status=lambda: "PKG:OK")
         self.docs = SimpleNamespace(
-            status=lambda: "DOCS:OK",
+            status=lambda: getattr(self, "docs_status", "DOCS:OK"),
             list_documents=lambda: "DOC_LIST",
         )
         self.code = SimpleNamespace(audit_project=lambda _path: "AUDIT:OK")
@@ -236,6 +236,24 @@ async def test_interactive_loop_covers_commands_and_standard_response(monkeypatc
     assert "DOC_LIST" in output
     assert "AB" in output
     assert agent._level_calls == ["sandbox"]
+
+
+@pytest.mark.asyncio
+async def test_interactive_loop_prints_rag_action_hints(monkeypatch, capsys):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    agent = _InteractiveAgent(provider="ollama", use_gpu=True)
+    agent.docs_status = "RAG: 0 belge | Motorlar: pgvector (pasif), BM25 (SQLite FTS5), Anahtar Kelime, GraphRAG (pasif)"
+
+    async def _raise_interrupt(_fn, _prompt):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.asyncio, "to_thread", _raise_interrupt)
+    await cli._interactive_loop_async(agent)
+    output = capsys.readouterr().out
+
+    assert "pgvector pasif" in output
+    assert "core.doctor" in output
+    assert "belge ekle <url>" in output
 
 
 @pytest.mark.asyncio
