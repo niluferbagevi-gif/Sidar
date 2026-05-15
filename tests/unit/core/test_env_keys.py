@@ -95,3 +95,24 @@ def test_initialize_env_file_copies_strong_legacy_alias_to_namespaced_key(tmp_pa
 
     assert "SIDAR_API_KEY" in result.updated
     assert values["SIDAR_API_KEY"] == "legacy-api-key-value-with-more-than-24-chars"
+
+
+def test_initialize_env_file_keeps_absent_advanced_secrets_out_of_minimal_env(tmp_path):
+    example = tmp_path / ".env.example"
+    env = tmp_path / ".env"
+    example.write_text(
+        "POSTGRES_PASSWORD=\n"
+        "SIDAR_API_KEY=\n"
+        "SIDAR_JWT_SECRET_KEY=\n"
+        "SIDAR_MEMORY_ENCRYPTION_KEY=\n",
+        encoding="utf-8",
+    )
+
+    result = initialize_env_file(env_path=env, example_path=example)
+    values = _env_values(env)
+
+    assert "POSTGRES_PASSWORD" in result.updated
+    assert "AUTONOMY_WEBHOOK_SECRET" not in values
+    assert "SWARM_FEDERATION_SHARED_SECRET" not in values
+    assert "GRAFANA_ADMIN_PASSWORD" not in values
+    assert "SIDAR_METRICS_TOKEN" not in values

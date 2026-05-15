@@ -300,17 +300,27 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 ./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
 ./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
 ./install_sidar.sh doctor              # sadece doctor raporu
-sidar init                             # .env.example -> .env + güvenli local secret üretimi
-sidar generate-keys                    # mevcut .env içindeki boş/zayıf Sidar secret'larını doldurur
+sidar init                             # minimal .env.example -> .env + güvenli temel secret üretimi
+sidar init --with-advanced             # ayrıca .env.advanced.example -> .env.advanced oluşturur
+sidar generate-keys                    # mevcut .env içindeki boş/zayıf temel Sidar secret'larını doldurur
+sidar generate-keys --with-advanced    # .env ve .env.advanced secret'larını birlikte doldurur
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
-`sidar init`, `.env.example` dosyasını `.env` olarak kopyalar ve boş/zayıf Sidar-managed
-secret alanlarını otomatik doldurur: `POSTGRES_PASSWORD`, `SIDAR_API_KEY`, `SIDAR_JWT_SECRET_KEY`,
-`SIDAR_MEMORY_ENCRYPTION_KEY`, webhook/federation secret'ları, `GRAFANA_ADMIN_PASSWORD` ve
-`SIDAR_METRICS_TOKEN`. `sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini
-yapar; `--force` verilirse mevcut Sidar-managed secret'lar da yeniden üretilir. Harici
-sağlayıcı anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY` vb.) otomatik üretilmez.
+`sidar init`, artık kısa ve ürkütmeyen `.env.example` dosyasını `.env` olarak kopyalar;
+bu dosyada yalnız sistemi ayağa kaldırmak için gereken AI sağlayıcısı, PostgreSQL kökleri,
+web/API güvenliği ve temel sandbox ayarları tutulur. Boş/zayıf temel Sidar-managed alanlar
+otomatik doldurulur: `POSTGRES_PASSWORD`, `SIDAR_API_KEY`, `SIDAR_JWT_SECRET_KEY` ve
+`SIDAR_MEMORY_ENCRYPTION_KEY`. LoRA/QLoRA eğitimi, Slack/Jira/Teams webhook'ları,
+OpenTelemetry/Jaeger, Swarm federasyonu, multimodal/voice ve gelişmiş sandbox limitleri gibi
+opsiyonel ayarlar `.env.advanced.example` içinde gruplanır. Bu dosyayı etkinleştirmek için
+`sidar init --with-advanced` komutunu kullanın veya elle `.env.advanced` olarak kopyalayın;
+`config.py` mevcutsa `.env` sonrasında `.env.advanced` dosyasını otomatik yükler.
+`sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini yapar;
+`--with-advanced` verilirse `.env.advanced` içindeki webhook/federation secret'ları,
+`GRAFANA_ADMIN_PASSWORD` ve `SIDAR_METRICS_TOKEN` gibi ileri seviye secret'lar da doldurulur.
+`--force` verilirse mevcut Sidar-managed secret'lar yeniden üretilir. Harici sağlayıcı
+anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY` vb.) otomatik üretilmez.
 
 `sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` ve `POSTGRES_DB` kök değişkenlerinden local/container DSN'lerini türetir; yalnız açık `DATABASE_URL` override verilmişse bunu köklerle karşılaştırır ve parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir ve indeks boşsa CLI'daki `belge ekle <url>` komutunu hatırlatır. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
 

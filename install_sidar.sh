@@ -3541,6 +3541,11 @@ ensure_auto_secrets() {
         return 1
     }
 
+    _key_exists() {
+        local key="$1"
+        grep -q "^${key}=" "$env_file" 2>/dev/null
+    }
+
     # Üretilen değeri .env'e yazar (varsa günceller, yoksa satır ekler)
     _write_secret() {
         local key="$1" val="$2"
@@ -3633,6 +3638,9 @@ PY
     # ── Hex tabanlı webhook/federation secret'lar ─────────────────────────────
     _auto_hex_secret() {
         local key="$1" bits="${2:-64}"; shift 2
+        if ! _key_exists "$key"; then
+            return
+        fi
         if _is_missing_or_insecure "$key" "$@"; then
             local _v; _v=$(_gen_hex "$bits")
             if [[ -n "$_v" ]]; then
@@ -3651,8 +3659,8 @@ PY
     _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
         "69df1db55791dd991a3197958f5fce4ea0ed47e3"
 
-    # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
-    if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
+    # ── GRAFANA_ADMIN_PASSWORD (yalnız .env.advanced içinde etkinse) ──────────
+    if _key_exists "GRAFANA_ADMIN_PASSWORD" && _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "GRAFANA_ADMIN_PASSWORD" "$_v"
@@ -3663,8 +3671,8 @@ PY
     fi
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
-    # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "SIDAR_METRICS_TOKEN" \
+    # /metrics uçlarını koruyan Bearer token; .env.advanced içinde etkinleştirilir.
+    if _key_exists "SIDAR_METRICS_TOKEN" && _is_missing_or_insecure "SIDAR_METRICS_TOKEN" \
         "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
@@ -3831,8 +3839,8 @@ PYDB
     if is_weak_secret_value "$pg_password"; then
         fail ".env güvenlik doğrulaması başarısız: POSTGRES_PASSWORD boş veya zayıf."
     fi
-    if is_weak_secret_value "$grafana_password"; then
-        fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
+    if [[ -n "$grafana_password" ]] && is_weak_secret_value "$grafana_password"; then
+        fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD zayıf. Observability profili için güçlü bir değer tanımlayın."
     fi
 }
 

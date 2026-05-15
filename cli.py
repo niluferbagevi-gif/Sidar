@@ -281,14 +281,28 @@ async def _run_interactive_session(agent: SidarAgent) -> None:
 # ─────────────────────────────────────────────
 
 
+def _print_env_key_result(label: str, result) -> None:
+    action = "oluşturuldu" if result.created else "güncellendi"
+    print(f"{label} {action}: {result.env_path}")
+    if result.updated:
+        print("Üretilen/güncellenen secret alanları: " + ", ".join(result.updated))
+    else:
+        print("Güncellenecek boş veya zayıf Sidar-managed secret bulunmadı.")
+    if result.skipped:
+        print("Korunan mevcut secret alanları: " + ", ".join(result.skipped))
+
+
 def _run_env_keys_command(
     *,
     env_path: str = ".env",
     example_path: str = ".env.example",
     force: bool = False,
     create: bool = True,
+    with_advanced: bool = False,
+    advanced_env_path: str = ".env.advanced",
+    advanced_example_path: str = ".env.advanced.example",
 ) -> int:
-    """Create/update .env and fill Sidar-managed local secrets."""
+    """Create/update .env files and fill Sidar-managed local secrets."""
     from env_keys import initialize_env_file
 
     result = initialize_env_file(
@@ -297,14 +311,23 @@ def _run_env_keys_command(
         force=force,
         create=create,
     )
-    action = "oluşturuldu" if result.created else "güncellendi"
-    print(f"Sidar .env {action}: {result.env_path}")
-    if result.updated:
-        print("Üretilen/güncellenen secret alanları: " + ", ".join(result.updated))
+    _print_env_key_result("Sidar .env", result)
+
+    if with_advanced:
+        advanced_result = initialize_env_file(
+            env_path=Path(advanced_env_path),
+            example_path=Path(advanced_example_path),
+            force=force,
+            create=create,
+            include_missing_essential=False,
+        )
+        _print_env_key_result("Sidar .env.advanced", advanced_result)
     else:
-        print("Güncellenecek boş veya zayıf Sidar-managed secret bulunmadı.")
-    if result.skipped:
-        print("Korunan mevcut secret alanları: " + ", ".join(result.skipped))
+        print(
+            "İleri seviye ayarlar ayrı tutulur: .env.advanced.example dosyasını "
+            "inceleyin veya `sidar init --with-advanced` kullanın."
+        )
+
     print(
         "Not: OPENAI_API_KEY, GEMINI_API_KEY gibi harici sağlayıcı anahtarları "
         "otomatik üretilmez; gerçek sağlayıcı panellerinden alınmalıdır."
@@ -332,6 +355,21 @@ def _parse_env_keys_command(command: str) -> int:
         action="store_true",
         help="Mevcut Sidar-managed secret değerlerini de yeniden üret",
     )
+    parser.add_argument(
+        "--with-advanced",
+        action="store_true",
+        help="Opsiyonel .env.advanced dosyasını da .env.advanced.example'dan oluştur/güncelle",
+    )
+    parser.add_argument(
+        "--advanced-env",
+        default=".env.advanced",
+        help="Hedef ileri seviye env dosyası (varsayılan: .env.advanced)",
+    )
+    parser.add_argument(
+        "--advanced-example",
+        default=".env.advanced.example",
+        help="Kaynak ileri seviye env şablonu (varsayılan: .env.advanced.example)",
+    )
     if command == "generate-keys":
         parser.add_argument(
             "--no-create",
@@ -344,6 +382,9 @@ def _parse_env_keys_command(command: str) -> int:
         example_path=args.example,
         force=args.force,
         create=not getattr(args, "no_create", False),
+        with_advanced=args.with_advanced,
+        advanced_env_path=args.advanced_env,
+        advanced_example_path=args.advanced_example,
     )
 
 

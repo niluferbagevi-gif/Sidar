@@ -33,6 +33,9 @@ def test_parse_init_command_creates_env_by_default(monkeypatch, tmp_path):
             "example_path": str(tmp_path / ".env.example"),
             "force": False,
             "create": True,
+            "with_advanced": False,
+            "advanced_env_path": ".env.advanced",
+            "advanced_example_path": ".env.advanced.example",
         }
     ]
 
@@ -65,5 +68,44 @@ def test_parse_generate_keys_supports_force_and_no_create(monkeypatch, tmp_path)
             "example_path": ".env.example",
             "force": True,
             "create": False,
+            "with_advanced": False,
+            "advanced_env_path": ".env.advanced",
+            "advanced_example_path": ".env.advanced.example",
+        }
+    ]
+
+
+def test_parse_init_supports_advanced_env(monkeypatch, tmp_path):
+    calls: list[dict[str, object]] = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        return 0
+
+    monkeypatch.setattr(cli, "_run_env_keys_command", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sidar",
+            "init",
+            "--with-advanced",
+            "--advanced-env",
+            str(tmp_path / ".env.advanced"),
+            "--advanced-example",
+            str(tmp_path / ".env.advanced.example"),
+        ],
+    )
+
+    assert cli._parse_env_keys_command("init") == 0
+    assert calls == [
+        {
+            "env_path": ".env",
+            "example_path": ".env.example",
+            "force": False,
+            "create": True,
+            "with_advanced": True,
+            "advanced_env_path": str(tmp_path / ".env.advanced"),
+            "advanced_example_path": str(tmp_path / ".env.advanced.example"),
         }
     ]

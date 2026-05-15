@@ -53,11 +53,11 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert "BENCHMARK_COMPARE_REQUIRED=${BENCHMARK_COMPARE_REQUIRED} iken karşılaştırma için baseline bulunamadı" in script
 
 
-def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
-    env_example = Path(".env.example").read_text(encoding="utf-8")
+def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
+    env_advanced_example = Path(".env.advanced.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
-    for content in (env_example, env_test_example):
+    for content in (env_advanced_example, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=true" in content
         assert "BENCHMARK_COMPARE_REQUIRED=false" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content

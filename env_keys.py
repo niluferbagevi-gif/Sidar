@@ -38,6 +38,7 @@ class SecretSpec:
     nbytes: int
     min_length: int = 24
     aliases: tuple[str, ...] = ()
+    essential: bool = True
 
 
 @dataclass(frozen=True)
@@ -59,11 +60,17 @@ SECRET_SPECS: tuple[SecretSpec, ...] = (
         min_length=44,
         aliases=("MEMORY_ENCRYPTION_KEY",),
     ),
-    SecretSpec("AUTONOMY_WEBHOOK_SECRET", "hex", 32),
-    SecretSpec("SWARM_FEDERATION_SHARED_SECRET", "hex", 32),
-    SecretSpec("GITHUB_WEBHOOK_SECRET", "hex", 20),
-    SecretSpec("GRAFANA_ADMIN_PASSWORD", "urlsafe", 32),
-    SecretSpec("SIDAR_METRICS_TOKEN", "urlsafe", 32, aliases=("METRICS_TOKEN",)),
+    SecretSpec("AUTONOMY_WEBHOOK_SECRET", "hex", 32, essential=False),
+    SecretSpec("SWARM_FEDERATION_SHARED_SECRET", "hex", 32, essential=False),
+    SecretSpec("GITHUB_WEBHOOK_SECRET", "hex", 20, essential=False),
+    SecretSpec("GRAFANA_ADMIN_PASSWORD", "urlsafe", 32, essential=False),
+    SecretSpec(
+        "SIDAR_METRICS_TOKEN",
+        "urlsafe",
+        32,
+        aliases=("METRICS_TOKEN",),
+        essential=False,
+    ),
 )
 
 
@@ -104,7 +111,6 @@ def _split_env_line(line: str) -> tuple[str, str] | None:
     return key, value.rstrip("\n\r")
 
 
-
 def _strong_alias_value(lines: list[str], spec: SecretSpec) -> str | None:
     for line in lines:
         parsed = _split_env_line(line)
@@ -116,7 +122,13 @@ def _strong_alias_value(lines: list[str], spec: SecretSpec) -> str | None:
     return None
 
 
-def _needs_update(lines: list[str], spec: SecretSpec, *, force: bool) -> tuple[bool, int | None]:
+def _needs_update(
+    lines: list[str],
+    spec: SecretSpec,
+    *,
+    force: bool,
+    include_missing_essential: bool,
+) -> tuple[bool, int | None]:
     for idx, line in enumerate(lines):
         parsed = _split_env_line(line)
         if not parsed:
@@ -125,7 +137,7 @@ def _needs_update(lines: list[str], spec: SecretSpec, *, force: bool) -> tuple[b
         if key != spec.key:
             continue
         return force or _is_weak_or_placeholder(value, spec), idx
-    return True, None
+    return spec.essential and include_missing_essential, None
 
 
 def initialize_env_file(
@@ -134,6 +146,7 @@ def initialize_env_file(
     example_path: str | Path = ".env.example",
     force: bool = False,
     create: bool = True,
+    include_missing_essential: bool = True,
 ) -> EnvKeyResult:
     """Create/update an env file and fill local Sidar security secrets.
 
@@ -159,7 +172,20 @@ def initialize_env_file(
     skipped: list[str] = []
 
     for spec in SECRET_SPECS:
-        should_update, idx = _needs_update(lines, spec, force=force)
+        env_keys = {
+            parsed[0]
+            for line in lines
+            if (parsed := _split_env_line(line)) is not None
+        }
+        if spec.key not in env_keys and not (env_keys & set(spec.aliases)):
+            if not spec.essential or not include_missing_essential:
+                continue
+        should_update, idx = _needs_update(
+            lines,
+            spec,
+            force=force,
+            include_missing_essential=include_missing_essential,
+        )
         if not should_update:
             skipped.append(spec.key)
             continue

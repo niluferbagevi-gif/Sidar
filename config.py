@@ -40,7 +40,14 @@ base_env_path = BASE_DIR / ".env"
 if base_env_path.exists():
     load_dotenv(dotenv_path=base_env_path)
 
-# 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
+# 3. Opsiyonel ileri seviye ayarları temel .env sonrasında yükle.
+#    Minimal deneme kurulumları için yalnız .env yeterlidir; .env.advanced varsa
+#    LoRA, webhook, gözlemlenebilirlik ve federasyon gibi gelişmiş ayarları devreye alır.
+advanced_env_path = BASE_DIR / ".env.advanced"
+if advanced_env_path.exists():
+    load_dotenv(dotenv_path=advanced_env_path, override=True)
+
+# 4. Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
     if specific_env_path.exists():
@@ -57,7 +64,7 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 4. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
+# 5. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
 #    (örn: test ortamında DOTENV_FILE=.env.test)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
 if _explicit_dotenv:
