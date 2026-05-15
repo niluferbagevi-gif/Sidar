@@ -64,7 +64,14 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 5. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
+# 5. Kullanıcının gerçek servis anahtarlarını repo dışında tutabilmesi için
+#    ~/.sidar_keys.env dosyasını opsiyonel olarak yükle. Bu dosya .env ailesinin
+#    üstüne yazar; böylece paylaşılan repo şablonları sır içermez.
+user_keys_env_path = Path.home() / ".sidar_keys.env"
+if user_keys_env_path.exists():
+    load_dotenv(dotenv_path=user_keys_env_path, override=True)
+
+# 6. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
 #    (örn: test ortamında DOTENV_FILE=.env.test)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
 if _explicit_dotenv:
@@ -828,6 +835,7 @@ class Config:
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
+    SLACK_APP_LEVEL_TOKEN: str = os.getenv("SLACK_APP_LEVEL_TOKEN", "")
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
     SLACK_DEFAULT_CHANNEL: str = os.getenv("SLACK_DEFAULT_CHANNEL", "")
 
@@ -842,6 +850,13 @@ class Config:
 
     # ─── Microsoft Teams Entegrasyonu (v6.0) ────────────────────
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+
+    # ─── Meta / Sosyal Medya Entegrasyonları (Poyraz) ───────────
+    META_GRAPH_API_TOKEN: str = os.getenv("META_GRAPH_API_TOKEN", "")
+    META_GRAPH_API_VERSION: str = os.getenv("META_GRAPH_API_VERSION", "v20.0")
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID", "")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
