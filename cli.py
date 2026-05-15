@@ -151,11 +151,51 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     print(f"  Paket Bilgi     : {agent.pkg.status()}")
     docs_status = agent.docs.status()
     print(f"  Belge Deposu    : {docs_status}")
-    if "pgvector (pasif)" in docs_status:
+
+    db = getattr(getattr(agent, "memory", None), "db", None)
+    if db is not None and bool(getattr(db, "degraded_mode", False)):
         print(
-            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+            "  Veritabanı      : ⚠ SQLite degraded mode (PostgreSQL kullanılamıyor — `.env` POSTGRES_* / DATABASE_URL parite kontrolü gerekli)."
         )
-    if "RAG: 0 belge" in docs_status:
+
+    pgvector_detail: dict = {}
+    try:
+        if hasattr(agent.docs, "pgvector_status_detail"):
+            pgvector_detail = agent.docs.pgvector_status_detail() or {}
+    except Exception:
+        pgvector_detail = {}
+
+    failure_category = pgvector_detail.get("failure_category")
+    if "pgvector (pasif)" in docs_status:
+        category_hints = {
+            "authentication": (
+                "pgvector pasif (PostgreSQL kimlik doğrulama başarısız); .env içindeki "
+                "DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD eşleşmesini doğrulayın."
+            ),
+            "connection": (
+                "pgvector pasif (PostgreSQL servisine ulaşılamadı); `docker compose ps postgres` ile "
+                "servis durumunu ve DATABASE_URL host/port değerlerini kontrol edin."
+            ),
+            "timeout": (
+                "pgvector pasif (PostgreSQL bağlantısı zaman aşımına uğradı); servis sağlığını ve "
+                "ağ erişimini kontrol edin."
+            ),
+            "extension": (
+                "pgvector pasif (PostgreSQL erişilebilir ancak `vector` eklentisi yüklü değil); "
+                "`CREATE EXTENSION IF NOT EXISTS vector;` çalıştırıp Alembic migrasyonlarını uygulayın."
+            ),
+        }
+        warning_line = category_hints.get(
+            str(failure_category or ""),
+            "pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın.",
+        )
+        print(f"  RAG Uyarısı     : {warning_line}")
+
+    if "RAG: 0 belge" in docs_status and failure_category not in {
+        "authentication",
+        "connection",
+        "timeout",
+    }:
         print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")
     print("\n  '.help' yazarak komut listesini görebilirsiniz.\n")
 

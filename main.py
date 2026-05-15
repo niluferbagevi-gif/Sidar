@@ -182,7 +182,7 @@ def _doctor_status_icon(status: str) -> str:
     return {"pass": "✅", "warn": "⚠", "fail": "❌"}.get(status, "ℹ️")
 
 
-def _print_doctor_check_summary(check: Any) -> None:
+def _print_doctor_check_summary(check: Any, seen_commands: set[str] | None = None) -> None:
     status = str(getattr(check, "status", "warn") or "warn")
     name = str(getattr(check, "name", "doctor") or "doctor")
     message = str(getattr(check, "message", "") or "")
@@ -202,8 +202,19 @@ def _print_doctor_check_summary(check: Any) -> None:
 
     commands = details.get("recommended_commands") if isinstance(details, dict) else None
     if isinstance(commands, list) and status in {"warn", "fail"}:
-        for command in commands[:3]:
-            print(f"{CYAN}   • Komut: {command}{RESET}")
+        printed = 0
+        for command in commands:
+            if printed >= 3:
+                break
+            command_key = str(command).strip()
+            if not command_key:
+                continue
+            if seen_commands is not None and command_key in seen_commands:
+                continue
+            if seen_commands is not None:
+                seen_commands.add(command_key)
+            print(f"{CYAN}   • Komut: {command_key}{RESET}")
+            printed += 1
 
 
 def _run_launcher_doctor_preflight() -> None:
@@ -218,9 +229,10 @@ def _run_launcher_doctor_preflight() -> None:
         return
 
     print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
+    seen_commands: set[str] = set()
     for check_func in (check_database_env, check_database_connectivity, check_rag_readiness):
         try:
-            _print_doctor_check_summary(check_func())
+            _print_doctor_check_summary(check_func(), seen_commands=seen_commands)
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
