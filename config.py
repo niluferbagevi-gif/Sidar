@@ -127,12 +127,24 @@ LLM_SETTINGS = LLMClientSettings()
 # ═══════════════════════════════════════════════════════════════
 
 
-def get_bool_env(key: str, default: bool = False) -> bool:
-    raw_val = os.getenv(key)
+def _parse_strict_bool_env(key: str, raw_val: str | None, default: bool) -> bool:
+    """Parse environment booleans with an enterprise-safe true/false contract."""
+
     if raw_val is None or not raw_val.strip():
         return default
     val = raw_val.strip().lower()
-    return val in ("true", "1", "yes", "on")
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(
+        f"{key} must be either 'true' or 'false' (case-insensitive); "
+        f"got {raw_val!r}. Legacy values such as 1/0/yes/no/on/off are not supported."
+    )
+
+
+def get_bool_env(key: str, default: bool = False) -> bool:
+    return _parse_strict_bool_env(key, os.getenv(key), default)
 
 
 def get_int_env(key: str, default: int = 0) -> int:
@@ -176,10 +188,43 @@ def get_sidar_int_env(key: str, default: int = 0) -> int:
 
 
 def get_sidar_bool_env(key: str, default: bool = False) -> bool:
-    raw_val = get_sidar_env(key, "")
-    if not raw_val.strip():
-        return default
-    return raw_val.strip().lower() in ("true", "1", "yes", "on")
+    prefixed = f"SIDAR_{key}"
+    raw_val = os.getenv(prefixed)
+    if raw_val is None or not raw_val.strip():
+        raw_val = os.getenv(key)
+        key = key if raw_val is not None and raw_val.strip() else prefixed
+    else:
+        key = prefixed
+    return _parse_strict_bool_env(key, raw_val, default)
+
+
+def get_deprecated_int_env(key: str, default: int, *, replacement: str) -> int:
+    if os.getenv(key, "").strip():
+        warnings.warn(
+            f"{key} is deprecated and will be removed in a future release; "
+            f"use {replacement} instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    return get_int_env(key, default)
+
+
+def resolve_web_scrape_max_chars(default: int = 12000) -> int:
+    """Resolve the preferred web scrape character limit with legacy compatibility."""
+
+    preferred = os.getenv("WEB_SCRAPE_MAX_CHARS", "").strip()
+    if preferred:
+        if os.getenv("WEB_FETCH_MAX_CHARS", "").strip():
+            warnings.warn(
+                "WEB_FETCH_MAX_CHARS is deprecated and ignored because "
+                "WEB_SCRAPE_MAX_CHARS is set; remove WEB_FETCH_MAX_CHARS.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+    return get_deprecated_int_env(
+        "WEB_FETCH_MAX_CHARS", default, replacement="WEB_SCRAPE_MAX_CHARS"
+    )
 
 
 def _postgres_env_value(key: str, default: str, *, preserve_blank: bool = False) -> str:
@@ -656,9 +701,10 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = resolve_web_scrape_max_chars(12000)
+    # Eski attribute, runtime uyumluluğu için yeni değere eşit tutulur.
+    WEB_FETCH_MAX_CHARS: int = WEB_SCRAPE_MAX_CHARS
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)

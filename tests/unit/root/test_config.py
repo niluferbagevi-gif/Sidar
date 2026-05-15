@@ -8,14 +8,24 @@ import pytest
 import config
 
 
-def test_get_bool_env_truthy_and_default(monkeypatch):
-    monkeypatch.setenv("FLAG_A", " yes ")
-    monkeypatch.setenv("FLAG_B", "0")
+def test_get_bool_env_accepts_only_true_false_and_default(monkeypatch):
+    monkeypatch.setenv("FLAG_A", " TRUE ")
+    monkeypatch.setenv("FLAG_B", "false")
     monkeypatch.delenv("FLAG_C", raising=False)
 
     assert config.get_bool_env("FLAG_A", False) is True
     assert config.get_bool_env("FLAG_B", True) is False
     assert config.get_bool_env("FLAG_C", True) is True
+
+
+def test_get_bool_env_rejects_legacy_truthy_aliases(monkeypatch):
+    monkeypatch.setenv("FLAG_A", "yes")
+    monkeypatch.setenv("FLAG_B", "0")
+
+    with pytest.raises(ValueError, match="1/0/yes/no/on/off"):
+        config.get_bool_env("FLAG_A", False)
+    with pytest.raises(ValueError, match="1/0/yes/no/on/off"):
+        config.get_bool_env("FLAG_B", True)
 
 
 def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
@@ -126,6 +136,24 @@ def test_resolve_container_database_url_uses_postgres_service_host(monkeypatch):
         config.resolve_container_database_url()
         == "postgresql+asyncpg://sidar:secret@postgres:5432/sidar"
     )
+
+
+
+
+def test_resolve_web_scrape_max_chars_prefers_new_name(monkeypatch):
+    monkeypatch.setenv("WEB_SCRAPE_MAX_CHARS", "7000")
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "4000")
+
+    with pytest.warns(DeprecationWarning, match="WEB_FETCH_MAX_CHARS is deprecated"):
+        assert config.resolve_web_scrape_max_chars() == 7000
+
+
+def test_resolve_web_scrape_max_chars_supports_legacy_with_warning(monkeypatch):
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "4000")
+
+    with pytest.warns(DeprecationWarning, match="WEB_FETCH_MAX_CHARS is deprecated"):
+        assert config.resolve_web_scrape_max_chars() == 4000
 
 
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
