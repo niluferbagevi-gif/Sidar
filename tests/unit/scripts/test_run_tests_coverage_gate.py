@@ -53,6 +53,31 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
+PRODUCTION_REQUIRED_SECRETS = (
+    "JWT_SECRET_KEY",
+    "MEMORY_ENCRYPTION_KEY",
+    "API_KEY",
+    "METRICS_TOKEN",
+    "AUTONOMY_WEBHOOK_SECRET",
+    "SWARM_FEDERATION_SHARED_SECRET",
+    "GRAFANA_ADMIN_PASSWORD",
+    "GITHUB_WEBHOOK_SECRET",
+)
+
+
+def test_env_example_has_production_required_secret_checklist() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    checklist = env_example.split("PRODUCTION_REQUIRED CHECKLIST", maxsplit=1)[1].split(
+        "# ─── AI Sağlayıcısı", maxsplit=1
+    )[0]
+
+    assert "secret manager / CI secret store" in checklist
+    assert "secrets.token_urlsafe(32)" in checklist
+    for secret_name in PRODUCTION_REQUIRED_SECRETS:
+        assert f"# - {secret_name}" in checklist
+        assert f"{secret_name}=" in env_example
+
+
 def test_env_examples_document_postgres_host_consistently() -> None:
     for env_path in (".env.example", ".env.development.example", ".env.test.example"):
         content = Path(env_path).read_text(encoding="utf-8")
