@@ -93,6 +93,40 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
     )
 
 
+def _pgvector_failure_category(exc: BaseException) -> str:
+    """pgvector başlatma hatasını sınıflandırır (banner/teşhis için)."""
+
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(
+        marker in text
+        for marker in (
+            "password authentication failed",
+            "authentication failed",
+            "invalid password",
+            "28p01",
+            "permission denied",
+            "auth",
+        )
+    ):
+        return "authentication"
+    if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
+        return "timeout"
+    if any(
+        marker in text
+        for marker in (
+            "connection refused",
+            "could not connect",
+            "server closed",
+            "connection failed",
+            "connection reset",
+        )
+    ):
+        return "connection"
+    if "extension" in text or "vector" in text:
+        return "extension"
+    return "unknown"
+
+
 class GraphIndex:
     """Kod tabanı içi modül, endpoint ve çağrı ilişkilerini yönlü grafik olarak tutar."""
 
@@ -740,6 +774,7 @@ class DocumentStore:
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
         self._pgvector_available = False
+        self._pgvector_failure_category: str | None = None
 
         self.chroma_client: Any | None = None
         self.collection: Any | None = None
@@ -982,6 +1017,7 @@ class DocumentStore:
             logger.warning(_pgvector_failure_action_message(exc))
             logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
             self._pgvector_available = False
+            self._pgvector_failure_category = _pgvector_failure_category(exc)
 
     def _pgvector_embed_texts(
         self, texts: builtins.list[str]
@@ -2785,3 +2821,12 @@ class DocumentStore:
             engines.append(f"GraphRAG ({graph_state})")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+
+    def pgvector_status_detail(self) -> dict[str, Any]:
+        """pgvector backend durumunu yapılandırılmış olarak döndürür (banner/teşhis için)."""
+        return {
+            "available": bool(getattr(self, "_pgvector_available", False)),
+            "configured_backend": str(getattr(self, "_vector_backend", "") or ""),
+            "failure_category": getattr(self, "_pgvector_failure_category", None),
+            "document_count": len(getattr(self, "_index", {}) or {}),
+        }
