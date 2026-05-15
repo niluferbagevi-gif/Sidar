@@ -73,7 +73,7 @@ services:
       - ollama
 
     environment:
-      - ACCESS_LEVEL=sandbox
+      - SIDAR_ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - POSTGRES_HOST=postgres
@@ -134,7 +134,7 @@ services:
       - ollama
 
     environment:
-      - ACCESS_LEVEL=sandbox
+      - SIDAR_ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - POSTGRES_HOST=postgres
@@ -177,7 +177,7 @@ services:
     command: --quick web --host 0.0.0.0 --port 7860
 
     ports:
-      - "${WEB_PORT:-7860}:7860"
+      - "${SIDAR_WEB_PORT:-7860}:7860"
 
     deploy:
       resources:
@@ -192,15 +192,15 @@ services:
       - ollama
 
     environment:
-      - ACCESS_LEVEL=sandbox
+      - SIDAR_ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
-      - WEB_HOST=0.0.0.0
-      - WEB_PORT=7860
-      - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
-      - API_KEY=${API_KEY:-}
+      - SIDAR_WEB_HOST=0.0.0.0
+      - SIDAR_WEB_PORT=7860
+      - SIDAR_MEMORY_ENCRYPTION_KEY=${SIDAR_MEMORY_ENCRYPTION_KEY:-${MEMORY_ENCRYPTION_KEY:-}}
+      - SIDAR_API_KEY=${SIDAR_API_KEY:-${API_KEY:-}}
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
@@ -254,21 +254,21 @@ services:
       - ollama
 
     environment:
-      - ACCESS_LEVEL=sandbox
+      - SIDAR_ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
-      - WEB_HOST=0.0.0.0
-      - WEB_PORT=7860
+      - SIDAR_WEB_HOST=0.0.0.0
+      - SIDAR_WEB_PORT=7860
       - USE_GPU=true
       - GPU_DEVICE=${GPU_DEVICE:-0}
       - GPU_MEMORY_FRACTION=${GPU_MEMORY_FRACTION:-0.8}
       - GPU_MIXED_PRECISION=${GPU_MIXED_PRECISION:-true}   # Ampere+ (RTX 30xx/40xx) FP16 destekler; eski GPU için .env'de false yapın
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
-      - API_KEY=${API_KEY:-}
+      - SIDAR_MEMORY_ENCRYPTION_KEY=${SIDAR_MEMORY_ENCRYPTION_KEY:-${MEMORY_ENCRYPTION_KEY:-}}
+      - SIDAR_API_KEY=${SIDAR_API_KEY:-${API_KEY:-}}
       - ENABLE_TRACING=${ENABLE_TRACING:-true}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}

@@ -191,7 +191,7 @@
 
 ### ✅ Bellek Şifreleme (Fernet)
 
-- `MEMORY_ENCRYPTION_KEY` tanımlandığında oturum dosyaları diskte şifrelenir.
+- `SIDAR_MEMORY_ENCRYPTION_KEY` tanımlandığında oturum dosyaları diskte şifrelenir.
 - Hassas ortamlarda varsayılan JSON saklama yerine şifreli depolama önerilir.
 - Anahtar üretimi için örnek komut:
 
@@ -306,9 +306,9 @@ sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
 `sidar init`, `.env.example` dosyasını `.env` olarak kopyalar ve boş/zayıf Sidar-managed
-secret alanlarını otomatik doldurur: `POSTGRES_PASSWORD`, `API_KEY`, `JWT_SECRET_KEY`,
-`MEMORY_ENCRYPTION_KEY`, webhook/federation secret'ları, `GRAFANA_ADMIN_PASSWORD` ve
-`METRICS_TOKEN`. `sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini
+secret alanlarını otomatik doldurur: `POSTGRES_PASSWORD`, `SIDAR_API_KEY`, `SIDAR_JWT_SECRET_KEY`,
+`SIDAR_MEMORY_ENCRYPTION_KEY`, webhook/federation secret'ları, `GRAFANA_ADMIN_PASSWORD` ve
+`SIDAR_METRICS_TOKEN`. `sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini
 yapar; `--force` verilirse mevcut Sidar-managed secret'lar da yeniden üretilir. Harici
 sağlayıcı anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY` vb.) otomatik üretilmez.
 
@@ -770,19 +770,19 @@ POSTGRES_USER=sidar
 POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
 
 # Güvenlik
-ACCESS_LEVEL=sandbox            # restricted | sandbox | full
+SIDAR_ACCESS_LEVEL=sandbox            # restricted | sandbox | full
 
 # GitHub
 GITHUB_TOKEN=
 GITHUB_REPO=kullanici/depo
 
 # Web Sunucu
-WEB_HOST=0.0.0.0
-WEB_PORT=7860
+SIDAR_WEB_HOST=0.0.0.0
+SIDAR_WEB_PORT=7860
 
 # Bellek & Oturum
-MAX_MEMORY_TURNS=20
-MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
+SIDAR_MAX_MEMORY_TURNS=20
+SIDAR_MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
 
 # Zaman Aşımı
 OLLAMA_TIMEOUT=30

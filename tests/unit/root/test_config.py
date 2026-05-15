@@ -41,6 +41,34 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+
+def test_sidar_env_prefixed_values_take_precedence(monkeypatch):
+    monkeypatch.setenv("ACCESS_LEVEL", "restricted")
+    monkeypatch.setenv("SIDAR_ACCESS_LEVEL", "sandbox")
+    monkeypatch.setenv("RATE_LIMIT_CHAT", "10")
+    monkeypatch.setenv("SIDAR_RATE_LIMIT_CHAT", "42")
+
+    assert config.get_sidar_env("ACCESS_LEVEL", "full") == "sandbox"
+    assert config.get_sidar_int_env("RATE_LIMIT_CHAT", 20) == 42
+
+
+def test_sidar_env_legacy_fallback_remains_supported(monkeypatch):
+    monkeypatch.setenv("ACCESS_LEVEL", "restricted")
+    monkeypatch.delenv("SIDAR_ACCESS_LEVEL", raising=False)
+    monkeypatch.setenv("RATE_LIMIT_CHAT", "11")
+    monkeypatch.delenv("SIDAR_RATE_LIMIT_CHAT", raising=False)
+
+    assert config.get_sidar_env("ACCESS_LEVEL", "full") == "restricted"
+    assert config.get_sidar_int_env("RATE_LIMIT_CHAT", 20) == 11
+
+
+def test_sidar_env_blank_prefixed_value_falls_back_to_legacy(monkeypatch):
+    monkeypatch.setenv("SIDAR_API_KEY", "")
+    monkeypatch.setenv("API_KEY", "legacy-key")
+
+    assert config.get_sidar_env("API_KEY", "") == "legacy-key"
+
+
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "3")
     monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "60")
@@ -1263,5 +1291,5 @@ def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
-    with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
+    with pytest.raises(ValueError, match="SIDAR_JWT_SECRET_KEY boş bırakılamaz"):
         config.Config()

@@ -1543,7 +1543,7 @@ for arg in "$@"; do
             echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
-  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
+  --i-understand-full-access  SIDAR_ACCESS_LEVEL=full için açık risk onayı"
             echo "  --cpu  GPU algılansa bile CPU modunda kur"
             echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
             echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
@@ -3595,38 +3595,38 @@ PY
     fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
+    if _is_missing_or_insecure "SIDAR_API_KEY" \
         "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
-            _write_secret "API_KEY" "$_v"
-            ok ".env: API_KEY otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_API_KEY" "$_v"
+            ok ".env: SIDAR_API_KEY otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_API_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
+    if _is_missing_or_insecure "SIDAR_JWT_SECRET_KEY" \
         "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
-            _write_secret "JWT_SECRET_KEY" "$_v"
-            ok ".env: JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_JWT_SECRET_KEY" "$_v"
+            ok ".env: SIDAR_JWT_SECRET_KEY otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_JWT_SECRET_KEY otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
+    if _is_missing_or_insecure "SIDAR_MEMORY_ENCRYPTION_KEY" \
         "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
-            _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
-            ok ".env: MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
+            _write_secret "SIDAR_MEMORY_ENCRYPTION_KEY" "$_v"
+            ok ".env: SIDAR_MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi."
         else
-            warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
+            warn "SIDAR_MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
         fi
     fi
 
@@ -3664,14 +3664,14 @@ PY
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
     # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
+    if _is_missing_or_insecure "SIDAR_METRICS_TOKEN" \
         "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
-            _write_secret "METRICS_TOKEN" "$_v"
-            ok ".env: METRICS_TOKEN otomatik ve güvenli bir değerle oluşturuldu."
+            _write_secret "SIDAR_METRICS_TOKEN" "$_v"
+            ok ".env: SIDAR_METRICS_TOKEN otomatik ve güvenli bir değerle oluşturuldu."
         else
-            warn "METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+            warn "SIDAR_METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
 }
@@ -3790,19 +3790,19 @@ is_weak_secret_value() {
 validate_required_security_profile() {
     local env_file="$1"
     local api_key memory_key access_level db_password database_url pg_password grafana_password
-    api_key="$(get_env_value "$env_file" API_KEY)"
-    memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
-    access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
+    api_key="$(get_sidar_env_value "$env_file" SIDAR_API_KEY API_KEY)"
+    memory_key="$(get_sidar_env_value "$env_file" SIDAR_MEMORY_ENCRYPTION_KEY MEMORY_ENCRYPTION_KEY)"
+    access_level="$(get_sidar_env_value "$env_file" SIDAR_ACCESS_LEVEL ACCESS_LEVEL)"
     database_url="$(get_env_value "$env_file" DATABASE_URL)"
     pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
     grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
 
     if is_weak_secret_value "$api_key"; then
-        fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
     fi
 
     if [[ -z "$memory_key" ]]; then
-        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY boş. Geçerli Fernet anahtarı zorunludur."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_MEMORY_ENCRYPTION_KEY boş. Geçerli Fernet anahtarı zorunludur."
     fi
     if ! python3 - "$memory_key" <<'PYFERNET'
 import sys
@@ -3810,11 +3810,11 @@ from cryptography.fernet import Fernet
 Fernet(sys.argv[1].encode())
 PYFERNET
     then
-        fail ".env güvenlik doğrulaması başarısız: MEMORY_ENCRYPTION_KEY geçerli Fernet anahtarı değil."
+        fail ".env güvenlik doğrulaması başarısız: SIDAR_MEMORY_ENCRYPTION_KEY geçerli Fernet anahtarı değil."
     fi
 
     if [[ "${access_level,,}" == "full" && "$ALLOW_FULL_ACCESS" != true ]]; then
-        fail "ACCESS_LEVEL=full yalnız açık onayla kullanılabilir. Riskleri kabul ediyorsanız --i-understand-full-access bayrağını verin."
+        fail "SIDAR_ACCESS_LEVEL=full yalnız açık onayla kullanılabilir. Riskleri kabul ediyorsanız --i-understand-full-access bayrağını verin."
     fi
 
     db_password="$(python3 - "$database_url" <<'PYDB' 2>/dev/null || true

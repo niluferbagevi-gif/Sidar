@@ -37,6 +37,7 @@ class SecretSpec:
     kind: SecretKind
     nbytes: int
     min_length: int = 24
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,14 +50,20 @@ class EnvKeyResult:
 
 SECRET_SPECS: tuple[SecretSpec, ...] = (
     SecretSpec("POSTGRES_PASSWORD", "urlsafe", 32),
-    SecretSpec("API_KEY", "urlsafe", 32),
-    SecretSpec("JWT_SECRET_KEY", "urlsafe", 64),
-    SecretSpec("MEMORY_ENCRYPTION_KEY", "fernet", 32, min_length=44),
+    SecretSpec("SIDAR_API_KEY", "urlsafe", 32, aliases=("API_KEY",)),
+    SecretSpec("SIDAR_JWT_SECRET_KEY", "urlsafe", 64, aliases=("JWT_SECRET_KEY",)),
+    SecretSpec(
+        "SIDAR_MEMORY_ENCRYPTION_KEY",
+        "fernet",
+        32,
+        min_length=44,
+        aliases=("MEMORY_ENCRYPTION_KEY",),
+    ),
     SecretSpec("AUTONOMY_WEBHOOK_SECRET", "hex", 32),
     SecretSpec("SWARM_FEDERATION_SHARED_SECRET", "hex", 32),
     SecretSpec("GITHUB_WEBHOOK_SECRET", "hex", 20),
     SecretSpec("GRAFANA_ADMIN_PASSWORD", "urlsafe", 32),
-    SecretSpec("METRICS_TOKEN", "urlsafe", 32),
+    SecretSpec("SIDAR_METRICS_TOKEN", "urlsafe", 32, aliases=("METRICS_TOKEN",)),
 )
 
 
@@ -95,6 +102,18 @@ def _split_env_line(line: str) -> tuple[str, str] | None:
     if not key:
         return None
     return key, value.rstrip("\n\r")
+
+
+
+def _strong_alias_value(lines: list[str], spec: SecretSpec) -> str | None:
+    for line in lines:
+        parsed = _split_env_line(line)
+        if not parsed:
+            continue
+        key, value = parsed
+        if key in spec.aliases and not _is_weak_or_placeholder(value, spec):
+            return value.strip().strip('"\'')
+    return None
 
 
 def _needs_update(lines: list[str], spec: SecretSpec, *, force: bool) -> tuple[bool, int | None]:
@@ -144,7 +163,9 @@ def initialize_env_file(
         if not should_update:
             skipped.append(spec.key)
             continue
-        value = generate_secret(spec)
+        value = _strong_alias_value(lines, spec) if idx is None and not force else None
+        if value is None:
+            value = generate_secret(spec)
         new_line = f"{spec.key}={value}\n"
         if idx is None:
             if lines and not lines[-1].endswith(("\n", "\r")):

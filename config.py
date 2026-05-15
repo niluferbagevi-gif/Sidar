@@ -144,6 +144,30 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     return [item.strip() for item in value.split(separator) if item.strip()]
 
 
+def get_sidar_env(key: str, default: str = "") -> str:
+    """Read SIDAR_<KEY> first, with legacy unprefixed fallback."""
+
+    prefixed = f"SIDAR_{key}"
+    value = os.getenv(prefixed)
+    if value is not None and value.strip():
+        return value
+    return os.getenv(key, default)
+
+
+def get_sidar_int_env(key: str, default: int = 0) -> int:
+    try:
+        return int(get_sidar_env(key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
+def get_sidar_bool_env(key: str, default: bool = False) -> bool:
+    raw_val = get_sidar_env(key, "")
+    if not raw_val.strip():
+        return default
+    return raw_val.strip().lower() in ("true", "1", "yes", "on")
+
+
 def _postgres_env_value(key: str, default: str, *, preserve_blank: bool = False) -> str:
     raw = os.getenv(key)
     if raw is None:
@@ -210,7 +234,7 @@ def get_db_pool_size_default() -> int:
 _LOG_DIR = BASE_DIR / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-_LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
+_LOG_LEVEL_STR = get_sidar_env("LOG_LEVEL", "INFO").upper()
 _LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
 _LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
 _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
@@ -496,11 +520,11 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
-    ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
-    API_KEY: str = os.getenv("API_KEY", "")
+    ACCESS_LEVEL: str = get_sidar_env("ACCESS_LEVEL", "sandbox")
+    API_KEY: str = get_sidar_env("API_KEY", "")
 
     # ─── JWT Auth (stateless) ─────────────────────────────────
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", os.getenv("API_KEY", ""))
+    JWT_SECRET_KEY: str = get_sidar_env("JWT_SECRET_KEY", get_sidar_env("API_KEY", ""))
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
 
@@ -542,11 +566,11 @@ class Config:
     GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", False)
 
     # ─── Uygulama ────────────────────────────────────────────
-    MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)
-    MEMORY_SUMMARY_KEEP_LAST: int = get_int_env("MEMORY_SUMMARY_KEEP_LAST", 4)
+    MAX_MEMORY_TURNS: int = get_sidar_int_env("MAX_MEMORY_TURNS", 20)
+    MEMORY_SUMMARY_KEEP_LAST: int = get_sidar_int_env("MEMORY_SUMMARY_KEEP_LAST", 4)
     CLI_FAST_MODE: bool = get_bool_env("CLI_FAST_MODE", False)
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    RESPONSE_LANGUAGE: str = os.getenv("RESPONSE_LANGUAGE", "tr")
+    LOG_LEVEL: str = get_sidar_env("LOG_LEVEL", "INFO")
+    RESPONSE_LANGUAGE: str = get_sidar_env("RESPONSE_LANGUAGE", "tr")
 
     # ─── Loglama ─────────────────────────────────────────────
     LOG_FILE: Path = _LOG_FILE_PATH
@@ -561,10 +585,10 @@ class Config:
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 
     # ─── API Rate Limiting ───────────────────────────────────
-    RATE_LIMIT_WINDOW: int = get_int_env("RATE_LIMIT_WINDOW", 60)
-    RATE_LIMIT_CHAT: int = get_int_env("RATE_LIMIT_CHAT", 20)
-    RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
-    RATE_LIMIT_GET_IO: int = get_int_env("RATE_LIMIT_GET_IO", 30)
+    RATE_LIMIT_WINDOW: int = get_sidar_int_env("RATE_LIMIT_WINDOW", 60)
+    RATE_LIMIT_CHAT: int = get_sidar_int_env("RATE_LIMIT_CHAT", 20)
+    RATE_LIMIT_MUTATIONS: int = get_sidar_int_env("RATE_LIMIT_MUTATIONS", 60)
+    RATE_LIMIT_GET_IO: int = get_sidar_int_env("RATE_LIMIT_GET_IO", 30)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
     ENABLE_DISTRIBUTED_AGENT_LOCKS: bool = get_bool_env("ENABLE_DISTRIBUTED_AGENT_LOCKS", True)
@@ -581,7 +605,7 @@ class Config:
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
     # Metrics endpoint'leri için statik Bearer token (boşsa yalnızca admin kullanıcılar erişebilir)
-    METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
+    METRICS_TOKEN: str = get_sidar_env("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = resolve_database_url()
@@ -660,11 +684,11 @@ class Config:
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
     # Fernet anahtarı üretmek için:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
+    MEMORY_ENCRYPTION_KEY: str = get_sidar_env("MEMORY_ENCRYPTION_KEY", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
-    WEB_HOST: str = os.getenv("WEB_HOST", "127.0.0.1")
-    WEB_PORT: int = get_int_env("WEB_PORT", 7860)
+    WEB_HOST: str = get_sidar_env("WEB_HOST", "127.0.0.1")
+    WEB_PORT: int = get_sidar_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
     # ─── Observability Bağlantı Noktaları ───────────────────
@@ -821,7 +845,7 @@ class Config:
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
         if not str(self.JWT_SECRET_KEY or "").strip() and not self._is_test_env():
-            raise ValueError("JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
+            raise ValueError("SIDAR_JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
@@ -957,7 +981,7 @@ class Config:
         }
         if cls.ACCESS_LEVEL.strip().lower() == "full" and not allow_full_access:
             logger.error(
-                "❌ ACCESS_LEVEL=full açık onay olmadan yasaktır. "
+                "❌ SIDAR_ACCESS_LEVEL=full açık onay olmadan yasaktır. "
                 "Riskleri kabul ediyorsanız SIDAR_ALLOW_FULL_ACCESS=true ayarlayın."
             )
             is_valid = False
@@ -980,7 +1004,7 @@ class Config:
                     Fernet(memory_encryption_key.encode())
                 except Exception as key_exc:
                     logger.error(
-                        "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
+                        "❌ SIDAR_MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
                         "   Geçerli anahtar üretmek için:\n"
                         '   python -c "from cryptography.fernet import Fernet; '
                         'print(Fernet.generate_key().decode())"',
@@ -989,14 +1013,14 @@ class Config:
                     is_valid = False
             except ImportError:
                 logger.error(
-                    "❌ MEMORY_ENCRYPTION_KEY ayarlanmış ama 'cryptography' paketi kurulu değil.\n"
+                    "❌ SIDAR_MEMORY_ENCRYPTION_KEY ayarlanmış ama 'cryptography' paketi kurulu değil.\n"
                     "   Bu kritik bir güvenlik ayarıdır. Şifreleme olmadan devam etmek\n"
                     "   güvenlik riskine yol açabilir. Kurmak için: uv pip install cryptography"
                 )
                 is_valid = False
         else:
             logger.critical(
-                "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory encryption. "
+                "SIDAR_MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory encryption. "
                 "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet "
                 "anahtarı eklemelisiniz.\n"
                 '   Yeni anahtar üretmek için: python -c "from cryptography.fernet import '
@@ -1004,7 +1028,7 @@ class Config:
             )
             if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
                 logger.critical(
-                    "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
+                    "SIDAR_ENV=production iken SIDAR_MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
                 )
                 raise SystemExit(1)
 
