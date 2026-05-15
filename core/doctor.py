@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess  # nosec B404
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,9 +132,121 @@ def _redact_url(database_url: str) -> str:
 def _redact_exception_text(exc: BaseException, *, database_url: str = "") -> str:
     text = str(exc)
     candidates = {database_url, _normalize_postgres_dsn(database_url), _redact_url(database_url)}
+    parsed = urlparse(database_url) if database_url else None
+    password = unquote(str(getattr(parsed, "password", "") or "")) if parsed else ""
+    if password:
+        candidates.add(password)
     for candidate in sorted((value for value in candidates if value), key=len, reverse=True):
-        text = text.replace(candidate, _redact_url(candidate))
+        text = text.replace(candidate, "***" if candidate == password else _redact_url(candidate))
     return text
+
+
+def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, dict[str, Any]]:
+    text = f"{type(exc).__name__} {exc}".lower()
+    common_commands = [
+        "docker compose ps postgres",
+        "uv run python -m core.doctor artifacts/install/doctor.json",
+    ]
+    if any(
+        marker in text
+        for marker in (
+            "password authentication failed",
+            "authentication failed",
+            "invalid password",
+            "28p01",
+            "permission denied",
+            "auth",
+        )
+    ):
+        return (
+            "PostgreSQL authentication failed; verify DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/POSTGRES_PASSWORD parity. "
+            "If a Docker volume already existed, sync the stored PostgreSQL user password or reset the dev volume. "
+            "Sidar will enter SQLite degraded mode and pgvector will fall back to BM25.",
+            {
+                "failure_category": "authentication",
+                "root_cause_hints": [
+                    "DATABASE_URL password does not match POSTGRES_PASSWORD",
+                    "SIDAR_CONTAINER_DATABASE_URL uses different credentials than DATABASE_URL",
+                    "PostgreSQL Docker volume was initialized with an older password",
+                    "sidar user exists with a different password in PostgreSQL",
+                ],
+                "remediation_steps": [
+                    "Compare POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, DATABASE_URL and SIDAR_CONTAINER_DATABASE_URL in .env.",
+                    "If the env values are correct but auth still fails, run ALTER USER for the existing PostgreSQL user or reset the PostgreSQL volume in development only.",
+                    "Restart PostgreSQL and rerun `uv run python -m core.doctor artifacts/install/doctor.json`.",
+                ],
+                "recommended_commands": common_commands
+                + [
+                    "docker compose exec postgres psql -U postgres -d postgres -c \"ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';\"",
+                    "# development only: docker compose down && docker volume rm <sidar_postgres_data> && docker compose up -d postgres",
+                ],
+            },
+        )
+    if any(
+        marker in text for marker in ("role", "does not exist", "3d000", "invalid catalog name")
+    ):
+        return (
+            "PostgreSQL is reachable but the expected user/database is missing; verify POSTGRES_USER and POSTGRES_DB initialization.",
+            {
+                "failure_category": "missing_role_or_database",
+                "root_cause_hints": [
+                    "sidar user or sidar database was not created",
+                    "DATABASE_URL points to a database name that differs from POSTGRES_DB",
+                    "Existing Docker volume was initialized before current .env values",
+                ],
+                "remediation_steps": [
+                    "Check POSTGRES_USER and POSTGRES_DB in .env.",
+                    "Create the missing role/database or reset the development PostgreSQL volume.",
+                ],
+                "recommended_commands": common_commands,
+            },
+        )
+    if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
+        return (
+            "PostgreSQL connectivity smoke timed out; verify the service, host, port and container networking.",
+            {
+                "failure_category": "timeout",
+                "root_cause_hints": [
+                    "PostgreSQL service is slow or unavailable",
+                    "DATABASE_URL host/port is unreachable from this process",
+                ],
+                "recommended_commands": common_commands,
+            },
+        )
+    if any(
+        marker in text
+        for marker in (
+            "connectionrefusederror",
+            "connection refused",
+            "could not connect",
+            "server closed",
+            "connection failed",
+            "connection reset",
+        )
+    ):
+        return (
+            "PostgreSQL connectivity smoke failed; verify that the container/service is running and DATABASE_URL host/port are correct.",
+            {
+                "failure_category": "connection",
+                "root_cause_hints": [
+                    "PostgreSQL container is not running",
+                    "DATABASE_URL points to localhost from the wrong runtime context",
+                    "Port 5432 is not published or reachable",
+                ],
+                "recommended_commands": common_commands,
+            },
+        )
+    return (
+        "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and pgvector/BM25 fallback may be used",
+        {
+            "failure_category": "unknown",
+            "root_cause_hints": [
+                "Verify .env database credentials",
+                "Verify PostgreSQL service status and networking",
+            ],
+            "recommended_commands": common_commands,
+        },
+    )
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -279,6 +392,28 @@ def check_database_env() -> DoctorCheck:
     )
 
 
+def _run_coro_sync(coro: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def _target() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised in caller thread
+            result["error"] = exc
+
+    thread = threading.Thread(target=_target, name="sidar-doctor-async-probe", daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
 async def _probe_postgres_connectivity(
     database_url: str,
     *,
@@ -331,7 +466,7 @@ def check_database_connectivity() -> DoctorCheck:
     timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
     details["timeout_seconds"] = timeout_seconds
     try:
-        probe = asyncio.run(
+        probe = _run_coro_sync(
             _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
         )
         details.update(probe)
@@ -346,12 +481,9 @@ def check_database_connectivity() -> DoctorCheck:
     except Exception as exc:
         details["error"] = _redact_exception_text(exc, database_url=database_url)
         details["error_type"] = type(exc).__name__
-        return DoctorCheck(
-            "database_connectivity",
-            "warn",
-            "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and pgvector/BM25 fallback may be used",
-            details,
-        )
+        message, guidance = _postgres_connectivity_failure_guidance(exc)
+        details.update(guidance)
+        return DoctorCheck("database_connectivity", "warn", message, details)
 
     if os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() == "pgvector" and not details.get(
         "pgvector_extension_installed"
@@ -396,6 +528,7 @@ def check_rag_readiness() -> DoctorCheck:
         "recommended_commands": [
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
+            "belge ekle <url>",
         ],
     }
 

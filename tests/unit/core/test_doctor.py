@@ -338,9 +338,41 @@ def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
     check = doctor.check_database_connectivity()
 
     assert check.status == "warn"
-    assert "SQLite degraded mode" in check.message
+    assert "container/service is running" in check.message
+    assert check.details["failure_category"] == "connection"
     assert check.details["error_type"] == "ConnectionRefusedError"
     assert "docker compose ps postgres" in check.details["recommended_commands"]
+
+
+def test_database_connectivity_auth_failure_reports_volume_remediation_and_redacts(
+    monkeypatch,
+):
+    password = "secretpasswordsecretpassword"
+
+    async def _connect(dsn):
+        raise RuntimeError(f"password authentication failed for {dsn} with password={password}")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv(
+        "DATABASE_URL", f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar"
+    )
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert "Docker volume already existed" in check.message
+    assert check.details["failure_category"] == "authentication"
+    assert any("older password" in hint for hint in check.details["root_cause_hints"])
+    assert any("ALTER USER" in cmd for cmd in check.details["recommended_commands"])
+    assert password not in check.details["error"]
+    assert "postgresql+asyncpg://sidar:" not in check.details["error"]
+
+
+async def test_run_coro_sync_works_inside_running_event_loop() -> None:
+    async def _value() -> int:
+        return 7
+
+    assert doctor._run_coro_sync(_value()) == 7
 
 
 def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch):
@@ -377,6 +409,7 @@ def test_rag_readiness_warns_for_empty_index_and_entity_graph(monkeypatch, tmp_p
     assert check.details["document_count"] == 0
     assert "no indexed documents" in check.message
     assert "entity memory is empty" in check.message
+    assert "belge ekle <url>" in check.details["recommended_commands"]
 
 
 def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
