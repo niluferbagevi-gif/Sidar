@@ -1,6 +1,7 @@
 import importlib
 import os
 import types
+import warnings
 from pathlib import Path
 
 import pytest
@@ -8,14 +9,70 @@ import pytest
 import config
 
 
-def test_get_bool_env_truthy_and_default(monkeypatch):
-    monkeypatch.setenv("FLAG_A", " yes ")
-    monkeypatch.setenv("FLAG_B", "0")
+def test_get_bool_env_strict_true_false_and_default(monkeypatch):
+    monkeypatch.setenv("FLAG_A", " true ")
+    monkeypatch.setenv("FLAG_B", "FALSE")
     monkeypatch.delenv("FLAG_C", raising=False)
 
     assert config.get_bool_env("FLAG_A", False) is True
     assert config.get_bool_env("FLAG_B", True) is False
     assert config.get_bool_env("FLAG_C", True) is True
+
+
+def test_get_bool_env_rejects_numeric_and_yes_no_aliases(monkeypatch):
+    monkeypatch.setenv("FLAG_A", "1")
+    monkeypatch.setenv("FLAG_B", "yes")
+
+    with pytest.raises(ValueError, match="FLAG_A must be either 'true' or 'false'"):
+        config.get_bool_env("FLAG_A", False)
+    with pytest.raises(ValueError, match="FLAG_B must be either 'true' or 'false'"):
+        config.get_bool_env("FLAG_B", False)
+
+
+def test_database_urls_are_derived_from_postgres_parts(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss word")
+    monkeypatch.setenv("POSTGRES_HOST", "db.local")
+    monkeypatch.setenv("POSTGRES_CONTAINER_HOST", "postgres")
+    monkeypatch.setenv("POSTGRES_PORT", "5544")
+    monkeypatch.setenv("POSTGRES_DB", "sidar db")
+
+    assert (
+        config.get_database_url()
+        == "postgresql+asyncpg://sidar%20user:p%40ss%20word@db.local:5544/sidar%20db"
+    )
+    assert (
+        config.get_container_database_url()
+        == "postgresql+asyncpg://sidar%20user:p%40ss%20word@postgres:5544/sidar%20db"
+    )
+
+
+def test_database_urls_prefer_explicit_values(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///tmp/sidar.db")
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql+asyncpg://x:y@pg:5432/z")
+
+    assert config.get_database_url() == "sqlite+aiosqlite:///tmp/sidar.db"
+    assert config.get_container_database_url() == "postgresql+asyncpg://x:y@pg:5432/z"
+
+
+def test_web_scrape_max_chars_warns_for_deprecated_fetch_alias(monkeypatch):
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "4321")
+
+    with pytest.warns(DeprecationWarning, match="WEB_FETCH_MAX_CHARS is deprecated"):
+        assert config.get_web_scrape_max_chars() == 4321
+
+
+def test_web_scrape_max_chars_prefers_new_name_without_warning(monkeypatch):
+    monkeypatch.setenv("WEB_SCRAPE_MAX_CHARS", "9876")
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "4321")
+
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        assert config.get_web_scrape_max_chars() == 9876
+    assert not record
 
 
 def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):

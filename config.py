@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -113,11 +114,69 @@ LLM_SETTINGS = LLMClientSettings()
 
 
 def get_bool_env(key: str, default: bool = False) -> bool:
+    """Return a strict boolean environment value.
+
+    Sidar feature flags intentionally accept only ``true`` or ``false``
+    (case-insensitive). Numeric and shell-style aliases such as ``1``, ``0``,
+    ``yes`` or ``no`` are rejected so deployments cannot silently drift between
+    incompatible boolean conventions.
+    """
     raw_val = os.getenv(key)
     if raw_val is None or not raw_val.strip():
         return default
     val = raw_val.strip().lower()
-    return val in ("true", "1", "yes", "on")
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(
+        f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}."
+    )
+
+
+def build_postgres_dsn(*, host: str | None = None) -> str:
+    """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
+    user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
+    password = os.getenv("POSTGRES_PASSWORD", "sidar")
+    resolved_host = (host or os.getenv("POSTGRES_HOST", "localhost")).strip() or "localhost"
+    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
+
+    quoted_user = quote(user, safe="")
+    quoted_password = quote(password, safe="")
+    quoted_database = quote(database, safe="")
+    return f"postgresql+asyncpg://{quoted_user}:{quoted_password}@{resolved_host}:{port}/{quoted_database}"
+
+
+def get_database_url() -> str:
+    """Resolve DATABASE_URL, deriving it from POSTGRES_* variables when absent."""
+    explicit_url = os.getenv("DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+    return build_postgres_dsn()
+
+
+def get_container_database_url() -> str:
+    """Resolve the container DSN from SIDAR_CONTAINER_DATABASE_URL or POSTGRES_* values."""
+    explicit_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+    container_host = os.getenv("POSTGRES_CONTAINER_HOST", "postgres")
+    return build_postgres_dsn(host=container_host)
+
+
+def get_web_scrape_max_chars(default: int = 12000) -> int:
+    """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
+    if os.getenv("WEB_SCRAPE_MAX_CHARS") is not None:
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+    if os.getenv("WEB_FETCH_MAX_CHARS") is not None:
+        warnings.warn(
+            "WEB_FETCH_MAX_CHARS is deprecated; use WEB_SCRAPE_MAX_CHARS instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return get_int_env("WEB_FETCH_MAX_CHARS", default)
+    return default
 
 
 def get_int_env(key: str, default: int = 0) -> int:
@@ -542,9 +601,8 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
-    )
+    DATABASE_URL: str = get_database_url()
+    SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
@@ -577,9 +635,10 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
+    # Eski ad geriye dönük uyumluluk için tutulur; tercih edilen anahtar WEB_SCRAPE_MAX_CHARS.
     WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = get_web_scrape_max_chars(WEB_FETCH_MAX_CHARS)
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)

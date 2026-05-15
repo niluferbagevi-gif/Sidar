@@ -748,17 +748,19 @@ OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
 
 # Veritabanı (v3.0.0+)
-# POSTGRES_PASSWORD ile DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL içindeki parola
-# birebir aynı olmalıdır; aksi halde PostgreSQL `password authentication failed for user "sidar"`
-# döndürür. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
+# DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL boşsa config.py bu POSTGRES_*
+# parçalarından otomatik DSN üretir; yalnız özel host/driver gerektiğinde override edin.
+# Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
 # mevcut kullanıcı parolasını ALTER USER ile eşitleyin veya sadece geliştirme ortamında volume'ü
 # sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
 POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
-DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@localhost:5432/sidar
-# Docker Compose servisleri için: postgresql+asyncpg://sidar:<POSTGRES_PASSWORD>@postgres:5432/sidar
-SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@postgres:5432/sidar
+POSTGRES_HOST=localhost
+POSTGRES_CONTAINER_HOST=postgres
+POSTGRES_PORT=5432
+DATABASE_URL=
+SIDAR_CONTAINER_DATABASE_URL=
 
 # Güvenlik
 ACCESS_LEVEL=sandbox            # restricted | sandbox | full
@@ -768,7 +770,7 @@ GITHUB_TOKEN=
 GITHUB_REPO=kullanici/depo
 
 # Web Sunucu
-WEB_HOST=0.0.0.0
+WEB_HOST=127.0.0.1
 WEB_PORT=7860
 
 # Bellek & Oturum
@@ -786,7 +788,8 @@ GOOGLE_SEARCH_API_KEY=          # Google Custom Search kullanılacaksa
 GOOGLE_SEARCH_CX=
 WEB_SEARCH_MAX_RESULTS=5
 WEB_FETCH_TIMEOUT=15
-WEB_FETCH_MAX_CHARS=4000
+WEB_SCRAPE_MAX_CHARS=4000
+# Legacy WEB_FETCH_MAX_CHARS hâlâ okunur ancak DeprecationWarning üretir.
 
 # RAG
 RAG_TOP_K=3
