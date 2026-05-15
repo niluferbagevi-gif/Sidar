@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Sidar — .env.example ↔ config.py Parite Kontrolü
+# Sidar — env şablonları ↔ config.py Parite Kontrolü
 #
 # Not: Bu dosya doğrudan çalıştırılabilir olmalıdır; test_env_parity bunu doğrular.
 #
 # config.py'deki tüm os.getenv(...) çağrılarını tarar ve karşılığının
-# .env.example'da tanımlı olup olmadığını doğrular.
+# .env.example, .env.advanced.example veya .sidar_keys.env.example içinde
+# tanımlı olup olmadığını doğrular. Minimal .env.example bilerek kısa tutulur.
 #
 # Çıkış kodları:
 #   0 → Tüm anahtarlar eşleşiyor (parite tamam)
@@ -57,16 +58,20 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 CONFIG_FILE="$PROJECT_ROOT/config.py"
 ENV_EXAMPLE="$PROJECT_ROOT/.env.example"
+ADVANCED_ENV_EXAMPLE="$PROJECT_ROOT/.env.advanced.example"
+KEYS_ENV_EXAMPLE="$PROJECT_ROOT/.sidar_keys.env.example"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "HATA: config.py bulunamadı → $CONFIG_FILE" >&2
   exit 1
 fi
 
-if [[ ! -f "$ENV_EXAMPLE" ]]; then
-  echo "HATA: .env.example bulunamadı → $ENV_EXAMPLE" >&2
-  exit 1
-fi
+for template in "$ENV_EXAMPLE" "$ADVANCED_ENV_EXAMPLE" "$KEYS_ENV_EXAMPLE"; do
+  if [[ ! -f "$template" ]]; then
+    echo "HATA: env şablonu bulunamadı → $template" >&2
+    exit 1
+  fi
+done
 
 # ─── config.py'den env anahtarlarını çıkar ────────────────────────────────────
 # os.getenv("KEY") ve os.getenv("KEY", ...) kalıplarını yakala
@@ -76,15 +81,45 @@ CONFIG_KEYS=$(
     | tr -d "'\"" | sort -u
 )
 
-# ─── .env.example'daki anahtarları çıkar ─────────────────────────────────────
+# ─── Env şablonlarındaki anahtarları çıkar ───────────────────────────────────
 EXAMPLE_KEYS=$(
-  grep -oP '^[A-Z_][A-Z0-9_]+(?==)' "$ENV_EXAMPLE" | sort -u
+  cat "$ENV_EXAMPLE" "$ADVANCED_ENV_EXAMPLE" "$KEYS_ENV_EXAMPLE" \
+    | grep -oP '^[A-Z_][A-Z0-9_]+(?==)' \
+    | sort -u
 )
 
 # ─── Karşılaştır ──────────────────────────────────────────────────────────────
+# Bilerek şablonlara yazılmayan runtime/internal/legacy override anahtarları.
+# Örn. DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL, POSTGRES_* köklerinden
+# türetildiği için kullanıcıdan istenmez.
+IGNORE_KEYS=(
+  CONDA_PREFIX
+  DATABASE_URL
+  DOTENV_FILE
+  POSTGRES_DSN_SCHEME
+  PYTEST_CURRENT_TEST
+  SIDAR_ALLOW_FULL_ACCESS
+  SIDAR_CONTAINER_DATABASE_URL
+  SIDAR_CONTAINER_POSTGRES_HOST
+  VIRTUAL_ENV
+  WEB_FETCH_MAX_CHARS
+)
+
+_is_ignored_key() {
+  local needle="$1"
+  local ignored
+  for ignored in "${IGNORE_KEYS[@]}"; do
+    [[ "$needle" == "$ignored" ]] && return 0
+  done
+  return 1
+}
+
 MISSING=()
 while IFS= read -r key; do
   [[ -z "$key" ]] && continue
+  if _is_ignored_key "$key"; then
+    continue
+  fi
   if ! echo "$EXAMPLE_KEYS" | grep -qx "$key"; then
     MISSING+=("$key")
   fi
@@ -93,20 +128,20 @@ done <<< "$CONFIG_KEYS"
 # ─── Sonuç raporu ─────────────────────────────────────────────────────────────
 echo "=== Sidar Env Parite Kontrolü ==="
 echo "config.py tarandı  : $(echo "$CONFIG_KEYS" | wc -l | tr -d ' ') anahtar"
-echo ".env.example tarandı: $(echo "$EXAMPLE_KEYS" | wc -l | tr -d ' ') anahtar"
+echo "env şablonları tarandı: $(echo "$EXAMPLE_KEYS" | wc -l | tr -d ' ') anahtar"
 echo ""
 
 if [[ ${#MISSING[@]} -eq 0 ]]; then
-  echo "✅  Parite tamam — tüm anahtarlar .env.example'da mevcut."
+  echo "✅  Parite tamam — tüm anahtarlar env şablonlarında mevcut."
   exit 0
 fi
 
-echo "❌  .env.example'da eksik anahtarlar (${#MISSING[@]} adet):"
+echo "❌  Env şablonlarında eksik anahtarlar (${#MISSING[@]} adet):"
 for key in "${MISSING[@]}"; do
   echo "    - $key"
 done
 echo ""
-echo "Düzeltmek için .env.example dosyasına yukarıdaki anahtarları ekleyin."
+echo "Düzeltmek için uygun şablona (.env.example, .env.advanced.example veya .sidar_keys.env.example) yukarıdaki anahtarları ekleyin."
 
 if [[ "$WARN_ONLY" -eq 1 ]]; then
   echo "(--warn-only modu: hata olarak çıkılmıyor)"
