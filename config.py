@@ -32,6 +32,26 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
+
+def _resolve_dotenv_path(raw_path: str) -> Path:
+    """Resolve repo-relative, absolute, or user-home dotenv file paths."""
+    dotenv_path = Path(raw_path).expanduser()
+    if not dotenv_path.is_absolute():
+        dotenv_path = BASE_DIR / dotenv_path
+    return dotenv_path
+
+
+def _load_dotenv_if_exists(raw_path: str, *, override: bool) -> Path | None:
+    """Load a dotenv file when it exists and return the resolved path."""
+    if not raw_path.strip():
+        return None
+    dotenv_path = _resolve_dotenv_path(raw_path.strip())
+    if dotenv_path.exists():
+        load_dotenv(dotenv_path=dotenv_path, override=override)
+        return dotenv_path
+    return None
+
+
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
@@ -57,13 +77,16 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 4. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
-#    (örn: test ortamında DOTENV_FILE=.env.test)
+# 4. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
+#    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
+#    (örn: test ortamında DOTENV_FILE=.env.test veya DOTENV_FILE=~/.sidar_keys.env)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-if _explicit_dotenv:
-    _explicit_dotenv_path = BASE_DIR / _explicit_dotenv
-    if _explicit_dotenv_path.exists():
-        load_dotenv(dotenv_path=_explicit_dotenv_path, override=True)
+_load_dotenv_if_exists(_explicit_dotenv, override=True)
+
+# 5. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
+#    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
+_sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+_load_dotenv_if_exists(_sidar_keys_file, override=True)
 
 ENV_PATH = base_env_path
 
@@ -129,16 +152,16 @@ def get_bool_env(key: str, default: bool = False) -> bool:
         return True
     if val == "false":
         return False
-    raise ValueError(
-        f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}."
-    )
+    raise ValueError(f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}.")
 
 
 def build_postgres_dsn(*, host: str | None = None) -> str:
     """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
     user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     password = os.getenv("POSTGRES_PASSWORD", "sidar")
-    resolved_host = (host or os.getenv("POSTGRES_HOST", "localhost")).strip() or "localhost"
+    resolved_host = (
+        host if host is not None else os.getenv("POSTGRES_HOST") or "localhost"
+    ).strip() or "localhost"
     port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
     database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
 
@@ -572,6 +595,7 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
+    SIDAR_KEYS_FILE: str = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env")
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
     API_KEY: str = os.getenv("API_KEY", "")
 
@@ -640,7 +664,9 @@ class Config:
     SIDAR_RATE_LIMIT_WINDOW: int = get_int_prefixed_env(
         "SIDAR_RATE_LIMIT_WINDOW", "RATE_LIMIT_WINDOW", 60
     )
-    SIDAR_RATE_LIMIT_CHAT: int = get_int_prefixed_env("SIDAR_RATE_LIMIT_CHAT", "RATE_LIMIT_CHAT", 20)
+    SIDAR_RATE_LIMIT_CHAT: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_CHAT", "RATE_LIMIT_CHAT", 20
+    )
     SIDAR_RATE_LIMIT_MUTATIONS: int = get_int_prefixed_env(
         "SIDAR_RATE_LIMIT_MUTATIONS", "RATE_LIMIT_MUTATIONS", 60
     )
@@ -781,7 +807,9 @@ class Config:
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
         "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
     )
-    DOCKER_MICROVM_MODE: str = get_prefixed_env("SIDAR_DOCKER_MICROVM_MODE", "DOCKER_MICROVM_MODE", "off")
+    DOCKER_MICROVM_MODE: str = get_prefixed_env(
+        "SIDAR_DOCKER_MICROVM_MODE", "DOCKER_MICROVM_MODE", "off"
+    )
     DOCKER_MEM_LIMIT: str = get_prefixed_env("SIDAR_DOCKER_MEM_LIMIT", "DOCKER_MEM_LIMIT", "256m")
     DOCKER_NETWORK_DISABLED: bool = get_bool_prefixed_env(
         "SIDAR_DOCKER_NETWORK_DISABLED", "DOCKER_NETWORK_DISABLED", True

@@ -4,6 +4,7 @@
 # Konfigürasyon ve ortam şablonları
 include .env.example
 include .env.advanced
+include .sidar_keys.env.example
 include alembic.ini
 
 # Docker

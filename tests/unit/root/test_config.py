@@ -233,6 +233,7 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
         return True
 
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr("dotenv.load_dotenv", _fake_load_dotenv)
 
@@ -240,6 +241,36 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
 
     assert reloaded.ENV_PATH == reloaded.BASE_DIR / ".env"
     assert all(call.get("override") in (False, None) for call in calls)
+
+
+def test_sidar_keys_file_supports_user_home_and_overrides(monkeypatch, tmp_path):
+    keys_file = tmp_path / "sidar_keys.env"
+    keys_file.write_text(
+        "OPENAI_API_KEY=from-keys-file\n"
+        "API_KEY=api-from-keys-file\n"
+        "JWT_SECRET_KEY=jwt-from-keys-file\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_file))
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.SIDAR_KEYS_FILE == str(keys_file)
+    assert reloaded.Config.OPENAI_API_KEY == "from-keys-file"
+    assert reloaded.Config.API_KEY == "api-from-keys-file"
+    assert reloaded.Config.JWT_SECRET_KEY == "jwt-from-keys-file"
+
+
+def test_resolve_dotenv_path_expands_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert config._resolve_dotenv_path("~/.sidar_keys.env") == tmp_path / ".sidar_keys.env"
 
 
 def test_is_test_env_returns_true_when_sidar_env_is_testing(monkeypatch):

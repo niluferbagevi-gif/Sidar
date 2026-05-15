@@ -31,6 +31,8 @@ env/
 .env.test
 .env.test.local
 .env.production.local
+.sidar_keys.env
+.sidar_keys.env.local
 
 # Secrets & credentials
 secrets/

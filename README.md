@@ -353,6 +353,9 @@ Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` en
 
 ```bash
 cp .env.example .env
+# Gizli servis anahtarlarını repo dışında tutmak için kişisel dosya oluşturun.
+cp .sidar_keys.env.example ~/.sidar_keys.env
+chmod 600 ~/.sidar_keys.env
 # Uzman ayarları gerekiyorsa sadece ihtiyaç duyduğunuz anahtarları .env.advanced içinden
 # ayrı bir override dosyasına kopyalayın ve DOTENV_FILE=.env.<dosya> ile yükleyin.
 ```
@@ -744,6 +747,7 @@ başında açıklanır.
 # Ortam
 SIDAR_ENV=development
 DOTENV_FILE=
+SIDAR_KEYS_FILE=~/.sidar_keys.env
 
 # AI Sağlayıcıları
 AI_PROVIDER=ollama
@@ -776,7 +780,8 @@ JWT_TTL_DAYS=7
 
 Gelişmiş örnekler: otonom coverage, Swarm federation, HITL/Judge, Kafka/RabbitMQ event bus,
 LoRA/Active Learning ve sandbox ince ayarları için `.env.advanced` dosyasından yalnız gerekli
-anahtarları kendi override dosyanıza taşıyın.
+anahtarları kendi override dosyanıza taşıyın. Gerçek API tokenlarını ise repo dışında
+`~/.sidar_keys.env` içinde tutun; güncel anahtar şablonu `.sidar_keys.env.example` dosyasındadır.
 
 
 ---
