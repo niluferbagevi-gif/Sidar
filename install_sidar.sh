@@ -3058,33 +3058,32 @@ harden_database_credentials() {
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
                     if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                        local db_host_port="${db_host_and_name%%/*}"
+                        local db_host="${db_host_port%%:*}"
+                        local db_port="5432"
+                        local db_name_for_roots="${db_host_and_name#*/}"
+                        if [[ "$db_host_port" == *:* ]]; then
+                            db_port="${db_host_port##*:}"
+                        fi
+                        db_name_for_roots="${db_name_for_roots%%\?*}"
+                        [[ -n "$db_name_for_roots" && "$db_name_for_roots" != "$db_host_and_name" ]] || db_name_for_roots="sidar"
 
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        local db_name_for_container="${db_host_and_name#*/}"
-                        db_name_for_container="${db_name_for_container%%\?*}"
-                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
-                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                        else
-                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                        fi
+                        sed -i '/^POSTGRES_HOST=/d' "$env_file"
+                        sed -i '/^POSTGRES_PORT=/d' "$env_file"
+                        sed -i '/^POSTGRES_USER=/d' "$env_file"
+                        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
+                        sed -i '/^POSTGRES_DB=/d' "$env_file"
+                        sed -i '/^DATABASE_URL=/d' "$env_file"
+                        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+                        {
+                            echo "POSTGRES_HOST=${db_host:-localhost}"
+                            echo "POSTGRES_PORT=${db_port:-5432}"
+                            echo "POSTGRES_USER=${db_user}"
+                            echo "POSTGRES_PASSWORD=${generated_password}"
+                            echo "POSTGRES_DB=${db_name_for_roots}"
+                        } >> "$env_file"
                         DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                        ok ".env: zayıf legacy DATABASE_URL kaldırıldı; POSTGRES_* kökleri güvenli parola ile güncellendi."
                         info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                         if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                             local detected_pg_volume=""
@@ -3099,7 +3098,7 @@ harden_database_credentials() {
                 else
                     warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                    warn "Parolayı manuel güncellemek isterseniz POSTGRES_PASSWORD kök değişkenini değiştirin; stale DATABASE_URL override tutmayın."
                 fi
                 ;;
         esac
@@ -3119,33 +3118,36 @@ sync_postgres_env_with_database_url() {
         local db_user="${BASH_REMATCH[2]}"
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
+        local db_host_port="${db_host_and_name%%/*}"
+        local db_host="${db_host_port%%:*}"
+        local db_port="5432"
         local db_name="${db_host_and_name#*/}"
 
-        # Host kısmında "/" yoksa varsayılan adı koru.
+        if [[ "$db_host_port" == *:* ]]; then
+            db_port="${db_host_port##*:}"
+        fi
         if [[ "$db_name" == "$db_host_and_name" ]]; then
             db_name="sidar"
         fi
-
-        # Olası query string'i temizle.
         db_name="${db_name%%\?*}"
 
-        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
+        # Legacy tam DSN satırlarını kaldırıp DRY POSTGRES_* köklerini tek kaynak yap.
+        sed -i '/^POSTGRES_HOST=/d' "$env_file"
+        sed -i '/^POSTGRES_PORT=/d' "$env_file"
         sed -i '/^POSTGRES_USER=/d' "$env_file"
         sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
         sed -i '/^POSTGRES_DB=/d' "$env_file"
         sed -i '/^DATABASE_URL=/d' "$env_file"
-
-        local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
         sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
         {
+            echo "POSTGRES_HOST=${db_host:-localhost}"
+            echo "POSTGRES_PORT=${db_port:-5432}"
             echo "POSTGRES_USER=${db_user}"
             echo "POSTGRES_PASSWORD=${db_password}"
             echo "POSTGRES_DB=${db_name}"
-            echo "DATABASE_URL=${db_url}"
-            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
         } >> "$env_file"
 
-        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
+        ok ".env: legacy DATABASE_URL kök POSTGRES_* değişkenlerine dönüştürüldü; tam DSN satırları kaldırıldı."
     fi
 }
 
@@ -3153,22 +3155,21 @@ write_generated_default_database_url() {
     local env_file="$1"
     local generated_password=""
     generated_password=$(generate_secure_token 24)
-    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
+    [[ -n "$generated_password" ]] || fail "POSTGRES_PASSWORD için güçlü parola üretilemedi."
 
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
-    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
-
+    sed -i '/^POSTGRES_HOST=/d' "$env_file"
+    sed -i '/^POSTGRES_PORT=/d' "$env_file"
     sed -i '/^POSTGRES_USER=/d' "$env_file"
     sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
     sed -i '/^POSTGRES_DB=/d' "$env_file"
     sed -i '/^DATABASE_URL=/d' "$env_file"
     sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
     {
+        echo "POSTGRES_HOST=localhost"
+        echo "POSTGRES_PORT=5432"
         echo "POSTGRES_USER=sidar"
         echo "POSTGRES_PASSWORD=${generated_password}"
         echo "POSTGRES_DB=sidar"
-        echo "DATABASE_URL=${local_db_url}"
-        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
     } >> "$env_file"
     DB_PASSWORD_HARDENED=true
 }
@@ -3185,21 +3186,21 @@ ensure_database_url_defaults() {
 
     if [[ -z "$current_db_url" ]]; then
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+        ok ".env: POSTGRES_* kökleri güçlü rastgele PostgreSQL parolasıyla hazırlandı."
         return
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        ok ".env: SQLite DATABASE_URL kaldırıldı; POSTGRES_* kökleri güçlü parolayla hazırlandı."
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
         warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+        ok ".env: eski ürün adına ait DATABASE_URL kaldırıldı; Sidar POSTGRES_* kökleri hazırlandı."
     fi
 }
 
@@ -3580,6 +3581,18 @@ except Exception:
     pass
 PY
     }
+
+    # ── POSTGRES_PASSWORD ───────────────────────────────────────────────────
+    if _is_missing_or_insecure "POSTGRES_PASSWORD" \
+        "sidar" "postgres" "replace-with-a-strong-24-plus-character-password"; then
+        local _v; _v=$(_gen_urlsafe 32)
+        if [[ -n "$_v" ]]; then
+            _write_secret "POSTGRES_PASSWORD" "$_v"
+            ok ".env: POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "POSTGRES_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
     if _is_missing_or_insecure "API_KEY" \

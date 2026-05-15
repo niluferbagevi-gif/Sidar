@@ -20,6 +20,8 @@ Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
 noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -27,12 +29,13 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agent.sidar_agent import SidarAgent
-from config import Config
+if TYPE_CHECKING:
+    from agent.sidar_agent import SidarAgent
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
@@ -274,6 +277,77 @@ async def _run_interactive_session(agent: SidarAgent) -> None:
 
 
 # ─────────────────────────────────────────────
+#  ENV INIT / SECRET GENERATION KOMUTLARI
+# ─────────────────────────────────────────────
+
+
+def _run_env_keys_command(
+    *,
+    env_path: str = ".env",
+    example_path: str = ".env.example",
+    force: bool = False,
+    create: bool = True,
+) -> int:
+    """Create/update .env and fill Sidar-managed local secrets."""
+    from env_keys import initialize_env_file
+
+    result = initialize_env_file(
+        env_path=Path(env_path),
+        example_path=Path(example_path),
+        force=force,
+        create=create,
+    )
+    action = "oluşturuldu" if result.created else "güncellendi"
+    print(f"Sidar .env {action}: {result.env_path}")
+    if result.updated:
+        print("Üretilen/güncellenen secret alanları: " + ", ".join(result.updated))
+    else:
+        print("Güncellenecek boş veya zayıf Sidar-managed secret bulunmadı.")
+    if result.skipped:
+        print("Korunan mevcut secret alanları: " + ", ".join(result.skipped))
+    print(
+        "Not: OPENAI_API_KEY, GEMINI_API_KEY gibi harici sağlayıcı anahtarları "
+        "otomatik üretilmez; gerçek sağlayıcı panellerinden alınmalıdır."
+    )
+    return 0
+
+
+def _parse_env_keys_command(command: str) -> int:
+    parser = argparse.ArgumentParser(
+        prog=f"sidar {command}",
+        description=".env oluştur ve Sidar güvenlik secret'larını otomatik üret",
+    )
+    parser.add_argument(
+        "--env",
+        default=".env",
+        help="Hedef env dosyası (varsayılan: .env)",
+    )
+    parser.add_argument(
+        "--example",
+        default=".env.example",
+        help="Kaynak env şablonu (varsayılan: .env.example)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Mevcut Sidar-managed secret değerlerini de yeniden üret",
+    )
+    if command == "generate-keys":
+        parser.add_argument(
+            "--no-create",
+            action="store_true",
+            help=".env yoksa .env.example'dan oluşturma; hata ver",
+        )
+    args = parser.parse_args(sys.argv[2:])
+    return _run_env_keys_command(
+        env_path=args.env,
+        example_path=args.example,
+        force=args.force,
+        create=not getattr(args, "no_create", False),
+    )
+
+
+# ─────────────────────────────────────────────
 #  DOCTOR KOMUTU
 # ─────────────────────────────────────────────
 
@@ -295,6 +369,9 @@ def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> i
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate-keys"}:
+        raise SystemExit(_parse_env_keys_command(sys.argv[1]))
+
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         doctor_parser = argparse.ArgumentParser(description="Sidar Doctor sağlık raporu üret")
         doctor_parser.add_argument("doctor", nargs="?")
@@ -305,6 +382,9 @@ def main() -> None:
         )
         doctor_args = doctor_parser.parse_args()
         raise SystemExit(_run_doctor_command(doctor_args.output))
+
+    from agent.sidar_agent import SidarAgent
+    from config import Config
 
     cfg_defaults = Config()
 

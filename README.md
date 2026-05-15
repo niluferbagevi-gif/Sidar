@@ -196,7 +196,7 @@
 - Anahtar üretimi için örnek komut:
 
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+sidar generate-keys
 ```
 
 ---
@@ -300,8 +300,17 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 ./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
 ./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
 ./install_sidar.sh doctor              # sadece doctor raporu
+sidar init                             # .env.example -> .env + güvenli local secret üretimi
+sidar generate-keys                    # mevcut .env içindeki boş/zayıf Sidar secret'larını doldurur
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
+
+`sidar init`, `.env.example` dosyasını `.env` olarak kopyalar ve boş/zayıf Sidar-managed
+secret alanlarını otomatik doldurur: `POSTGRES_PASSWORD`, `API_KEY`, `JWT_SECRET_KEY`,
+`MEMORY_ENCRYPTION_KEY`, webhook/federation secret'ları, `GRAFANA_ADMIN_PASSWORD` ve
+`METRICS_TOKEN`. `sidar generate-keys` mevcut `.env` için aynı güvenli doldurma işlemini
+yapar; `--force` verilirse mevcut Sidar-managed secret'lar da yeniden üretilir. Harici
+sağlayıcı anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY` vb.) otomatik üretilmez.
 
 `sidar doctor`; `uv`, `uv.lock`, veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` ve `POSTGRES_DB` kök değişkenlerinden local/container DSN'lerini türetir; yalnız açık `DATABASE_URL` override verilmişse bunu köklerle karşılaştırır ve parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir ve indeks boşsa CLI'daki `belge ekle <url>` komutunu hatırlatır. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
 
