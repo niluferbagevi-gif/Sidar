@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -141,6 +142,39 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     if not value:
         return default
     return [item.strip() for item in value.split(separator) if item.strip()]
+
+
+def get_web_scrape_max_chars(default: int = 12000) -> int:
+    """Web scrape karakter limitini tercih edilen env adından, legacy fallback ile okur."""
+    preferred_value = os.getenv("WEB_SCRAPE_MAX_CHARS", "").strip()
+    if preferred_value:
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+
+    legacy_value = os.getenv("WEB_FETCH_MAX_CHARS", "").strip()
+    if legacy_value:
+        logging.getLogger(__name__).warning(
+            "WEB_FETCH_MAX_CHARS deprecated; WEB_SCRAPE_MAX_CHARS kullanın."
+        )
+        return get_int_env("WEB_FETCH_MAX_CHARS", default)
+
+    return default
+
+
+def build_database_url_from_env() -> str:
+    """DATABASE_URL yoksa POSTGRES_* bileşenlerinden async PostgreSQL URL'i üretir."""
+    explicit_database_url = os.getenv("DATABASE_URL", "").strip()
+    if explicit_database_url:
+        return explicit_database_url
+
+    postgres_user = quote(os.getenv("POSTGRES_USER", "sidar").strip() or "sidar", safe="")
+    postgres_password = quote(os.getenv("POSTGRES_PASSWORD", "sidar").strip() or "sidar", safe="")
+    postgres_host = os.getenv("POSTGRES_HOST", "localhost").strip() or "localhost"
+    postgres_port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    postgres_db = quote(os.getenv("POSTGRES_DB", "sidar").strip() or "sidar", safe="")
+    return (
+        f"postgresql+asyncpg://{postgres_user}:{postgres_password}"
+        f"@{postgres_host}:{postgres_port}/{postgres_db}"
+    )
 
 
 def get_db_pool_size_default() -> int:
@@ -542,9 +576,7 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
-    )
+    DATABASE_URL: str = build_database_url_from_env()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
@@ -577,9 +609,9 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
-    # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = get_web_scrape_max_chars(12000)
+    # Geriye dönük uyumluluk alias'ı; env okuması get_web_scrape_max_chars içinde yapılır.
+    WEB_FETCH_MAX_CHARS: int = WEB_SCRAPE_MAX_CHARS
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
@@ -604,7 +636,7 @@ class Config:
     DOCKER_TEST_IMAGE: str = os.getenv("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
-        "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
+        "DOCKER_ALLOWED_RUNTIMES", ["runc", "runsc", "kata-runtime"]
     )
     DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
     DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")

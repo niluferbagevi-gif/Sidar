@@ -53,7 +53,7 @@ def manager(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
-        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_ALLOWED_RUNTIMES=["runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
         DOCKER_MEM_LIMIT="256m",
         DOCKER_NETWORK_DISABLED=True,
@@ -102,13 +102,22 @@ def test_file_uri_helpers_and_invalid_scheme(tmp_path):
         cm._file_uri_to_path("http://x")
 
 
-def test_runtime_and_limits_resolution(manager):
+def test_runtime_and_limits_resolution(manager, monkeypatch):
     manager.docker_runtime = "unknown"
     assert manager._resolve_runtime() == ""
 
     manager.docker_runtime = ""
+    manager.docker_microvm_mode = "off"
+    monkeypatch.setattr(
+        cm.logger,
+        "warning",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("warning-hit")),
+    )
+    assert manager._resolve_runtime() == ""
+
     manager.docker_microvm_mode = "runsc"
     assert manager._resolve_runtime() == "runsc"
+    monkeypatch.setattr(cm.logger, "warning", lambda *_args, **_kwargs: None)
 
     manager.cfg.SANDBOX_LIMITS = {"cpus": "bad", "pids_limit": 0, "timeout": 0}
     limits = manager._resolve_sandbox_limits()
@@ -883,7 +892,7 @@ def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
-        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_ALLOWED_RUNTIMES=["runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
         DOCKER_MEM_LIMIT="256m",
         DOCKER_NETWORK_DISABLED=True,
@@ -1001,7 +1010,7 @@ def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
-        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_ALLOWED_RUNTIMES=["runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
         DOCKER_MEM_LIMIT="256m",
         DOCKER_NETWORK_DISABLED=True,
@@ -1064,7 +1073,7 @@ def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
-        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_ALLOWED_RUNTIMES=["runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
         DOCKER_MEM_LIMIT="256m",
         DOCKER_NETWORK_DISABLED=True,
@@ -2383,7 +2392,9 @@ def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(
 
 def test_docker_image_exists_returns_false_when_cli_inspect_times_out(manager, monkeypatch) -> None:
     manager.docker_client = None
-    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
 
     def raise_timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd="docker image inspect sidar:latest", timeout=5)
@@ -2408,7 +2419,9 @@ def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> N
     )
 
 
-def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(manager, monkeypatch) -> None:
+def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(
+    manager, monkeypatch
+) -> None:
     manager.docker_client = SimpleNamespace(
         images=SimpleNamespace(get=lambda _image: pytest.fail("unsafe image must not be probed"))
     )

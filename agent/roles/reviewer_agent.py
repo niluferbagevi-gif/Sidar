@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import re
+import shlex
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -392,6 +393,33 @@ class ReviewerAgent(BaseAgent):
             cleaned.append(val)
         return list(dict.fromkeys(cleaned))
 
+    @staticmethod
+    def _is_allowed_test_command(command: str) -> bool:
+        """Reviewer test komutlarını shell enjeksiyonuna karşı allowlist ile doğrula."""
+        command = (command or "").strip()
+        if not command or re.search(r"[;&|`$<>\n\r]", command):
+            return False
+
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return False
+
+        if not parts:
+            return False
+
+        safe_arg = re.compile(r"^[\w./:=,+@-]+$")
+        if not all(safe_arg.fullmatch(part) for part in parts):
+            return False
+
+        if parts[:2] in (["bash", "run_tests.sh"], ["bash", "./run_tests.sh"]):
+            return True
+        if parts[0] == "pytest":
+            return True
+        if parts[:3] == ["python", "-m", "pytest"]:
+            return True
+        return parts[:3] == ["uv", "run", "pytest"]
+
     def _build_regression_commands(self, code_context: str) -> list[str]:
         """Değişen dosyalara göre hedefli test + global regresyon komutlarını üretir."""
         commands: list[str] = []
@@ -399,7 +427,12 @@ class ReviewerAgent(BaseAgent):
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest"))
+        configured_command = getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest")
+        commands.append(
+            configured_command
+            if self._is_allowed_test_command(configured_command)
+            else "uv run pytest"
+        )
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
     @staticmethod
@@ -1046,8 +1079,7 @@ class ReviewerAgent(BaseAgent):
 
     async def _tool_run_tests(self, arg: str) -> str:
         command = (arg or "").strip() or self.config.REVIEWER_TEST_COMMAND
-        allowed_prefixes = ("bash run_tests.sh", "pytest", "python -m pytest", "uv run pytest")
-        if not command.startswith(allowed_prefixes):
+        if not self._is_allowed_test_command(command):
             return "⚠ Kullanım: run_tests|bash run_tests.sh veya run_tests|pytest ..."
         ok, out = await asyncio.to_thread(
             self.code.run_shell_in_sandbox,

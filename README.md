@@ -748,17 +748,17 @@ OPENAI_API_KEY=                 # OpenAI kullanılacaksa
 ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
 
 # Veritabanı (v3.0.0+)
-# POSTGRES_PASSWORD ile DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL içindeki parola
-# birebir aynı olmalıdır; aksi halde PostgreSQL `password authentication failed for user "sidar"`
-# döndürür. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
-# mevcut kullanıcı parolasını ALTER USER ile eşitleyin veya sadece geliştirme ortamında volume'ü
-# sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
+# POSTGRES_* tek doğruluk kaynağıdır. DATABASE_URL boş bırakılırsa config.py
+# tarafından bu bileşenlerden türetilir; Docker Compose servisleri yalnız
+# POSTGRES_HOST=postgres override eder. Docker volume eski parolayla init edildiyse
+# .env değişikliği tek başına yetmez; ALTER USER ile eşitleyin veya sadece geliştirme
+# ortamında volume'ü sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
 POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
-DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@localhost:5432/sidar
-# Docker Compose servisleri için: postgresql+asyncpg://sidar:<POSTGRES_PASSWORD>@postgres:5432/sidar
-SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@postgres:5432/sidar
+# DATABASE_URL=  # yalnız harici DB/SQLite gibi ileri seviye override için
 
 # Güvenlik
 ACCESS_LEVEL=sandbox            # restricted | sandbox | full

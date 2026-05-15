@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 import types
 from pathlib import Path
@@ -24,6 +25,23 @@ def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_llm_client_settings_uses_gemini_api_key_only(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-google-key")
+
+    settings = config.LLMClientSettings(_env_file=None)
+
+    assert settings.GEMINI_API_KEY == ""
+
+
+def test_llm_client_settings_reads_redis_max_connections(monkeypatch):
+    monkeypatch.setenv("REDIS_MAX_CONNECTIONS", "77")
+
+    settings = config.LLMClientSettings(_env_file=None)
+
+    assert settings.REDIS_MAX_CONNECTIONS == 77
+
+
 def test_get_int_float_and_list_env_parsing(monkeypatch):
     monkeypatch.setenv("INT_OK", "42")
     monkeypatch.setenv("INT_BAD", "abc")
@@ -39,6 +57,56 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_VAL", []) == ["a", "b", "c"]
     assert config.get_list_env("LIST_EMPTY", ["fallback"]) == ["fallback"]
     assert config.get_list_env("LIST_EMPTY", None) == []
+
+
+def test_docker_allowed_runtime_defaults_do_not_include_empty_name(monkeypatch):
+    monkeypatch.delenv("DOCKER_ALLOWED_RUNTIMES", raising=False)
+
+    runtimes = config.get_list_env("DOCKER_ALLOWED_RUNTIMES", ["runc", "runsc", "kata-runtime"])
+
+    assert runtimes == ["runc", "runsc", "kata-runtime"]
+    assert "" not in runtimes
+
+
+def test_get_web_scrape_max_chars_prefers_new_env_without_warning(monkeypatch, caplog):
+    monkeypatch.setenv("WEB_SCRAPE_MAX_CHARS", "9000")
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "3000")
+
+    with caplog.at_level(logging.WARNING):
+        assert config.get_web_scrape_max_chars() == 9000
+
+    assert "WEB_FETCH_MAX_CHARS deprecated" not in caplog.text
+
+
+def test_get_web_scrape_max_chars_supports_legacy_env_with_warning(monkeypatch, caplog):
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "3000")
+
+    with caplog.at_level(logging.WARNING):
+        assert config.get_web_scrape_max_chars() == 3000
+
+    assert "WEB_FETCH_MAX_CHARS deprecated" in caplog.text
+
+
+def test_build_database_url_from_env_prefers_explicit_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///custom.db")
+    monkeypatch.setenv("POSTGRES_HOST", "db.internal")
+
+    assert config.build_database_url_from_env() == "sqlite+aiosqlite:///custom.db"
+
+
+def test_build_database_url_from_env_uses_postgres_components(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret@value")
+    monkeypatch.setenv("POSTGRES_HOST", "postgres")
+    monkeypatch.setenv("POSTGRES_PORT", "6543")
+    monkeypatch.setenv("POSTGRES_DB", "sidar db")
+
+    assert (
+        config.build_database_url_from_env()
+        == "postgresql+asyncpg://sidar%20user:secret%40value@postgres:6543/sidar%20db"
+    )
 
 
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
