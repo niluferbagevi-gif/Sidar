@@ -144,6 +144,22 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     return [item.strip() for item in value.split(separator) if item.strip()]
 
 
+def get_web_scrape_max_chars(default: int = 12000) -> int:
+    """Web scrape karakter limitini tercih edilen env adından, legacy fallback ile okur."""
+    preferred_value = os.getenv("WEB_SCRAPE_MAX_CHARS", "").strip()
+    if preferred_value:
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+
+    legacy_value = os.getenv("WEB_FETCH_MAX_CHARS", "").strip()
+    if legacy_value:
+        logging.getLogger(__name__).warning(
+            "WEB_FETCH_MAX_CHARS deprecated; WEB_SCRAPE_MAX_CHARS kullanın."
+        )
+        return get_int_env("WEB_FETCH_MAX_CHARS", default)
+
+    return default
+
+
 def build_database_url_from_env() -> str:
     """DATABASE_URL yoksa POSTGRES_* bileşenlerinden async PostgreSQL URL'i üretir."""
     explicit_database_url = os.getenv("DATABASE_URL", "").strip()
@@ -593,9 +609,9 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
-    # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = get_web_scrape_max_chars(12000)
+    # Geriye dönük uyumluluk alias'ı; env okuması get_web_scrape_max_chars içinde yapılır.
+    WEB_FETCH_MAX_CHARS: int = WEB_SCRAPE_MAX_CHARS
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)

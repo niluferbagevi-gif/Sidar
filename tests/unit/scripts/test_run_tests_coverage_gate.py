@@ -87,6 +87,14 @@ def test_env_example_uses_loopback_web_host_by_default() -> None:
     assert "production/container için bilinçli override" in env_example
 
 
+def test_env_example_uses_single_web_scrape_character_limit_name() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "WEB_SCRAPE_MAX_CHARS=12000" in env_example
+    assert "WEB_FETCH_MAX_CHARS=" not in env_example
+    assert "deprecation fallback" in env_example
+
+
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")

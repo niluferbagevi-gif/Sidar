@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 import types
 from pathlib import Path
@@ -56,6 +57,26 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_VAL", []) == ["a", "b", "c"]
     assert config.get_list_env("LIST_EMPTY", ["fallback"]) == ["fallback"]
     assert config.get_list_env("LIST_EMPTY", None) == []
+
+
+def test_get_web_scrape_max_chars_prefers_new_env_without_warning(monkeypatch, caplog):
+    monkeypatch.setenv("WEB_SCRAPE_MAX_CHARS", "9000")
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "3000")
+
+    with caplog.at_level(logging.WARNING):
+        assert config.get_web_scrape_max_chars() == 9000
+
+    assert "WEB_FETCH_MAX_CHARS deprecated" not in caplog.text
+
+
+def test_get_web_scrape_max_chars_supports_legacy_env_with_warning(monkeypatch, caplog):
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.setenv("WEB_FETCH_MAX_CHARS", "3000")
+
+    with caplog.at_level(logging.WARNING):
+        assert config.get_web_scrape_max_chars() == 3000
+
+    assert "WEB_FETCH_MAX_CHARS deprecated" in caplog.text
 
 
 def test_build_database_url_from_env_prefers_explicit_database_url(monkeypatch):

@@ -43,11 +43,7 @@ class WebSearchManager:
 
             self.MAX_RESULTS = getattr(config, "WEB_SEARCH_MAX_RESULTS", self.MAX_RESULTS)
             self.FETCH_TIMEOUT = getattr(config, "WEB_FETCH_TIMEOUT", self.FETCH_TIMEOUT)
-            self.FETCH_MAX_CHARS = getattr(
-                config,
-                "WEB_SCRAPE_MAX_CHARS",
-                getattr(config, "WEB_FETCH_MAX_CHARS", self.FETCH_MAX_CHARS),
-            )
+            self.FETCH_MAX_CHARS = getattr(config, "WEB_SCRAPE_MAX_CHARS", self.FETCH_MAX_CHARS)
         else:
             self.engine = "auto"
             self.tavily_key = ""
