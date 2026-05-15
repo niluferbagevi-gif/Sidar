@@ -53,7 +53,7 @@
 - JSON doğrulama
 - Dosya yamalama (`patch_file` — sadece değişen satırlar)
 - Dizin listeleme ve proje denetimi (`audit`)
-- **Docker REPL Sandbox**: `python:3.11-slim` veya `DOCKER_TEST_IMAGE` ile proje Dockerfile'ından build edilmiş Sidar imajı içinde ağ/RAM/CPU kısıtlı izole kod/pytest doğrulama
+- **Docker REPL Sandbox**: `python:3.11-slim` veya `SIDAR_DOCKER_TEST_IMAGE` ile proje Dockerfile'ından build edilmiş Sidar imajı içinde ağ/RAM/CPU kısıtlı izole kod/pytest doğrulama
 - Metrik takibi (okunan/yazılan/doğrulanan)
 
 ### OpenClaw Güvenlik Sistemi (SecurityManager)
@@ -686,8 +686,8 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `bash run_tests.sh` gibi regresyon komutları ayrıca sandbox içinde `uv` binary'si gerektirir;
 > proje Dockerfile'ı `/bin/uv` ve `/bin/uvx` kopyasını build sırasında doğrular. Coverage/QA ajanları
 > için önerilen kalıcı ayar: `docker build -t sidar:latest .` sonrası `.env` içinde
-> `DOCKER_TEST_IMAGE=sidar:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
-> `DOCKER_TEST_IMAGE` açık verilmediyse `CodeManager`, Docker daemon erişimi olduğunda
+> `SIDAR_DOCKER_TEST_IMAGE=sidar:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
+> `SIDAR_DOCKER_TEST_IMAGE` açık verilmediyse `CodeManager`, Docker daemon erişimi olduğunda
 > `sidar:latest`, `sidar-gpu:latest` ve geriye dönük uyumluluk için `sidar-ai:latest`/`sidar-ai-gpu:latest` imajlarını otomatik test imajı adayı olarak dener.
 >
 > Hızlı sorun giderme (pytest başlangıç hataları):
@@ -852,7 +852,7 @@ uv run mypy .
 | **v3.0.20** | Kapsamlı rapor güncelleme turu: AUDIT_REPORT_v5.0, PROJE_RAPORU.md, README.md tüm satır sayıları ve araç envanteri mevcut koda göre yeniden ölçüldü ve güncellendi |
 | **v3.0.19** | React SPA react-router-dom navigasyonu, PromptAdminPanel/SwarmFlowPanel/P2PDialoguePanel bileşenleri, `/api/swarm/execute` endpoint, DB destekli sistem promptu yükleme |
 | **v3.0.18** | FAZ-6: D-6 `core/db.py` lazy lock dead-code kapatıldı. Tüm 18 güvenlik bulgusu (K/Y/O/D) kapatıldı. Güvenlik puanı 10.0/10 |
-| **v3.0.17** | FAZ-5: O-1..O-6 tüm orta öncelikli bulgular kapatıldı (BASE_DIR kısıtlama, DOCKER_REQUIRED, shell blocklist) |
+| **v3.0.17** | FAZ-5: O-1..O-6 tüm orta öncelikli bulgular kapatıldı (BASE_DIR kısıtlama, SIDAR_DOCKER_REQUIRED, shell blocklist) |
 | **v3.0.16** | FAZ-4: Y-1..Y-5 tüm yüksek öncelikli bulgular doğrulandı/kapatıldı |
 | **v3.0.15** | FAZ-3: D-1..D-5 teknik borç temizliği, metric auth, bleach sanitizasyon, CI pg-stress job |
 | **v3.0.14** | Kapsamlı yeniden ölçüm; `agent/registry.py`, `agent/swarm.py`, `plugins/` eklendi; 132 test modülü, 30.613 test satırı |

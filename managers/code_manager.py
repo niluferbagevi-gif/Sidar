@@ -212,9 +212,7 @@ class CodeManager:
         self.security = security
         self.base_dir = Path(base_dir).resolve()
         self.cfg = cfg or Config()
-        self.docker_runtime = str(
-            getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or ""
-        ).strip()
+        self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", "") or "").strip()
         self.docker_allowed_runtimes = list(
             getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
             or [""]
@@ -223,35 +221,28 @@ class CodeManager:
             str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
         )
         self.docker_mem_limit = str(
-            getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m"
+            getattr(self.cfg, "DOCKER_MEM_LIMIT", "256m") or "256m"
         ).strip()
         self.docker_network_disabled = bool(
-            getattr(
-                self.cfg,
-                "DOCKER_NETWORK_DISABLED",
-                os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on"),
-            )
+            getattr(self.cfg, "DOCKER_NETWORK_DISABLED", True)
         )
         self.docker_nano_cpus = int(
-            getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000"))
-            or 1000000000
+            getattr(self.cfg, "DOCKER_NANO_CPUS", 1000000000) or 1000000000
         )
         self.docker_image: str = str(
             docker_image
-            or os.getenv("DOCKER_IMAGE", "")
-            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
+            or getattr(self.cfg, "DOCKER_IMAGE", "")
+            or getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-slim")
         )
-        configured_test_image = str(
-            getattr(self.cfg, "DOCKER_TEST_IMAGE", os.getenv("DOCKER_TEST_IMAGE", "")) or ""
-        ).strip()
-        self._docker_test_image_explicit = bool(os.getenv("DOCKER_TEST_IMAGE", "").strip()) or (
-            bool(configured_test_image) and configured_test_image != self.docker_image
-        )
+        configured_test_image = str(getattr(self.cfg, "DOCKER_TEST_IMAGE", "") or "").strip()
+        self._docker_test_image_explicit = bool(
+            getattr(self.cfg, "DOCKER_TEST_IMAGE_EXPLICIT", False)
+        ) or (bool(configured_test_image) and configured_test_image != self.docker_image)
         self.docker_test_image: str = configured_test_image or self.docker_image
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
             if docker_exec_timeout is not None
-            else int(os.getenv("DOCKER_EXEC_TIMEOUT", str(SANDBOX_LIMITS.get("timeout", 10))))
+            else int(getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", SANDBOX_LIMITS.get("timeout", 10)))
         )
         self.max_output_chars = 10000
         self._lock = threading.RLock()
@@ -1648,7 +1639,10 @@ class CodeManager:
             suffixes = [".cmd", ".exe", ".bat", ""]
 
         candidate_dirs: list[Path] = []
-        for env_path in (os.getenv("VIRTUAL_ENV"), os.getenv("CONDA_PREFIX")):
+        for env_path in (
+            getattr(self.cfg, "PYTHON_VIRTUAL_ENV", ""),
+            getattr(self.cfg, "CONDA_PREFIX", ""),
+        ):
             if env_path:
                 candidate_dirs.append(Path(env_path) / ("Scripts" if os.name == "nt" else "bin"))
 
