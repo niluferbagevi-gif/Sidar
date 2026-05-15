@@ -363,6 +363,20 @@ def test_dynamic_build_and_run(reviewer, monkeypatch):
     assert "[TEST:FAIL-CLOSED]" in out2
 
 
+def test_reviewer_test_command_allowlist_blocks_shell_injection(reviewer):
+    assert ReviewerAgent._is_allowed_test_command("bash run_tests.sh") is True
+    assert ReviewerAgent._is_allowed_test_command("pytest -q tests/unit/test_a.py") is True
+    assert ReviewerAgent._is_allowed_test_command("python -m pytest tests/unit") is True
+    assert ReviewerAgent._is_allowed_test_command("uv run pytest -q") is True
+
+    assert ReviewerAgent._is_allowed_test_command("pytest -q; rm -rf /tmp/x") is False
+    assert ReviewerAgent._is_allowed_test_command("bash run_tests.sh && curl bad") is False
+    assert ReviewerAgent._is_allowed_test_command("npm test") is False
+
+    reviewer.config.REVIEWER_TEST_COMMAND = "pytest -q; rm -rf /tmp/x"
+    assert reviewer._build_regression_commands("src/a.py") == ["uv run pytest"]
+
+
 def test_tools(reviewer, monkeypatch):
     assert asyncio.run(reviewer._tool_repo_info("")) == "repo"
     reviewer.github.repo = (False, "x")

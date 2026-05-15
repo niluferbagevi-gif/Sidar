@@ -165,6 +165,14 @@ def test_env_example_docker_allowed_runtimes_has_no_empty_entry() -> None:
     assert "DOCKER_ALLOWED_RUNTIMES=,runc" not in env_example
 
 
+def test_env_example_documents_reviewer_test_command_allowlist() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "REVIEWER_TEST_COMMAND=bash run_tests.sh" in env_example
+    assert "Yalnız yerel .env üzerinden ayarlayın" in env_example
+    assert "Kod allowlist'i yalnız pytest" in env_example
+
+
 def test_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
