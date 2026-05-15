@@ -626,7 +626,7 @@ def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
 
 def test_resolve_lsp_command_uses_project_venv_when_path_missing(manager, tmp_path, monkeypatch):
     monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
-    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / ".venv"))
+    manager.cfg.PYTHON_VIRTUAL_ENV = str(tmp_path / ".venv")
     manager.base_dir = tmp_path
     bin_dir = tmp_path / ".venv" / ("Scripts" if os.name == "nt" else "bin")
     bin_dir.mkdir(parents=True)

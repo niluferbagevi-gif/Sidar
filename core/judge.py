@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import random
 import re
 import time
@@ -139,19 +138,19 @@ class LLMJudge:
     def __init__(self) -> None:
         from config import Config
 
-        self.enabled = os.getenv("JUDGE_ENABLED", "false").lower() in ("1", "true", "yes")
-        self.model = os.getenv("JUDGE_MODEL", "").strip() or None
-        self.provider = os.getenv("JUDGE_PROVIDER", "ollama").strip().lower()
-        self.sample_rate = max(0.0, min(1.0, float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or 0.2)))
         self.config = Config()
-        self.auto_feedback_enabled = os.getenv("JUDGE_AUTO_FEEDBACK_ENABLED", "true").lower() in (
-            "1",
-            "true",
-            "yes",
+        self.enabled = bool(getattr(self.config, "JUDGE_ENABLED", False))
+        self.model = str(getattr(self.config, "JUDGE_MODEL", "") or "").strip() or None
+        self.provider = str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama").strip().lower()
+        self.sample_rate = max(
+            0.0, min(1.0, float(getattr(self.config, "JUDGE_SAMPLE_RATE", 0.2) or 0.2))
+        )
+        self.auto_feedback_enabled = bool(
+            getattr(self.config, "JUDGE_AUTO_FEEDBACK_ENABLED", True)
         )
         self.auto_feedback_threshold = max(
             0.0,
-            min(10.0, float(os.getenv("JUDGE_AUTO_FEEDBACK_THRESHOLD", "8.0") or 8.0)),
+            min(10.0, float(getattr(self.config, "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0) or 8.0)),
         )
 
     def _should_evaluate(self) -> bool:
@@ -163,7 +162,7 @@ class LLMJudge:
         return self._should_evaluate()
 
     def _response_eval_model(self) -> str:
-        override = os.getenv("JUDGE_RESPONSE_MODEL", "").strip()
+        override = str(getattr(self.config, "JUDGE_RESPONSE_MODEL", "") or "").strip()
         if override:
             return override
         if self.model:

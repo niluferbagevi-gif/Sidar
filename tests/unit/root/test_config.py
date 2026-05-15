@@ -75,6 +75,28 @@ def test_web_scrape_max_chars_prefers_new_name_without_warning(monkeypatch):
     assert not record
 
 
+def test_prefixed_env_helpers_prefer_sidar_namespace(monkeypatch):
+    monkeypatch.setenv("LEGACY_INT", "10")
+    monkeypatch.setenv("SIDAR_INT", "20")
+    monkeypatch.setenv("LEGACY_FLOAT", "1.5")
+    monkeypatch.setenv("SIDAR_FLOAT", "2.5")
+    monkeypatch.setenv("LEGACY_TEXT", "legacy")
+    monkeypatch.setenv("SIDAR_TEXT", "prefixed")
+
+    assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 0) == 20
+    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 0.0) == 2.5
+    assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "fallback") == "prefixed"
+
+
+def test_prefixed_bool_env_is_strict(monkeypatch):
+    monkeypatch.setenv("LEGACY_BOOL", "true")
+    assert config.get_bool_prefixed_env("SIDAR_BOOL", "LEGACY_BOOL", False) is True
+
+    monkeypatch.setenv("SIDAR_BOOL", "yes")
+    with pytest.raises(ValueError, match="SIDAR_BOOL / LEGACY_BOOL must be either"):
+        config.get_bool_prefixed_env("SIDAR_BOOL", "LEGACY_BOOL", False)
+
+
 def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
     monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
     settings = config.LLMClientSettings()

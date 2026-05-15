@@ -202,6 +202,53 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     return [item.strip() for item in value.split(separator) if item.strip()]
 
 
+def get_prefixed_env(prefix_key: str, legacy_key: str, default: str = "") -> str:
+    """Read a Sidar-prefixed env var while preserving a legacy fallback."""
+    prefixed_value = os.getenv(prefix_key)
+    if prefixed_value is not None:
+        return prefixed_value
+    return os.getenv(legacy_key, default)
+
+
+def get_optional_prefixed_env(prefix_key: str, legacy_key: str) -> str | None:
+    """Read an optional Sidar-prefixed env var with legacy fallback."""
+    prefixed_value = os.getenv(prefix_key)
+    if prefixed_value is not None:
+        return prefixed_value
+    return os.getenv(legacy_key)
+
+
+def get_int_prefixed_env(prefix_key: str, legacy_key: str, default: int = 0) -> int:
+    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    try:
+        return int(raw_value)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.0) -> float:
+    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    try:
+        return float(raw_value)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool = False) -> bool:
+    raw_value = get_optional_prefixed_env(prefix_key, legacy_key)
+    if raw_value is None or not raw_value.strip():
+        return default
+    val = raw_value.strip().lower()
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(
+        f"{prefix_key} / {legacy_key} must be either 'true' or 'false' "
+        f"(case-insensitive); got {raw_value!r}."
+    )
+
+
 def get_db_pool_size_default() -> int:
     """
     DB havuz boyutu için çekirdek sayısı + PostgreSQL max_connections temelli varsayılan üretir.
@@ -471,6 +518,18 @@ class Config:
     SELF_HEAL_PLAN_MAX_RETRIES: int = get_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
     SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
     SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env("SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6)
+    SELF_HEAL_LOCAL_SCOPE_LIMIT: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_LOCAL_SCOPE_LIMIT", "SELF_HEAL_LOCAL_SCOPE_LIMIT", 200
+    )
+    SELF_HEAL_HITL_SCOPE_THRESHOLD: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_HITL_SCOPE_THRESHOLD", "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3
+    )
+    SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
+    )
+    RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_optional_prefixed_env(
+        "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES", "RUFF_AUTOFIX_UNSAFE_RULES"
+    )
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR: Path = BASE_DIR
@@ -578,12 +637,36 @@ class Config:
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 
     # ─── API Rate Limiting ───────────────────────────────────
-    RATE_LIMIT_WINDOW: int = get_int_env("RATE_LIMIT_WINDOW", 60)
-    RATE_LIMIT_CHAT: int = get_int_env("RATE_LIMIT_CHAT", 20)
-    RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
-    RATE_LIMIT_GET_IO: int = get_int_env("RATE_LIMIT_GET_IO", 30)
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    SIDAR_RATE_LIMIT_WINDOW: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_WINDOW", "RATE_LIMIT_WINDOW", 60
+    )
+    SIDAR_RATE_LIMIT_CHAT: int = get_int_prefixed_env("SIDAR_RATE_LIMIT_CHAT", "RATE_LIMIT_CHAT", 20)
+    SIDAR_RATE_LIMIT_MUTATIONS: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_MUTATIONS", "RATE_LIMIT_MUTATIONS", 60
+    )
+    SIDAR_RATE_LIMIT_GET_IO: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_GET_IO", "RATE_LIMIT_GET_IO", 30
+    )
+    RATE_LIMIT_WINDOW: int = SIDAR_RATE_LIMIT_WINDOW
+    RATE_LIMIT_CHAT: int = SIDAR_RATE_LIMIT_CHAT
+    RATE_LIMIT_MUTATIONS: int = SIDAR_RATE_LIMIT_MUTATIONS
+    RATE_LIMIT_GET_IO: int = SIDAR_RATE_LIMIT_GET_IO
+    SIDAR_REDIS_URL: str = get_prefixed_env(
+        "SIDAR_REDIS_URL", "REDIS_URL", "redis://localhost:6379/0"
+    )
+    REDIS_URL: str = SIDAR_REDIS_URL
+    SIDAR_REDIS_MAX_CONNECTIONS: int = get_int_prefixed_env(
+        "SIDAR_REDIS_MAX_CONNECTIONS", "REDIS_MAX_CONNECTIONS", LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    )
+    REDIS_MAX_CONNECTIONS: int = SIDAR_REDIS_MAX_CONNECTIONS
+    SIDAR_REDIS_CONNECT_TIMEOUT: float = get_float_prefixed_env(
+        "SIDAR_REDIS_CONNECT_TIMEOUT", "REDIS_CONNECT_TIMEOUT", 0.5
+    )
+    REDIS_CONNECT_TIMEOUT: float = SIDAR_REDIS_CONNECT_TIMEOUT
+    SIDAR_REDIS_SOCKET_TIMEOUT: float = get_float_prefixed_env(
+        "SIDAR_REDIS_SOCKET_TIMEOUT", "REDIS_SOCKET_TIMEOUT", 0.5
+    )
+    REDIS_SOCKET_TIMEOUT: float = SIDAR_REDIS_SOCKET_TIMEOUT
     ENABLE_DISTRIBUTED_AGENT_LOCKS: bool = get_bool_env("ENABLE_DISTRIBUTED_AGENT_LOCKS", True)
     DISTRIBUTED_AGENT_LOCK_REQUIRED: bool = get_bool_env("DISTRIBUTED_AGENT_LOCK_REQUIRED", False)
     DISTRIBUTED_AGENT_LOCK_TTL_SECONDS: int = get_int_env(
@@ -623,10 +706,36 @@ class Config:
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
+    SIDAR_EVENT_BUS_BACKEND: str = os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis")
+    SIDAR_EVENT_BUS_CHANNEL: str = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
+    SIDAR_EVENT_BUS_GROUP: str = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
     SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv(
-        "SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq"
+        "SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{SIDAR_EVENT_BUS_CHANNEL}:dlq"
     )
     SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
+    SIDAR_EVENT_BUS_DLQ_PERSIST_PATH: str = os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "")
+    SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE: int = get_int_env(
+        "SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", 100
+    )
+    SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL: float = get_float_env(
+        "SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", 1.0
+    )
+    SIDAR_RABBITMQ_URL: str = get_prefixed_env(
+        "SIDAR_RABBITMQ_URL", "RABBITMQ_URL", "amqp://guest:guest@localhost/"
+    )
+    RABBITMQ_URL: str = SIDAR_RABBITMQ_URL
+    SIDAR_EVENT_BUS_KAFKA_TOPIC: str = os.getenv(
+        "SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events"
+    )
+    SIDAR_EVENT_BUS_KAFKA_GROUP: str = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", "")
+    SIDAR_KAFKA_BOOTSTRAP_SERVERS: str = get_prefixed_env(
+        "SIDAR_KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
+    )
+    KAFKA_BOOTSTRAP_SERVERS: str = SIDAR_KAFKA_BOOTSTRAP_SERVERS
+    SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD: int = get_int_env(
+        "SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", 5
+    )
+    SIDAR_EVENT_BUS_CB_OPEN_SECONDS: float = get_float_env("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", 15.0)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
@@ -659,20 +768,33 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
-    DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
-    DOCKER_TEST_IMAGE: str = os.getenv("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
-    DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
+    DOCKER_PYTHON_IMAGE: str = get_prefixed_env(
+        "SIDAR_DOCKER_PYTHON_IMAGE", "DOCKER_PYTHON_IMAGE", "python:3.11-slim"
+    )
+    DOCKER_IMAGE: str = get_prefixed_env("SIDAR_DOCKER_IMAGE", "DOCKER_IMAGE", "")
+    _DOCKER_TEST_IMAGE_RAW: str | None = get_optional_prefixed_env(
+        "SIDAR_DOCKER_TEST_IMAGE", "DOCKER_TEST_IMAGE"
+    )
+    DOCKER_TEST_IMAGE_EXPLICIT: bool = bool((_DOCKER_TEST_IMAGE_RAW or "").strip())
+    DOCKER_TEST_IMAGE: str = (_DOCKER_TEST_IMAGE_RAW or DOCKER_PYTHON_IMAGE).strip()
+    DOCKER_RUNTIME: str = get_prefixed_env("SIDAR_DOCKER_RUNTIME", "DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
         "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
     )
-    DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
-    DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
-    DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
-    DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
+    DOCKER_MICROVM_MODE: str = get_prefixed_env("SIDAR_DOCKER_MICROVM_MODE", "DOCKER_MICROVM_MODE", "off")
+    DOCKER_MEM_LIMIT: str = get_prefixed_env("SIDAR_DOCKER_MEM_LIMIT", "DOCKER_MEM_LIMIT", "256m")
+    DOCKER_NETWORK_DISABLED: bool = get_bool_prefixed_env(
+        "SIDAR_DOCKER_NETWORK_DISABLED", "DOCKER_NETWORK_DISABLED", True
+    )
+    DOCKER_NANO_CPUS: int = get_int_prefixed_env(
+        "SIDAR_DOCKER_NANO_CPUS", "DOCKER_NANO_CPUS", 1_000_000_000
+    )
     # Maksimum Docker sandbox çalışma süresi (saniye) — sonsuz döngü koruması
     DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
     # Docker zorunlu mod: True ise Docker erişilemezse yerel subprocess fallback engellenir
-    DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)
+    DOCKER_REQUIRED: bool = get_bool_prefixed_env("SIDAR_DOCKER_REQUIRED", "DOCKER_REQUIRED", False)
+    PYTHON_VIRTUAL_ENV: str = os.getenv("VIRTUAL_ENV", "")
+    PYTHON_CONDA_PREFIX: str = os.getenv("CONDA_PREFIX", "")
 
     # ─── Bellek Şifrelemesi ───────────────────────────────────────
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
@@ -701,10 +823,28 @@ class Config:
     HITL_TIMEOUT_SECONDS: int = get_int_env("HITL_TIMEOUT_SECONDS", 120)
 
     # ─── LLM-as-a-Judge Kalite Değerlendirmesi ────────────────
-    JUDGE_ENABLED: bool = get_bool_env("JUDGE_ENABLED", False)
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
-    JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
-    JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or "0.2")
+    JUDGE_ENABLED: bool = get_bool_prefixed_env("SIDAR_JUDGE_ENABLED", "JUDGE_ENABLED", False)
+    JUDGE_MODEL: str = get_prefixed_env("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "")
+    JUDGE_PROVIDER: str = get_prefixed_env("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "ollama")
+    JUDGE_SAMPLE_RATE: float = max(
+        0.0,
+        min(1.0, get_float_prefixed_env("SIDAR_JUDGE_SAMPLE_RATE", "JUDGE_SAMPLE_RATE", 0.2)),
+    )
+    JUDGE_AUTO_FEEDBACK_ENABLED: bool = get_bool_prefixed_env(
+        "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED", "JUDGE_AUTO_FEEDBACK_ENABLED", True
+    )
+    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = max(
+        0.0,
+        min(
+            10.0,
+            get_float_prefixed_env(
+                "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD", "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0
+            ),
+        ),
+    )
+    JUDGE_RESPONSE_MODEL: str = get_prefixed_env(
+        "SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", ""
+    )
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
     ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
