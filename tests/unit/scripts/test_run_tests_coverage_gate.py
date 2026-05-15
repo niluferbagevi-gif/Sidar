@@ -122,6 +122,13 @@ def test_env_examples_document_redis_connection_pool_limits() -> None:
     assert "REDIS_MAX_CONNECTIONS=5" in env_test_example
 
 
+def test_env_examples_document_ollama_parallelism_consistently() -> None:
+    for env_path in (".env.example", ".env.development.example", ".env.test.example"):
+        content = Path(env_path).read_text(encoding="utf-8")
+
+        assert "OLLAMA_NUM_PARALLEL=4" in content
+
+
 def test_env_example_uses_loopback_web_host_by_default() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
