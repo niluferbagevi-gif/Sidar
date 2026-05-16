@@ -156,3 +156,12 @@ def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
         "METRICS_TOKEN",
     ):
         assert f"{key}=" in known_weak
+
+
+def test_install_sidar_uses_entropy_checker_for_database_password_hardening() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'if is_weak_secret_value "$db_password"; then' in script
+    assert 'case "$db_password" in' not in script
+    assert "secret_strength.py" in script
+    assert "Password1" not in script

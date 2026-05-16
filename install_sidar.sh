@@ -3052,9 +3052,8 @@ harden_database_credentials() {
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
 
-        case "$db_password" in
-            sidar|postgres|password|admin|changeme|123456)
-                if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+        if is_weak_secret_value "$db_password"; then
+            if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
                     PRE_HARDEN_DB_PASSWORD="$db_password"
                     local generated_password=""
                     generated_password=$(generate_secure_token 24)
@@ -3101,9 +3100,8 @@ harden_database_credentials() {
                     warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
                     warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
                     warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
-                fi
-                ;;
-        esac
+            fi
+        fi
     fi
 }
 
@@ -3839,15 +3837,38 @@ get_env_value() {
     grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
 }
 
+secret_strength_script_file() {
+    local primary="${SCRIPT_DIR}/scripts/secret_strength.py"
+    local original="${ORIGINAL_SCRIPT_DIR}/scripts/secret_strength.py"
+    if [[ -f "$primary" ]]; then
+        printf '%s\n' "$primary"
+    elif [[ -f "$original" ]]; then
+        printf '%s\n' "$original"
+    fi
+}
+
 is_weak_secret_value() {
     local value="${1:-}"
+    local strength_script=""
+    local strength_status=0
     [[ -n "${value//[[:space:]]/}" ]] || return 0
+
+    strength_script="$(secret_strength_script_file)"
+    if [[ -n "$strength_script" ]] && command -v python3 &>/dev/null; then
+        if python3 "$strength_script" --quiet "$value"; then
+            return 0
+        fi
+        strength_status="$?"
+        [[ "$strength_status" == "1" ]] && return 1
+    fi
+
     case "${value,,}" in
-        sidar|admin|password|changeme|change_me|change-me*|replace-with-*|secret|default|test|example|postgres|root|123456|12345678)
+        *password*|*passwd*|sidar|admin|changeme|change_me|change-me*|replace-with-*|*secret*|default|*test*|example|postgres|root|*qwerty*|*letmein*|*welcome*|123456|12345678|*1234*|*abcd*|*asdf*|*zxcv*)
             return 0
             ;;
     esac
     (( ${#value} < 24 )) && return 0
+    [[ "$value" =~ (.)\1\1\1 ]] && return 0
     return 1
 }
 
