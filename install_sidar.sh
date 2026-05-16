@@ -18,6 +18,8 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
+
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
@@ -240,7 +242,7 @@ run_with_progress_hint() {
 
 prompt_yes_no_with_timeout_default_yes() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -255,7 +257,7 @@ prompt_yes_no_with_timeout_default_yes() {
 
 prompt_yes_no_with_timeout_default_no() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -3747,10 +3749,10 @@ prompt_post_install_sidar_env_mode() {
         echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
         echo "======================================================"
 
-        if read -r -t 180 -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
+        if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
             :
         else
-            warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
+            warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
             env_choice="1"
         fi
 
@@ -4993,10 +4995,10 @@ select_runtime_mode() {
             info "Kurulum çalışma modu seçimi:"
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
-            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+            if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
                 :
             else
-                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
                 runtime_answer="1"
             fi
             case "${runtime_answer:-1}" in

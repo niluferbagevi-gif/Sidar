@@ -281,6 +281,20 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
 
 
 
+
+
+def test_install_sidar_uses_single_prompt_timeout_constant() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
+    assert 'local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"' in script
+    assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice' in script
+    assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer' in script
+    assert '${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı' in script
+    assert "read -r -t 180" not in script
+    assert "180 saniye içinde" not in script
+    assert '${2:-180}' not in script
+
 def test_install_sidar_uses_central_env_reader_for_values(tmp_path: Path) -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
