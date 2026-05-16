@@ -356,6 +356,8 @@ cp .env.example .env
 # Gizli servis anahtarlarını repo dışında tutmak için kişisel dosya oluşturun.
 cp .sidar_keys.env.example ~/.sidar_keys.env
 chmod 600 ~/.sidar_keys.env
+# ~/.sidar_keys.env içinde yalnız kullanacağınız MANUEL satırları yorumdan çıkarıp doldurun;
+# boş KEY= satırları .env içinde otomatik üretilen değerleri override edebilir.
 # Uzman ayarları gerekiyorsa sadece ihtiyaç duyduğunuz anahtarları .env.advanced içinden
 # ayrı bir override dosyasına kopyalayın ve DOTENV_FILE=.env.<dosya> ile yükleyin.
 ```
