@@ -217,6 +217,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "phases/05_frontend.sh",
         "phases/06_services.sh",
         "phases/07_finish.sh",
+        "utils/wsl_gpu_preflight.sh",
         "utils/gpu_utils.sh",
         "utils/python_env.sh",
         "utils/db_credentials.sh",
@@ -257,9 +258,11 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
 
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    preflight_utils = Path("scripts/install_modules/utils/wsl_gpu_preflight.sh").read_text(encoding="utf-8")
     gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
     python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
@@ -268,10 +271,19 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
+    assert 'sidar_source_install_utils "wsl_gpu_preflight.sh"' in context_phase
+    assert "run_wsl2_gpu_preflight" in context_phase
+    assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
     assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
     assert 'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"' in workspace_phase
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
 
+    assert "run_wsl2_gpu_preflight()" in preflight_utils
+    assert "SIDAR_WSL_GPU_PREFLIGHT" in preflight_utils
+    assert "nvidia-smi" in preflight_utils
+    assert "/dev/dxg" in preflight_utils
+    assert "libcuda" in preflight_utils
+    assert "Ollama API" in preflight_utils
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
     assert "create_uv_venv()" in python_env_utils

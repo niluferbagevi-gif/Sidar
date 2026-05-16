@@ -190,6 +190,7 @@ fi
 source "$INSTALL_HELPERS_MODULE"
 
 INSTALL_UTILITY_MODULES=(
+    "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
     "utils/python_env.sh"
     "utils/db_credentials.sh"
