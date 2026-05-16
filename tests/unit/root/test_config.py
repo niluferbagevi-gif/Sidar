@@ -1536,3 +1536,29 @@ def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch
     monkeypatch.setenv("SIDAR_ENV", "development")
 
     assert config.Config.get_missing_critical_runtime_keys() == []
+
+
+def test_sidar_keys_example_does_not_ship_active_empty_overrides() -> None:
+    """The personal keys template must not blank .env values when copied as-is."""
+    example_path = Path(__file__).resolve().parents[3] / ".sidar_keys.env.example"
+    active_empty_assignments: list[str] = []
+
+    for raw_line in example_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() and not value.strip():
+            active_empty_assignments.append(key.strip())
+
+    assert active_empty_assignments == []
+
+
+def test_sidar_keys_example_documents_manual_and_autonomous_sections() -> None:
+    example_path = Path(__file__).resolve().parents[3] / ".sidar_keys.env.example"
+    content = example_path.read_text(encoding="utf-8")
+
+    assert "OTONOM oluşabilen yerel güvenlik secretları" in content
+    assert "MANUEL doldurulan AI sağlayıcıları" in content
+    assert "MANUEL doldurulan Meta / Poyraz sosyal yayın anahtarları" in content
+    assert "Boş `KEY=` satırlarını aktif bırakmayın" in content
