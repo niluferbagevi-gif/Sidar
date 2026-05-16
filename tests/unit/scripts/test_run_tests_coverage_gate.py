@@ -123,3 +123,36 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_uses_central_known_weak_secret_list() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
+
+    assert "is_known_weak_secret_value" in script
+    assert "is_env_example_secret_value" in script
+    assert "known_weak_secrets.txt" in script
+    assert "is_weak_secret_value \"$val\" && return 0" in script
+    assert "is_known_weak_secret_value \"$key\" \"$val\" && return 0" in script
+    assert "is_env_example_secret_value \"$key\" \"$val\" && return 0" in script
+
+    for line in known_weak.splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        _, weak_value = line.split("=", 1)
+        assert weak_value not in script
+
+
+def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
+    known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
+
+    for key in (
+        "API_KEY",
+        "JWT_SECRET_KEY",
+        "MEMORY_ENCRYPTION_KEY",
+        "AUTONOMY_WEBHOOK_SECRET",
+        "SWARM_FEDERATION_SHARED_SECRET",
+        "GITHUB_WEBHOOK_SECRET",
+        "METRICS_TOKEN",
+    ):
+        assert f"{key}=" in known_weak

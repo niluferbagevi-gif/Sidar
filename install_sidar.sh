@@ -3598,15 +3598,18 @@ ensure_env_file_secrets_after_uv_sync() {
 ensure_auto_secrets() {
     local env_file="$1"
 
-    # Boş, eksik veya bilinen güvensiz değer mi? → 0 (true) döner
+    # Boş, eksik veya bilinen güvensiz değer mi? → 0 (true) döner.
+    # Bilinen örnek değerler merkezi weak-secret listesi ve .env.example üzerinden
+    # okunur; bu fonksiyon gizli/örnek literal değerleri install script içinde
+    # tekrar gömmemelidir.
     _is_missing_or_insecure() {
-        local key="$1"; shift
+        local key="$1"
         local val
         val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
               | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
         is_weak_secret_value "$val" && return 0
-        local bad
-        for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
+        is_known_weak_secret_value "$key" "$val" && return 0
+        is_env_example_secret_value "$key" "$val" && return 0
         return 1
     }
 
@@ -3652,8 +3655,7 @@ PY
     }
 
     # ── POSTGRES_PASSWORD ────────────────────────────────────────────────────
-    if _is_missing_or_insecure "POSTGRES_PASSWORD" \
-        "change-me-to-a-strong-password" "replace-with-a-strong-24-plus-character-password"; then
+    if _is_missing_or_insecure "POSTGRES_PASSWORD"; then
         local _v; _v=$(_gen_urlsafe 24)
         if [[ -n "$_v" ]]; then
             _write_secret "POSTGRES_PASSWORD" "$_v"
@@ -3664,8 +3666,7 @@ PY
     fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
-        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
+    if _is_missing_or_insecure "API_KEY"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "API_KEY" "$_v"
@@ -3676,8 +3677,7 @@ PY
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
-        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
+    if _is_missing_or_insecure "JWT_SECRET_KEY"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
             _write_secret "JWT_SECRET_KEY" "$_v"
@@ -3688,8 +3688,7 @@ PY
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
-        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
+    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY"; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
             _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
@@ -3713,15 +3712,12 @@ PY
         fi
     }
 
-    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64 \
-        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
-    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64 \
-        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
-    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
-        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40
 
     # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
-    if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
+    if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "GRAFANA_ADMIN_PASSWORD" "$_v"
@@ -3732,9 +3728,8 @@ PY
     fi
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
-    # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
-        "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
+    # /metrics uçlarını koruyan Bearer token; örnek/legacy değerler merkezi listeden denetlenir.
+    if _is_missing_or_insecure "METRICS_TOKEN"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "METRICS_TOKEN" "$_v"
@@ -3853,6 +3848,52 @@ is_weak_secret_value() {
             ;;
     esac
     (( ${#value} < 24 )) && return 0
+    return 1
+}
+
+known_weak_secrets_file() {
+    local primary="${SCRIPT_DIR}/scripts/known_weak_secrets.txt"
+    local original="${ORIGINAL_SCRIPT_DIR}/scripts/known_weak_secrets.txt"
+    if [[ -f "$primary" ]]; then
+        printf '%s\n' "$primary"
+    elif [[ -f "$original" ]]; then
+        printf '%s\n' "$original"
+    fi
+}
+
+is_known_weak_secret_value() {
+    local key="$1" value="${2:-}" weak_file line entry_key entry_value
+    [[ -n "${value//[[:space:]]/}" ]] || return 1
+    weak_file="$(known_weak_secrets_file)"
+    [[ -n "$weak_file" && -f "$weak_file" ]] || return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ -n "${line//[[:space:]]/}" ]] || continue
+        [[ "${line:0:1}" == "#" ]] && continue
+        [[ "$line" == *=* ]] || continue
+        entry_key="${line%%=*}"
+        entry_value="${line#*=}"
+        entry_key="${entry_key//[[:space:]]/}"
+        [[ "$entry_key" == "$key" || "$entry_key" == "*" ]] || continue
+        [[ "$value" == "$entry_value" ]] && return 0
+    done < "$weak_file"
+
+    return 1
+}
+
+is_env_example_secret_value() {
+    local key="$1" value="${2:-}" example_file example_value
+    [[ -n "${value//[[:space:]]/}" ]] || return 1
+
+    for example_file in "${SCRIPT_DIR}/.env.example" "${ORIGINAL_SCRIPT_DIR}/.env.example"; do
+        [[ -f "$example_file" ]] || continue
+        example_value=$(grep -E "^${key}=" "$example_file" 2>/dev/null \
+            | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        [[ -n "${example_value//[[:space:]]/}" ]] || continue
+        [[ "$value" == "$example_value" ]] && return 0
+    done
+
     return 1
 }
 
