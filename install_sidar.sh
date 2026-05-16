@@ -44,6 +44,8 @@ mask_install_log_stream() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+# shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
+SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -134,7 +136,13 @@ sidar_t() {
 ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
 info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
 warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
-fail() { echo -e "${RED}❌  $*${NC}" >&2; exit 1; }
+fail() {
+    echo -e "${RED}❌  $*${NC}" >&2
+    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
+        sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-fail}" "$*" || true
+    fi
+    exit 1
+}
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 sed_inplace() {
@@ -189,6 +197,16 @@ fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
 
+INSTALL_UTILITY_MODULES=(
+    "utils/install_remediation.sh"
+    "utils/wsl_gpu_preflight.sh"
+    "utils/gpu_utils.sh"
+    "utils/python_env.sh"
+    "utils/db_credentials.sh"
+    "utils/env_utils.sh"
+    "utils/ollama_models.sh"
+)
+
 INSTALL_PHASE_MODULES=(
     "phases/01_context.sh"
     "phases/02_repo.sh"
@@ -198,6 +216,17 @@ INSTALL_PHASE_MODULES=(
     "phases/06_services.sh"
     "phases/07_finish.sh"
 )
+
+validate_install_utility_modules() {
+    local module_rel=""
+    local module_path=""
+    for module_rel in "${INSTALL_UTILITY_MODULES[@]}"; do
+        module_path="${INSTALL_MODULE_DIR}/${module_rel}"
+        if [[ ! -f "$module_path" ]]; then
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+        fi
+    done
+}
 
 load_install_phase_modules() {
     local module_rel=""
@@ -212,6 +241,8 @@ load_install_phase_modules() {
     done
 }
 
+validate_install_utility_modules
+sidar_source_install_utils "install_remediation.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
@@ -286,6 +317,9 @@ on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
+    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
+        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
+    fi
     echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
     echo "$(sidar_t failed_command "$failed_cmd")" >&2
     echo "$(sidar_t check_log "$LOG_FILE")" >&2
@@ -1680,6 +1714,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
+    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
 EOF
     else
         cat <<EOF
@@ -1732,6 +1768,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
+    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
 EOF
     fi
 }
@@ -2739,30 +2777,20 @@ install_python_deps() {
 install_pyright_lsp_tool() {
     step "Pyright LSP Aracı"
 
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    local venv_bin="$SCRIPT_DIR/.venv/bin"
+    export PATH="$venv_bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP hazır: $(command -v pyright-langserver)"
+    if [[ -x "$venv_bin/pyright-langserver" ]]; then
+        ok "Pyright LSP hazır: $venv_bin/pyright-langserver"
         return
     fi
 
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        warn "Çevrimdışı modda pyright-langserver bulunamadı; LSP diagnostics için çevrimiçi ortamda 'uv tool install pyright' çalıştırın veya offline tool cache sağlayın."
+    if uv run pyright-langserver --version >/dev/null 2>&1; then
+        ok "Pyright LSP uv sync ortamında hazır: $(uv run python -c 'import shutil; print(shutil.which("pyright-langserver") or "uv-run")')"
         return
     fi
 
-    info "Pyright LSP kuruluyor: uv tool install pyright"
-    if ! uv tool install pyright; then
-        warn "uv tool install pyright başarısız oldu; ajan LSP diagnostics özelliği için manuel kurulum gerekir."
-        return
-    fi
-
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP kuruldu: $(command -v pyright-langserver)"
-    else
-        warn "Pyright kuruldu ancak pyright-langserver PATH üzerinde bulunamadı; ~/.local/bin PATH ayarını kontrol edin."
-    fi
+    fail "Pyright LSP bulunamadı. Kurulum eski paket/tool fallback kullanmaz; dev extra dahil standart akışla 'uv sync --frozen --all-extras' çalıştırın."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -4898,13 +4926,23 @@ select_pytorch_cuda_wheel_tag() {
     echo "cu124"
 }
 
-install_pytorch_cuda_wheels() {
+sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
+    local -a sync_args=(
+        --frozen
+        --all-extras
+        --index "$index_url"
+        --reinstall-package torch
+        --reinstall-package torchvision
+        --reinstall-package torchaudio
+    )
 
-    info "PyTorch CUDA wheel seçimi: ${cuda_tag} (${index_url})"
-    uv pip install torch torchvision torchaudio --reinstall --index-url "$index_url"
+    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url})"
+    if ! uv sync "${sync_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
+    fi
 }
 
 verify_torch_cuda() {
@@ -4924,7 +4962,7 @@ print(f'available={avail} cuda={ver} device={dev}')
         else
             warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
             info "GPU wheel için PyTorch yeniden kuruluyor (GPU compute capability/CUDA sürümüne göre dinamik index seçilecek)..."
-            install_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
+            sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
 
             if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
                 ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
@@ -5684,18 +5722,18 @@ run_install_subcommand_if_requested() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
-    sidar_phase_initialize_context
+    sidar_run_install_phase "01_context" sidar_phase_initialize_context
     if sidar_phase_handle_early_exit; then
         return
     fi
 
-    sidar_phase_bootstrap_repo_system
-    sidar_phase_runtime_prerequisites
-    sidar_phase_workspace_config
-    sidar_phase_frontend_assets
-    sidar_phase_local_migrations_and_models
-    sidar_phase_services_and_validation
-    sidar_phase_finish
+    sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system
+    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites
+    sidar_run_install_phase "04_workspace" sidar_phase_workspace_config
+    sidar_run_install_phase "05_frontend" sidar_phase_frontend_assets
+    sidar_run_install_phase "06_models" sidar_phase_local_migrations_and_models
+    sidar_run_install_phase "06_services" sidar_phase_services_and_validation
+    sidar_run_install_phase "07_finish" sidar_phase_finish
 }
 
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then

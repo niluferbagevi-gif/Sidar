@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 sidar_phase_local_migrations_and_models() {
+    sidar_source_install_utils "ollama_models.sh"
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations

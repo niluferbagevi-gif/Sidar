@@ -124,3 +124,185 @@ ENV
   [[ "$output" == *"Kullanım:"* ]]
   [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
 }
+
+@test "01_context phase runs environment detection before WSL GPU preflight" {
+  run_installer_function '
+    events=()
+    banner() { events+=(banner); }
+    report_repo_lookup_context() { events+=(repo_context); }
+    detect_environment() { events+=(detect_environment); WSL2=false; }
+    sidar_source_install_utils() { events+=("source:$*"); }
+    run_wsl2_gpu_preflight() { events+=(wsl_preflight); }
+    verify_offline_bundle_manifest() { events+=(offline_manifest); }
+    OFFLINE_MODE=false
+
+    sidar_phase_initialize_context
+    [[ "${events[*]}" == "banner repo_context detect_environment source:wsl_gpu_preflight.sh wsl_preflight" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "01_context phase fails offline quality gate when bundle directory is missing" {
+  run_installer_function '
+    banner() { :; }
+    report_repo_lookup_context() { :; }
+    detect_environment() { WSL2=false; }
+    sidar_source_install_utils() { :; }
+    run_wsl2_gpu_preflight() { :; }
+    resolve_offline_packages_dir() { return 1; }
+    OFFLINE_MODE=true
+
+    sidar_phase_initialize_context
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."* ]]
+}
+
+@test "03_runtime phase performs hardware/runtime gates but never provisions uv workspace" {
+  run_installer_function '
+    events=()
+    sidar_source_install_utils() { events+=("source:$*"); }
+    ensure_prerequisites() { events+=(ensure_prerequisites); }
+    select_runtime_mode() { events+=(select_runtime_mode); APP_RUNTIME_MODE_SELECTED=local; }
+    detect_gpu() { events+=(detect_gpu); }
+    setup_nvidia_docker() { events+=(setup_nvidia_docker); }
+    install_uv_cli() { events+=(unexpected_uv); return 99; }
+    create_uv_venv() { events+=(unexpected_venv); return 99; }
+    install_python_deps() { events+=(unexpected_deps); return 99; }
+
+    sidar_phase_runtime_prerequisites
+    [[ "${events[*]}" == "source:gpu_utils.sh ensure_prerequisites select_runtime_mode detect_gpu setup_nvidia_docker" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "04_workspace local mode enforces uv venv and uv sync quality gate ordering" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=local
+    sidar_source_install_utils() { events+=("source:$*"); }
+    install_uv_cli() { events+=(install_uv_cli); }
+    create_uv_venv() { events+=(create_uv_venv); }
+    install_python_deps() { events+=(install_python_deps); }
+    install_pyright_lsp_tool() { events+=(install_pyright_lsp_tool); }
+    verify_torch_cuda() { events+=(verify_torch_cuda); }
+    create_directories() { events+=(create_directories); }
+    setup_vscode_workspace() { events+=(setup_vscode_workspace); }
+    setup_env_file() { events+=(setup_env_file); }
+
+    sidar_phase_workspace_config
+    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "04_workspace docker mode skips local uv provisioning but still prepares workspace files" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=docker
+    sidar_source_install_utils() { events+=("source:$*"); }
+    install_uv_cli() { events+=(unexpected_uv); return 99; }
+    create_uv_venv() { events+=(unexpected_venv); return 99; }
+    install_python_deps() { events+=(unexpected_deps); return 99; }
+    install_pyright_lsp_tool() { events+=(unexpected_pyright); return 99; }
+    verify_torch_cuda() { events+=(unexpected_torch); return 99; }
+    create_directories() { events+=(create_directories); }
+    setup_vscode_workspace() { events+=(setup_vscode_workspace); }
+    setup_env_file() { events+=(setup_env_file); }
+
+    sidar_phase_workspace_config
+    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "06 services phases gate local migrations models smoke and audit in order" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=local
+    sidar_source_install_utils() { events+=("source:$*"); }
+    prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
+    run_migrations() { events+=(run_migrations); }
+    download_ollama_models() { events+=(download_ollama_models); }
+    launch_docker_services() { events+=(launch_docker_services); }
+    run_smoke_tests() { events+=(run_smoke_tests); }
+    run_test_artifact_audit() { events+=(run_test_artifact_audit); }
+
+    sidar_phase_local_migrations_and_models
+    sidar_phase_services_and_validation
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models launch_docker_services run_smoke_tests run_test_artifact_audit" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "06 services docker mode marks local-only gates as skipped" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=docker
+    sidar_source_install_utils() { events+=("source:$*"); }
+    prepare_docker_for_migrations() { events+=(unexpected_prepare); return 99; }
+    run_migrations() { events+=(unexpected_migration); return 99; }
+    download_ollama_models() { events+=(unexpected_models); return 99; }
+    launch_docker_services() { events+=(launch_docker_services); }
+    run_smoke_tests() { events+=(unexpected_smoke); return 99; }
+    run_test_artifact_audit() { events+=(unexpected_audit); return 99; }
+
+    sidar_phase_local_migrations_and_models
+    sidar_phase_services_and_validation
+    [[ "${events[*]}" == "source:ollama_models.sh launch_docker_services" ]]
+    [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+    [[ "$SMOKE_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+    [[ "$AUDIT_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "WSL GPU preflight supports explicit off and CPU skip modes" {
+  run_installer_function '
+    sidar_source_install_utils wsl_gpu_preflight.sh
+    WSL2=true
+    FORCE_CPU=false
+    SIDAR_WSL_GPU_PREFLIGHT=off
+    run_wsl2_gpu_preflight
+    FORCE_CPU=true
+    SIDAR_WSL_GPU_PREFLIGHT=strict
+    run_wsl2_gpu_preflight
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SIDAR_WSL_GPU_PREFLIGHT=off"* ]]
+  [[ "$output" == *"--cpu etkin"* ]]
+}
+
+@test "auto-heal resume skips completed phases and reruns failed phase" {
+  run_installer_function '
+    SIDAR_INSTALL_RESUME_FROM_PHASE=04_workspace
+    called=0
+    phase_fn() { called=$((called + 1)); }
+
+    sidar_run_install_phase 03_runtime phase_fn
+    [[ "$called" -eq 0 ]]
+    sidar_run_install_phase 04_workspace phase_fn
+    [[ "$called" -eq 1 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "auto-heal strategy routes uv sync workspace failures to remediation" {
+  run_installer_function '
+    sidar_remediate_uv_sync_failure() { printf "%s\n" "uv-remediation-called"; return 0; }
+    sidar_phase_remediation_strategy 04_workspace "uv sync --frozen --all-extras" ""
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uv-remediation-called"* ]]
+}
+
+@test "auto-heal can be disabled for deterministic fail-fast installer runs" {
+  run_installer_function '
+    SIDAR_INSTALL_AUTO_HEAL=0
+    SIDAR_CURRENT_INSTALL_PHASE=04_workspace
+    if sidar_handle_install_failure 1 10 "uv sync" "uv sync"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+}

@@ -19,19 +19,34 @@ if [[ ! -d "$MODULE_DIR" ]]; then
 fi
 
 awk -v module_dir="$MODULE_DIR" '
+function emit_module(file, line) {
+    print ""
+    print "# --- MODULE: " file " ---"
+    while ((getline line < file) > 0) {
+        print line
+    }
+    close(file)
+}
 BEGIN { in_block = 0 }
 /^# BEGIN_BUNDLE_MODULES$/ {
     print "# BEGIN_BUNDLE_MODULES"
     print "# Bundled by scripts/tools/bundle_install_sidar.sh"
-    while ((("find \"" module_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort") | getline f) > 0) {
-        print ""
-        print "# --- MODULE: " f " ---"
-        while ((getline line < f) > 0) {
-            print line
-        }
-        close(f)
+
+    helper = module_dir "/install_helpers.sh"
+    if (system("test -f \"" helper "\"") == 0) {
+        emit_module(helper)
     }
-    close("find \"" module_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort")
+
+    while ((("find \"" module_dir "/utils\" -type f -name \"*.sh\" 2>/dev/null | sort") | getline f) > 0) {
+        emit_module(f)
+    }
+    close("find \"" module_dir "/utils\" -type f -name \"*.sh\" 2>/dev/null | sort")
+
+    while ((("find \"" module_dir "/phases\" -type f -name \"*.sh\" 2>/dev/null | sort") | getline f) > 0) {
+        emit_module(f)
+    }
+    close("find \"" module_dir "/phases\" -type f -name \"*.sh\" 2>/dev/null | sort")
+
     print "# END_BUNDLE_MODULES"
     in_block = 1
     next

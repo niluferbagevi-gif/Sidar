@@ -4,6 +4,8 @@ sidar_phase_initialize_context() {
     banner
     report_repo_lookup_context
     detect_environment
+    sidar_source_install_utils "wsl_gpu_preflight.sh"
+    run_wsl2_gpu_preflight
     if [[ "$OFFLINE_MODE" == true ]]; then
         OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
         if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then

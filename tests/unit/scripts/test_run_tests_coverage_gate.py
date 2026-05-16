@@ -199,6 +199,7 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
 
     assert "lint: lint-shell" in makefile
     assert "install_sidar.sh" in makefile
+    assert "scripts/install_modules/utils/*.sh" in makefile
     assert "shellcheck" in makefile
     assert "--severity=warning -x" in makefile
     assert "make lint" in ci_workflow
@@ -217,6 +218,13 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "phases/05_frontend.sh",
         "phases/06_services.sh",
         "phases/07_finish.sh",
+        "utils/install_remediation.sh",
+        "utils/wsl_gpu_preflight.sh",
+        "utils/gpu_utils.sh",
+        "utils/python_env.sh",
+        "utils/db_credentials.sh",
+        "utils/env_utils.sh",
+        "utils/ollama_models.sh",
     )
     for module in expected_modules:
         assert module in script
@@ -249,6 +257,91 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]' in script
     assert 'main "$@"' in script
 
+
+def test_install_sidar_phases_delegate_functional_install_utils() -> None:
+    helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
+    runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
+    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
+    preflight_utils = Path("scripts/install_modules/utils/wsl_gpu_preflight.sh").read_text(encoding="utf-8")
+    gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
+    python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
+    db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
+    env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
+    ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(encoding="utf-8")
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "sidar_source_install_utils()" in helper
+    assert "sidar_run_install_phase()" in remediation_utils
+    assert "sidar_handle_install_failure()" in remediation_utils
+    assert "sidar_remediate_uv_sync_failure()" in remediation_utils
+    assert "SIDAR_INSTALL_RESUME_FROM_PHASE" in remediation_utils
+    assert "uv lock --check" in remediation_utils
+    assert "uv cache prune" in remediation_utils
+    assert 'sidar_source_install_utils "wsl_gpu_preflight.sh"' in context_phase
+    assert "run_wsl2_gpu_preflight" in context_phase
+    assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
+    assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
+    assert 'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"' in workspace_phase
+    assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
+
+    assert "run_wsl2_gpu_preflight()" in preflight_utils
+    assert "SIDAR_WSL_GPU_PREFLIGHT" in preflight_utils
+    assert "nvidia-smi" in preflight_utils
+    assert "/dev/dxg" in preflight_utils
+    assert "libcuda" in preflight_utils
+    assert "Ollama API" in preflight_utils
+    assert "detect_gpu()" in gpu_utils
+    assert "setup_nvidia_docker()" in gpu_utils
+    assert "create_uv_venv()" in python_env_utils
+    assert "install_python_deps()" in python_env_utils
+    assert "uv sync" in python_env_utils
+    assert "uv pip" not in python_env_utils
+    assert "uv tool install" not in python_env_utils
+    assert "harden_database_credentials()" in db_utils
+    assert "sync_postgres_env_with_database_url()" in db_utils
+    assert "ensure_database_url_defaults()" in db_utils
+    assert "setup_env_file()" in env_utils
+    assert "harden_database_credentials" in env_utils
+    assert "download_ollama_models()" in ollama_utils
+    assert "qwen2.5-coder:7b" in ollama_utils
+
+    assert 'module_dir "/utils' in bundler
+    assert 'module_dir "/phases' in bundler
+
+
+def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
+
+    assert '"utils/install_remediation.sh"' in script
+    assert 'sidar_source_install_utils "install_remediation.sh"' in script
+    assert "sidar_handle_install_failure" in script
+    assert "SIDAR_INSTALL_ORIGINAL_ARGS" in script
+
+    for phase_name in (
+        "01_context",
+        "02_repo",
+        "03_runtime",
+        "04_workspace",
+        "05_frontend",
+        "06_models",
+        "06_services",
+        "07_finish",
+    ):
+        assert f'sidar_run_install_phase "{phase_name}"' in main_body
+
+    assert "SIDAR_INSTALL_AUTO_HEAL" in remediation_utils
+    assert "SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS" in remediation_utils
+    assert "sidar_phase_remediation_strategy()" in remediation_utils
+    assert "sidar_resume_after_remediation()" in remediation_utils
+    assert "uv.lock" in remediation_utils
+    assert "uv lock" in remediation_utils
+    assert "exec env" in remediation_utils
+    assert "artifacts/install/remediation" in remediation_utils
 
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
@@ -292,6 +385,7 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
     sync_deps_start = script.index("run_sync_deps_phase()")
     sync_deps_body = script[sync_deps_start : script.index("run_provision_models_phase()", sync_deps_start)]
 
@@ -300,7 +394,9 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     assert "install_uv_cli()" in script
     assert "create_uv_venv()" in script
     assert script.index("install_uv_cli()") < script.index("create_uv_venv()")
-    assert runtime_phase.index("install_uv_cli") < runtime_phase.index("create_uv_venv")
+    assert "install_uv_cli" not in runtime_phase
+    assert workspace_phase.index("install_uv_cli") < workspace_phase.index("create_uv_venv")
+    assert workspace_phase.index("create_uv_venv") < workspace_phase.index("install_python_deps")
     assert sync_deps_body.index("install_uv_cli") < sync_deps_body.index("create_uv_venv")
 
 
@@ -354,7 +450,7 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")
-    selector_body = script[selector_start : script.index("install_pytorch_cuda_wheels()", selector_start)]
+    selector_body = script[selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)]
     verify_body = script[script.index("verify_torch_cuda()") : script.index("# ── 14.", script.index("verify_torch_cuda()"))]
 
     assert "PyTorch cu124 fallback" not in script
@@ -366,5 +462,10 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "cu126" in selector_body
     assert "cu124" in selector_body
     assert "PYTORCH_CUDA_INDEX_URL" in script
-    assert "install_pytorch_cuda_wheels \"$(select_pytorch_cuda_wheel_tag)\"" in verify_body
-    assert "uv pip install torch torchvision torchaudio --reinstall\n" not in script
+    assert 'sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"' in verify_body
+    assert "--reinstall-package torch" in script
+    assert "uv pip" not in script
+    assert "uv tool install" not in script
+    assert "python -m venv" not in script
+    assert "python3 -m venv" not in script
+    assert "virtualenv" not in script

@@ -84,3 +84,22 @@ resolve_offline_package_file() {
     done
     return 1
 }
+
+sidar_source_install_utils() {
+    local module_rel=""
+    local module_path=""
+    local sentinel=""
+    for module_rel in "$@"; do
+        [[ -n "$module_rel" ]] || continue
+        sentinel="SIDAR_INSTALL_UTIL_$(printf '%s' "$module_rel" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9_]/_/g')_LOADED"
+        if [[ "${!sentinel:-}" == "1" ]]; then
+            continue
+        fi
+        module_path="${INSTALL_MODULE_DIR}/utils/${module_rel}"
+        if [[ ! -f "$module_path" ]]; then
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+        fi
+        # shellcheck disable=SC1090
+        source "$module_path"
+    done
+}
