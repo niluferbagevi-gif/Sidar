@@ -23,7 +23,7 @@ BEGIN { in_block = 0 }
 /^# BEGIN_BUNDLE_MODULES$/ {
     print "# BEGIN_BUNDLE_MODULES"
     print "# Bundled by scripts/tools/bundle_install_sidar.sh"
-    while ((("find \"" module_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort") | getline f) > 0) {
+    while ((("find \"" module_dir "\" -type f -name \"*.sh\" | sort") | getline f) > 0) {
         print ""
         print "# --- MODULE: " f " ---"
         while ((getline line < f) > 0) {
@@ -31,7 +31,7 @@ BEGIN { in_block = 0 }
         }
         close(f)
     }
-    close("find \"" module_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort")
+    close("find \"" module_dir "\" -type f -name \"*.sh\" | sort")
     print "# END_BUNDLE_MODULES"
     in_block = 1
     next

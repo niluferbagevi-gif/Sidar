@@ -162,13 +162,32 @@ def test_install_sidar_redacts_sensitive_log_stream_before_tee() -> None:
 
 
 def test_install_sidar_requires_stash_ref_before_destructive_git_cleanup() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    repo_phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
 
-    assert 'local STASH_REF=""' in script
-    assert "git stash list -n 1 --format='%gd'" in script
-    assert 'git stash pop "$STASH_REF"' in script
-    assert 'git rev-parse -q --verify "$STASH_REF"' in script
-    assert "git clean -fd çalıştırılmadı" in script
-    assert "Stash yedeği ${STASH_REF} korunarak" in script
-    assert "Stash yedeği korunuyor: ${STASH_REF}" in script
-    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script
+    assert 'local STASH_REF=""' in repo_phase
+    assert "git stash list -n 1 --format='%gd'" in repo_phase
+    assert 'git stash pop "$STASH_REF"' in repo_phase
+    assert 'git rev-parse -q --verify "$STASH_REF"' in repo_phase
+    assert "git clean -fd çalıştırılmadı" in repo_phase
+    assert "Stash yedeği ${STASH_REF} korunarak" in repo_phase
+    assert "Stash yedeği korunuyor: ${STASH_REF}" in repo_phase
+    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in repo_phase
+
+
+def test_install_sidar_loads_phase_modules_for_repo_and_system_steps() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    system_phase = Path("scripts/install_modules/phases/01_system.sh").read_text(encoding="utf-8")
+    repo_phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+
+    assert '"phases/01_system.sh"' in script
+    assert '"phases/02_repo.sh"' in script
+    assert 'source "$install_phase_path"' in script
+    assert "install_system_dependencies()" not in script
+    assert "sync_repo()" not in script
+    assert "install_system_dependencies()" in system_phase
+    assert "sync_repo()" in repo_phase
+    assert "report_repo_lookup_context()" in repo_phase
+    assert "-type f" in bundler
+    assert "*.sh" in bundler
+    assert "maxdepth 1" not in bundler

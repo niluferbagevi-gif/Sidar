@@ -91,43 +91,70 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+INSTALL_PHASE_MODULES=(
+    "phases/01_system.sh"
+    "phases/02_repo.sh"
+)
 INSTALL_HELPERS_TEMP_DIR=""
+REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+
+_download_install_module() {
+    local relative_path="$1"
+    local destination="$2"
+    local remote_url="${REMOTE_MODULE_BASE}/${relative_path}"
+    local tmp_module_path=""
+
+    mkdir -p "$(dirname "$destination")"
+    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX.sh")"
+    if command -v curl &>/dev/null; then
+        if ! curl -fsSL "$remote_url" -o "$tmp_module_path"; then
+            rm -f "$tmp_module_path"
+            return 1
+        fi
+    elif command -v wget &>/dev/null; then
+        if ! wget -qO "$tmp_module_path" "$remote_url"; then
+            rm -f "$tmp_module_path"
+            return 1
+        fi
+    else
+        rm -f "$tmp_module_path"
+        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+    fi
+    install -m 0644 "$tmp_module_path" "$destination"
+    rm -f "$tmp_module_path"
+}
+
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı; modüller uzaktan indirilmeyi deneyecek."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    mkdir -p "$INSTALL_MODULE_DIR"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-    REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
-    TMP_HELPERS_PATH="$(mktemp "${TMPDIR:-/tmp}/sidar_install_helpers.XXXXXX.sh")"
 
-    if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    else
-        rm -f "$TMP_HELPERS_PATH"
+    if ! _download_install_module "install_helpers.sh" "$INSTALL_HELPERS_MODULE"; then
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+        fail "Gerekli modül indirilemedi: ${REMOTE_MODULE_BASE}/install_helpers.sh"
     fi
-
-    install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
-    rm -f "$TMP_HELPERS_PATH"
     ok "Modül indirildi ve geçici dizine kaydedildi: $INSTALL_HELPERS_MODULE"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
+
+for install_phase_module in "${INSTALL_PHASE_MODULES[@]}"; do
+    install_phase_path="${INSTALL_MODULE_DIR}/${install_phase_module}"
+    if [[ ! -f "$install_phase_path" && -n "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if ! _download_install_module "$install_phase_module" "$install_phase_path"; then
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+            fail "Gerekli faz modülü indirilemedi: ${REMOTE_MODULE_BASE}/${install_phase_module}"
+        fi
+        ok "Faz modülü indirildi: $install_phase_module"
+    fi
+    [[ -f "$install_phase_path" ]] || fail "Gerekli faz modülü bulunamadı: $install_phase_path"
+    # shellcheck disable=SC1090
+    source "$install_phase_path"
+done
+unset install_phase_module install_phase_path
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -1896,289 +1923,6 @@ deploy_with_helm() {
         echo "       kubectl get svc -n $HELM_NAMESPACE"
     else
         warn "kubectl bulunamadı. Cluster doğrulaması için kubectl kurmanız önerilir."
-    fi
-}
-
-report_repo_lookup_context() {
-    local current_pwd
-    current_pwd="$(pwd)"
-
-    info "Kurulum çalışma dizini: $current_pwd"
-    info "Sidar deposu hedef dizini: $TARGET_DIR"
-
-    if [[ "$current_pwd" == /mnt/* ]]; then
-        warn "Kurulum /mnt altında çalışıyor. Windows dosya sistemi önceki Sidar klasörünü koruyor olabilir."
-        info "Temiz kurulum için öneri: cd \"$HOME\" && ./Sidar/install_sidar.sh veya doğrudan cd \"$TARGET_DIR\"."
-    fi
-}
-
-# ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
-sync_repo() {
-    step "Sidar projesi GitHub'dan çekiliyor"
-
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        if [[ -d "$SCRIPT_DIR/.git" ]]; then
-            TARGET_DIR="$SCRIPT_DIR"
-            ok "Çevrimdışı mod: mevcut repo kullanılacak (git clone/pull atlandı): $SCRIPT_DIR"
-            return
-        fi
-
-        if [[ -d "$TARGET_DIR/.git" ]]; then
-            SCRIPT_DIR="$TARGET_DIR"
-            ok "Çevrimdışı mod: mevcut hedef repo kullanılacak (git clone/pull atlandı): $TARGET_DIR"
-            return
-        fi
-
-        fail "Çevrimdışı modda git clone yapılamaz. Lütfen repo içinden çalıştırın veya $TARGET_DIR altında önceden klonlanmış repo sağlayın."
-    fi
-
-    # Bu adım git clone/pull çalıştırdığı için, akış sırası değişse bile
-    # git erişimi burada da kesin olarak doğrulanır.
-    if ! command -v git &>/dev/null; then
-        fail "git komutu bulunamadı. Önce sistem bağımlılıklarını kurun (install_system_dependencies)."
-    fi
-
-    if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
-        ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
-        return
-    fi
-
-    if [[ ! -d "$TARGET_DIR/.git" ]]; then
-        info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone "$REPO_URL" "$TARGET_DIR"
-    else
-        warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
-        info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
-        (
-            cd "$TARGET_DIR"
-            local STASHED_CHANGES=false
-            local STASH_REF=""
-            if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-                info "Lokal değişiklikler geçici olarak stash'e alınıyor."
-                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
-                STASH_REF="$(git stash list -n 1 --format='%gd' || true)"
-                [[ -n "$STASH_REF" ]] || fail "Git stash oluşturuldu sanıldı ancak referans okunamadı; güvenli kurtarma için kurulum durduruldu."
-                info "Lokal değişiklik yedeği oluşturuldu: ${STASH_REF}. Gerekirse '$TARGET_DIR' içinde 'git stash apply ${STASH_REF}' ile geri alabilirsiniz."
-                STASHED_CHANGES=true
-            fi
-
-            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
-
-            if [[ "$STASHED_CHANGES" == true ]]; then
-                if git stash pop "$STASH_REF" >/dev/null 2>&1; then
-                    ok "Lokal değişiklikler stash'ten geri yüklendi."
-                else
-                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
-                    git merge --abort >/dev/null 2>&1 || true
-                    git rebase --abort >/dev/null 2>&1 || true
-                    if [[ -z "$STASH_REF" ]] || ! git rev-parse -q --verify "$STASH_REF" >/dev/null; then
-                        fail "Git çalışma ağacı çakışmalı durumda ve doğrulanmış stash yedeği bulunamadı. Veri kaybı riskinden dolayı reset/clean çalıştırılmadı; lütfen '$TARGET_DIR' içinde manuel çözün."
-                    fi
-                    warn "Lokal değişiklik yedeği stash içinde korunuyor: ${STASH_REF}. Geri almak için: cd '$TARGET_DIR' && git stash apply ${STASH_REF}"
-
-                    if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılmadı. Stash yedeği: ${STASH_REF}. Manuel çözün veya yedeği doğruladıktan sonra temiz kurulumu tekrar başlatın."
-                    fi
-
-                    echo ""
-                    warn "İsterseniz doğrulanmış stash yedeği (${STASH_REF}) korunurken çalışma ağacı origin/main durumuna temizlenebilir."
-                    local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Stash yedeği ${STASH_REF} korunarak 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
-                    case "${recovery_reply:-H}" in
-                        [EeYy]*)
-                            if ! git rev-parse -q --verify "$STASH_REF" >/dev/null; then
-                                fail "Stash yedeği (${STASH_REF}) artık doğrulanamıyor; veri kaybını önlemek için git clean -fd çalıştırılmadı."
-                            fi
-                            warn "Kurtarma adımı uygulanıyor: çalışma ağacı temizlenecek; yedek stash referansı korunuyor: ${STASH_REF}."
-                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Stash yedeği: ${STASH_REF}"
-                            ok "Repo origin/main durumuna sıfırlandı. Stash yedeği korunuyor: ${STASH_REF}. Kurulum devam edecek."
-                            ;;
-                        *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Stash yedeği: ${STASH_REF}. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya yedeği doğruladıktan sonra temizleyip kurulumu tekrar başlatın."
-                            ;;
-                    esac
-                fi
-            fi
-        )
-    fi
-
-    SCRIPT_DIR="$TARGET_DIR"
-    ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
-}
-
-# ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
-install_system_dependencies() {
-    step "Temel Sistem Paketlerinin Kurulumu"
-    local node_target_major=""
-    node_target_major="$(resolve_target_node_major)"
-    local node_target_series="node_${node_target_major}.x"
-    local node_brew_formula="node@${node_target_major}"
-
-    if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        info "Linux temel paketleri kuruluyor (tam sistem upgrade atlanır)..."
-        local -a ns_source_files=()
-        mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
-        if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
-            info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
-            local src_file=""
-            for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
-                    "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
-                    "$src_file"
-            done
-        fi
-
-        if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
-            warn "apt update başarısız oldu. NodeSource listesi sıfırlanıp tekrar denenecek..."
-            sudo rm -f /etc/apt/sources.list.d/nodesource.list
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
-        fi
-        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
-            postgresql-client-common postgresql-client
-
-        ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."
-
-        info "Node.js (v${node_target_major}.x) durumu kontrol ediliyor..."
-        local node_bin=""
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
-            ok "Node.js ${node_target_major}.x zaten kurulu: $("$node_bin" -v)"
-        else
-            if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
-                warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
-            fi
-            info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
-            local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
-            local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
-            local ns_key_tmp=""
-            local ns_ready=false
-
-            ns_key_tmp=$(mktemp)
-            if curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
-                "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key" -o "$ns_key_tmp"; then
-                sudo install -m 0755 -d /etc/apt/keyrings
-                if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
-                    sudo chmod 0644 "$ns_keyring"
-                    sudo rm -f "$ns_repo_file"
-                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/${node_target_series} nodistro main" | sudo tee "$ns_repo_file" >/dev/null
-                    sudo chmod 0644 "$ns_repo_file"
-                    ns_ready=true
-                else
-                    warn "NodeSource GPG keyring oluşturulamadı."
-                fi
-            else
-                warn "NodeSource GPG anahtarı indirilemedi."
-            fi
-            rm -f "$ns_key_tmp"
-
-            if [[ "$ns_ready" == true ]] && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
-                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-            else
-                warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                node_bin="$(resolve_native_binary_path node || true)"
-                if [[ -n "$node_bin" ]]; then
-                    warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
-                    warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    local npm_bin=""
-                    npm_bin="$(resolve_native_binary_path npm || true)"
-                    if [[ -n "$npm_bin" ]]; then
-                        ok "npm zaten mevcut: $("$npm_bin" -v 2>/dev/null || echo 'sürüm alınamadı')"
-                    else
-                        warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
-                    fi
-                else
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
-                fi
-            fi
-        fi
-
-        info "Kamera ve ses kütüphaneleri kuruluyor..."
-        local -a linux_media_pkgs=(
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
-        )
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
-            linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
-        fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
-        info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
-        info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
-
-        ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
-    elif command -v dnf &>/dev/null; then
-        warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
-        sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v pacman &>/dev/null; then
-        warn "Arch tabanlı sistem tespit edildi. Paketler pacman ile kuruluyor..."
-        sudo pacman -Sy --noconfirm --needed \
-            curl wget git zstd nodejs npm portaudio alsa-utils v4l-utils ffmpeg
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]]; then
-            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
-            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
-                warn "Arch depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
-            else
-                ok "Node.js sürümü uygun: $("$node_bin" -v)"
-            fi
-        fi
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v zypper &>/dev/null; then
-        warn "OpenSUSE/SLES tabanlı sistem tespit edildi. Paketler zypper ile kuruluyor..."
-        sudo zypper --non-interactive refresh
-        sudo zypper --non-interactive install --no-recommends \
-            curl wget git zstd nodejs npm portaudio19-devel alsa-utils v4l-utils ffmpeg
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]]; then
-            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
-            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
-                warn "OpenSUSE depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
-            else
-                ok "Node.js sürümü uygun: $("$node_bin" -v)"
-            fi
-        fi
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v brew &>/dev/null; then
-        warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
-        brew update
-        brew install \
-            curl wget git zstd "${node_brew_formula}" ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
-        info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
-
-        if brew list "${node_brew_formula}" &>/dev/null; then
-            info "Node.js ${node_target_major} için brew link işlemi deneniyor..."
-            brew link --overwrite --force "${node_brew_formula}" >/dev/null 2>&1 || true
-            ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-        fi
-
-        info "brew services ile host PostgreSQL/Redis başlatma adımı kaldırıldı (Docker Compose tercih ediliyor)."
-
-        ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
-    else
-        warn "Desteklenen paket yöneticileri (apt/dnf/pacman/zypper/brew) bulunamadı. Lütfen paketleri manuel kurun:"
-        info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
-    fi
-}
-
-detect_environment() {
-    step "Çalışma Ortamı Tespiti"
-
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
-        WSL2=true
-        info "Ortam: WSL2 (Windows Subsystem for Linux)"
-    elif [[ "$(uname -s)" == "Darwin" ]]; then
-        WSL2=false
-        info "Ortam: macOS"
-    else
-        WSL2=false
-        info "Ortam: Linux (native/container)"
     fi
 }
 
