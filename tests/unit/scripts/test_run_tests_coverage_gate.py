@@ -134,6 +134,20 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
 
+def test_install_sidar_triggers_opt_in_auto_heal_on_failure() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "install_auto_heal_on_failure_enabled()" in script
+    assert "start_install_auto_heal_on_failure" in script
+    assert "INSTALL_AUTO_HEAL_ON_FAILURE=1" in script
+    assert "scripts/auto_heal.py" in script
+    assert "--source install" in script
+    assert "--hitl-approve" in script
+    assert 'local hitl_approve="${INSTALL_AUTO_HEAL_HITL_APPROVE:-no}"' in script
+    assert "install_failure_context_" in script
+    assert "install_auto_heal_" in script
+    assert 'local mode="${INSTALL_AUTO_HEAL_MODE:-background}"' in script
+    assert 'trap - ERR' in script
 
 def test_install_sidar_sources_modular_install_components() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

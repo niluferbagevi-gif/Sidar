@@ -173,13 +173,116 @@ prompt_yes_no_with_timeout_default_no() {
     echo "$reply"
 }
 
+install_auto_heal_on_failure_enabled() {
+    case "${INSTALL_AUTO_HEAL_ON_FAILURE:-0}" in
+        1|true|TRUE|yes|YES|y|Y|evet|EVET|e|E) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+start_install_auto_heal_on_failure() {
+    local exit_code="$1"
+    local failed_line="$2"
+    local failed_cmd="$3"
+
+    if ! install_auto_heal_on_failure_enabled; then
+        echo "   Otonom kurulum kurtarma kapalı. Etkinleştirmek için: INSTALL_AUTO_HEAL_ON_FAILURE=1 ./install_sidar.sh ..." >&2
+        return 0
+    fi
+
+    if [[ ! -f "${SCRIPT_DIR}/scripts/auto_heal.py" ]]; then
+        warn "INSTALL_AUTO_HEAL_ON_FAILURE=1 ancak scripts/auto_heal.py bulunamadı; self-heal atlandı."
+        return 0
+    fi
+
+    local artifact_dir="${SCRIPT_DIR}/artifacts/install"
+    mkdir -p "$artifact_dir"
+
+    local stamp=""
+    stamp="$(date +%Y%m%d_%H%M%S)"
+    local context_log="${artifact_dir}/install_failure_context_${stamp}.log"
+    local heal_log="${artifact_dir}/install_auto_heal_${stamp}.log"
+    local output_json="${artifact_dir}/install_auto_heal_${stamp}.json"
+    local tail_lines="${INSTALL_AUTO_HEAL_LOG_TAIL_LINES:-1200}"
+    local batch_retries="${INSTALL_AUTO_HEAL_BATCH_RETRIES:-0}"
+    local scope_log_lines="${INSTALL_AUTO_HEAL_SCOPE_LOG_LINES:-80}"
+    local hitl_approve="${INSTALL_AUTO_HEAL_HITL_APPROVE:-no}"
+    local mode="${INSTALL_AUTO_HEAL_MODE:-background}"
+
+    local resume_hint="INSTALL_AUTO_HEAL_ON_FAILURE=1 ./install_sidar.sh"
+    if [[ "${INSTALL_SUBCOMMAND:-full}" != "full" ]]; then
+        resume_hint="${resume_hint} ${INSTALL_SUBCOMMAND}"
+    fi
+
+    {
+        echo "Sidar install failure context"
+        echo "timestamp=${stamp}"
+        echo "exit_code=${exit_code}"
+        echo "failed_line=${failed_line}"
+        echo "failed_command=${failed_cmd}"
+        echo "install_subcommand=${INSTALL_SUBCOMMAND:-full}"
+        echo "resume_hint=${resume_hint}"
+        echo "log_file=${LOG_FILE}"
+        echo "--- install log tail (${tail_lines} lines) ---"
+        if [[ -f "$LOG_FILE" ]]; then
+            tail -n "$tail_lines" "$LOG_FILE"
+        else
+            echo "Log dosyası henüz oluşmadı: $LOG_FILE"
+        fi
+    } > "$context_log"
+
+    local -a heal_cmd=()
+    if command -v uv &>/dev/null; then
+        heal_cmd=(uv run python -m scripts.auto_heal)
+    elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+        heal_cmd=("${SCRIPT_DIR}/.venv/bin/python" -m scripts.auto_heal)
+    elif command -v python3 &>/dev/null; then
+        heal_cmd=(python3 -m scripts.auto_heal)
+    else
+        warn "INSTALL_AUTO_HEAL_ON_FAILURE=1 ancak uv/python bulunamadı; self-heal atlandı. Context: $context_log"
+        return 0
+    fi
+
+    heal_cmd+=(
+        --log "$context_log"
+        --source install
+        --batch-retries "$batch_retries"
+        --scope-log-lines "$scope_log_lines"
+        --hitl-approve "$hitl_approve"
+        --output "$output_json"
+    )
+    if [[ -n "${INSTALL_AUTO_HEAL_MODEL:-}" ]]; then
+        heal_cmd+=(--model "$INSTALL_AUTO_HEAL_MODEL")
+    fi
+
+    info "Kurulum hatası için self-heal tetikleniyor (mode=${mode}). Context: $context_log"
+    info "Self-heal çıktı dosyaları: $heal_log / $output_json"
+    if [[ "$mode" == "foreground" || "$mode" == "sync" ]]; then
+        (cd "$SCRIPT_DIR" && "${heal_cmd[@]}") >> "$heal_log" 2>&1
+        local heal_rc=$?
+        if [[ "$heal_rc" -eq 0 ]]; then
+            ok "Kurulum self-heal tamamlandı. Sonucu inceleyin ve kurulumu tekrar çalıştırın: $output_json"
+        else
+            warn "Kurulum self-heal başarısız veya uygulanabilir patch bulamadı (rc=${heal_rc}). Log: $heal_log"
+        fi
+    else
+        (cd "$SCRIPT_DIR" && "${heal_cmd[@]}") >> "$heal_log" 2>&1 &
+        local heal_pid=$!
+        disown "$heal_pid" 2>/dev/null || true
+        info "Kurulum self-heal arka planda başlatıldı (pid=${heal_pid}). Sonucu izlemek için: tail -f '$heal_log'"
+    fi
+}
+
 on_install_error() {
     local exit_code=$?
+    trap - ERR
+    set +e
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
     echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
     echo "   Hata veren komut: ${failed_cmd}" >&2
     echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+    start_install_auto_heal_on_failure "$exit_code" "$failed_line" "$failed_cmd"
     exit "$exit_code"
 }
 
@@ -1600,6 +1703,9 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    INSTALL_AUTO_HEAL_ON_FAILURE=1  Kurulum hatasında scripts.auto_heal köprüsünü log ile tetikle"
+            echo "    INSTALL_AUTO_HEAL_MODE=background|foreground  Self-heal çalışma modu (varsayılan: background)"
+            echo "    INSTALL_AUTO_HEAL_HITL_APPROVE=no|yes  Riskli planlarda HITL kararı (varsayılan: no)"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
