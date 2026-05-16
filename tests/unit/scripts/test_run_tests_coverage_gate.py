@@ -135,6 +135,16 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
+def test_install_sidar_supports_target_dir_override() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"' in script
+    assert 'SIDAR_TARGET_DIR boş olamaz' in script
+    assert '"~/"*) TARGET_DIR="$HOME/${TARGET_DIR#~/}"' in script
+    assert '*) TARGET_DIR="$(pwd)/$TARGET_DIR"' in script
+    assert 'TARGET_DIR="${TARGET_DIR%/}"' in script
+    assert "SIDAR_TARGET_DIR=/tmp/Sidar" in script
+
 def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 

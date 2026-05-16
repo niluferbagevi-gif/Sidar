@@ -1728,6 +1728,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    SIDAR_TARGET_DIR=/tmp/Sidar  Repo klon/güncelleme hedef dizini (varsayılan: $HOME/Sidar)"
             echo "    WSL_MEMORY_GB=16 / WSL_SWAP_GB=8  WSL2 .wslconfig memory/swap override değerleri"
             echo "    INSTALL_AUTO_HEAL_ON_FAILURE=1  Kurulum hatasında scripts.auto_heal köprüsünü log ile tetikle"
             echo "    INSTALL_AUTO_HEAL_MODE=background|foreground  Self-heal çalışma modu (varsayılan: background)"
@@ -1857,7 +1858,19 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
 fi
 DEFAULT_DATABASE_URL=""
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
-TARGET_DIR="$HOME/Sidar"
+TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"
+if [[ -z "${TARGET_DIR//[[:space:]]/}" ]]; then
+    fail "SIDAR_TARGET_DIR boş olamaz. Örnek: SIDAR_TARGET_DIR=/tmp/Sidar ./install_sidar.sh"
+fi
+case "$TARGET_DIR" in
+    "~") TARGET_DIR="$HOME" ;;
+    "~/"*) TARGET_DIR="$HOME/${TARGET_DIR#~/}" ;;
+    /*) : ;;
+    *) TARGET_DIR="$(pwd)/$TARGET_DIR" ;;
+esac
+if [[ "$TARGET_DIR" != "/" ]]; then
+    TARGET_DIR="${TARGET_DIR%/}"
+fi
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
