@@ -61,6 +61,17 @@ warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() { echo -e "${RED}❌  $*${NC}" >&2; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
+sed_inplace() {
+    local expression="${1:-}"
+    shift || fail "sed_inplace: ifade parametresi eksik."
+    [[ "$#" -gt 0 ]] || fail "sed_inplace: hedef dosya parametresi eksik."
+
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin) sed -i '' "$expression" "$@" ;;
+        *) sed -i "$expression" "$@" ;;
+    esac
+}
+
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
@@ -2822,7 +2833,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
                 else
                     echo "ENABLE_MULTIMODAL=true" >> "$env_file"
                 fi
@@ -2857,7 +2868,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
                 fi
             fi
         else
@@ -2981,7 +2992,7 @@ ASOUNDRC
 memory=__SIDAR_WSL_MEMORY__
 swap=__SIDAR_WSL_SWAP__
 WSLCFG
-            sed -i "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
+            sed_inplace "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
@@ -3133,18 +3144,18 @@ harden_database_credentials() {
                 generated_password=$(generate_secure_token 24)
                 if [[ -n "$generated_password" ]]; then
                     safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                    sed_inplace "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
                     ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
                     # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
                     # DATABASE_URL ile senkron kalmalıdır.
                     if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                        sed_inplace "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                     else
                         echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
                     fi
                     if grep -q '^POSTGRES_USER=' "$env_file"; then
-                        sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        sed_inplace "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
                     else
                         echo "POSTGRES_USER=${db_user}" >> "$env_file"
                     fi
@@ -3153,7 +3164,7 @@ harden_database_credentials() {
                     [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
                     local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
                     if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                        sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
+                        sed_inplace "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
                     else
                         echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
                     fi
@@ -3203,13 +3214,13 @@ sync_postgres_env_with_database_url() {
         db_name="${db_name%%\?*}"
 
         # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
-        sed -i '/^POSTGRES_USER=/d' "$env_file"
-        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-        sed -i '/^POSTGRES_DB=/d' "$env_file"
-        sed -i '/^DATABASE_URL=/d' "$env_file"
+        sed_inplace '/^POSTGRES_USER=/d' "$env_file"
+        sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
+        sed_inplace '/^POSTGRES_DB=/d' "$env_file"
+        sed_inplace '/^DATABASE_URL=/d' "$env_file"
 
         local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
-        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+        sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
         {
             echo "POSTGRES_USER=${db_user}"
             echo "POSTGRES_PASSWORD=${db_password}"
@@ -3231,11 +3242,11 @@ write_generated_default_database_url() {
     local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
     local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
 
-    sed -i '/^POSTGRES_USER=/d' "$env_file"
-    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-    sed -i '/^POSTGRES_DB=/d' "$env_file"
-    sed -i '/^DATABASE_URL=/d' "$env_file"
-    sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+    sed_inplace '/^POSTGRES_USER=/d' "$env_file"
+    sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
+    sed_inplace '/^POSTGRES_DB=/d' "$env_file"
+    sed_inplace '/^DATABASE_URL=/d' "$env_file"
+    sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
     {
         echo "POSTGRES_USER=sidar"
         echo "POSTGRES_PASSWORD=${generated_password}"
@@ -3292,7 +3303,7 @@ ensure_rag_vector_backend_pgvector() {
     fi
 
     if [[ "$current_backend" != "pgvector" ]]; then
-        sed -i 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
+        sed_inplace 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
         ok ".env: RAG_VECTOR_BACKEND pgvector olarak güncellendi."
     fi
 }
@@ -3360,7 +3371,7 @@ collect_api_keys_interactive() {
         val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3689,7 +3700,7 @@ ensure_auto_secrets() {
     _write_secret() {
         local key="$1" val="$2"
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3816,12 +3827,12 @@ ensure_local_service_host_defaults() {
     local env_file="$1"
     # Lokal kurulumda Docker hostname yerine localhost kullan
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
-        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+        sed_inplace 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
     if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
-        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+        sed_inplace 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
         ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
 }
@@ -3840,7 +3851,7 @@ ensure_sidar_env_default() {
     fi
 
     if [[ "$current_env" == "production" ]]; then
-        sed -i 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
+        sed_inplace 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
         warn ".env: SIDAR_ENV=production varsayılanı development olarak düzeltildi (üretimde manuel production yapın)."
     fi
 }
@@ -3891,7 +3902,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if grep -qE '^SIDAR_ENV=' "$env_file"; then
-        sed -i "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
+        sed_inplace "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
     else
         echo "SIDAR_ENV=$selected_env" >> "$env_file"
     fi
@@ -4083,12 +4094,12 @@ setup_env_file() {
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
-            sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
-            sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
+            sed_inplace 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
 
             # Docker için GPU modunu ön tanımlı yap
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
             fi
@@ -4096,9 +4107,9 @@ setup_env_file() {
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
-            sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
@@ -4109,14 +4120,14 @@ setup_env_file() {
     # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
         if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
-            sed -i 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
+            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
         else
             echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
         fi
 
         if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
             if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
             fi
         else
             echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"

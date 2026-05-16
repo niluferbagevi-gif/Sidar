@@ -284,3 +284,17 @@ def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
     assert 'REPO_URL="https://github.com/niluferbagevi-gif/Sidar"' not in script
     assert "SIDAR_REPO_URL=https://..." in script
     assert script.index("SIDAR_REPO_URL") < script.index("git clone \"$REPO_URL\"")
+
+
+def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    wrapper_start = script.index("sed_inplace() {")
+    wrapper_end = script.index("\n}\n\n# BEGIN_BUNDLE_MODULES", wrapper_start) + len("\n}\n")
+    wrapper_body = script[wrapper_start:wrapper_end]
+    script_without_wrapper = script[:wrapper_start] + script[wrapper_end:]
+
+    assert "Darwin) sed -i ''" in wrapper_body
+    assert '*) sed -i "$expression" "$@"' in wrapper_body
+    assert "sed -i " not in script_without_wrapper
+    assert "sed_inplace 's/^ENABLE_MULTIMODAL=" in script
+    assert "sed_inplace \"s|^DATABASE_URL=.*|DATABASE_URL=" in script
