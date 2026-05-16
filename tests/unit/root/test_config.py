@@ -1411,3 +1411,128 @@ def test_config_helper_edge_cases_cover_centralized_env_helpers(monkeypatch):
     monkeypatch.setenv("LEGACY_BOOL_FALSE", "false")
     monkeypatch.delenv("SIDAR_BOOL_FALSE", raising=False)
     assert config.get_bool_prefixed_env("SIDAR_BOOL_FALSE", "LEGACY_BOOL_FALSE", True) is False
+
+
+def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch):
+    values_by_name = {
+        ".env": {"OPENAI_API_KEY": "from-base", "JWT_SECRET_KEY": "jwt-base"},
+        ".env.advanced": {"OPENAI_API_KEY": "from-advanced", "SIDAR_ENV": "development"},
+        ".env.development": {"OPENAI_API_KEY": "from-development"},
+        "runtime.env": {"OPENAI_API_KEY": "from-explicit"},
+        "keys.env": {"OPENAI_API_KEY": "from-secret"},
+    }
+
+    def fake_exists(self):
+        return self.name in values_by_name
+
+    def fake_load_dotenv(*, dotenv_path=None, override=False):
+        payload = values_by_name[Path(dotenv_path).name]
+        for key, value in payload.items():
+            if override or key not in os.environ:
+                monkeypatch.setenv(key, value)
+        return True
+
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("DOTENV_FILE", "runtime.env")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "keys.env")
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr("dotenv.load_dotenv", fake_load_dotenv)
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.OPENAI_API_KEY == "from-secret"
+    assert reloaded.Config.JWT_SECRET_KEY == "jwt-base"
+    report = reloaded.get_dotenv_load_report()
+    loaded_labels = [event["label"] for event in report if event["loaded"]]
+    assert loaded_labels == [
+        "base",
+        "advanced",
+        "environment:development",
+        "explicit:DOTENV_FILE",
+        "secret:SIDAR_KEYS_FILE",
+    ]
+
+
+def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, caplog):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
+        config.Config()
+
+    assert "Kritik ortam anahtarları çözülemedi" in caplog.text
+    assert "SIDAR_KEYS_FILE" in caplog.text
+
+
+def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
+    before = len(config.get_dotenv_load_report())
+    assert (
+        config._load_dotenv_if_exists(
+            "missing-runtime.env", override=True, label="missing-no-record", record_missing=False
+        )
+        is None
+    )
+    assert len(config.get_dotenv_load_report()) == before
+
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.delenv("WEB_FETCH_MAX_CHARS", raising=False)
+    assert config.get_web_scrape_max_chars(2468) == 2468
+
+    monkeypatch.delenv("SIDAR_BOOL_DEFAULT", raising=False)
+    monkeypatch.delenv("LEGACY_BOOL_DEFAULT", raising=False)
+    assert config.get_bool_prefixed_env("SIDAR_BOOL_DEFAULT", "LEGACY_BOOL_DEFAULT", True) is True
+
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
+    monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "bad-url")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "jwt-ok")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    assert config.Config.get_missing_critical_runtime_keys() == [
+        "LITELLM_GATEWAY_URL",
+        "MEMORY_ENCRYPTION_KEY",
+    ]
+
+    monkeypatch.setattr(config, "_DOTENV_LOAD_EVENTS", [], raising=False)
+    config.Config._log_dotenv_load_status(missing_keys=[])
+    assert "Hiçbir dotenv dosyası yüklenmedi" in caplog.text
+
+
+def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
+    monkeypatch.setattr(config.Config, "_hardware_loaded", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(
+        config,
+        "check_hardware",
+        lambda: config.HardwareInfo(
+            has_cuda=True,
+            gpu_name="LoadedGPU",
+            gpu_count=3,
+            cpu_count=12,
+            cuda_version="12.4",
+            driver_version="555.1",
+        ),
+    )
+
+    config.Config._ensure_hardware_info_loaded()
+
+    assert config.Config.USE_GPU is True
+    assert config.Config.GPU_INFO == "LoadedGPU"
+    assert config.Config.GPU_COUNT == 3
+    assert config.Config.CPU_COUNT == 12
+    assert config.Config.CUDA_VERSION == "12.4"
+    assert config.Config.DRIVER_VERSION == "555.1"
+
+
+def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
+    monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "https://litellm.internal")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "jwt-ok")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setenv("SIDAR_ENV", "development")
+
+    assert config.Config.get_missing_critical_runtime_keys() == []

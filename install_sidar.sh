@@ -2497,6 +2497,7 @@ install_python_deps() {
 
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
     ensure_env_file_secrets_after_uv_sync
+    validate_runtime_env_loading
 }
 
 # ── 5.1 Pyright LSP aracını kur/doğrula ─────────────────────────────────────
@@ -3521,6 +3522,50 @@ report_env_api_key_status() {
     done
 }
 
+validate_runtime_env_loading() {
+    local env_file="$SCRIPT_DIR/.env"
+
+    step "Runtime .env Enjeksiyon Kontrolü"
+    info "Yükleme zinciri: .env, .env.advanced, .env.\${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE (proses env korunur; secret dosyası en sonda)"
+
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; runtime env enjeksiyon kontrolü atlandı. Önce uv sync --all-extras çalıştırın."
+        return 0
+    fi
+
+    if [[ ! -f "$env_file" ]]; then
+        warn ".env bulunamadı; runtime yalnız proses env ve opsiyonel DOTENV_FILE/SIDAR_KEYS_FILE ile başlayacak."
+    fi
+
+    if ! (cd "$SCRIPT_DIR" && uv run python - <<'PY_RUNTIME_ENV_CHECK'
+from __future__ import annotations
+
+import config
+
+print("ℹ️ Runtime dotenv yükleme raporu:")
+for event in config.get_dotenv_load_report():
+    label = event.get("label", "unknown")
+    path = event.get("path") or event.get("raw_path") or "-"
+    status = "loaded" if event.get("loaded") else f"skipped:{event.get('reason') or 'not_loaded'}"
+    override = "override" if event.get("override") else "no-override"
+    print(f"  - {label}: {status} ({override}) {path}")
+
+missing = config.Config.get_missing_critical_runtime_keys()
+if missing:
+    print(
+        "⚠️ Kritik runtime anahtarları çözülemedi: "
+        + ", ".join(missing)
+        + ". Değerleri .env, .env.advanced, DOTENV_FILE veya SIDAR_KEYS_FILE içine ekleyin."
+    )
+else:
+    print("✅ Kritik runtime anahtarları dotenv yükleme zincirinden başarıyla çözüldü.")
+PY_RUNTIME_ENV_CHECK
+    ); then
+        warn "Runtime env enjeksiyon kontrolü tamamlanamadı; uygulama başlatmadan önce .env/DOTENV_FILE/SIDAR_KEYS_FILE değerlerini kontrol edin."
+        return 0
+    fi
+}
+
 ensure_env_file_secrets_after_uv_sync() {
     local env_file="$SCRIPT_DIR/.env"
     local example_file="$SCRIPT_DIR/.env.example"
@@ -3877,6 +3922,7 @@ setup_env_file() {
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
+        validate_runtime_env_loading
         return
     fi
 
@@ -3945,6 +3991,7 @@ setup_env_file() {
 
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"
+    validate_runtime_env_loading
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
