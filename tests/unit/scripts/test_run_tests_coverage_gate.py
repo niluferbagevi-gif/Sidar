@@ -217,6 +217,10 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "phases/05_frontend.sh",
         "phases/06_services.sh",
         "phases/07_finish.sh",
+        "utils/gpu_utils.sh",
+        "utils/db_credentials.sh",
+        "utils/env_utils.sh",
+        "utils/ollama_models.sh",
     )
     for module in expected_modules:
         assert module in script
@@ -249,6 +253,35 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]' in script
     assert 'main "$@"' in script
 
+
+def test_install_sidar_phases_delegate_functional_install_utils() -> None:
+    helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
+    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
+    db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
+    env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
+    ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(encoding="utf-8")
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "sidar_source_install_utils()" in helper
+    assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
+    assert 'sidar_source_install_utils "db_credentials.sh" "env_utils.sh"' in workspace_phase
+    assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
+
+    assert "detect_gpu()" in gpu_utils
+    assert "setup_nvidia_docker()" in gpu_utils
+    assert "harden_database_credentials()" in db_utils
+    assert "sync_postgres_env_with_database_url()" in db_utils
+    assert "ensure_database_url_defaults()" in db_utils
+    assert "setup_env_file()" in env_utils
+    assert "harden_database_credentials" in env_utils
+    assert "download_ollama_models()" in ollama_utils
+    assert "qwen2.5-coder:7b" in ollama_utils
+
+    assert 'module_dir "/utils' in bundler
+    assert 'module_dir "/phases' in bundler
 
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

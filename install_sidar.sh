@@ -189,6 +189,13 @@ fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
 
+INSTALL_UTILITY_MODULES=(
+    "utils/gpu_utils.sh"
+    "utils/db_credentials.sh"
+    "utils/env_utils.sh"
+    "utils/ollama_models.sh"
+)
+
 INSTALL_PHASE_MODULES=(
     "phases/01_context.sh"
     "phases/02_repo.sh"
@@ -198,6 +205,17 @@ INSTALL_PHASE_MODULES=(
     "phases/06_services.sh"
     "phases/07_finish.sh"
 )
+
+validate_install_utility_modules() {
+    local module_rel=""
+    local module_path=""
+    for module_rel in "${INSTALL_UTILITY_MODULES[@]}"; do
+        module_path="${INSTALL_MODULE_DIR}/${module_rel}"
+        if [[ ! -f "$module_path" ]]; then
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+        fi
+    done
+}
 
 load_install_phase_modules() {
     local module_rel=""
@@ -212,6 +230,7 @@ load_install_phase_modules() {
     done
 }
 
+validate_install_utility_modules
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
