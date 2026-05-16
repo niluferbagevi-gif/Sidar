@@ -21,6 +21,14 @@ set -Eeuo pipefail
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
+# Resmi üçüncü parti kurulum betikleri için repo-içi checksum pinning.
+# Format: label|url|sha256. Bash 3.x/macOS uyumluluğu için associative array yerine
+# taşınabilir indexed array kullanılır.
+PINNED_REMOTE_SCRIPT_CHECKSUMS=(
+    "uv_install|https://releases.astral.sh/github/uv/releases/download/0.11.11/uv-installer.sh|3a020f8d69019caca567c9038999d130b0ea85866483caf2042c386cb685aef4"
+    "ollama_install|https://github.com/ollama/ollama/releases/download/v0.24.0/install.sh|25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f"
+)
+
 # GitHub Codespaces overlay dosya sisteminde uv hardlink uyarılarını ve gereksiz
 # full-copy fallback denemelerini önlemek için copy modu varsayılanlaştırılır.
 if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODESPACES:-}" == "true" ) ]]; then
@@ -508,12 +516,45 @@ verify_offline_bundle_manifest() {
     ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
 }
 
+pinned_remote_script_field() {
+    local script_label="${1:-}"
+    local field_name="${2:-}"
+    local entry=""
+    local label=""
+    local pinned_url=""
+    local pinned_sha=""
+
+    for entry in "${PINNED_REMOTE_SCRIPT_CHECKSUMS[@]}"; do
+        IFS='|' read -r label pinned_url pinned_sha <<< "$entry"
+        if [[ "$label" == "$script_label" ]]; then
+            case "$field_name" in
+                url) echo "$pinned_url"; return 0 ;;
+                sha256) echo "$pinned_sha"; return 0 ;;
+            esac
+        fi
+    done
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
     local script_label="$3"
+    local pinned_url=""
+    local pinned_sha=""
     local script_file
     script_file=$(mktemp)
+    pinned_url="$(pinned_remote_script_field "$script_label" url 2>/dev/null || true)"
+    pinned_sha="$(pinned_remote_script_field "$script_label" sha256 2>/dev/null || true)"
+
+    if [[ -n "$pinned_url" && "$script_url" != "$pinned_url" ]]; then
+        info "${script_label}: repo içinde pin'lenmiş kurulum betiği URL'i kullanılacak: ${pinned_url}"
+        script_url="$pinned_url"
+    fi
+    if [[ -z "$expected_sha" && -n "$pinned_sha" ]]; then
+        expected_sha="$pinned_sha"
+        info "${script_label}: repo içinde pin'lenmiş SHA256 kullanılacak."
+    fi
 
     if [[ "$OFFLINE_MODE" == true ]]; then
         rm -f "$script_file"

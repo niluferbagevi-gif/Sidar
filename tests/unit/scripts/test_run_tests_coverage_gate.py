@@ -135,6 +135,20 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
+def test_install_sidar_pins_remote_installer_checksums() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "PINNED_REMOTE_SCRIPT_CHECKSUMS=(" in script
+    assert "uv_install|https://releases.astral.sh/github/uv/releases/download/0.11.11/uv-installer.sh" in script
+    assert "3a020f8d69019caca567c9038999d130b0ea85866483caf2042c386cb685aef4" in script
+    assert "ollama_install|https://github.com/ollama/ollama/releases/download/v0.24.0/install.sh" in script
+    assert "25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f" in script
+    assert "pinned_remote_script_field()" in script
+    assert 'pinned_url="$(pinned_remote_script_field "$script_label" url' in script
+    assert 'pinned_sha="$(pinned_remote_script_field "$script_label" sha256' in script
+    assert 'script_url="$pinned_url"' in script
+    assert 'expected_sha="$pinned_sha"' in script
+
 def test_install_sidar_supports_target_dir_override() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
