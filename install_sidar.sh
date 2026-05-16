@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : $SIDAR_INSTALLER_VERSION
+# Sürüm : pyproject.toml [project.version]
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -17,8 +17,6 @@
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
-
-SIDAR_INSTALLER_VERSION="${SIDAR_INSTALLER_VERSION:-5.2.3}"
 
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
@@ -50,6 +48,38 @@ mask_install_log_stream() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+
+resolve_installer_version() {
+    if [[ -n "${SIDAR_INSTALLER_VERSION:-}" ]]; then
+        printf '%s\n' "$SIDAR_INSTALLER_VERSION"
+        return 0
+    fi
+
+    local pyproject_path="$SCRIPT_DIR/pyproject.toml"
+    local pyproject_version=""
+    if [[ -f "$pyproject_path" ]]; then
+        pyproject_version="$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$pyproject_path" | head -n1)"
+    fi
+    if [[ -n "$pyproject_version" ]]; then
+        printf '%s\n' "$pyproject_version"
+        return 0
+    fi
+
+    if [[ -f "$SCRIPT_DIR/sidar_version.py" ]] && command -v python3 &>/dev/null; then
+        python3 - "$SCRIPT_DIR" <<'PYVERSION' 2>/dev/null || true
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]).resolve()))
+from sidar_version import resolve_version
+print(resolve_version())
+PYVERSION
+        return 0
+    fi
+
+    printf '%s\n' "0.0.0"
+}
+
+SIDAR_INSTALLER_VERSION="$(resolve_installer_version)"
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"

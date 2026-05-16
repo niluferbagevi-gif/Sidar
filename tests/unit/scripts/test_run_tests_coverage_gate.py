@@ -346,10 +346,17 @@ def test_install_sidar_sources_modular_install_components() -> None:
 def test_install_sidar_centralizes_installer_version_and_phase_orchestration() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     combined = _install_script_with_modules()
+    pyproject_version = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in Path("pyproject.toml").read_text(encoding="utf-8").splitlines()
+        if line.startswith("version =")
+    )
 
-    assert 'SIDAR_INSTALLER_VERSION="${SIDAR_INSTALLER_VERSION:-5.2.3}"' in script
-    assert script.count("5.2.3") == 1
-    assert "v5.2.3" not in script
+    assert "resolve_installer_version()" in script
+    assert 'pyproject_path="$SCRIPT_DIR/pyproject.toml"' in script
+    assert 'SIDAR_INSTALLER_VERSION="$(resolve_installer_version)"' in script
+    assert pyproject_version not in script
+    assert f"v{pyproject_version}" not in script
     assert 'printf "║          Sidar AI — Kurulum Başlıyor (v%-9s)        ║\\n" "$SIDAR_INSTALLER_VERSION"' in script
     assert "run_prepare_system_phase()" not in script
     assert "run_sync_deps_phase()" not in script
