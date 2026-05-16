@@ -135,6 +135,20 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
+def test_install_sidar_uses_entropy_heuristic_for_weak_passwords() -> None:
+    script = _install_script_with_modules()
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+
+    assert "is_low_entropy_secret_value()" in script
+    assert "entropy_bits < 80" in script
+    assert "Password1Password1Password1" in script
+    assert "qwerty123qwerty123" in script
+    assert 'is_low_entropy_secret_value "$value" && return 0' in script
+    assert 'if is_weak_secret_value "$db_password"; then' in db_module
+    assert 'case "$db_password" in' not in db_module
+    assert 'sidar|postgres|password|admin|changeme|123456)' not in db_module
+
+
 def test_install_sidar_loads_known_weak_secrets_from_central_denylist() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     denylist_lines = [

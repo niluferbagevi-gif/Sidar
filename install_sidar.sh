@@ -3703,6 +3703,78 @@ is_known_weak_secret_value() {
     return 1
 }
 
+is_low_entropy_secret_value() {
+    local value="${1:-}"
+    command -v python3 &>/dev/null || return 1
+    python3 - "$value" <<'PYENTROPY'
+import math
+import re
+import sys
+
+value = sys.argv[1].strip()
+lower = value.lower()
+
+if not value:
+    sys.exit(0)
+
+# Catch long variants of common weak passwords that otherwise pass a length-only
+# check, e.g. Password1Password1Password1 or qwerty123qwerty123.
+common_tokens = (
+    "password", "passw0rd", "postgres", "sidar", "admin", "changeme",
+    "change_me", "change-me", "qwerty", "letmein", "welcome", "default",
+    "secret", "example", "testing", "test123", "password1",
+)
+keyboard_sequences = (
+    "qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890", "0987654321",
+    "abcdefghijklmnopqrstuvwxyz", "zyxwvutsrqponmlkjihgfedcba",
+)
+
+pool = 0
+if re.search(r"[a-z]", value):
+    pool += 26
+if re.search(r"[A-Z]", value):
+    pool += 26
+if re.search(r"[0-9]", value):
+    pool += 10
+if re.search(r"[^A-Za-z0-9]", value):
+    pool += 33
+pool = max(pool, 1)
+
+# Hex-only secrets should be scored against the real alphabet size instead of
+# the generic alpha+digit pool.
+if re.fullmatch(r"[0-9a-fA-F]+", value):
+    pool = 16
+
+entropy_bits = len(value) * math.log2(pool)
+
+for token in common_tokens:
+    if token in lower:
+        entropy_bits -= 35
+
+for seq in keyboard_sequences:
+    if any(seq[start:start + 5] in lower for start in range(0, max(1, len(seq) - 4))):
+        entropy_bits -= 30
+
+longest_run = max((len(match.group(0)) for match in re.finditer(r"(.)\1+", value)), default=1)
+if longest_run >= 4:
+    entropy_bits -= (longest_run - 2) * 8
+
+unique_ratio = len(set(value)) / len(value)
+if unique_ratio < 0.35:
+    entropy_bits -= 35
+
+# Repeated short units are very weak despite being long.
+for unit_len in range(1, min(13, len(value) // 2 + 1)):
+    if len(value) % unit_len == 0:
+        unit = value[:unit_len]
+        repeats = len(value) // unit_len
+        if repeats >= 2 and unit * repeats == value:
+            entropy_bits = min(entropy_bits, unit_len * math.log2(pool) + math.log2(repeats))
+
+sys.exit(0 if entropy_bits < 80 else 1)
+PYENTROPY
+}
+
 is_weak_secret_value() {
     local value="${1:-}"
     [[ -n "${value//[[:space:]]/}" ]] || return 0
@@ -3713,6 +3785,7 @@ is_weak_secret_value() {
     esac
     is_known_weak_secret_value "$value" && return 0
     (( ${#value} < 24 )) && return 0
+    is_low_entropy_secret_value "$value" && return 0
     return 1
 }
 
