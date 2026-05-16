@@ -2280,7 +2280,7 @@ ensure_prerequisites() {
 
     # Sistem Python sürümü artık doğrulanmaz: uv, gerekli Python sürümünü izole
     # ortam için kendisi çözer/indirir ve proje sürümünü .python-version veya
-    # pyproject.toml üzerinden setup_python_env içinde uygular.
+    # pyproject.toml üzerinden create_uv_venv içinde uygular.
 
     if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
@@ -2484,24 +2484,9 @@ setup_nvidia_docker() {
     fi
 }
 
-setup_python_env() {
-    step "uv venv Ortamı"
-    VENV_DIR="$SCRIPT_DIR/.venv"
-    if [[ -d "$VENV_DIR" ]]; then
-        info "Mevcut uv venv bulundu: $VENV_DIR"
-    else
-        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-        ok "uv venv oluşturuldu."
-    fi
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate"
-    ok "Ortam aktif: $VENV_DIR"
-}
-
-# ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
-setup_uv() {
-    step "uv Paket Yöneticisi"
+# ── 4. uv CLI kurulumu / güncelleme ──────────────────────────────────────────
+install_uv_cli() {
+    step "uv CLI Paket Yöneticisi"
     export UV_PROGRESS_BAR=on
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
@@ -2538,6 +2523,22 @@ setup_uv() {
         fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
     ok "uv $(uv --version | cut -d' ' -f2)"
+}
+
+# ── 4.1 uv venv oluşturma / etkinleştirme ───────────────────────────────────
+create_uv_venv() {
+    step "uv venv Ortamı"
+    VENV_DIR="$SCRIPT_DIR/.venv"
+    if [[ -d "$VENV_DIR" ]]; then
+        info "Mevcut uv venv bulundu: $VENV_DIR"
+    else
+        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
+        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+        ok "uv venv oluşturuldu."
+    fi
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate"
+    ok "Ortam aktif: $VENV_DIR"
 }
 
 # ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
@@ -5416,8 +5417,8 @@ run_sync_deps_phase() {
     ensure_prerequisites
     select_runtime_mode
     detect_gpu
-    setup_uv
-    setup_python_env
+    install_uv_cli
+    create_uv_venv
     install_python_deps
     install_pyright_lsp_tool
     verify_torch_cuda

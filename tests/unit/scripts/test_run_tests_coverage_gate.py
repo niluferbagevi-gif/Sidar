@@ -214,7 +214,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     for legacy_inline_call in (
         "install_system_dependencies",
         "sync_repo",
-        "setup_python_env",
+        "create_uv_venv",
         "setup_env_file",
         "run_migrations",
         "launch_docker_services",
@@ -260,3 +260,18 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "Tam Docker modu" not in launch_body
     assert 'local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"' in launch_body
     assert "tekrar menü göstermeden" in launch_body
+
+
+def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    sync_deps_start = script.index("run_sync_deps_phase()")
+    sync_deps_body = script[sync_deps_start : script.index("run_provision_models_phase()", sync_deps_start)]
+
+    assert "setup_uv" not in script
+    assert "setup_python_env" not in script
+    assert "install_uv_cli()" in script
+    assert "create_uv_venv()" in script
+    assert script.index("install_uv_cli()") < script.index("create_uv_venv()")
+    assert runtime_phase.index("install_uv_cli") < runtime_phase.index("create_uv_venv")
+    assert sync_deps_body.index("install_uv_cli") < sync_deps_body.index("create_uv_venv")

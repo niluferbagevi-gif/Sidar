@@ -6,9 +6,9 @@ sidar_phase_runtime_prerequisites() {
     detect_gpu
     setup_nvidia_docker
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-        setup_uv
-        setup_python_env
+        # uv akışı: önce CLI kur/güncelle, sonra venv oluştur
+        install_uv_cli
+        create_uv_venv
         install_python_deps
         install_pyright_lsp_tool
         verify_torch_cuda
