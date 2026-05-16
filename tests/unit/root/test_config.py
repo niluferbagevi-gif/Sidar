@@ -88,6 +88,28 @@ def test_prefixed_env_helpers_prefer_sidar_namespace(monkeypatch):
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "fallback") == "prefixed"
 
 
+def test_resolve_dotenv_path_accepts_repo_relative_path():
+    assert config._resolve_dotenv_path(".env.custom") == config.BASE_DIR / ".env.custom"
+
+
+def test_prefixed_env_helpers_fallback_edges(monkeypatch):
+    monkeypatch.setenv("LEGACY_INT", "not-int")
+    monkeypatch.setenv("SIDAR_FLOAT", "not-float")
+    monkeypatch.setenv("SIDAR_BOOL", "false")
+
+    assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 7) == 7
+    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 2.5
+    assert config.get_bool_prefixed_env("SIDAR_BOOL", "LEGACY_BOOL", True) is False
+
+
+def test_placeholder_config_value_detection():
+    assert config.is_missing_or_placeholder_config_value(None) is True
+    assert config.is_missing_or_placeholder_config_value("  ") is True
+    assert config.is_missing_or_placeholder_config_value("change-me-api-key") is True
+    assert config.is_missing_or_placeholder_config_value("replace-with-real-token") is True
+    assert config.is_missing_or_placeholder_config_value("sk-real-looking-token") is False
+
+
 def test_prefixed_bool_env_is_strict(monkeypatch):
     monkeypatch.setenv("LEGACY_BOOL", "true")
     assert config.get_bool_prefixed_env("SIDAR_BOOL", "LEGACY_BOOL", False) is True
@@ -313,6 +335,74 @@ def test_initialize_directories_returns_false_when_mkdir_fails(monkeypatch):
 
     monkeypatch.setattr(config.Config, "REQUIRED_DIRS", [_BadDir()])
     assert config.Config.initialize_directories() is False
+
+
+def _stub_validate_critical_settings_runtime(monkeypatch):
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "initialize_directories", classmethod(lambda cls: True)
+    )
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("SIDAR_ALLOW_FULL_ACCESS", raising=False)
+
+
+@pytest.mark.parametrize(
+    ("provider", "attr", "bad_value"),
+    [
+        ("gemini", "GEMINI_API_KEY", ""),
+        ("openai", "OPENAI_API_KEY", "change-me-openai-key"),
+        ("anthropic", "ANTHROPIC_API_KEY", "replace-with-anthropic-key"),
+        ("litellm", "LITELLM_GATEWAY_URL", "placeholder"),
+    ],
+)
+def test_validate_critical_settings_rejects_missing_or_placeholder_provider_values(
+    monkeypatch, provider, attr, bad_value
+):
+    _stub_validate_critical_settings_runtime(monkeypatch)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", provider)
+    monkeypatch.setattr(config.Config, attr, bad_value)
+
+    assert config.Config.validate_critical_settings() is False
+
+
+@pytest.mark.parametrize(
+    ("provider", "attr", "good_value"),
+    [
+        ("gemini", "GEMINI_API_KEY", "AIza-realistic-key"),
+        ("openai", "OPENAI_API_KEY", "sk-realistic-key"),
+        ("anthropic", "ANTHROPIC_API_KEY", "sk-ant-realistic-key"),
+        ("litellm", "LITELLM_GATEWAY_URL", "http://localhost:4000"),
+    ],
+)
+def test_validate_critical_settings_accepts_configured_external_provider_values(
+    monkeypatch, provider, attr, good_value
+):
+    _stub_validate_critical_settings_runtime(monkeypatch)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", provider)
+    monkeypatch.setattr(config.Config, attr, good_value)
+
+    assert config.Config.validate_critical_settings() is True
+
+
+def test_validate_critical_settings_rejects_full_access_without_explicit_allow(monkeypatch):
+    _stub_validate_critical_settings_runtime(monkeypatch)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(config.Config, "OPENAI_API_KEY", "sk-realistic-key")
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full")
+
+    assert config.Config.validate_critical_settings() is False
+
+    monkeypatch.setenv("SIDAR_ALLOW_FULL_ACCESS", "true")
+    assert config.Config.validate_critical_settings() is True
 
 
 def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):

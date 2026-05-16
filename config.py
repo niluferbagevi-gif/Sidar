@@ -136,6 +136,40 @@ LLM_SETTINGS = LLMClientSettings()
 # ═══════════════════════════════════════════════════════════════
 
 
+_CONFIG_PLACEHOLDER_VALUES = {
+    "",
+    "change-me",
+    "changeme",
+    "replace-me",
+    "replace_with",
+    "placeholder",
+    "example",
+    "dummy",
+    "test",
+}
+_CONFIG_PLACEHOLDER_PREFIXES = (
+    "change-me",
+    "replace-with",
+    "replace_with",
+    "your-",
+    "your_",
+    "example-",
+    "dummy-",
+    "test-",
+)
+
+
+def is_missing_or_placeholder_config_value(value: str | None) -> bool:
+    """Return True for blank values or unsafe template placeholders."""
+    normalized = str(value or "").strip()
+    if not normalized:
+        return True
+    lowered = normalized.lower()
+    return lowered in _CONFIG_PLACEHOLDER_VALUES or lowered.startswith(
+        _CONFIG_PLACEHOLDER_PREFIXES
+    )
+
+
 def get_bool_env(key: str, default: bool = False) -> bool:
     """Return a strict boolean environment value.
 
@@ -1148,10 +1182,14 @@ class Config:
             )
             is_valid = False
 
-        if cls.AI_PROVIDER == "gemini" and not cls.GEMINI_API_KEY:
+        if cls.AI_PROVIDER == "gemini" and is_missing_or_placeholder_config_value(
+            cls.GEMINI_API_KEY
+        ):
             logger.error(
-                "❌ Gemini modu seçili ama GEMINI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
+                "❌ Gemini modu seçili ama GEMINI_API_KEY eksik veya geçersiz "
+                "placeholder değerinde!\n"
+                "   .env dosyasını ve ~/.sidar_keys.env içindeki manuel anahtarları "
+                "kontrol edin."
             )
             is_valid = False
 
@@ -1194,24 +1232,36 @@ class Config:
                 )
                 raise SystemExit(1)
 
-        if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
+        if cls.AI_PROVIDER == "openai" and is_missing_or_placeholder_config_value(
+            cls.OPENAI_API_KEY
+        ):
             logger.error(
-                "❌ OpenAI modu seçili ama OPENAI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
+                "❌ OpenAI modu seçili ama OPENAI_API_KEY eksik veya geçersiz "
+                "placeholder değerinde!\n"
+                "   .env dosyasını ve ~/.sidar_keys.env içindeki manuel anahtarları "
+                "kontrol edin."
             )
             is_valid = False
 
-        if cls.AI_PROVIDER == "anthropic" and not cls.ANTHROPIC_API_KEY:
+        if cls.AI_PROVIDER == "anthropic" and is_missing_or_placeholder_config_value(
+            cls.ANTHROPIC_API_KEY
+        ):
             logger.error(
-                "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
+                "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY eksik veya geçersiz "
+                "placeholder değerinde!\n"
+                "   .env dosyasını ve ~/.sidar_keys.env içindeki manuel anahtarları "
+                "kontrol edin."
             )
             is_valid = False
 
-        if cls.AI_PROVIDER == "litellm" and not cls.LITELLM_GATEWAY_URL:
+        if cls.AI_PROVIDER == "litellm" and is_missing_or_placeholder_config_value(
+            cls.LITELLM_GATEWAY_URL
+        ):
             logger.error(
-                "❌ LiteLLM modu seçili ama LITELLM_GATEWAY_URL ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
+                "❌ LiteLLM modu seçili ama LITELLM_GATEWAY_URL eksik veya geçersiz "
+                "placeholder değerinde!\n"
+                "   .env dosyasını ve ~/.sidar_keys.env içindeki manuel gateway "
+                "değerini kontrol edin."
             )
             is_valid = False
 
