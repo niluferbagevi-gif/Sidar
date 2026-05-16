@@ -1338,3 +1338,76 @@ def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
     with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
         config.Config()
+
+
+@pytest.mark.parametrize(
+    ("provider", "setting_name", "valid_value"),
+    [
+        ("gemini", "GEMINI_API_KEY", "gemini-key"),
+        ("openai", "OPENAI_API_KEY", "openai-key"),
+        ("anthropic", "ANTHROPIC_API_KEY", "anthropic-key"),
+        ("litellm", "LITELLM_GATEWAY_URL", "https://litellm.internal"),
+    ],
+)
+def test_validate_ai_provider_settings_rejects_missing_and_malformed_required_values(
+    monkeypatch, provider, setting_name, valid_value
+):
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", provider)
+    monkeypatch.setattr(config.Config, setting_name, "   ")
+    assert config.Config._validate_ai_provider_settings() is False
+
+    malformed_value = "bad\nsecret" if setting_name != "LITELLM_GATEWAY_URL" else "not-a-url"
+    monkeypatch.setattr(config.Config, setting_name, malformed_value)
+    assert config.Config._validate_ai_provider_settings() is False
+
+    monkeypatch.setattr(config.Config, setting_name, valid_value)
+    assert config.Config._validate_ai_provider_settings() is True
+
+
+def test_validate_ai_provider_settings_normalizes_provider_and_rejects_unknown(monkeypatch):
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", " OpenAI ")
+    monkeypatch.setattr(config.Config, "OPENAI_API_KEY", "sk-centralized")
+    assert config.Config._validate_ai_provider_settings() is True
+    assert config.Config.AI_PROVIDER == "openai"
+
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "unknown")
+    assert config.Config._validate_ai_provider_settings() is False
+
+
+def test_validate_critical_settings_rejects_full_access_without_explicit_allow(monkeypatch):
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full")
+    monkeypatch.delenv("SIDAR_ALLOW_FULL_ACCESS", raising=False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(config.Config, "OPENAI_API_KEY", "sk-valid")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_config_helper_edge_cases_cover_centralized_env_helpers(monkeypatch):
+    relative = config._resolve_dotenv_path("relative.env")
+    assert relative == config.BASE_DIR / "relative.env"
+
+    assert config.is_nonempty_secret(None) is False
+    assert config.is_valid_http_url(None) is False
+
+    monkeypatch.setenv("LEGACY_INT_BAD", "bad-int")
+    monkeypatch.delenv("SIDAR_INT_BAD", raising=False)
+    assert config.get_int_prefixed_env("SIDAR_INT_BAD", "LEGACY_INT_BAD", 7) == 7
+
+    monkeypatch.setenv("LEGACY_FLOAT_BAD", "bad-float")
+    monkeypatch.delenv("SIDAR_FLOAT_BAD", raising=False)
+    assert config.get_float_prefixed_env("SIDAR_FLOAT_BAD", "LEGACY_FLOAT_BAD", 1.5) == 1.5
+
+    monkeypatch.setenv("LEGACY_BOOL_FALSE", "false")
+    monkeypatch.delenv("SIDAR_BOOL_FALSE", raising=False)
+    assert config.get_bool_prefixed_env("SIDAR_BOOL_FALSE", "LEGACY_BOOL_FALSE", True) is False

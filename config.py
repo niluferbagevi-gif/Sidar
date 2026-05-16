@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -130,6 +130,43 @@ class LLMClientSettings(BaseSettings):
 
 
 LLM_SETTINGS = LLMClientSettings()
+
+SUPPORTED_AI_PROVIDERS: frozenset[str] = frozenset(
+    {"ollama", "gemini", "openai", "anthropic", "litellm"}
+)
+_PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
+    "gemini": ("GEMINI_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "litellm": ("LITELLM_GATEWAY_URL",),
+}
+
+
+def normalize_ai_provider(provider: str | None) -> str:
+    """Normalize configured AI provider names for consistent validation and routing."""
+    return (provider or "ollama").strip().lower() or "ollama"
+
+
+def is_nonempty_secret(value: str | None) -> bool:
+    """Return whether a secret-like config value is present and not obviously malformed."""
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return not any(char in stripped for char in ("\n", "\r", "\x00"))
+
+
+def is_valid_http_url(value: str | None) -> bool:
+    """Validate required HTTP(S) endpoint settings without leaking the raw value."""
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    parsed = urlparse(stripped)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
 
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
@@ -1109,7 +1146,7 @@ class Config:
             "anthropic": "anthropic",
             "litellm": "litellm",
         }
-        m_lower = mode.lower()
+        m_lower = normalize_ai_provider(mode)
         if m_lower in mode_map:
             cls.AI_PROVIDER = mode_map[m_lower]
             logger.info("✅ AI Sağlayıcı güncellendi: %s", cls.AI_PROVIDER.upper())
@@ -1119,6 +1156,42 @@ class Config:
                 mode,
                 list(mode_map.keys()),
             )
+
+    @classmethod
+    def _validate_ai_provider_settings(cls) -> bool:
+        """Validate centralized provider and credential settings from config.py."""
+        provider = normalize_ai_provider(cls.AI_PROVIDER)
+        cls.AI_PROVIDER = provider
+
+        if provider not in SUPPORTED_AI_PROVIDERS:
+            logger.error(
+                "❌ Geçersiz AI_PROVIDER=%s. Geçerli sağlayıcılar: %s",
+                provider,
+                ", ".join(sorted(SUPPORTED_AI_PROVIDERS)),
+            )
+            return False
+
+        is_valid = True
+        for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):  # ollama has no API key
+            raw_value = getattr(cls, setting_name, "")
+            if setting_name.endswith("_GATEWAY_URL"):
+                setting_valid = is_valid_http_url(raw_value)
+                message = (
+                    f"❌ {provider} modu seçili ama {setting_name} geçerli bir http(s) URL değil!\n"
+                    "   .env dosyasını kontrol edin."
+                )
+            else:
+                setting_valid = is_nonempty_secret(raw_value)
+                message = (
+                    f"❌ {provider} modu seçili ama {setting_name} ayarlanmamış veya hatalı!\n"
+                    "   .env dosyasını kontrol edin."
+                )
+
+            if not setting_valid:
+                logger.error(message)
+                is_valid = False
+
+        return is_valid
 
     @classmethod
     def validate_critical_settings(cls) -> bool:
@@ -1148,12 +1221,7 @@ class Config:
             )
             is_valid = False
 
-        if cls.AI_PROVIDER == "gemini" and not cls.GEMINI_API_KEY:
-            logger.error(
-                "❌ Gemini modu seçili ama GEMINI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
+        is_valid = cls._validate_ai_provider_settings() and is_valid
 
         memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
 
@@ -1193,27 +1261,6 @@ class Config:
                     "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
                 )
                 raise SystemExit(1)
-
-        if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
-            logger.error(
-                "❌ OpenAI modu seçili ama OPENAI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
-
-        if cls.AI_PROVIDER == "anthropic" and not cls.ANTHROPIC_API_KEY:
-            logger.error(
-                "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
-
-        if cls.AI_PROVIDER == "litellm" and not cls.LITELLM_GATEWAY_URL:
-            logger.error(
-                "❌ LiteLLM modu seçili ama LITELLM_GATEWAY_URL ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
 
         if cls.AI_PROVIDER == "ollama":
             try:
