@@ -64,7 +64,14 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 5. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
+# 5. Kullanıcının gerçek servis anahtarlarını repo dışında tutabilmesi için
+#    ~/.sidar_keys.env dosyasını opsiyonel olarak yükle. Bu dosya .env ailesinin
+#    üstüne yazar; böylece paylaşılan repo şablonları sır içermez.
+user_keys_env_path = Path.home() / ".sidar_keys.env"
+if user_keys_env_path.exists():
+    load_dotenv(dotenv_path=user_keys_env_path, override=True)
+
+# 6. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
 #    (örn: test ortamında DOTENV_FILE=.env.test)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
 if _explicit_dotenv:
@@ -120,12 +127,24 @@ LLM_SETTINGS = LLMClientSettings()
 # ═══════════════════════════════════════════════════════════════
 
 
-def get_bool_env(key: str, default: bool = False) -> bool:
-    raw_val = os.getenv(key)
+def _parse_strict_bool_env(key: str, raw_val: str | None, default: bool) -> bool:
+    """Parse environment booleans with an enterprise-safe true/false contract."""
+
     if raw_val is None or not raw_val.strip():
         return default
     val = raw_val.strip().lower()
-    return val in ("true", "1", "yes", "on")
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(
+        f"{key} must be either 'true' or 'false' (case-insensitive); "
+        f"got {raw_val!r}. Legacy values such as 1/0/yes/no/on/off are not supported."
+    )
+
+
+def get_bool_env(key: str, default: bool = False) -> bool:
+    return _parse_strict_bool_env(key, os.getenv(key), default)
 
 
 def get_int_env(key: str, default: int = 0) -> int:
@@ -151,14 +170,37 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     return [item.strip() for item in value.split(separator) if item.strip()]
 
 
+def get_sidar_list_env(
+    key: str, default: list[str] | None = None, separator: str = ","
+) -> list[str]:
+    if default is None:
+        default = []
+    value = get_sidar_optional_env(key, default=None)
+    if value is None:
+        return default
+    return [item.strip() for item in value.split(separator) if item.strip()]
+
+
 def get_sidar_env(key: str, default: str = "") -> str:
     """Read SIDAR_<KEY> first, with legacy unprefixed fallback."""
 
+    value = get_sidar_optional_env(key, default=None)
+    return default if value is None else value
+
+
+def get_sidar_optional_env(
+    key: str, default: str | None = None, *, preserve_blank: bool = False
+) -> str | None:
+    """Read SIDAR_<KEY> first, then legacy KEY, without scattering getenv calls."""
+
     prefixed = f"SIDAR_{key}"
-    value = os.getenv(prefixed)
-    if value is not None and value.strip():
-        return value
-    return os.getenv(key, default)
+    for candidate in (prefixed, key):
+        value = os.getenv(candidate)
+        if value is None:
+            continue
+        if preserve_blank or value.strip():
+            return value
+    return default
 
 
 def get_sidar_int_env(key: str, default: int = 0) -> int:
@@ -169,10 +211,43 @@ def get_sidar_int_env(key: str, default: int = 0) -> int:
 
 
 def get_sidar_bool_env(key: str, default: bool = False) -> bool:
-    raw_val = get_sidar_env(key, "")
-    if not raw_val.strip():
-        return default
-    return raw_val.strip().lower() in ("true", "1", "yes", "on")
+    prefixed = f"SIDAR_{key}"
+    raw_val = os.getenv(prefixed)
+    if raw_val is None or not raw_val.strip():
+        raw_val = os.getenv(key)
+        key = key if raw_val is not None and raw_val.strip() else prefixed
+    else:
+        key = prefixed
+    return _parse_strict_bool_env(key, raw_val, default)
+
+
+def get_deprecated_int_env(key: str, default: int, *, replacement: str) -> int:
+    if os.getenv(key, "").strip():
+        warnings.warn(
+            f"{key} is deprecated and will be removed in a future release; "
+            f"use {replacement} instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    return get_int_env(key, default)
+
+
+def resolve_web_scrape_max_chars(default: int = 12000) -> int:
+    """Resolve the preferred web scrape character limit with legacy compatibility."""
+
+    preferred = os.getenv("WEB_SCRAPE_MAX_CHARS", "").strip()
+    if preferred:
+        if os.getenv("WEB_FETCH_MAX_CHARS", "").strip():
+            warnings.warn(
+                "WEB_FETCH_MAX_CHARS is deprecated and ignored because "
+                "WEB_SCRAPE_MAX_CHARS is set; remove WEB_FETCH_MAX_CHARS.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+    return get_deprecated_int_env(
+        "WEB_FETCH_MAX_CHARS", default, replacement="WEB_SCRAPE_MAX_CHARS"
+    )
 
 
 def _postgres_env_value(key: str, default: str, *, preserve_blank: bool = False) -> str:
@@ -480,11 +555,15 @@ class Config:
     ENABLE_MULTI_AGENT: bool = (
         True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
     )
-    ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)
-    SELF_HEAL_MAX_PATCHES: int = get_int_env("SELF_HEAL_MAX_PATCHES", 3)
-    SELF_HEAL_PLAN_MAX_RETRIES: int = get_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
-    SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
-    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env("SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6)
+    ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_sidar_bool_env(
+        "ENABLE_AUTONOMOUS_SELF_HEAL", False
+    )
+    SELF_HEAL_MAX_PATCHES: int = get_sidar_int_env("SELF_HEAL_MAX_PATCHES", 3)
+    SELF_HEAL_PLAN_MAX_RETRIES: int = get_sidar_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
+    SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_sidar_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
+    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_sidar_int_env(
+        "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6
+    )
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR: Path = BASE_DIR
@@ -596,8 +675,16 @@ class Config:
     RATE_LIMIT_CHAT: int = get_sidar_int_env("RATE_LIMIT_CHAT", 20)
     RATE_LIMIT_MUTATIONS: int = get_sidar_int_env("RATE_LIMIT_MUTATIONS", 60)
     RATE_LIMIT_GET_IO: int = get_sidar_int_env("RATE_LIMIT_GET_IO", 30)
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    REDIS_URL: str = get_sidar_env("REDIS_URL", "redis://localhost:6379/0")
+    REDIS_MAX_CONNECTIONS: int = get_sidar_int_env(
+        "REDIS_MAX_CONNECTIONS", LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    )
+    REDIS_CONNECT_TIMEOUT: float = get_float_env(
+        "SIDAR_REDIS_CONNECT_TIMEOUT", get_float_env("REDIS_CONNECT_TIMEOUT", 0.5)
+    )
+    REDIS_SOCKET_TIMEOUT: float = get_float_env(
+        "SIDAR_REDIS_SOCKET_TIMEOUT", get_float_env("REDIS_SOCKET_TIMEOUT", 0.5)
+    )
     ENABLE_DISTRIBUTED_AGENT_LOCKS: bool = get_bool_env("ENABLE_DISTRIBUTED_AGENT_LOCKS", True)
     DISTRIBUTED_AGENT_LOCK_REQUIRED: bool = get_bool_env("DISTRIBUTED_AGENT_LOCK_REQUIRED", False)
     DISTRIBUTED_AGENT_LOCK_TTL_SECONDS: int = get_int_env(
@@ -637,10 +724,35 @@ class Config:
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
-    SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv(
-        "SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq"
+    SIDAR_EVENT_BUS_BACKEND: str = get_sidar_env("EVENT_BUS_BACKEND", "redis")
+    SIDAR_EVENT_BUS_CHANNEL: str = get_sidar_env("EVENT_BUS_CHANNEL", "sidar:agent_events")
+    SIDAR_EVENT_BUS_GROUP: str = get_sidar_env("EVENT_BUS_GROUP", "sidar:agent_events:cg")
+    SIDAR_EVENT_BUS_DLQ_CHANNEL: str = get_sidar_env(
+        "EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq"
     )
-    SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
+    SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_sidar_int_env("EVENT_BUS_DLQ_MAXLEN", 1000)
+    SIDAR_EVENT_BUS_DLQ_PERSIST_PATH: str = get_sidar_env("EVENT_BUS_DLQ_PERSIST_PATH", "")
+    SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE: int = get_sidar_int_env(
+        "EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", 100
+    )
+    SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL: float = get_float_env(
+        "SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL",
+        get_float_env("EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", 1.0),
+    )
+    SIDAR_EVENT_BUS_KAFKA_TOPIC: str = get_sidar_env(
+        "EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events"
+    )
+    SIDAR_EVENT_BUS_KAFKA_GROUP: str = get_sidar_env("EVENT_BUS_KAFKA_GROUP", "")
+    SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD: int = get_sidar_int_env(
+        "EVENT_BUS_CB_FAILURE_THRESHOLD", 5
+    )
+    SIDAR_EVENT_BUS_CB_OPEN_SECONDS: float = get_float_env(
+        "SIDAR_EVENT_BUS_CB_OPEN_SECONDS", get_float_env("EVENT_BUS_CB_OPEN_SECONDS", 15.0)
+    )
+    RABBITMQ_URL: str = get_sidar_env("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+    KAFKA_BOOTSTRAP_SERVERS: str = get_sidar_env(
+        "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
+    )
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
@@ -649,9 +761,10 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = resolve_web_scrape_max_chars(12000)
+    # Eski attribute, runtime uyumluluğu için yeni değere eşit tutulur.
+    WEB_FETCH_MAX_CHARS: int = WEB_SCRAPE_MAX_CHARS
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
@@ -672,20 +785,22 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
-    DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
-    DOCKER_TEST_IMAGE: str = os.getenv("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
-    DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
-    DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
+    DOCKER_IMAGE: str = get_sidar_env("DOCKER_IMAGE", "")
+    DOCKER_PYTHON_IMAGE: str = get_sidar_env("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
+    DOCKER_TEST_IMAGE_EXPLICIT: bool = get_sidar_optional_env("DOCKER_TEST_IMAGE") is not None
+    DOCKER_TEST_IMAGE: str = get_sidar_env("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
+    DOCKER_RUNTIME: str = get_sidar_env("DOCKER_RUNTIME", "")
+    DOCKER_ALLOWED_RUNTIMES: list[str] = get_sidar_list_env(
         "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
     )
-    DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
-    DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
-    DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
-    DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
+    DOCKER_MICROVM_MODE: str = get_sidar_env("DOCKER_MICROVM_MODE", "off")
+    DOCKER_MEM_LIMIT: str = get_sidar_env("DOCKER_MEM_LIMIT", "256m")
+    DOCKER_NETWORK_DISABLED: bool = get_sidar_bool_env("DOCKER_NETWORK_DISABLED", True)
+    DOCKER_NANO_CPUS: int = get_sidar_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
     # Maksimum Docker sandbox çalışma süresi (saniye) — sonsuz döngü koruması
-    DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
+    DOCKER_EXEC_TIMEOUT: int = get_sidar_int_env("DOCKER_EXEC_TIMEOUT", 10)
     # Docker zorunlu mod: True ise Docker erişilemezse yerel subprocess fallback engellenir
-    DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)
+    DOCKER_REQUIRED: bool = get_sidar_bool_env("DOCKER_REQUIRED", False)
 
     # ─── Bellek Şifrelemesi ───────────────────────────────────────
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
@@ -703,7 +818,15 @@ class Config:
     GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
 
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
-    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "uv run pytest")
+    REVIEWER_TEST_COMMAND: str = get_sidar_env("REVIEWER_TEST_COMMAND", "uv run pytest")
+    RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_sidar_optional_env(
+        "RUFF_AUTOFIX_UNSAFE_RULES", preserve_blank=True
+    )
+    SELF_HEAL_LOCAL_SCOPE_LIMIT: int = get_sidar_int_env("SELF_HEAL_LOCAL_SCOPE_LIMIT", 200)
+    SELF_HEAL_HITL_SCOPE_THRESHOLD: int = get_sidar_int_env("SELF_HEAL_HITL_SCOPE_THRESHOLD", 3)
+    SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = get_sidar_int_env(
+        "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
+    )
 
     # ─── DLP — Veri Kaybı Önleme ─────────────────────────────
     DLP_ENABLED: bool = get_bool_env("DLP_ENABLED", True)
@@ -714,10 +837,18 @@ class Config:
     HITL_TIMEOUT_SECONDS: int = get_int_env("HITL_TIMEOUT_SECONDS", 120)
 
     # ─── LLM-as-a-Judge Kalite Değerlendirmesi ────────────────
-    JUDGE_ENABLED: bool = get_bool_env("JUDGE_ENABLED", False)
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
-    JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
-    JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or "0.2")
+    JUDGE_ENABLED: bool = get_sidar_bool_env("JUDGE_ENABLED", False)
+    JUDGE_MODEL: str = get_sidar_env("JUDGE_MODEL", "")
+    JUDGE_PROVIDER: str = get_sidar_env("JUDGE_PROVIDER", "ollama")
+    JUDGE_SAMPLE_RATE: float = get_float_env(
+        "SIDAR_JUDGE_SAMPLE_RATE", get_float_env("JUDGE_SAMPLE_RATE", 0.2)
+    )
+    JUDGE_AUTO_FEEDBACK_ENABLED: bool = get_sidar_bool_env("JUDGE_AUTO_FEEDBACK_ENABLED", True)
+    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = get_float_env(
+        "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD",
+        get_float_env("JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0),
+    )
+    JUDGE_RESPONSE_MODEL: str = get_sidar_env("JUDGE_RESPONSE_MODEL", "")
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
     ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
@@ -803,6 +934,8 @@ class Config:
     LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
     PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
     TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
+    PYTHON_VIRTUAL_ENV: str = os.getenv("VIRTUAL_ENV", "")
+    CONDA_PREFIX: str = os.getenv("CONDA_PREFIX", "")
     ENABLE_AUTONOMOUS_CRON: bool = get_bool_env("ENABLE_AUTONOMOUS_CRON", False)
     AUTONOMOUS_CRON_INTERVAL_SECONDS: int = get_int_env("AUTONOMOUS_CRON_INTERVAL_SECONDS", 900)
     AUTONOMOUS_CRON_PROMPT: str = os.getenv(
@@ -828,6 +961,7 @@ class Config:
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
+    SLACK_APP_LEVEL_TOKEN: str = os.getenv("SLACK_APP_LEVEL_TOKEN", "")
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
     SLACK_DEFAULT_CHANNEL: str = os.getenv("SLACK_DEFAULT_CHANNEL", "")
 
@@ -842,6 +976,13 @@ class Config:
 
     # ─── Microsoft Teams Entegrasyonu (v6.0) ────────────────────
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+
+    # ─── Meta / Sosyal Medya Entegrasyonları (Poyraz) ───────────
+    META_GRAPH_API_TOKEN: str = os.getenv("META_GRAPH_API_TOKEN", "")
+    META_GRAPH_API_VERSION: str = os.getenv("META_GRAPH_API_VERSION", "v20.0")
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID", "")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 
     # ─────────────────────────────────────────────────────────
     #  METOTLAR

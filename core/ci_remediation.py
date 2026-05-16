@@ -9,11 +9,11 @@ from __future__ import annotations
 import ast
 import contextlib
 import json
-import os
 import re
 import shlex
 from typing import Any
 
+from config import Config, get_sidar_int_env, get_sidar_optional_env
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 
 _CI_FAILURE_CONCLUSIONS = {
@@ -80,7 +80,7 @@ def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
 
 
 def _configured_ruff_unsafe_selectors() -> list[str]:
-    env_value = os.getenv("RUFF_AUTOFIX_UNSAFE_RULES")
+    env_value = get_sidar_optional_env("RUFF_AUTOFIX_UNSAFE_RULES", preserve_blank=True)
     if env_value is None:
         return _normalize_ruff_rule_selectors(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
     return _normalize_ruff_rule_selectors(env_value)
@@ -573,7 +573,7 @@ def build_local_failure_context(
     )
     local_scope_limit = max(
         1,
-        int(os.getenv("SELF_HEAL_LOCAL_SCOPE_LIMIT", "200") or "200"),
+        get_sidar_int_env("SELF_HEAL_LOCAL_SCOPE_LIMIT", Config.SELF_HEAL_LOCAL_SCOPE_LIMIT),
     )
     effective_targets = suspected_targets[:local_scope_limit]
     log_excerpt = _trim_text(text, 1200)
@@ -944,11 +944,15 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
     ).lower()
     scope_hitl_threshold = max(
         1,
-        int(os.getenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "3") or "3"),
+        get_sidar_int_env(
+            "SELF_HEAL_HITL_SCOPE_THRESHOLD", Config.SELF_HEAL_HITL_SCOPE_THRESHOLD
+        ),
     )
     auto_batch_size = max(
         1,
-        int(os.getenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "5") or "5"),
+        get_sidar_int_env(
+            "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", Config.SELF_HEAL_AUTONOMOUS_BATCH_SIZE
+        ),
     )
     hitl_reasons: list[str] = []
     if "syntaxerror" in combined_text:

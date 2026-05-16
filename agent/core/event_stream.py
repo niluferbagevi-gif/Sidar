@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from agent.core.event_backends import BaseEventBusBackend
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -35,32 +36,44 @@ class AgentEventBus:
         self._subscribers: dict[int, asyncio.Queue[AgentEvent]] = {}
         self._buffered_events: dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
+        cfg = Config
         self._backend = (
-            str(os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
+            str(getattr(cfg, "SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
         )
-        self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
-        self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
-        self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
+        self._channel = str(getattr(cfg, "SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events"))
+        self._consumer_group = str(
+            getattr(cfg, "SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
+        )
+        self._dlq_channel = str(
+            getattr(cfg, "SIDAR_EVENT_BUS_DLQ_CHANNEL", "") or f"{self._channel}:dlq"
+        )
         self._dlq_buffer: deque[dict[str, object]] = deque(
-            maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000"))
+            maxlen=max(10, int(getattr(cfg, "SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000) or 1000))
         )
         self._dlq_persist_path = str(
-            os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or ""
+            getattr(cfg, "SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "") or ""
         ).strip()
         self._dlq_persist_batch_size = max(
-            1, int(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", "100") or "100")
+            1, int(getattr(cfg, "SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", 100) or 100)
         )
         self._dlq_persist_flush_interval = max(
-            0.05, float(os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", "1.0") or "1.0")
+            0.05,
+            float(getattr(cfg, "SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", 1.0) or 1.0),
         )
         self._dlq_persist_pending: list[dict[str, object]] = []
         self._dlq_persist_lock: asyncio.Lock | None = None
         self._dlq_persist_flush_task: asyncio.Task[None] | None = None
 
-        self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
-        self._redis_connect_timeout = float(os.getenv("REDIS_CONNECT_TIMEOUT", "0.5") or "0.5")
-        self._redis_socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.5") or "0.5")
+        self._redis_url = str(getattr(cfg, "REDIS_URL", "redis://localhost:6379/0"))
+        self._redis_max_connections = max(
+            1, int(getattr(cfg, "REDIS_MAX_CONNECTIONS", 50) or 50)
+        )
+        self._redis_connect_timeout = float(
+            getattr(cfg, "REDIS_CONNECT_TIMEOUT", 0.5) or 0.5
+        )
+        self._redis_socket_timeout = float(
+            getattr(cfg, "REDIS_SOCKET_TIMEOUT", 0.5) or 0.5
+        )
         self._redis_client: Redis | None = None
         self._redis_listener_task: asyncio.Task[None] | None = None
         self._redis_bootstrap_task: asyncio.Task[None] | None = None
@@ -72,22 +85,27 @@ class AgentEventBus:
         self._rabbit_connection: Any | None = None
         self._rabbit_channel: Any | None = None
         self._rabbit_queue: Any | None = None
-        self._rabbit_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+        self._rabbit_url = str(getattr(cfg, "RABBITMQ_URL", "amqp://guest:guest@localhost/"))
         self._kafka_bootstrap_task: asyncio.Task[None] | None = None
         self._kafka_listener_task: asyncio.Task[None] | None = None
         self._kafka_available: bool | None = None
         self._kafka_producer: Any | None = None
         self._kafka_consumer: Any | None = None
-        self._kafka_topic = os.getenv("SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
-        self._kafka_group = os.getenv(
-            "SIDAR_EVENT_BUS_KAFKA_GROUP", f"sidar-agent-events-{self._instance_id[:8]}"
+        self._kafka_topic = str(
+            getattr(cfg, "SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events")
         )
-        self._kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        self._kafka_group = str(
+            getattr(cfg, "SIDAR_EVENT_BUS_KAFKA_GROUP", "")
+            or f"sidar-agent-events-{self._instance_id[:8]}"
+        )
+        self._kafka_bootstrap_servers = str(
+            getattr(cfg, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        )
         self._remote_circuit_failure_threshold = max(
-            1, int(os.getenv("SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", "5") or "5")
+            1, int(getattr(cfg, "SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", 5) or 5)
         )
         self._remote_circuit_open_seconds = max(
-            1.0, float(os.getenv("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", "15") or "15")
+            1.0, float(getattr(cfg, "SIDAR_EVENT_BUS_CB_OPEN_SECONDS", 15.0) or 15.0)
         )
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0

@@ -594,7 +594,7 @@ wait_for_test_services_ready() {
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
   local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
-  local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar}}"
+  local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar_test_secure_pw}}"
   local test_db_host="${POSTGRES_HOST:-localhost}"
   local admin_db_user="${POSTGRES_ADMIN_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_port="${POSTGRES_PORT:-5432}"
@@ -665,7 +665,7 @@ prepare_test_database() {
 
   export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
   export TEST_DATABASE_URL="${DATABASE_URL}"
-  echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"
+  echo "ℹ️ Test veritabanı bağlantısı ayarlandı: user=${test_db_user} host=${test_db_host} port=${test_db_port} db=${test_db_name}"
 
   echo "📦 Alembic migrasyonları uygulanıyor (upgrade head)..."
   if ! uv run alembic upgrade head; then
