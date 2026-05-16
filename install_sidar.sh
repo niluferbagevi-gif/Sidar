@@ -191,6 +191,7 @@ source "$INSTALL_HELPERS_MODULE"
 
 INSTALL_UTILITY_MODULES=(
     "utils/gpu_utils.sh"
+    "utils/python_env.sh"
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
@@ -2758,30 +2759,20 @@ install_python_deps() {
 install_pyright_lsp_tool() {
     step "Pyright LSP Aracı"
 
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    local venv_bin="$SCRIPT_DIR/.venv/bin"
+    export PATH="$venv_bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP hazır: $(command -v pyright-langserver)"
+    if [[ -x "$venv_bin/pyright-langserver" ]]; then
+        ok "Pyright LSP hazır: $venv_bin/pyright-langserver"
         return
     fi
 
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        warn "Çevrimdışı modda pyright-langserver bulunamadı; LSP diagnostics için çevrimiçi ortamda 'uv tool install pyright' çalıştırın veya offline tool cache sağlayın."
+    if uv run pyright-langserver --version >/dev/null 2>&1; then
+        ok "Pyright LSP uv sync ortamında hazır: $(uv run python -c 'import shutil; print(shutil.which("pyright-langserver") or "uv-run")')"
         return
     fi
 
-    info "Pyright LSP kuruluyor: uv tool install pyright"
-    if ! uv tool install pyright; then
-        warn "uv tool install pyright başarısız oldu; ajan LSP diagnostics özelliği için manuel kurulum gerekir."
-        return
-    fi
-
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP kuruldu: $(command -v pyright-langserver)"
-    else
-        warn "Pyright kuruldu ancak pyright-langserver PATH üzerinde bulunamadı; ~/.local/bin PATH ayarını kontrol edin."
-    fi
+    fail "Pyright LSP bulunamadı. Kurulum eski paket/tool fallback kullanmaz; dev extra dahil standart akışla 'uv sync --frozen --all-extras' çalıştırın."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -4917,13 +4908,23 @@ select_pytorch_cuda_wheel_tag() {
     echo "cu124"
 }
 
-install_pytorch_cuda_wheels() {
+sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
+    local -a sync_args=(
+        --frozen
+        --all-extras
+        --index "$index_url"
+        --reinstall-package torch
+        --reinstall-package torchvision
+        --reinstall-package torchaudio
+    )
 
-    info "PyTorch CUDA wheel seçimi: ${cuda_tag} (${index_url})"
-    uv pip install torch torchvision torchaudio --reinstall --index-url "$index_url"
+    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url})"
+    if ! uv sync "${sync_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
+    fi
 }
 
 verify_torch_cuda() {
@@ -4943,7 +4944,7 @@ print(f'available={avail} cuda={ver} device={dev}')
         else
             warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
             info "GPU wheel için PyTorch yeniden kuruluyor (GPU compute capability/CUDA sürümüne göre dinamik index seçilecek)..."
-            install_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
+            sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
 
             if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
                 ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."

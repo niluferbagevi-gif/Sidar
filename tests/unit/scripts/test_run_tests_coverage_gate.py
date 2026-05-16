@@ -218,6 +218,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "phases/06_services.sh",
         "phases/07_finish.sh",
         "utils/gpu_utils.sh",
+        "utils/python_env.sh",
         "utils/db_credentials.sh",
         "utils/env_utils.sh",
         "utils/ollama_models.sh",
@@ -260,6 +261,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
+    python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
     env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
     ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(encoding="utf-8")
@@ -267,11 +269,16 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 
     assert "sidar_source_install_utils()" in helper
     assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
-    assert 'sidar_source_install_utils "db_credentials.sh" "env_utils.sh"' in workspace_phase
+    assert 'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"' in workspace_phase
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
 
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
+    assert "create_uv_venv()" in python_env_utils
+    assert "install_python_deps()" in python_env_utils
+    assert "uv sync" in python_env_utils
+    assert "uv pip" not in python_env_utils
+    assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
     assert "sync_postgres_env_with_database_url()" in db_utils
     assert "ensure_database_url_defaults()" in db_utils
@@ -325,6 +332,7 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
     sync_deps_start = script.index("run_sync_deps_phase()")
     sync_deps_body = script[sync_deps_start : script.index("run_provision_models_phase()", sync_deps_start)]
 
@@ -333,7 +341,9 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     assert "install_uv_cli()" in script
     assert "create_uv_venv()" in script
     assert script.index("install_uv_cli()") < script.index("create_uv_venv()")
-    assert runtime_phase.index("install_uv_cli") < runtime_phase.index("create_uv_venv")
+    assert "install_uv_cli" not in runtime_phase
+    assert workspace_phase.index("install_uv_cli") < workspace_phase.index("create_uv_venv")
+    assert workspace_phase.index("create_uv_venv") < workspace_phase.index("install_python_deps")
     assert sync_deps_body.index("install_uv_cli") < sync_deps_body.index("create_uv_venv")
 
 
@@ -387,7 +397,7 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")
-    selector_body = script[selector_start : script.index("install_pytorch_cuda_wheels()", selector_start)]
+    selector_body = script[selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)]
     verify_body = script[script.index("verify_torch_cuda()") : script.index("# ── 14.", script.index("verify_torch_cuda()"))]
 
     assert "PyTorch cu124 fallback" not in script
@@ -399,5 +409,10 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "cu126" in selector_body
     assert "cu124" in selector_body
     assert "PYTORCH_CUDA_INDEX_URL" in script
-    assert "install_pytorch_cuda_wheels \"$(select_pytorch_cuda_wheel_tag)\"" in verify_body
-    assert "uv pip install torch torchvision torchaudio --reinstall\n" not in script
+    assert 'sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"' in verify_body
+    assert "--reinstall-package torch" in script
+    assert "uv pip" not in script
+    assert "uv tool install" not in script
+    assert "python -m venv" not in script
+    assert "python3 -m venv" not in script
+    assert "virtualenv" not in script
