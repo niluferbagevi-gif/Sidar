@@ -3521,6 +3521,58 @@ report_env_api_key_status() {
     done
 }
 
+report_env_file_injection_status() {
+    local env_file="$1"
+    local sidar_env=""
+    local explicit_dotenv=""
+    local sidar_keys_file=""
+    local advanced_file="$SCRIPT_DIR/.env.advanced"
+
+    sidar_env=$(get_env_value "$env_file" SIDAR_ENV)
+    [[ -n "$sidar_env" ]] || sidar_env="${SIDAR_ENV:-development}"
+
+    explicit_dotenv="${DOTENV_FILE:-$(get_env_value "$env_file" DOTENV_FILE)}"
+    sidar_keys_file="${SIDAR_KEYS_FILE:-$(get_env_value "$env_file" SIDAR_KEYS_FILE)}"
+    [[ -n "$sidar_keys_file" ]] || sidar_keys_file="$HOME/.sidar_keys.env"
+
+    info "Runtime env yükleme sırası doğrulanıyor (.env → .env.<SIDAR_ENV> → DOTENV_FILE → SIDAR_KEYS_FILE)."
+
+    if [[ -f "$env_file" ]]; then
+        ok "Env yükleme adımı hazır: .env bulundu ($env_file)."
+    else
+        warn "Env yükleme uyarısı: .env bulunamadı ($env_file). uv run öncesi cp .env.example .env çalıştırın."
+    fi
+
+    if [[ -n "$sidar_env" && -f "$SCRIPT_DIR/.env.${sidar_env}" ]]; then
+        ok "Env yükleme adımı hazır: .env.${sidar_env} bulundu."
+    elif [[ -n "$sidar_env" && "$sidar_env" != "development" && "$sidar_env" != "dev" && "$sidar_env" != "local" ]]; then
+        warn "Env yükleme uyarısı: SIDAR_ENV=${sidar_env} için .env.${sidar_env} bulunamadı; temel .env kullanılacak."
+    fi
+
+    if [[ -n "$explicit_dotenv" ]]; then
+        local explicit_path="$explicit_dotenv"
+        [[ "$explicit_path" == /* ]] || explicit_path="$SCRIPT_DIR/$explicit_path"
+        if [[ -f "$explicit_path" ]]; then
+            ok "Env yükleme adımı hazır: DOTENV_FILE=$explicit_dotenv bulundu."
+        else
+            warn "Env yükleme uyarısı: DOTENV_FILE=$explicit_dotenv bulunamadı. uv run öncesi yolu düzeltin."
+        fi
+    elif [[ -f "$advanced_file" ]]; then
+        info ".env.advanced otomatik yüklenmez; gerekiyorsa DOTENV_FILE=.env.advanced uv run ... kullanın."
+    fi
+
+    if [[ -n "$sidar_keys_file" ]]; then
+        local keys_path="$sidar_keys_file"
+        [[ "$keys_path" == ~* ]] && keys_path="${keys_path/#\~/$HOME}"
+        [[ "$keys_path" == /* ]] || keys_path="$SCRIPT_DIR/$keys_path"
+        if [[ -f "$keys_path" ]]; then
+            ok "Env yükleme adımı hazır: SIDAR_KEYS_FILE=$sidar_keys_file bulundu."
+        else
+            warn "Env yükleme uyarısı: SIDAR_KEYS_FILE=$sidar_keys_file bulunamadı. Manuel API anahtarları eksikse ~/.sidar_keys.env oluşturun."
+        fi
+    fi
+}
+
 ensure_env_file_secrets_after_uv_sync() {
     local env_file="$SCRIPT_DIR/.env"
     local example_file="$SCRIPT_DIR/.env.example"
@@ -3877,6 +3929,7 @@ setup_env_file() {
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
+        report_env_file_injection_status "$ENV_FILE"
         return
     fi
 
@@ -3945,6 +3998,7 @@ setup_env_file() {
 
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"
+    report_env_file_injection_status "$ENV_FILE"
 }
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────

@@ -123,3 +123,13 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_reports_runtime_env_file_injection_order() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "report_env_file_injection_status" in script
+    assert ".env → .env.<SIDAR_ENV> → DOTENV_FILE → SIDAR_KEYS_FILE" in script
+    assert ".env.advanced otomatik yüklenmez" in script
+    assert "DOTENV_FILE=.env.advanced uv run" in script
+    assert "SIDAR_KEYS_FILE=$sidar_keys_file bulunamadı" in script

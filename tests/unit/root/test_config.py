@@ -289,6 +289,57 @@ def test_sidar_keys_file_supports_user_home_and_overrides(monkeypatch, tmp_path)
     assert reloaded.Config.JWT_SECRET_KEY == "jwt-from-keys-file"
 
 
+def test_dotenv_file_loads_before_sidar_keys_and_keys_win(monkeypatch, tmp_path):
+    explicit_file = tmp_path / "explicit.env"
+    keys_file = tmp_path / "sidar_keys.env"
+    explicit_file.write_text(
+        "OPENAI_API_KEY=from-explicit\nJWT_SECRET_KEY=jwt-from-explicit\n",
+        encoding="utf-8",
+    )
+    keys_file.write_text(
+        "OPENAI_API_KEY=from-keys\nJWT_SECRET_KEY=jwt-from-keys\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("DOTENV_FILE", str(explicit_file))
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_file))
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.OPENAI_API_KEY == "from-keys"
+    assert reloaded.Config.JWT_SECRET_KEY == "jwt-from-keys"
+    loaded_labels = [
+        event["label"] for event in reloaded._DOTENV_LOAD_EVENTS if event["status"] == "loaded"
+    ]
+    assert loaded_labels.index("DOTENV_FILE override") < loaded_labels.index(
+        "SIDAR_KEYS_FILE secrets"
+    )
+
+
+def test_required_dotenv_file_misses_are_recorded(monkeypatch, tmp_path):
+    missing_explicit = tmp_path / "missing-explicit.env"
+    missing_keys = tmp_path / "missing-keys.env"
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("DOTENV_FILE", str(missing_explicit))
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(missing_keys))
+
+    reloaded = importlib.reload(config)
+
+    missing_required = {
+        event["label"]: event
+        for event in reloaded._DOTENV_LOAD_EVENTS
+        if event["status"] == "missing" and event["required"]
+    }
+    assert missing_required["DOTENV_FILE override"]["resolved_path"] == missing_explicit
+    assert missing_required["SIDAR_KEYS_FILE secrets"]["resolved_path"] == missing_keys
+
+
 def test_resolve_dotenv_path_expands_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
 

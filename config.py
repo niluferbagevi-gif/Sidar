@@ -33,6 +33,9 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 BASE_DIR = Path(__file__).resolve().parent
 
 
+_DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
+
+
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
     dotenv_path = Path(raw_path).expanduser()
@@ -41,14 +44,66 @@ def _resolve_dotenv_path(raw_path: str) -> Path:
     return dotenv_path
 
 
-def _load_dotenv_if_exists(raw_path: str, *, override: bool) -> Path | None:
+def _record_dotenv_load_event(
+    *,
+    label: str,
+    raw_path: str,
+    resolved_path: Path | None,
+    status: str,
+    override: bool,
+    required: bool,
+) -> None:
+    """Record dotenv load diagnostics for later logging after logging is configured."""
+    _DOTENV_LOAD_EVENTS.append(
+        {
+            "label": label,
+            "raw_path": raw_path,
+            "resolved_path": resolved_path,
+            "status": status,
+            "override": override,
+            "required": required,
+        }
+    )
+
+
+def _load_dotenv_if_exists(
+    raw_path: str,
+    *,
+    override: bool,
+    label: str = "dotenv",
+    required: bool = False,
+) -> Path | None:
     """Load a dotenv file when it exists and return the resolved path."""
     if not raw_path.strip():
+        _record_dotenv_load_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=None,
+            status="skipped-empty",
+            override=override,
+            required=required,
+        )
         return None
     dotenv_path = _resolve_dotenv_path(raw_path.strip())
     if dotenv_path.exists():
         load_dotenv(dotenv_path=dotenv_path, override=override)
+        _record_dotenv_load_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=dotenv_path,
+            status="loaded",
+            override=override,
+            required=required,
+        )
         return dotenv_path
+    _record_dotenv_load_event(
+        label=label,
+        raw_path=raw_path,
+        resolved_path=dotenv_path,
+        status="missing",
+        override=override,
+        required=required,
+    )
     return None
 
 
@@ -57,14 +112,17 @@ sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
 # 2. Önce her zaman temel .env dosyasını yükle (varsa)
 base_env_path = BASE_DIR / ".env"
-if base_env_path.exists():
-    load_dotenv(dotenv_path=base_env_path)
+_loaded_base_env = _load_dotenv_if_exists(
+    str(base_env_path), override=False, label="base .env"
+)
 
 # 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
     if specific_env_path.exists():
-        load_dotenv(dotenv_path=specific_env_path, override=True)
+        _load_dotenv_if_exists(
+            str(specific_env_path), override=True, label=f"environment .env.{sidar_env}"
+        )
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}
@@ -74,19 +132,30 @@ if sidar_env:
             print(
                 f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak."
             )
-elif not base_env_path.exists():
+elif _loaded_base_env is None:
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
 # 4. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
 #    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
 #    (örn: test ortamında DOTENV_FILE=.env.test veya DOTENV_FILE=~/.sidar_keys.env)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-_load_dotenv_if_exists(_explicit_dotenv, override=True)
+_load_dotenv_if_exists(
+    _explicit_dotenv,
+    override=True,
+    label="DOTENV_FILE override",
+    required=bool(_explicit_dotenv),
+)
 
 # 5. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
 #    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
-_sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-_load_dotenv_if_exists(_sidar_keys_file, override=True)
+_sidar_keys_file_raw = os.getenv("SIDAR_KEYS_FILE")
+_sidar_keys_file = (_sidar_keys_file_raw or "~/.sidar_keys.env").strip()
+_load_dotenv_if_exists(
+    _sidar_keys_file,
+    override=True,
+    label="SIDAR_KEYS_FILE secrets",
+    required=bool(_sidar_keys_file_raw),
+)
 
 ENV_PATH = base_env_path
 
@@ -401,8 +470,41 @@ logger = logging.getLogger("Sidar.Config")
 
 _DEPENDENCY_AUTO = object()
 
-if ENV_PATH.exists():
-    logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
+
+def _emit_dotenv_load_diagnostics() -> None:
+    """Log the effective multi-dotenv load chain for uv/runtime diagnostics."""
+    for event in _DOTENV_LOAD_EVENTS:
+        label = str(event.get("label") or "dotenv")
+        status = str(event.get("status") or "unknown")
+        path = event.get("resolved_path") or event.get("raw_path") or "-"
+        override = bool(event.get("override"))
+        required = bool(event.get("required"))
+        if status == "loaded":
+            logger.info(
+                "✅ Env yüklendi [%s]: %s (override=%s)",
+                label,
+                path,
+                str(override).lower(),
+            )
+        elif status == "missing" and required:
+            logger.warning(
+                "⚠️ Env dosyası bulunamadı [%s]: %s. "
+                "uv run öncesi DOTENV_FILE/SIDAR_KEYS_FILE değerini veya dosya yolunu "
+                "kontrol edin.",
+                label,
+                path,
+            )
+
+    advanced_path = BASE_DIR / ".env.advanced"
+    if advanced_path.exists() and not os.getenv("DOTENV_FILE", "").strip():
+        logger.info(
+            "ℹ️ .env.advanced otomatik yüklenmez; bu ayarları runtime'a almak için "
+            "DOTENV_FILE=.env.advanced uv run ... kullanın veya gerekli anahtarları "
+            "özel override dosyanıza taşıyın."
+        )
+
+
+_emit_dotenv_load_diagnostics()
 
 # ═══════════════════════════════════════════════════════════════
 # SANDBOX KAYNAK KOTALARI (Docker/cgroups)
@@ -1041,6 +1143,10 @@ class Config:
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
         if not str(self.JWT_SECRET_KEY or "").strip() and not self._is_test_env():
+            logger.error(
+                "❌ JWT_SECRET_KEY boş. Uygulama durmadan önce .env yükleme sırasını "
+                "kontrol edin: .env → .env.<SIDAR_ENV> → DOTENV_FILE → SIDAR_KEYS_FILE."
+            )
             raise ValueError("JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
 
     @classmethod
