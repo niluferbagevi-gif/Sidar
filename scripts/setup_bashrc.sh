@@ -1,7 +1,6 @@
 #!/bin/bash
 # Sidar projesinin .bashrc alias ve otomasyon bloğunu kullanıcının shell config dosyasına ekler.
 
-SIDAR_DIR="/home/niluf/Sidar"
 BASHRC="$HOME/.bashrc"
 
 BLOCK=$(cat <<'EOF'

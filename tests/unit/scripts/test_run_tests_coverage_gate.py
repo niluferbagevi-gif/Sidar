@@ -199,7 +199,9 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
 
     assert "lint: lint-shell" in makefile
     assert "install_sidar.sh" in makefile
-    assert "scripts/install_modules/utils/*.sh" in makefile
+    assert "scripts/**/*.sh" in makefile
+    assert "autonomous_loop.sh" in makefile
+    assert "run_tests.sh" in makefile
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
     assert "sudo apt-get install -y bats" in ci_workflow
@@ -207,6 +209,24 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index("make lint")
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
+
+
+def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
+    config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"pre-commit>=4.0.0,<5.0.0"' in pyproject
+    assert "id: ruff-check" in config
+    assert "entry: uv run ruff check --force-exclude" in config
+    assert "id: ruff-format-check" in config
+    assert "entry: uv run ruff format --check --force-exclude" in config
+    assert "id: mypy" in config
+    assert "entry: uv run mypy ." in config
+    assert "pass_filenames: false" in config
+    assert "id: shellcheck" in config
+    assert "entry: uv run shellcheck --severity=warning -x" in config
+    assert "autonomous_loop" in config
+    assert "scripts/.*\\.(sh|bash)" in config
 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:

@@ -113,10 +113,13 @@ for path in "${ENV_TEMPLATES[@]}"; do
   fi
 done
 
+SIDAR_ENV_PARITY_SCAN_PATHS="$(printf '%s\n' "${SCAN_PATHS[@]}")"
+SIDAR_ENV_PARITY_TEMPLATES="$(printf '%s\n' "${ENV_TEMPLATES[@]}")"
+SIDAR_ENV_PARITY_IGNORE="$(printf '%s\n' "${IGNORE_KEYS[@]}" | sed '/^$/d' | sort -u)"
 export SIDAR_ENV_PARITY_PROJECT_ROOT="$PROJECT_ROOT"
-export SIDAR_ENV_PARITY_SCAN_PATHS="$(printf '%s\n' "${SCAN_PATHS[@]}")"
-export SIDAR_ENV_PARITY_TEMPLATES="$(printf '%s\n' "${ENV_TEMPLATES[@]}")"
-export SIDAR_ENV_PARITY_IGNORE="$(printf '%s\n' "${IGNORE_KEYS[@]}" | sed '/^$/d' | sort -u)"
+export SIDAR_ENV_PARITY_SCAN_PATHS
+export SIDAR_ENV_PARITY_TEMPLATES
+export SIDAR_ENV_PARITY_IGNORE
 
 python3 <<'PY_ENV_PARITY'
 from __future__ import annotations

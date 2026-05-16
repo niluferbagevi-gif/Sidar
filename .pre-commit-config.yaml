@@ -1,0 +1,30 @@
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+
+      - id: ruff-format-check
+        name: ruff format check
+        entry: uv run ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+
+      - id: mypy
+        name: mypy strict type check
+        entry: uv run mypy .
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+
+      - id: shellcheck
+        name: shellcheck shell scripts
+        entry: uv run shellcheck --severity=warning -x
+        language: system
+        files: ^(install_sidar\.sh|autonomous_loop\.sh|run_tests\.sh|scripts/.*\.(sh|bash)|tests/shell/.*\.bats)$
