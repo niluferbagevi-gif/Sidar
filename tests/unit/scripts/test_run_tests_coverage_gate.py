@@ -123,3 +123,17 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_uses_central_weak_secret_hash_registry() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    weak_hashes = Path("scripts/known_weak_secret_hashes.txt").read_text(encoding="utf-8")
+
+    assert "is_example_secret_value" in script
+    assert "is_known_weak_secret_hash" in script
+    assert "scripts/known_weak_secret_hashes.txt" in script
+    assert "historical API_KEY sample" in weak_hashes
+    assert "historical JWT_SECRET_KEY sample" in weak_hashes
+    assert "historical METRICS_TOKEN sample" in weak_hashes
+    assert 'API_KEY" "change-me-api-key"' in script
+    assert "historical API_KEY sample" not in script

@@ -3605,6 +3605,8 @@ ensure_auto_secrets() {
         val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
               | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
         is_weak_secret_value "$val" && return 0
+        is_example_secret_value "$key" "$val" && return 0
+        is_known_weak_secret_hash "$val" && return 0
         local bad
         for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
         return 1
@@ -3664,8 +3666,7 @@ PY
     fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
-        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
+    if _is_missing_or_insecure "API_KEY" "change-me-api-key"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "API_KEY" "$_v"
@@ -3676,8 +3677,7 @@ PY
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
-        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
+    if _is_missing_or_insecure "JWT_SECRET_KEY" "change-me-jwt-secret-32-plus-chars"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
             _write_secret "JWT_SECRET_KEY" "$_v"
@@ -3688,8 +3688,7 @@ PY
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
-        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
+    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY"; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
             _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
@@ -3713,12 +3712,9 @@ PY
         fi
     }
 
-    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64 \
-        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
-    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64 \
-        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
-    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
-        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40
 
     # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
     if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
@@ -3733,8 +3729,7 @@ PY
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
     # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
-        "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
+    if _is_missing_or_insecure "METRICS_TOKEN"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "METRICS_TOKEN" "$_v"
@@ -3842,6 +3837,51 @@ prompt_post_install_sidar_env_mode() {
 get_env_value() {
     local env_file="$1" key="$2"
     grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
+}
+
+secret_value_sha256() {
+    local value="${1:-}"
+    if command -v python3 &>/dev/null; then
+        SECRET_VALUE="$value" python3 - <<'PYHASH' 2>/dev/null || true
+import hashlib
+import os
+
+print(hashlib.sha256(os.environ.get("SECRET_VALUE", "").encode()).hexdigest())
+PYHASH
+    elif command -v sha256sum &>/dev/null; then
+        printf '%s' "$value" | sha256sum | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        printf '%s' "$value" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+is_known_weak_secret_hash() {
+    local value="${1:-}" hash weak_hashes_file line known_hash
+    [[ -n "${value//[[:space:]]/}" ]] || return 0
+    weak_hashes_file="${SIDAR_KNOWN_WEAK_SECRET_HASHES_FILE:-$SCRIPT_DIR/scripts/known_weak_secret_hashes.txt}"
+    [[ -f "$weak_hashes_file" ]] || return 1
+
+    hash="$(secret_value_sha256 "$value")"
+    [[ -n "$hash" ]] || return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"
+        read -r known_hash _ <<<"$line"
+        [[ -n "${known_hash:-}" ]] || continue
+        [[ "$hash" == "$known_hash" ]] && return 0
+    done < "$weak_hashes_file"
+    return 1
+}
+
+is_example_secret_value() {
+    local key="$1" value="${2:-}" example_file example_value
+    [[ -n "${value//[[:space:]]/}" ]] || return 0
+    example_file="${SIDAR_ENV_EXAMPLE_FILE:-$SCRIPT_DIR/.env.example}"
+    [[ -f "$example_file" ]] || return 1
+
+    example_value="$(get_env_value "$example_file" "$key")"
+    [[ -n "${example_value//[[:space:]]/}" ]] || return 1
+    [[ "$value" == "$example_value" ]]
 }
 
 is_weak_secret_value() {
