@@ -243,7 +243,7 @@ def test_install_sidar_pins_remote_installer_checksums() -> None:
     assert 'script_url="$pinned_url"' in script
     assert 'expected_sha="$pinned_sha"' in script
 
-def test_install_sidar_supports_target_dir_override() -> None:
+def test_install_sidar_supports_target_dir_and_repo_url_overrides() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert 'TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"' in script
@@ -252,6 +252,8 @@ def test_install_sidar_supports_target_dir_override() -> None:
     assert '*) TARGET_DIR="$(pwd)/$TARGET_DIR"' in script
     assert 'TARGET_DIR="${TARGET_DIR%/}"' in script
     assert "SIDAR_TARGET_DIR=/tmp/Sidar" in script
+    assert 'REPO_URL="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}"' in script
+    assert 'git clone "$REPO_URL" "$TARGET_DIR"' in script
 
 def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

@@ -1985,7 +1985,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     fi
 fi
 DEFAULT_DATABASE_URL=""
-REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
+REPO_URL="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}"
 TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"
 if [[ -z "${TARGET_DIR//[[:space:]]/}" ]]; then
     fail "SIDAR_TARGET_DIR boş olamaz. Örnek: SIDAR_TARGET_DIR=/tmp/Sidar ./install_sidar.sh"
