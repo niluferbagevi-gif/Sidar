@@ -9,11 +9,12 @@ import logging
 import os
 import sys
 import warnings
+from copy import deepcopy
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,35 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
+_DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
+
+
+def _record_dotenv_event(
+    *,
+    label: str,
+    raw_path: str,
+    resolved_path: Path | None,
+    loaded: bool,
+    override: bool,
+    reason: str = "",
+) -> None:
+    """Record dotenv load attempts so runtime checks can explain env precedence."""
+    _DOTENV_LOAD_EVENTS.append(
+        {
+            "label": label,
+            "raw_path": raw_path,
+            "path": str(resolved_path) if resolved_path is not None else "",
+            "loaded": loaded,
+            "override": override,
+            "reason": reason,
+        }
+    )
+
+
+def get_dotenv_load_report() -> list[dict[str, Any]]:
+    """Return the ordered dotenv load attempts used by this runtime."""
+    return deepcopy(_DOTENV_LOAD_EVENTS)
+
 
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
@@ -41,14 +71,45 @@ def _resolve_dotenv_path(raw_path: str) -> Path:
     return dotenv_path
 
 
-def _load_dotenv_if_exists(raw_path: str, *, override: bool) -> Path | None:
+def _load_dotenv_if_exists(
+    raw_path: str,
+    *,
+    override: bool,
+    label: str,
+    record_missing: bool = True,
+) -> Path | None:
     """Load a dotenv file when it exists and return the resolved path."""
-    if not raw_path.strip():
+    cleaned_path = raw_path.strip()
+    if not cleaned_path:
+        _record_dotenv_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=None,
+            loaded=False,
+            override=override,
+            reason="empty_path",
+        )
         return None
-    dotenv_path = _resolve_dotenv_path(raw_path.strip())
+    dotenv_path = _resolve_dotenv_path(cleaned_path)
     if dotenv_path.exists():
         load_dotenv(dotenv_path=dotenv_path, override=override)
+        _record_dotenv_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=dotenv_path,
+            loaded=True,
+            override=override,
+        )
         return dotenv_path
+    if record_missing:
+        _record_dotenv_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=dotenv_path,
+            loaded=False,
+            override=override,
+            reason="missing",
+        )
     return None
 
 
@@ -57,19 +118,28 @@ sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
 # 2. Önce her zaman temel .env dosyasını yükle (varsa)
 base_env_path = BASE_DIR / ".env"
-if base_env_path.exists():
-    load_dotenv(dotenv_path=base_env_path)
+_load_dotenv_if_exists(str(base_env_path), override=False, label="base")
 
-# 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
+# 3. İleri seviye yerel ayarlar yüklenir; mevcut proses/.env değerlerini ezmez.
+#    Bu dosya üretim secret deposu değildir; kullanıcıya özel secret dosyası en sonda yüklenir.
+advanced_env_path = BASE_DIR / ".env.advanced"
+_load_dotenv_if_exists(str(advanced_env_path), override=False, label="advanced")
+# .env veya .env.advanced SIDAR_ENV değerini değiştirdiyse ortam dosyası seçimini güncelle.
+sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+
+# 4. Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
-    if specific_env_path.exists():
-        load_dotenv(dotenv_path=specific_env_path, override=True)
+    if _load_dotenv_if_exists(
+        str(specific_env_path), override=True, label=f"environment:{sidar_env}"
+    ):
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}
         if sidar_env in optional_env_aliases and base_env_path.exists():
-            print(f"ℹ️  .env.{sidar_env} bulunamadı; temel .env ayarları kullanılacak.")
+            print(
+                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env/.env.advanced ayarları kullanılacak."
+            )
         else:
             print(
                 f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak."
@@ -77,16 +147,16 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 4. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
+# 5. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
 #    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
 #    (örn: test ortamında DOTENV_FILE=.env.test veya DOTENV_FILE=~/.sidar_keys.env)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-_load_dotenv_if_exists(_explicit_dotenv, override=True)
+_load_dotenv_if_exists(_explicit_dotenv, override=True, label="explicit:DOTENV_FILE")
 
-# 5. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
+# 6. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
 #    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
 _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-_load_dotenv_if_exists(_sidar_keys_file, override=True)
+_load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
 
 ENV_PATH = base_env_path
 
@@ -130,6 +200,43 @@ class LLMClientSettings(BaseSettings):
 
 
 LLM_SETTINGS = LLMClientSettings()
+
+SUPPORTED_AI_PROVIDERS: frozenset[str] = frozenset(
+    {"ollama", "gemini", "openai", "anthropic", "litellm"}
+)
+_PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
+    "gemini": ("GEMINI_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "litellm": ("LITELLM_GATEWAY_URL",),
+}
+
+
+def normalize_ai_provider(provider: str | None) -> str:
+    """Normalize configured AI provider names for consistent validation and routing."""
+    return (provider or "ollama").strip().lower() or "ollama"
+
+
+def is_nonempty_secret(value: str | None) -> bool:
+    """Return whether a secret-like config value is present and not obviously malformed."""
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return not any(char in stripped for char in ("\n", "\r", "\x00"))
+
+
+def is_valid_http_url(value: str | None) -> bool:
+    """Validate required HTTP(S) endpoint settings without leaking the raw value."""
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    parsed = urlparse(stripped)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
 
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
@@ -981,6 +1088,13 @@ class Config:
     ENABLE_RAG_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_ENTITY_EXTRACTION", True)
     RAG_ENTITY_MAX_PER_DOC: int = get_int_env("RAG_ENTITY_MAX_PER_DOC", 24)
 
+    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
+    META_GRAPH_API_TOKEN: str = os.getenv("META_GRAPH_API_TOKEN", "")
+    META_GRAPH_API_VERSION: str = os.getenv("META_GRAPH_API_VERSION", "v20.0")
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID", "")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
@@ -1002,12 +1116,72 @@ class Config:
     #  METOTLAR
     # ─────────────────────────────────────────────────────────
 
+    @classmethod
+    def get_missing_critical_runtime_keys(cls) -> list[str]:
+        """Return critical keys that remain unresolved after the dotenv load chain."""
+        missing: list[str] = []
+        if not str(cls.JWT_SECRET_KEY or "").strip() and not cls._is_test_env():
+            missing.append("JWT_SECRET_KEY")
+
+        provider = normalize_ai_provider(cls.AI_PROVIDER)
+        for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):
+            raw_value = getattr(cls, setting_name, "")
+            if setting_name.endswith("_GATEWAY_URL"):
+                if not is_valid_http_url(raw_value):
+                    missing.append(setting_name)
+            elif not is_nonempty_secret(raw_value):
+                missing.append(setting_name)
+
+        if (
+            os.getenv("SIDAR_ENV", "").strip().lower() == "production"
+            and not str(cls.MEMORY_ENCRYPTION_KEY or "").strip()
+        ):
+            missing.append("MEMORY_ENCRYPTION_KEY")
+
+        return missing
+
+    @classmethod
+    def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
+        """Log the effective dotenv load chain and actionable missing-key guidance."""
+        loaded = [event for event in _DOTENV_LOAD_EVENTS if event.get("loaded")]
+        missing_files = [
+            event
+            for event in _DOTENV_LOAD_EVENTS
+            if not event.get("loaded") and event.get("reason") == "missing"
+        ]
+        if loaded:
+            logger.info(
+                "Runtime env yükleme zinciri: %s",
+                " -> ".join(f"{event['label']}={event['path']}" for event in loaded),
+            )
+        else:
+            logger.warning(
+                "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri kullanılacak."
+            )
+
+        if missing_files:
+            logger.info(
+                "Opsiyonel dotenv dosyaları bulunamadı: %s",
+                ", ".join(f"{event['label']}={event['path']}" for event in missing_files),
+            )
+
+        if missing_keys:
+            logger.warning(
+                "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, .env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri korunur; SIDAR_KEYS_FILE en son yüklenir. "
+                "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan ~/.sidar_keys.env) içine ekleyin.",
+                ", ".join(missing_keys),
+            )
+
     def __init__(self) -> None:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
-        if not str(self.JWT_SECRET_KEY or "").strip() and not self._is_test_env():
-            raise ValueError("JWT_SECRET_KEY boş bırakılamaz. .env dosyasını kontrol edin.")
+        missing_keys = self.__class__.get_missing_critical_runtime_keys()
+        if "JWT_SECRET_KEY" in missing_keys:
+            self.__class__._log_dotenv_load_status(missing_keys=missing_keys)
+            raise ValueError(
+                "JWT_SECRET_KEY boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme sırasını kontrol edin."
+            )
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
@@ -1109,7 +1283,7 @@ class Config:
             "anthropic": "anthropic",
             "litellm": "litellm",
         }
-        m_lower = mode.lower()
+        m_lower = normalize_ai_provider(mode)
         if m_lower in mode_map:
             cls.AI_PROVIDER = mode_map[m_lower]
             logger.info("✅ AI Sağlayıcı güncellendi: %s", cls.AI_PROVIDER.upper())
@@ -1121,12 +1295,49 @@ class Config:
             )
 
     @classmethod
+    def _validate_ai_provider_settings(cls) -> bool:
+        """Validate centralized provider and credential settings from config.py."""
+        provider = normalize_ai_provider(cls.AI_PROVIDER)
+        cls.AI_PROVIDER = provider
+
+        if provider not in SUPPORTED_AI_PROVIDERS:
+            logger.error(
+                "❌ Geçersiz AI_PROVIDER=%s. Geçerli sağlayıcılar: %s",
+                provider,
+                ", ".join(sorted(SUPPORTED_AI_PROVIDERS)),
+            )
+            return False
+
+        is_valid = True
+        for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):  # ollama has no API key
+            raw_value = getattr(cls, setting_name, "")
+            if setting_name.endswith("_GATEWAY_URL"):
+                setting_valid = is_valid_http_url(raw_value)
+                message = (
+                    f"❌ {provider} modu seçili ama {setting_name} geçerli bir http(s) URL değil!\n"
+                    "   .env dosyasını kontrol edin."
+                )
+            else:
+                setting_valid = is_nonempty_secret(raw_value)
+                message = (
+                    f"❌ {provider} modu seçili ama {setting_name} ayarlanmamış veya hatalı!\n"
+                    "   .env dosyasını kontrol edin."
+                )
+
+            if not setting_valid:
+                logger.error(message)
+                is_valid = False
+
+        return is_valid
+
+    @classmethod
     def validate_critical_settings(cls) -> bool:
         """Kritik yapılandırmaları doğrular; uyarıları loglar."""
         is_valid = True
         cls._ensure_hardware_info_loaded()
         cls._apply_gpu_memory_safety_check()
         cls.initialize_directories()
+        cls._log_dotenv_load_status(missing_keys=cls.get_missing_critical_runtime_keys())
 
         if cls.REQUIRE_GPU and not cls.USE_GPU:
             logger.error(
@@ -1148,12 +1359,7 @@ class Config:
             )
             is_valid = False
 
-        if cls.AI_PROVIDER == "gemini" and not cls.GEMINI_API_KEY:
-            logger.error(
-                "❌ Gemini modu seçili ama GEMINI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
+        is_valid = cls._validate_ai_provider_settings() and is_valid
 
         memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
 
@@ -1193,27 +1399,6 @@ class Config:
                     "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
                 )
                 raise SystemExit(1)
-
-        if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
-            logger.error(
-                "❌ OpenAI modu seçili ama OPENAI_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
-
-        if cls.AI_PROVIDER == "anthropic" and not cls.ANTHROPIC_API_KEY:
-            logger.error(
-                "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
-
-        if cls.AI_PROVIDER == "litellm" and not cls.LITELLM_GATEWAY_URL:
-            logger.error(
-                "❌ LiteLLM modu seçili ama LITELLM_GATEWAY_URL ayarlanmamış!\n"
-                "   .env dosyasını kontrol edin."
-            )
-            is_valid = False
 
         if cls.AI_PROVIDER == "ollama":
             try:
