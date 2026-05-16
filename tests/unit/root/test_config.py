@@ -1562,3 +1562,5 @@ def test_sidar_keys_example_documents_manual_and_autonomous_sections() -> None:
     assert "MANUEL doldurulan AI sağlayıcıları" in content
     assert "MANUEL doldurulan Meta / Poyraz sosyal yayın anahtarları" in content
     assert "Boş `KEY=` satırlarını aktif bırakmayın" in content
+    assert "Gerçek tokenları issue/PR/chat ekranlarına yapıştırmayın" in content
+    assert "config preflight en az LITELLM_GATEWAY_URL bekler" in content
