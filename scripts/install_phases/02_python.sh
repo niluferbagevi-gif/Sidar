@@ -7,8 +7,8 @@ run_sync_deps_phase() {
     ensure_prerequisites
     select_runtime_mode
     detect_gpu
-    setup_uv
-    setup_python_env
+    install_uv_cli
+    create_uv_venv
     install_python_deps
     install_pyright_lsp_tool
     verify_torch_cuda

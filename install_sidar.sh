@@ -2543,7 +2543,7 @@ ensure_prerequisites() {
 
     # Sistem Python sürümü artık doğrulanmaz: uv, gerekli Python sürümünü izole
     # ortam için kendisi çözer/indirir ve proje sürümünü .python-version veya
-    # pyproject.toml üzerinden setup_python_env içinde uygular.
+    # pyproject.toml üzerinden create_uv_venv içinde uygular.
 
     if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
@@ -2646,8 +2646,8 @@ ensure_prerequisites() {
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
 # detect_gpu scripts/install_modules altında modülerleştirildi.
 # setup_nvidia_docker scripts/install_modules altında modülerleştirildi.
-# setup_python_env scripts/install_modules altında modülerleştirildi.
-# setup_uv scripts/install_modules altında modülerleştirildi.
+# install_uv_cli scripts/install_modules altında modülerleştirildi.
+# create_uv_venv scripts/install_modules altında modülerleştirildi.
 # install_python_deps scripts/install_modules altında modülerleştirildi.
 # install_pyright_lsp_tool scripts/install_modules altında modülerleştirildi.
 should_install_playwright_browsers() {

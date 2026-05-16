@@ -351,7 +351,12 @@ def test_install_sidar_sources_modular_install_components() -> None:
     assert 'source "${INSTALL_PHASE_DIR}/${phase_name}"' in script
     assert "REMOTE_PHASE_BASE" in script
     assert "detect_gpu()" in Path("scripts/install_modules/gpu_utils.sh").read_text(encoding="utf-8")
-    assert "setup_python_env()" in Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    env_utils = Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    assert "install_uv_cli()" in env_utils
+    assert "create_uv_venv()" in env_utils
+    assert env_utils.index("install_uv_cli()") < env_utils.index("create_uv_venv()")
+    assert "setup_uv()" not in env_utils
+    assert "setup_python_env()" not in env_utils
     assert "harden_database_credentials()" in Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
     assert "download_ollama_models()" in Path("scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8")
     assert "run_prepare_system_phase()" in Path("scripts/install_phases/01_system.sh").read_text(encoding="utf-8")
