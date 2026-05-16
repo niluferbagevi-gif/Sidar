@@ -114,6 +114,7 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 coverage.xml
+coverage.json
 .hypothesis/
 .tox/
 .nox/
