@@ -14,6 +14,7 @@ def _run_autonomous_loop_config(
     extra_env: dict[str, str] | None = None,
 ) -> str:
     env = os.environ.copy()
+    env.pop("AUTONOMOUS_LOOP_COVERAGE_TARGET", None)
     env.update(
         {
             "AUTONOMOUS_LOOP_COVERAGE_PROFILE": profile,
@@ -157,3 +158,10 @@ def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
 
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED true/false olmalı" in output
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED=false" in output
+
+
+def test_autonomous_loop_print_config_runs_config_preflight() -> None:
+    output = _run_autonomous_loop_config(profile="short")
+
+    assert "[PREFLIGHT 0/3] Config: uv run python ile dotenv zinciri" in output
+    assert "[CONFIG][OK] Config importu ve kritik runtime anahtar kontrolü başarılı." in output

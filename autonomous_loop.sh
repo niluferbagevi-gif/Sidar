@@ -9,6 +9,17 @@ if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB
   export UV_LINK_MODE=copy
 fi
 
+is_truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|y|Y|evet|EVET|Evet|e|E)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 ITERATIONS="${AUTONOMOUS_LOOP_ITERATIONS:-15}"
 AUTO_REMEDIATION_MAX_RETRIES="${AUTONOMOUS_LOOP_REMEDIATION_RETRIES:-2}"
 AUTONOMOUS_COVERAGE_PROFILE="${AUTONOMOUS_LOOP_COVERAGE_PROFILE:-short}"
@@ -157,6 +168,32 @@ if [ -z "${AUTONOMOUS_LOOP_MUTATION_COMMAND+x}" ]; then
   AUTONOMOUS_MUTATION_COMMAND="uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}"
 fi
 
+run_config_preflight() {
+  echo "[PREFLIGHT 0/3] Config: uv run python ile dotenv zinciri ve kritik anahtarlar doğrulanıyor"
+  uv run python - <<'PY_CONFIG_PREFLIGHT'
+from __future__ import annotations
+
+import config
+
+print("[CONFIG] Runtime dotenv yükleme zinciri:")
+for event in config.get_dotenv_load_report():
+    label = event.get("label", "unknown")
+    path = event.get("path") or event.get("raw_path") or "-"
+    status = "loaded" if event.get("loaded") else f"skipped:{event.get('reason') or 'not_loaded'}"
+    override = "override" if event.get("override") else "no-override"
+    print(f"[CONFIG] - {label}: {status} ({override}) {path}")
+
+missing = config.Config.get_missing_critical_runtime_keys()
+if missing:
+    print("[CONFIG][HATA] Kritik runtime anahtarları çözülemedi: " + ", ".join(missing))
+    print("[CONFIG][HATA] Yükleme zinciri: .env, .env.advanced, .env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE")
+    raise SystemExit(2)
+
+print("[CONFIG][OK] Config importu ve kritik runtime anahtar kontrolü başarılı.")
+PY_CONFIG_PREFLIGHT
+}
+
+
 if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
   # shellcheck disable=SC1091
   source .venv/bin/activate
@@ -179,11 +216,16 @@ echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONO
 echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; hibrit modda mypy yalnız ön kontrol run_tests.sh kalite kapısında çalışır."
 echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
 echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
+run_config_preflight
+config_preflight_exit=$?
+if [ "${config_preflight_exit}" -ne 0 ]; then
+  echo "[HATA] Config preflight başarısız oldu (exit code: ${config_preflight_exit}); otonom kalite kapıları başlatılmadı."
+  exit "${config_preflight_exit}"
+fi
 if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then
   echo "[INFO] AUTONOMOUS_LOOP_PRINT_CONFIG=1 verildi; otonom döngü başlatılmadan yapılandırma doğrulaması tamamlandı."
   exit 0
 fi
-
 read_coverage_percent() {
   local coverage_json="${1:-coverage.json}"
   local target_file="${2:-}"
