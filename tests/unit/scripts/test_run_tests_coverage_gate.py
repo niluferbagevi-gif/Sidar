@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 RUN_TESTS = Path("run_tests.sh")
@@ -242,6 +244,59 @@ def test_pytest_shellcheck_quality_gate_is_registered() -> None:
     assert "uv run pytest -q --no-cov -m quality_gate" in ci_workflow
     assert "tests/quality/test_shellcheck_quality_gate.py" in ci_workflow
     assert "shellcheck-py must expose the shellcheck executable via uv" in shellcheck_gate
+
+
+def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
+    remote_modules = tmp_path / "remote"
+    runner_dir = tmp_path / "runner"
+    shutil.copytree("scripts/install_modules", remote_modules)
+    runner_dir.mkdir()
+    shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
+
+    expected_modules = (
+        "install_helpers.sh",
+        "utils/install_remediation.sh",
+        "utils/wsl_gpu_preflight.sh",
+        "utils/gpu_utils.sh",
+        "utils/python_env.sh",
+        "utils/db_credentials.sh",
+        "utils/env_utils.sh",
+        "utils/ollama_models.sh",
+        "phases/01_context.sh",
+        "phases/02_repo.sh",
+        "phases/03_runtime.sh",
+        "phases/04_workspace.sh",
+        "phases/05_frontend.sh",
+        "phases/06_services.sh",
+        "phases/07_finish.sh",
+    )
+    module_checks = "; ".join(
+        f'test -f "$INSTALL_MODULE_DIR/{module}"' for module in expected_modules
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; {module_checks}; '
+            'case "$INSTALL_MODULE_DIR" in /tmp/sidar_install_modules.*/*) ;; *) exit 1 ;; esac; '
+            'printf "%s\n" "$INSTALL_MODULE_DIR"',
+            "bash",
+            str(runner_dir / "install_sidar.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "HOME": str(tmp_path),
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "SIDAR_INSTALL_MODULE_BASE_URL": remote_modules.resolve().as_uri(),
+        },
+        text=True,
+    )
+
+    assert "Kurulum modülleri indirildi" in result.stderr
+    assert "install_modules" in result.stdout
 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
