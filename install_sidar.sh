@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.3
+# Sürüm : pyproject.toml [project].version üzerinden dinamik çözülür
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -36,7 +36,47 @@ ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+
+redact_install_log_stream() {
+    if command -v python3 &>/dev/null; then
+        python3 -c '
+import re
+import sys
+
+SENSITIVE_ASSIGNMENT = re.compile(
+    r"(?i)(\b(?:[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_KEY|DATABASE_URL|DB_URL)[A-Z0-9_]*|"
+    r"generated_password|safe_db_url|container_db_url|db_password|pg_password|grafana_password|"
+    r"api_key|memory_key)\s*=\s*)([\"\x27]?)([^\"\x27\s|;]+)(\2)"
+)
+DB_URL_WITH_PASSWORD = re.compile(
+    r"(?i)\b((?:postgres(?:ql)?(?:\+asyncpg)?|mysql|mariadb)://[^\s:@/]+:)([^\s@]+)(@[^\s\"\x27|;)]+)"
+)
+AUTH_HEADER = re.compile(r"(?i)\b(Authorization:\s*(?:Bearer|Basic)\s+)[^\s\"\x27|;)]+")
+
+
+def redact(line: str) -> str:
+    line = DB_URL_WITH_PASSWORD.sub(r"\1***\3", line)
+    line = SENSITIVE_ASSIGNMENT.sub(r"\1\2***\4", line)
+    line = AUTH_HEADER.sub(r"\1***", line)
+    return line
+
+for raw_line in sys.stdin:
+    sys.stdout.write(redact(raw_line))
+    sys.stdout.flush()
+'
+    else
+        sed -u -E \
+            -e 's#((postgres(ql)?(\+asyncpg)?|mysql|mariadb)://[^[:space:]@:/]+:)[^[:space:]@]+(@[^[:space:]|;)]+)#\1***\5#gI' \
+            -e 's#((SECRET|TOKEN|PASSWORD|API_KEY|DATABASE_URL|DB_URL)[A-Z0-9_]*[[:space:]]*=[[:space:]]*)[^[:space:]|;]+#\1***#gI' \
+            -e 's#(Authorization:[[:space:]]*(Bearer|Basic)[[:space:]]+)[^[:space:]|;)]+#\1***#gI'
+    fi
+}
+
+strip_ansi_stream() {
+    sed -u -E $'s/\[[0-9;]*[[:alpha:]]//g'
+}
+
+exec > >(redact_install_log_stream | tee -i >(strip_ansi_stream > "$LOG_FILE")) 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -51,43 +91,70 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+INSTALL_PHASE_MODULES=(
+    "phases/01_system.sh"
+    "phases/02_repo.sh"
+)
 INSTALL_HELPERS_TEMP_DIR=""
+REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+
+_download_install_module() {
+    local relative_path="$1"
+    local destination="$2"
+    local remote_url="${REMOTE_MODULE_BASE}/${relative_path}"
+    local tmp_module_path=""
+
+    mkdir -p "$(dirname "$destination")"
+    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX.sh")"
+    if command -v curl &>/dev/null; then
+        if ! curl -fsSL "$remote_url" -o "$tmp_module_path"; then
+            rm -f "$tmp_module_path"
+            return 1
+        fi
+    elif command -v wget &>/dev/null; then
+        if ! wget -qO "$tmp_module_path" "$remote_url"; then
+            rm -f "$tmp_module_path"
+            return 1
+        fi
+    else
+        rm -f "$tmp_module_path"
+        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+    fi
+    install -m 0644 "$tmp_module_path" "$destination"
+    rm -f "$tmp_module_path"
+}
+
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı; modüller uzaktan indirilmeyi deneyecek."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    mkdir -p "$INSTALL_MODULE_DIR"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-    REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
-    TMP_HELPERS_PATH="$(mktemp "${TMPDIR:-/tmp}/sidar_install_helpers.XXXXXX.sh")"
 
-    if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    else
-        rm -f "$TMP_HELPERS_PATH"
+    if ! _download_install_module "install_helpers.sh" "$INSTALL_HELPERS_MODULE"; then
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+        fail "Gerekli modül indirilemedi: ${REMOTE_MODULE_BASE}/install_helpers.sh"
     fi
-
-    install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
-    rm -f "$TMP_HELPERS_PATH"
     ok "Modül indirildi ve geçici dizine kaydedildi: $INSTALL_HELPERS_MODULE"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
+
+for install_phase_module in "${INSTALL_PHASE_MODULES[@]}"; do
+    install_phase_path="${INSTALL_MODULE_DIR}/${install_phase_module}"
+    if [[ ! -f "$install_phase_path" && -n "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if ! _download_install_module "$install_phase_module" "$install_phase_path"; then
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+            fail "Gerekli faz modülü indirilemedi: ${REMOTE_MODULE_BASE}/${install_phase_module}"
+        fi
+        ok "Faz modülü indirildi: $install_phase_module"
+    fi
+    [[ -f "$install_phase_path" ]] || fail "Gerekli faz modülü bulunamadı: $install_phase_path"
+    # shellcheck disable=SC1090
+    source "$install_phase_path"
+done
+unset install_phase_module install_phase_path
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -1688,6 +1755,22 @@ if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
+resolve_install_sidar_version() {
+    local pyproject_path="${SCRIPT_DIR}/pyproject.toml"
+    local version_value=""
+
+    if [[ -f "$pyproject_path" ]]; then
+        version_value=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$pyproject_path" | head -n1 || true)
+    fi
+
+    if [[ -z "$version_value" && -f "${SCRIPT_DIR}/sidar_version.py" ]]; then
+        version_value=$(sed -nE 's/^[[:space:]]*_FALLBACK_VERSION[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${SCRIPT_DIR}/sidar_version.py" | head -n1 || true)
+    fi
+
+    echo "${version_value:-0.0.0}"
+}
+
+INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -1709,7 +1792,7 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
+    echo "║          Sidar AI — Kurulum Başlıyor (v${INSTALL_SIDAR_VERSION})               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -1856,277 +1939,6 @@ deploy_with_helm() {
         echo "       kubectl get svc -n $HELM_NAMESPACE"
     else
         warn "kubectl bulunamadı. Cluster doğrulaması için kubectl kurmanız önerilir."
-    fi
-}
-
-report_repo_lookup_context() {
-    local current_pwd
-    current_pwd="$(pwd)"
-
-    info "Kurulum çalışma dizini: $current_pwd"
-    info "Sidar deposu hedef dizini: $TARGET_DIR"
-
-    if [[ "$current_pwd" == /mnt/* ]]; then
-        warn "Kurulum /mnt altında çalışıyor. Windows dosya sistemi önceki Sidar klasörünü koruyor olabilir."
-        info "Temiz kurulum için öneri: cd \"$HOME\" && ./Sidar/install_sidar.sh veya doğrudan cd \"$TARGET_DIR\"."
-    fi
-}
-
-# ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
-sync_repo() {
-    step "Sidar projesi GitHub'dan çekiliyor"
-
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        if [[ -d "$SCRIPT_DIR/.git" ]]; then
-            TARGET_DIR="$SCRIPT_DIR"
-            ok "Çevrimdışı mod: mevcut repo kullanılacak (git clone/pull atlandı): $SCRIPT_DIR"
-            return
-        fi
-
-        if [[ -d "$TARGET_DIR/.git" ]]; then
-            SCRIPT_DIR="$TARGET_DIR"
-            ok "Çevrimdışı mod: mevcut hedef repo kullanılacak (git clone/pull atlandı): $TARGET_DIR"
-            return
-        fi
-
-        fail "Çevrimdışı modda git clone yapılamaz. Lütfen repo içinden çalıştırın veya $TARGET_DIR altında önceden klonlanmış repo sağlayın."
-    fi
-
-    # Bu adım git clone/pull çalıştırdığı için, akış sırası değişse bile
-    # git erişimi burada da kesin olarak doğrulanır.
-    if ! command -v git &>/dev/null; then
-        fail "git komutu bulunamadı. Önce sistem bağımlılıklarını kurun (install_system_dependencies)."
-    fi
-
-    if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
-        ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
-        return
-    fi
-
-    if [[ ! -d "$TARGET_DIR/.git" ]]; then
-        info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone "$REPO_URL" "$TARGET_DIR"
-    else
-        warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
-        info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
-        (
-            cd "$TARGET_DIR"
-            local STASHED_CHANGES=false
-            if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-                info "Lokal değişiklikler geçici olarak stash'e alınıyor."
-                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
-                STASHED_CHANGES=true
-            fi
-
-            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
-
-            if [[ "$STASHED_CHANGES" == true ]]; then
-                if git stash pop >/dev/null 2>&1; then
-                    ok "Lokal değişiklikler stash'ten geri yüklendi."
-                else
-                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
-                    git merge --abort >/dev/null 2>&1 || true
-                    git rebase --abort >/dev/null 2>&1 || true
-                    if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
-                    fi
-
-                    echo ""
-                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
-                    local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
-                    case "${recovery_reply:-H}" in
-                        [EeYy]*)
-                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
-                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
-                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
-                            ;;
-                        *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
-                            ;;
-                    esac
-                fi
-            fi
-        )
-    fi
-
-    SCRIPT_DIR="$TARGET_DIR"
-    ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
-}
-
-# ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
-install_system_dependencies() {
-    step "Temel Sistem Paketlerinin Kurulumu"
-    local node_target_major=""
-    node_target_major="$(resolve_target_node_major)"
-    local node_target_series="node_${node_target_major}.x"
-    local node_brew_formula="node@${node_target_major}"
-
-    if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        info "Linux temel paketleri kuruluyor (tam sistem upgrade atlanır)..."
-        local -a ns_source_files=()
-        mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
-        if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
-            info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
-            local src_file=""
-            for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
-                    "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
-                    "$src_file"
-            done
-        fi
-
-        if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
-            warn "apt update başarısız oldu. NodeSource listesi sıfırlanıp tekrar denenecek..."
-            sudo rm -f /etc/apt/sources.list.d/nodesource.list
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
-        fi
-        info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential software-properties-common zstd ca-certificates gnupg \
-            postgresql-client-common postgresql-client
-
-        ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."
-
-        info "Node.js (v${node_target_major}.x) durumu kontrol ediliyor..."
-        local node_bin=""
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
-            ok "Node.js ${node_target_major}.x zaten kurulu: $("$node_bin" -v)"
-        else
-            if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
-                warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
-            fi
-            info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
-            local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
-            local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
-            local ns_key_tmp=""
-            local ns_ready=false
-
-            ns_key_tmp=$(mktemp)
-            if curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
-                "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key" -o "$ns_key_tmp"; then
-                sudo install -m 0755 -d /etc/apt/keyrings
-                if gpg --dearmor < "$ns_key_tmp" | sudo tee "$ns_keyring" >/dev/null; then
-                    sudo chmod 0644 "$ns_keyring"
-                    sudo rm -f "$ns_repo_file"
-                    echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/${node_target_series} nodistro main" | sudo tee "$ns_repo_file" >/dev/null
-                    sudo chmod 0644 "$ns_repo_file"
-                    ns_ready=true
-                else
-                    warn "NodeSource GPG keyring oluşturulamadı."
-                fi
-            else
-                warn "NodeSource GPG anahtarı indirilemedi."
-            fi
-            rm -f "$ns_key_tmp"
-
-            if [[ "$ns_ready" == true ]] && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
-                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-            else
-                warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
-                node_bin="$(resolve_native_binary_path node || true)"
-                if [[ -n "$node_bin" ]]; then
-                    warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
-                    warn "nodejs + npm çakışmasını önlemek için apt ile npm zorla kurulmayacak."
-                    local npm_bin=""
-                    npm_bin="$(resolve_native_binary_path npm || true)"
-                    if [[ -n "$npm_bin" ]]; then
-                        ok "npm zaten mevcut: $("$npm_bin" -v 2>/dev/null || echo 'sürüm alınamadı')"
-                    else
-                        warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
-                    fi
-                else
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
-                fi
-            fi
-        fi
-
-        info "Kamera ve ses kütüphaneleri kuruluyor..."
-        local -a linux_media_pkgs=(
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
-        )
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
-            linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
-        fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
-        info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
-        info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
-
-        ok "Sistem paketleri ve donanım kütüphaneleri başarıyla kuruldu."
-    elif command -v dnf &>/dev/null; then
-        warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
-        sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v pacman &>/dev/null; then
-        warn "Arch tabanlı sistem tespit edildi. Paketler pacman ile kuruluyor..."
-        sudo pacman -Sy --noconfirm --needed \
-            curl wget git zstd nodejs npm portaudio alsa-utils v4l-utils ffmpeg
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]]; then
-            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
-            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
-                warn "Arch depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
-            else
-                ok "Node.js sürümü uygun: $("$node_bin" -v)"
-            fi
-        fi
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v zypper &>/dev/null; then
-        warn "OpenSUSE/SLES tabanlı sistem tespit edildi. Paketler zypper ile kuruluyor..."
-        sudo zypper --non-interactive refresh
-        sudo zypper --non-interactive install --no-recommends \
-            curl wget git zstd nodejs npm portaudio19-devel alsa-utils v4l-utils ffmpeg
-        node_bin="$(resolve_native_binary_path node || true)"
-        if [[ -n "$node_bin" ]]; then
-            NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
-            if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
-                warn "OpenSUSE depolarındaki Node.js sürümü hedefin altında olabilir: $("$node_bin" -v) (hedef: ${node_target_major}.x+)."
-            else
-                ok "Node.js sürümü uygun: $("$node_bin" -v)"
-            fi
-        fi
-        info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
-    elif command -v brew &>/dev/null; then
-        warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
-        brew update
-        brew install \
-            curl wget git zstd "${node_brew_formula}" ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
-        info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
-
-        if brew list "${node_brew_formula}" &>/dev/null; then
-            info "Node.js ${node_target_major} için brew link işlemi deneniyor..."
-            brew link --overwrite --force "${node_brew_formula}" >/dev/null 2>&1 || true
-            ok "Node.js sürümü: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
-        fi
-
-        info "brew services ile host PostgreSQL/Redis başlatma adımı kaldırıldı (Docker Compose tercih ediliyor)."
-
-        ok "Homebrew tabanlı bağımlılık kurulumu tamamlandı."
-    else
-        warn "Desteklenen paket yöneticileri (apt/dnf/pacman/zypper/brew) bulunamadı. Lütfen paketleri manuel kurun:"
-        info "Gerekenler: zstd portaudio19-dev alsa-utils v4l-utils ffmpeg vb."
-    fi
-}
-
-detect_environment() {
-    step "Çalışma Ortamı Tespiti"
-
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
-        WSL2=true
-        info "Ortam: WSL2 (Windows Subsystem for Linux)"
-    elif [[ "$(uname -s)" == "Darwin" ]]; then
-        WSL2=false
-        info "Ortam: macOS"
-    else
-        WSL2=false
-        info "Ortam: Linux (native/container)"
     fi
 }
 
@@ -3052,58 +2864,56 @@ harden_database_credentials() {
         local db_password="${BASH_REMATCH[3]}"
         local db_host_and_name="${BASH_REMATCH[4]}"
 
-        case "$db_password" in
-            sidar|postgres|password|admin|changeme|123456)
-                if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    PRE_HARDEN_DB_PASSWORD="$db_password"
-                    local generated_password=""
-                    generated_password=$(generate_secure_token 24)
-                    if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+        if is_weak_secret_value "$db_password"; then
+            if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                PRE_HARDEN_DB_PASSWORD="$db_password"
+                local generated_password=""
+                generated_password=$(generate_secure_token 24)
+                if [[ -n "$generated_password" ]]; then
+                    safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                    ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        local db_name_for_container="${db_host_and_name#*/}"
-                        db_name_for_container="${db_name_for_container%%\?*}"
-                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
-                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                        else
-                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                        fi
-                        DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
-                        if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
-                            local detected_pg_volume=""
-                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                            if [[ -n "$detected_pg_volume" ]]; then
-                                info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
-                            fi
-                        fi
+                    # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                    # DATABASE_URL ile senkron kalmalıdır.
+                    if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                     else
-                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                        echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                    fi
+                    if grep -q '^POSTGRES_USER=' "$env_file"; then
+                        sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                    else
+                        echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                    fi
+                    local db_name_for_container="${db_host_and_name#*/}"
+                    db_name_for_container="${db_name_for_container%%\?*}"
+                    [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
+                    local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
+                    if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
+                        sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
+                    else
+                        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
+                    fi
+                    DB_PASSWORD_HARDENED=true
+                    ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                    info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
+                    if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
+                        local detected_pg_volume=""
+                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                        if [[ -n "$detected_pg_volume" ]]; then
+                            info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
+                        fi
                     fi
                 else
-                    warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                    warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                    warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
                 fi
-                ;;
-        esac
+            else
+                warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
+                warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:***)."
+                warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+            fi
+        fi
     fi
 }
 
@@ -3605,6 +3415,8 @@ ensure_auto_secrets() {
         val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
               | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
         is_weak_secret_value "$val" && return 0
+        is_example_secret_value "$key" "$val" && return 0
+        is_known_weak_secret_hash "$val" && return 0
         local bad
         for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
         return 1
@@ -3664,8 +3476,7 @@ PY
     fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
-        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
+    if _is_missing_or_insecure "API_KEY" "change-me-api-key"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "API_KEY" "$_v"
@@ -3676,8 +3487,7 @@ PY
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
-        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
+    if _is_missing_or_insecure "JWT_SECRET_KEY" "change-me-jwt-secret-32-plus-chars"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
             _write_secret "JWT_SECRET_KEY" "$_v"
@@ -3688,8 +3498,7 @@ PY
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
-        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
+    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY"; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
             _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
@@ -3713,12 +3522,9 @@ PY
         fi
     }
 
-    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64 \
-        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
-    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64 \
-        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
-    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
-        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40
 
     # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
     if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
@@ -3733,8 +3539,7 @@ PY
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
     # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
-        "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
+    if _is_missing_or_insecure "METRICS_TOKEN"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "METRICS_TOKEN" "$_v"
@@ -3844,15 +3649,120 @@ get_env_value() {
     grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
 }
 
+secret_value_sha256() {
+    local value="${1:-}"
+    if command -v python3 &>/dev/null; then
+        SECRET_VALUE="$value" python3 - <<'PYHASH' 2>/dev/null || true
+import hashlib
+import os
+
+print(hashlib.sha256(os.environ.get("SECRET_VALUE", "").encode()).hexdigest())
+PYHASH
+    elif command -v sha256sum &>/dev/null; then
+        printf '%s' "$value" | sha256sum | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        printf '%s' "$value" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+is_known_weak_secret_hash() {
+    local value="${1:-}" hash weak_hashes_file line known_hash
+    [[ -n "${value//[[:space:]]/}" ]] || return 0
+    weak_hashes_file="${SIDAR_KNOWN_WEAK_SECRET_HASHES_FILE:-$SCRIPT_DIR/scripts/known_weak_secret_hashes.txt}"
+    [[ -f "$weak_hashes_file" ]] || return 1
+
+    hash="$(secret_value_sha256 "$value")"
+    [[ -n "$hash" ]] || return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"
+        read -r known_hash _ <<<"$line"
+        [[ -n "${known_hash:-}" ]] || continue
+        [[ "$hash" == "$known_hash" ]] && return 0
+    done < "$weak_hashes_file"
+    return 1
+}
+
+is_example_secret_value() {
+    local key="$1" value="${2:-}" example_file example_value
+    [[ -n "${value//[[:space:]]/}" ]] || return 0
+    example_file="${SIDAR_ENV_EXAMPLE_FILE:-$SCRIPT_DIR/.env.example}"
+    [[ -f "$example_file" ]] || return 1
+
+    example_value="$(get_env_value "$example_file" "$key")"
+    [[ -n "${example_value//[[:space:]]/}" ]] || return 1
+    [[ "$value" == "$example_value" ]]
+}
+
+is_low_entropy_secret_value() {
+    local value="${1:-}"
+    command -v python3 &>/dev/null || return 1
+    SECRET_VALUE="$value" python3 - <<'PYENTROPY'
+import math
+import os
+import re
+import sys
+
+value = os.environ.get("SECRET_VALUE", "")
+normalized = value.lower()
+common_fragments = (
+    "password", "passw0rd", "p@ssw", "qwerty", "azerty", "asdf", "zxcv",
+    "admin", "administrator", "changeme", "change_me", "letmein", "welcome",
+    "secret", "default", "example", "postgres", "database", "sidar", "test",
+    "root", "monkey", "dragon", "football", "iloveyou",
+)
+keyboard_runs = ("qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890", "0987654321")
+
+if not value.strip():
+    sys.exit(0)
+if any(fragment in normalized for fragment in common_fragments):
+    sys.exit(0)
+if re.search(r"(.)\1{3,}", value):
+    sys.exit(0)
+if re.fullmatch(r"[a-zA-Z]+\d{1,4}[!@#$%^&*._-]?", value):
+    sys.exit(0)
+if re.fullmatch(r"\d+", value):
+    sys.exit(0)
+if len(set(value)) <= 4:
+    sys.exit(0)
+if any(run[i:i + 4] in normalized for run in keyboard_runs for i in range(len(run) - 3)):
+    sys.exit(0)
+
+pool = 0
+pool += 26 if re.search(r"[a-z]", value) else 0
+pool += 26 if re.search(r"[A-Z]", value) else 0
+pool += 10 if re.search(r"\d", value) else 0
+pool += 33 if re.search(r"[^A-Za-z0-9]", value) else 0
+pool = max(pool, 1)
+entropy = len(value) * math.log2(pool)
+
+# Penalize low-diversity and visibly patterned strings. This is intentionally
+# conservative; generated Sidar secrets are random URL-safe/hex values and remain
+# comfortably above the threshold.
+unique_ratio = len(set(value)) / max(len(value), 1)
+if unique_ratio < 0.35:
+    entropy *= 0.45
+elif unique_ratio < 0.5:
+    entropy *= 0.7
+if re.search(r"(.{2,8})\1{1,}", value):
+    entropy *= 0.5
+if re.search(r"(19|20)\d{2}", value):
+    entropy -= 10
+
+sys.exit(0 if entropy < 80 else 1)
+PYENTROPY
+}
+
 is_weak_secret_value() {
     local value="${1:-}"
     [[ -n "${value//[[:space:]]/}" ]] || return 0
     case "${value,,}" in
-        sidar|admin|password|changeme|change_me|change-me*|replace-with-*|secret|default|test|example|postgres|root|123456|12345678)
+        sidar|admin|password|changeme|change_me|change-me*|replace-with-*|secret|default|test|example|postgres|root|123456|12345678|qwerty*|password*|test123*)
             return 0
             ;;
     esac
     (( ${#value} < 24 )) && return 0
+    is_low_entropy_secret_value "$value" && return 0
     return 1
 }
 

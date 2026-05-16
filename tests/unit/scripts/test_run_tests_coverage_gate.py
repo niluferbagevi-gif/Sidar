@@ -123,3 +123,83 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_uses_central_weak_secret_hash_registry() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    weak_hashes = Path("scripts/known_weak_secret_hashes.txt").read_text(encoding="utf-8")
+
+    assert "is_example_secret_value" in script
+    assert "is_known_weak_secret_hash" in script
+    assert "scripts/known_weak_secret_hashes.txt" in script
+    assert "historical API_KEY sample" in weak_hashes
+    assert "historical JWT_SECRET_KEY sample" in weak_hashes
+    assert "historical METRICS_TOKEN sample" in weak_hashes
+    assert 'API_KEY" "change-me-api-key"' in script
+    assert "historical API_KEY sample" not in script
+
+
+def test_install_sidar_uses_entropy_heuristics_for_weak_passwords() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'case "$db_password" in' not in script
+    assert 'if is_weak_secret_value "$db_password"; then' in script
+    assert "is_low_entropy_secret_value" in script
+    assert "entropy < 80" in script
+    assert "qwerty*|password*|test123*" in script
+    assert "DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:***)" in script
+
+
+def test_install_sidar_redacts_sensitive_log_stream_before_tee() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "redact_install_log_stream" in script
+    assert 'exec > >(redact_install_log_stream | tee -i >(strip_ansi_stream > "$LOG_FILE")) 2>&1' in script
+    assert "SENSITIVE_ASSIGNMENT" in script
+    assert "DB_URL_WITH_PASSWORD" in script
+    assert "AUTH_HEADER" in script
+    assert "generated_password|safe_db_url|container_db_url|db_password" in script
+
+
+def test_install_sidar_requires_stash_ref_before_destructive_git_cleanup() -> None:
+    repo_phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
+
+    assert 'local STASH_REF=""' in repo_phase
+    assert "git stash list -n 1 --format='%gd'" in repo_phase
+    assert 'git stash pop "$STASH_REF"' in repo_phase
+    assert 'git rev-parse -q --verify "$STASH_REF"' in repo_phase
+    assert "git clean -fd çalıştırılmadı" in repo_phase
+    assert "Stash yedeği ${STASH_REF} korunarak" in repo_phase
+    assert "Stash yedeği korunuyor: ${STASH_REF}" in repo_phase
+    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in repo_phase
+
+
+def test_install_sidar_loads_phase_modules_for_repo_and_system_steps() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    system_phase = Path("scripts/install_modules/phases/01_system.sh").read_text(encoding="utf-8")
+    repo_phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+
+    assert '"phases/01_system.sh"' in script
+    assert '"phases/02_repo.sh"' in script
+    assert 'source "$install_phase_path"' in script
+    assert "install_system_dependencies()" not in script
+    assert "sync_repo()" not in script
+    assert "install_system_dependencies()" in system_phase
+    assert "sync_repo()" in repo_phase
+    assert "report_repo_lookup_context()" in repo_phase
+    assert "-type f" in bundler
+    assert "*.sh" in bundler
+    assert "maxdepth 1" not in bundler
+
+
+def test_install_sidar_version_comes_from_pyproject() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'resolve_install_sidar_version()' in script
+    assert 'INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"' in script
+    assert 'Sidar AI — Kurulum Başlıyor (v${INSTALL_SIDAR_VERSION})' in script
+    assert '# Sürüm : pyproject.toml [project].version üzerinden dinamik çözülür' in script
+    assert 'version = "5.2.0"' in pyproject
+    assert '5.2.3' not in script
