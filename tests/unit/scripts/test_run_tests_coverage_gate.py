@@ -137,3 +137,14 @@ def test_install_sidar_uses_central_weak_secret_hash_registry() -> None:
     assert "historical METRICS_TOKEN sample" in weak_hashes
     assert 'API_KEY" "change-me-api-key"' in script
     assert "historical API_KEY sample" not in script
+
+
+def test_install_sidar_uses_entropy_heuristics_for_weak_passwords() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'case "$db_password" in' not in script
+    assert 'if is_weak_secret_value "$db_password"; then' in script
+    assert "is_low_entropy_secret_value" in script
+    assert "entropy < 80" in script
+    assert "qwerty*|password*|test123*" in script
+    assert "DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:***)" in script
