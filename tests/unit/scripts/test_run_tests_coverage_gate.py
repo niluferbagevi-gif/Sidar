@@ -275,3 +275,12 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     assert script.index("install_uv_cli()") < script.index("create_uv_venv()")
     assert runtime_phase.index("install_uv_cli") < runtime_phase.index("create_uv_venv")
     assert sync_deps_body.index("install_uv_cli") < sync_deps_body.index("create_uv_venv")
+
+
+def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"' in script
+    assert 'REPO_URL="https://github.com/niluferbagevi-gif/Sidar"' not in script
+    assert "SIDAR_REPO_URL=https://..." in script
+    assert script.index("SIDAR_REPO_URL") < script.index("git clone \"$REPO_URL\"")

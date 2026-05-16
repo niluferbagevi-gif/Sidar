@@ -1620,6 +1620,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
@@ -1759,7 +1760,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     fi
 fi
 DEFAULT_DATABASE_URL=""
-REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
+REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
