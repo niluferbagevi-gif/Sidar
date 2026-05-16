@@ -27,7 +27,20 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
-# Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
+# Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz.
+# Filtre önce terminal/log fan-out'una girer; böylece set -x, sed hata çıktısı
+# veya beklenmeyen tool çıktıları DATABASE_URL/parola/token değerlerini hem
+# terminalden hem de kalıcı log dosyasından maskeler.
+mask_install_log_stream() {
+    sed -u -E \
+        -e 's#((postgresql|postgres|mysql|mariadb)(\+[^:/@[:space:]]+)?://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
+        -e 's#((redis|rediss|amqp|amqps|mongodb|mongodb\+srv)://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
+        -e 's#((DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)=)[^[:space:]";]+#\1****#g' \
+        -e 's#((generated_password|safe_db_url|container_db_url|db_password|db_url|api_key|memory_key|grafana_password|pg_password)=)[^[:space:]";]+#\1****#gi' \
+        -e 's#("(DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)"[[:space:]]*:[[:space:]]*")[^"]*"#\1****"#g' \
+        -e 's#((Authorization|X-API-Key|X-Auth-Token):[[:space:]]*)(Bearer[[:space:]]+)?[^[:space:]]+#\1\3****#gi'
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
@@ -36,7 +49,7 @@ ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -3054,52 +3067,52 @@ harden_database_credentials() {
 
         if is_weak_secret_value "$db_password"; then
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    PRE_HARDEN_DB_PASSWORD="$db_password"
-                    local generated_password=""
-                    generated_password=$(generate_secure_token 24)
-                    if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
+                PRE_HARDEN_DB_PASSWORD="$db_password"
+                local generated_password=""
+                generated_password=$(generate_secure_token 24)
+                if [[ -n "$generated_password" ]]; then
+                    safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
+                    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                    ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        local db_name_for_container="${db_host_and_name#*/}"
-                        db_name_for_container="${db_name_for_container%%\?*}"
-                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
-                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                        else
-                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                        fi
-                        DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
-                        if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
-                            local detected_pg_volume=""
-                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                            if [[ -n "$detected_pg_volume" ]]; then
-                                info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
-                            fi
-                        fi
+                    # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
+                    # DATABASE_URL ile senkron kalmalıdır.
+                    if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
+                        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                     else
-                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                        echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
+                    fi
+                    if grep -q '^POSTGRES_USER=' "$env_file"; then
+                        sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                    else
+                        echo "POSTGRES_USER=${db_user}" >> "$env_file"
+                    fi
+                    local db_name_for_container="${db_host_and_name#*/}"
+                    db_name_for_container="${db_name_for_container%%\?*}"
+                    [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
+                    local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
+                    if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
+                        sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
+                    else
+                        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
+                    fi
+                    DB_PASSWORD_HARDENED=true
+                    ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                    info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
+                    if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
+                        local detected_pg_volume=""
+                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                        if [[ -n "$detected_pg_volume" ]]; then
+                            info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
+                        fi
                     fi
                 else
-                    warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                    warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
+                    warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
+                fi
+            else
+                warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
+                warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:****)."
+                warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
             fi
         fi
     fi
