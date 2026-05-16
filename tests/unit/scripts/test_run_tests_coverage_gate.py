@@ -159,3 +159,16 @@ def test_install_sidar_redacts_sensitive_log_stream_before_tee() -> None:
     assert "DB_URL_WITH_PASSWORD" in script
     assert "AUTH_HEADER" in script
     assert "generated_password|safe_db_url|container_db_url|db_password" in script
+
+
+def test_install_sidar_requires_stash_ref_before_destructive_git_cleanup() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'local STASH_REF=""' in script
+    assert "git stash list -n 1 --format='%gd'" in script
+    assert 'git stash pop "$STASH_REF"' in script
+    assert 'git rev-parse -q --verify "$STASH_REF"' in script
+    assert "git clean -fd çalıştırılmadı" in script
+    assert "Stash yedeği ${STASH_REF} korunarak" in script
+    assert "Stash yedeği korunuyor: ${STASH_REF}" in script
+    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script

@@ -1952,39 +1952,51 @@ sync_repo() {
         (
             cd "$TARGET_DIR"
             local STASHED_CHANGES=false
+            local STASH_REF=""
             if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
                 info "Lokal değişiklikler geçici olarak stash'e alınıyor."
                 git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
+                STASH_REF="$(git stash list -n 1 --format='%gd' || true)"
+                [[ -n "$STASH_REF" ]] || fail "Git stash oluşturuldu sanıldı ancak referans okunamadı; güvenli kurtarma için kurulum durduruldu."
+                info "Lokal değişiklik yedeği oluşturuldu: ${STASH_REF}. Gerekirse '$TARGET_DIR' içinde 'git stash apply ${STASH_REF}' ile geri alabilirsiniz."
                 STASHED_CHANGES=true
             fi
 
             git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
 
             if [[ "$STASHED_CHANGES" == true ]]; then
-                if git stash pop >/dev/null 2>&1; then
+                if git stash pop "$STASH_REF" >/dev/null 2>&1; then
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
                     warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
                     git merge --abort >/dev/null 2>&1 || true
                     git rebase --abort >/dev/null 2>&1 || true
+                    if [[ -z "$STASH_REF" ]] || ! git rev-parse -q --verify "$STASH_REF" >/dev/null; then
+                        fail "Git çalışma ağacı çakışmalı durumda ve doğrulanmış stash yedeği bulunamadı. Veri kaybı riskinden dolayı reset/clean çalıştırılmadı; lütfen '$TARGET_DIR' içinde manuel çözün."
+                    fi
+                    warn "Lokal değişiklik yedeği stash içinde korunuyor: ${STASH_REF}. Geri almak için: cd '$TARGET_DIR' && git stash apply ${STASH_REF}"
+
                     if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
+                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılmadı. Stash yedeği: ${STASH_REF}. Manuel çözün veya yedeği doğruladıktan sonra temiz kurulumu tekrar başlatın."
                     fi
 
                     echo ""
-                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
+                    warn "İsterseniz doğrulanmış stash yedeği (${STASH_REF}) korunurken çalışma ağacı origin/main durumuna temizlenebilir."
                     local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Stash yedeği ${STASH_REF} korunarak 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
                     case "${recovery_reply:-H}" in
                         [EeYy]*)
-                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
+                            if ! git rev-parse -q --verify "$STASH_REF" >/dev/null; then
+                                fail "Stash yedeği (${STASH_REF}) artık doğrulanamıyor; veri kaybını önlemek için git clean -fd çalıştırılmadı."
+                            fi
+                            warn "Kurtarma adımı uygulanıyor: çalışma ağacı temizlenecek; yedek stash referansı korunuyor: ${STASH_REF}."
                             git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
                             git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
-                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
+                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Stash yedeği: ${STASH_REF}"
+                            ok "Repo origin/main durumuna sıfırlandı. Stash yedeği korunuyor: ${STASH_REF}. Kurulum devam edecek."
                             ;;
                         *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Stash yedeği: ${STASH_REF}. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya yedeği doğruladıktan sonra temizleyip kurulumu tekrar başlatın."
                             ;;
                     esac
                 fi
