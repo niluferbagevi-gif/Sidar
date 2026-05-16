@@ -217,6 +217,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "phases/05_frontend.sh",
         "phases/06_services.sh",
         "phases/07_finish.sh",
+        "utils/install_remediation.sh",
         "utils/wsl_gpu_preflight.sh",
         "utils/gpu_utils.sh",
         "utils/python_env.sh",
@@ -262,6 +263,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
     preflight_utils = Path("scripts/install_modules/utils/wsl_gpu_preflight.sh").read_text(encoding="utf-8")
     gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
     python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
@@ -271,6 +273,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
+    assert "sidar_run_install_phase()" in remediation_utils
+    assert "sidar_handle_install_failure()" in remediation_utils
+    assert "sidar_remediate_uv_sync_failure()" in remediation_utils
+    assert "SIDAR_INSTALL_RESUME_FROM_PHASE" in remediation_utils
+    assert "uv lock --check" in remediation_utils
+    assert "uv cache prune" in remediation_utils
     assert 'sidar_source_install_utils "wsl_gpu_preflight.sh"' in context_phase
     assert "run_wsl2_gpu_preflight" in context_phase
     assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
@@ -301,6 +309,38 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 
     assert 'module_dir "/utils' in bundler
     assert 'module_dir "/phases' in bundler
+
+
+def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
+
+    assert '"utils/install_remediation.sh"' in script
+    assert 'sidar_source_install_utils "install_remediation.sh"' in script
+    assert "sidar_handle_install_failure" in script
+    assert "SIDAR_INSTALL_ORIGINAL_ARGS" in script
+
+    for phase_name in (
+        "01_context",
+        "02_repo",
+        "03_runtime",
+        "04_workspace",
+        "05_frontend",
+        "06_models",
+        "06_services",
+        "07_finish",
+    ):
+        assert f'sidar_run_install_phase "{phase_name}"' in main_body
+
+    assert "SIDAR_INSTALL_AUTO_HEAL" in remediation_utils
+    assert "SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS" in remediation_utils
+    assert "sidar_phase_remediation_strategy()" in remediation_utils
+    assert "sidar_resume_after_remediation()" in remediation_utils
+    assert "uv.lock" in remediation_utils
+    assert "uv lock" in remediation_utils
+    assert "exec env" in remediation_utils
+    assert "artifacts/install/remediation" in remediation_utils
 
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

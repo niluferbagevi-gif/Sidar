@@ -44,6 +44,7 @@ mask_install_log_stream() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -134,7 +135,13 @@ sidar_t() {
 ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
 info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
 warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
-fail() { echo -e "${RED}❌  $*${NC}" >&2; exit 1; }
+fail() {
+    echo -e "${RED}❌  $*${NC}" >&2
+    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
+        sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-fail}" "$*" || true
+    fi
+    exit 1
+}
 step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 sed_inplace() {
@@ -190,6 +197,7 @@ fi
 source "$INSTALL_HELPERS_MODULE"
 
 INSTALL_UTILITY_MODULES=(
+    "utils/install_remediation.sh"
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
     "utils/python_env.sh"
@@ -233,6 +241,7 @@ load_install_phase_modules() {
 }
 
 validate_install_utility_modules
+sidar_source_install_utils "install_remediation.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
@@ -307,6 +316,9 @@ on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
+    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
+        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
+    fi
     echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
     echo "$(sidar_t failed_command "$failed_cmd")" >&2
     echo "$(sidar_t check_log "$LOG_FILE")" >&2
@@ -1701,6 +1713,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
+    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
 EOF
     else
         cat <<EOF
@@ -1753,6 +1767,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
+    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
 EOF
     fi
 }
@@ -5705,18 +5721,18 @@ run_install_subcommand_if_requested() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
-    sidar_phase_initialize_context
+    sidar_run_install_phase "01_context" sidar_phase_initialize_context
     if sidar_phase_handle_early_exit; then
         return
     fi
 
-    sidar_phase_bootstrap_repo_system
-    sidar_phase_runtime_prerequisites
-    sidar_phase_workspace_config
-    sidar_phase_frontend_assets
-    sidar_phase_local_migrations_and_models
-    sidar_phase_services_and_validation
-    sidar_phase_finish
+    sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system
+    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites
+    sidar_run_install_phase "04_workspace" sidar_phase_workspace_config
+    sidar_run_install_phase "05_frontend" sidar_phase_frontend_assets
+    sidar_run_install_phase "06_models" sidar_phase_local_migrations_and_models
+    sidar_run_install_phase "06_services" sidar_phase_services_and_validation
+    sidar_run_install_phase "07_finish" sidar_phase_finish
 }
 
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
