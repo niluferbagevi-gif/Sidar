@@ -191,3 +191,15 @@ def test_install_sidar_loads_phase_modules_for_repo_and_system_steps() -> None:
     assert "-type f" in bundler
     assert "*.sh" in bundler
     assert "maxdepth 1" not in bundler
+
+
+def test_install_sidar_version_comes_from_pyproject() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'resolve_install_sidar_version()' in script
+    assert 'INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"' in script
+    assert 'Sidar AI — Kurulum Başlıyor (v${INSTALL_SIDAR_VERSION})' in script
+    assert '# Sürüm : pyproject.toml [project].version üzerinden dinamik çözülür' in script
+    assert 'version = "5.2.0"' in pyproject
+    assert '5.2.3' not in script
