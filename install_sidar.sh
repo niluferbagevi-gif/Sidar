@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.3
+# Sürüm : pyproject.toml / sidar_version.py üzerinden otomatik çözülür
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -1726,6 +1726,26 @@ if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
+resolve_install_sidar_version() {
+    local resolved_version=""
+
+    if command -v python3 &>/dev/null && [[ -f "$SCRIPT_DIR/sidar_version.py" ]]; then
+        resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>/dev/null || true
+from sidar_version import resolve_version
+print(resolve_version())
+PY_VERSION
+)
+    fi
+
+    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
+    fi
+
+    resolved_version="${resolved_version//[[:space:]]/}"
+    echo "${resolved_version:-0.0.0}"
+}
+
+INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -1747,7 +1767,7 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
+    printf "║          Sidar AI — Kurulum Başlıyor (v%-21s)║\n" "$INSTALL_SIDAR_VERSION"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }

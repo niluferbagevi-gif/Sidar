@@ -221,3 +221,21 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "print_summary",
     ):
         assert legacy_inline_call not in main_body
+
+
+def test_install_sidar_uses_single_source_project_version() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    project_version = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in pyproject.splitlines()
+        if line.startswith("version =")
+    )
+
+    assert "resolve_install_sidar_version()" in script
+    assert "sidar_version import resolve_version" in script
+    assert 'version[[:space:]]*=' in script
+    assert "INSTALL_SIDAR_VERSION" in script
+    assert "Kurulum Başlıyor (v5.2.3)" not in script
+    assert "# Sürüm : 5.2.3" not in script
+    assert f"v{project_version}" not in script
