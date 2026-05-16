@@ -279,6 +279,44 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
 
 
 
+
+
+def test_install_sidar_uses_central_env_reader_for_values(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    env_file = tmp_path / "sample.env"
+    env_file.write_text(
+        "# DATABASE_URL=postgresql://ignored:ignored@example/sidar\n"
+        "DATABASE_URL=  \"postgresql://sidar:pw@example/sidar\"  # trailing comment\r\n"
+        "POSTGRES_PASSWORD='quoted pw'\n",
+        encoding="utf-8",
+    )
+    helper_file = tmp_path / "env_reader.sh"
+    helper_start = script.index("read_env_value_from_file()")
+    helper_end = script.index("resolve_ollama_version_url()", helper_start)
+    helper_file.write_text(script[helper_start:helper_end], encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; read_env_value_from_file DATABASE_URL "$2"; read_env_value_from_file POSTGRES_PASSWORD "$2"',
+            "_",
+            str(helper_file),
+            str(env_file),
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert proc.stdout.splitlines() == ["postgresql://sidar:pw@example/sidar", "quoted pw"]
+    assert "read_env_value_from_file" in db_module
+    assert "cut -d= -f2-" not in script
+    assert "cut -d= -f2-" not in db_module
+    assert 'grep -E "^${key}="' not in script
+
 def test_install_sidar_uses_portable_sed_inplace_wrapper(tmp_path: Path) -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")

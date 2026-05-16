@@ -3251,8 +3251,8 @@ collect_api_keys_interactive() {
         local openai_key=""
         local anthropic_key=""
 
-        openai_key=$(grep -E '^OPENAI_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
-        anthropic_key=$(grep -E '^ANTHROPIC_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+        openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file" | tr -d '[:space:]' || true)
+        anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$env_file" | tr -d '[:space:]' || true)
 
         if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
             warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
@@ -3271,16 +3271,7 @@ collect_api_keys_interactive() {
 
         info "API anahtarları ${source_file} dosyasından içeri alınıyor (etkileşimli giriş atlanacak)..."
         for key in "${KEY_ORDER[@]}"; do
-            raw_val=$(grep -E "^${key}=" "$source_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-            raw_val="${raw_val#"${raw_val%%[![:space:]]*}"}"
-            raw_val="${raw_val%"${raw_val##*[![:space:]]}"}"
-
-            # Basit tek satır tırnaklarını temizle: KEY="value" / KEY='value'
-            if [[ "$raw_val" == \"*\" && "$raw_val" == *\" ]]; then
-                raw_val="${raw_val:1:${#raw_val}-2}"
-            elif [[ "$raw_val" == \'*\' && "$raw_val" == *\' ]]; then
-                raw_val="${raw_val:1:${#raw_val}-2}"
-            fi
+            raw_val=$(read_env_value_from_file "$key" "$source_file" || true)
 
             if [[ -n "$raw_val" ]]; then
                 _write_key "$key" "$raw_val"
@@ -3310,8 +3301,7 @@ collect_api_keys_interactive() {
     local -a missing_keys=()
     local _chk_val
     for key in "${KEY_ORDER[@]}"; do
-        _chk_val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-                   | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        _chk_val=$(read_env_value_from_file "$key" "$env_file" || true)
         if [[ -z "$_chk_val" ]]; then
             missing_keys+=("$key")
             info "  [ eksik  ] ${key}"
@@ -3464,8 +3454,7 @@ report_env_api_key_status() {
 
     local key value
     for key in "${key_order[@]}"; do
-        value=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-                | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        value=$(read_env_value_from_file "$key" "$env_file" || true)
         if [[ -n "$value" ]]; then
             ((ENV_API_KEYS_FILLED+=1))
         else
@@ -3556,11 +3545,9 @@ ensure_auto_secrets() {
     _is_missing_or_insecure() {
         local key="$1"; shift
         local val example_val
-        val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-              | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        val=$(read_env_value_from_file "$key" "$env_file" || true)
         is_weak_secret_value "$val" && return 0
-        example_val=$(grep -E "^${key}=" "$SCRIPT_DIR/.env.example" 2>/dev/null \
-              | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        example_val=$(read_env_value_from_file "$key" "$SCRIPT_DIR/.env.example" || true)
         [[ -n "$example_val" && "$val" == "$example_val" ]] && return 0
         local bad
         for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
@@ -3712,7 +3699,7 @@ ensure_sidar_env_default() {
     local env_file="$1"
     local current_env=""
 
-    current_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file" || true)
     current_env=$(echo "$current_env" | tr -d '"'\''[:space:]')
 
     if [[ -z "$current_env" ]]; then
@@ -3790,7 +3777,7 @@ prompt_post_install_sidar_env_mode() {
 
 get_env_value() {
     local env_file="$1" key="$2"
-    grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
+    read_env_value_from_file "$key" "$env_file" || true
 }
 
 known_weak_secrets_file() {
@@ -4110,7 +4097,7 @@ run_migrations() {
 
     DB_URL=""
     if [[ -f "$ENV_FILE" ]]; then
-        DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE" || true)
     fi
 
     cd "$SCRIPT_DIR"
@@ -4290,8 +4277,8 @@ PY
     if [[ -f "$ENV_FILE" ]]; then
         local refreshed_db_url=""
         local refreshed_postgres_password=""
-        refreshed_db_url=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
-        refreshed_postgres_password=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        refreshed_db_url=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE" || true)
+        refreshed_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$ENV_FILE" || true)
 
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
@@ -4365,7 +4352,7 @@ start_docker_image_prefetch_async() {
     fi
 
     if [[ -f "$env_file" ]]; then
-        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file" | tr -d '[:space:]' || true)
     fi
     if [[ -z "$compose_profiles" ]]; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -4835,7 +4822,7 @@ print_summary() {
 
     if [[ "$WSL2" == true ]]; then
         local multimodal_val=""
-        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(grep -E "^ENABLE_MULTIMODAL=" "$SCRIPT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]' || true)
         if [[ "$multimodal_val" == "true" ]]; then
             echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
             if [[ "$AUDIO_SESSION_RESTART_RECOMMENDED" == true ]]; then
@@ -4910,7 +4897,7 @@ launch_docker_services() {
     fi
 
     if [[ -f "$env_file" ]]; then
-        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file" | tr -d '[:space:]' || true)
     fi
     if [[ -z "$compose_profiles" ]]; then
         if [[ "$GPU_AVAILABLE" == true ]]; then

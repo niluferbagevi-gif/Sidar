@@ -203,7 +203,7 @@ ensure_rag_vector_backend_pgvector() {
         return
     fi
 
-    current_backend=$(grep -E '^RAG_VECTOR_BACKEND=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_backend=$(read_env_value_from_file "RAG_VECTOR_BACKEND" "$env_file" || true)
     if [[ -z "$current_backend" ]]; then
         echo "RAG_VECTOR_BACKEND=pgvector" >> "$env_file"
         ok ".env: RAG_VECTOR_BACKEND=pgvector eklendi."
