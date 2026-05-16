@@ -165,3 +165,17 @@ def test_install_sidar_uses_entropy_checker_for_database_password_hardening() ->
     assert 'case "$db_password" in' not in script
     assert "secret_strength.py" in script
     assert "Password1" not in script
+
+
+def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    recovery_start = script.index("warn \"Stash apply sırasında çakışma oluştu")
+    recovery_block = script[recovery_start : script.index("SCRIPT_DIR=\"$TARGET_DIR\"", recovery_start)]
+
+    assert "git stash apply \"$INSTALL_STASH_REF\"" in script
+    assert "git stash pop" not in script
+    assert "git rev-parse -q --verify \"${INSTALL_STASH_REF}^{commit}\"" in recovery_block
+    assert recovery_block.index("git rev-parse -q --verify") < recovery_block.index("git clean -fd ||")
+    assert "Yedek stash korunuyor" in recovery_block
+    assert "git stash apply ${INSTALL_STASH_REF}" in recovery_block
+    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script

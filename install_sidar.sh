@@ -1925,39 +1925,53 @@ sync_repo() {
         (
             cd "$TARGET_DIR"
             local STASHED_CHANGES=false
+            local INSTALL_STASH_REF=""
+            local INSTALL_STASH_MESSAGE=""
             if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+                INSTALL_STASH_MESSAGE="sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)"
                 info "Lokal değişiklikler geçici olarak stash'e alınıyor."
-                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
+                git stash push -u -m "$INSTALL_STASH_MESSAGE" >/dev/null 2>&1 || fail "Lokal değişiklikler yedek stash'e alınamadı; git güncellemesi güvenli şekilde durduruldu."
+                INSTALL_STASH_REF="$(git stash list --format='%gd:%gs' | awk -F: -v msg="$INSTALL_STASH_MESSAGE" '$0 ~ msg {print $1; exit}')"
+                INSTALL_STASH_REF="${INSTALL_STASH_REF:-stash@{0}}"
                 STASHED_CHANGES=true
+                ok "Lokal değişiklikler yedek stash'e alındı: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
             fi
 
             git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
 
             if [[ "$STASHED_CHANGES" == true ]]; then
-                if git stash pop >/dev/null 2>&1; then
+                # `apply` kullanıyoruz; başarı kesinleşmeden stash'i drop etmeyerek
+                # reset/clean gibi yıkıcı kurtarma adımlarında kullanıcı çalışmasını
+                # geri alınabilir bir stash referansıyla koruyoruz.
+                if git stash apply "$INSTALL_STASH_REF" >/dev/null 2>&1; then
+                    git stash drop "$INSTALL_STASH_REF" >/dev/null 2>&1 || warn "Uygulanan stash otomatik silinemedi; manuel kontrol edin: ${INSTALL_STASH_REF}"
                     ok "Lokal değişiklikler stash'ten geri yüklendi."
                 else
-                    warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
+                    warn "Stash apply sırasında çakışma oluştu; yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
                     git merge --abort >/dev/null 2>&1 || true
                     git rebase --abort >/dev/null 2>&1 || true
                     if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
+                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılmadı. Yerel çalışma yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Manuel çözün veya stash'i doğruladıktan sonra reset/clean işlemini bilinçli çalıştırın."
                     fi
 
                     echo ""
-                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
+                    warn "Yerel değişiklikler yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
+                    warn "Yalnız bu stash referansını doğruladıktan sonra çalışma ağacını origin/main durumuna sıfırlayabilirsiniz."
                     local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Yedek stash doğrulandı. Çakışmayı temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
                     case "${recovery_reply:-H}" in
                         [EeYy]*)
-                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
+                            if [[ -z "$INSTALL_STASH_REF" ]] || ! git rev-parse -q --verify "${INSTALL_STASH_REF}^{commit}" >/dev/null; then
+                                fail "Yıkıcı git kurtarma reddedildi: geçerli yedek stash referansı bulunamadı. git clean -fd çalıştırılmadı."
+                            fi
+                            warn "Kurtarma adımı uygulanıyor. Yerel çalışma yedek stash'te korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
                             git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
-                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
+                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu. Yedek stash: ${INSTALL_STASH_REF}"
+                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Yedek stash: ${INSTALL_STASH_REF}"
+                            ok "Repo origin/main durumuna sıfırlandı. Yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Geri almak için: git stash apply ${INSTALL_STASH_REF}"
                             ;;
                         *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Yerel çalışma yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Lütfen '$TARGET_DIR' içinde çakışmaları manuel çözün veya stash'i doğruladıktan sonra reset/clean işlemini bilinçli çalıştırın."
                             ;;
                     esac
                 fi
