@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.3
+# Sürüm : $SIDAR_INSTALLER_VERSION
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -17,6 +17,8 @@
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
+
+SIDAR_INSTALLER_VERSION="${SIDAR_INSTALLER_VERSION:-5.2.3}"
 
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
@@ -67,6 +69,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
+INSTALL_PHASE_DIR="${SCRIPT_DIR}/scripts/install_phases"
 INSTALL_HELPERS_TEMP_DIR=""
 REQUIRED_INSTALL_MODULES=(
     "install_helpers.sh"
@@ -75,21 +78,37 @@ REQUIRED_INSTALL_MODULES=(
     "db_credentials.sh"
     "ollama_models.sh"
 )
+REQUIRED_INSTALL_PHASES=(
+    "00_doctor.sh"
+    "01_system.sh"
+    "02_python.sh"
+    "03_models.sh"
+    "04_smoke.sh"
+    "99_full_install.sh"
+)
 missing_install_modules=()
 for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
     if [[ ! -f "${INSTALL_MODULE_DIR}/${module_name}" ]]; then
         missing_install_modules+=("$module_name")
     fi
 done
+missing_install_phases=()
+for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+    if [[ ! -f "${INSTALL_PHASE_DIR}/${phase_name}" ]]; then
+        missing_install_phases+=("$phase_name")
+    fi
+done
 
-if (( ${#missing_install_modules[@]} > 0 )); then
-    warn "Yerel kurulum modülleri eksik: ${missing_install_modules[*]}"
-    warn "Tek dosyalık/eksik checkout algılandı; modüller uzaktan indirilmeyi deneyecek."
+if (( ${#missing_install_modules[@]} > 0 || ${#missing_install_phases[@]} > 0 )); then
+    warn "Yerel kurulum modülleri/fazları eksik: ${missing_install_modules[*]} ${missing_install_phases[*]}"
+    warn "Tek dosyalık/eksik checkout algılandı; modüller ve fazlar uzaktan indirilmeyi deneyecek."
 
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_components.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    mkdir -p "$INSTALL_MODULE_DIR"
+    INSTALL_PHASE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_phases"
+    mkdir -p "$INSTALL_MODULE_DIR" "$INSTALL_PHASE_DIR"
     REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    REMOTE_PHASE_BASE="${SIDAR_INSTALL_PHASE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_phases}"
 
     for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
         remote_module_url="${REMOTE_MODULE_BASE}/${module_name}"
@@ -115,14 +134,43 @@ if (( ${#missing_install_modules[@]} > 0 )); then
         install -m 0644 "$tmp_module_path" "${INSTALL_MODULE_DIR}/${module_name}"
         rm -f "$tmp_module_path"
     done
-    ok "Kurulum modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
+
+    for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+        remote_phase_url="${REMOTE_PHASE_BASE}/${phase_name}"
+        tmp_phase_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_${phase_name%.sh}.XXXXXX.sh")"
+        if command -v curl &>/dev/null; then
+            if ! curl -fsSL "$remote_phase_url" -o "$tmp_phase_path"; then
+                rm -f "$tmp_phase_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli faz indirilemedi: ${remote_phase_url}"
+            fi
+        elif command -v wget &>/dev/null; then
+            if ! wget -qO "$tmp_phase_path" "$remote_phase_url"; then
+                rm -f "$tmp_phase_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli faz indirilemedi: ${remote_phase_url}"
+            fi
+        else
+            rm -f "$tmp_phase_path"
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+            fail "Ne curl ne de wget bulundu; fazlar indirilemiyor."
+        fi
+
+        install -m 0644 "$tmp_phase_path" "${INSTALL_PHASE_DIR}/${phase_name}"
+        rm -f "$tmp_phase_path"
+    done
+    ok "Kurulum bileşenleri geçici dizine indirildi: $INSTALL_HELPERS_TEMP_DIR"
 fi
 
 for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
     # shellcheck disable=SC1090
     source "${INSTALL_MODULE_DIR}/${module_name}"
 done
-unset module_name missing_install_modules remote_module_url tmp_module_path
+for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+    # shellcheck disable=SC1090
+    source "${INSTALL_PHASE_DIR}/${phase_name}"
+done
+unset module_name phase_name missing_install_modules missing_install_phases remote_module_url remote_phase_url tmp_module_path tmp_phase_path
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -1927,7 +1975,7 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
+    printf "║          Sidar AI — Kurulum Başlıyor (v%-9s)        ║\n" "$SIDAR_INSTALLER_VERSION"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -5099,115 +5147,12 @@ EOF
 }
 
 
-run_doctor_phase() {
-    step "Sidar Doctor"
-    cd "$SCRIPT_DIR"
-    mkdir -p artifacts/install
-    local -a doctor_cmd=()
-    if command -v uv &>/dev/null; then
-        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
-    elif command -v python3 &>/dev/null; then
-        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
-    else
-        fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
-    fi
-
-    if "${doctor_cmd[@]}"; then
-        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
-    else
-        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
-        return 1
-    fi
-}
-
-run_prepare_system_phase() {
-    install_system_dependencies
-    sync_repo
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_nvidia_docker
-    create_directories
-    setup_env_file
-    ok "prepare-system fazı tamamlandı."
-}
-
-run_sync_deps_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_uv
-    setup_python_env
-    install_python_deps
-    install_pyright_lsp_tool
-    verify_torch_cuda
-    ok "sync-deps fazı tamamlandı."
-}
-
-run_provision_models_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    detect_gpu
-    setup_env_file
-    download_ollama_models
-    ok "provision-models fazı tamamlandı."
-}
-
-run_smoke_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    detect_gpu
-    prepare_docker_for_migrations
-    run_migrations
-    run_smoke_tests
-    run_test_artifact_audit
-    run_doctor_phase || true
-    ok "smoke fazı tamamlandı."
-}
-
-run_install_subcommand_if_requested() {
-    case "$INSTALL_SUBCOMMAND" in
-        full) return 1 ;;
-        doctor)
-            run_doctor_phase
-            return 0
-            ;;
-        prepare-system)
-            run_prepare_system_phase
-            return 0
-            ;;
-        sync-deps)
-            run_sync_deps_phase
-            return 0
-            ;;
-        provision-models)
-            run_provision_models_phase
-            return 0
-            ;;
-        smoke)
-            run_smoke_phase
-            return 0
-            ;;
-    esac
-    return 1
-}
-
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
     report_repo_lookup_context
     detect_environment
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
-        if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
-            info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
-            verify_offline_bundle_manifest "$OFFLINE_PACKAGES_DIR"
-        else
-            fail "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."
-        fi
-    fi
+    prepare_offline_mode_if_needed
 
     if [[ "$INSTALL_SUBCOMMAND" == "doctor" ]]; then
         run_doctor_phase
@@ -5228,76 +5173,7 @@ main() {
         return
     fi
 
-    # Kritik sıra:
-    # 1) Sistem bağımlılıkları (git/curl vb.)
-    # 2) Repo senkronizasyonu (git clone/pull)
-    # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
-    install_system_dependencies
-    sync_repo
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_nvidia_docker
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" && -f "$SCRIPT_DIR/.env" ]]; then
-        # Mevcut .env varsa Docker imajlarını uv sync ile paralel önceden çekebiliriz.
-        start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
-    fi
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-        setup_uv
-        setup_python_env
-        install_python_deps
-        install_pyright_lsp_tool
-        verify_torch_cuda
-    else
-        info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."
-    fi
-    create_directories
-    # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
-    setup_vscode_workspace
-    setup_env_file
-    start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        setup_react_frontend
-        install_playwright_browsers
-    else
-        info "Tam Docker modu: lokal React build ve Playwright kurulumu atlanıyor."
-    fi
-    setup_shell_activation_shortcut
-    setup_wsl2_audio
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # DB migrasyonu öncesinde paralel image prefetch sonuçlansın; compose up gerekirse kalanları tekrar çeker.
-        wait_for_docker_image_prefetch
-        # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
-        prepare_docker_for_migrations
-        # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
-        run_migrations
-        # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
-        # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
-        # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
-        download_ollama_models
-    else
-        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
-    fi
-    # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
-    wait_for_docker_image_prefetch
-    launch_docker_services
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        run_smoke_tests
-        run_test_artifact_audit
-    else
-        SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
-    fi
-    print_summary
-    relocate_log_file_if_needed
-    cleanup_bootstrap_script_copy
-    prompt_post_install_sidar_env_mode
-    # En son adım: IDE başlatma onayı
-    launch_ide
+    run_full_install_phase
 }
 
 main "$@"

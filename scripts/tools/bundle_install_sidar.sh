@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_SCRIPT="${ROOT_DIR}/install_sidar.sh"
 MODULE_DIR="${ROOT_DIR}/scripts/install_modules"
+PHASE_DIR="${ROOT_DIR}/scripts/install_phases"
 OUTPUT_SCRIPT="${ROOT_DIR}/dist/install_sidar.sh"
 
 mkdir -p "${ROOT_DIR}/dist"
@@ -18,7 +19,12 @@ if [[ ! -d "$MODULE_DIR" ]]; then
     exit 1
 fi
 
-awk -v module_dir="$MODULE_DIR" '
+if [[ ! -d "$PHASE_DIR" ]]; then
+    echo "Faz dizini bulunamadı: $PHASE_DIR" >&2
+    exit 1
+fi
+
+awk -v module_dir="$MODULE_DIR" -v phase_dir="$PHASE_DIR" '
 BEGIN { in_block = 0 }
 /^# BEGIN_BUNDLE_MODULES$/ {
     print "# BEGIN_BUNDLE_MODULES"
@@ -32,6 +38,15 @@ BEGIN { in_block = 0 }
         close(f)
     }
     close("find \"" module_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort")
+    while ((("find \"" phase_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort") | getline f) > 0) {
+        print ""
+        print "# --- PHASE: " f " ---"
+        while ((getline line < f) > 0) {
+            print line
+        }
+        close(f)
+    }
+    close("find \"" phase_dir "\" -maxdepth 1 -type f -name \"*.sh\" | sort")
     print "# END_BUNDLE_MODULES"
     in_block = 1
     next

@@ -16,6 +16,10 @@ def _install_script_with_modules() -> str:
         module.read_text(encoding="utf-8")
         for module in sorted(Path("scripts/install_modules").glob("*.sh"))
     )
+    parts.extend(
+        phase.read_text(encoding="utf-8")
+        for phase in sorted(Path("scripts/install_phases").glob("*.sh"))
+    )
     return "\n".join(parts)
 
 
@@ -270,7 +274,7 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     assert "WSL_MEMORY_GB=16 / WSL_SWAP_GB=8" in script
 
 def test_install_sidar_parallel_prefetches_docker_images() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script_with_modules()
 
     assert "install_parallel_prefetch_enabled()" in script
     assert "start_docker_image_prefetch_async()" in script
@@ -313,8 +317,43 @@ def test_install_sidar_sources_modular_install_components() -> None:
         "ollama_models.sh",
     ]:
         assert f'"{module_name}"' in script
+    for phase_name in [
+        "00_doctor.sh",
+        "01_system.sh",
+        "02_python.sh",
+        "03_models.sh",
+        "04_smoke.sh",
+        "99_full_install.sh",
+    ]:
+        assert f'"{phase_name}"' in script
     assert 'source "${INSTALL_MODULE_DIR}/${module_name}"' in script
+    assert 'source "${INSTALL_PHASE_DIR}/${phase_name}"' in script
+    assert "REMOTE_PHASE_BASE" in script
     assert "detect_gpu()" in Path("scripts/install_modules/gpu_utils.sh").read_text(encoding="utf-8")
     assert "setup_python_env()" in Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
     assert "harden_database_credentials()" in Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
     assert "download_ollama_models()" in Path("scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8")
+    assert "run_prepare_system_phase()" in Path("scripts/install_phases/01_system.sh").read_text(encoding="utf-8")
+    assert "run_sync_deps_phase()" in Path("scripts/install_phases/02_python.sh").read_text(encoding="utf-8")
+    assert "run_full_install_phase()" in Path("scripts/install_phases/99_full_install.sh").read_text(encoding="utf-8")
+
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+    assert 'PHASE_DIR="${ROOT_DIR}/scripts/install_phases"' in bundler
+    assert '# --- PHASE: ' in bundler
+    assert 'awk -v module_dir="$MODULE_DIR" -v phase_dir="$PHASE_DIR"' in bundler
+
+
+def test_install_sidar_centralizes_installer_version_and_phase_orchestration() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    combined = _install_script_with_modules()
+
+    assert 'SIDAR_INSTALLER_VERSION="${SIDAR_INSTALLER_VERSION:-5.2.3}"' in script
+    assert script.count("5.2.3") == 1
+    assert "v5.2.3" not in script
+    assert 'printf "║          Sidar AI — Kurulum Başlıyor (v%-9s)        ║\\n" "$SIDAR_INSTALLER_VERSION"' in script
+    assert "run_prepare_system_phase()" not in script
+    assert "run_sync_deps_phase()" not in script
+    assert "run_provision_models_phase()" not in script
+    assert "run_smoke_phase()" not in script
+    assert "run_full_install_phase" in script
+    assert "run_full_install_phase()" in combined
