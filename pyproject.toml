@@ -272,7 +272,8 @@ markers = [
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
   "integration: harici sistem entegrasyonları",
-  "quality_gate: LLM kalite kapısı doğrulamaları",
+  "quality_gate: deterministik kalite kapısı doğrulamaları",
+  "shellcheck: shell betikleri için ShellCheck kalite kapısı",
 ]
 filterwarnings = [
   "error",

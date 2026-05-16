@@ -125,8 +125,11 @@ jobs:
       - name: Check empty test artifacts
         run: bash scripts/check_empty_test_artifacts.sh
 
-      - name: Run deterministic LLM quality gate
-        run: uv run pytest -q --no-cov -m quality_gate tests/quality/test_llm_quality_gate.py
+      - name: Run deterministic quality gates
+        run: >-
+          uv run pytest -q --no-cov -m quality_gate
+          tests/quality/test_llm_quality_gate.py
+          tests/quality/test_shellcheck_quality_gate.py
 
       - name: Prepare isolated test database (sidar_test) + Alembic upgrade
         env:

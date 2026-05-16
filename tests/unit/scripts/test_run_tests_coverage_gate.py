@@ -229,6 +229,21 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "scripts/.*\\.(sh|bash)" in config
 
 
+def test_pytest_shellcheck_quality_gate_is_registered() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    shellcheck_gate = Path("tests/quality/test_shellcheck_quality_gate.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"shellcheck: shell betikleri için ShellCheck kalite kapısı"' in pyproject
+    assert "pytest.mark.shellcheck" in shellcheck_gate
+    assert "pytest.mark.quality_gate" in shellcheck_gate
+    assert "uv run pytest -q --no-cov -m quality_gate" in ci_workflow
+    assert "tests/quality/test_shellcheck_quality_gate.py" in ci_workflow
+    assert "shellcheck-py must expose the shellcheck executable via uv" in shellcheck_gate
+
+
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
