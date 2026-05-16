@@ -36,7 +36,47 @@ ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+
+redact_install_log_stream() {
+    if command -v python3 &>/dev/null; then
+        python3 -c '
+import re
+import sys
+
+SENSITIVE_ASSIGNMENT = re.compile(
+    r"(?i)(\b(?:[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_KEY|DATABASE_URL|DB_URL)[A-Z0-9_]*|"
+    r"generated_password|safe_db_url|container_db_url|db_password|pg_password|grafana_password|"
+    r"api_key|memory_key)\s*=\s*)([\"\x27]?)([^\"\x27\s|;]+)(\2)"
+)
+DB_URL_WITH_PASSWORD = re.compile(
+    r"(?i)\b((?:postgres(?:ql)?(?:\+asyncpg)?|mysql|mariadb)://[^\s:@/]+:)([^\s@]+)(@[^\s\"\x27|;)]+)"
+)
+AUTH_HEADER = re.compile(r"(?i)\b(Authorization:\s*(?:Bearer|Basic)\s+)[^\s\"\x27|;)]+")
+
+
+def redact(line: str) -> str:
+    line = DB_URL_WITH_PASSWORD.sub(r"\1***\3", line)
+    line = SENSITIVE_ASSIGNMENT.sub(r"\1\2***\4", line)
+    line = AUTH_HEADER.sub(r"\1***", line)
+    return line
+
+for raw_line in sys.stdin:
+    sys.stdout.write(redact(raw_line))
+    sys.stdout.flush()
+'
+    else
+        sed -u -E \
+            -e 's#((postgres(ql)?(\+asyncpg)?|mysql|mariadb)://[^[:space:]@:/]+:)[^[:space:]@]+(@[^[:space:]|;)]+)#\1***\5#gI' \
+            -e 's#((SECRET|TOKEN|PASSWORD|API_KEY|DATABASE_URL|DB_URL)[A-Z0-9_]*[[:space:]]*=[[:space:]]*)[^[:space:]|;]+#\1***#gI' \
+            -e 's#(Authorization:[[:space:]]*(Bearer|Basic)[[:space:]]+)[^[:space:]|;)]+#\1***#gI'
+    fi
+}
+
+strip_ansi_stream() {
+    sed -u -E $'s/\[[0-9;]*[[:alpha:]]//g'
+}
+
+exec > >(redact_install_log_stream | tee -i >(strip_ansi_stream > "$LOG_FILE")) 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'

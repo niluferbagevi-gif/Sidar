@@ -148,3 +148,14 @@ def test_install_sidar_uses_entropy_heuristics_for_weak_passwords() -> None:
     assert "entropy < 80" in script
     assert "qwerty*|password*|test123*" in script
     assert "DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:***)" in script
+
+
+def test_install_sidar_redacts_sensitive_log_stream_before_tee() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "redact_install_log_stream" in script
+    assert 'exec > >(redact_install_log_stream | tee -i >(strip_ansi_stream > "$LOG_FILE")) 2>&1' in script
+    assert "SENSITIVE_ASSIGNMENT" in script
+    assert "DB_URL_WITH_PASSWORD" in script
+    assert "AUTH_HEADER" in script
+    assert "generated_password|safe_db_url|container_db_url|db_password" in script
