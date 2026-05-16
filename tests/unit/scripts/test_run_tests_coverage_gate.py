@@ -273,6 +273,27 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     assert "--wsl-memory <GB> / --wsl-memory=<GB>" in script
     assert "WSL_MEMORY_GB=16 / WSL_SWAP_GB=8" in script
 
+
+
+def test_install_sidar_uses_single_runtime_mode_selection() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    combined = _install_script_with_modules()
+    launch_start = script.index("launch_docker_services()")
+    select_start = script.index("select_runtime_mode()")
+    launch_section = script[launch_start:select_start]
+    select_section = script[select_start:script.index("# ── Kurulum Sonrası IDE", select_start)]
+
+    assert "select_runtime_mode_early" not in combined
+    assert combined.count("Kurulum çalışma modu seçimi:") == 1
+    assert combined.count("1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker") == 1
+    assert combined.count("2) Tam Docker modu: web/agent dahil tüm servisler Docker") == 1
+    assert 'read -r -t 180 -p "Seçim [1/2, varsayılan=1]: "' not in launch_section
+    assert "select_runtime_mode" in launch_section
+    assert "APP_RUNTIME_MODE_SELECTED" in launch_section
+    assert 'APP_RUNTIME_MODE="$runtime_mode"' in select_section
+    assert 'APP_RUNTIME_MODE_SELECTED="$runtime_mode"' in select_section
+    assert "select_runtime_mode" in Path("scripts/install_phases/99_full_install.sh").read_text(encoding="utf-8")
+
 def test_install_sidar_parallel_prefetches_docker_images() -> None:
     script = _install_script_with_modules()
 

@@ -4897,8 +4897,7 @@ launch_docker_services() {
     local docker_compose_cmd=()
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
-    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
-    local runtime_answer=""
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-}"
     local -a infra_services=(postgres redis ollama jaeger prometheus grafana)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
@@ -4921,29 +4920,10 @@ launch_docker_services() {
         fi
     fi
 
-    if [[ "$runtime_mode" == "ask" ]]; then
-        if [[ "$NO_INTERACTION" == true ]]; then
-            runtime_mode="docker"
-            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
-        else
-            echo ""
-            info "Çalışma modu seçimi:"
-            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
-            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
-            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
-                :
-            else
-                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
-                runtime_answer="1"
-            fi
-            case "${runtime_answer:-1}" in
-                2) runtime_mode="docker" ;;
-                *) runtime_mode="local" ;;
-            esac
-        fi
+    if [[ -z "$runtime_mode" || "$runtime_mode" == "ask" ]]; then
+        select_runtime_mode
+        runtime_mode="$APP_RUNTIME_MODE_SELECTED"
     fi
-
-    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
     echo ""
     local start_prompt="Docker servisleri başlatılsın mı? [E/h] "
     local start_default="E"
@@ -5007,10 +4987,15 @@ launch_docker_services() {
     esac
 }
 
-# ── Çalışma Modu Seçimi (Erken) ──────────────────────────────────────────────
-select_runtime_mode_early() {
-    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+# ── Çalışma Modu Seçimi ──────────────────────────────────────────────────────
+select_runtime_mode() {
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-ask}}"
     local runtime_answer=""
+
+    case "$runtime_mode" in
+        local|docker) ;;
+        *) runtime_mode="ask" ;;
+    esac
 
     if [[ "$runtime_mode" == "ask" ]]; then
         if [[ "$NO_INTERACTION" == true ]]; then
@@ -5018,7 +5003,7 @@ select_runtime_mode_early() {
             info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
         else
             echo ""
-            info "Kurulum başlangıcında çalışma modu seçimi:"
+            info "Kurulum çalışma modu seçimi:"
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
             if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then

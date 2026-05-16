@@ -7,7 +7,7 @@ run_prepare_system_phase() {
     sync_repo
     cd "$SCRIPT_DIR"
     ensure_prerequisites
-    select_runtime_mode_early
+    select_runtime_mode
     detect_gpu
     setup_nvidia_docker
     create_directories

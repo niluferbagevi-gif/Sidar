@@ -5,7 +5,7 @@
 run_sync_deps_phase() {
     cd "$SCRIPT_DIR"
     ensure_prerequisites
-    select_runtime_mode_early
+    select_runtime_mode
     detect_gpu
     setup_uv
     setup_python_env

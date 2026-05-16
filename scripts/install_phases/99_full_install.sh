@@ -11,7 +11,7 @@ run_full_install_phase() {
     sync_repo
     cd "$SCRIPT_DIR"
     ensure_prerequisites
-    select_runtime_mode_early
+    select_runtime_mode
     detect_gpu
     setup_nvidia_docker
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" && -f "$SCRIPT_DIR/.env" ]]; then
