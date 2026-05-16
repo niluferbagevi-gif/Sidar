@@ -135,6 +135,26 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
+def test_install_sidar_loads_known_weak_secrets_from_central_denylist() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    denylist_lines = [
+        line
+        for line in Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    denylist_keys = {line.split("=", 1)[0] for line in denylist_lines if "=" in line}
+    denylist_values = [line.split("=", 1)[1] if "=" in line else line for line in denylist_lines]
+
+    assert "known_weak_secrets_file()" in script
+    assert "is_known_weak_secret_value" in script
+    assert "scripts/known_weak_secrets.txt" in script
+    assert ".env.example" in script[script.index("_is_missing_or_insecure()") :]
+    assert {"API_KEY", "JWT_SECRET_KEY", "MEMORY_ENCRYPTION_KEY"} <= denylist_keys
+    assert {"AUTONOMY_WEBHOOK_SECRET", "SWARM_FEDERATION_SHARED_SECRET", "GITHUB_WEBHOOK_SECRET"} <= denylist_keys
+    assert "METRICS_TOKEN" in denylist_keys
+    assert all(value not in script for value in denylist_values)
+
+
 def test_install_sidar_pins_remote_installer_checksums() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
