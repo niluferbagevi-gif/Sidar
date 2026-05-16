@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
 # Sürüm : pyproject.toml / sidar_version.py üzerinden otomatik çözülür
-# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
+# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX GPU ailesi (PyTorch CUDA wheel dinamik seçilir)
 #
 # Kullanım:
 #   chmod +x install_sidar.sh
@@ -1635,6 +1635,8 @@ for arg in "$@"; do
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
             echo "    SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)"
             echo "    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder"
+            echo "    PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)"
+            echo "    PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
@@ -2400,6 +2402,7 @@ detect_gpu() {
     step "GPU Tespiti"
     GPU_AVAILABLE=false
     CUDA_VERSION=""
+    GPU_COMPUTE_CAPABILITY=""
 
     if [[ "$FORCE_CPU" == true ]]; then
         warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
@@ -2429,6 +2432,8 @@ detect_gpu() {
             VRAM_MB="0"
         fi
 
+        query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
+        GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
         CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || true)
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
@@ -2441,6 +2446,7 @@ detect_gpu() {
         ok "VRAM    : ${VRAM_MB} MiB"
         ok "Sürücü  : $DRIVER_VER"
         ok "CUDA    : $CUDA_VERSION"
+        [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
 
         if [[ "$WSL2" == true ]]; then
             info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
@@ -4708,6 +4714,58 @@ prepare_docker_for_migrations() {
 }
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
+select_pytorch_cuda_wheel_tag() {
+    local override_tag="${PYTORCH_CUDA_WHEEL_TAG:-}"
+    local cuda_version="${CUDA_VERSION:-}"
+    local compute_capability="${GPU_COMPUTE_CAPABILITY:-}"
+    local gpu_name="${GPU_NAME:-}"
+    local compute_major=""
+    local cuda_major=""
+    local cuda_minor=""
+
+    if [[ -n "$override_tag" ]]; then
+        echo "$override_tag"
+        return 0
+    fi
+
+    compute_major="${compute_capability%%.*}"
+    if [[ "$compute_major" =~ ^[0-9]+$ ]] && (( compute_major >= 12 )); then
+        # Blackwell / RTX 50xx sınıfı GPU'lar CUDA 12.6+ wheel ister; cu128 tercih edilir.
+        echo "cu128"
+        return 0
+    fi
+
+    if [[ "$gpu_name" =~ (Blackwell|RTX[[:space:]]*50|RTX[[:space:]]*5[0-9]{3}) ]]; then
+        echo "cu128"
+        return 0
+    fi
+
+    cuda_major="${cuda_version%%.*}"
+    cuda_minor="${cuda_version#*.}"
+    cuda_minor="${cuda_minor%%.*}"
+    if [[ "$cuda_major" =~ ^[0-9]+$ && "$cuda_minor" =~ ^[0-9]+$ ]]; then
+        if (( cuda_major > 12 || (cuda_major == 12 && cuda_minor >= 8) )); then
+            echo "cu128"
+            return 0
+        fi
+        if (( cuda_major == 12 && cuda_minor >= 6 )); then
+            echo "cu126"
+            return 0
+        fi
+    fi
+
+    echo "cu124"
+}
+
+install_pytorch_cuda_wheels() {
+    local cuda_tag="${1:-}"
+    [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
+    local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
+
+    info "PyTorch CUDA wheel seçimi: ${cuda_tag} (${index_url})"
+    uv pip install torch torchvision torchaudio --reinstall --index-url "$index_url"
+}
+
 verify_torch_cuda() {
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
@@ -4724,8 +4782,8 @@ print(f'available={avail} cuda={ver} device={dev}')
             ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
         else
             warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-            info "GPU wheel için PyTorch yeniden kuruluyor (pyproject.toml içindeki [tool.uv] index ayarları kullanılarak)..."
-            uv pip install torch torchvision torchaudio --reinstall
+            info "GPU wheel için PyTorch yeniden kuruluyor (GPU compute capability/CUDA sürümüne göre dinamik index seçilecek)..."
+            install_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
 
             if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
                 ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."

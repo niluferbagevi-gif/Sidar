@@ -322,3 +322,22 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
     assert "read -r -t 180" not in script
     assert "180 saniye içinde" not in script
     assert '${2:-180}' not in script
+
+
+def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    selector_start = script.index("select_pytorch_cuda_wheel_tag()")
+    selector_body = script[selector_start : script.index("install_pytorch_cuda_wheels()", selector_start)]
+    verify_body = script[script.index("verify_torch_cuda()") : script.index("# ── 14.", script.index("verify_torch_cuda()"))]
+
+    assert "PyTorch cu124 fallback" not in script
+    assert "--query-gpu=compute_cap" in script
+    assert "PYTORCH_CUDA_WHEEL_TAG" in selector_body
+    assert "compute_major >= 12" in selector_body
+    assert "Blackwell" in selector_body
+    assert "cu128" in selector_body
+    assert "cu126" in selector_body
+    assert "cu124" in selector_body
+    assert "PYTORCH_CUDA_INDEX_URL" in script
+    assert "install_pytorch_cuda_wheels \"$(select_pytorch_cuda_wheel_tag)\"" in verify_body
+    assert "uv pip install torch torchvision torchaudio --reinstall\n" not in script
