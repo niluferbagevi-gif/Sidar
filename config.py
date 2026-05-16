@@ -1088,6 +1088,13 @@ class Config:
     ENABLE_RAG_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_ENTITY_EXTRACTION", True)
     RAG_ENTITY_MAX_PER_DOC: int = get_int_env("RAG_ENTITY_MAX_PER_DOC", 24)
 
+    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
+    META_GRAPH_API_TOKEN: str = os.getenv("META_GRAPH_API_TOKEN", "")
+    META_GRAPH_API_VERSION: str = os.getenv("META_GRAPH_API_VERSION", "v20.0")
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID", "")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
