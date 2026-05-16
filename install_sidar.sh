@@ -282,6 +282,7 @@ on_install_error() {
     echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
     echo "   Hata veren komut: ${failed_cmd}" >&2
     echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+    cancel_docker_image_prefetch_if_running
     start_install_auto_heal_on_failure "$exit_code" "$failed_line" "$failed_cmd"
     exit "$exit_code"
 }
@@ -1610,6 +1611,9 @@ MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
+DOCKER_IMAGE_PREFETCH_PID=""
+DOCKER_IMAGE_PREFETCH_LOG=""
+DOCKER_IMAGE_PREFETCH_STATUS="not_started"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
@@ -1706,6 +1710,7 @@ for arg in "$@"; do
             echo "    INSTALL_AUTO_HEAL_ON_FAILURE=1  Kurulum hatasında scripts.auto_heal köprüsünü log ile tetikle"
             echo "    INSTALL_AUTO_HEAL_MODE=background|foreground  Self-heal çalışma modu (varsayılan: background)"
             echo "    INSTALL_AUTO_HEAL_HITL_APPROVE=no|yes  Riskli planlarda HITL kararı (varsayılan: no)"
+            echo "    INSTALL_PARALLEL_PREFETCH=1|0  uv/frontend kurulumu sırasında Docker imajlarını paralel önceden çek"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
@@ -3962,6 +3967,106 @@ PY
     fi
 }
 
+install_parallel_prefetch_enabled() {
+    if [[ "${OFFLINE_MODE:-false}" == true ]]; then
+        return 1
+    fi
+    case "${INSTALL_PARALLEL_PREFETCH:-1}" in
+        0|false|FALSE|no|NO|n|N|hayir|HAYIR|hayır|HAYIR|h|H) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+start_docker_image_prefetch_async() {
+    local runtime_mode="${1:-local}"
+    local compose_profiles=""
+    local env_file="$SCRIPT_DIR/.env"
+    local artifact_dir="$SCRIPT_DIR/artifacts/install"
+    local -a docker_compose_cmd=()
+    local -a prefetch_services=(postgres redis ollama jaeger prometheus grafana)
+
+    if [[ -n "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+    if ! install_parallel_prefetch_enabled; then
+        DOCKER_IMAGE_PREFETCH_STATUS="disabled"
+        return 0
+    fi
+    if ! command -v docker &>/dev/null; then
+        DOCKER_IMAGE_PREFETCH_STATUS="docker_unavailable"
+        return 0
+    fi
+    if docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        DOCKER_IMAGE_PREFETCH_STATUS="compose_unavailable"
+        return 0
+    fi
+    if ! docker info &>/dev/null; then
+        DOCKER_IMAGE_PREFETCH_STATUS="daemon_unavailable"
+        info "Docker daemon hazır olmadığı için paralel image prefetch atlandı."
+        return 0
+    fi
+
+    if [[ -f "$env_file" ]]; then
+        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+    fi
+    if [[ -z "$compose_profiles" ]]; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
+            compose_profiles="gpu"
+        else
+            compose_profiles="cpu"
+        fi
+    fi
+
+    mkdir -p "$artifact_dir"
+    DOCKER_IMAGE_PREFETCH_LOG="${artifact_dir}/docker_image_prefetch_$(date +%Y%m%d_%H%M%S).log"
+    DOCKER_IMAGE_PREFETCH_STATUS="running"
+    info "Docker image prefetch arka planda başlatılıyor (${runtime_mode}; servisler: ${prefetch_services[*]}). Log: $DOCKER_IMAGE_PREFETCH_LOG"
+    (
+        cd "$SCRIPT_DIR" || exit 1
+        echo "Sidar Docker image prefetch"
+        echo "runtime_mode=${runtime_mode}"
+        echo "compose_profiles=${compose_profiles}"
+        echo "services=${prefetch_services[*]}"
+        echo "command=COMPOSE_PROFILES=${compose_profiles} ${docker_compose_cmd[*]} pull ${prefetch_services[*]}"
+        COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull "${prefetch_services[@]}"
+    ) > "$DOCKER_IMAGE_PREFETCH_LOG" 2>&1 &
+    DOCKER_IMAGE_PREFETCH_PID=$!
+}
+
+wait_for_docker_image_prefetch() {
+    if [[ -z "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+
+    info "Paralel Docker image prefetch tamamlanması bekleniyor (pid=${DOCKER_IMAGE_PREFETCH_PID})."
+    if wait "$DOCKER_IMAGE_PREFETCH_PID"; then
+        DOCKER_IMAGE_PREFETCH_STATUS="completed"
+        ok "Docker image prefetch tamamlandı."
+    else
+        local prefetch_rc=$?
+        DOCKER_IMAGE_PREFETCH_STATUS="warning"
+        warn "Docker image prefetch başarısız oldu veya bazı imajlar çekilemedi (rc=${prefetch_rc}). Asıl docker compose up akışı gerekirse tekrar deneyecek. Log: ${DOCKER_IMAGE_PREFETCH_LOG:-yok}"
+    fi
+    DOCKER_IMAGE_PREFETCH_PID=""
+}
+
+cancel_docker_image_prefetch_if_running() {
+    if [[ -z "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+    if kill -0 "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null; then
+        warn "Kurulum hata verdi; arka plan Docker image prefetch görevi durduruluyor (pid=${DOCKER_IMAGE_PREFETCH_PID})."
+        kill "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null || true
+        wait "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null || true
+    fi
+    DOCKER_IMAGE_PREFETCH_STATUS="cancelled"
+    DOCKER_IMAGE_PREFETCH_PID=""
+}
+
 prepare_docker_for_migrations() {
     local docker_compose_cmd=()
 
@@ -4858,6 +4963,10 @@ main() {
     select_runtime_mode_early
     detect_gpu
     setup_nvidia_docker
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" && -f "$SCRIPT_DIR/.env" ]]; then
+        # Mevcut .env varsa Docker imajlarını uv sync ile paralel önceden çekebiliriz.
+        start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
+    fi
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
         setup_uv
@@ -4872,6 +4981,7 @@ main() {
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
     setup_env_file
+    start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         setup_react_frontend
         install_playwright_browsers
@@ -4881,6 +4991,8 @@ main() {
     setup_shell_activation_shortcut
     setup_wsl2_audio
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        # DB migrasyonu öncesinde paralel image prefetch sonuçlansın; compose up gerekirse kalanları tekrar çeker.
+        wait_for_docker_image_prefetch
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
@@ -4894,6 +5006,7 @@ main() {
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
     fi
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
+    wait_for_docker_image_prefetch
     launch_docker_services
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         run_smoke_tests

@@ -134,6 +134,25 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
 
+
+def test_install_sidar_parallel_prefetches_docker_images() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "install_parallel_prefetch_enabled()" in script
+    assert "start_docker_image_prefetch_async()" in script
+    assert "wait_for_docker_image_prefetch()" in script
+    assert "cancel_docker_image_prefetch_if_running()" in script
+    assert 'case "${INSTALL_PARALLEL_PREFETCH:-1}"' in script
+    assert "docker_image_prefetch_" in script
+    assert (
+        'COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull '
+        '"${prefetch_services[@]}"'
+    ) in script
+    assert 'start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"' in script
+    assert "wait_for_docker_image_prefetch" in script
+    assert "INSTALL_PARALLEL_PREFETCH=1|0" in script
+    assert "cancel_docker_image_prefetch_if_running" in script
+
 def test_install_sidar_triggers_opt_in_auto_heal_on_failure() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
