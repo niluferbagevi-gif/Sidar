@@ -239,3 +239,24 @@ def test_install_sidar_uses_single_source_project_version() -> None:
     assert "Kurulum Başlıyor (v5.2.3)" not in script
     assert "# Sürüm : 5.2.3" not in script
     assert f"v{project_version}" not in script
+
+
+def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    launch_body = script[
+        script.index("launch_docker_services() {") : script.index("# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {"))
+    ]
+    select_body = script[script.index("select_runtime_mode() {") : script.index("# ── Kurulum Sonrası IDE", script.index("select_runtime_mode() {"))]
+
+    assert "select_runtime_mode_early" not in script
+    assert "select_runtime_mode" in Path("scripts/install_modules/phases/03_runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "Çalışma modu seçimi:" in select_body
+    assert "Geliştirici modu" in select_body
+    assert "Tam Docker modu" in select_body
+    assert "Çalışma modu seçimi:" not in launch_body
+    assert "Geliştirici modu" not in launch_body
+    assert "Tam Docker modu" not in launch_body
+    assert 'local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"' in launch_body
+    assert "tekrar menü göstermeden" in launch_body

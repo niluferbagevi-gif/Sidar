@@ -2,7 +2,7 @@
 
 sidar_phase_runtime_prerequisites() {
     ensure_prerequisites
-    select_runtime_mode_early
+    select_runtime_mode
     detect_gpu
     setup_nvidia_docker
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
