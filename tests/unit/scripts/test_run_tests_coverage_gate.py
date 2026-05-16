@@ -181,6 +181,18 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
     assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script
 
 
+def test_install_sidar_has_locale_switch_for_english_messages() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "resolve_sidar_locale()" in script
+    assert "SIDAR_LOCALE" in script
+    assert "${LANG:-${LC_ALL:-${LC_MESSAGES:-tr}}}" in script
+    assert "sidar_t()" in script
+    assert "Usage:" in script
+    assert "Unknown argument:" in script
+    assert "Select installer message language" in script
+
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -191,6 +203,7 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "--severity=warning -x" in makefile
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
+
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

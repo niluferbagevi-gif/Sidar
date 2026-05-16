@@ -96,3 +96,31 @@ ENV
   rm -rf "$tmpdir"
   [ "$status" -eq 0 ]
 }
+
+@test "SIDAR_LOCALE=en renders installer help in English" {
+  local root
+  root="$(repo_root)"
+  run env SIDAR_INSTALL_TEST_MODE=1 SIDAR_LOCALE=en bash "$root/install_sidar.sh" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"Select installer message language"* ]]
+  [[ "$output" != *"Kullanım:"* ]]
+}
+
+@test "LANG=en_US renders invalid argument warnings in English" {
+  local root
+  root="$(repo_root)"
+  run env -u SIDAR_LOCALE SIDAR_INSTALL_TEST_MODE=1 LANG=en_US.UTF-8 bash "$root/install_sidar.sh" --not-a-real-flag
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Unknown argument: --not-a-real-flag"* ]]
+  [[ "$output" != *"Bilinmeyen argüman"* ]]
+}
+
+@test "default installer help remains Turkish" {
+  local root
+  root="$(repo_root)"
+  run env SIDAR_INSTALL_TEST_MODE=1 SIDAR_LOCALE=tr bash "$root/install_sidar.sh" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Kullanım:"* ]]
+  [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
+}

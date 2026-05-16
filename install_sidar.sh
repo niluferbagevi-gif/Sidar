@@ -55,9 +55,81 @@ else
     LOG_FILE=""
 fi
 
-# ── Renkler ──────────────────────────────────────────────────────────────────
+# ── Renkler + i18n ────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+
+resolve_sidar_locale() {
+    local raw_locale="${SIDAR_LOCALE:-${LANG:-${LC_ALL:-${LC_MESSAGES:-tr}}}}"
+    raw_locale="${raw_locale,,}"
+    raw_locale="${raw_locale%%.*}"
+    raw_locale="${raw_locale%%_*}"
+    raw_locale="${raw_locale%%-*}"
+
+    case "$raw_locale" in
+        en) echo "en" ;;
+        *) echo "tr" ;;
+    esac
+}
+
+SIDAR_EFFECTIVE_LOCALE="$(resolve_sidar_locale)"
+
+sidar_is_english_locale() {
+    [[ "${SIDAR_EFFECTIVE_LOCALE:-tr}" == "en" ]]
+}
+
+sidar_t() {
+    local key="$1"
+    shift || true
+
+    if sidar_is_english_locale; then
+        case "$key" in
+            sed_expression_missing) printf 'sed_inplace: expression parameter is missing.' ;;
+            sed_target_missing) printf 'sed_inplace: target file parameter is missing.' ;;
+            timeout_yes) printf 'No response received within %s seconds. Default selection: Yes.' "$1" ;;
+            timeout_no) printf 'No response received within %s seconds. Default selection: No.' "$1" ;;
+            install_failed) printf 'Installation failed (line %s, exit code %s).' "$1" "$2" ;;
+            failed_command) printf '   Failed command: %s' "$1" ;;
+            check_log) printf '   Check the log file for cleanup/review: %s' "$1" ;;
+            banner_title) printf 'Sidar AI — Installation Starting' ;;
+            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
+            invalid_docker_cli) printf 'Invalid DOCKER_CLI_INSTALL value: %s. Supported: auto|always|never' "$1" ;;
+            invalid_mode) printf 'Invalid --mode value: %s. Supported: local|docker' "$1" ;;
+            invalid_env) printf 'Invalid --env value: %s. Supported: development|production' "$1" ;;
+            silent_mode_enabled) printf 'Silent autonomous installation mode enabled (CI/CD-safe defaults are applied).' ;;
+            incompatible_model_flags) printf '%s' '--skip-models and --download-models cannot be used together.' ;;
+            kubernetes_ignores_cpu) printf '%s' '--cpu is not used in --kubernetes/--helm mode; it will be ignored.' ;;
+            root_install) printf 'Installer is running as root; no sudo password blocker is expected.' ;;
+            sudo_missing_noninteractive) printf 'sudo is required for non-interactive installation, but sudo was not found. Start the installer as root (for example: sudo ./install_sidar.sh).' ;;
+            sudo_ready) printf 'Passwordless/pre-validated sudo access is ready for non-interactive mode.' ;;
+            sudo_blocked) printf "A sudo password blocker was detected. Non-interactive/silent installation would be blocked. Fix: (1) start as root with sudo ./install_sidar.sh, (2) run 'sudo -v' beforehand, or (3) configure NOPASSWD sudo for the required commands." ;;
+            *) printf '%s' "$key" ;;
+        esac
+    else
+        case "$key" in
+            sed_expression_missing) printf 'sed_inplace: ifade parametresi eksik.' ;;
+            sed_target_missing) printf 'sed_inplace: hedef dosya parametresi eksik.' ;;
+            timeout_yes) printf '%s saniye içinde yanıt alınamadı. Varsayılan seçim: Evet.' "$1" ;;
+            timeout_no) printf '%s saniye içinde yanıt alınamadı. Varsayılan seçim: Hayır.' "$1" ;;
+            install_failed) printf 'Kurulum başarısız (satır %s, çıkış kodu %s).' "$1" "$2" ;;
+            failed_command) printf '   Hata veren komut: %s' "$1" ;;
+            check_log) printf '   Temizleme/inceleme için log dosyasını kontrol edin: %s' "$1" ;;
+            banner_title) printf 'Sidar AI — Kurulum Başlıyor' ;;
+            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
+            invalid_docker_cli) printf "Geçersiz DOCKER_CLI_INSTALL değeri: '%s'. Desteklenen: auto|always|never" "$1" ;;
+            invalid_mode) printf "Geçersiz --mode değeri: '%s'. Desteklenen: local|docker" "$1" ;;
+            invalid_env) printf "Geçersiz --env değeri: '%s'. Desteklenen: development|production" "$1" ;;
+            silent_mode_enabled) printf 'Sessiz otonom kurulum modu etkin (CI/CD güvenli varsayılanları uygulanıyor).' ;;
+            incompatible_model_flags) printf '%s' '--skip-models ve --download-models birlikte kullanılamaz.' ;;
+            kubernetes_ignores_cpu) printf '%s' '--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek.' ;;
+            root_install) printf 'Kurulum root yetkisiyle çalışıyor; sudo parola engeli beklenmiyor.' ;;
+            sudo_missing_noninteractive) printf 'Etkileşimsiz kurulum için sudo gerekli ancak sistemde sudo bulunamadı. Kurulumu root olarak başlatın (ör. sudo ./install_sidar.sh).' ;;
+            sudo_ready) printf 'Etkileşimsiz mod için şifresiz/ön-doğrulanmış sudo erişimi hazır.' ;;
+            sudo_blocked) printf "Sudo parola engeli algılandı. Etkileşimsiz/sessiz kurulum bloke olur. Çözüm: (1) sudo ./install_sidar.sh ile root başlatın, (2) önceden 'sudo -v' çalıştırın, veya (3) gerekli komutlar için NOPASSWD sudo yapılandırın." ;;
+            *) printf '%s' "$key" ;;
+        esac
+    fi
+}
 
 ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
 info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
@@ -67,8 +139,8 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 sed_inplace() {
     local expression="${1:-}"
-    shift || fail "sed_inplace: ifade parametresi eksik."
-    [[ "$#" -gt 0 ]] || fail "sed_inplace: hedef dosya parametresi eksik."
+    shift || fail "$(sidar_t sed_expression_missing)"
+    [[ "$#" -gt 0 ]] || fail "$(sidar_t sed_target_missing)"
 
     case "$(uname -s 2>/dev/null || true)" in
         Darwin) sed -i '' "$expression" "$@" ;;
@@ -188,7 +260,7 @@ prompt_yes_no_with_timeout_default_yes() {
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
     else
-        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Evet."
+        warn "$(sidar_t timeout_yes "$timeout_seconds")"
         reply="E"
     fi
 
@@ -203,7 +275,7 @@ prompt_yes_no_with_timeout_default_no() {
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
     else
-        warn "${timeout_seconds} saniye içinde yanıt alınamadı. Varsayılan seçim: Hayır."
+        warn "$(sidar_t timeout_no "$timeout_seconds")"
         reply="H"
     fi
 
@@ -214,9 +286,9 @@ on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
-    echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
-    echo "   Hata veren komut: ${failed_cmd}" >&2
-    echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+    echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
+    echo "$(sidar_t failed_command "$failed_cmd")" >&2
+    echo "$(sidar_t check_log "$LOG_FILE")" >&2
     exit "$exit_code"
 }
 
@@ -1555,6 +1627,115 @@ WSLCONFIG_CHANGED=false
 ENV_API_KEYS_TOTAL=0
 ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
+
+print_install_help() {
+    if sidar_is_english_locale; then
+        cat <<EOF
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+  doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
+  --upgrade-lock  Intentionally update uv.lock
+  --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
+  --cpu  Force CPU mode even when a GPU is detected
+  --docker-only  Do not install PostgreSQL/Redis on the host; use Docker services only
+  --runtime-mode=local|docker  Runtime mode: local=app local + infrastructure in Docker, docker=all services in Docker
+  --force-postgres-volume-cleanup / --force-docker-cleanup  Enable project-scoped aggressive docker rm -f cleanup after DB password hardening
+  --kubernetes / --helm  Use the Helm chart/Kubernetes flow instead of local installation
+  --helm-release=<name>  Helm release name (default: sidar)
+  --namespace=<name>  Kubernetes namespace (default: sidar)
+  --values=<file>  Helm values file (for example: helm/sidar/values-prod.yaml)
+  --smoke-test  Require tests/smoke at the end of installation
+  --skip-smoke-test  Do not run smoke tests at the end of installation
+  --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
+  --skip-models  Skip Ollama model downloads
+  --download-models  Download Ollama models by default
+  --build-ui  Rebuild the React Web UI even when cache exists
+  --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
+  --ci / --no-interaction  Run non-interactively without prompting the user
+  --non-interactive / --headless / --yes / -y  Short aliases for --no-interaction
+  --silent  Quiet CI/CD install: DEBIAN_FRONTEND=noninteractive + safe automatic defaults
+            Note: sudo cannot prompt for a password in non-interactive mode; run as root or pre-validate sudo.
+  --auto  Short flag for non-interactive installation (AUTO_INSTALL=true)
+  --mode=local|docker  Select runtime mode directly
+  --env=development|production  Select post-install SIDAR_ENV directly
+  --reset-db / --no-reset-db  Select whether PostgreSQL volumes may be reset
+  --start-services / --no-start-services  Select whether Docker services should start
+  --vscode / --no-vscode  Select whether VS Code opens at the end of installation
+  --with-browsers / --skip-browsers  Force/skip Playwright Chromium browser installation
+  --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
+  --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
+  --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
+
+  Non-interactive environment variables:
+    SIDAR_LOCALE=en|tr or LANG=en_US.UTF-8  Select installer message language
+    AUTO_INSTALL=true|false        (true behaves like --no-interaction)
+    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=full Docker)
+    ENV_TYPE=dev|prod              (SIDAR_ENV selection: development/production)
+    RESET_DB=yes|no                (PostgreSQL volume reset approval)
+    START_DOCKER_SERVICES=yes|no   (migration/final Docker startup approval)
+    OPEN_VSCODE=yes|no             (VS Code launch approval)
+    INSTALL_PLAYWRIGHT_BROWSERS=true|false (force/skip Playwright browser installation)
+    OFFLINE_INSTALL=true|false     (equivalent to --offline/--air-gapped)
+    SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
+    SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
+    PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
+    PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
+    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+EOF
+    else
+        cat <<EOF
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
+  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
+  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
+  --cpu  GPU algılansa bile CPU modunda kur
+  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan
+  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker
+  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir
+  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap
+  --helm-release=<ad>  Helm release adı (varsayılan: sidar)
+  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)
+  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)
+  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
+  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
+  --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
+  --skip-models  Ollama model indirmelerini atla
+  --download-models  Ollama modellerini varsayılan olarak indir
+  --build-ui  React Web UI yeniden build et (cache olsa bile)
+  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
+  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır
+  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar
+  --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar
+            Not: Etkileşimsiz modda sudo parola sorulamaz; root çalıştırın veya önceden sudo doğrulayın.
+  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)
+  --mode=local|docker  Çalışma modu seçimini doğrudan belirle
+  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle
+  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle
+  --start-services / --no-start-services  Docker servis başlatma kararını belirle
+  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle
+  --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla
+  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
+  --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
+  --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
+
+  Etkileşimsiz çevre değişkenleri:
+    SIDAR_LOCALE=en|tr veya LANG=en_US.UTF-8  Kurulum mesaj dilini seçer
+    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)
+    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=tam docker)
+    ENV_TYPE=dev|prod              (SIDAR_ENV seçimi: development/production)
+    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)
+    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)
+    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)
+    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)
+    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)
+    SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
+    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
+    PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
+    PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
+    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+EOF
+    fi
+}
+
 INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
     case "$arg" in
@@ -1595,57 +1776,10 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
-            echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
-            echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
-  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
-            echo "  --cpu  GPU algılansa bile CPU modunda kur"
-            echo "  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan"
-            echo "  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker"
-            echo "  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir"
-            echo "  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap"
-            echo "  --helm-release=<ad>  Helm release adı (varsayılan: sidar)"
-            echo "  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)"
-            echo "  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)"
-            echo "  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır"
-            echo "  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma"
-            echo "  --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır"
-            echo "  --skip-models  Ollama model indirmelerini atla"
-            echo "  --download-models  Ollama modellerini varsayılan olarak indir"
-            echo "  --build-ui  React Web UI yeniden build et (cache olsa bile)"
-            echo "  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)"
-            echo "  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır"
-            echo "  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar"
-            echo "  --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar"
-            echo "            Not: Etkileşimsiz modda sudo parola sorulamaz; root çalıştırın veya önceden sudo doğrulayın."
-            echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
-            echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
-            echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
-            echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
-            echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
-            echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
-            echo "  --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla"
-            echo "  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan"
-            echo "  --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla"
-            echo "  --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla"
-            echo ""
-            echo "  Etkileşimsiz çevre değişkenleri:"
-            echo "    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)"
-            echo "    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=tam docker)"
-            echo "    ENV_TYPE=dev|prod              (SIDAR_ENV seçimi: development/production)"
-            echo "    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)"
-            echo "    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)"
-            echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
-            echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
-            echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
-            echo "    SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)"
-            echo "    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder"
-            echo "    PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)"
-            echo "    PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override"
-            echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
+            print_install_help
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "$(sidar_t invalid_arg "$arg")"; exit 1 ;;
     esac
 done
 
@@ -1691,7 +1825,7 @@ fi
 
 case "${DOCKER_CLI_INSTALL_MODE}" in
     auto|always|never|true|false|yes|no|1|0) ;;
-    *) fail "Geçersiz DOCKER_CLI_INSTALL değeri: '${DOCKER_CLI_INSTALL_MODE}'. Desteklenen: auto|always|never" ;;
+    *) fail "$(sidar_t invalid_docker_cli "${DOCKER_CLI_INSTALL_MODE}")" ;;
 esac
 
 PLAYWRIGHT_BROWSERS_RAW="$(normalize_bool "${INSTALL_PLAYWRIGHT_BROWSERS:-}")"
@@ -1703,7 +1837,7 @@ fi
 
 AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${CLI_MODE_RAW:-${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}}")"
 if [[ -n "$CLI_MODE_RAW" && "$AUTO_RUNTIME_MODE" == "ask" ]]; then
-    fail "Geçersiz --mode değeri: '${CLI_MODE_RAW}'. Desteklenen: local|docker"
+    fail "$(sidar_t invalid_mode "${CLI_MODE_RAW}")"
 fi
 if [[ "$AUTO_RUNTIME_MODE" != "ask" ]]; then
     APP_RUNTIME_MODE="$AUTO_RUNTIME_MODE"
@@ -1717,7 +1851,7 @@ AUTO_RESET_POSTGRES_VOLUMES="$(normalize_bool "${CLI_RESET_POSTGRES_VOLUMES:-${R
 
 AUTO_ENV_TYPE="$(resolve_env_type_choice "${CLI_ENV_RAW:-${ENV_TYPE:-${SIDAR_ENV_TYPE:-}}}")"
 if [[ -n "$CLI_ENV_RAW" && "$AUTO_ENV_TYPE" == "ask" ]]; then
-    fail "Geçersiz --env değeri: '${CLI_ENV_RAW}'. Desteklenen: development|production"
+    fail "$(sidar_t invalid_env "${CLI_ENV_RAW}")"
 fi
 AUTO_OPEN_VSCODE="$(normalize_bool "${CLI_OPEN_VSCODE:-${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}}")"
 [[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
@@ -1732,15 +1866,15 @@ if [[ "$SILENT_MODE" == true ]]; then
     [[ "$AUTO_ENV_TYPE" == "ask" ]] && AUTO_ENV_TYPE="development"
     [[ "$AUTO_OPEN_VSCODE" == "ask" ]] && AUTO_OPEN_VSCODE="false"
     [[ "$PLAYWRIGHT_BROWSERS_MODE" == "auto" ]] && PLAYWRIGHT_BROWSERS_MODE="never"
-    info "⚠️  Sessiz otonom kurulum modu etkin (CI/CD güvenli varsayılanları uygulanıyor)."
+    info "⚠️  $(sidar_t silent_mode_enabled)"
 fi
 
 if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
-    fail "--skip-models ve --download-models birlikte kullanılamaz."
+    fail "$(sidar_t incompatible_model_flags)"
 fi
 
 if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
-    warn "--kubernetes/--helm modu aktifken --cpu parametresi kullanılmaz; göz ardı edilecek."
+    warn "$(sidar_t kubernetes_ignores_cpu)"
 fi
 
 if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
@@ -1791,29 +1925,29 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    printf "║          Sidar AI — Kurulum Başlıyor (v%-21s)║\n" "$INSTALL_SIDAR_VERSION"
+    printf "║          %-34s (v%-10s)║\n" "$(sidar_t banner_title)" "$INSTALL_SIDAR_VERSION"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
 
 ensure_noninteractive_sudo_ready() {
     if [[ "$EUID" -eq 0 ]]; then
-        info "Kurulum root yetkisiyle çalışıyor; sudo parola engeli beklenmiyor."
+        info "$(sidar_t root_install)"
         return 0
     fi
 
     if ! command -v sudo >/dev/null 2>&1; then
         if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
-            fail "Etkileşimsiz kurulum için sudo gerekli ancak sistemde sudo bulunamadı. Kurulumu root olarak başlatın (ör. sudo ./install_sidar.sh)."
+            fail "$(sidar_t sudo_missing_noninteractive)"
         fi
         return 0
     fi
 
     if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
         if sudo -n -v >/dev/null 2>&1; then
-            ok "Etkileşimsiz mod için şifresiz/ön-doğrulanmış sudo erişimi hazır."
+            ok "$(sidar_t sudo_ready)"
         else
-            fail "Sudo parola engeli algılandı. Etkileşimsiz/sessiz kurulum bloke olur. Çözüm: (1) sudo ./install_sidar.sh ile root başlatın, (2) önceden 'sudo -v' çalıştırın, veya (3) gerekli komutlar için NOPASSWD sudo yapılandırın."
+            fail "$(sidar_t sudo_blocked)"
         fi
     fi
 }
