@@ -350,6 +350,40 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/phases' in bundler
 
 
+def test_single_file_installer_fallback_downloads_all_required_modules() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "download_remote_install_module()" in script
+    assert "ensure_remote_install_modules()" in script
+    assert (
+        'local -a remote_modules=("${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")'
+        in script
+    )
+    assert "ensure_remote_install_modules\nvalidate_install_utility_modules" in script
+    assert "${remote_module_base%/}/${module_rel}" in script
+
+
+def test_bundled_installer_release_asset_is_documented_and_published() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/publish-installer.yml").read_text(encoding="utf-8")
+    modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
+        encoding="utf-8"
+    )
+
+    release_url = (
+        "https://github.com/niluferbagevi-gif/Sidar/releases/download/"
+        "installer-latest/install_sidar.sh"
+    )
+    assert release_url in readme
+    assert release_url in modularization_note
+    assert "bash scripts/tools/bundle_install_sidar.sh" in workflow
+    assert "gh release upload installer-latest dist/install_sidar.sh --clobber" in workflow
+    assert (
+        'gh release upload "${{ github.event.release.tag_name }}" dist/install_sidar.sh --clobber'
+        in workflow
+    )
+    assert "bash -n dist/install_sidar.sh" in workflow
+
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]

@@ -217,6 +217,58 @@ INSTALL_PHASE_MODULES=(
     "phases/07_finish.sh"
 )
 
+download_remote_install_module() {
+    local module_rel="${1:-}"
+    [[ -n "$module_rel" ]] || fail "İndirilecek kurulum modülü adı boş olamaz."
+
+    local remote_module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    local remote_module_url="${remote_module_base%/}/${module_rel}"
+    local module_path="${INSTALL_MODULE_DIR}/${module_rel}"
+    local tmp_module_path=""
+
+    mkdir -p "$(dirname "$module_path")"
+    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX.sh")"
+
+    if command -v curl &>/dev/null; then
+        if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
+            rm -f "$tmp_module_path"
+            fail "Gerekli kurulum modülü indirilemedi: ${remote_module_url}"
+        fi
+    elif command -v wget &>/dev/null; then
+        if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
+            rm -f "$tmp_module_path"
+            fail "Gerekli kurulum modülü indirilemedi: ${remote_module_url}"
+        fi
+    else
+        rm -f "$tmp_module_path"
+        fail "Ne curl ne de wget bulundu; kurulum modülü indirilemiyor: ${module_rel}"
+    fi
+
+    install -m 0644 "$tmp_module_path" "$module_path"
+    rm -f "$tmp_module_path"
+}
+
+ensure_remote_install_modules() {
+    [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" ]] || return 0
+
+    local module_rel=""
+    local downloaded_count=0
+    local module_path=""
+    local -a remote_modules=("${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")
+
+    for module_rel in "${remote_modules[@]}"; do
+        module_path="${INSTALL_MODULE_DIR}/${module_rel}"
+        if [[ ! -f "$module_path" ]]; then
+            download_remote_install_module "$module_rel"
+            downloaded_count=$((downloaded_count + 1))
+        fi
+    done
+
+    if [[ "$downloaded_count" -gt 0 ]]; then
+        ok "Tek dosyalık kurulum için ${downloaded_count} ek modül geçici dizine indirildi."
+    fi
+}
+
 validate_install_utility_modules() {
     local module_rel=""
     local module_path=""
@@ -241,6 +293,7 @@ load_install_phase_modules() {
     done
 }
 
+ensure_remote_install_modules
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 load_install_phase_modules
