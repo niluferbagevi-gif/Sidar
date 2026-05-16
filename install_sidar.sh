@@ -174,9 +174,11 @@ run_with_progress_hint() {
     return "$cmd_rc"
 }
 
+SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
+
 prompt_yes_no_with_timeout_default_yes() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -191,7 +193,7 @@ prompt_yes_no_with_timeout_default_yes() {
 
 prompt_yes_no_with_timeout_default_no() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -1631,6 +1633,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)"
             echo "    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
@@ -3885,10 +3888,10 @@ prompt_post_install_sidar_env_mode() {
         echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
         echo "======================================================"
 
-        if read -r -t 180 -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
+        if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
             :
         else
-            warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
+            warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
             env_choice="1"
         fi
 
@@ -5229,10 +5232,10 @@ select_runtime_mode() {
             info "Çalışma modu seçimi:"
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
-            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+            if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
                 :
             else
-                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
                 runtime_answer="1"
             fi
             case "${runtime_answer:-1}" in

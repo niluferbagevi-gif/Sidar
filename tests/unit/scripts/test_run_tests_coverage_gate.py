@@ -310,3 +310,15 @@ def test_install_sidar_centralizes_env_value_reads() -> None:
     assert "compose_profiles=$(read_env_value_from_file \"COMPOSE_PROFILES\" \"$env_file\"" in script
     assert "cut -d= -f2-" not in script
     assert "grep -E \"^${key}=\"" not in script
+
+
+def test_install_sidar_prompt_timeout_is_centralized() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
+    assert '${2:-$SIDAR_PROMPT_TIMEOUT}' in script
+    assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT"' in script
+    assert "SIDAR_PROMPT_TIMEOUT=180" in script
+    assert "read -r -t 180" not in script
+    assert "180 saniye içinde" not in script
+    assert '${2:-180}' not in script
