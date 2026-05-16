@@ -67,6 +67,16 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install shell test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck bats
+
+      - name: Run installer shell gates
+        run: |
+          shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/*.sh scripts/install_modules/phases/*.sh tests/shell/*.bats
+          bats tests/shell
+
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.4.3
         with:

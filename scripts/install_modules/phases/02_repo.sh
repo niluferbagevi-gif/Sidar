@@ -7,5 +7,5 @@ sidar_phase_bootstrap_repo_system() {
     # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
     install_system_dependencies
     sync_repo
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return
 }

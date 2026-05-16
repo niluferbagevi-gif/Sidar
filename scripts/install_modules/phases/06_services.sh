@@ -11,6 +11,7 @@ sidar_phase_local_migrations_and_models() {
         # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
         download_ollama_models
     else
+        # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
     fi
@@ -23,7 +24,9 @@ sidar_phase_services_and_validation() {
         run_smoke_tests
         run_test_artifact_audit
     else
+        # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
     fi

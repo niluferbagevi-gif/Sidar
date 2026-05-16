@@ -183,7 +183,7 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
-    main_body = script[script.index("main() {") : script.index('\n}\n\nmain "$@"')]
+    main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
 
     expected_modules = (
         "phases/01_context.sh",
@@ -221,6 +221,9 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "print_summary",
     ):
         assert legacy_inline_call not in main_body
+
+    assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]' in script
+    assert 'main "$@"' in script
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:

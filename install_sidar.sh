@@ -47,9 +47,13 @@ ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
+    exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+else
+    LOG_FILE=""
+fi
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -1526,6 +1530,7 @@ AUTO_RESET_POSTGRES_VOLUMES="ask"
 AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
 OFFLINE_MODE=false
+# shellcheck disable=SC2034  # phase modules read this runtime override after sync.
 OFFLINE_PACKAGES_DIR=""
 DOCKER_CLI_INSTALL_MODE="${DOCKER_CLI_INSTALL:-auto}"
 PLAYWRIGHT_BROWSERS_MODE="auto"
@@ -1775,10 +1780,12 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
     fi
 fi
+# shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
+# shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
 banner() {
@@ -2303,7 +2310,7 @@ ensure_prerequisites() {
         info "WSL2 ortamı tespit edildi."
     fi
 
-    if [[ "$WSL2" == true ]] && !(command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
+    if [[ "$WSL2" == true ]] && ! (command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
 
         # Windows tarafında Docker Desktop'ın gerçekten kurulu olup olmadığını denetle
         local docker_desktop_installed=false
@@ -2812,7 +2819,7 @@ ctl.pulse {
 ASOUNDRC
             ok "ALSA → PulseAudio köprüsü yapılandırıldı (~/.asoundrc)."
         else
-            ok "~/.asoundrc zaten PulseAudio yapılandırması içeriyor."
+            ok "$HOME/.asoundrc zaten PulseAudio yapılandırması içeriyor."
         fi
 
         # PULSE_SERVER ortam değişkeni (yeni terminaller için kalıcı)
@@ -5557,4 +5564,6 @@ main() {
     sidar_phase_finish
 }
 
-main "$@"
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
+    main "$@"
+fi
