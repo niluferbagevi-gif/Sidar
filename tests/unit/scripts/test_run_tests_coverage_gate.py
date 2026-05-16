@@ -166,6 +166,24 @@ def test_install_sidar_masks_secret_log_stream_before_tee(tmp_path: Path) -> Non
     assert "normal line" in proc.stdout
 
 
+def test_install_sidar_requires_stash_before_destructive_git_recovery() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    recovery_start = script.index("Stash pop sırasında çakışma oluştu")
+    recovery = script[recovery_start : script.index('SCRIPT_DIR="$TARGET_DIR"', recovery_start)]
+
+    assert "latest_stash_ref_for_message()" in script
+    assert "ensure_git_recovery_backup_stash()" in script
+    assert 'git stash push -u -m "$STASH_MESSAGE" >/dev/null 2>&1 || fail' in script
+    assert 'STASH_REF="$(latest_stash_ref_for_message "$STASH_MESSAGE")"' in script
+    assert "git reset --hard origin/main && git clean -fd" not in script
+    assert "Çakışmayı otomatik temizlemek için" not in script
+    assert 'recovery_backup_ref="$(ensure_git_recovery_backup_stash "$STASH_REF")"' in recovery
+    assert recovery.index("ensure_git_recovery_backup_stash") < recovery.index("git clean -fd")
+    assert "Kurtarma öncesi stash yedeği: $recovery_backup_ref" in recovery
+    assert "Yerel değişiklik yedeği: $recovery_backup_ref" in recovery
+    assert "--no-interaction modunda otomatik reset/clean uygulanmadı" in recovery
+
+
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     script = _install_script_with_modules()
 
