@@ -2,24 +2,9 @@
 # Sidar installer module: env_utils.sh
 # shellcheck shell=bash
 
-setup_python_env() {
-    step "uv venv Ortamı"
-    VENV_DIR="$SCRIPT_DIR/.venv"
-    if [[ -d "$VENV_DIR" ]]; then
-        info "Mevcut uv venv bulundu: $VENV_DIR"
-    else
-        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-        ok "uv venv oluşturuldu."
-    fi
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate"
-    ok "Ortam aktif: $VENV_DIR"
-}
-
 # ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
 
-setup_uv() {
+install_uv_cli() {
     step "uv Paket Yöneticisi"
     export UV_PROGRESS_BAR=on
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -57,6 +42,21 @@ setup_uv() {
         fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
     ok "uv $(uv --version | cut -d' ' -f2)"
+}
+
+create_uv_venv() {
+    step "uv venv Ortamı"
+    VENV_DIR="$SCRIPT_DIR/.venv"
+    if [[ -d "$VENV_DIR" ]]; then
+        info "Mevcut uv venv bulundu: $VENV_DIR"
+    else
+        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
+        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+        ok "uv venv oluşturuldu."
+    fi
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate"
+    ok "Ortam aktif: $VENV_DIR"
 }
 
 # ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────

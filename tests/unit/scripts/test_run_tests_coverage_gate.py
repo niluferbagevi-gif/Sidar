@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 RUN_TESTS = Path("run_tests.sh")
@@ -14,6 +15,10 @@ def _install_script_with_modules() -> str:
     parts.extend(
         module.read_text(encoding="utf-8")
         for module in sorted(Path("scripts/install_modules").glob("*.sh"))
+    )
+    parts.extend(
+        phase.read_text(encoding="utf-8")
+        for phase in sorted(Path("scripts/install_phases").glob("*.sh"))
     )
     return "\n".join(parts)
 
@@ -128,11 +133,100 @@ def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
 
 
+def test_install_sidar_masks_secret_log_stream_before_tee(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    start = script.index("mask_install_log_stream()")
+    end = script.index("# Kurulum loglarını", start)
+    helper = tmp_path / "mask_helper.sh"
+    sample = tmp_path / "sample.log"
+    helper.write_text(script[start:end], encoding="utf-8")
+    sample.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql+asyncpg://sidar:superSecret123@localhost:5432/sidar",
+                "+ generated_password=superSecret123",
+                "+ sed -i s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=superSecret123| .env",
+                "--password superSecret123",
+                "normal line",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        ["bash", "-c", 'source "$1"; cat "$2" | mask_install_log_stream', "_", str(helper), str(sample)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert "mask_install_log_stream | tee -i" in script
+    assert "superSecret123" not in proc.stdout
+    assert "DATABASE_URL=****" in proc.stdout
+    assert "generated_password=****" in proc.stdout
+    assert "POSTGRES_PASSWORD=****" in proc.stdout
+    assert "--password ****" in proc.stdout
+    assert "normal line" in proc.stdout
+
+
+def test_install_sidar_requires_stash_before_destructive_git_recovery() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    recovery_start = script.index("Stash pop sırasında çakışma oluştu")
+    recovery = script[recovery_start : script.index('SCRIPT_DIR="$TARGET_DIR"', recovery_start)]
+
+    assert "latest_stash_ref_for_message()" in script
+    assert "ensure_git_recovery_backup_stash()" in script
+    assert 'git stash push -u -m "$STASH_MESSAGE" >/dev/null 2>&1 || fail' in script
+    assert 'STASH_REF="$(latest_stash_ref_for_message "$STASH_MESSAGE")"' in script
+    assert "git reset --hard origin/main && git clean -fd" not in script
+    assert "Çakışmayı otomatik temizlemek için" not in script
+    assert 'recovery_backup_ref="$(ensure_git_recovery_backup_stash "$STASH_REF")"' in recovery
+    assert recovery.index("ensure_git_recovery_backup_stash") < recovery.index("git clean -fd")
+    assert "Kurtarma öncesi stash yedeği: $recovery_backup_ref" in recovery
+    assert "Yerel değişiklik yedeği: $recovery_backup_ref" in recovery
+    assert "--no-interaction modunda otomatik reset/clean uygulanmadı" in recovery
+
+
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     script = _install_script_with_modules()
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_uses_entropy_heuristic_for_weak_passwords() -> None:
+    script = _install_script_with_modules()
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+
+    assert "is_low_entropy_secret_value()" in script
+    assert "entropy_bits < 80" in script
+    assert "Password1Password1Password1" in script
+    assert "qwerty123qwerty123" in script
+    assert 'is_low_entropy_secret_value "$value" && return 0' in script
+    assert 'if is_weak_secret_value "$db_password"; then' in db_module
+    assert 'case "$db_password" in' not in db_module
+    assert 'sidar|postgres|password|admin|changeme|123456)' not in db_module
+
+
+def test_install_sidar_loads_known_weak_secrets_from_central_denylist() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    denylist_lines = [
+        line
+        for line in Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    denylist_keys = {line.split("=", 1)[0] for line in denylist_lines if "=" in line}
+    denylist_values = [line.split("=", 1)[1] if "=" in line else line for line in denylist_lines]
+
+    assert "known_weak_secrets_file()" in script
+    assert "is_known_weak_secret_value" in script
+    assert "scripts/known_weak_secrets.txt" in script
+    assert ".env.example" in script[script.index("_is_missing_or_insecure()") :]
+    assert {"API_KEY", "JWT_SECRET_KEY", "MEMORY_ENCRYPTION_KEY"} <= denylist_keys
+    assert {"AUTONOMY_WEBHOOK_SECRET", "SWARM_FEDERATION_SHARED_SECRET", "GITHUB_WEBHOOK_SECRET"} <= denylist_keys
+    assert "METRICS_TOKEN" in denylist_keys
+    assert all(value not in script for value in denylist_values)
 
 
 def test_install_sidar_pins_remote_installer_checksums() -> None:
@@ -149,7 +243,7 @@ def test_install_sidar_pins_remote_installer_checksums() -> None:
     assert 'script_url="$pinned_url"' in script
     assert 'expected_sha="$pinned_sha"' in script
 
-def test_install_sidar_supports_target_dir_override() -> None:
+def test_install_sidar_supports_target_dir_and_repo_url_overrides() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert 'TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"' in script
@@ -158,6 +252,8 @@ def test_install_sidar_supports_target_dir_override() -> None:
     assert '*) TARGET_DIR="$(pwd)/$TARGET_DIR"' in script
     assert 'TARGET_DIR="${TARGET_DIR%/}"' in script
     assert "SIDAR_TARGET_DIR=/tmp/Sidar" in script
+    assert 'REPO_URL="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}"' in script
+    assert 'git clone "$REPO_URL" "$TARGET_DIR"' in script
 
 def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
@@ -179,8 +275,114 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
     assert "--wsl-memory <GB> / --wsl-memory=<GB>" in script
     assert "WSL_MEMORY_GB=16 / WSL_SWAP_GB=8" in script
 
-def test_install_sidar_parallel_prefetches_docker_images() -> None:
+
+
+
+
+
+
+
+
+def test_install_sidar_uses_single_prompt_timeout_constant() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
+    assert 'local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"' in script
+    assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice' in script
+    assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer' in script
+    assert '${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı' in script
+    assert "read -r -t 180" not in script
+    assert "180 saniye içinde" not in script
+    assert '${2:-180}' not in script
+
+def test_install_sidar_uses_central_env_reader_for_values(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    env_file = tmp_path / "sample.env"
+    env_file.write_text(
+        "# DATABASE_URL=postgresql://ignored:ignored@example/sidar\n"
+        "DATABASE_URL=  \"postgresql://sidar:pw@example/sidar\"  # trailing comment\r\n"
+        "POSTGRES_PASSWORD='quoted pw'\n",
+        encoding="utf-8",
+    )
+    helper_file = tmp_path / "env_reader.sh"
+    helper_start = script.index("read_env_value_from_file()")
+    helper_end = script.index("resolve_ollama_version_url()", helper_start)
+    helper_file.write_text(script[helper_start:helper_end], encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; read_env_value_from_file DATABASE_URL "$2"; read_env_value_from_file POSTGRES_PASSWORD "$2"',
+            "_",
+            str(helper_file),
+            str(env_file),
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert proc.stdout.splitlines() == ["postgresql://sidar:pw@example/sidar", "quoted pw"]
+    assert "read_env_value_from_file" in db_module
+    assert "cut -d= -f2-" not in script
+    assert "cut -d= -f2-" not in db_module
+    assert 'grep -E "^${key}="' not in script
+
+def test_install_sidar_uses_portable_sed_inplace_wrapper(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    helpers = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    sample = tmp_path / "sample.env"
+    sample.write_text("POSTGRES_PASSWORD=weak\nKEEP=yes\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; sed_inplace "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=strong|" "$2"; cat "$2"',
+            "_",
+            "scripts/install_modules/install_helpers.sh",
+            str(sample),
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert "sed_inplace()" in helpers
+    assert "sudo_sed_inplace()" in helpers
+    assert "sed_cmd+=(-i ''" in helpers
+    assert "sed_supports_gnu_inplace" in helpers
+    assert "POSTGRES_PASSWORD=strong" in proc.stdout
+    assert "sed -i " not in script
+    assert "sudo sed -E -i" not in script
+    assert "sed_inplace" in db_module
+
+def test_install_sidar_uses_single_runtime_mode_selection() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    combined = _install_script_with_modules()
+    launch_start = script.index("launch_docker_services()")
+    select_start = script.index("select_runtime_mode()")
+    launch_section = script[launch_start:select_start]
+    select_section = script[select_start:script.index("# ── Kurulum Sonrası IDE", select_start)]
+
+    assert "select_runtime_mode_early" not in combined
+    assert combined.count("Kurulum çalışma modu seçimi:") == 1
+    assert combined.count("1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker") == 1
+    assert combined.count("2) Tam Docker modu: web/agent dahil tüm servisler Docker") == 1
+    assert 'read -r -t 180 -p "Seçim [1/2, varsayılan=1]: "' not in launch_section
+    assert "select_runtime_mode" in launch_section
+    assert "APP_RUNTIME_MODE_SELECTED" in launch_section
+    assert 'APP_RUNTIME_MODE="$runtime_mode"' in select_section
+    assert 'APP_RUNTIME_MODE_SELECTED="$runtime_mode"' in select_section
+    assert "select_runtime_mode" in Path("scripts/install_phases/99_full_install.sh").read_text(encoding="utf-8")
+
+def test_install_sidar_parallel_prefetches_docker_images() -> None:
+    script = _install_script_with_modules()
 
     assert "install_parallel_prefetch_enabled()" in script
     assert "start_docker_image_prefetch_async()" in script
@@ -223,8 +425,55 @@ def test_install_sidar_sources_modular_install_components() -> None:
         "ollama_models.sh",
     ]:
         assert f'"{module_name}"' in script
+    for phase_name in [
+        "00_doctor.sh",
+        "01_system.sh",
+        "02_python.sh",
+        "03_models.sh",
+        "04_smoke.sh",
+        "99_full_install.sh",
+    ]:
+        assert f'"{phase_name}"' in script
     assert 'source "${INSTALL_MODULE_DIR}/${module_name}"' in script
+    assert 'source "${INSTALL_PHASE_DIR}/${phase_name}"' in script
+    assert "REMOTE_PHASE_BASE" in script
     assert "detect_gpu()" in Path("scripts/install_modules/gpu_utils.sh").read_text(encoding="utf-8")
-    assert "setup_python_env()" in Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    env_utils = Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    assert "install_uv_cli()" in env_utils
+    assert "create_uv_venv()" in env_utils
+    assert env_utils.index("install_uv_cli()") < env_utils.index("create_uv_venv()")
+    assert "setup_uv()" not in env_utils
+    assert "setup_python_env()" not in env_utils
     assert "harden_database_credentials()" in Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
     assert "download_ollama_models()" in Path("scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8")
+    assert "run_prepare_system_phase()" in Path("scripts/install_phases/01_system.sh").read_text(encoding="utf-8")
+    assert "run_sync_deps_phase()" in Path("scripts/install_phases/02_python.sh").read_text(encoding="utf-8")
+    assert "run_full_install_phase()" in Path("scripts/install_phases/99_full_install.sh").read_text(encoding="utf-8")
+
+    bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+    assert 'PHASE_DIR="${ROOT_DIR}/scripts/install_phases"' in bundler
+    assert '# --- PHASE: ' in bundler
+    assert 'awk -v module_dir="$MODULE_DIR" -v phase_dir="$PHASE_DIR"' in bundler
+
+
+def test_install_sidar_centralizes_installer_version_and_phase_orchestration() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    combined = _install_script_with_modules()
+    pyproject_version = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in Path("pyproject.toml").read_text(encoding="utf-8").splitlines()
+        if line.startswith("version =")
+    )
+
+    assert "resolve_installer_version()" in script
+    assert 'pyproject_path="$SCRIPT_DIR/pyproject.toml"' in script
+    assert 'SIDAR_INSTALLER_VERSION="$(resolve_installer_version)"' in script
+    assert pyproject_version not in script
+    assert f"v{pyproject_version}" not in script
+    assert 'printf "║          Sidar AI — Kurulum Başlıyor (v%-9s)        ║\\n" "$SIDAR_INSTALLER_VERSION"' in script
+    assert "run_prepare_system_phase()" not in script
+    assert "run_sync_deps_phase()" not in script
+    assert "run_provision_models_phase()" not in script
+    assert "run_smoke_phase()" not in script
+    assert "run_full_install_phase" in script
+    assert "run_full_install_phase()" in combined

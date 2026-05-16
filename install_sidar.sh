@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
-# Sürüm : 5.2.3
+# Sürüm : pyproject.toml [project.version]
 # Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x, PyTorch cu124 fallback)
 #
 # Kullanım:
@@ -17,6 +17,8 @@
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
+
+SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
 
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
@@ -35,16 +37,57 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+mask_install_log_stream() {
+    # Maskeleme tee'den önce çalışır; böylece hem terminal hem LOG_FILE set -x,
+    # stderr veya komut hata çıktılarındaki secret/DSN değerlerini düz metin görmez.
+    sed -u -E \
+        -e 's#([A-Za-z][A-Za-z0-9+.-]*://[^:/@[:space:]]+:)[^@[:space:]]+(@)#\1****\2#g' \
+        -e 's#(^|[^A-Za-z0-9_])(([A-Za-z_][A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ENCRYPTION_KEY)[A-Za-z0-9_]*|DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|REDIS_URL)=)[^[:space:];|]+#\1\2****#Ig' \
+        -e 's#(--?[A-Za-z0-9_-]*(password|secret|token|api-key|private-key|database-url|redis-url)[A-Za-z0-9_-]*([=[:space:]]+))[^[:space:];|]+#\1****#Ig'
+}
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+
+resolve_installer_version() {
+    if [[ -n "${SIDAR_INSTALLER_VERSION:-}" ]]; then
+        printf '%s\n' "$SIDAR_INSTALLER_VERSION"
+        return 0
+    fi
+
+    local pyproject_path="$SCRIPT_DIR/pyproject.toml"
+    local pyproject_version=""
+    if [[ -f "$pyproject_path" ]]; then
+        pyproject_version="$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$pyproject_path" | head -n1)"
+    fi
+    if [[ -n "$pyproject_version" ]]; then
+        printf '%s\n' "$pyproject_version"
+        return 0
+    fi
+
+    if [[ -f "$SCRIPT_DIR/sidar_version.py" ]] && command -v python3 &>/dev/null; then
+        python3 - "$SCRIPT_DIR" <<'PYVERSION' 2>/dev/null || true
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]).resolve()))
+from sidar_version import resolve_version
+print(resolve_version())
+PYVERSION
+        return 0
+    fi
+
+    printf '%s\n' "0.0.0"
+}
+
+SIDAR_INSTALLER_VERSION="$(resolve_installer_version)"
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -58,6 +101,7 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
+INSTALL_PHASE_DIR="${SCRIPT_DIR}/scripts/install_phases"
 INSTALL_HELPERS_TEMP_DIR=""
 REQUIRED_INSTALL_MODULES=(
     "install_helpers.sh"
@@ -66,21 +110,37 @@ REQUIRED_INSTALL_MODULES=(
     "db_credentials.sh"
     "ollama_models.sh"
 )
+REQUIRED_INSTALL_PHASES=(
+    "00_doctor.sh"
+    "01_system.sh"
+    "02_python.sh"
+    "03_models.sh"
+    "04_smoke.sh"
+    "99_full_install.sh"
+)
 missing_install_modules=()
 for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
     if [[ ! -f "${INSTALL_MODULE_DIR}/${module_name}" ]]; then
         missing_install_modules+=("$module_name")
     fi
 done
+missing_install_phases=()
+for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+    if [[ ! -f "${INSTALL_PHASE_DIR}/${phase_name}" ]]; then
+        missing_install_phases+=("$phase_name")
+    fi
+done
 
-if (( ${#missing_install_modules[@]} > 0 )); then
-    warn "Yerel kurulum modülleri eksik: ${missing_install_modules[*]}"
-    warn "Tek dosyalık/eksik checkout algılandı; modüller uzaktan indirilmeyi deneyecek."
+if (( ${#missing_install_modules[@]} > 0 || ${#missing_install_phases[@]} > 0 )); then
+    warn "Yerel kurulum modülleri/fazları eksik: ${missing_install_modules[*]} ${missing_install_phases[*]}"
+    warn "Tek dosyalık/eksik checkout algılandı; modüller ve fazlar uzaktan indirilmeyi deneyecek."
 
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_components.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    mkdir -p "$INSTALL_MODULE_DIR"
+    INSTALL_PHASE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_phases"
+    mkdir -p "$INSTALL_MODULE_DIR" "$INSTALL_PHASE_DIR"
     REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    REMOTE_PHASE_BASE="${SIDAR_INSTALL_PHASE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_phases}"
 
     for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
         remote_module_url="${REMOTE_MODULE_BASE}/${module_name}"
@@ -106,14 +166,43 @@ if (( ${#missing_install_modules[@]} > 0 )); then
         install -m 0644 "$tmp_module_path" "${INSTALL_MODULE_DIR}/${module_name}"
         rm -f "$tmp_module_path"
     done
-    ok "Kurulum modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
+
+    for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+        remote_phase_url="${REMOTE_PHASE_BASE}/${phase_name}"
+        tmp_phase_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_${phase_name%.sh}.XXXXXX.sh")"
+        if command -v curl &>/dev/null; then
+            if ! curl -fsSL "$remote_phase_url" -o "$tmp_phase_path"; then
+                rm -f "$tmp_phase_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli faz indirilemedi: ${remote_phase_url}"
+            fi
+        elif command -v wget &>/dev/null; then
+            if ! wget -qO "$tmp_phase_path" "$remote_phase_url"; then
+                rm -f "$tmp_phase_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli faz indirilemedi: ${remote_phase_url}"
+            fi
+        else
+            rm -f "$tmp_phase_path"
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+            fail "Ne curl ne de wget bulundu; fazlar indirilemiyor."
+        fi
+
+        install -m 0644 "$tmp_phase_path" "${INSTALL_PHASE_DIR}/${phase_name}"
+        rm -f "$tmp_phase_path"
+    done
+    ok "Kurulum bileşenleri geçici dizine indirildi: $INSTALL_HELPERS_TEMP_DIR"
 fi
 
 for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
     # shellcheck disable=SC1090
     source "${INSTALL_MODULE_DIR}/${module_name}"
 done
-unset module_name missing_install_modules remote_module_url tmp_module_path
+for phase_name in "${REQUIRED_INSTALL_PHASES[@]}"; do
+    # shellcheck disable=SC1090
+    source "${INSTALL_PHASE_DIR}/${phase_name}"
+done
+unset module_name phase_name missing_install_modules missing_install_phases remote_module_url remote_phase_url tmp_module_path tmp_phase_path
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -153,7 +242,7 @@ run_with_progress_hint() {
 
 prompt_yes_no_with_timeout_default_yes() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -168,7 +257,7 @@ prompt_yes_no_with_timeout_default_yes() {
 
 prompt_yes_no_with_timeout_default_no() {
     local prompt="$1"
-    local timeout_seconds="${2:-180}"
+    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
@@ -1898,7 +1987,7 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     fi
 fi
 DEFAULT_DATABASE_URL=""
-REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
+REPO_URL="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}"
 TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"
 if [[ -z "${TARGET_DIR//[[:space:]]/}" ]]; then
     fail "SIDAR_TARGET_DIR boş olamaz. Örnek: SIDAR_TARGET_DIR=/tmp/Sidar ./install_sidar.sh"
@@ -1918,7 +2007,7 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.3)               ║"
+    printf "║          Sidar AI — Kurulum Başlıyor (v%-9s)        ║\n" "$SIDAR_INSTALLER_VERSION"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -2081,6 +2170,35 @@ report_repo_lookup_context() {
     fi
 }
 
+latest_stash_ref_for_message() {
+    local stash_message="$1"
+    git stash list --format='%gd%x09%s' \
+        | awk -F '\t' -v msg="$stash_message" 'index($2, msg) { print $1; exit }'
+}
+
+ensure_git_recovery_backup_stash() {
+    local existing_stash_ref="${1:-}"
+    local backup_message backup_ref
+
+    if [[ -n "$existing_stash_ref" ]] && git rev-parse -q --verify "$existing_stash_ref" >/dev/null 2>&1; then
+        printf '%s\n' "$existing_stash_ref"
+        return 0
+    fi
+
+    if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+        return 1
+    fi
+
+    backup_message="sidar-install-recovery-backup-$(date +%Y%m%d_%H%M%S)"
+    if ! git stash push -u -m "$backup_message" >/dev/null 2>&1; then
+        return 1
+    fi
+
+    backup_ref="$(latest_stash_ref_for_message "$backup_message")"
+    [[ -n "$backup_ref" ]] || return 1
+    printf '%s\n' "$backup_ref"
+}
+
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
@@ -2121,9 +2239,15 @@ sync_repo() {
         (
             cd "$TARGET_DIR"
             local STASHED_CHANGES=false
+            local STASH_MESSAGE=""
+            local STASH_REF=""
             if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
                 info "Lokal değişiklikler geçici olarak stash'e alınıyor."
-                git stash push -u -m "sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)" >/dev/null 2>&1
+                STASH_MESSAGE="sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)"
+                git stash push -u -m "$STASH_MESSAGE" >/dev/null 2>&1 || fail "Lokal değişiklikler stash yedeğine alınamadı; git pull/rebase güvenli değil. Lütfen değişikliklerinizi commit veya stash edin."
+                STASH_REF="$(latest_stash_ref_for_message "$STASH_MESSAGE")"
+                [[ -n "$STASH_REF" ]] || fail "Oluşturulan stash referansı doğrulanamadı; kurulum güvenli şekilde durduruldu."
+                info "Lokal değişiklik stash yedeği: $STASH_REF"
                 STASHED_CHANGES=true
             fi
 
@@ -2136,24 +2260,28 @@ sync_repo() {
                     warn "Stash pop sırasında çakışma oluştu. Repo güvenliği için kurtarma seçeneği sunulacak."
                     git merge --abort >/dev/null 2>&1 || true
                     git rebase --abort >/dev/null 2>&1 || true
+                    warn "Orijinal lokal değişiklik stash yedeği korunuyor: ${STASH_REF:-bilinmiyor}."
                     if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılamadı. Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın."
+                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik reset/clean uygulanmadı. Stash yedeğini doğrulayın (${STASH_REF:-stash list}) ve çakışmaları manuel çözün."
                     fi
 
                     echo ""
-                    warn "İsterseniz yerel değişiklikleri silerek origin/main durumuna geri dönebilirsiniz."
+                    warn "İsterseniz yedek stash doğrulandıktan sonra çalışma ağacı origin/main durumuna geri alınabilir."
                     local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Çakışmayı otomatik temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Yedek stash doğrulanırsa çakışmayı temizlemek için origin/main'e sıfırlama ve untracked temizlik uygulansın mı? [e/H] ")
                     case "${recovery_reply:-H}" in
                         [EeYy]*)
-                            warn "Kurtarma adımı uygulanıyor: yerel değişiklikler silinecek."
+                            local recovery_backup_ref=""
+                            recovery_backup_ref="$(ensure_git_recovery_backup_stash "$STASH_REF")" || fail "Yedek stash doğrulanamadı/oluşturulamadı; reset/clean güvenlik nedeniyle uygulanmadı."
+                            warn "Kurtarma öncesi stash yedeği: $recovery_backup_ref"
+                            warn "Kurtarma adımı uygulanıyor: çalışma ağacı origin/main durumuna sıfırlanacak."
                             git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu."
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi."
-                            ok "Repo origin/main durumuna sıfırlandı. Kurulum devam edecek."
+                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu. Stash yedeği: $recovery_backup_ref"
+                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Stash yedeği: $recovery_backup_ref"
+                            ok "Repo origin/main durumuna sıfırlandı. Yerel değişiklik yedeği: $recovery_backup_ref"
                             ;;
                         *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları çözün veya 'git reset --hard origin/main && git clean -fd' ile temizleyip kurulumu tekrar başlatın."
+                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Lütfen '$TARGET_DIR' içinde çakışmaları manuel çözün. Yerel değişiklik stash yedeği: ${STASH_REF:-git stash list ile kontrol edin}."
                             ;;
                     esac
                 fi
@@ -2181,7 +2309,7 @@ install_system_dependencies() {
             info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
             local src_file=""
             for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
+                sudo_sed_inplace -E \
                     "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
                     "$src_file"
             done
@@ -2417,7 +2545,7 @@ ensure_prerequisites() {
 
     # Sistem Python sürümü artık doğrulanmaz: uv, gerekli Python sürümünü izole
     # ortam için kendisi çözer/indirir ve proje sürümünü .python-version veya
-    # pyproject.toml üzerinden setup_python_env içinde uygular.
+    # pyproject.toml üzerinden create_uv_venv içinde uygular.
 
     if [[ "$WSL2" == true ]]; then
         info "WSL2 ortamı tespit edildi."
@@ -2520,8 +2648,8 @@ ensure_prerequisites() {
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
 # detect_gpu scripts/install_modules altında modülerleştirildi.
 # setup_nvidia_docker scripts/install_modules altında modülerleştirildi.
-# setup_python_env scripts/install_modules altında modülerleştirildi.
-# setup_uv scripts/install_modules altında modülerleştirildi.
+# install_uv_cli scripts/install_modules altında modülerleştirildi.
+# create_uv_venv scripts/install_modules altında modülerleştirildi.
 # install_python_deps scripts/install_modules altında modülerleştirildi.
 # install_pyright_lsp_tool scripts/install_modules altında modülerleştirildi.
 should_install_playwright_browsers() {
@@ -2741,7 +2869,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
                 else
                     echo "ENABLE_MULTIMODAL=true" >> "$env_file"
                 fi
@@ -2776,7 +2904,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
                 fi
             fi
         else
@@ -2941,7 +3069,7 @@ ASOUNDRC
 memory=__SIDAR_WSL_MEMORY__
 swap=__SIDAR_WSL_SWAP__
 WSLCFG
-            sed -i "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
+            sed_inplace "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
@@ -3114,7 +3242,7 @@ collect_api_keys_interactive() {
         val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3125,8 +3253,8 @@ collect_api_keys_interactive() {
         local openai_key=""
         local anthropic_key=""
 
-        openai_key=$(grep -E '^OPENAI_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
-        anthropic_key=$(grep -E '^ANTHROPIC_API_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r\n[:space:]' || true)
+        openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file" | tr -d '[:space:]' || true)
+        anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$env_file" | tr -d '[:space:]' || true)
 
         if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
             warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
@@ -3145,16 +3273,7 @@ collect_api_keys_interactive() {
 
         info "API anahtarları ${source_file} dosyasından içeri alınıyor (etkileşimli giriş atlanacak)..."
         for key in "${KEY_ORDER[@]}"; do
-            raw_val=$(grep -E "^${key}=" "$source_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-            raw_val="${raw_val#"${raw_val%%[![:space:]]*}"}"
-            raw_val="${raw_val%"${raw_val##*[![:space:]]}"}"
-
-            # Basit tek satır tırnaklarını temizle: KEY="value" / KEY='value'
-            if [[ "$raw_val" == \"*\" && "$raw_val" == *\" ]]; then
-                raw_val="${raw_val:1:${#raw_val}-2}"
-            elif [[ "$raw_val" == \'*\' && "$raw_val" == *\' ]]; then
-                raw_val="${raw_val:1:${#raw_val}-2}"
-            fi
+            raw_val=$(read_env_value_from_file "$key" "$source_file" || true)
 
             if [[ -n "$raw_val" ]]; then
                 _write_key "$key" "$raw_val"
@@ -3184,8 +3303,7 @@ collect_api_keys_interactive() {
     local -a missing_keys=()
     local _chk_val
     for key in "${KEY_ORDER[@]}"; do
-        _chk_val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-                   | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        _chk_val=$(read_env_value_from_file "$key" "$env_file" || true)
         if [[ -z "$_chk_val" ]]; then
             missing_keys+=("$key")
             info "  [ eksik  ] ${key}"
@@ -3338,8 +3456,7 @@ report_env_api_key_status() {
 
     local key value
     for key in "${key_order[@]}"; do
-        value=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-                | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        value=$(read_env_value_from_file "$key" "$env_file" || true)
         if [[ -n "$value" ]]; then
             ((ENV_API_KEYS_FILLED+=1))
         else
@@ -3424,13 +3541,16 @@ ensure_env_file_secrets_after_uv_sync() {
 ensure_auto_secrets() {
     local env_file="$1"
 
-    # Boş, eksik veya bilinen güvensiz değer mi? → 0 (true) döner
+    # Boş, eksik, .env.example değeri veya merkezi bilinen-güvensiz değer mi?
+    # → 0 (true) döner. .env.example kontrolü, örnek değerler değiştiğinde
+    # install_sidar.sh içine yeni secret literal'i eklemeden senkron kalır.
     _is_missing_or_insecure() {
         local key="$1"; shift
-        local val
-        val=$(grep -E "^${key}=" "$env_file" 2>/dev/null \
-              | head -n1 | cut -d= -f2- | tr -d '\r\n' || true)
+        local val example_val
+        val=$(read_env_value_from_file "$key" "$env_file" || true)
         is_weak_secret_value "$val" && return 0
+        example_val=$(read_env_value_from_file "$key" "$SCRIPT_DIR/.env.example" || true)
+        [[ -n "$example_val" && "$val" == "$example_val" ]] && return 0
         local bad
         for bad in "$@"; do [[ "$val" == "$bad" ]] && return 0; done
         return 1
@@ -3440,7 +3560,7 @@ ensure_auto_secrets() {
     _write_secret() {
         local key="$1" val="$2"
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3478,8 +3598,7 @@ PY
     }
 
     # ── POSTGRES_PASSWORD ────────────────────────────────────────────────────
-    if _is_missing_or_insecure "POSTGRES_PASSWORD" \
-        "change-me-to-a-strong-password" "replace-with-a-strong-24-plus-character-password"; then
+    if _is_missing_or_insecure "POSTGRES_PASSWORD"; then
         local _v; _v=$(_gen_urlsafe 24)
         if [[ -n "$_v" ]]; then
             _write_secret "POSTGRES_PASSWORD" "$_v"
@@ -3490,8 +3609,7 @@ PY
     fi
 
     # ── API_KEY ──────────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "API_KEY" \
-        "uyaL0M3t5hHt0dj5ous7-oScvna9HH9pV6CneB5hYJw"; then
+    if _is_missing_or_insecure "API_KEY"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "API_KEY" "$_v"
@@ -3502,8 +3620,7 @@ PY
     fi
 
     # ── JWT_SECRET_KEY ────────────────────────────────────────────────────────
-    if _is_missing_or_insecure "JWT_SECRET_KEY" \
-        "Lipg1iwRX5USyUaEt06ctbmnUQnYdywHcgW3y8Rif24fYvNiKX8V5xSQ3m1XOhpx6UuF9X6BGSekm8m_a3jQcg"; then
+    if _is_missing_or_insecure "JWT_SECRET_KEY"; then
         local _v; _v=$(_gen_urlsafe 64)
         if [[ -n "$_v" ]]; then
             _write_secret "JWT_SECRET_KEY" "$_v"
@@ -3514,8 +3631,7 @@ PY
     fi
 
     # ── MEMORY_ENCRYPTION_KEY (Fernet) ────────────────────────────────────────
-    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY" \
-        "vQYaMh2gwGHuEzCfG8638aVcBfQX4xLJ8d8uJzBWfW8="; then
+    if _is_missing_or_insecure "MEMORY_ENCRYPTION_KEY"; then
         local _v; _v=$(_gen_fernet)
         if [[ -n "$_v" ]]; then
             _write_secret "MEMORY_ENCRYPTION_KEY" "$_v"
@@ -3539,12 +3655,9 @@ PY
         fi
     }
 
-    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64 \
-        "a4313adde181fddef87f03ebff7fbf8f2f9f27d58b7ad8d0fa1cb5fc7e8d43ac"
-    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64 \
-        "aeaac3534fe2f97f2147be6f756ea8f4500f4d0f0f5ef758f6f7798f7d8a3f1b"
-    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40 \
-        "69df1db55791dd991a3197958f5fce4ea0ed47e3"
+    _auto_hex_secret "AUTONOMY_WEBHOOK_SECRET" 64
+    _auto_hex_secret "SWARM_FEDERATION_SHARED_SECRET" 64
+    _auto_hex_secret "GITHUB_WEBHOOK_SECRET" 40
 
     # ── GRAFANA_ADMIN_PASSWORD ────────────────────────────────────────────────
     if _is_missing_or_insecure "GRAFANA_ADMIN_PASSWORD" "admin" "sidar" "password" "changeme"; then
@@ -3558,9 +3671,8 @@ PY
     fi
 
     # ── METRICS_TOKEN ─────────────────────────────────────────────────────────
-    # /metrics uçlarını koruyan Bearer token; .env.example'daki örnek değer güvensizdir.
-    if _is_missing_or_insecure "METRICS_TOKEN" \
-        "H4gi2982LlyRXyO1hPusH4XWvcYM44yp35TjGlF6JDw"; then
+    # /metrics uçlarını koruyan Bearer token; örnek veya bilinen güvensiz değerler yenilenir.
+    if _is_missing_or_insecure "METRICS_TOKEN"; then
         local _v; _v=$(_gen_urlsafe 32)
         if [[ -n "$_v" ]]; then
             _write_secret "METRICS_TOKEN" "$_v"
@@ -3575,12 +3687,12 @@ ensure_local_service_host_defaults() {
     local env_file="$1"
     # Lokal kurulumda Docker hostname yerine localhost kullan
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
-        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+        sed_inplace 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
     if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
-        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+        sed_inplace 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
         ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
 }
@@ -3589,7 +3701,7 @@ ensure_sidar_env_default() {
     local env_file="$1"
     local current_env=""
 
-    current_env=$(grep -E '^SIDAR_ENV=' "$env_file" | head -n1 | cut -d= -f2- || true)
+    current_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file" || true)
     current_env=$(echo "$current_env" | tr -d '"'\''[:space:]')
 
     if [[ -z "$current_env" ]]; then
@@ -3599,7 +3711,7 @@ ensure_sidar_env_default() {
     fi
 
     if [[ "$current_env" == "production" ]]; then
-        sed -i 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
+        sed_inplace 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
         warn ".env: SIDAR_ENV=production varsayılanı development olarak düzeltildi (üretimde manuel production yapın)."
     fi
 }
@@ -3637,10 +3749,10 @@ prompt_post_install_sidar_env_mode() {
         echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
         echo "======================================================"
 
-        if read -r -t 180 -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
+        if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
             :
         else
-            warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
+            warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
             env_choice="1"
         fi
 
@@ -3650,7 +3762,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if grep -qE '^SIDAR_ENV=' "$env_file"; then
-        sed -i "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
+        sed_inplace "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
     else
         echo "SIDAR_ENV=$selected_env" >> "$env_file"
     fi
@@ -3667,7 +3779,115 @@ prompt_post_install_sidar_env_mode() {
 
 get_env_value() {
     local env_file="$1" key="$2"
-    grep -E "^${key}=" "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
+    read_env_value_from_file "$key" "$env_file" || true
+}
+
+known_weak_secrets_file() {
+    local script_dir="${SCRIPT_DIR:-}"
+    if [[ -n "$script_dir" && -f "$script_dir/scripts/known_weak_secrets.txt" ]]; then
+        printf '%s\n' "$script_dir/scripts/known_weak_secrets.txt"
+        return 0
+    fi
+    if [[ -f "scripts/known_weak_secrets.txt" ]]; then
+        printf '%s\n' "scripts/known_weak_secrets.txt"
+        return 0
+    fi
+    return 1
+}
+
+is_known_weak_secret_value() {
+    local value="${1:-}" weak_file line known_value
+    [[ -n "$value" ]] || return 1
+    weak_file="$(known_weak_secrets_file 2>/dev/null || true)"
+    [[ -n "$weak_file" && -f "$weak_file" ]] || return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"
+        line="${line%$'\r'}"
+        line="${line#${line%%[![:space:]]*}}"
+        line="${line%${line##*[![:space:]]}}"
+        [[ -n "$line" ]] || continue
+        if [[ "$line" == *=* ]]; then
+            known_value="${line#*=}"
+        else
+            known_value="$line"
+        fi
+        [[ "$value" == "$known_value" ]] && return 0
+    done < "$weak_file"
+
+    return 1
+}
+
+is_low_entropy_secret_value() {
+    local value="${1:-}"
+    command -v python3 &>/dev/null || return 1
+    python3 - "$value" <<'PYENTROPY'
+import math
+import re
+import sys
+
+value = sys.argv[1].strip()
+lower = value.lower()
+
+if not value:
+    sys.exit(0)
+
+# Catch long variants of common weak passwords that otherwise pass a length-only
+# check, e.g. Password1Password1Password1 or qwerty123qwerty123.
+common_tokens = (
+    "password", "passw0rd", "postgres", "sidar", "admin", "changeme",
+    "change_me", "change-me", "qwerty", "letmein", "welcome", "default",
+    "secret", "example", "testing", "test123", "password1",
+)
+keyboard_sequences = (
+    "qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890", "0987654321",
+    "abcdefghijklmnopqrstuvwxyz", "zyxwvutsrqponmlkjihgfedcba",
+)
+
+pool = 0
+if re.search(r"[a-z]", value):
+    pool += 26
+if re.search(r"[A-Z]", value):
+    pool += 26
+if re.search(r"[0-9]", value):
+    pool += 10
+if re.search(r"[^A-Za-z0-9]", value):
+    pool += 33
+pool = max(pool, 1)
+
+# Hex-only secrets should be scored against the real alphabet size instead of
+# the generic alpha+digit pool.
+if re.fullmatch(r"[0-9a-fA-F]+", value):
+    pool = 16
+
+entropy_bits = len(value) * math.log2(pool)
+
+for token in common_tokens:
+    if token in lower:
+        entropy_bits -= 35
+
+for seq in keyboard_sequences:
+    if any(seq[start:start + 5] in lower for start in range(0, max(1, len(seq) - 4))):
+        entropy_bits -= 30
+
+longest_run = max((len(match.group(0)) for match in re.finditer(r"(.)\1+", value)), default=1)
+if longest_run >= 4:
+    entropy_bits -= (longest_run - 2) * 8
+
+unique_ratio = len(set(value)) / len(value)
+if unique_ratio < 0.35:
+    entropy_bits -= 35
+
+# Repeated short units are very weak despite being long.
+for unit_len in range(1, min(13, len(value) // 2 + 1)):
+    if len(value) % unit_len == 0:
+        unit = value[:unit_len]
+        repeats = len(value) // unit_len
+        if repeats >= 2 and unit * repeats == value:
+            entropy_bits = min(entropy_bits, unit_len * math.log2(pool) + math.log2(repeats))
+
+sys.exit(0 if entropy_bits < 80 else 1)
+PYENTROPY
 }
 
 is_weak_secret_value() {
@@ -3678,7 +3898,9 @@ is_weak_secret_value() {
             return 0
             ;;
     esac
+    is_known_weak_secret_value "$value" && return 0
     (( ${#value} < 24 )) && return 0
+    is_low_entropy_secret_value "$value" && return 0
     return 1
 }
 
@@ -3773,12 +3995,12 @@ setup_env_file() {
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
-            sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
-            sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
+            sed_inplace 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
 
             # Docker için GPU modunu ön tanımlı yap
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
             fi
@@ -3786,9 +4008,9 @@ setup_env_file() {
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
-            sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
@@ -3799,14 +4021,14 @@ setup_env_file() {
     # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
         if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
-            sed -i 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
+            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
         else
             echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
         fi
 
         if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
             if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
             fi
         else
             echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
@@ -3877,7 +4099,7 @@ run_migrations() {
 
     DB_URL=""
     if [[ -f "$ENV_FILE" ]]; then
-        DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE" || true)
     fi
 
     cd "$SCRIPT_DIR"
@@ -4057,8 +4279,8 @@ PY
     if [[ -f "$ENV_FILE" ]]; then
         local refreshed_db_url=""
         local refreshed_postgres_password=""
-        refreshed_db_url=$(grep -E '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
-        refreshed_postgres_password=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- || true)
+        refreshed_db_url=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE" || true)
+        refreshed_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$ENV_FILE" || true)
 
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
@@ -4132,7 +4354,7 @@ start_docker_image_prefetch_async() {
     fi
 
     if [[ -f "$env_file" ]]; then
-        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file" | tr -d '[:space:]' || true)
     fi
     if [[ -z "$compose_profiles" ]]; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -4602,7 +4824,7 @@ print_summary() {
 
     if [[ "$WSL2" == true ]]; then
         local multimodal_val=""
-        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(grep -E "^ENABLE_MULTIMODAL=" "$SCRIPT_DIR/.env" | head -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]' || true)
         if [[ "$multimodal_val" == "true" ]]; then
             echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
             if [[ "$AUDIO_SESSION_RESTART_RECOMMENDED" == true ]]; then
@@ -4664,8 +4886,7 @@ launch_docker_services() {
     local docker_compose_cmd=()
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
-    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
-    local runtime_answer=""
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-}"
     local -a infra_services=(postgres redis ollama jaeger prometheus grafana)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
@@ -4678,7 +4899,7 @@ launch_docker_services() {
     fi
 
     if [[ -f "$env_file" ]]; then
-        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+        compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file" | tr -d '[:space:]' || true)
     fi
     if [[ -z "$compose_profiles" ]]; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -4688,29 +4909,10 @@ launch_docker_services() {
         fi
     fi
 
-    if [[ "$runtime_mode" == "ask" ]]; then
-        if [[ "$NO_INTERACTION" == true ]]; then
-            runtime_mode="docker"
-            info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
-        else
-            echo ""
-            info "Çalışma modu seçimi:"
-            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
-            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
-            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
-                :
-            else
-                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
-                runtime_answer="1"
-            fi
-            case "${runtime_answer:-1}" in
-                2) runtime_mode="docker" ;;
-                *) runtime_mode="local" ;;
-            esac
-        fi
+    if [[ -z "$runtime_mode" || "$runtime_mode" == "ask" ]]; then
+        select_runtime_mode
+        runtime_mode="$APP_RUNTIME_MODE_SELECTED"
     fi
-
-    APP_RUNTIME_MODE_SELECTED="$runtime_mode"
     echo ""
     local start_prompt="Docker servisleri başlatılsın mı? [E/h] "
     local start_default="E"
@@ -4774,10 +4976,15 @@ launch_docker_services() {
     esac
 }
 
-# ── Çalışma Modu Seçimi (Erken) ──────────────────────────────────────────────
-select_runtime_mode_early() {
-    local runtime_mode="${APP_RUNTIME_MODE:-ask}"
+# ── Çalışma Modu Seçimi ──────────────────────────────────────────────────────
+select_runtime_mode() {
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-ask}}"
     local runtime_answer=""
+
+    case "$runtime_mode" in
+        local|docker) ;;
+        *) runtime_mode="ask" ;;
+    esac
 
     if [[ "$runtime_mode" == "ask" ]]; then
         if [[ "$NO_INTERACTION" == true ]]; then
@@ -4785,13 +4992,13 @@ select_runtime_mode_early() {
             info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
         else
             echo ""
-            info "Kurulum başlangıcında çalışma modu seçimi:"
+            info "Kurulum çalışma modu seçimi:"
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
-            if read -r -t 180 -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+            if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
                 :
             else
-                warn "180 saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
+                warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
                 runtime_answer="1"
             fi
             case "${runtime_answer:-1}" in
@@ -4944,115 +5151,12 @@ EOF
 }
 
 
-run_doctor_phase() {
-    step "Sidar Doctor"
-    cd "$SCRIPT_DIR"
-    mkdir -p artifacts/install
-    local -a doctor_cmd=()
-    if command -v uv &>/dev/null; then
-        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
-    elif command -v python3 &>/dev/null; then
-        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
-    else
-        fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
-    fi
-
-    if "${doctor_cmd[@]}"; then
-        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
-    else
-        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
-        return 1
-    fi
-}
-
-run_prepare_system_phase() {
-    install_system_dependencies
-    sync_repo
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_nvidia_docker
-    create_directories
-    setup_env_file
-    ok "prepare-system fazı tamamlandı."
-}
-
-run_sync_deps_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_uv
-    setup_python_env
-    install_python_deps
-    install_pyright_lsp_tool
-    verify_torch_cuda
-    ok "sync-deps fazı tamamlandı."
-}
-
-run_provision_models_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    detect_gpu
-    setup_env_file
-    download_ollama_models
-    ok "provision-models fazı tamamlandı."
-}
-
-run_smoke_phase() {
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    detect_gpu
-    prepare_docker_for_migrations
-    run_migrations
-    run_smoke_tests
-    run_test_artifact_audit
-    run_doctor_phase || true
-    ok "smoke fazı tamamlandı."
-}
-
-run_install_subcommand_if_requested() {
-    case "$INSTALL_SUBCOMMAND" in
-        full) return 1 ;;
-        doctor)
-            run_doctor_phase
-            return 0
-            ;;
-        prepare-system)
-            run_prepare_system_phase
-            return 0
-            ;;
-        sync-deps)
-            run_sync_deps_phase
-            return 0
-            ;;
-        provision-models)
-            run_provision_models_phase
-            return 0
-            ;;
-        smoke)
-            run_smoke_phase
-            return 0
-            ;;
-    esac
-    return 1
-}
-
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
     banner
     report_repo_lookup_context
     detect_environment
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
-        if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
-            info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
-            verify_offline_bundle_manifest "$OFFLINE_PACKAGES_DIR"
-        else
-            fail "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."
-        fi
-    fi
+    prepare_offline_mode_if_needed
 
     if [[ "$INSTALL_SUBCOMMAND" == "doctor" ]]; then
         run_doctor_phase
@@ -5073,76 +5177,7 @@ main() {
         return
     fi
 
-    # Kritik sıra:
-    # 1) Sistem bağımlılıkları (git/curl vb.)
-    # 2) Repo senkronizasyonu (git clone/pull)
-    # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
-    install_system_dependencies
-    sync_repo
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_nvidia_docker
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" && -f "$SCRIPT_DIR/.env" ]]; then
-        # Mevcut .env varsa Docker imajlarını uv sync ile paralel önceden çekebiliriz.
-        start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
-    fi
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-        setup_uv
-        setup_python_env
-        install_python_deps
-        install_pyright_lsp_tool
-        verify_torch_cuda
-    else
-        info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."
-    fi
-    create_directories
-    # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
-    setup_vscode_workspace
-    setup_env_file
-    start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        setup_react_frontend
-        install_playwright_browsers
-    else
-        info "Tam Docker modu: lokal React build ve Playwright kurulumu atlanıyor."
-    fi
-    setup_shell_activation_shortcut
-    setup_wsl2_audio
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # DB migrasyonu öncesinde paralel image prefetch sonuçlansın; compose up gerekirse kalanları tekrar çeker.
-        wait_for_docker_image_prefetch
-        # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
-        prepare_docker_for_migrations
-        # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
-        run_migrations
-        # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
-        # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
-        # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
-        download_ollama_models
-    else
-        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
-    fi
-    # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
-    wait_for_docker_image_prefetch
-    launch_docker_services
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        run_smoke_tests
-        run_test_artifact_audit
-    else
-        SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
-    fi
-    print_summary
-    relocate_log_file_if_needed
-    cleanup_bootstrap_script_copy
-    prompt_post_install_sidar_env_mode
-    # En son adım: IDE başlatma onayı
-    launch_ide
+    run_full_install_phase
 }
 
 main "$@"
