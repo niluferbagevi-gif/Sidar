@@ -9,6 +9,15 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def _install_script_with_modules() -> str:
+    parts = [Path("install_sidar.sh").read_text(encoding="utf-8")]
+    parts.extend(
+        module.read_text(encoding="utf-8")
+        for module in sorted(Path("scripts/install_modules").glob("*.sh"))
+    )
+    return "\n".join(parts)
+
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
@@ -107,19 +116,38 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
 
 
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script_with_modules()
+    env_module = Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
 
     assert "ensure_env_file_secrets_after_uv_sync" in script
     assert 'ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."' in script
-    assert "ensure_env_file_secrets_after_uv_sync" in script[
-        script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")
+    assert "ensure_env_file_secrets_after_uv_sync" in env_module[
+        env_module.index("install_python_deps()") : env_module.index("# ── 5.1 Pyright")
     ]
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
 
 
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script_with_modules()
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_sources_modular_install_components() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    for module_name in [
+        "install_helpers.sh",
+        "gpu_utils.sh",
+        "env_utils.sh",
+        "db_credentials.sh",
+        "ollama_models.sh",
+    ]:
+        assert f'"{module_name}"' in script
+    assert 'source "${INSTALL_MODULE_DIR}/${module_name}"' in script
+    assert "detect_gpu()" in Path("scripts/install_modules/gpu_utils.sh").read_text(encoding="utf-8")
+    assert "setup_python_env()" in Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    assert "harden_database_credentials()" in Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    assert "download_ollama_models()" in Path("scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8")
