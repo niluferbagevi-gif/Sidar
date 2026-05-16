@@ -34,6 +34,7 @@ AUTONOMOUS_AUTO_HEAL_ENABLED="${AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED:-1}"
 AUTONOMOUS_AUTO_HEAL_HITL_APPROVE="${AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE:-no}"
 AUTONOMOUS_TEST_FAILURE_LOG="${AUTONOMOUS_LOOP_TEST_FAILURE_LOG:-artifacts/autonomous_loop_test_failure.log}"
 AUTONOMOUS_AUTO_HEAL_RESULT_PATH="${AUTONOMOUS_LOOP_AUTO_HEAL_RESULT_PATH:-artifacts/autonomous_loop_auto_heal_result.json}"
+AUTONOMOUS_DOTENV_FILE="${AUTONOMOUS_LOOP_DOTENV_FILE:-${DOTENV_FILE:-.env.test}}"
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
@@ -162,6 +163,17 @@ if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
   source .venv/bin/activate
 fi
 
+is_truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|y|Y|evet|EVET|Evet|e|E)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 echo "[INFO] Coverage operasyon profili: ${AUTONOMOUS_OPERATION_PROFILE}."
 echo "[INFO] Günlük local kalite kapısı: run_tests.sh / .coveragerc / COVERAGE_FAIL_UNDER => %${LOCAL_COVERAGE_GATE}."
@@ -179,6 +191,7 @@ echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONO
 echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; hibrit modda mypy yalnız ön kontrol run_tests.sh kalite kapısında çalışır."
 echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
 echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
+echo "[INFO] Otonom Python yardımcıları DOTENV_FILE=${AUTONOMOUS_DOTENV_FILE} ile çalışacak."
 if [ "${AUTONOMOUS_LOOP_PRINT_CONFIG:-0}" = "1" ]; then
   echo "[INFO] AUTONOMOUS_LOOP_PRINT_CONFIG=1 verildi; otonom döngü başlatılmadan yapılandırma doğrulaması tamamlandı."
   exit 0
@@ -343,6 +356,7 @@ run_coverage_agent() {
   AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_COVERAGE_MAX_MISSING_LINES}" \
   AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES}" \
   AUTONOMOUS_LOOP_EXCLUDE_FILES="${AUTONOMOUS_EXCLUDE_FILES}" \
+  DOTENV_FILE="${AUTONOMOUS_DOTENV_FILE}" \
     uv run python - <<'PY_COVERAGE_AGENT'
 import asyncio
 import json
@@ -595,7 +609,7 @@ run_auto_heal_for_test_failure() {
   else
     cmd+=(--hitl-approve "${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}")
   fi
-  "${cmd[@]}"
+  DOTENV_FILE="${AUTONOMOUS_DOTENV_FILE}" "${cmd[@]}"
 }
 
 run_preflight_quality_gate() {

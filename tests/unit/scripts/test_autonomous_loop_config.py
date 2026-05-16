@@ -19,6 +19,8 @@ def _run_autonomous_loop_config(
             "AUTONOMOUS_LOOP_COVERAGE_PROFILE": profile,
             "AUTONOMOUS_LOOP_OPERATION_PROFILE": operation_profile,
             "AUTONOMOUS_LOOP_PRINT_CONFIG": "1",
+            "AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "0",
+            "AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED": "1",
         }
     )
     if extra_env:
@@ -157,3 +159,12 @@ def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
 
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED true/false olmalı" in output
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED=false" in output
+
+
+def test_autonomous_loop_defines_truthy_helper_before_upload_usage() -> None:
+    script = (REPO_ROOT / "autonomous_loop.sh").read_text(encoding="utf-8")
+
+    assert "is_truthy_flag()" in script
+    assert script.index("is_truthy_flag()") < script.index("run_github_upload()")
+    assert 'AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}' in script
+    assert 'DOTENV_FILE="${AUTONOMOUS_DOTENV_FILE}"' in script
