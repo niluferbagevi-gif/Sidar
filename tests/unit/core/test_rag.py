@@ -438,10 +438,13 @@ async def test_document_store_apply_hf_runtime_env_sets_expected_vars(
     store = _make_store_stub(Path("/tmp"))
     store.cfg = SimpleNamespace(HF_TOKEN="abc-token", HF_HUB_OFFLINE=True)
 
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
-    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
-    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    # setenv'i baseline değerle çağırmak monkeypatch'in teardown'da değişkeni
+    # restore etmesini garanti eder; sadece delenv kullanmak SUT içinde
+    # os.environ[...]="1" atamasının kalıcı sızıntısını engellemez.
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "")
 
     store._apply_hf_runtime_env()
 

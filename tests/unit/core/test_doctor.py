@@ -33,6 +33,9 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
         DoctorCheck("gpu", "warn", "no gpu", {"run_gpu_stress": False}),
     ]
     monkeypatch.setattr(doctor, "check_uv", lambda: checks[0])
+    monkeypatch.setattr(
+        doctor, "check_env_loading", lambda: DoctorCheck("env_loading", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
     monkeypatch.setattr(
         doctor, "check_database_connectivity", lambda: DoctorCheck("db_conn", "pass", "ok")
@@ -813,6 +816,9 @@ def test_model_check_handles_present_missing_smoke_failure_and_http_errors(monke
 
 def test_run_doctor_report_aggregates_failures_and_skips_model_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor, "check_uv", lambda: DoctorCheck("uv", "pass", "ok"))
+    monkeypatch.setattr(
+        doctor, "check_env_loading", lambda: DoctorCheck("env_loading", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "fail", "bad"))
     monkeypatch.setattr(doctor, "check_migrations", lambda: DoctorCheck("migrations", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_agent_catalog", lambda: DoctorCheck("catalog", "pass", "ok"))
@@ -866,3 +872,110 @@ def test_main_returns_zero_for_warn_and_one_for_fail(monkeypatch, tmp_path, caps
         },
     )
     assert doctor.main() == 1
+
+
+# ─── check_env_loading testleri ──────────────────────────────────────────────
+
+
+def _patch_env_loading(monkeypatch, *, files=None, missing=None, ai_provider="ollama"):
+    """check_env_loading'i izole etmek için config arayüzünü taklit eder."""
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "get_env_loading_report",
+        lambda: {
+            "files": files or [],
+            "override_chain": [entry["label"] for entry in (files or [])],
+            "sidar_env": "test",
+            "missing_optional": missing or [],
+        },
+    )
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", ai_provider)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "non-empty-jwt-secret-value-1234")
+    monkeypatch.setattr(config.Config, "API_KEY", "non-empty-api-key-value-1234")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://localhost:11434/api")
+    monkeypatch.setattr(config.Config, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(config.Config, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(config.Config, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "")
+
+
+def test_check_env_loading_passes_when_files_loaded_and_secrets_set(monkeypatch):
+    files = [
+        {"priority": 10, "label": "base", "path": "/repo/.env", "override": False},
+        {"priority": 40, "label": "sidar_keys", "path": "/home/user/.sidar_keys.env", "override": True},
+    ]
+    _patch_env_loading(monkeypatch, files=files)
+
+    check = doctor.check_env_loading()
+    assert check.status == "pass"
+    assert check.details["override_chain"] == ["base", "sidar_keys"]
+    assert check.details["missing_critical_secrets"] == []
+    assert check.details["provider_secret_missing"] is False
+
+
+def test_check_env_loading_fails_when_critical_secrets_empty(monkeypatch):
+    files = [{"priority": 10, "label": "base", "path": "/repo/.env", "override": False}]
+    _patch_env_loading(monkeypatch, files=files)
+    import config as cfg
+
+    monkeypatch.setattr(cfg.Config, "JWT_SECRET_KEY", "")
+
+    check = doctor.check_env_loading()
+    assert check.status == "fail"
+    assert "JWT_SECRET_KEY" in check.details["missing_critical_secrets"]
+    assert "JWT_SECRET_KEY" in check.message
+
+
+def test_check_env_loading_warns_when_provider_secret_missing(monkeypatch):
+    files = [{"priority": 10, "label": "base", "path": "/repo/.env", "override": False}]
+    _patch_env_loading(monkeypatch, files=files, ai_provider="openai")
+
+    check = doctor.check_env_loading()
+    assert check.status == "warn"
+    assert check.details["provider_secret_attr"] == "OPENAI_API_KEY"
+    assert check.details["provider_secret_missing"] is True
+    assert "OPENAI_API_KEY" in check.message
+
+
+def test_check_env_loading_warns_when_no_files_loaded(monkeypatch):
+    _patch_env_loading(monkeypatch, files=[])
+
+    check = doctor.check_env_loading()
+    assert check.status == "warn"
+    assert "No .env files were loaded" in check.message
+
+
+def test_check_env_loading_warns_for_missing_optional_files(monkeypatch):
+    files = [{"priority": 10, "label": "base", "path": "/repo/.env", "override": False}]
+    missing = [{"label": "dotenv_file", "path": "/repo/.env.advanced"}]
+    _patch_env_loading(monkeypatch, files=files, missing=missing)
+
+    check = doctor.check_env_loading()
+    assert check.status == "warn"
+    assert "Optional env file declared but not found" in check.message
+    assert check.details["missing_optional"] == missing
+
+
+def test_check_env_loading_passes_for_litellm_with_gateway(monkeypatch):
+    files = [{"priority": 10, "label": "base", "path": "/repo/.env", "override": False}]
+    _patch_env_loading(monkeypatch, files=files, ai_provider="litellm")
+    import config as cfg
+
+    monkeypatch.setattr(cfg.Config, "LITELLM_GATEWAY_URL", "https://gateway.example.com")
+
+    check = doctor.check_env_loading()
+    assert check.status == "pass"
+    assert check.details["provider_secret_attr"] == "LITELLM_GATEWAY_URL"
+    assert check.details["provider_secret_missing"] is False
+
+
+def test_check_env_loading_handles_unknown_provider(monkeypatch):
+    files = [{"priority": 10, "label": "base", "path": "/repo/.env", "override": False}]
+    _patch_env_loading(monkeypatch, files=files, ai_provider="custom-provider")
+
+    check = doctor.check_env_loading()
+    assert check.status == "pass"
+    assert check.details["provider_secret_attr"] is None
+    assert check.details["provider_secret_missing"] is False

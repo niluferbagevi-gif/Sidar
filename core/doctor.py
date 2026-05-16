@@ -107,6 +107,90 @@ def check_uv() -> DoctorCheck:
     )
 
 
+def check_env_loading() -> DoctorCheck:
+    """Verify multi-tier .env files were loaded and critical secrets are present.
+
+    Reports the actual override chain (base → SIDAR_ENV-specific → DOTENV_FILE →
+    SIDAR_KEYS_FILE) so developers can spot misconfigured priorities, and warns
+    when no source file was loaded at all or when critical secrets are missing
+    — before runtime code crashes.
+    """
+    try:
+        from config import Config, get_env_loading_report
+    except Exception as exc:  # pragma: no cover - defensive runtime path
+        return DoctorCheck("env_loading", "fail", f"config import failed: {exc}")
+
+    report = get_env_loading_report()
+    files = report["files"]
+    override_chain = report["override_chain"]
+    missing_optional = report["missing_optional"]
+
+    critical_secrets = {
+        "JWT_SECRET_KEY": getattr(Config, "JWT_SECRET_KEY", ""),
+        "API_KEY": getattr(Config, "API_KEY", ""),
+    }
+    provider_keys = {
+        "ollama": "OLLAMA_URL",
+        "gemini": "GEMINI_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "litellm": "LITELLM_GATEWAY_URL",
+    }
+    provider = (getattr(Config, "AI_PROVIDER", "") or "").lower().strip()
+    provider_secret_attr = provider_keys.get(provider)
+    provider_secret_value = (
+        getattr(Config, provider_secret_attr, "") if provider_secret_attr else ""
+    )
+
+    missing_critical = [name for name, value in critical_secrets.items() if not str(value).strip()]
+    provider_missing = bool(provider_secret_attr) and not str(provider_secret_value).strip()
+
+    failures: list[str] = []
+    warnings: list[str] = []
+
+    if not files:
+        warnings.append(
+            "No .env files were loaded. Place secrets in .env, .env.<SIDAR_ENV>, "
+            "the DOTENV_FILE target, or ~/.sidar_keys.env before launching the app."
+        )
+
+    if missing_critical:
+        failures.append(
+            "Critical secrets are empty: "
+            + ", ".join(missing_critical)
+            + ". Set them in .env or ~/.sidar_keys.env before launching the app."
+        )
+
+    if provider_missing:
+        warnings.append(
+            f"AI_PROVIDER={provider!r} but {provider_secret_attr} is missing. "
+            "Configure it in the highest-priority .env source listed below."
+        )
+
+    for entry in missing_optional:
+        warnings.append(
+            f"Optional env file declared but not found: {entry['label']}={entry['path']}"
+        )
+
+    status = "fail" if failures else ("warn" if warnings else "pass")
+    if status == "pass":
+        message = f".env override chain loaded: {' > '.join(override_chain) or '(none)'}"
+    else:
+        message = "; ".join(failures + warnings)
+
+    details: dict[str, Any] = {
+        "override_chain": override_chain,
+        "files": files,
+        "sidar_env": report["sidar_env"],
+        "missing_optional": missing_optional,
+        "missing_critical_secrets": missing_critical,
+        "provider": provider,
+        "provider_secret_attr": provider_secret_attr,
+        "provider_secret_missing": provider_missing,
+    }
+    return DoctorCheck("env_loading", status, message, details)
+
+
 def _is_postgres_url(parsed: Any) -> bool:
     return bool(parsed and str(parsed.scheme).startswith("postgresql"))
 
@@ -775,6 +859,7 @@ def run_doctor_report(
 ) -> dict[str, Any]:
     checks = [
         check_uv(),
+        check_env_loading(),
         check_database_env(),
         check_database_connectivity(),
         check_rag_readiness(),

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,6 +32,83 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
+# Çalışma zamanında yüklenen .env dosyalarının kronolojik, önceliklendirilmiş listesi.
+# Her giriş: {"priority": int, "label": str, "path": Path, "override": bool}.
+# Yüksek priority değeri = daha geç yüklenen ve dolayısıyla baskın olan dosya.
+LOADED_ENV_FILES: list[dict[str, Any]] = []
+
+
+def _resolve_dotenv_path(raw_path: str) -> Path:
+    """Resolve repo-relative, absolute, or user-home dotenv file paths."""
+    dotenv_path = Path(raw_path).expanduser()
+    if not dotenv_path.is_absolute():
+        dotenv_path = BASE_DIR / dotenv_path
+    return dotenv_path
+
+
+def _record_loaded_env(label: str, path: Path, *, priority: int, override: bool) -> None:
+    """Yüklenen .env dosyasını izleme listesine ekler (yeniden yükleme idempotent)."""
+    entry = {"priority": priority, "label": label, "path": path, "override": override}
+    LOADED_ENV_FILES.append(entry)
+
+
+def _load_dotenv_if_exists(
+    raw_path: str,
+    *,
+    override: bool,
+    label: str | None = None,
+    priority: int | None = None,
+) -> Path | None:
+    """Load a dotenv file when it exists and return the resolved path."""
+    if not raw_path.strip():
+        return None
+    dotenv_path = _resolve_dotenv_path(raw_path.strip())
+    if dotenv_path.exists():
+        load_dotenv(dotenv_path=dotenv_path, override=override)
+        if label is not None and priority is not None:
+            _record_loaded_env(label, dotenv_path, priority=priority, override=override)
+        return dotenv_path
+    return None
+
+
+def get_env_loading_report() -> dict[str, Any]:
+    """Yapılandırma yüklemesinin görünür hale getirildiği denetim raporu döndürür.
+
+    Rapor hem doctor hem de log diagnostics tarafında kullanılır:
+    - ``files``: Önceliklendirilmiş, yüklenmiş .env dosyalarının listesi.
+    - ``override_chain``: Sadece dosya etiketleri (örn. "base", "specific", "dotenv_file", "sidar_keys").
+    - ``sidar_env``: Aktif SIDAR_ENV (varsa) — boşsa None.
+    - ``missing_optional``: Beklenen ama bulunamayan opsiyonel dosyalar.
+    """
+    files_payload = [
+        {
+            "priority": entry["priority"],
+            "label": entry["label"],
+            "path": str(entry["path"]),
+            "override": entry["override"],
+        }
+        for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])
+    ]
+    override_chain = [entry["label"] for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])]
+    missing_optional: list[dict[str, str]] = []
+    explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
+    if explicit_dotenv:
+        resolved = _resolve_dotenv_path(explicit_dotenv)
+        if not resolved.exists():
+            missing_optional.append({"label": "dotenv_file", "path": str(resolved)})
+    sidar_keys = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    if sidar_keys:
+        resolved_keys = _resolve_dotenv_path(sidar_keys)
+        if not resolved_keys.exists() and "sidar_keys" not in override_chain:
+            missing_optional.append({"label": "sidar_keys", "path": str(resolved_keys)})
+    return {
+        "files": files_payload,
+        "override_chain": override_chain,
+        "sidar_env": os.getenv("SIDAR_ENV", "").strip() or None,
+        "missing_optional": missing_optional,
+    }
+
+
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
@@ -38,12 +116,14 @@ sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 base_env_path = BASE_DIR / ".env"
 if base_env_path.exists():
     load_dotenv(dotenv_path=base_env_path)
+    _record_loaded_env("base", base_env_path, priority=10, override=False)
 
 # 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
     if specific_env_path.exists():
         load_dotenv(dotenv_path=specific_env_path, override=True)
+        _record_loaded_env("specific", specific_env_path, priority=20, override=True)
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}
@@ -56,13 +136,16 @@ if sidar_env:
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
-# 4. DOTENV_FILE ile açıkça belirtilen dosyayı en yüksek öncelikle yükle
-#    (örn: test ortamında DOTENV_FILE=.env.test)
+# 4. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
+#    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
+#    (örn: test ortamında DOTENV_FILE=.env.test veya DOTENV_FILE=~/.sidar_keys.env)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-if _explicit_dotenv:
-    _explicit_dotenv_path = BASE_DIR / _explicit_dotenv
-    if _explicit_dotenv_path.exists():
-        load_dotenv(dotenv_path=_explicit_dotenv_path, override=True)
+_load_dotenv_if_exists(_explicit_dotenv, override=True, label="dotenv_file", priority=30)
+
+# 5. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
+#    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
+_sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+_load_dotenv_if_exists(_sidar_keys_file, override=True, label="sidar_keys", priority=40)
 
 ENV_PATH = base_env_path
 
@@ -113,11 +196,69 @@ LLM_SETTINGS = LLMClientSettings()
 
 
 def get_bool_env(key: str, default: bool = False) -> bool:
+    """Return a strict boolean environment value.
+
+    Sidar feature flags intentionally accept only ``true`` or ``false``
+    (case-insensitive). Numeric and shell-style aliases such as ``1``, ``0``,
+    ``yes`` or ``no`` are rejected so deployments cannot silently drift between
+    incompatible boolean conventions.
+    """
     raw_val = os.getenv(key)
     if raw_val is None or not raw_val.strip():
         return default
     val = raw_val.strip().lower()
-    return val in ("true", "1", "yes", "on")
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}.")
+
+
+def build_postgres_dsn(*, host: str | None = None) -> str:
+    """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
+    user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
+    password = os.getenv("POSTGRES_PASSWORD", "sidar")
+    resolved_host = (
+        host if host is not None else os.getenv("POSTGRES_HOST") or "localhost"
+    ).strip() or "localhost"
+    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
+
+    quoted_user = quote(user, safe="")
+    quoted_password = quote(password, safe="")
+    quoted_database = quote(database, safe="")
+    return f"postgresql+asyncpg://{quoted_user}:{quoted_password}@{resolved_host}:{port}/{quoted_database}"
+
+
+def get_database_url() -> str:
+    """Resolve DATABASE_URL, deriving it from POSTGRES_* variables when absent."""
+    explicit_url = os.getenv("DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+    return build_postgres_dsn()
+
+
+def get_container_database_url() -> str:
+    """Resolve the container DSN from SIDAR_CONTAINER_DATABASE_URL or POSTGRES_* values."""
+    explicit_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+    container_host = os.getenv("POSTGRES_CONTAINER_HOST", "postgres")
+    return build_postgres_dsn(host=container_host)
+
+
+def get_web_scrape_max_chars(default: int = 12000) -> int:
+    """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
+    if os.getenv("WEB_SCRAPE_MAX_CHARS") is not None:
+        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
+    if os.getenv("WEB_FETCH_MAX_CHARS") is not None:
+        warnings.warn(
+            "WEB_FETCH_MAX_CHARS is deprecated; use WEB_SCRAPE_MAX_CHARS instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return get_int_env("WEB_FETCH_MAX_CHARS", default)
+    return default
 
 
 def get_int_env(key: str, default: int = 0) -> int:
@@ -141,6 +282,53 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
     if not value:
         return default
     return [item.strip() for item in value.split(separator) if item.strip()]
+
+
+def get_prefixed_env(prefix_key: str, legacy_key: str, default: str = "") -> str:
+    """Read a Sidar-prefixed env var while preserving a legacy fallback."""
+    prefixed_value = os.getenv(prefix_key)
+    if prefixed_value is not None:
+        return prefixed_value
+    return os.getenv(legacy_key, default)
+
+
+def get_optional_prefixed_env(prefix_key: str, legacy_key: str) -> str | None:
+    """Read an optional Sidar-prefixed env var with legacy fallback."""
+    prefixed_value = os.getenv(prefix_key)
+    if prefixed_value is not None:
+        return prefixed_value
+    return os.getenv(legacy_key)
+
+
+def get_int_prefixed_env(prefix_key: str, legacy_key: str, default: int = 0) -> int:
+    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    try:
+        return int(raw_value)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.0) -> float:
+    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    try:
+        return float(raw_value)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool = False) -> bool:
+    raw_value = get_optional_prefixed_env(prefix_key, legacy_key)
+    if raw_value is None or not raw_value.strip():
+        return default
+    val = raw_value.strip().lower()
+    if val == "true":
+        return True
+    if val == "false":
+        return False
+    raise ValueError(
+        f"{prefix_key} / {legacy_key} must be either 'true' or 'false' "
+        f"(case-insensitive); got {raw_value!r}."
+    )
 
 
 def get_db_pool_size_default() -> int:
@@ -240,6 +428,20 @@ _DEPENDENCY_AUTO = object()
 
 if ENV_PATH.exists():
     logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
+
+# Yüklenen tüm .env dosyalarını öncelik sırasına göre logla — debugging için
+# hangi dosyaların hangi sırayla ezildiği şeffaf olmalı.
+if LOADED_ENV_FILES:
+    _chain = " > ".join(
+        f"{entry['label']}={entry['path']}"
+        for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])
+    )
+    logger.info("ℹ️  .env yükleme zinciri (düşükten yükseğe öncelik): %s", _chain)
+else:
+    logger.warning(
+        "⚠️  Hiçbir .env dosyası yüklenmedi. Varsayılan değerler kullanılacak; "
+        "kritik anahtarlar (API_KEY, JWT_SECRET_KEY) eksik olabilir."
+    )
 
 # ═══════════════════════════════════════════════════════════════
 # SANDBOX KAYNAK KOTALARI (Docker/cgroups)
@@ -412,6 +614,18 @@ class Config:
     SELF_HEAL_PLAN_MAX_RETRIES: int = get_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
     SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
     SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env("SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6)
+    SELF_HEAL_LOCAL_SCOPE_LIMIT: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_LOCAL_SCOPE_LIMIT", "SELF_HEAL_LOCAL_SCOPE_LIMIT", 200
+    )
+    SELF_HEAL_HITL_SCOPE_THRESHOLD: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_HITL_SCOPE_THRESHOLD", "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3
+    )
+    SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = get_int_prefixed_env(
+        "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
+    )
+    RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_optional_prefixed_env(
+        "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES", "RUFF_AUTOFIX_UNSAFE_RULES"
+    )
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR: Path = BASE_DIR
@@ -454,6 +668,7 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
+    SIDAR_KEYS_FILE: str = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env")
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
     API_KEY: str = os.getenv("API_KEY", "")
 
@@ -519,12 +734,38 @@ class Config:
     AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 
     # ─── API Rate Limiting ───────────────────────────────────
-    RATE_LIMIT_WINDOW: int = get_int_env("RATE_LIMIT_WINDOW", 60)
-    RATE_LIMIT_CHAT: int = get_int_env("RATE_LIMIT_CHAT", 20)
-    RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
-    RATE_LIMIT_GET_IO: int = get_int_env("RATE_LIMIT_GET_IO", 30)
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_MAX_CONNECTIONS: int = LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    SIDAR_RATE_LIMIT_WINDOW: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_WINDOW", "RATE_LIMIT_WINDOW", 60
+    )
+    SIDAR_RATE_LIMIT_CHAT: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_CHAT", "RATE_LIMIT_CHAT", 20
+    )
+    SIDAR_RATE_LIMIT_MUTATIONS: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_MUTATIONS", "RATE_LIMIT_MUTATIONS", 60
+    )
+    SIDAR_RATE_LIMIT_GET_IO: int = get_int_prefixed_env(
+        "SIDAR_RATE_LIMIT_GET_IO", "RATE_LIMIT_GET_IO", 30
+    )
+    RATE_LIMIT_WINDOW: int = SIDAR_RATE_LIMIT_WINDOW
+    RATE_LIMIT_CHAT: int = SIDAR_RATE_LIMIT_CHAT
+    RATE_LIMIT_MUTATIONS: int = SIDAR_RATE_LIMIT_MUTATIONS
+    RATE_LIMIT_GET_IO: int = SIDAR_RATE_LIMIT_GET_IO
+    SIDAR_REDIS_URL: str = get_prefixed_env(
+        "SIDAR_REDIS_URL", "REDIS_URL", "redis://localhost:6379/0"
+    )
+    REDIS_URL: str = SIDAR_REDIS_URL
+    SIDAR_REDIS_MAX_CONNECTIONS: int = get_int_prefixed_env(
+        "SIDAR_REDIS_MAX_CONNECTIONS", "REDIS_MAX_CONNECTIONS", LLM_SETTINGS.REDIS_MAX_CONNECTIONS
+    )
+    REDIS_MAX_CONNECTIONS: int = SIDAR_REDIS_MAX_CONNECTIONS
+    SIDAR_REDIS_CONNECT_TIMEOUT: float = get_float_prefixed_env(
+        "SIDAR_REDIS_CONNECT_TIMEOUT", "REDIS_CONNECT_TIMEOUT", 0.5
+    )
+    REDIS_CONNECT_TIMEOUT: float = SIDAR_REDIS_CONNECT_TIMEOUT
+    SIDAR_REDIS_SOCKET_TIMEOUT: float = get_float_prefixed_env(
+        "SIDAR_REDIS_SOCKET_TIMEOUT", "REDIS_SOCKET_TIMEOUT", 0.5
+    )
+    REDIS_SOCKET_TIMEOUT: float = SIDAR_REDIS_SOCKET_TIMEOUT
     ENABLE_DISTRIBUTED_AGENT_LOCKS: bool = get_bool_env("ENABLE_DISTRIBUTED_AGENT_LOCKS", True)
     DISTRIBUTED_AGENT_LOCK_REQUIRED: bool = get_bool_env("DISTRIBUTED_AGENT_LOCK_REQUIRED", False)
     DISTRIBUTED_AGENT_LOCK_TTL_SECONDS: int = get_int_env(
@@ -542,9 +783,8 @@ class Config:
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
-    )
+    DATABASE_URL: str = get_database_url()
+    SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
@@ -565,10 +805,36 @@ class Config:
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
+    SIDAR_EVENT_BUS_BACKEND: str = os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis")
+    SIDAR_EVENT_BUS_CHANNEL: str = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
+    SIDAR_EVENT_BUS_GROUP: str = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
     SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv(
-        "SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq"
+        "SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{SIDAR_EVENT_BUS_CHANNEL}:dlq"
     )
     SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
+    SIDAR_EVENT_BUS_DLQ_PERSIST_PATH: str = os.getenv("SIDAR_EVENT_BUS_DLQ_PERSIST_PATH", "")
+    SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE: int = get_int_env(
+        "SIDAR_EVENT_BUS_DLQ_PERSIST_BATCH_SIZE", 100
+    )
+    SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL: float = get_float_env(
+        "SIDAR_EVENT_BUS_DLQ_PERSIST_FLUSH_INTERVAL", 1.0
+    )
+    SIDAR_RABBITMQ_URL: str = get_prefixed_env(
+        "SIDAR_RABBITMQ_URL", "RABBITMQ_URL", "amqp://guest:guest@localhost/"
+    )
+    RABBITMQ_URL: str = SIDAR_RABBITMQ_URL
+    SIDAR_EVENT_BUS_KAFKA_TOPIC: str = os.getenv(
+        "SIDAR_EVENT_BUS_KAFKA_TOPIC", "sidar.agent_events"
+    )
+    SIDAR_EVENT_BUS_KAFKA_GROUP: str = os.getenv("SIDAR_EVENT_BUS_KAFKA_GROUP", "")
+    SIDAR_KAFKA_BOOTSTRAP_SERVERS: str = get_prefixed_env(
+        "SIDAR_KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
+    )
+    KAFKA_BOOTSTRAP_SERVERS: str = SIDAR_KAFKA_BOOTSTRAP_SERVERS
+    SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD: int = get_int_env(
+        "SIDAR_EVENT_BUS_CB_FAILURE_THRESHOLD", 5
+    )
+    SIDAR_EVENT_BUS_CB_OPEN_SECONDS: float = get_float_env("SIDAR_EVENT_BUS_CB_OPEN_SECONDS", 15.0)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
@@ -577,9 +843,10 @@ class Config:
     GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
+    # Eski ad geriye dönük uyumluluk için tutulur; tercih edilen anahtar WEB_SCRAPE_MAX_CHARS.
     WEB_FETCH_MAX_CHARS: int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
-    WEB_SCRAPE_MAX_CHARS: int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
+    WEB_SCRAPE_MAX_CHARS: int = get_web_scrape_max_chars(WEB_FETCH_MAX_CHARS)
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
@@ -600,20 +867,35 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
-    DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-slim")
-    DOCKER_TEST_IMAGE: str = os.getenv("DOCKER_TEST_IMAGE", DOCKER_PYTHON_IMAGE)
-    DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
+    DOCKER_PYTHON_IMAGE: str = get_prefixed_env(
+        "SIDAR_DOCKER_PYTHON_IMAGE", "DOCKER_PYTHON_IMAGE", "python:3.11-slim"
+    )
+    DOCKER_IMAGE: str = get_prefixed_env("SIDAR_DOCKER_IMAGE", "DOCKER_IMAGE", "")
+    _DOCKER_TEST_IMAGE_RAW: str | None = get_optional_prefixed_env(
+        "SIDAR_DOCKER_TEST_IMAGE", "DOCKER_TEST_IMAGE"
+    )
+    DOCKER_TEST_IMAGE_EXPLICIT: bool = bool((_DOCKER_TEST_IMAGE_RAW or "").strip())
+    DOCKER_TEST_IMAGE: str = (_DOCKER_TEST_IMAGE_RAW or DOCKER_PYTHON_IMAGE).strip()
+    DOCKER_RUNTIME: str = get_prefixed_env("SIDAR_DOCKER_RUNTIME", "DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: list[str] = get_list_env(
         "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]
     )
-    DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
-    DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
-    DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
-    DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
+    DOCKER_MICROVM_MODE: str = get_prefixed_env(
+        "SIDAR_DOCKER_MICROVM_MODE", "DOCKER_MICROVM_MODE", "off"
+    )
+    DOCKER_MEM_LIMIT: str = get_prefixed_env("SIDAR_DOCKER_MEM_LIMIT", "DOCKER_MEM_LIMIT", "256m")
+    DOCKER_NETWORK_DISABLED: bool = get_bool_prefixed_env(
+        "SIDAR_DOCKER_NETWORK_DISABLED", "DOCKER_NETWORK_DISABLED", True
+    )
+    DOCKER_NANO_CPUS: int = get_int_prefixed_env(
+        "SIDAR_DOCKER_NANO_CPUS", "DOCKER_NANO_CPUS", 1_000_000_000
+    )
     # Maksimum Docker sandbox çalışma süresi (saniye) — sonsuz döngü koruması
     DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
     # Docker zorunlu mod: True ise Docker erişilemezse yerel subprocess fallback engellenir
-    DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)
+    DOCKER_REQUIRED: bool = get_bool_prefixed_env("SIDAR_DOCKER_REQUIRED", "DOCKER_REQUIRED", False)
+    PYTHON_VIRTUAL_ENV: str = os.getenv("VIRTUAL_ENV", "")
+    PYTHON_CONDA_PREFIX: str = os.getenv("CONDA_PREFIX", "")
 
     # ─── Bellek Şifrelemesi ───────────────────────────────────────
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
@@ -642,10 +924,28 @@ class Config:
     HITL_TIMEOUT_SECONDS: int = get_int_env("HITL_TIMEOUT_SECONDS", 120)
 
     # ─── LLM-as-a-Judge Kalite Değerlendirmesi ────────────────
-    JUDGE_ENABLED: bool = get_bool_env("JUDGE_ENABLED", False)
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
-    JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
-    JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or "0.2")
+    JUDGE_ENABLED: bool = get_bool_prefixed_env("SIDAR_JUDGE_ENABLED", "JUDGE_ENABLED", False)
+    JUDGE_MODEL: str = get_prefixed_env("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "")
+    JUDGE_PROVIDER: str = get_prefixed_env("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "ollama")
+    JUDGE_SAMPLE_RATE: float = max(
+        0.0,
+        min(1.0, get_float_prefixed_env("SIDAR_JUDGE_SAMPLE_RATE", "JUDGE_SAMPLE_RATE", 0.2)),
+    )
+    JUDGE_AUTO_FEEDBACK_ENABLED: bool = get_bool_prefixed_env(
+        "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED", "JUDGE_AUTO_FEEDBACK_ENABLED", True
+    )
+    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = max(
+        0.0,
+        min(
+            10.0,
+            get_float_prefixed_env(
+                "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD", "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0
+            ),
+        ),
+    )
+    JUDGE_RESPONSE_MODEL: str = get_prefixed_env(
+        "SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", ""
+    )
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
     ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)

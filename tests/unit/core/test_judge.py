@@ -11,9 +11,23 @@ import core.judge as judge
 class DummyConfig:
     TEXT_MODEL = "text-model"
     CODING_MODEL = "coding-model"
+    JUDGE_ENABLED = True
+    JUDGE_MODEL = ""
+    JUDGE_PROVIDER = "ollama"
+    JUDGE_SAMPLE_RATE = 1.0
+    JUDGE_AUTO_FEEDBACK_ENABLED = True
+    JUDGE_AUTO_FEEDBACK_THRESHOLD = 8.0
+    JUDGE_RESPONSE_MODEL = ""
 
 
 def _install_config_module(monkeypatch):
+    DummyConfig.JUDGE_ENABLED = True
+    DummyConfig.JUDGE_MODEL = ""
+    DummyConfig.JUDGE_PROVIDER = "ollama"
+    DummyConfig.JUDGE_SAMPLE_RATE = 1.0
+    DummyConfig.JUDGE_AUTO_FEEDBACK_ENABLED = True
+    DummyConfig.JUDGE_AUTO_FEEDBACK_THRESHOLD = 8.0
+    DummyConfig.JUDGE_RESPONSE_MODEL = ""
     fake = types.ModuleType("config")
     fake.Config = DummyConfig
     monkeypatch.setitem(sys.modules, "config", fake)
@@ -42,8 +56,6 @@ def _install_llm_client_module(monkeypatch, client_cls=FakeLLMClient):
 
 @pytest.fixture
 def judge_instance(monkeypatch):
-    monkeypatch.setenv("JUDGE_ENABLED", "true")
-    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "1.0")
     _install_config_module(monkeypatch)
     return judge.LLMJudge()
 
@@ -67,9 +79,7 @@ def test_judge_result_properties():
 )
 def test_response_eval_model_selection(monkeypatch, provider, model, expected):
     _install_config_module(monkeypatch)
-    monkeypatch.delenv("JUDGE_RESPONSE_MODEL", raising=False)
-    monkeypatch.setenv("JUDGE_PROVIDER", provider)
-    monkeypatch.setenv("JUDGE_ENABLED", "true")
+    monkeypatch.setattr(DummyConfig, "JUDGE_PROVIDER", provider)
     instance = judge.LLMJudge()
     instance.model = model
     assert instance._response_eval_model() == expected
@@ -77,8 +87,7 @@ def test_response_eval_model_selection(monkeypatch, provider, model, expected):
 
 def test_response_eval_model_env_override(monkeypatch):
     _install_config_module(monkeypatch)
-    monkeypatch.setenv("JUDGE_RESPONSE_MODEL", "explicit")
-    monkeypatch.setenv("JUDGE_ENABLED", "true")
+    monkeypatch.setattr(DummyConfig, "JUDGE_RESPONSE_MODEL", "explicit")
     instance = judge.LLMJudge()
     assert instance._response_eval_model() == "explicit"
 

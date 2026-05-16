@@ -21,7 +21,7 @@ AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE="${AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZ
 AUTONOMOUS_COVERAGE_MAX_MISSING_LINES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES:-25}"
 AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES="${AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES:-10}"
 AUTONOMOUS_EXCLUDE_FILES="${AUTONOMOUS_LOOP_EXCLUDE_FILES:-${AUTONOMOUS_LOOP_COVERAGE_EXCLUDE_FILES:-web_server.py,main.py,gui_launcher.py,cli.py}}"
-AUTONOMOUS_MUTATION_ENABLED="${AUTONOMOUS_LOOP_MUTATION_ENABLED:-1}"
+AUTONOMOUS_MUTATION_ENABLED="${AUTONOMOUS_LOOP_MUTATION_ENABLED:-true}"
 AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-8}"
 AUTONOMOUS_MUTATION_COMMAND="${AUTONOMOUS_LOOP_MUTATION_COMMAND:-uv run --with mutmut mutmut run --max-children ${AUTONOMOUS_MUTATION_MAX_CHILDREN}}"
 AUTONOMOUS_MUTATION_RESULTS_COMMAND="${AUTONOMOUS_LOOP_MUTATION_RESULTS_COMMAND:-uv run --with mutmut mutmut results}"
@@ -113,6 +113,18 @@ if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUT
   echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 8 kullanılacak."
   AUTONOMOUS_MUTATION_MAX_CHILDREN="8"
 fi
+case "${AUTONOMOUS_MUTATION_ENABLED}" in
+  true|TRUE|True)
+    AUTONOMOUS_MUTATION_ENABLED="true"
+    ;;
+  false|FALSE|False|"")
+    AUTONOMOUS_MUTATION_ENABLED="false"
+    ;;
+  *)
+    echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_ENABLED true/false olmalı. Alınan: '${AUTONOMOUS_MUTATION_ENABLED}'. Mutasyon kalite kapısı devre dışı bırakılacak."
+    AUTONOMOUS_MUTATION_ENABLED="false"
+    ;;
+esac
 case "${AUTONOMOUS_REMEDIATION_MODE}" in
   hybrid|full-static)
     ;;
@@ -234,12 +246,16 @@ raise SystemExit(1)
 PY_COVERAGE_COMPARE
 }
 
-is_truthy_flag() {
+is_true_flag() {
   case "${1:-}" in
-    1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+    true|TRUE|True)
       return 0
       ;;
+    false|FALSE|False|"")
+      return 1
+      ;;
     *)
+      echo "[UYARI] Boolean bayrak true/false olmalı. Alınan: '${1:-}'" >&2
       return 1
       ;;
   esac
@@ -250,7 +266,7 @@ run_mutation_quality_gate() {
   local results_exit
   local stats_exit
 
-  if ! is_truthy_flag "${AUTONOMOUS_MUTATION_ENABLED}"; then
+  if ! is_true_flag "${AUTONOMOUS_MUTATION_ENABLED}"; then
     echo "[MUTATION] Mutasyon testi kalite kapısı devre dışı (AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONOMOUS_MUTATION_ENABLED})."
     return 0
   fi

@@ -58,7 +58,7 @@ def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> 
 def test_is_allowed_validation_command_respects_empty_ruff_unsafe_allowlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("RUFF_AUTOFIX_UNSAFE_RULES", "")
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", "")
 
     assert (
         ci._is_allowed_validation_command(
@@ -775,7 +775,7 @@ def test_build_remediation_loop_syntax_error_requires_hitl() -> None:
 def test_build_remediation_loop_large_scope_respects_env_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SELF_HEAL_HITL_SCOPE_THRESHOLD", "3")
+    monkeypatch.setattr(ci.Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3)
     context = {
         "suspected_targets": [f"tests/t{i}.py" for i in range(4)],
         "failed_jobs": ["j1"],
@@ -858,7 +858,7 @@ def test_build_remediation_loop_adds_stub_install_from_hint_only() -> None:
 def test_build_remediation_loop_batches_follow_configured_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "2")
+    monkeypatch.setattr(ci.Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 2)
     context = {
         "suspected_targets": [f"core/t{i}.py" for i in range(5)],
         "failed_jobs": [],
@@ -920,7 +920,7 @@ def test_build_local_failure_context_fallbacks_when_log_has_no_structured_error(
 def test_build_local_failure_context_respects_local_scope_limit_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SELF_HEAL_LOCAL_SCOPE_LIMIT", "3")
+    monkeypatch.setattr(ci.Config, "SELF_HEAL_LOCAL_SCOPE_LIMIT", 3)
     log_text = "\n".join(
         [
             "core/a.py:1: error: err [assignment]",

@@ -353,7 +353,11 @@ Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` en
 
 ```bash
 cp .env.example .env
-# .env dosyasını düzenleyin
+# Gizli servis anahtarlarını repo dışında tutmak için kişisel dosya oluşturun.
+cp .sidar_keys.env.example ~/.sidar_keys.env
+chmod 600 ~/.sidar_keys.env
+# Uzman ayarları gerekiyorsa sadece ihtiyaç duyduğunuz anahtarları .env.advanced içinden
+# ayrı bir override dosyasına kopyalayın ve DOTENV_FILE=.env.<dosya> ile yükleyin.
 ```
 
 ### Ollama Kurulumu
@@ -735,75 +739,50 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 
 ## Yapılandırma (.env)
 
-```env
-# AI Sağlayıcı
-AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
-CODING_MODEL=qwen2.5-coder:7b
-OLLAMA_URL=http://localhost:11434/api
-OLLAMA_NUM_PARALLEL=4         # GPU benchmark concurrency için >=4 önerilir
-OLLAMA_KEEP_ALIVE=30m          # TTFT cold-start outlier'larını azaltmak için modeli sıcak tutar
-TEXT_MODEL=llama3.1:8b
-GEMINI_API_KEY=                 # Gemini kullanılacaksa
-OPENAI_API_KEY=                 # OpenAI kullanılacaksa
-ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
+Temel kurulum şablonu bilinçli olarak kısa tutulur (`.env.example`, 40-50 satır).
+Gelişmiş/operasyonel anahtarlar `.env.advanced` içindedir; override hiyerarşisi dosyanın
+başında açıklanır.
 
-# Veritabanı (v3.0.0+)
-# POSTGRES_PASSWORD ile DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL içindeki parola
-# birebir aynı olmalıdır; aksi halde PostgreSQL `password authentication failed for user "sidar"`
-# döndürür. Docker volume eski parolayla init edildiyse .env değişikliği tek başına yetmez;
-# mevcut kullanıcı parolasını ALTER USER ile eşitleyin veya sadece geliştirme ortamında volume'ü
-# sıfırlayın. Hızlı kontrol: `uv run python -m core.doctor artifacts/install/doctor.json`.
+```env
+# Ortam
+SIDAR_ENV=development
+DOTENV_FILE=
+SIDAR_KEYS_FILE=~/.sidar_keys.env
+
+# AI Sağlayıcıları
+AI_PROVIDER=ollama
+CODING_MODEL=qwen2.5-coder:7b
+TEXT_MODEL=gemma2:9b
+OLLAMA_URL=http://localhost:11434/api
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+
+# PostgreSQL kök bilgileri; DATABASE_URL boşsa config.py bunlardan DSN üretir.
+POSTGRES_HOST=localhost
+POSTGRES_CONTAINER_HOST=postgres
+POSTGRES_PORT=5432
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
-POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password
-DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@localhost:5432/sidar
-# Docker Compose servisleri için: postgresql+asyncpg://sidar:<POSTGRES_PASSWORD>@postgres:5432/sidar
-SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:replace-with-a-strong-24-plus-character-password@postgres:5432/sidar
+POSTGRES_PASSWORD=change-me-to-a-strong-password
+
+# Redis temel bağlantısı
+SIDAR_REDIS_URL=redis://localhost:6379/0
+SIDAR_REDIS_MAX_CONNECTIONS=50
 
 # Güvenlik
-ACCESS_LEVEL=sandbox            # restricted | sandbox | full
-
-# GitHub
-GITHUB_TOKEN=
-GITHUB_REPO=kullanici/depo
-
-# Web Sunucu
-WEB_HOST=0.0.0.0
-WEB_PORT=7860
-
-# Bellek & Oturum
-MAX_MEMORY_TURNS=20
-MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
-
-# Zaman Aşımı
-OLLAMA_TIMEOUT=30
-REACT_TIMEOUT=60
-SWARM_TASK_TIMEOUT_SECONDS=60   # Swarm ajan handle/run_task deadlock koruması
-
-# Web Arama
-TAVILY_API_KEY=                 # Tavily kullanılacaksa (öncelikli)
-GOOGLE_SEARCH_API_KEY=          # Google Custom Search kullanılacaksa
-GOOGLE_SEARCH_CX=
-WEB_SEARCH_MAX_RESULTS=5
-WEB_FETCH_TIMEOUT=15
-WEB_FETCH_MAX_CHARS=4000
-
-# RAG
-RAG_TOP_K=3
-RAG_CHUNK_SIZE=1000
-RAG_CHUNK_OVERLAP=200
-
-# Paket Bilgi
-PACKAGE_INFO_TIMEOUT=12
-
-# GPU (önerilen)
-USE_GPU=true                    # true: GPU embedding aktif
-REQUIRE_GPU=true                # true: GPU yoksa uygulama başlangıçta durdurulur
-GPU_DEVICE=0
-GPU_MEMORY_FRACTION=0.8
-GPU_MIXED_PRECISION=false
-MULTI_GPU=false
+ACCESS_LEVEL=sandbox
+API_KEY=change-me-api-key
+JWT_SECRET_KEY=change-me-jwt-secret-32-plus-chars
+JWT_ALGORITHM=HS256
+JWT_TTL_DAYS=7
 ```
+
+Gelişmiş örnekler: otonom coverage, Swarm federation, HITL/Judge, Kafka/RabbitMQ event bus,
+LoRA/Active Learning ve sandbox ince ayarları için `.env.advanced` dosyasından yalnız gerekli
+anahtarları kendi override dosyanıza taşıyın. Gerçek API tokenlarını ise repo dışında
+`~/.sidar_keys.env` içinde tutun; güncel anahtar şablonu `.sidar_keys.env.example` dosyasındadır.
+
 
 ---
 
