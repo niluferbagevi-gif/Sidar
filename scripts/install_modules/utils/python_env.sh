@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_PYTHON_ENV_SH_LOADED=1
 
 # uv-only Python environment helpers for the phase-based Sidar installer.
@@ -63,7 +64,7 @@ create_uv_venv() {
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
     local -a SYNC_ARGS=(--frozen --all-extras)

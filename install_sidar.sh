@@ -44,6 +44,7 @@ mask_install_log_stream() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+# shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
 SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.

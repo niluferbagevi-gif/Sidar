@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_INSTALL_REMEDIATION_SH_LOADED=1
 
 # Lightweight installer auto-heal / resume controller.
@@ -104,7 +105,8 @@ sidar_remediate_uv_sync_failure() {
 
     if [[ -d .venv && ! -f .venv/pyvenv.cfg ]]; then
         warn "Auto-heal: bozuk .venv tespit edildi; yedeklenip yeniden oluşturulacak."
-        local venv_backup="artifacts/install/remediation/venv_broken_$(date +%Y%m%d_%H%M%S)"
+        local venv_backup=""
+        venv_backup="artifacts/install/remediation/venv_broken_$(date +%Y%m%d_%H%M%S)"
         mv .venv "$venv_backup"
         action="${action}+venv-backup"
     fi

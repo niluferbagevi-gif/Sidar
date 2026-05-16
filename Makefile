@@ -7,6 +7,7 @@ SHELLCHECK_FILES := \
 	install_sidar.sh \
 	scripts/install_modules/*.sh \
 	scripts/install_modules/phases/*.sh \
+	scripts/install_modules/utils/*.sh \
 	tests/shell/*.bats
 
 .PHONY: lint lint-shell test-shell

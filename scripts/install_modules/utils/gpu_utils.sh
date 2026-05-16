@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_GPU_UTILS_SH_LOADED=1
 
 # Functional install helpers for the phase-based Sidar installer.

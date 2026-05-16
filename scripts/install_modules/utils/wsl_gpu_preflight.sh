@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_WSL_GPU_PREFLIGHT_SH_LOADED=1
 
 # Early WSL2 + NVIDIA/RTX health gate.  This runs before package installation so

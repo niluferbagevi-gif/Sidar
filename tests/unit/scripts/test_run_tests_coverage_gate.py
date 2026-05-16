@@ -199,6 +199,7 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
 
     assert "lint: lint-shell" in makefile
     assert "install_sidar.sh" in makefile
+    assert "scripts/install_modules/utils/*.sh" in makefile
     assert "shellcheck" in makefile
     assert "--severity=warning -x" in makefile
     assert "make lint" in ci_workflow

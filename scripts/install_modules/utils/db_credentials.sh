@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_DB_CREDENTIALS_SH_LOADED=1
 
 # Database credential hardening helpers for the phase-based Sidar installer.
@@ -28,6 +29,7 @@ harden_database_credentials() {
 
         if is_weak_secret_value "$db_password"; then
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                # shellcheck disable=SC2034  # summarized later by installer status output.
                 PRE_HARDEN_DB_PASSWORD="$db_password"
                 local generated_password=""
                 generated_password=$(generate_secure_token 24)
@@ -57,6 +59,7 @@ harden_database_credentials() {
                     else
                         echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
                     fi
+                    # shellcheck disable=SC2034  # summarized later by installer status output.
                     DB_PASSWORD_HARDENED=true
                     ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
