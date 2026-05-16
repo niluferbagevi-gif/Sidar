@@ -1338,3 +1338,340 @@ def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
     with pytest.raises(ValueError, match="JWT_SECRET_KEY boş bırakılamaz"):
         config.Config()
+
+
+# ─── Merkezi config.py uç durum (edge case) tamamlayıcı testleri ─────────────
+
+
+def test_resolve_dotenv_path_joins_relative_paths_with_base_dir():
+    """Göreli dotenv yolu BASE_DIR ile birleştirilmeli."""
+    resolved = config._resolve_dotenv_path(".env.custom")
+    assert resolved == config.BASE_DIR / ".env.custom"
+    assert resolved.is_absolute()
+
+
+def test_load_dotenv_if_exists_ignores_blank_paths(monkeypatch):
+    """Boş veya yalnızca boşluk içeren yollar sessizce atlanmalı."""
+    calls: list[object] = []
+
+    def _fake_load_dotenv(*, dotenv_path=None, override=False):
+        calls.append(dotenv_path)
+        return True
+
+    monkeypatch.setattr("config.load_dotenv", _fake_load_dotenv)
+    assert config._load_dotenv_if_exists("", override=True) is None
+    assert config._load_dotenv_if_exists("   ", override=False) is None
+    assert calls == []
+
+
+def test_load_dotenv_if_exists_returns_none_when_missing(monkeypatch, tmp_path):
+    """Mevcut olmayan ancak boş olmayan yol için None dönmeli ve load_dotenv çağrılmamalı."""
+    calls: list[object] = []
+
+    def _fake_load_dotenv(*, dotenv_path=None, override=False):
+        calls.append(dotenv_path)
+        return True
+
+    monkeypatch.setattr("config.load_dotenv", _fake_load_dotenv)
+    missing = tmp_path / "absent.env"
+    assert config._load_dotenv_if_exists(str(missing), override=True) is None
+    assert calls == []
+
+
+def test_get_int_prefixed_env_falls_back_to_default_on_parse_error(monkeypatch):
+    """Sayısal olmayan değer için varsayılan döndürülmeli (TypeError/ValueError dalı)."""
+    monkeypatch.setenv("SIDAR_BAD_INT", "not-a-number")
+    monkeypatch.delenv("LEGACY_BAD_INT", raising=False)
+    assert config.get_int_prefixed_env("SIDAR_BAD_INT", "LEGACY_BAD_INT", 77) == 77
+
+
+def test_get_float_prefixed_env_falls_back_to_default_on_parse_error(monkeypatch):
+    """Geçersiz float için varsayılan döndürülmeli."""
+    monkeypatch.setenv("SIDAR_BAD_FLOAT", "not-a-float")
+    monkeypatch.delenv("LEGACY_BAD_FLOAT", raising=False)
+    assert config.get_float_prefixed_env("SIDAR_BAD_FLOAT", "LEGACY_BAD_FLOAT", 3.5) == 3.5
+
+
+def test_get_bool_prefixed_env_returns_false_branch(monkeypatch):
+    """'false' değeri için açıkça False dönmeli (return False dalı)."""
+    monkeypatch.delenv("SIDAR_FLAG_F", raising=False)
+    monkeypatch.setenv("LEGACY_FLAG_F", "FALSE")
+    assert config.get_bool_prefixed_env("SIDAR_FLAG_F", "LEGACY_FLAG_F", True) is False
+
+    monkeypatch.setenv("SIDAR_FLAG_F", "false")
+    monkeypatch.setenv("LEGACY_FLAG_F", "true")
+    assert config.get_bool_prefixed_env("SIDAR_FLAG_F", "LEGACY_FLAG_F", True) is False
+
+
+def test_get_bool_prefixed_env_returns_default_for_blank_value(monkeypatch):
+    """Boşluklardan oluşan değer için default dönmeli (blank-strip dalı)."""
+    monkeypatch.setenv("SIDAR_FLAG_BLANK", "   ")
+    monkeypatch.delenv("LEGACY_FLAG_BLANK", raising=False)
+    assert config.get_bool_prefixed_env("SIDAR_FLAG_BLANK", "LEGACY_FLAG_BLANK", True) is True
+
+
+def test_validate_critical_settings_blocks_access_level_full_without_optin(monkeypatch):
+    """ACCESS_LEVEL=full, SIDAR_ALLOW_FULL_ACCESS açık onayı olmadan reddedilmeli."""
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://x")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full")
+    monkeypatch.delenv("SIDAR_ALLOW_FULL_ACCESS", raising=False)
+
+    class _Resp:
+        status_code = 200
+
+    class _ClientOK:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_allows_access_level_full_with_optin(monkeypatch):
+    """ACCESS_LEVEL=full, SIDAR_ALLOW_FULL_ACCESS=true ile kabul edilmeli."""
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://x")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full")
+    monkeypatch.setenv("SIDAR_ALLOW_FULL_ACCESS", "true")
+
+    class _Resp:
+        status_code = 200
+
+    class _ClientOK:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+    assert config.Config.validate_critical_settings() is True
+
+
+@pytest.mark.parametrize(
+    "provider,key_attr,key_value",
+    [
+        ("gemini", "GEMINI_API_KEY", "valid-gemini-key"),
+        ("openai", "OPENAI_API_KEY", "valid-openai-key"),
+        ("anthropic", "ANTHROPIC_API_KEY", "valid-anthropic-key"),
+    ],
+)
+def test_validate_critical_settings_accepts_valid_api_keys(
+    monkeypatch, provider, key_attr, key_value
+):
+    """Geçerli API anahtarı ayarlandığında ilgili sağlayıcı için doğrulama geçmelidir."""
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", provider)
+    monkeypatch.setattr(config.Config, key_attr, key_value)
+    assert config.Config.validate_critical_settings() is True
+
+
+def test_validate_critical_settings_accepts_litellm_gateway(monkeypatch):
+    """LiteLLM modunda gateway URL'i ayarlandığında doğrulama geçmelidir."""
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
+    monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "https://gateway.example.com")
+    assert config.Config.validate_critical_settings() is True
+
+
+def test_validate_critical_settings_accepts_valid_fernet_key(monkeypatch):
+    """Geçerli Fernet anahtarı için MEMORY_ENCRYPTION_KEY doğrulaması başarılı olmalı."""
+    from cryptography.fernet import Fernet
+
+    valid_key = Fernet.generate_key().decode()
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://x")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", valid_key)
+
+    class _Resp:
+        status_code = 200
+
+    class _ClientOK:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+    assert config.Config.validate_critical_settings() is True
+
+
+def test_is_test_env_returns_true_when_pytest_running(monkeypatch):
+    """PYTEST_CURRENT_TEST ortam değişkeni varken test ortamı tespit edilmeli."""
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "some_test")
+    assert config.Config._is_test_env() is True
+
+
+def test_is_test_env_returns_false_when_no_signal(monkeypatch):
+    """Test sinyali yokken False dönmeli."""
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert config.Config._is_test_env() is False
+
+
+def test_config_constructor_passes_in_test_env(monkeypatch):
+    """Test ortamında JWT_SECRET_KEY boş olsa bile Config() istisna atmamalı."""
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "active")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "")
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    instance = config.Config()
+    assert isinstance(instance, config.Config)
+
+
+def test_llm_client_settings_reads_overridden_env(monkeypatch):
+    """LLMClientSettings ortam değişkenlerinden değerleri okumalı."""
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-test")
+    monkeypatch.setenv("OPENAI_TIMEOUT", "30")
+    monkeypatch.setenv("LLM_MAX_RETRIES", "5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
+    settings = config.LLMClientSettings()
+    assert settings.AI_PROVIDER == "openai"
+    assert settings.OPENAI_API_KEY == "sk-test"
+    assert settings.OPENAI_MODEL == "gpt-test"
+    assert settings.OPENAI_TIMEOUT == 30
+    assert settings.LLM_MAX_RETRIES == 5
+    assert settings.ANTHROPIC_API_KEY == "ant-test"
+
+
+def test_build_postgres_dsn_uses_default_values(monkeypatch):
+    """POSTGRES_* env değişkenleri ayarlı değilken güvenli varsayılanlar kullanılmalı."""
+    for key in (
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_DB",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    dsn = config.build_postgres_dsn()
+    assert dsn == "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+
+
+def test_build_postgres_dsn_normalizes_blank_overrides(monkeypatch):
+    """Sadece boşluk içeren POSTGRES_* değerleri varsayılanlara düşmeli."""
+    monkeypatch.setenv("POSTGRES_USER", "   ")
+    monkeypatch.setenv("POSTGRES_HOST", "   ")
+    monkeypatch.setenv("POSTGRES_PORT", "   ")
+    monkeypatch.setenv("POSTGRES_DB", "   ")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
+    dsn = config.build_postgres_dsn()
+    assert dsn == "postgresql+asyncpg://sidar:secret@localhost:5432/sidar"
+
+
+def test_build_postgres_dsn_explicit_host_override(monkeypatch):
+    """host parametresi env'i geçersiz kılmalı."""
+    monkeypatch.setenv("POSTGRES_HOST", "db.local")
+    dsn = config.build_postgres_dsn(host="override-host")
+    assert "@override-host:" in dsn
+
+
+def test_get_web_scrape_max_chars_returns_default_when_neither_env_set(monkeypatch):
+    """Hiç env değişkeni yokken varsayılan değer döndürülmeli."""
+    monkeypatch.delenv("WEB_SCRAPE_MAX_CHARS", raising=False)
+    monkeypatch.delenv("WEB_FETCH_MAX_CHARS", raising=False)
+    assert config.get_web_scrape_max_chars(default=555) == 555
+
+
+def test_get_optional_prefixed_env_returns_none_when_unset(monkeypatch):
+    """İki anahtar da yokken None dönmeli."""
+    monkeypatch.delenv("SIDAR_OPT", raising=False)
+    monkeypatch.delenv("LEGACY_OPT", raising=False)
+    assert config.get_optional_prefixed_env("SIDAR_OPT", "LEGACY_OPT") is None
+
+
+def test_get_optional_prefixed_env_falls_back_to_legacy(monkeypatch):
+    """SIDAR_ yokken legacy anahtardan değer alınmalı."""
+    monkeypatch.delenv("SIDAR_OPT", raising=False)
+    monkeypatch.setenv("LEGACY_OPT", "legacy-value")
+    assert config.get_optional_prefixed_env("SIDAR_OPT", "LEGACY_OPT") == "legacy-value"
+
+
+def test_get_prefixed_env_falls_back_to_legacy_then_default(monkeypatch):
+    """SIDAR_ ve legacy yokken default dönmeli; legacy varsa onu kullanmalı."""
+    monkeypatch.delenv("SIDAR_KEY", raising=False)
+    monkeypatch.delenv("LEGACY_KEY", raising=False)
+    assert config.get_prefixed_env("SIDAR_KEY", "LEGACY_KEY", "fallback") == "fallback"
+
+    monkeypatch.setenv("LEGACY_KEY", "legacy-only")
+    assert config.get_prefixed_env("SIDAR_KEY", "LEGACY_KEY", "fallback") == "legacy-only"
