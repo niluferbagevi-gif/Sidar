@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 from env_keys import initialize_env_file
 
@@ -116,3 +117,25 @@ def test_initialize_env_file_keeps_absent_advanced_secrets_out_of_minimal_env(tm
     assert "SWARM_FEDERATION_SHARED_SECRET" not in values
     assert "GRAFANA_ADMIN_PASSWORD" not in values
     assert "SIDAR_METRICS_TOKEN" not in values
+
+
+def test_sidar_keys_example_separates_manual_and_generated_fields() -> None:
+    content = Path(".sidar_keys.env.example").read_text(encoding="utf-8")
+
+    assert "Doldurma rehberi:" in content
+    assert "OTOMATİK ÜRETİLEBİLİR / Sidar-managed secret" in content
+    assert "MANUEL DOLDURULACAK / Harici servis kimlik bilgisi" in content
+    assert "VARSAYILAN BIRAKILABİLİR / Operasyonel ayar" in content
+    assert "uv run sidar generate-keys --env ~/.sidar_keys.env" in content
+    for key in (
+        "SIDAR_API_KEY",
+        "SIDAR_JWT_SECRET_KEY",
+        "SIDAR_MEMORY_ENCRYPTION_KEY",
+        "AUTONOMY_WEBHOOK_SECRET",
+        "SWARM_FEDERATION_SHARED_SECRET",
+        "GITHUB_WEBHOOK_SECRET",
+        "GRAFANA_ADMIN_PASSWORD",
+        "SIDAR_METRICS_TOKEN",
+    ):
+        assert f"#    - {key}" in content
+    assert "OpenAI/Gemini/Anthropic/LiteLLM/HuggingFace" in content
