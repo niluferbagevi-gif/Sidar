@@ -27,6 +27,15 @@ Kurallar:
 """
 
 
+INSTALL_SELF_HEAL_REFERENCE = """\
+Install self-heal referansı:
+- Kurulum hatalarında önce logdaki failed_command, exit_code ve platform bağlamını doğrula.
+- Eksik sistem bağımlılığı varsa doğrudan hostta komut çalıştırmak yerine install_sidar.sh veya scripts/install_modules/ içindeki ilgili idempotent kurulum adımını düzelt.
+- Ağ/timeout hatalarında retry/backoff veya doğrulama iyileştirmesi öner; gizli değerleri ve .env secret içeriklerini loglama.
+- Değişiklikleri dar kapsamlı tut; doğrulama olarak bash -n install_sidar.sh, modül syntax check ve ilgili pytest kontratlarını kullan.
+"""
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sidar local self-heal CLI")
     parser.add_argument(
@@ -239,6 +248,13 @@ def _extract_scope_error_lines(
     return selected
 
 
+def _self_heal_reference_for_source(source: str) -> str:
+    normalized_source = str(source or "mypy").strip().lower()
+    if normalized_source in {"install", "installer", "install_sidar"}:
+        return INSTALL_SELF_HEAL_REFERENCE
+    return MYPY_SELF_HEAL_REFERENCE
+
+
 def _build_attempt_diagnosis(
     *,
     base_diagnosis: str,
@@ -246,6 +262,7 @@ def _build_attempt_diagnosis(
     scope_error_lines: list[str],
     attempt: int,
     total_attempts: int,
+    source: str = "mypy",
 ) -> str:
     diagnosis_lines = [
         line.strip() for line in str(base_diagnosis or "").splitlines() if line.strip()
@@ -263,7 +280,7 @@ def _build_attempt_diagnosis(
     if scope_error_lines:
         diagnosis_lines.append("Hedef hata satırları:")
         diagnosis_lines.extend(f"- {line}" for line in scope_error_lines[:40])
-    diagnosis_lines.append(MYPY_SELF_HEAL_REFERENCE)
+    diagnosis_lines.append(_self_heal_reference_for_source(source))
     return "\n".join(diagnosis_lines)
 
 
@@ -403,6 +420,7 @@ async def _run(args: argparse.Namespace) -> int:
                 scope_error_lines=scope_error_lines,
                 attempt=attempt,
                 total_attempts=attempt_count,
+                source=args.source,
             )
             execution = await _run_self_heal_attempt(
                 agent=agent,

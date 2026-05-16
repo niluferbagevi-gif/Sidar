@@ -21,6 +21,14 @@ set -Eeuo pipefail
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
+# Resmi üçüncü parti kurulum betikleri için repo-içi checksum pinning.
+# Format: label|url|sha256. Bash 3.x/macOS uyumluluğu için associative array yerine
+# taşınabilir indexed array kullanılır.
+PINNED_REMOTE_SCRIPT_CHECKSUMS=(
+    "uv_install|https://releases.astral.sh/github/uv/releases/download/0.11.11/uv-installer.sh|3a020f8d69019caca567c9038999d130b0ea85866483caf2042c386cb685aef4"
+    "ollama_install|https://github.com/ollama/ollama/releases/download/v0.24.0/install.sh|25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f"
+)
+
 # GitHub Codespaces overlay dosya sisteminde uv hardlink uyarılarını ve gereksiz
 # full-copy fallback denemelerini önlemek için copy modu varsayılanlaştırılır.
 if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODESPACES:-}" == "true" ) ]]; then
@@ -50,44 +58,62 @@ step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
-INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
-if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
-    warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
+REQUIRED_INSTALL_MODULES=(
+    "install_helpers.sh"
+    "gpu_utils.sh"
+    "env_utils.sh"
+    "db_credentials.sh"
+    "ollama_models.sh"
+)
+missing_install_modules=()
+for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
+    if [[ ! -f "${INSTALL_MODULE_DIR}/${module_name}" ]]; then
+        missing_install_modules+=("$module_name")
+    fi
+done
+
+if (( ${#missing_install_modules[@]} > 0 )); then
+    warn "Yerel kurulum modülleri eksik: ${missing_install_modules[*]}"
+    warn "Tek dosyalık/eksik checkout algılandı; modüller uzaktan indirilmeyi deneyecek."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
     mkdir -p "$INSTALL_MODULE_DIR"
     REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-    REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
-    TMP_HELPERS_PATH="$(mktemp "${TMPDIR:-/tmp}/sidar_install_helpers.XXXXXX.sh")"
 
-    if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
-            rm -f "$TMP_HELPERS_PATH"
+    for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
+        remote_module_url="${REMOTE_MODULE_BASE}/${module_name}"
+        tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_${module_name%.sh}.XXXXXX.sh")"
+        if command -v curl &>/dev/null; then
+            if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
+                rm -f "$tmp_module_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli modül indirilemedi: ${remote_module_url}"
+            fi
+        elif command -v wget &>/dev/null; then
+            if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
+                rm -f "$tmp_module_path"
+                rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+                fail "Gerekli modül indirilemedi: ${remote_module_url}"
+            fi
+        else
+            rm -f "$tmp_module_path"
             rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
+            fail "Ne curl ne de wget bulundu; modüller indirilemiyor."
         fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    else
-        rm -f "$TMP_HELPERS_PATH"
-        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
-    fi
 
-    install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
-    rm -f "$TMP_HELPERS_PATH"
-    ok "Modül indirildi ve geçici dizine kaydedildi: $INSTALL_HELPERS_MODULE"
+        install -m 0644 "$tmp_module_path" "${INSTALL_MODULE_DIR}/${module_name}"
+        rm -f "$tmp_module_path"
+    done
+    ok "Kurulum modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 fi
-# shellcheck disable=SC1090
-source "$INSTALL_HELPERS_MODULE"
+
+for module_name in "${REQUIRED_INSTALL_MODULES[@]}"; do
+    # shellcheck disable=SC1090
+    source "${INSTALL_MODULE_DIR}/${module_name}"
+done
+unset module_name missing_install_modules remote_module_url tmp_module_path
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -155,13 +181,117 @@ prompt_yes_no_with_timeout_default_no() {
     echo "$reply"
 }
 
+install_auto_heal_on_failure_enabled() {
+    case "${INSTALL_AUTO_HEAL_ON_FAILURE:-0}" in
+        1|true|TRUE|yes|YES|y|Y|evet|EVET|e|E) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+start_install_auto_heal_on_failure() {
+    local exit_code="$1"
+    local failed_line="$2"
+    local failed_cmd="$3"
+
+    if ! install_auto_heal_on_failure_enabled; then
+        echo "   Otonom kurulum kurtarma kapalı. Etkinleştirmek için: INSTALL_AUTO_HEAL_ON_FAILURE=1 ./install_sidar.sh ..." >&2
+        return 0
+    fi
+
+    if [[ ! -f "${SCRIPT_DIR}/scripts/auto_heal.py" ]]; then
+        warn "INSTALL_AUTO_HEAL_ON_FAILURE=1 ancak scripts/auto_heal.py bulunamadı; self-heal atlandı."
+        return 0
+    fi
+
+    local artifact_dir="${SCRIPT_DIR}/artifacts/install"
+    mkdir -p "$artifact_dir"
+
+    local stamp=""
+    stamp="$(date +%Y%m%d_%H%M%S)"
+    local context_log="${artifact_dir}/install_failure_context_${stamp}.log"
+    local heal_log="${artifact_dir}/install_auto_heal_${stamp}.log"
+    local output_json="${artifact_dir}/install_auto_heal_${stamp}.json"
+    local tail_lines="${INSTALL_AUTO_HEAL_LOG_TAIL_LINES:-1200}"
+    local batch_retries="${INSTALL_AUTO_HEAL_BATCH_RETRIES:-0}"
+    local scope_log_lines="${INSTALL_AUTO_HEAL_SCOPE_LOG_LINES:-80}"
+    local hitl_approve="${INSTALL_AUTO_HEAL_HITL_APPROVE:-no}"
+    local mode="${INSTALL_AUTO_HEAL_MODE:-background}"
+
+    local resume_hint="INSTALL_AUTO_HEAL_ON_FAILURE=1 ./install_sidar.sh"
+    if [[ "${INSTALL_SUBCOMMAND:-full}" != "full" ]]; then
+        resume_hint="${resume_hint} ${INSTALL_SUBCOMMAND}"
+    fi
+
+    {
+        echo "Sidar install failure context"
+        echo "timestamp=${stamp}"
+        echo "exit_code=${exit_code}"
+        echo "failed_line=${failed_line}"
+        echo "failed_command=${failed_cmd}"
+        echo "install_subcommand=${INSTALL_SUBCOMMAND:-full}"
+        echo "resume_hint=${resume_hint}"
+        echo "log_file=${LOG_FILE}"
+        echo "--- install log tail (${tail_lines} lines) ---"
+        if [[ -f "$LOG_FILE" ]]; then
+            tail -n "$tail_lines" "$LOG_FILE"
+        else
+            echo "Log dosyası henüz oluşmadı: $LOG_FILE"
+        fi
+    } > "$context_log"
+
+    local -a heal_cmd=()
+    if command -v uv &>/dev/null; then
+        heal_cmd=(uv run python -m scripts.auto_heal)
+    elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+        heal_cmd=("${SCRIPT_DIR}/.venv/bin/python" -m scripts.auto_heal)
+    elif command -v python3 &>/dev/null; then
+        heal_cmd=(python3 -m scripts.auto_heal)
+    else
+        warn "INSTALL_AUTO_HEAL_ON_FAILURE=1 ancak uv/python bulunamadı; self-heal atlandı. Context: $context_log"
+        return 0
+    fi
+
+    heal_cmd+=(
+        --log "$context_log"
+        --source install
+        --batch-retries "$batch_retries"
+        --scope-log-lines "$scope_log_lines"
+        --hitl-approve "$hitl_approve"
+        --output "$output_json"
+    )
+    if [[ -n "${INSTALL_AUTO_HEAL_MODEL:-}" ]]; then
+        heal_cmd+=(--model "$INSTALL_AUTO_HEAL_MODEL")
+    fi
+
+    info "Kurulum hatası için self-heal tetikleniyor (mode=${mode}). Context: $context_log"
+    info "Self-heal çıktı dosyaları: $heal_log / $output_json"
+    if [[ "$mode" == "foreground" || "$mode" == "sync" ]]; then
+        (cd "$SCRIPT_DIR" && "${heal_cmd[@]}") >> "$heal_log" 2>&1
+        local heal_rc=$?
+        if [[ "$heal_rc" -eq 0 ]]; then
+            ok "Kurulum self-heal tamamlandı. Sonucu inceleyin ve kurulumu tekrar çalıştırın: $output_json"
+        else
+            warn "Kurulum self-heal başarısız veya uygulanabilir patch bulamadı (rc=${heal_rc}). Log: $heal_log"
+        fi
+    else
+        (cd "$SCRIPT_DIR" && "${heal_cmd[@]}") >> "$heal_log" 2>&1 &
+        local heal_pid=$!
+        disown "$heal_pid" 2>/dev/null || true
+        info "Kurulum self-heal arka planda başlatıldı (pid=${heal_pid}). Sonucu izlemek için: tail -f '$heal_log'"
+    fi
+}
+
 on_install_error() {
     local exit_code=$?
+    trap - ERR
+    set +e
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
     echo "❌ Kurulum başarısız (satır ${failed_line}, çıkış kodu ${exit_code})." >&2
     echo "   Hata veren komut: ${failed_cmd}" >&2
     echo "   Temizleme/inceleme için log dosyasını kontrol edin: ${LOG_FILE}" >&2
+    cancel_docker_image_prefetch_if_running
+    start_install_auto_heal_on_failure "$exit_code" "$failed_line" "$failed_cmd"
     exit "$exit_code"
 }
 
@@ -386,12 +516,45 @@ verify_offline_bundle_manifest() {
     ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
 }
 
+pinned_remote_script_field() {
+    local script_label="${1:-}"
+    local field_name="${2:-}"
+    local entry=""
+    local label=""
+    local pinned_url=""
+    local pinned_sha=""
+
+    for entry in "${PINNED_REMOTE_SCRIPT_CHECKSUMS[@]}"; do
+        IFS='|' read -r label pinned_url pinned_sha <<< "$entry"
+        if [[ "$label" == "$script_label" ]]; then
+            case "$field_name" in
+                url) echo "$pinned_url"; return 0 ;;
+                sha256) echo "$pinned_sha"; return 0 ;;
+            esac
+        fi
+    done
+    return 1
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
     local script_label="$3"
+    local pinned_url=""
+    local pinned_sha=""
     local script_file
     script_file=$(mktemp)
+    pinned_url="$(pinned_remote_script_field "$script_label" url 2>/dev/null || true)"
+    pinned_sha="$(pinned_remote_script_field "$script_label" sha256 2>/dev/null || true)"
+
+    if [[ -n "$pinned_url" && "$script_url" != "$pinned_url" ]]; then
+        info "${script_label}: repo içinde pin'lenmiş kurulum betiği URL'i kullanılacak: ${pinned_url}"
+        script_url="$pinned_url"
+    fi
+    if [[ -z "$expected_sha" && -n "$pinned_sha" ]]; then
+        expected_sha="$pinned_sha"
+        info "${script_label}: repo içinde pin'lenmiş SHA256 kullanılacak."
+    fi
 
     if [[ "$OFFLINE_MODE" == true ]]; then
         rm -f "$script_file"
@@ -1483,12 +1646,18 @@ CLI_ENV_RAW=""
 CLI_RESET_POSTGRES_VOLUMES="ask"
 CLI_START_DOCKER_SERVICES="ask"
 CLI_OPEN_VSCODE="ask"
+WSL_MEMORY_OVERRIDE_GB="${WSL_MEMORY_GB:-}"
+WSL_SWAP_OVERRIDE_GB="${WSL_SWAP_GB:-}"
+PENDING_WSL_OVERRIDE_ARG=""
 SILENT_MODE=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
+DOCKER_IMAGE_PREFETCH_PID=""
+DOCKER_IMAGE_PREFETCH_LOG=""
+DOCKER_IMAGE_PREFETCH_STATUS="not_started"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
@@ -1501,6 +1670,18 @@ ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
 INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
+    if [[ -n "$PENDING_WSL_OVERRIDE_ARG" ]]; then
+        if [[ "$arg" == --* ]]; then
+            fail "${PENDING_WSL_OVERRIDE_ARG} için değer eksik. Örnek: --wsl-memory 16 veya --wsl-swap 8"
+        fi
+        case "$PENDING_WSL_OVERRIDE_ARG" in
+            memory) WSL_MEMORY_OVERRIDE_GB="$arg" ;;
+            swap) WSL_SWAP_OVERRIDE_GB="$arg" ;;
+        esac
+        PENDING_WSL_OVERRIDE_ARG=""
+        continue
+    fi
+
     case "$arg" in
         --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ; INSTALL_DEV=true ;;
         --upgrade-lock) UPGRADE_LOCK=true ;;
@@ -1516,6 +1697,10 @@ for arg in "$@"; do
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
         --mode=*) CLI_MODE_RAW="${arg#*=}" ;;
         --env=*) CLI_ENV_RAW="${arg#*=}" ;;
+        --wsl-memory) PENDING_WSL_OVERRIDE_ARG="memory" ;;
+        --wsl-memory=*) WSL_MEMORY_OVERRIDE_GB="${arg#*=}" ;;
+        --wsl-swap) PENDING_WSL_OVERRIDE_ARG="swap" ;;
+        --wsl-swap=*) WSL_SWAP_OVERRIDE_GB="${arg#*=}" ;;
         --reset-db) CLI_RESET_POSTGRES_VOLUMES="true" ;;
         --no-reset-db) CLI_RESET_POSTGRES_VOLUMES="false" ;;
         --start-services) CLI_START_DOCKER_SERVICES="true" ;;
@@ -1539,7 +1724,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--wsl-memory=<GB>] [--wsl-swap=<GB>] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
@@ -1565,6 +1750,8 @@ for arg in "$@"; do
             echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
             echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
             echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
+            echo "  --wsl-memory <GB> / --wsl-memory=<GB>  WSL2 .wslconfig memory değerini dışarıdan belirle (örn. 16 veya 16GB)"
+            echo "  --wsl-swap <GB> / --wsl-swap=<GB>  WSL2 .wslconfig swap değerini dışarıdan belirle (örn. 8 veya 8GB; 0 kapatır)"
             echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
             echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
             echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
@@ -1582,12 +1769,22 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    SIDAR_TARGET_DIR=/tmp/Sidar  Repo klon/güncelleme hedef dizini (varsayılan: $HOME/Sidar)"
+            echo "    WSL_MEMORY_GB=16 / WSL_SWAP_GB=8  WSL2 .wslconfig memory/swap override değerleri"
+            echo "    INSTALL_AUTO_HEAL_ON_FAILURE=1  Kurulum hatasında scripts.auto_heal köprüsünü log ile tetikle"
+            echo "    INSTALL_AUTO_HEAL_MODE=background|foreground  Self-heal çalışma modu (varsayılan: background)"
+            echo "    INSTALL_AUTO_HEAL_HITL_APPROVE=no|yes  Riskli planlarda HITL kararı (varsayılan: no)"
+            echo "    INSTALL_PARALLEL_PREFETCH=1|0  uv/frontend kurulumu sırasında Docker imajlarını paralel önceden çek"
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --wsl-memory=... | --wsl-swap=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
+
+if [[ -n "$PENDING_WSL_OVERRIDE_ARG" ]]; then
+    fail "${PENDING_WSL_OVERRIDE_ARG} için değer eksik. Örnek: --wsl-memory 16 veya --wsl-swap 8"
+fi
 
 normalize_bool() {
     local value="${1:-}"
@@ -1702,7 +1899,19 @@ elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
 fi
 DEFAULT_DATABASE_URL=""
 REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
-TARGET_DIR="$HOME/Sidar"
+TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"
+if [[ -z "${TARGET_DIR//[[:space:]]/}" ]]; then
+    fail "SIDAR_TARGET_DIR boş olamaz. Örnek: SIDAR_TARGET_DIR=/tmp/Sidar ./install_sidar.sh"
+fi
+case "$TARGET_DIR" in
+    "~") TARGET_DIR="$HOME" ;;
+    "~/"*) TARGET_DIR="$HOME/${TARGET_DIR#~/}" ;;
+    /*) : ;;
+    *) TARGET_DIR="$(pwd)/$TARGET_DIR" ;;
+esac
+if [[ "$TARGET_DIR" != "/" ]]; then
+    TARGET_DIR="${TARGET_DIR%/}"
+fi
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
@@ -2309,228 +2518,12 @@ ensure_prerequisites() {
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
-detect_gpu() {
-    step "GPU Tespiti"
-    GPU_AVAILABLE=false
-    CUDA_VERSION=""
-
-    if [[ "$FORCE_CPU" == true ]]; then
-        warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
-        return
-    fi
-
-    local SMI_CMD=""
-    local smi_ping_out=""
-    local query_out=""
-    if command -v nvidia-smi &>/dev/null; then
-        SMI_CMD="nvidia-smi"
-    elif command -v nvidia-smi.exe &>/dev/null; then
-        SMI_CMD="nvidia-smi.exe"
-    fi
-
-    if [[ -n "$SMI_CMD" ]]; then
-        smi_ping_out=$("$SMI_CMD" -L 2>/dev/null | head -1 || true)
-    fi
-
-    if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
-        query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_NAME="${query_out:-Bilinmiyor}"
-
-        query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
-        VRAM_MB=$(echo "${query_out:-0}" | tr -d ' ,' )
-        if [[ -z "$VRAM_MB" ]]; then
-            VRAM_MB="0"
-        fi
-
-        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || true)
-        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
-
-        GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
-            export RUN_GPU_STRESS=1
-            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
-        fi
-        ok "GPU     : $GPU_NAME"
-        ok "VRAM    : ${VRAM_MB} MiB"
-        ok "Sürücü  : $DRIVER_VER"
-        ok "CUDA    : $CUDA_VERSION"
-
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
-        fi
-    else
-        if command -v rocm-smi &>/dev/null || lspci 2>/dev/null | grep -qi "AMD/ATI"; then
-            warn "AMD GPU tespit edildi. Bu kurulum akışı NVIDIA/CUDA odaklıdır; Docker için CPU profili kullanılacak."
-        fi
-        if [[ "$(uname -s)" == "Darwin" ]] && [[ "$(uname -m)" == "arm64" ]]; then
-            warn "Apple Silicon (arm64) tespit edildi. CUDA/NVIDIA akışı devre dışı; CPU profili kullanılacak."
-        fi
-        warn "NVIDIA GPU bulunamadı veya nvidia-smi erişilemez — CPU modunda kurulum yapılacak."
-    fi
-}
-
-# ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
-setup_nvidia_docker() {
-    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
-        step "Docker GPU Desteği (nvidia-container-toolkit)"
-        if ! command -v nvidia-ctk &>/dev/null; then
-            warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
-
-            # NVIDIA repolarını ekle ve kur
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
-
-            sudo apt-get update
-            sudo apt-get install -y nvidia-container-toolkit
-
-            # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
-            sudo nvidia-ctk runtime configure --runtime=docker
-
-            # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
-            info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
-                if systemctl is-active --quiet docker; then
-                    sudo systemctl restart docker
-                    ok "Docker servisi systemd üzerinden yeniden başlatıldı."
-                else
-                    warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
-                    info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
-                fi
-            elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
-                sudo service docker restart
-                ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
-            else
-                warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
-                info "nvidia-container-toolkit'in aktif olması için Windows üzerinden Docker Desktop'ı yeniden başlatmanız gerekebilir."
-            fi
-            ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
-        else
-            ok "nvidia-container-toolkit zaten kurulu."
-        fi
-    fi
-}
-
-setup_python_env() {
-    step "uv venv Ortamı"
-    VENV_DIR="$SCRIPT_DIR/.venv"
-    if [[ -d "$VENV_DIR" ]]; then
-        info "Mevcut uv venv bulundu: $VENV_DIR"
-    else
-        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-        ok "uv venv oluşturuldu."
-    fi
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate"
-    ok "Ortam aktif: $VENV_DIR"
-}
-
-# ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
-setup_uv() {
-    step "uv Paket Yöneticisi"
-    export UV_PROGRESS_BAR=on
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
-    if ! command -v uv &>/dev/null; then
-        local uv_install_script=""
-        if [[ "$OFFLINE_MODE" == true ]]; then
-            info "uv bulunamadı — çevrimdışı paketlerden kurulacak."
-            uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
-            [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
-        else
-            info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-            DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
-                "https://astral.sh/uv/install.sh" \
-                "${UV_INSTALL_SHA256:-}" \
-                "uv_install"
-            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
-            uv_install_script="$DOWNLOADED_SCRIPT_FILE"
-        fi
-
-        sh "$uv_install_script"
-        [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-        if [[ -f "$HOME/.cargo/env" ]]; then
-            # shellcheck disable=SC1090
-            source "$HOME/.cargo/env"
-        fi
-        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
-        export PATH="$HOME/.local/bin:$PATH"
-    fi
-
-    if ! command -v uv &>/dev/null; then
-        fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
-    fi
-    ok "uv $(uv --version | cut -d' ' -f2)"
-}
-
-# ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
-install_python_deps() {
-    step "Python Bağımlılıkları Kuruluyor"
-
-    cd "$SCRIPT_DIR"
-    UV_CMD=(uv)
-
-    local -a SYNC_ARGS=(--frozen --all-extras)
-
-    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
-        fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
-    fi
-
-    if [[ "$UPGRADE_LOCK" == true ]]; then
-        info "--upgrade-lock verildi; uv.lock bilinçli olarak güncelleniyor (uv lock --upgrade)."
-        if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade; then
-            fail "uv lock --upgrade başarısız oldu; uv.lock güncellenemedi."
-        fi
-    else
-        info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
-    fi
-
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras. Dev araçları self-healing için standarttır."
-    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
-    fi
-
-    ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
-    ensure_env_file_secrets_after_uv_sync
-    validate_runtime_env_loading
-}
-
-# ── 5.1 Pyright LSP aracını kur/doğrula ─────────────────────────────────────
-install_pyright_lsp_tool() {
-    step "Pyright LSP Aracı"
-
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP hazır: $(command -v pyright-langserver)"
-        return
-    fi
-
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        warn "Çevrimdışı modda pyright-langserver bulunamadı; LSP diagnostics için çevrimiçi ortamda 'uv tool install pyright' çalıştırın veya offline tool cache sağlayın."
-        return
-    fi
-
-    info "Pyright LSP kuruluyor: uv tool install pyright"
-    if ! uv tool install pyright; then
-        warn "uv tool install pyright başarısız oldu; ajan LSP diagnostics özelliği için manuel kurulum gerekir."
-        return
-    fi
-
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-    if command -v pyright-langserver &>/dev/null; then
-        ok "Pyright LSP kuruldu: $(command -v pyright-langserver)"
-    else
-        warn "Pyright kuruldu ancak pyright-langserver PATH üzerinde bulunamadı; ~/.local/bin PATH ayarını kontrol edin."
-    fi
-}
-
-# ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
+# detect_gpu scripts/install_modules altında modülerleştirildi.
+# setup_nvidia_docker scripts/install_modules altında modülerleştirildi.
+# setup_python_env scripts/install_modules altında modülerleştirildi.
+# setup_uv scripts/install_modules altında modülerleştirildi.
+# install_python_deps scripts/install_modules altında modülerleştirildi.
+# install_pyright_lsp_tool scripts/install_modules altında modülerleştirildi.
 should_install_playwright_browsers() {
     case "$PLAYWRIGHT_BROWSERS_MODE" in
         always) return 0 ;;
@@ -2811,6 +2804,27 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    _normalize_wsl_gb_override() {
+        local raw="${1:-}"
+        local label="${2:-WSL2 değer}"
+        local min_value="${3:-0}"
+        local max_value="${4:-256}"
+        local normalized=""
+        local value=0
+
+        normalized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+        normalized="${normalized%gb}"
+        normalized="${normalized%g}"
+        if [[ ! "$normalized" =~ ^[0-9]+$ ]]; then
+            fail "${label} geçersiz: '${raw}'. GB cinsinden pozitif tam sayı verin (örn. 16 veya 16GB)."
+        fi
+        value=$((10#$normalized))
+        if (( value < min_value || value > max_value )); then
+            fail "${label} desteklenen aralık dışında: ${value}GB (izin verilen: ${min_value}-${max_value}GB)."
+        fi
+        echo "$value"
+    }
+
     _detect_host_ram_gb() {
         local total_kb="0"
         if [[ -r /proc/meminfo ]]; then
@@ -2848,20 +2862,36 @@ ASOUNDRC
     target_swap_gb=$((host_ram_gb / 2))
     target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
 
+    local wsl_memory_override_active=false
+    local wsl_swap_override_active=false
+    if [[ -n "${WSL_MEMORY_OVERRIDE_GB:-}" ]]; then
+        target_memory_gb=$(_normalize_wsl_gb_override "$WSL_MEMORY_OVERRIDE_GB" "WSL2 memory override" 1 256)
+        wsl_memory_override_active=true
+    fi
+    if [[ -n "${WSL_SWAP_OVERRIDE_GB:-}" ]]; then
+        target_swap_gb=$(_normalize_wsl_gb_override "$WSL_SWAP_OVERRIDE_GB" "WSL2 swap override" 0 256)
+        wsl_swap_override_active=true
+    fi
+
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
-    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+    if [[ "$wsl_memory_override_active" == true || "$wsl_swap_override_active" == true ]]; then
+        info "WSL2 .wslconfig override hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM algısı: ${host_ram_gb}GB)."
+    else
+        info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+    fi
 
     # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
-    # Değer zaten varsa korur, yinelenen satırları temizler.
+    # Override verilmediyse mevcut değeri korur, override verilirse hedef değere çeker.
     _ensure_wsl2_key_once() {
         local cfg_file="$1"
         local cfg_key="$2"
         local cfg_value="$3"
+        local force_replace="${4:-false}"
         local tmp_file
         tmp_file=$(mktemp)
 
-        awk -v key="$cfg_key" -v value="$cfg_value" '
+        awk -v key="$cfg_key" -v value="$cfg_value" -v force_replace="$force_replace" '
             BEGIN { in_wsl2=0; seen_key=0 }
             {
                 if ($0 ~ /^\[.*\]$/) {
@@ -2876,7 +2906,11 @@ ASOUNDRC
 
                 if (in_wsl2 && $0 ~ ("^" key "=")) {
                     if (!seen_key) {
-                        print
+                        if (force_replace == "true") {
+                            print key "=" value
+                        } else {
+                            print
+                        }
                         seen_key=1
                     }
                     next
@@ -2922,7 +2956,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory" "$wsl_memory_override_active"; then
                 ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -2941,7 +2975,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap" "$wsl_swap_override_active"; then
                 ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -3014,220 +3048,12 @@ EOF
 }
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
-generate_secure_token() {
-    local token_length="${1:-32}"
-    local generated=""
-
-    if command -v python3 &>/dev/null; then
-        generated=$(python3 - <<PY
-import secrets
-print(secrets.token_urlsafe(${token_length}))
-PY
-)
-    elif command -v openssl &>/dev/null; then
-        generated=$(openssl rand -base64 "$token_length" | tr -d '\n')
-    fi
-
-    echo "$generated"
-}
-
-harden_database_credentials() {
-    local env_file="$1"
-    local db_url=""
-    local sidar_env="development"
-    local safe_db_url=""
-    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
-
-    [[ -f "$env_file" ]] || return
-
-    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-    sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
-    sidar_env="${sidar_env:-development}"
-
-    [[ -n "$db_url" ]] || return
-
-    # Güvensiz bilinen varsayılan kimlik bilgileri (postgres:postgres vb.)
-    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
-        local db_user="${BASH_REMATCH[2]}"
-        local db_password="${BASH_REMATCH[3]}"
-        local db_host_and_name="${BASH_REMATCH[4]}"
-
-        case "$db_password" in
-            sidar|postgres|password|admin|changeme|123456)
-                if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                    PRE_HARDEN_DB_PASSWORD="$db_password"
-                    local generated_password=""
-                    generated_password=$(generate_secure_token 24)
-                    if [[ -n "$generated_password" ]]; then
-                        safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                        ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
-
-                        # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                        # DATABASE_URL ile senkron kalmalıdır.
-                        if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                        else
-                            echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                        fi
-                        if grep -q '^POSTGRES_USER=' "$env_file"; then
-                            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                        else
-                            echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                        fi
-                        local db_name_for_container="${db_host_and_name#*/}"
-                        db_name_for_container="${db_name_for_container%%\?*}"
-                        [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
-                        local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                        if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                            sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                        else
-                            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                        fi
-                        DB_PASSWORD_HARDENED=true
-                        ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                        info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
-                        if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
-                            local detected_pg_volume=""
-                            detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
-                            if [[ -n "$detected_pg_volume" ]]; then
-                                info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
-                            fi
-                        fi
-                    else
-                        warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
-                    fi
-                else
-                    warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                    warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:${db_password})."
-                    warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
-                fi
-                ;;
-        esac
-    fi
-}
-
-sync_postgres_env_with_database_url() {
-    local env_file="$1"
-    local db_url=""
-
-    [[ -f "$env_file" ]] || return
-
-    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-    [[ -n "$db_url" ]] || return
-
-    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
-        local db_user="${BASH_REMATCH[2]}"
-        local db_password="${BASH_REMATCH[3]}"
-        local db_host_and_name="${BASH_REMATCH[4]}"
-        local db_name="${db_host_and_name#*/}"
-
-        # Host kısmında "/" yoksa varsayılan adı koru.
-        if [[ "$db_name" == "$db_host_and_name" ]]; then
-            db_name="sidar"
-        fi
-
-        # Olası query string'i temizle.
-        db_name="${db_name%%\?*}"
-
-        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
-        sed -i '/^POSTGRES_USER=/d' "$env_file"
-        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-        sed -i '/^POSTGRES_DB=/d' "$env_file"
-        sed -i '/^DATABASE_URL=/d' "$env_file"
-
-        local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
-        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
-        {
-            echo "POSTGRES_USER=${db_user}"
-            echo "POSTGRES_PASSWORD=${db_password}"
-            echo "POSTGRES_DB=${db_name}"
-            echo "DATABASE_URL=${db_url}"
-            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
-        } >> "$env_file"
-
-        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
-    fi
-}
-
-write_generated_default_database_url() {
-    local env_file="$1"
-    local generated_password=""
-    generated_password=$(generate_secure_token 24)
-    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
-
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
-    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
-
-    sed -i '/^POSTGRES_USER=/d' "$env_file"
-    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-    sed -i '/^POSTGRES_DB=/d' "$env_file"
-    sed -i '/^DATABASE_URL=/d' "$env_file"
-    sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
-    {
-        echo "POSTGRES_USER=sidar"
-        echo "POSTGRES_PASSWORD=${generated_password}"
-        echo "POSTGRES_DB=sidar"
-        echo "DATABASE_URL=${local_db_url}"
-        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
-    } >> "$env_file"
-    DB_PASSWORD_HARDENED=true
-}
-
-ensure_database_url_defaults() {
-    local env_file="$1"
-    local current_db_url=""
-
-    if [[ ! -f "$env_file" ]]; then
-        return
-    fi
-
-    current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-
-    if [[ -z "$current_db_url" ]]; then
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
-        return
-    fi
-
-    if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
-        warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
-        return
-    fi
-
-    if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
-    fi
-}
-
-ensure_rag_vector_backend_pgvector() {
-    local env_file="$1"
-    local current_backend=""
-
-    if [[ ! -f "$env_file" ]]; then
-        return
-    fi
-
-    current_backend=$(grep -E '^RAG_VECTOR_BACKEND=' "$env_file" | head -n1 | cut -d= -f2- || true)
-    if [[ -z "$current_backend" ]]; then
-        echo "RAG_VECTOR_BACKEND=pgvector" >> "$env_file"
-        ok ".env: RAG_VECTOR_BACKEND=pgvector eklendi."
-        return
-    fi
-
-    if [[ "$current_backend" != "pgvector" ]]; then
-        sed -i 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
-        ok ".env: RAG_VECTOR_BACKEND pgvector olarak güncellendi."
-    fi
-}
-
-# ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
-# Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
-# sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
+# generate_secure_token scripts/install_modules altında modülerleştirildi.
+# harden_database_credentials scripts/install_modules altında modülerleştirildi.
+# sync_postgres_env_with_database_url scripts/install_modules altında modülerleştirildi.
+# write_generated_default_database_url scripts/install_modules altında modülerleştirildi.
+# ensure_database_url_defaults scripts/install_modules altında modülerleştirildi.
+# ensure_rag_vector_backend_pgvector scripts/install_modules altında modülerleştirildi.
 collect_api_keys_interactive() {
     local env_file="$1"
 
@@ -4037,249 +3863,7 @@ PYJSON
     ok "Coding model JSON smoke testi başarılı (${model_name})."
 }
 
-download_ollama_models() {
-    step "Ollama Modelleri Hazırlanıyor"
-    local estimated_size_gb="~14.8 GB"
-    local temp_ollama_pid=""
-    local ollama_tags_url=""
-    local tags_payload=""
-    local existing_model_count=0
-    local env_file="$SCRIPT_DIR/.env"
-    local missing_required_models=""
-    local resolved_models_csv=""
-    local should_prompt_for_download=true
-    local -a models_to_pull=()
-    local -a models=()
-    _count_ollama_models_from_tags() {
-        local payload="$1"
-        if command -v python3 &>/dev/null; then
-            python3 - "$payload" <<'PY' 2>/dev/null || echo "0"
-import json
-import sys
-raw = sys.argv[1] if len(sys.argv) > 1 else ""
-try:
-    data = json.loads(raw)
-except Exception:
-    print("0")
-    raise SystemExit(0)
-models = data.get("models")
-if isinstance(models, list):
-    print(str(sum(1 for m in models if isinstance(m, dict) and m.get("name"))))
-else:
-    print("0")
-PY
-        else
-            printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
-        fi
-    }
-    _model_exists_in_tags() {
-        local payload="$1"
-        local model_name="$2"
-        if [[ -z "$payload" || -z "$model_name" ]]; then
-            return 1
-        fi
-        if command -v python3 &>/dev/null; then
-            python3 - "$payload" "$model_name" <<'PY' >/dev/null 2>&1
-import json
-import sys
-
-raw = sys.argv[1] if len(sys.argv) > 1 else ""
-target = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
-if not target:
-    raise SystemExit(1)
-try:
-    data = json.loads(raw)
-except Exception:
-    raise SystemExit(1)
-models = data.get("models")
-if not isinstance(models, list):
-    raise SystemExit(1)
-names = {m.get("name") for m in models if isinstance(m, dict) and isinstance(m.get("name"), str)}
-if target in names:
-    raise SystemExit(0)
-# Kullanıcı modeli etiketsiz verdiyse Ollama'da sık görülen :latest eşleşmesini de kabul et.
-if ":" not in target and f"{target}:latest" in names:
-    raise SystemExit(0)
-raise SystemExit(1)
-PY
-            return $?
-        fi
-
-        if printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}\""; then
-            return 0
-        fi
-        if [[ "$model_name" != *:* ]] && printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}:latest\""; then
-            return 0
-        fi
-        return 1
-    }
-    cleanup_temp_ollama() {
-        if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
-            info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
-            kill "${temp_ollama_pid:-}" >/dev/null 2>&1 || true
-            # Sürecin tamamen kapanmasını bekle; böylece 11434 portu Docker Ollama
-            # servisi başlamadan önce işletim sistemi tarafından serbest bırakılır.
-            local _i
-            for _i in {1..10}; do
-                kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1 || break
-                sleep 1
-            done
-        fi
-    }
-    trap cleanup_temp_ollama RETURN
-
-    if [[ "$WSL2" == true && "$WSLCONFIG_CHANGED" == true ]]; then
-        warn "WSL2 .wslconfig bu kurulumda güncellendi; yeni memory/swap limitleri henüz etkin değil."
-        info "Model indirme işlemleri güvenlik için ertelendi. Önce Windows PowerShell'de şunu çalıştırın:"
-        echo "  wsl --shutdown"
-        info "Ardından dağıtımı yeniden açıp modelleri indirmek için tekrar çalıştırın: ./install_sidar.sh --download-models"
-        return
-    fi
-
-    if [[ "$SKIP_MODELS" == true ]]; then
-        info "--skip-models bayrağı verildi, model indirmeleri atlanıyor."
-        return
-    fi
-
-    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
-    ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
-
-    if [[ ! -f "$env_file" ]]; then
-        warn ".env bulunamadı, varsayılan modeller indirilemedi."
-        return
-    fi
-
-    TEXT_MOD=$(read_env_value_from_file "TEXT_MODEL" "$env_file")
-    CODE_MOD=$(read_env_value_from_file "CODING_MODEL" "$env_file")
-    VISION_MOD=$(read_env_value_from_file "VISION_MODEL" "$env_file")
-    MULTIMODAL=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$env_file")
-
-    if [[ -z "$TEXT_MOD" ]]; then
-        TEXT_MOD="llama3.1:8b"
-        warn "TEXT_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $TEXT_MOD"
-    fi
-    if [[ -z "$CODE_MOD" ]]; then
-        CODE_MOD="qwen2.5-coder:7b"
-        warn "CODING_MODEL boş/geçersiz görünüyor, varsayılan kullanılacak: $CODE_MOD"
-    fi
-    models=("$TEXT_MOD" "$CODE_MOD" "nomic-embed-text")
-    if [[ "${MULTIMODAL,,}" == "true" && -n "$VISION_MOD" ]]; then
-        models+=("$VISION_MOD")
-    fi
-
-    # Etkileşimli "indirilsin mi?" sorusundan önce mevcut model adlarını doğrula.
-    # Sadece sayıya göre değil, projede gereken model adlarına göre karar ver.
-    if command -v ollama &>/dev/null; then
-        tags_payload=$(curl -sf "$ollama_tags_url" 2>/dev/null || true)
-        if [[ -n "$tags_payload" ]]; then
-            existing_model_count=$(_count_ollama_models_from_tags "$tags_payload")
-            for model in "${models[@]}"; do
-                [[ -n "$model" ]] || continue
-                if _model_exists_in_tags "$tags_payload" "$model"; then
-                    continue
-                fi
-                models_to_pull+=("$model")
-            done
-
-            if (( ${#models_to_pull[@]} == 0 )); then
-                ok "Ollama üzerinde ${existing_model_count} model mevcut ve gerekli modeller zaten yüklü (${ollama_tags_url})."
-                run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
-                return
-            fi
-
-            if [[ "$DOWNLOAD_MODELS" != true ]]; then
-                missing_required_models=$(IFS=', '; echo "${models_to_pull[*]}")
-                warn "Ollama'da model(ler) eksik: ${missing_required_models}. Sadece eksik modeller indirilecek."
-                should_prompt_for_download=false
-            fi
-        fi
-    fi
-
-    if [[ "$DOWNLOAD_MODELS" != true && "$should_prompt_for_download" == true ]]; then
-        if [[ "$NO_INTERACTION" == true ]]; then
-            info "--ci/--no-interaction etkin ve --download-models verilmedi: model indirmeleri atlanıyor (${estimated_size_gb})."
-            info "Model indirmek için: ./install_sidar.sh --download-models"
-            return
-        fi
-        reply=$(prompt_yes_no_with_timeout_default_yes "Modeller indirilecek (${estimated_size_gb}). Devam edilsin mi? [E/h] ")
-        case "${reply:-E}" in
-            [HhNn]*)
-                info "Model indirmesi kullanıcı tercihiyle atlandı."
-                return
-                ;;
-        esac
-    fi
-
-    if ! command -v ollama &>/dev/null; then
-        warn "Ollama bulunamadı, model indirme atlanıyor."
-        return
-    fi
-
-    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
-        info "Ollama API erişilemedi (${OLLAMA_VERSION_URL})."
-        if is_local_ollama_url "$OLLAMA_BASE_URL"; then
-            info "Yerel Ollama servisi başlatma deneniyor..."
-            if command -v systemctl &>/dev/null && command -v sudo &>/dev/null; then
-                sudo systemctl enable --now ollama >/dev/null 2>&1 || true
-            fi
-            # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
-            if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
-                info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
-                ollama serve >/dev/null 2>&1 &
-                temp_ollama_pid=$!
-            fi
-            for _ in {1..12}; do
-                if curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
-                    break
-                fi
-                sleep 5
-            done
-        else
-            warn "Uzak Ollama endpoint'i tespit edildi (${OLLAMA_BASE_URL}). Otomatik servis başlatma atlandı."
-        fi
-    fi
-
-    if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
-        warn "Ollama servisi doğrulanamadı (${OLLAMA_VERSION_URL}), model indirme atlanıyor."
-        return
-    fi
-
-    if (( ${#models_to_pull[@]} == 0 )); then
-        models_to_pull=("${models[@]}")
-    fi
-
-    resolved_models_csv=$(IFS=', '; echo "${models_to_pull[*]}")
-    info "İndirilecek model listesi: ${resolved_models_csv}"
-
-    for model in "${models_to_pull[@]}"; do
-        if [[ -n "$model" ]]; then
-            info "-> $model indiriliyor (bu işlem zaman alabilir)..."
-            local pull_success=false
-            for attempt in 1 2 3; do
-                if ollama pull "$model"; then
-                    pull_success=true
-                    break
-                fi
-                warn "Model indirme denemesi başarısız (${model}) [${attempt}/3]."
-                if [[ "$attempt" -lt 3 ]]; then
-                    local backoff=$((attempt * 5))
-                    info "${backoff}s sonra yeniden denenecek..."
-                    sleep "$backoff"
-                fi
-            done
-
-            if [[ "$pull_success" != true ]]; then
-                fail "Model indirilemedi: ${model} (3 deneme sonrası başarısız)."
-            fi
-        fi
-    done
-
-    run_coding_model_smoke_prompt "$CODE_MOD" "$OLLAMA_BASE_URL"
-    ok "Gerekli tüm modeller başarıyla hazırlandı ve doğrulandı."
-}
-
-# ── 12. Alembic migrasyonları ────────────────────────────────────────────────
+# download_ollama_models scripts/install_modules altında modülerleştirildi.
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -4502,6 +4086,106 @@ PY
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
+}
+
+install_parallel_prefetch_enabled() {
+    if [[ "${OFFLINE_MODE:-false}" == true ]]; then
+        return 1
+    fi
+    case "${INSTALL_PARALLEL_PREFETCH:-1}" in
+        0|false|FALSE|no|NO|n|N|hayir|HAYIR|hayır|HAYIR|h|H) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+start_docker_image_prefetch_async() {
+    local runtime_mode="${1:-local}"
+    local compose_profiles=""
+    local env_file="$SCRIPT_DIR/.env"
+    local artifact_dir="$SCRIPT_DIR/artifacts/install"
+    local -a docker_compose_cmd=()
+    local -a prefetch_services=(postgres redis ollama jaeger prometheus grafana)
+
+    if [[ -n "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+    if ! install_parallel_prefetch_enabled; then
+        DOCKER_IMAGE_PREFETCH_STATUS="disabled"
+        return 0
+    fi
+    if ! command -v docker &>/dev/null; then
+        DOCKER_IMAGE_PREFETCH_STATUS="docker_unavailable"
+        return 0
+    fi
+    if docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        DOCKER_IMAGE_PREFETCH_STATUS="compose_unavailable"
+        return 0
+    fi
+    if ! docker info &>/dev/null; then
+        DOCKER_IMAGE_PREFETCH_STATUS="daemon_unavailable"
+        info "Docker daemon hazır olmadığı için paralel image prefetch atlandı."
+        return 0
+    fi
+
+    if [[ -f "$env_file" ]]; then
+        compose_profiles=$(grep -E '^COMPOSE_PROFILES=' "$env_file" | tail -n1 | cut -d= -f2- | tr -d '[:space:]' || true)
+    fi
+    if [[ -z "$compose_profiles" ]]; then
+        if [[ "$GPU_AVAILABLE" == true ]]; then
+            compose_profiles="gpu"
+        else
+            compose_profiles="cpu"
+        fi
+    fi
+
+    mkdir -p "$artifact_dir"
+    DOCKER_IMAGE_PREFETCH_LOG="${artifact_dir}/docker_image_prefetch_$(date +%Y%m%d_%H%M%S).log"
+    DOCKER_IMAGE_PREFETCH_STATUS="running"
+    info "Docker image prefetch arka planda başlatılıyor (${runtime_mode}; servisler: ${prefetch_services[*]}). Log: $DOCKER_IMAGE_PREFETCH_LOG"
+    (
+        cd "$SCRIPT_DIR" || exit 1
+        echo "Sidar Docker image prefetch"
+        echo "runtime_mode=${runtime_mode}"
+        echo "compose_profiles=${compose_profiles}"
+        echo "services=${prefetch_services[*]}"
+        echo "command=COMPOSE_PROFILES=${compose_profiles} ${docker_compose_cmd[*]} pull ${prefetch_services[*]}"
+        COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull "${prefetch_services[@]}"
+    ) > "$DOCKER_IMAGE_PREFETCH_LOG" 2>&1 &
+    DOCKER_IMAGE_PREFETCH_PID=$!
+}
+
+wait_for_docker_image_prefetch() {
+    if [[ -z "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+
+    info "Paralel Docker image prefetch tamamlanması bekleniyor (pid=${DOCKER_IMAGE_PREFETCH_PID})."
+    if wait "$DOCKER_IMAGE_PREFETCH_PID"; then
+        DOCKER_IMAGE_PREFETCH_STATUS="completed"
+        ok "Docker image prefetch tamamlandı."
+    else
+        local prefetch_rc=$?
+        DOCKER_IMAGE_PREFETCH_STATUS="warning"
+        warn "Docker image prefetch başarısız oldu veya bazı imajlar çekilemedi (rc=${prefetch_rc}). Asıl docker compose up akışı gerekirse tekrar deneyecek. Log: ${DOCKER_IMAGE_PREFETCH_LOG:-yok}"
+    fi
+    DOCKER_IMAGE_PREFETCH_PID=""
+}
+
+cancel_docker_image_prefetch_if_running() {
+    if [[ -z "${DOCKER_IMAGE_PREFETCH_PID:-}" ]]; then
+        return 0
+    fi
+    if kill -0 "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null; then
+        warn "Kurulum hata verdi; arka plan Docker image prefetch görevi durduruluyor (pid=${DOCKER_IMAGE_PREFETCH_PID})."
+        kill "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null || true
+        wait "$DOCKER_IMAGE_PREFETCH_PID" 2>/dev/null || true
+    fi
+    DOCKER_IMAGE_PREFETCH_STATUS="cancelled"
+    DOCKER_IMAGE_PREFETCH_PID=""
 }
 
 prepare_docker_for_migrations() {
@@ -5400,6 +5084,10 @@ main() {
     select_runtime_mode_early
     detect_gpu
     setup_nvidia_docker
+    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" && -f "$SCRIPT_DIR/.env" ]]; then
+        # Mevcut .env varsa Docker imajlarını uv sync ile paralel önceden çekebiliriz.
+        start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
+    fi
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
         setup_uv
@@ -5414,6 +5102,7 @@ main() {
     # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
     setup_vscode_workspace
     setup_env_file
+    start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         setup_react_frontend
         install_playwright_browsers
@@ -5423,6 +5112,8 @@ main() {
     setup_shell_activation_shortcut
     setup_wsl2_audio
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        # DB migrasyonu öncesinde paralel image prefetch sonuçlansın; compose up gerekirse kalanları tekrar çeker.
+        wait_for_docker_image_prefetch
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
@@ -5436,6 +5127,7 @@ main() {
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
     fi
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
+    wait_for_docker_image_prefetch
     launch_docker_services
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         run_smoke_tests

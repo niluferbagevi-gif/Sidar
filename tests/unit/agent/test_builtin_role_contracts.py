@@ -280,7 +280,15 @@ def test_readme_uses_sidar_uv_qwen_terminology_standards() -> None:
 
 
 def test_install_script_defaults_match_terminology_standards() -> None:
-    script = (_repo_root() / "install_sidar.sh").read_text(encoding="utf-8")
+    root = _repo_root()
+    script = "\n".join(
+        [
+            (root / "install_sidar.sh").read_text(encoding="utf-8"),
+            (root / "scripts/install_modules/env_utils.sh").read_text(encoding="utf-8"),
+            (root / "scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8"),
+            (root / "scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8"),
+        ]
+    )
 
     assert 'CODE_MOD="qwen2.5-coder:7b"' in script
     assert 'CODE_MOD="qwen2.5-coder:3b"' not in script
@@ -337,20 +345,32 @@ def test_sidar_uv_qwen_development_contract() -> None:
             "AGENTS.md",
             "README.md",
             "install_sidar.sh",
+            "scripts/install_modules/env_utils.sh",
+            "scripts/install_modules/db_credentials.sh",
+            "scripts/install_modules/ollama_models.sh",
             "agent/registry.py",
             "config.py",
             "gui_launcher.py",
         ]
     }
+    install_contract = "\n".join(
+        text_by_file[path]
+        for path in [
+            "install_sidar.sh",
+            "scripts/install_modules/env_utils.sh",
+            "scripts/install_modules/db_credentials.sh",
+            "scripts/install_modules/ollama_models.sh",
+        ]
+    )
 
     assert "Güncel ürün adı **Sidar**" in text_by_file["AGENTS.md"]
     assert "uv sync --all-extras" in text_by_file["AGENTS.md"]
     assert "CODING_MODEL=qwen2.5-coder:7b" in text_by_file["README.md"]
     assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["config.py"]
     assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
-    assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
-    assert "uv run pytest" in text_by_file["install_sidar.sh"]
-    assert "uv tool install pyright" in text_by_file["install_sidar.sh"]
+    assert 'CODE_MOD="qwen2.5-coder:7b"' in install_contract
+    assert "uv run pytest" in install_contract
+    assert "uv tool install pyright" in install_contract
     assert "uv tool install pyright" in text_by_file["README.md"]
     assert "uv run alembic upgrade head" in text_by_file["README.md"]
 

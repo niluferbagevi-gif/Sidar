@@ -8,6 +8,7 @@ import pytest
 
 import scripts.auto_heal as auto_heal
 from scripts.auto_heal import (
+    INSTALL_SELF_HEAL_REFERENCE,
     MYPY_SELF_HEAL_REFERENCE,
     _build_attempt_diagnosis,
     _build_scope_queue,
@@ -285,6 +286,19 @@ def test_build_attempt_diagnosis_includes_mypy_reference() -> None:
     assert "ignore[import-untyped]" in diagnosis
     assert MYPY_SELF_HEAL_REFERENCE in diagnosis
 
+def test_build_attempt_diagnosis_includes_install_reference_for_install_source() -> None:
+    diagnosis = _build_attempt_diagnosis(
+        base_diagnosis="install failed",
+        scope_paths=["install_sidar.sh"],
+        scope_error_lines=["failed_command=apt-get install docker"],
+        attempt=1,
+        total_attempts=1,
+        source="install",
+    )
+
+    assert INSTALL_SELF_HEAL_REFERENCE in diagnosis
+    assert MYPY_SELF_HEAL_REFERENCE not in diagnosis
+    assert "bash -n install_sidar.sh" in diagnosis
 
 def test_extract_scope_error_lines_filters_deduplicates_and_limits() -> None:
     log_text = """pkg/a.py:10: error: incompatible types

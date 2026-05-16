@@ -9,6 +9,15 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def _install_script_with_modules() -> str:
+    parts = [Path("install_sidar.sh").read_text(encoding="utf-8")]
+    parts.extend(
+        module.read_text(encoding="utf-8")
+        for module in sorted(Path("scripts/install_modules").glob("*.sh"))
+    )
+    return "\n".join(parts)
+
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
@@ -107,19 +116,115 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
 
 
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script_with_modules()
+    env_module = Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
 
     assert "ensure_env_file_secrets_after_uv_sync" in script
     assert 'ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."' in script
-    assert "ensure_env_file_secrets_after_uv_sync" in script[
-        script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")
+    assert "ensure_env_file_secrets_after_uv_sync" in env_module[
+        env_module.index("install_python_deps()") : env_module.index("# ── 5.1 Pyright")
     ]
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
 
 
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script_with_modules()
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
+
+
+def test_install_sidar_pins_remote_installer_checksums() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "PINNED_REMOTE_SCRIPT_CHECKSUMS=(" in script
+    assert "uv_install|https://releases.astral.sh/github/uv/releases/download/0.11.11/uv-installer.sh" in script
+    assert "3a020f8d69019caca567c9038999d130b0ea85866483caf2042c386cb685aef4" in script
+    assert "ollama_install|https://github.com/ollama/ollama/releases/download/v0.24.0/install.sh" in script
+    assert "25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f" in script
+    assert "pinned_remote_script_field()" in script
+    assert 'pinned_url="$(pinned_remote_script_field "$script_label" url' in script
+    assert 'pinned_sha="$(pinned_remote_script_field "$script_label" sha256' in script
+    assert 'script_url="$pinned_url"' in script
+    assert 'expected_sha="$pinned_sha"' in script
+
+def test_install_sidar_supports_target_dir_override() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'TARGET_DIR="${SIDAR_TARGET_DIR:-$HOME/Sidar}"' in script
+    assert 'SIDAR_TARGET_DIR boş olamaz' in script
+    assert '"~/"*) TARGET_DIR="$HOME/${TARGET_DIR#~/}"' in script
+    assert '*) TARGET_DIR="$(pwd)/$TARGET_DIR"' in script
+    assert 'TARGET_DIR="${TARGET_DIR%/}"' in script
+    assert "SIDAR_TARGET_DIR=/tmp/Sidar" in script
+
+def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'WSL_MEMORY_OVERRIDE_GB="${WSL_MEMORY_GB:-}"' in script
+    assert 'WSL_SWAP_OVERRIDE_GB="${WSL_SWAP_GB:-}"' in script
+    assert 'if [[ "$arg" == --* ]]; then' in script
+    assert '--wsl-memory) PENDING_WSL_OVERRIDE_ARG="memory"' in script
+    assert '--wsl-memory=*) WSL_MEMORY_OVERRIDE_GB="${arg#*=}"' in script
+    assert '--wsl-swap) PENDING_WSL_OVERRIDE_ARG="swap"' in script
+    assert '--wsl-swap=*) WSL_SWAP_OVERRIDE_GB="${arg#*=}"' in script
+    assert "_normalize_wsl_gb_override()" in script
+    assert 'value=$((10#$normalized))' in script
+    assert 'target_memory_gb=$(_normalize_wsl_gb_override "$WSL_MEMORY_OVERRIDE_GB"' in script
+    assert 'target_swap_gb=$(_normalize_wsl_gb_override "$WSL_SWAP_OVERRIDE_GB"' in script
+    assert 'force_replace == "true"' in script
+    assert '"memory" "$target_memory" "$wsl_memory_override_active"' in script
+    assert '"swap" "$target_swap" "$wsl_swap_override_active"' in script
+    assert "--wsl-memory <GB> / --wsl-memory=<GB>" in script
+    assert "WSL_MEMORY_GB=16 / WSL_SWAP_GB=8" in script
+
+def test_install_sidar_parallel_prefetches_docker_images() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "install_parallel_prefetch_enabled()" in script
+    assert "start_docker_image_prefetch_async()" in script
+    assert "wait_for_docker_image_prefetch()" in script
+    assert "cancel_docker_image_prefetch_if_running()" in script
+    assert 'case "${INSTALL_PARALLEL_PREFETCH:-1}"' in script
+    assert "docker_image_prefetch_" in script
+    assert (
+        'COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull '
+        '"${prefetch_services[@]}"'
+    ) in script
+    assert 'start_docker_image_prefetch_async "$APP_RUNTIME_MODE_SELECTED"' in script
+    assert "wait_for_docker_image_prefetch" in script
+    assert "INSTALL_PARALLEL_PREFETCH=1|0" in script
+    assert "cancel_docker_image_prefetch_if_running" in script
+
+def test_install_sidar_triggers_opt_in_auto_heal_on_failure() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "install_auto_heal_on_failure_enabled()" in script
+    assert "start_install_auto_heal_on_failure" in script
+    assert "INSTALL_AUTO_HEAL_ON_FAILURE=1" in script
+    assert "scripts/auto_heal.py" in script
+    assert "--source install" in script
+    assert "--hitl-approve" in script
+    assert 'local hitl_approve="${INSTALL_AUTO_HEAL_HITL_APPROVE:-no}"' in script
+    assert "install_failure_context_" in script
+    assert "install_auto_heal_" in script
+    assert 'local mode="${INSTALL_AUTO_HEAL_MODE:-background}"' in script
+    assert 'trap - ERR' in script
+
+def test_install_sidar_sources_modular_install_components() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    for module_name in [
+        "install_helpers.sh",
+        "gpu_utils.sh",
+        "env_utils.sh",
+        "db_credentials.sh",
+        "ollama_models.sh",
+    ]:
+        assert f'"{module_name}"' in script
+    assert 'source "${INSTALL_MODULE_DIR}/${module_name}"' in script
+    assert "detect_gpu()" in Path("scripts/install_modules/gpu_utils.sh").read_text(encoding="utf-8")
+    assert "setup_python_env()" in Path("scripts/install_modules/env_utils.sh").read_text(encoding="utf-8")
+    assert "harden_database_credentials()" in Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    assert "download_ollama_models()" in Path("scripts/install_modules/ollama_models.sh").read_text(encoding="utf-8")
