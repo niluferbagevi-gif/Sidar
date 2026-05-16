@@ -48,18 +48,18 @@ harden_database_credentials() {
                 generated_password=$(generate_secure_token 24)
                 if [[ -n "$generated_password" ]]; then
                     safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
+                    sed_inplace "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
                     ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
 
                     # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
                     # DATABASE_URL ile senkron kalmalıdır.
                     if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
+                        sed_inplace "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
                     else
                         echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
                     fi
                     if grep -q '^POSTGRES_USER=' "$env_file"; then
-                        sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
+                        sed_inplace "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
                     else
                         echo "POSTGRES_USER=${db_user}" >> "$env_file"
                     fi
@@ -68,7 +68,7 @@ harden_database_credentials() {
                     [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
                     local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
                     if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                        sed -i "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
+                        sed_inplace "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
                     else
                         echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
                     fi
@@ -119,13 +119,13 @@ sync_postgres_env_with_database_url() {
         db_name="${db_name%%\?*}"
 
         # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
-        sed -i '/^POSTGRES_USER=/d' "$env_file"
-        sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-        sed -i '/^POSTGRES_DB=/d' "$env_file"
-        sed -i '/^DATABASE_URL=/d' "$env_file"
+        sed_inplace '/^POSTGRES_USER=/d' "$env_file"
+        sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
+        sed_inplace '/^POSTGRES_DB=/d' "$env_file"
+        sed_inplace '/^DATABASE_URL=/d' "$env_file"
 
         local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
-        sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+        sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
         {
             echo "POSTGRES_USER=${db_user}"
             echo "POSTGRES_PASSWORD=${db_password}"
@@ -148,11 +148,11 @@ write_generated_default_database_url() {
     local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
     local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
 
-    sed -i '/^POSTGRES_USER=/d' "$env_file"
-    sed -i '/^POSTGRES_PASSWORD=/d' "$env_file"
-    sed -i '/^POSTGRES_DB=/d' "$env_file"
-    sed -i '/^DATABASE_URL=/d' "$env_file"
-    sed -i '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
+    sed_inplace '/^POSTGRES_USER=/d' "$env_file"
+    sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
+    sed_inplace '/^POSTGRES_DB=/d' "$env_file"
+    sed_inplace '/^DATABASE_URL=/d' "$env_file"
+    sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
     {
         echo "POSTGRES_USER=sidar"
         echo "POSTGRES_PASSWORD=${generated_password}"
@@ -211,7 +211,7 @@ ensure_rag_vector_backend_pgvector() {
     fi
 
     if [[ "$current_backend" != "pgvector" ]]; then
-        sed -i 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
+        sed_inplace 's|^RAG_VECTOR_BACKEND=.*|RAG_VECTOR_BACKEND=pgvector|' "$env_file"
         ok ".env: RAG_VECTOR_BACKEND pgvector olarak güncellendi."
     fi
 }

@@ -277,6 +277,39 @@ def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
 
 
 
+
+
+def test_install_sidar_uses_portable_sed_inplace_wrapper(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    db_module = Path("scripts/install_modules/db_credentials.sh").read_text(encoding="utf-8")
+    helpers = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    sample = tmp_path / "sample.env"
+    sample.write_text("POSTGRES_PASSWORD=weak\nKEEP=yes\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; sed_inplace "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=strong|" "$2"; cat "$2"',
+            "_",
+            "scripts/install_modules/install_helpers.sh",
+            str(sample),
+        ],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert "sed_inplace()" in helpers
+    assert "sudo_sed_inplace()" in helpers
+    assert "sed_cmd+=(-i ''" in helpers
+    assert "sed_supports_gnu_inplace" in helpers
+    assert "POSTGRES_PASSWORD=strong" in proc.stdout
+    assert "sed -i " not in script
+    assert "sudo sed -E -i" not in script
+    assert "sed_inplace" in db_module
+
 def test_install_sidar_uses_single_runtime_mode_selection() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     combined = _install_script_with_modules()

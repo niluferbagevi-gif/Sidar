@@ -1,5 +1,46 @@
 #!/usr/bin/env bash
 
+
+sed_supports_gnu_inplace() {
+    sed --version >/dev/null 2>&1
+}
+
+sed_inplace() {
+    local extended="false"
+    if [[ "${1:-}" == "-E" ]]; then
+        extended="true"
+        shift
+    fi
+    local expression="$1"
+    local file_path="$2"
+    local -a sed_cmd=(sed)
+    [[ "$extended" == "true" ]] && sed_cmd+=(-E)
+    if sed_supports_gnu_inplace; then
+        sed_cmd+=(-i "$expression" "$file_path")
+    else
+        sed_cmd+=(-i '' "$expression" "$file_path")
+    fi
+    "${sed_cmd[@]}"
+}
+
+sudo_sed_inplace() {
+    local extended="false"
+    if [[ "${1:-}" == "-E" ]]; then
+        extended="true"
+        shift
+    fi
+    local expression="$1"
+    local file_path="$2"
+    local -a sed_cmd=(sudo sed)
+    [[ "$extended" == "true" ]] && sed_cmd+=(-E)
+    if sed_supports_gnu_inplace; then
+        sed_cmd+=(-i "$expression" "$file_path")
+    else
+        sed_cmd+=(-i '' "$expression" "$file_path")
+    fi
+    "${sed_cmd[@]}"
+}
+
 extract_node_major_from_spec() {
     local version_spec="${1:-}"
     local extracted_major=""

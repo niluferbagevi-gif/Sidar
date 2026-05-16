@@ -2307,7 +2307,7 @@ install_system_dependencies() {
             info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
             local src_file=""
             for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
+                sudo_sed_inplace -E \
                     "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
                     "$src_file"
             done
@@ -2867,7 +2867,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=true/' "$env_file"
                 else
                     echo "ENABLE_MULTIMODAL=true" >> "$env_file"
                 fi
@@ -2902,7 +2902,7 @@ ASOUNDRC
             local env_file="$SCRIPT_DIR/.env"
             if [[ -f "$env_file" ]]; then
                 if grep -q "^ENABLE_MULTIMODAL=" "$env_file"; then
-                    sed -i 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
+                    sed_inplace 's/^ENABLE_MULTIMODAL=.*/ENABLE_MULTIMODAL=false/' "$env_file"
                 fi
             fi
         else
@@ -3067,7 +3067,7 @@ ASOUNDRC
 memory=__SIDAR_WSL_MEMORY__
 swap=__SIDAR_WSL_SWAP__
 WSLCFG
-            sed -i "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
+            sed_inplace "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
             ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
@@ -3240,7 +3240,7 @@ collect_api_keys_interactive() {
         val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3571,7 +3571,7 @@ ensure_auto_secrets() {
     _write_secret() {
         local key="$1" val="$2"
         if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${key}=${val}|" "$env_file"
+            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
         else
             echo "${key}=${val}" >> "$env_file"
         fi
@@ -3698,12 +3698,12 @@ ensure_local_service_host_defaults() {
     local env_file="$1"
     # Lokal kurulumda Docker hostname yerine localhost kullan
     if grep -q '^REDIS_URL=redis://redis:6379/0' "$env_file"; then
-        sed -i 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
+        sed_inplace 's|^REDIS_URL=redis://redis:6379/0|REDIS_URL=redis://localhost:6379/0|' "$env_file"
         ok ".env: REDIS_URL lokal ortam için localhost olarak güncellendi."
     fi
 
     if grep -q '^OTEL_EXPORTER_ENDPOINT=http://jaeger:' "$env_file"; then
-        sed -i 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
+        sed_inplace 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
         ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
 }
@@ -3722,7 +3722,7 @@ ensure_sidar_env_default() {
     fi
 
     if [[ "$current_env" == "production" ]]; then
-        sed -i 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
+        sed_inplace 's/^SIDAR_ENV=.*/SIDAR_ENV=development/' "$env_file"
         warn ".env: SIDAR_ENV=production varsayılanı development olarak düzeltildi (üretimde manuel production yapın)."
     fi
 }
@@ -3773,7 +3773,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if grep -qE '^SIDAR_ENV=' "$env_file"; then
-        sed -i "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
+        sed_inplace "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
     else
         echo "SIDAR_ENV=$selected_env" >> "$env_file"
     fi
@@ -4006,12 +4006,12 @@ setup_env_file() {
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
-            sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
-            sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
+            sed_inplace 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
 
             # Docker için GPU modunu ön tanımlı yap
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
             fi
@@ -4019,9 +4019,9 @@ setup_env_file() {
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
-            sed -i 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
+                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
@@ -4032,14 +4032,14 @@ setup_env_file() {
     # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
         if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
-            sed -i 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
+            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
         else
             echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
         fi
 
         if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
             if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed -i 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
+                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
             fi
         else
             echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
