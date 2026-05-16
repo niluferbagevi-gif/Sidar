@@ -108,7 +108,13 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Kurulum eski paket/tool fallback kullanmaz; dev extra dahil standart akışla 'uv sync --frozen --all-extras' çalıştırın."
+    warn "Pyright LSP proje ortamında bulunamadı; uv tool install pyright fallback deneniyor."
+    if uv tool install pyright >/dev/null 2>&1 && command -v pyright-langserver >/dev/null 2>&1; then
+        ok "Pyright LSP uv tool fallback ile hazır: $(command -v pyright-langserver)"
+        return
+    fi
+
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya fallback için 'uv tool install pyright' komutunu doğrulayın."
 }
 
 select_pytorch_cuda_wheel_tag() {

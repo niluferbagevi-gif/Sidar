@@ -392,13 +392,36 @@ select = [
   "B",
   "UP",
   "ASYNC",
+  "D",
 ]
 ignore = [
   "E501",
+  # D100-D107 eksik docstring kuralları kademeli dokümantasyon kampanyasına ayrıldı;
+  # agent rol kontratları şimdilik tests/unit/agent/test_builtin_role_contracts.py ile korunur.
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+  # Mevcut docstring stili geçişte korunur; yeni dokümantasyon Google convention'a uymalıdır.
+  "D200",
+  "D202",
+  "D205",
+  "D209",
+  "D212",
+  "D403",
+  "D415",
+  "D417",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E402"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [

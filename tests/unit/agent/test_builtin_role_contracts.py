@@ -128,6 +128,37 @@ def test_builtin_role_decorators_explicitly_mark_is_builtin_true() -> None:
         assert _extract_is_builtin_from_role_file(role_file) is True
 
 
+def _extract_role_class_docstrings(role_file: Path) -> dict[str, str]:
+    tree = ast.parse(role_file.read_text(encoding="utf-8"))
+    return {
+        node.name: ast.get_docstring(node) or ""
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name.endswith("Agent")
+    }
+
+
+def test_builtin_role_classes_keep_documented_agent_contracts() -> None:
+    role_dir = _repo_root() / "agent" / "roles"
+    expected_classes = {
+        "CoderAgent",
+        "ResearcherAgent",
+        "ReviewerAgent",
+        "QAAgent",
+        "CoverageAgent",
+        "PoyrazAgent",
+    }
+
+    documented_classes: dict[str, str] = {}
+    for role_file in role_dir.glob("*_agent.py"):
+        documented_classes.update(_extract_role_class_docstrings(role_file))
+
+    assert set(documented_classes) == expected_classes
+    for class_name, docstring in documented_classes.items():
+        assert (
+            len(docstring.split()) >= 6
+        ), f"{class_name} needs a meaningful role contract docstring"
+
+
 def test_agents_documentation_covers_specialized_roles_and_interactions() -> None:
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
@@ -200,7 +231,9 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
     )
     assert "run_mutation_quality_gate" in script
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED" in script
-    assert 'AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-8}"' in script
+    assert (
+        'AUTONOMOUS_MUTATION_MAX_CHILDREN="${AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN:-8}"' in script
+    )
     assert "uv run --with mutmut mutmut run" in script
     assert "Coverage hedefi sağlandı fakat mutasyon kalite kapısı başarısız oldu" in script
     assert "Mevcut coverage artefaktları bulundu" in script

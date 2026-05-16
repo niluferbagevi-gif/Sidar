@@ -40,3 +40,13 @@ def test_legacy_setup_cfg_has_no_conflicting_python_requires():
 
     raw_text = setup_cfg.read_text()
     assert not re.search(r"python_requires\s*=\s*[^\n]*3\.12", raw_text)
+
+
+def test_ruff_enables_pydocstyle_incrementally():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+
+    lint_config = pyproject["tool"]["ruff"]["lint"]
+    assert "D" in lint_config["select"]
+    assert pyproject["tool"]["ruff"]["lint"]["pydocstyle"]["convention"] == "google"
+    for transitional_ignore in ("D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"):
+        assert transitional_ignore in lint_config["ignore"]

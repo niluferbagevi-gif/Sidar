@@ -139,15 +139,10 @@ def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut()
 
     assert (
         "CoverageAgent exclude listesi: "
-        "AUTONOMOUS_LOOP_EXCLUDE_FILES='web_server.py,main.py,gui_launcher.py,cli.py'"
-        in output
+        "AUTONOMOUS_LOOP_EXCLUDE_FILES='web_server.py,main.py,gui_launcher.py,cli.py'" in output
     )
-    assert (
-        "Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=true; max_children=8"
-        in output
-    )
+    assert "Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=true; max_children=8" in output
     assert "uv run --with mutmut mutmut run --max-children 8" in output
-
 
 
 def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
