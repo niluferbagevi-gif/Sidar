@@ -179,3 +179,45 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
     assert "Yedek stash korunuyor" in recovery_block
     assert "git stash apply ${INSTALL_STASH_REF}" in recovery_block
     assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script
+
+
+def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    main_body = script[script.index("main() {") : script.index('\n}\n\nmain "$@"')]
+
+    expected_modules = (
+        "phases/01_context.sh",
+        "phases/02_repo.sh",
+        "phases/03_runtime.sh",
+        "phases/04_workspace.sh",
+        "phases/05_frontend.sh",
+        "phases/06_services.sh",
+        "phases/07_finish.sh",
+    )
+    for module in expected_modules:
+        assert module in script
+        assert Path("scripts/install_modules", module).is_file()
+
+    for phase_call in (
+        "sidar_phase_initialize_context",
+        "sidar_phase_handle_early_exit",
+        "sidar_phase_bootstrap_repo_system",
+        "sidar_phase_runtime_prerequisites",
+        "sidar_phase_workspace_config",
+        "sidar_phase_frontend_assets",
+        "sidar_phase_local_migrations_and_models",
+        "sidar_phase_services_and_validation",
+        "sidar_phase_finish",
+    ):
+        assert phase_call in main_body
+
+    for legacy_inline_call in (
+        "install_system_dependencies",
+        "sync_repo",
+        "setup_python_env",
+        "setup_env_file",
+        "run_migrations",
+        "launch_docker_services",
+        "print_summary",
+    ):
+        assert legacy_inline_call not in main_body

@@ -101,6 +101,31 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
+
+INSTALL_PHASE_MODULES=(
+    "phases/01_context.sh"
+    "phases/02_repo.sh"
+    "phases/03_runtime.sh"
+    "phases/04_workspace.sh"
+    "phases/05_frontend.sh"
+    "phases/06_services.sh"
+    "phases/07_finish.sh"
+)
+
+load_install_phase_modules() {
+    local module_rel=""
+    local module_path=""
+    for module_rel in "${INSTALL_PHASE_MODULES[@]}"; do
+        module_path="${INSTALL_MODULE_DIR}/${module_rel}"
+        if [[ ! -f "$module_path" ]]; then
+            fail "Kurulum faz modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+        fi
+        # shellcheck disable=SC1090
+        source "$module_path"
+    done
+}
+
+load_install_phase_modules
 # END_BUNDLE_MODULES
 
 run_with_progress_hint() {
@@ -5446,100 +5471,18 @@ run_install_subcommand_if_requested() {
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
 main() {
-    banner
-    report_repo_lookup_context
-    detect_environment
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
-        if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
-            info "Çevrimdışı/air-gapped mod etkin. Paket kaynağı: $OFFLINE_PACKAGES_DIR"
-            verify_offline_bundle_manifest "$OFFLINE_PACKAGES_DIR"
-        else
-            fail "Çevrimdışı mod etkin ancak offline_packages dizini bulunamadı."
-        fi
-    fi
-
-    if [[ "$INSTALL_SUBCOMMAND" == "doctor" ]]; then
-        run_doctor_phase
+    sidar_phase_initialize_context
+    if sidar_phase_handle_early_exit; then
         return
     fi
 
-    ensure_noninteractive_sudo_ready
-
-    if run_install_subcommand_if_requested; then
-        relocate_log_file_if_needed
-        cleanup_bootstrap_script_copy
-        return
-    fi
-
-    if [[ "$INSTALL_KUBERNETES" == true ]]; then
-        info "--kubernetes/--helm modu aktif: yerel bağımlılık kurulumu atlanacak, Helm dağıtımı yapılacak."
-        deploy_with_helm
-        return
-    fi
-
-    # Kritik sıra:
-    # 1) Sistem bağımlılıkları (git/curl vb.)
-    # 2) Repo senkronizasyonu (git clone/pull)
-    # 3) Ön koşul doğrulaması (uv/Python/FFmpeg/Docker/Ollama)
-    install_system_dependencies
-    sync_repo
-    cd "$SCRIPT_DIR"
-    ensure_prerequisites
-    select_runtime_mode_early
-    detect_gpu
-    setup_nvidia_docker
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # uv-venv akışı: önce uv kur/güncelle, sonra venv oluştur
-        setup_uv
-        setup_python_env
-        install_python_deps
-        install_pyright_lsp_tool
-        verify_torch_cuda
-    else
-        info "Tam Docker modu: lokal Python/Conda ortam kurulumu atlanıyor."
-    fi
-    create_directories
-    # VS Code ayarları, Python yorumlayıcı yolu belli olduktan sonra erken hazırlanabilir.
-    setup_vscode_workspace
-    setup_env_file
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        setup_react_frontend
-        install_playwright_browsers
-    else
-        info "Tam Docker modu: lokal React build ve Playwright kurulumu atlanıyor."
-    fi
-    setup_shell_activation_shortcut
-    setup_wsl2_audio
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
-        prepare_docker_for_migrations
-        # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
-        run_migrations
-        # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
-        # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
-        # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
-        download_ollama_models
-    else
-        MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
-    fi
-    # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
-    launch_docker_services
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
-        run_smoke_tests
-        run_test_artifact_audit
-    else
-        SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
-    fi
-    print_summary
-    relocate_log_file_if_needed
-    cleanup_bootstrap_script_copy
-    prompt_post_install_sidar_env_mode
-    # En son adım: IDE başlatma onayı
-    launch_ide
+    sidar_phase_bootstrap_repo_system
+    sidar_phase_runtime_prerequisites
+    sidar_phase_workspace_config
+    sidar_phase_frontend_assets
+    sidar_phase_local_migrations_and_models
+    sidar_phase_services_and_validation
+    sidar_phase_finish
 }
 
 main "$@"
