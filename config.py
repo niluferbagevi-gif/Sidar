@@ -32,6 +32,11 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
+# Çalışma zamanında yüklenen .env dosyalarının kronolojik, önceliklendirilmiş listesi.
+# Her giriş: {"priority": int, "label": str, "path": Path, "override": bool}.
+# Yüksek priority değeri = daha geç yüklenen ve dolayısıyla baskın olan dosya.
+LOADED_ENV_FILES: list[dict[str, Any]] = []
+
 
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
@@ -41,15 +46,67 @@ def _resolve_dotenv_path(raw_path: str) -> Path:
     return dotenv_path
 
 
-def _load_dotenv_if_exists(raw_path: str, *, override: bool) -> Path | None:
+def _record_loaded_env(label: str, path: Path, *, priority: int, override: bool) -> None:
+    """Yüklenen .env dosyasını izleme listesine ekler (yeniden yükleme idempotent)."""
+    entry = {"priority": priority, "label": label, "path": path, "override": override}
+    LOADED_ENV_FILES.append(entry)
+
+
+def _load_dotenv_if_exists(
+    raw_path: str,
+    *,
+    override: bool,
+    label: str | None = None,
+    priority: int | None = None,
+) -> Path | None:
     """Load a dotenv file when it exists and return the resolved path."""
     if not raw_path.strip():
         return None
     dotenv_path = _resolve_dotenv_path(raw_path.strip())
     if dotenv_path.exists():
         load_dotenv(dotenv_path=dotenv_path, override=override)
+        if label is not None and priority is not None:
+            _record_loaded_env(label, dotenv_path, priority=priority, override=override)
         return dotenv_path
     return None
+
+
+def get_env_loading_report() -> dict[str, Any]:
+    """Yapılandırma yüklemesinin görünür hale getirildiği denetim raporu döndürür.
+
+    Rapor hem doctor hem de log diagnostics tarafında kullanılır:
+    - ``files``: Önceliklendirilmiş, yüklenmiş .env dosyalarının listesi.
+    - ``override_chain``: Sadece dosya etiketleri (örn. "base", "specific", "dotenv_file", "sidar_keys").
+    - ``sidar_env``: Aktif SIDAR_ENV (varsa) — boşsa None.
+    - ``missing_optional``: Beklenen ama bulunamayan opsiyonel dosyalar.
+    """
+    files_payload = [
+        {
+            "priority": entry["priority"],
+            "label": entry["label"],
+            "path": str(entry["path"]),
+            "override": entry["override"],
+        }
+        for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])
+    ]
+    override_chain = [entry["label"] for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])]
+    missing_optional: list[dict[str, str]] = []
+    explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
+    if explicit_dotenv:
+        resolved = _resolve_dotenv_path(explicit_dotenv)
+        if not resolved.exists():
+            missing_optional.append({"label": "dotenv_file", "path": str(resolved)})
+    sidar_keys = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    if sidar_keys:
+        resolved_keys = _resolve_dotenv_path(sidar_keys)
+        if not resolved_keys.exists() and "sidar_keys" not in override_chain:
+            missing_optional.append({"label": "sidar_keys", "path": str(resolved_keys)})
+    return {
+        "files": files_payload,
+        "override_chain": override_chain,
+        "sidar_env": os.getenv("SIDAR_ENV", "").strip() or None,
+        "missing_optional": missing_optional,
+    }
 
 
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
@@ -59,12 +116,14 @@ sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 base_env_path = BASE_DIR / ".env"
 if base_env_path.exists():
     load_dotenv(dotenv_path=base_env_path)
+    _record_loaded_env("base", base_env_path, priority=10, override=False)
 
 # 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
     if specific_env_path.exists():
         load_dotenv(dotenv_path=specific_env_path, override=True)
+        _record_loaded_env("specific", specific_env_path, priority=20, override=True)
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}
@@ -81,12 +140,12 @@ elif not base_env_path.exists():
 #    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
 #    (örn: test ortamında DOTENV_FILE=.env.test veya DOTENV_FILE=~/.sidar_keys.env)
 _explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-_load_dotenv_if_exists(_explicit_dotenv, override=True)
+_load_dotenv_if_exists(_explicit_dotenv, override=True, label="dotenv_file", priority=30)
 
 # 5. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
 #    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
 _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-_load_dotenv_if_exists(_sidar_keys_file, override=True)
+_load_dotenv_if_exists(_sidar_keys_file, override=True, label="sidar_keys", priority=40)
 
 ENV_PATH = base_env_path
 
@@ -369,6 +428,20 @@ _DEPENDENCY_AUTO = object()
 
 if ENV_PATH.exists():
     logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
+
+# Yüklenen tüm .env dosyalarını öncelik sırasına göre logla — debugging için
+# hangi dosyaların hangi sırayla ezildiği şeffaf olmalı.
+if LOADED_ENV_FILES:
+    _chain = " > ".join(
+        f"{entry['label']}={entry['path']}"
+        for entry in sorted(LOADED_ENV_FILES, key=lambda e: e["priority"])
+    )
+    logger.info("ℹ️  .env yükleme zinciri (düşükten yükseğe öncelik): %s", _chain)
+else:
+    logger.warning(
+        "⚠️  Hiçbir .env dosyası yüklenmedi. Varsayılan değerler kullanılacak; "
+        "kritik anahtarlar (API_KEY, JWT_SECRET_KEY) eksik olabilir."
+    )
 
 # ═══════════════════════════════════════════════════════════════
 # SANDBOX KAYNAK KOTALARI (Docker/cgroups)

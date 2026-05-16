@@ -1675,3 +1675,144 @@ def test_get_prefixed_env_falls_back_to_legacy_then_default(monkeypatch):
 
     monkeypatch.setenv("LEGACY_KEY", "legacy-only")
     assert config.get_prefixed_env("SIDAR_KEY", "LEGACY_KEY", "fallback") == "legacy-only"
+
+
+# ─── .env yükleme zinciri (LOADED_ENV_FILES) testleri ────────────────────────
+
+
+def test_load_dotenv_if_exists_records_loaded_entry(monkeypatch, tmp_path):
+    """label/priority verildiğinde dosya yüklemesi izleme listesine eklenmeli."""
+    fake_env = tmp_path / "tracked.env"
+    fake_env.write_text("FOO=bar\n", encoding="utf-8")
+
+    monkeypatch.setattr(config, "LOADED_ENV_FILES", [])
+    monkeypatch.setattr("config.load_dotenv", lambda **_kwargs: True)
+
+    config._load_dotenv_if_exists(
+        str(fake_env), override=True, label="custom", priority=99
+    )
+
+    assert len(config.LOADED_ENV_FILES) == 1
+    entry = config.LOADED_ENV_FILES[0]
+    assert entry["label"] == "custom"
+    assert entry["priority"] == 99
+    assert entry["override"] is True
+    assert entry["path"] == fake_env
+
+
+def test_load_dotenv_if_exists_skips_record_when_label_missing(monkeypatch, tmp_path):
+    """label/priority verilmediğinde izleme listesine ekleme yapılmamalı."""
+    fake_env = tmp_path / "untracked.env"
+    fake_env.write_text("BAZ=qux\n", encoding="utf-8")
+
+    monkeypatch.setattr(config, "LOADED_ENV_FILES", [])
+    monkeypatch.setattr("config.load_dotenv", lambda **_kwargs: True)
+
+    config._load_dotenv_if_exists(str(fake_env), override=False)
+    assert config.LOADED_ENV_FILES == []
+
+
+def test_get_env_loading_report_returns_chain_and_missing_optional(monkeypatch, tmp_path):
+    """Rapor sıralı zinciri ve eksik opsiyonel dosyaları içermeli."""
+    monkeypatch.setattr(
+        config,
+        "LOADED_ENV_FILES",
+        [
+            {"priority": 20, "label": "specific", "path": tmp_path / ".env.dev", "override": True},
+            {"priority": 10, "label": "base", "path": tmp_path / ".env", "override": False},
+        ],
+    )
+    missing_dotenv = tmp_path / "missing.env"
+    monkeypatch.setenv("DOTENV_FILE", str(missing_dotenv))
+    missing_keys = tmp_path / "no_such_keys.env"
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(missing_keys))
+    monkeypatch.setenv("SIDAR_ENV", "development")
+
+    report = config.get_env_loading_report()
+
+    assert report["override_chain"] == ["base", "specific"]
+    assert report["sidar_env"] == "development"
+    assert report["files"][0]["priority"] == 10
+    assert report["files"][1]["priority"] == 20
+    labels_missing = {entry["label"] for entry in report["missing_optional"]}
+    assert "dotenv_file" in labels_missing
+    assert "sidar_keys" in labels_missing
+
+
+def test_get_env_loading_report_does_not_warn_when_sidar_keys_loaded(monkeypatch, tmp_path):
+    """SIDAR_KEYS_FILE zaten yüklenmişse missing_optional listesine eklenmemeli."""
+    sidar_keys_path = tmp_path / "keys.env"
+    monkeypatch.setattr(
+        config,
+        "LOADED_ENV_FILES",
+        [
+            {"priority": 40, "label": "sidar_keys", "path": sidar_keys_path, "override": True},
+        ],
+    )
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(sidar_keys_path))
+
+    report = config.get_env_loading_report()
+    assert report["missing_optional"] == []
+    assert report["override_chain"] == ["sidar_keys"]
+
+
+def test_get_env_loading_report_skips_existing_dotenv_in_missing_list(monkeypatch, tmp_path):
+    """DOTENV_FILE mevcut bir dosyaya işaret ediyorsa missing_optional listesine eklenmemeli."""
+    existing = tmp_path / "exists.env"
+    existing.write_text("X=1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        config,
+        "LOADED_ENV_FILES",
+        [{"priority": 30, "label": "dotenv_file", "path": existing, "override": True}],
+    )
+    monkeypatch.setenv("DOTENV_FILE", str(existing))
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+
+    report = config.get_env_loading_report()
+    assert report["missing_optional"] == []
+
+
+def test_get_env_loading_report_empty_when_nothing_loaded(monkeypatch):
+    """Hiç dosya yüklenmemişse files boş, sidar_env None dönmeli."""
+    monkeypatch.setattr(config, "LOADED_ENV_FILES", [])
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+
+    report = config.get_env_loading_report()
+    assert report["files"] == []
+    assert report["override_chain"] == []
+    assert report["sidar_env"] is None
+    assert report["missing_optional"] == []
+
+
+def test_module_reload_records_env_chain_with_dotenv_file(monkeypatch, tmp_path):
+    """DOTENV_FILE'a işaret eden gerçek bir dosya varsa LOADED_ENV_FILES'da görünmeli."""
+    dotenv_path = tmp_path / "tracked.env"
+    dotenv_path.write_text("SIDAR_TEST_TRACK=1\n", encoding="utf-8")
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setenv("DOTENV_FILE", str(dotenv_path))
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+
+    reloaded = importlib.reload(config)
+    labels = [entry["label"] for entry in reloaded.LOADED_ENV_FILES]
+    assert "dotenv_file" in labels, f"expected dotenv_file in {labels}"
+    dotenv_entry = next(e for e in reloaded.LOADED_ENV_FILES if e["label"] == "dotenv_file")
+    assert dotenv_entry["path"] == dotenv_path
+    assert dotenv_entry["override"] is True
+
+
+def test_module_reload_records_sidar_keys_with_priority(monkeypatch, tmp_path):
+    """SIDAR_KEYS_FILE yüklemesi en yüksek öncelikle (40) kaydedilmeli."""
+    keys_path = tmp_path / "keys.env"
+    keys_path.write_text("OPENAI_API_KEY=test\n", encoding="utf-8")
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_path))
+
+    reloaded = importlib.reload(config)
+    sidar_keys_entries = [e for e in reloaded.LOADED_ENV_FILES if e["label"] == "sidar_keys"]
+    assert sidar_keys_entries, "sidar_keys not recorded"
+    assert sidar_keys_entries[0]["priority"] == 40
+    assert sidar_keys_entries[0]["path"] == keys_path
