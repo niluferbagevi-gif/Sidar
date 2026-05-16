@@ -200,8 +200,11 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "lint: lint-shell" in makefile
     assert "install_sidar.sh" in makefile
     assert "scripts/install_modules/utils/*.sh" in makefile
-    assert "shellcheck" in makefile
+    assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
+    assert "sudo apt-get install -y bats" in ci_workflow
+    assert "sudo apt-get install -y shellcheck" not in ci_workflow
+    assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index("make lint")
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
 

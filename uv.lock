@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = "==3.11.*"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -3215,6 +3215,15 @@ wheels = [
 ]
 
 [[package]]
+name = "shellcheck-py"
+version = "0.10.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/ad/b96c0bc2e740797770307065464780eaeb1ab3eaa2bc4fbddaa8cfbba2ea/shellcheck_py-0.10.0.1.tar.gz", hash = "sha256:390826b340b8c19173922b0da5ef7b66ef34d4d087dc48aad3e01f7e77e164d9", size = 3071, upload-time = "2024-03-17T15:15:39.409Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/5c/ca7c7440dc25591961a8c6544468d3c987e2a84cb832a0f8b10e699e43b6/shellcheck_py-0.10.0.1-py2.py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c1c266f7f54cd286057c592ead3095f93d123acdcabf048879a7d8900c3aac7b", size = 3647494, upload-time = "2024-03-17T15:20:41.627Z" },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3285,6 +3294,7 @@ dependencies = [
     { name = "ruff", marker = "sys_platform == 'linux'" },
     { name = "safety", marker = "sys_platform == 'linux'" },
     { name = "sentence-transformers", marker = "sys_platform == 'linux'" },
+    { name = "shellcheck-py", marker = "sys_platform == 'linux'" },
     { name = "sqlalchemy", marker = "sys_platform == 'linux'" },
     { name = "starlette", marker = "sys_platform == 'linux'" },
     { name = "testcontainers", marker = "sys_platform == 'linux'" },
@@ -3349,6 +3359,7 @@ all = [
     { name = "safety", marker = "sys_platform == 'linux'" },
     { name = "selenium", marker = "sys_platform == 'linux'" },
     { name = "sentence-transformers", marker = "sys_platform == 'linux'" },
+    { name = "shellcheck-py", marker = "sys_platform == 'linux'" },
     { name = "slack-sdk", marker = "sys_platform == 'linux'" },
     { name = "speechrecognition", marker = "sys_platform == 'linux'" },
     { name = "testcontainers", marker = "sys_platform == 'linux'" },
@@ -3399,6 +3410,7 @@ dev = [
     { name = "respx", marker = "sys_platform == 'linux'" },
     { name = "ruff", marker = "sys_platform == 'linux'" },
     { name = "safety", marker = "sys_platform == 'linux'" },
+    { name = "shellcheck-py", marker = "sys_platform == 'linux'" },
     { name = "testcontainers", marker = "sys_platform == 'linux'" },
     { name = "types-beautifulsoup4", marker = "sys_platform == 'linux'" },
     { name = "types-bleach", marker = "sys_platform == 'linux'" },
@@ -3586,6 +3598,8 @@ requires-dist = [
     { name = "selenium", marker = "extra == 'browser'", specifier = "~=4.29.0" },
     { name = "sentence-transformers", specifier = ">=3.0.1,<6.0.0" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3.0.1,<6.0.0" },
+    { name = "shellcheck-py", specifier = ">=0.10.0.1,<0.11.0" },
+    { name = "shellcheck-py", marker = "extra == 'dev'", specifier = ">=0.10.0.1,<0.11.0" },
     { name = "sidar", extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "dev"], marker = "extra == 'all'" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = "~=3.33.0" },
     { name = "speechrecognition", marker = "extra == 'voice'", specifier = "~=3.10.4" },

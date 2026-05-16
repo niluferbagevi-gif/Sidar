@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-SHELLCHECK ?= shellcheck
+SHELLCHECK ?= uv run shellcheck
 BATS ?= bats
 
 SHELLCHECK_FILES := \
