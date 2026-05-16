@@ -1605,6 +1605,9 @@ CLI_ENV_RAW=""
 CLI_RESET_POSTGRES_VOLUMES="ask"
 CLI_START_DOCKER_SERVICES="ask"
 CLI_OPEN_VSCODE="ask"
+WSL_MEMORY_OVERRIDE_GB="${WSL_MEMORY_GB:-}"
+WSL_SWAP_OVERRIDE_GB="${WSL_SWAP_GB:-}"
+PENDING_WSL_OVERRIDE_ARG=""
 SILENT_MODE=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
@@ -1626,6 +1629,18 @@ ENV_API_KEYS_FILLED=0
 ENV_API_KEYS_MISSING=()
 INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
+    if [[ -n "$PENDING_WSL_OVERRIDE_ARG" ]]; then
+        if [[ "$arg" == --* ]]; then
+            fail "${PENDING_WSL_OVERRIDE_ARG} için değer eksik. Örnek: --wsl-memory 16 veya --wsl-swap 8"
+        fi
+        case "$PENDING_WSL_OVERRIDE_ARG" in
+            memory) WSL_MEMORY_OVERRIDE_GB="$arg" ;;
+            swap) WSL_SWAP_OVERRIDE_GB="$arg" ;;
+        esac
+        PENDING_WSL_OVERRIDE_ARG=""
+        continue
+    fi
+
     case "$arg" in
         --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ; INSTALL_DEV=true ;;
         --upgrade-lock) UPGRADE_LOCK=true ;;
@@ -1641,6 +1656,10 @@ for arg in "$@"; do
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
         --mode=*) CLI_MODE_RAW="${arg#*=}" ;;
         --env=*) CLI_ENV_RAW="${arg#*=}" ;;
+        --wsl-memory) PENDING_WSL_OVERRIDE_ARG="memory" ;;
+        --wsl-memory=*) WSL_MEMORY_OVERRIDE_GB="${arg#*=}" ;;
+        --wsl-swap) PENDING_WSL_OVERRIDE_ARG="swap" ;;
+        --wsl-swap=*) WSL_SWAP_OVERRIDE_GB="${arg#*=}" ;;
         --reset-db) CLI_RESET_POSTGRES_VOLUMES="true" ;;
         --no-reset-db) CLI_RESET_POSTGRES_VOLUMES="false" ;;
         --start-services) CLI_START_DOCKER_SERVICES="true" ;;
@@ -1664,7 +1683,7 @@ for arg in "$@"; do
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
-            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
+            echo "Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--wsl-memory=<GB>] [--wsl-swap=<GB>] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]"
             echo "  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır"
             echo "  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı"
@@ -1690,6 +1709,8 @@ for arg in "$@"; do
             echo "  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)"
             echo "  --mode=local|docker  Çalışma modu seçimini doğrudan belirle"
             echo "  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle"
+            echo "  --wsl-memory <GB> / --wsl-memory=<GB>  WSL2 .wslconfig memory değerini dışarıdan belirle (örn. 16 veya 16GB)"
+            echo "  --wsl-swap <GB> / --wsl-swap=<GB>  WSL2 .wslconfig swap değerini dışarıdan belirle (örn. 8 veya 8GB; 0 kapatır)"
             echo "  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle"
             echo "  --start-services / --no-start-services  Docker servis başlatma kararını belirle"
             echo "  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle"
@@ -1707,6 +1728,7 @@ for arg in "$@"; do
             echo "    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)"
             echo "    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)"
             echo "    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)"
+            echo "    WSL_MEMORY_GB=16 / WSL_SWAP_GB=8  WSL2 .wslconfig memory/swap override değerleri"
             echo "    INSTALL_AUTO_HEAL_ON_FAILURE=1  Kurulum hatasında scripts.auto_heal köprüsünü log ile tetikle"
             echo "    INSTALL_AUTO_HEAL_MODE=background|foreground  Self-heal çalışma modu (varsayılan: background)"
             echo "    INSTALL_AUTO_HEAL_HITL_APPROVE=no|yes  Riskli planlarda HITL kararı (varsayılan: no)"
@@ -1714,9 +1736,13 @@ for arg in "$@"; do
             echo "    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası"
             exit 0
             ;;
-        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
+        *)      warn "Bilinmeyen argüman: $arg (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --wsl-memory=... | --wsl-swap=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)"; exit 1 ;;
     esac
 done
+
+if [[ -n "$PENDING_WSL_OVERRIDE_ARG" ]]; then
+    fail "${PENDING_WSL_OVERRIDE_ARG} için değer eksik. Örnek: --wsl-memory 16 veya --wsl-swap 8"
+fi
 
 normalize_bool() {
     local value="${1:-}"
@@ -2724,6 +2750,27 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    _normalize_wsl_gb_override() {
+        local raw="${1:-}"
+        local label="${2:-WSL2 değer}"
+        local min_value="${3:-0}"
+        local max_value="${4:-256}"
+        local normalized=""
+        local value=0
+
+        normalized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+        normalized="${normalized%gb}"
+        normalized="${normalized%g}"
+        if [[ ! "$normalized" =~ ^[0-9]+$ ]]; then
+            fail "${label} geçersiz: '${raw}'. GB cinsinden pozitif tam sayı verin (örn. 16 veya 16GB)."
+        fi
+        value=$((10#$normalized))
+        if (( value < min_value || value > max_value )); then
+            fail "${label} desteklenen aralık dışında: ${value}GB (izin verilen: ${min_value}-${max_value}GB)."
+        fi
+        echo "$value"
+    }
+
     _detect_host_ram_gb() {
         local total_kb="0"
         if [[ -r /proc/meminfo ]]; then
@@ -2761,20 +2808,36 @@ ASOUNDRC
     target_swap_gb=$((host_ram_gb / 2))
     target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
 
+    local wsl_memory_override_active=false
+    local wsl_swap_override_active=false
+    if [[ -n "${WSL_MEMORY_OVERRIDE_GB:-}" ]]; then
+        target_memory_gb=$(_normalize_wsl_gb_override "$WSL_MEMORY_OVERRIDE_GB" "WSL2 memory override" 1 256)
+        wsl_memory_override_active=true
+    fi
+    if [[ -n "${WSL_SWAP_OVERRIDE_GB:-}" ]]; then
+        target_swap_gb=$(_normalize_wsl_gb_override "$WSL_SWAP_OVERRIDE_GB" "WSL2 swap override" 0 256)
+        wsl_swap_override_active=true
+    fi
+
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
-    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+    if [[ "$wsl_memory_override_active" == true || "$wsl_swap_override_active" == true ]]; then
+        info "WSL2 .wslconfig override hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM algısı: ${host_ram_gb}GB)."
+    else
+        info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+    fi
 
     # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
-    # Değer zaten varsa korur, yinelenen satırları temizler.
+    # Override verilmediyse mevcut değeri korur, override verilirse hedef değere çeker.
     _ensure_wsl2_key_once() {
         local cfg_file="$1"
         local cfg_key="$2"
         local cfg_value="$3"
+        local force_replace="${4:-false}"
         local tmp_file
         tmp_file=$(mktemp)
 
-        awk -v key="$cfg_key" -v value="$cfg_value" '
+        awk -v key="$cfg_key" -v value="$cfg_value" -v force_replace="$force_replace" '
             BEGIN { in_wsl2=0; seen_key=0 }
             {
                 if ($0 ~ /^\[.*\]$/) {
@@ -2789,7 +2852,11 @@ ASOUNDRC
 
                 if (in_wsl2 && $0 ~ ("^" key "=")) {
                     if (!seen_key) {
-                        print
+                        if (force_replace == "true") {
+                            print key "=" value
+                        } else {
+                            print
+                        }
                         seen_key=1
                     }
                     next
@@ -2835,7 +2902,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory" "$wsl_memory_override_active"; then
                 ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                 changed=true
             fi
@@ -2854,7 +2921,7 @@ WSLCFG
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
+            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap" "$wsl_swap_override_active"; then
                 ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                 changed=true
             fi

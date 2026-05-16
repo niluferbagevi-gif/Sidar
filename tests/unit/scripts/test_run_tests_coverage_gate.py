@@ -135,6 +135,26 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
+def test_install_sidar_supports_wsl_memory_and_swap_overrides() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'WSL_MEMORY_OVERRIDE_GB="${WSL_MEMORY_GB:-}"' in script
+    assert 'WSL_SWAP_OVERRIDE_GB="${WSL_SWAP_GB:-}"' in script
+    assert 'if [[ "$arg" == --* ]]; then' in script
+    assert '--wsl-memory) PENDING_WSL_OVERRIDE_ARG="memory"' in script
+    assert '--wsl-memory=*) WSL_MEMORY_OVERRIDE_GB="${arg#*=}"' in script
+    assert '--wsl-swap) PENDING_WSL_OVERRIDE_ARG="swap"' in script
+    assert '--wsl-swap=*) WSL_SWAP_OVERRIDE_GB="${arg#*=}"' in script
+    assert "_normalize_wsl_gb_override()" in script
+    assert 'value=$((10#$normalized))' in script
+    assert 'target_memory_gb=$(_normalize_wsl_gb_override "$WSL_MEMORY_OVERRIDE_GB"' in script
+    assert 'target_swap_gb=$(_normalize_wsl_gb_override "$WSL_SWAP_OVERRIDE_GB"' in script
+    assert 'force_replace == "true"' in script
+    assert '"memory" "$target_memory" "$wsl_memory_override_active"' in script
+    assert '"swap" "$target_swap" "$wsl_swap_override_active"' in script
+    assert "--wsl-memory <GB> / --wsl-memory=<GB>" in script
+    assert "WSL_MEMORY_GB=16 / WSL_SWAP_GB=8" in script
+
 def test_install_sidar_parallel_prefetches_docker_images() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
