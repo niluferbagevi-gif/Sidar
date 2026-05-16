@@ -298,3 +298,15 @@ def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
     assert "sed -i " not in script_without_wrapper
     assert "sed_inplace 's/^ENABLE_MULTIMODAL=" in script
     assert "sed_inplace \"s|^DATABASE_URL=.*|DATABASE_URL=" in script
+
+
+def test_install_sidar_centralizes_env_value_reads() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "read_env_value_from_file()" in script
+    assert "current_backend=$(read_env_value_from_file \"RAG_VECTOR_BACKEND\" \"$env_file\")" in script
+    assert "openai_key=$(read_env_value_from_file \"OPENAI_API_KEY\" \"$env_file\"" in script
+    assert "DB_URL=$(read_env_value_from_file \"DATABASE_URL\" \"$ENV_FILE\")" in script
+    assert "compose_profiles=$(read_env_value_from_file \"COMPOSE_PROFILES\" \"$env_file\"" in script
+    assert "cut -d= -f2-" not in script
+    assert "grep -E \"^${key}=\"" not in script
