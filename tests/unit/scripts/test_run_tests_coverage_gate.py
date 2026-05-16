@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 RUN_TESTS = Path("run_tests.sh")
@@ -126,6 +127,43 @@ def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
     ]
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
+
+
+def test_install_sidar_masks_secret_log_stream_before_tee(tmp_path: Path) -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    start = script.index("mask_install_log_stream()")
+    end = script.index("# Kurulum loglarını", start)
+    helper = tmp_path / "mask_helper.sh"
+    sample = tmp_path / "sample.log"
+    helper.write_text(script[start:end], encoding="utf-8")
+    sample.write_text(
+        "\n".join(
+            [
+                "DATABASE_URL=postgresql+asyncpg://sidar:superSecret123@localhost:5432/sidar",
+                "+ generated_password=superSecret123",
+                "+ sed -i s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=superSecret123| .env",
+                "--password superSecret123",
+                "normal line",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        ["bash", "-c", 'source "$1"; cat "$2" | mask_install_log_stream', "_", str(helper), str(sample)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert "mask_install_log_stream | tee -i" in script
+    assert "superSecret123" not in proc.stdout
+    assert "DATABASE_URL=****" in proc.stdout
+    assert "generated_password=****" in proc.stdout
+    assert "POSTGRES_PASSWORD=****" in proc.stdout
+    assert "--password ****" in proc.stdout
+    assert "normal line" in proc.stdout
 
 
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:

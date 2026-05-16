@@ -35,6 +35,15 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+mask_install_log_stream() {
+    # Maskeleme tee'den önce çalışır; böylece hem terminal hem LOG_FILE set -x,
+    # stderr veya komut hata çıktılarındaki secret/DSN değerlerini düz metin görmez.
+    sed -u -E \
+        -e 's#([A-Za-z][A-Za-z0-9+.-]*://[^:/@[:space:]]+:)[^@[:space:]]+(@)#\1****\2#g' \
+        -e 's#(^|[^A-Za-z0-9_])(([A-Za-z_][A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ENCRYPTION_KEY)[A-Za-z0-9_]*|DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|REDIS_URL)=)[^[:space:];|]+#\1\2****#Ig' \
+        -e 's#(--?[A-Za-z0-9_-]*(password|secret|token|api-key|private-key|database-url|redis-url)[A-Za-z0-9_-]*([=[:space:]]+))[^[:space:];|]+#\1****#Ig'
+}
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -44,7 +53,7 @@ ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
+exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
 
 # ── Renkler ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
