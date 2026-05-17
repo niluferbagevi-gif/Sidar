@@ -210,6 +210,13 @@ def test_install_sidar_has_locale_switch_for_english_messages() -> None:
     assert "Select installer message language" in script
 
 
+def test_ci_system_dependency_installer_provisions_shellcheck() -> None:
+    installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
+
+    assert "PACKAGES=(portaudio19-dev shellcheck)" in installer
+    assert "MISSING_PACKAGES=()" in installer
+    assert 'apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
