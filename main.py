@@ -546,7 +546,7 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
-    if "--summary-only" in cmd or "--quiet" in cmd:
+    if "--summary-only" in cmd or "--metadata-only" in cmd or "--quiet" in cmd:
         return cmd
     for index in range(len(cmd) - 2):
         if cmd[index : index + 3] == ["python", "-m", "scripts.seed_rag"]:
@@ -633,10 +633,21 @@ def _doctor_auto_fix_lost_env_keys(
         "postgres_password_set": "POSTGRES_PASSWORD",
         "postgres_db_set": "POSTGRES_DB",
     }
+    derived_equivalents = {
+        "database_url_set": "effective_database_url_derived",
+        "container_database_url_set": "effective_container_database_url_derived",
+    }
     lost_keys: list[str] = []
     for detail_key, env_key in set_flags.items():
-        if source_details.get(detail_key) is True and updated_details.get(detail_key) is False:
-            lost_keys.append(env_key)
+        if (
+            source_details.get(detail_key) is not True
+            or updated_details.get(detail_key) is not False
+        ):
+            continue
+        derived_detail_key = derived_equivalents.get(detail_key)
+        if derived_detail_key and updated_details.get(derived_detail_key) is True:
+            continue
+        lost_keys.append(env_key)
     return lost_keys
 
 

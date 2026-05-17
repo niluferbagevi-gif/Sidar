@@ -409,7 +409,6 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
     assert "password drift attempt 2" in output
 
 
-
 def test_launcher_doctor_preflight_skips_database_dependents_after_failed_database_env(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -428,7 +427,9 @@ def test_launcher_doctor_preflight_skips_database_dependents_after_failed_databa
 
     def _connectivity_check() -> SimpleNamespace:
         calls["connectivity"] += 1
-        return SimpleNamespace(name="database_connectivity", status="pass", message="ok", details={})
+        return SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        )
 
     def _rag_check() -> SimpleNamespace:
         calls["rag"] += 1
@@ -455,7 +456,9 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8")
+    env_file.write_text(
+        "DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8"
+    )
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:old@localhost:5432/sidar")
     monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
 
@@ -480,6 +483,7 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     assert updated is not None
     assert updated.status == "pass"
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
+
 
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -599,7 +603,7 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     assert main._run_doctor_auto_fix(check, _check_func) is True
     assert commands == [
         ["uv", "run", "python", "-m", "scripts.sync_database_passwords"],
-        ["uv", "run", "python", "-m", "scripts.seed_rag"],
+        ["uv", "run", "python", "-m", "scripts.seed_rag", "--summary-only"],
     ]
     assert revalidation_calls["count"] == 2
     output = capsys.readouterr().out

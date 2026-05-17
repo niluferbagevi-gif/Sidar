@@ -83,6 +83,36 @@ def test_revalidate_doctor_check_flags_lost_env_key_regression(monkeypatch, caps
     assert "kalan uyarıları inceleyin" not in captured.out
 
 
+def test_revalidate_doctor_check_allows_derived_database_url_after_auto_fix(monkeypatch, capsys):
+    monkeypatch.setattr(launcher, "_reload_environment_after_auto_fix", lambda details: True)
+    updated_check = SimpleNamespace(
+        name="database_env",
+        status="pass",
+        message="database environment looks secure",
+        details={
+            "database_url_set": False,
+            "effective_database_url_derived": True,
+            "container_database_url_set": False,
+            "effective_container_database_url_derived": True,
+            "postgres_password_set": True,
+        },
+    )
+
+    result = launcher._revalidate_doctor_check_after_auto_fix(
+        lambda: updated_check,
+        {
+            "database_url_set": True,
+            "container_database_url_set": True,
+            "postgres_password_set": True,
+        },
+    )
+
+    captured = capsys.readouterr()
+    assert result is updated_check
+    assert "regresyon üretti" not in captured.out
+    assert "kontrolünü düzeltti" in captured.out
+
+
 def test_run_doctor_auto_fix_command_adds_seed_rag_summary_only(monkeypatch, capsys):
     captured: dict[str, list[str]] = {}
 
