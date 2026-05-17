@@ -298,6 +298,102 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
     assert "scripts.bootstrap_env" in output
 
 
+def test_launcher_doctor_preflight_revalidates_successful_auto_fix(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    calls = {"database_env": 0}
+
+    def _database_check() -> SimpleNamespace:
+        calls["database_env"] += 1
+        if calls["database_env"] == 1:
+            return SimpleNamespace(
+                name="database_env",
+                status="fail",
+                message="password drift",
+                details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+            )
+        return SimpleNamespace(
+            name="database_env",
+            status="pass",
+            message="database environment looks secure",
+            details={},
+        )
+
+    monkeypatch.setattr(doctor, "check_database_env", _database_check)
+    monkeypatch.setattr(
+        doctor,
+        "check_database_connectivity",
+        lambda: SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_readiness",
+        lambda: SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_gpu_memory_config",
+        lambda: SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda check: check.name == "database_env")
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert calls["database_env"] == 2
+    assert "Auto-fix sonrası yeniden doğrulama" in output
+    assert "Auto-fix Doctor/database_env kontrolünü düzeltti" in output
+
+
+def test_launcher_doctor_preflight_reports_failed_revalidation(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    calls = {"database_env": 0}
+
+    def _database_check() -> SimpleNamespace:
+        calls["database_env"] += 1
+        return SimpleNamespace(
+            name="database_env",
+            status="fail",
+            message=f"password drift attempt {calls['database_env']}",
+            details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+        )
+
+    monkeypatch.setattr(doctor, "check_database_env", _database_check)
+    monkeypatch.setattr(
+        doctor,
+        "check_database_connectivity",
+        lambda: SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_readiness",
+        lambda: SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_gpu_memory_config",
+        lambda: SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda check: check.name == "database_env")
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert calls["database_env"] == 2
+    assert "Auto-fix sonrası yeniden doğrulama" in output
+    assert "Auto-fix Doctor/database_env sorununu gideremedi" in output
+    assert "password drift attempt 2" in output
+
+
 def test_doctor_auto_fix_prompts_and_runs_seed_command_in_process(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -415,7 +415,6 @@ def _print_doctor_check_summary(check: Any) -> None:
             print(f"{CYAN}   • Komut: {command}{RESET}")
 
 
-
 def _seed_rag_argv_from_auto_fix(cmd: list[str]) -> list[str] | None:
     """Return seed_rag argv when Doctor auto_fix targets scripts.seed_rag."""
     if len(cmd) >= 4 and cmd[:2] == ["uv", "run"]:
@@ -491,6 +490,34 @@ def _run_doctor_auto_fix(check: Any) -> bool:
     return False
 
 
+def _revalidate_doctor_check_after_auto_fix(check_func: Any) -> Any | None:
+    """Run a Doctor check once after a successful auto-fix and print the result."""
+    try:
+        updated_check = check_func()
+    except Exception as exc:  # pragma: no cover - defensive launcher path
+        logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
+        print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
+        return None
+
+    print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
+    _print_doctor_check_summary(updated_check)
+    updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+    updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
+    if updated_status == "fail":
+        print(
+            f"{RED}   • Auto-fix Doctor/{updated_name} sorununu gideremedi; "
+            f"yukarıdaki önerileri manuel uygulayın.{RESET}"
+        )
+    elif updated_status == "pass":
+        print(f"{GREEN}   • Auto-fix Doctor/{updated_name} kontrolünü düzeltti.{RESET}")
+    else:
+        print(
+            f"{YELLOW}   • Auto-fix Doctor/{updated_name} kontrolünü yeniden çalıştırdı; "
+            f"kalan uyarıları inceleyin.{RESET}"
+        )
+    return updated_check
+
+
 def _run_launcher_doctor_preflight() -> None:
     try:
         from core.doctor import (
@@ -513,7 +540,8 @@ def _run_launcher_doctor_preflight() -> None:
         try:
             check = check_func()
             _print_doctor_check_summary(check)
-            _run_doctor_auto_fix(check)
+            if _run_doctor_auto_fix(check):
+                _revalidate_doctor_check_after_auto_fix(check_func)
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
