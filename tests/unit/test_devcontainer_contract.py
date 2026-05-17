@@ -33,6 +33,13 @@ def test_devcontainer_build_env_matches_non_secret_container_env_defaults():
         assert dockerfile_env.get(name) == value, name
 
 
+def test_devcontainer_image_installs_shellcheck_os_package():
+    dockerfile = _read(".devcontainer/Dockerfile")
+
+    assert "shellcheck \\" in dockerfile
+    assert dockerfile.index("portaudio19-dev") < dockerfile.index("shellcheck")
+    assert dockerfile.index("shellcheck") < dockerfile.index("install -m 0755 -d /etc/apt/keyrings")
+
 def test_devcontainer_generated_log_directory_is_gitignored():
     gitignore = _read(".gitignore").splitlines()
 
