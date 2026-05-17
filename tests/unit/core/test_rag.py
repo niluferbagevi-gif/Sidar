@@ -494,9 +494,7 @@ async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache_root = tmp_path / "hf"
-    (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(
-        parents=True
-    )
+    (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(parents=True)
     monkeypatch.setenv("HF_HOME", str(cache_root))
     monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)

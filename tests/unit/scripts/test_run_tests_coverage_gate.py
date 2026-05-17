@@ -102,7 +102,10 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
     assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development
     assert "RAG_GPU_MEMORY_FRACTION=0.3" in env_development
-    assert "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars" in env_development
+    assert (
+        "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars"
+        in env_development
+    )
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:

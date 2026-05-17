@@ -152,7 +152,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL parolalarını POSTGRES_PASSWORD ile eşitle",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası")
+    parser.add_argument(
+        "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
+    )
     return parser.parse_args(argv)
 
 
