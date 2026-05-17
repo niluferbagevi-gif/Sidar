@@ -150,3 +150,34 @@ def test_sync_env_chain_updates_later_override_files_with_effective_password(
     assert _password_from(development_database_url) == "s" * 24
     assert _password_from(advanced_container_url) == "s" * 24
     assert summary["changed_keys_by_file"][str(development_env)] == ["DATABASE_URL"]
+
+
+def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    secret_file = tmp_path / "keys.env"
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(secret_file))
+
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        "POSTGRES_PASSWORD=" + "a" * 24 + "\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    secret_file.write_text("POSTGRES_PASSWORD=" + "s" * 24 + "\n", encoding="utf-8")
+
+    summary = sync_database_passwords.sync_env_chain(base_env)
+
+    secret_summary = next(
+        item for item in summary["file_summaries"] if item["label"] == "secret:SIDAR_KEYS_FILE"
+    )
+    assert secret_summary["skipped"] == {
+        "DATABASE_URL": "missing",
+        "SIDAR_CONTAINER_DATABASE_URL": "missing",
+    }
+    assert any("does not define DATABASE_URL" in warning for warning in summary["warnings"])
+    assert all("s" * 24 not in warning for warning in summary["warnings"])
+    assert _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1]) == "s" * 24
