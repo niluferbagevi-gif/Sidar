@@ -34,6 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent
 
 _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
 _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
+_DOTENV_MANAGED_KEYS: set[str] = set()
+_DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -73,11 +75,27 @@ def _record_dotenv_key_sources(
         if key not in os.environ:
             continue
         if override or before_values.get(key) is None:
+            if key not in _DOTENV_MANAGED_KEYS:
+                original_value = before_values.get(key)
+                if original_value is not None:
+                    _DOTENV_ORIGINAL_ENV_VALUES[key] = original_value
+            _DOTENV_MANAGED_KEYS.add(key)
             _DOTENV_KEY_SOURCES[key] = {
                 "label": label,
                 "path": str(path),
                 "override": override,
             }
+
+
+def _reset_dotenv_managed_environment() -> None:
+    """Restore pre-dotenv env values so reloads can observe changed dotenv files."""
+    for key in tuple(_DOTENV_MANAGED_KEYS):
+        original_value = _DOTENV_ORIGINAL_ENV_VALUES.get(key)
+        if original_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original_value
+    _DOTENV_MANAGED_KEYS.clear()
 
 
 def _record_dotenv_event(
@@ -1763,6 +1781,7 @@ class Config:
 
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
+    _reset_dotenv_managed_environment()
     _DOTENV_LOAD_EVENTS.clear()
     _DOTENV_KEY_SOURCES.clear()
     base_path = BASE_DIR / ".env"

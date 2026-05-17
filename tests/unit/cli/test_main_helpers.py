@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import importlib.util
 import io
+import os
 import sys
 import types
 from pathlib import Path
@@ -393,6 +394,35 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
     assert "Auto-fix Doctor/database_env sorununu gideremedi" in output
     assert "password drift attempt 2" in output
 
+
+def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    reload_calls: list[tuple[str | None, str]] = []
+    monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:old@localhost:5432/sidar")
+
+    def _reload_config_environment(*, profile: str | None, reason: str) -> bool:
+        reload_calls.append((profile, reason))
+        monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:new@localhost:5432/sidar")
+        return True
+
+    def _database_check() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="pass" if ":new@" in os.environ["DATABASE_URL"] else "fail",
+            message=os.environ["DATABASE_URL"],
+            details={},
+        )
+
+    monkeypatch.setattr(main, "_reload_config_environment", _reload_config_environment)
+
+    updated = main._revalidate_doctor_check_after_auto_fix(_database_check)
+
+    assert updated is not None
+    assert updated.status == "pass"
+    assert reload_calls == [(None, "Doctor auto-fix")]
 
 def test_doctor_auto_fix_runs_seed_command_in_subprocess(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

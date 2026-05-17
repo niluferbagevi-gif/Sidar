@@ -246,28 +246,42 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     return _normalize_launch_selection(selection)
 
 
-def _reload_environment_after_bootstrap(profile: str = "development") -> bool:
-    """Reload config dotenv chain after bootstrap creates a profile env file."""
+def _reload_config_environment(*, profile: str | None, reason: str) -> bool:
+    """Reload config dotenv chain in the launcher process after external env edits."""
     if config_module is None:
         return False
 
     reload_environment = getattr(config_module, "reload_environment", None)
     if not callable(reload_environment):
-        logger.warning("config.reload_environment bulunamadı; bootstrap sonrası reload atlandı.")
+        logger.warning("config.reload_environment bulunamadı; %s sonrası reload atlandı.", reason)
         return False
 
     global cfg
     try:
         reloaded_cfg = reload_environment(profile=profile)
     except Exception as exc:
-        logger.warning("Bootstrap sonrası environment reload başarısız: %s", exc)
+        logger.warning("%s sonrası environment reload başarısız: %s", reason, exc)
         print(f"{YELLOW}⚠ Environment reload başarısız: {exc}{RESET}")
         return False
 
     if reloaded_cfg is not None:
         cfg = reloaded_cfg
-    print(f"{GREEN}✅ Environment yeniden yüklendi: SIDAR_ENV={profile}{RESET}")
+    effective_profile = profile or os.getenv("SIDAR_ENV", "").strip().lower() or "varsayılan"
+    print(f"{GREEN}✅ Environment yeniden yüklendi: SIDAR_ENV={effective_profile}{RESET}")
     return True
+
+
+def _reload_environment_after_bootstrap(profile: str = "development") -> bool:
+    """Reload config dotenv chain after bootstrap creates a profile env file."""
+    return _reload_config_environment(profile=profile, reason="Bootstrap")
+
+
+def _reload_environment_after_auto_fix() -> bool:
+    """Reload dotenv values in this process after a Doctor auto-fix subprocess."""
+    profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
+    if profile is None and _development_env_path().exists():
+        profile = "development"
+    return _reload_config_environment(profile=profile, reason="Doctor auto-fix")
 
 
 def _maybe_bootstrap_development_env() -> bool:
@@ -457,6 +471,7 @@ def _run_doctor_auto_fix(check: Any) -> bool:
 
 def _revalidate_doctor_check_after_auto_fix(check_func: Any) -> Any | None:
     """Run a Doctor check once after a successful auto-fix and print the result."""
+    _reload_environment_after_auto_fix()
     try:
         updated_check = check_func()
     except Exception as exc:  # pragma: no cover - defensive launcher path
