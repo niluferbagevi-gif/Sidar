@@ -1,14 +1,42 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 RUN_TESTS = Path("run_tests.sh")
 
+# `uv tool install` çağrılarını yakala ve hangi paketi kurduklarını çıkar.
+# Sadece pyright fallback'i (proje sync'i ile gelmeyen LSP) izinli.
+_UV_TOOL_INSTALL_RE = re.compile(
+    r"uv\s+tool\s+install\s+(?:--[^\s]+\s+)*([A-Za-z0-9_.\-]+)"
+)
+_UV_TOOL_INSTALL_ALLOWLIST = frozenset({"pyright"})
+
 
 def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
+
+
+def _assert_uv_tool_install_only_for_pyright(content: str) -> None:
+    """`uv tool install` yalnızca opsiyonel pyright LSP fallback'i için kullanılabilir.
+
+    Yorum satırlarındaki / kullanıcı uyarı mesajlarındaki referanslar (örn. fail()
+    mesajı içindeki "uv tool install pyright" öneri metni) tetikleyici sayılmaz —
+    yalnızca komut çağrısı (örneğin `if uv tool install pyright`) eşleşmelidir.
+    """
+
+    invalid: list[str] = []
+    for match in _UV_TOOL_INSTALL_RE.finditer(content):
+        package = match.group(1)
+        if package not in _UV_TOOL_INSTALL_ALLOWLIST:
+            invalid.append(package)
+    assert not invalid, (
+        "İzin verilmeyen `uv tool install` paketleri tespit edildi: "
+        f"{sorted(set(invalid))}. Yalnızca {sorted(_UV_TOOL_INSTALL_ALLOWLIST)} "
+        "fallback amaçlı kullanılabilir; diğer kurulumlar uv sync üzerinden yapılmalı."
+    )
 
 
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
@@ -452,7 +480,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "install_python_deps()" in python_env_utils
     assert "uv sync" in python_env_utils
     assert "uv pip" not in python_env_utils
-    assert "uv tool install" not in python_env_utils
+    # `uv tool install` yalnızca opsiyonel pyright LSP fallback'i için kullanılır.
+    # Başka bir global tool kurulumu sızarsa burada yakalanır.
+    _assert_uv_tool_install_only_for_pyright(python_env_utils)
     assert "harden_database_credentials()" in db_utils
     assert "sync_postgres_env_with_database_url()" in db_utils
     assert "ensure_database_url_defaults()" in db_utils
@@ -647,7 +677,26 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert 'sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"' in verify_body
     assert "--reinstall-package torch" in script
     assert "uv pip" not in script
-    assert "uv tool install" not in script
+    # `uv tool install` yalnızca opsiyonel pyright LSP fallback'i için kullanılır.
+    _assert_uv_tool_install_only_for_pyright(script)
     assert "python -m venv" not in script
     assert "python3 -m venv" not in script
     assert "virtualenv" not in script
+
+
+def test_uv_tool_install_guard_rejects_unallowed_packages() -> None:
+    """Allowlist guardrail'inin pyright dışı paketleri reddettiğini doğrula."""
+
+    sample_violating = "if uv tool install ruff >/dev/null 2>&1; then :; fi\n"
+    try:
+        _assert_uv_tool_install_only_for_pyright(sample_violating)
+    except AssertionError as exc:
+        assert "ruff" in str(exc)
+    else:  # pragma: no cover - sentinel: helper should have raised
+        raise AssertionError("Allowlist guardrail 'ruff' kurulumunu yakalamalı.")
+
+    # Pyright fallback ve düz metin yorumları izinli kalmalı.
+    _assert_uv_tool_install_only_for_pyright(
+        "warn 'uv tool install pyright fallback deneniyor.'\n"
+        "if uv tool install pyright >/dev/null 2>&1; then :; fi\n"
+    )
