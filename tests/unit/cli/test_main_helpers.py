@@ -550,6 +550,40 @@ def test_doctor_auto_fix_applies_sync_env_snapshot_after_subprocess(
     assert captured_status["POSTGRES_PASSWORD"] == "new-password-1234567890"
 
 
+def test_doctor_auto_fix_surfaces_critical_warnings_from_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
+    monkeypatch.setattr(main, "_reload_doctor_env_source_definitions", lambda *_args: False)
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        flag_index = cmd.index("--snapshot-out")
+        snapshot_path = Path(cmd[flag_index + 1])
+        snapshot_path.write_text(
+            '{"env": {"DATABASE_URL": "postgresql://sidar:new@localhost:5432/sidar"},'
+            ' "critical_warnings": ["Effective DATABASE_URL password still differs"]}',
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(name="database_env", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check, _check_func) is True
+    output = capsys.readouterr().out
+    assert "Kritik uyarı (severity=critical)" in output
+    assert "Effective DATABASE_URL password still differs" in output
+
+
 def test_doctor_auto_fix_cleans_up_snapshot_when_subprocess_fails(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -554,12 +554,35 @@ def _prepare_auto_fix_snapshot(cmd: list[str]) -> tuple[list[str], Path | None]:
     return [*cmd, "--snapshot-out", snapshot_path], Path(snapshot_path)
 
 
+def _split_auto_fix_snapshot_payload(
+    payload: object,
+) -> tuple[dict[str, str], list[str]]:
+    """Return (env_values, critical_warnings) from either flat or structured snapshots."""
+    if not isinstance(payload, dict):
+        return {}, []
+
+    raw_env = payload.get("env") if "env" in payload else payload
+    env_values: dict[str, str] = {}
+    if isinstance(raw_env, dict):
+        for key, value in raw_env.items():
+            if isinstance(key, str) and isinstance(value, str) and key:
+                env_values[key] = value
+
+    critical_warnings: list[str] = []
+    raw_warnings = payload.get("critical_warnings") if "env" in payload else None
+    if isinstance(raw_warnings, list):
+        critical_warnings = [item for item in raw_warnings if isinstance(item, str) and item]
+
+    return env_values, critical_warnings
+
+
 def _apply_auto_fix_env_snapshots() -> bool:
     """Apply queued effective env snapshots to ``os.environ`` and clean their files up."""
     if not _PENDING_AUTO_FIX_ENV_SNAPSHOTS:
         return False
 
     applied_any = False
+    critical_warnings: list[str] = []
     for snapshot_path in list(_PENDING_AUTO_FIX_ENV_SNAPSHOTS):
         try:
             raw_text = snapshot_path.read_text(encoding="utf-8")
@@ -568,11 +591,11 @@ def _apply_auto_fix_env_snapshots() -> bool:
             logger.warning("Auto-fix env snapshot okunamadı (%s): %s", snapshot_path, exc)
             payload = {}
 
-        if isinstance(payload, dict):
-            for key, value in payload.items():
-                if isinstance(key, str) and isinstance(value, str) and key:
-                    os.environ[key] = value
-                    applied_any = True
+        env_values, snapshot_warnings = _split_auto_fix_snapshot_payload(payload)
+        for key, value in env_values.items():
+            os.environ[key] = value
+            applied_any = True
+        critical_warnings.extend(snapshot_warnings)
 
         try:
             snapshot_path.unlink()
@@ -580,6 +603,10 @@ def _apply_auto_fix_env_snapshots() -> bool:
             pass
 
     _PENDING_AUTO_FIX_ENV_SNAPSHOTS.clear()
+
+    for warning in critical_warnings:
+        print(f"{RED}   • Kritik uyarı (severity=critical): {warning}{RESET}")
+
     return applied_any
 
 
