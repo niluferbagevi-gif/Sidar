@@ -788,6 +788,7 @@ class Config:
     # ─── HuggingFace ─────────────────────────────────────────
     HF_TOKEN: str = os.getenv("HF_TOKEN", "")
     HF_HUB_OFFLINE: bool = get_bool_env("HF_HUB_OFFLINE", False)
+    HF_USE_LOCAL_CACHE_ONLY: bool = get_bool_env("HF_USE_LOCAL_CACHE_ONLY", False)
 
     # ─── Donanım & GPU ───────────────────────────────────────
     USE_GPU: bool = get_bool_env("USE_GPU", True)
@@ -1507,6 +1508,7 @@ class Config:
             "web_port": cls.WEB_PORT,
             "web_gpu_port": cls.WEB_GPU_PORT,
             "hf_hub_offline": cls.HF_HUB_OFFLINE,
+            "hf_use_local_cache_only": cls.HF_USE_LOCAL_CACHE_ONLY,
             "rate_limit_window": cls.RATE_LIMIT_WINDOW,
             "rate_limit_chat": cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,

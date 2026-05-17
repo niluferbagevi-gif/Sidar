@@ -323,12 +323,17 @@ async def test_embed_texts_for_semantic_cache_empty() -> None:
 
 
 async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setenv("TRANSFORMERS_CACHE", str(tmp_path / "transformers"))
+
     class _EF:
-        def __init__(self, model_name: str, device: str) -> None:
+        def __init__(self, model_name: str, device: str, local_files_only: bool) -> None:
             self.model_name = model_name
             self.device = device
+            self.local_files_only = local_files_only
 
     monkeypatch.setitem(
         sys.modules,
@@ -341,6 +346,7 @@ async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
     assert ef is not None
     assert ef.model_name == "all-MiniLM-L6-v2"
     assert ef.device == "cpu"
+    assert ef.local_files_only is False
 
 
 async def test_document_store_helper_methods(tmp_path: Path) -> None:
@@ -464,6 +470,45 @@ async def test_document_store_apply_hf_runtime_env_sets_expected_vars(
 
     assert os.environ["HF_TOKEN"] == "abc-token"
     assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "abc-token"
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+
+async def test_document_store_apply_hf_runtime_env_uses_local_cache_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE="false", HF_USE_LOCAL_CACHE_ONLY=True)
+    store._pg_embedding_model_name = "custom/model"
+
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    store._apply_hf_runtime_env()
+
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+
+async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache_root = tmp_path / "hf"
+    (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(
+        parents=True
+    )
+    monkeypatch.setenv("HF_HOME", str(cache_root))
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_CACHE", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False, HF_USE_LOCAL_CACHE_ONLY=False)
+
+    store._apply_hf_runtime_env()
+
     assert os.environ["HF_HUB_OFFLINE"] == "1"
     assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
 
@@ -848,17 +893,22 @@ async def test_document_store_search_sync_empty_session_and_analyze_graph_impact
 
 
 async def test_embed_texts_for_semantic_cache_success_and_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setenv("TRANSFORMERS_CACHE", str(tmp_path / "transformers"))
+
     class _Vec:
         def tolist(self) -> list[list[float]]:
             return [[0.1, 0.2]]
 
-    seen: dict[str, str] = {}
+    seen: dict[str, object] = {}
 
     class _ST:
-        def __init__(self, _name: str, *, device: str) -> None:
+        def __init__(self, _name: str, *, device: str, local_files_only: bool) -> None:
             seen["device"] = device
+            seen["local_files_only"] = local_files_only
 
         def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> _Vec:
             assert normalize_embeddings is True
@@ -874,10 +924,13 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
     )
     assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == [[0.1, 0.2]]
     assert seen["device"] == "cpu"
+    assert seen["local_files_only"] is False
 
     cfg.USE_GPU = "true"
+    cfg.HF_USE_LOCAL_CACHE_ONLY = True
     assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == [[0.1, 0.2]]
     assert seen["device"] == "cuda:1"
+    assert seen["local_files_only"] is True
 
     class _BrokenST:
         def __init__(self, _name: str, **_kwargs: object) -> None:
@@ -919,9 +972,10 @@ async def test_build_embedding_function_gpu_success_and_fallback(
             return _Ctx()
 
     class _EF:
-        def __init__(self, model_name: str, device: str) -> None:
+        def __init__(self, model_name: str, device: str, local_files_only: bool) -> None:
             self.model_name = model_name
             self.device = device
+            self.local_files_only = local_files_only
 
         def __call__(self, _input: list[str]) -> list[list[float]]:
             return [[1.0]]
@@ -971,9 +1025,10 @@ async def test_build_embedding_function_import_module_and_missing_autocast_warni
         cuda = _Cuda()
 
     class _EF:
-        def __init__(self, model_name: str, device: str) -> None:
+        def __init__(self, model_name: str, device: str, local_files_only: bool) -> None:
             self.model_name = model_name
             self.device = device
+            self.local_files_only = local_files_only
 
     fake_embedding_module = SimpleNamespace(SentenceTransformerEmbeddingFunction=_EF)
     monkeypatch.delitem(sys.modules, "chromadb.utils.embedding_functions", raising=False)
@@ -1424,11 +1479,12 @@ async def test_document_store_pgvector_init_and_query_helpers(
         SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda s: s),
     )
 
-    seen_sentence_transformer: dict[str, str] = {}
+    seen_sentence_transformer: dict[str, object] = {}
 
     class _ST:
-        def __init__(self, _model: str, *, device: str) -> None:
+        def __init__(self, _model: str, *, device: str, local_files_only: bool) -> None:
             seen_sentence_transformer["device"] = device
+            seen_sentence_transformer["local_files_only"] = local_files_only
 
         def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> list[list[float]]:
             assert normalize_embeddings is True
@@ -1443,6 +1499,7 @@ async def test_document_store_pgvector_init_and_query_helpers(
     store._init_pgvector()
     assert store._pgvector_available is True
     assert seen_sentence_transformer["device"] == "cpu"
+    assert seen_sentence_transformer["local_files_only"] is False
 
     # _fetch_pgvector with parent de-dup
     store._is_local_llm_provider = False
@@ -1591,7 +1648,10 @@ async def test_document_store_apply_hf_runtime_env_when_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     store = _make_store_stub(tmp_path)
-    store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False)
+    store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False, HF_USE_LOCAL_CACHE_ONLY=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "empty-hf"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "empty-hub"))
+    monkeypatch.setenv("TRANSFORMERS_CACHE", str(tmp_path / "empty-transformers"))
     monkeypatch.setenv("HF_TOKEN", "keep")
     monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "keep")
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)

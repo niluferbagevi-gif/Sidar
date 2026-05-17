@@ -35,7 +35,10 @@ import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
 from config import Config
-from core.embeddings import sentence_transformer_device_from_config
+from core.embeddings import (
+    sentence_transformer_device_from_config,
+    sentence_transformer_local_files_only,
+)
 from core.utils.network_validation import is_local_only_host
 
 _BLEACH_AVAILABLE = True
@@ -611,7 +614,10 @@ def embed_texts_for_semantic_cache(
 
 
 def _build_embedding_function(
-    use_gpu: bool = False, gpu_device: int = 0, mixed_precision: bool = False
+    use_gpu: bool = False,
+    gpu_device: int = 0,
+    mixed_precision: bool = False,
+    cfg: Any | None = None,
 ) -> Any:
     """
     ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
@@ -635,9 +641,11 @@ def _build_embedding_function(
             torch = _torch
             device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
 
+        model_name = "all-MiniLM-L6-v2"
         ef = SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2",
+            model_name=model_name,
             device=device,
+            local_files_only=sentence_transformer_local_files_only(cfg or Config, model_name),
         )
 
         # Mixed precision: sentence-transformers encode sırasında half() uygula
@@ -795,7 +803,16 @@ class DocumentStore:
                 os.environ["HF_TOKEN"] = hf_token
                 os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
 
-            if getattr(self.cfg, "HF_HUB_OFFLINE", False):
+            model_names = {
+                "sentence-transformers/all-MiniLM-L6-v2",
+                "all-MiniLM-L6-v2",
+                str(getattr(self, "_pg_embedding_model_name", "") or ""),
+            }
+            if any(
+                sentence_transformer_local_files_only(self.cfg, model_name)
+                for model_name in model_names
+                if model_name
+            ):
                 os.environ["HF_HUB_OFFLINE"] = "1"
                 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
@@ -855,6 +872,7 @@ class DocumentStore:
                 use_gpu=self._use_gpu,
                 gpu_device=self._gpu_device,
                 mixed_precision=self._mixed_precision,
+                cfg=self.cfg,
             )
 
             create_kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
@@ -977,6 +995,9 @@ class DocumentStore:
             self._pg_embedding_model = SentenceTransformer(
                 self._pg_embedding_model_name,
                 device=sentence_transformer_device_from_config(self.cfg),
+                local_files_only=sentence_transformer_local_files_only(
+                    self.cfg, self._pg_embedding_model_name
+                ),
             )
             self._pgvector_available = True
             logger.info(

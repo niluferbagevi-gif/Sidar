@@ -199,6 +199,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     monkeypatch.setattr(config.Config, "WEB_PORT", 7860)
     monkeypatch.setattr(config.Config, "WEB_GPU_PORT", 7861)
     monkeypatch.setattr(config.Config, "HF_HUB_OFFLINE", False)
+    monkeypatch.setattr(config.Config, "HF_USE_LOCAL_CACHE_ONLY", True)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_WINDOW", 60)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_CHAT", 20)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_MUTATIONS", 60)
@@ -214,6 +215,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
 
     assert info["provider"] == "ollama"
     assert info["gpu_enabled"] is False
+    assert info["hf_use_local_cache_only"] is True
     assert "REDIS_URL" not in info
 
 
