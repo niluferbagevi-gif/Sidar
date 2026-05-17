@@ -2823,7 +2823,17 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın ve dev bağımlılıklarının proje ortamında kurulu olduğunu doğrulayın."
+    info "Pyright LSP bulunamadı; standart fallback çalıştırılıyor: uv tool install pyright"
+    if uv tool install pyright; then
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        if command -v pyright-langserver >/dev/null 2>&1; then
+            ok "Pyright LSP 'uv tool install pyright' fallback'i ile kuruldu: $(command -v pyright-langserver)"
+            return
+        fi
+        warn "uv tool install pyright tamamlandı ancak pyright-langserver PATH'te değil; ~/.local/bin PATH ayarını kontrol edin."
+    fi
+
+    fail "Pyright LSP bulunamadı. 'uv sync --frozen --all-extras' ya da 'uv tool install pyright' komutlarını manuel çalıştırın."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
