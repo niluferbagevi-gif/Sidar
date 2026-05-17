@@ -58,7 +58,7 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> (
     None
 ):
-    env_advanced = Path(".env.advanced").read_text(encoding="utf-8")
+    env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
     for content in (env_advanced, env_test_example):
