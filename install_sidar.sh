@@ -3887,6 +3887,7 @@ ensure_env_file_secrets_after_uv_sync() {
 
     ensure_sidar_env_default "$env_file"
     ensure_auto_secrets "$env_file"
+    propagate_shared_secrets_to_env_variants "$env_file"
 }
 
 # ── Otomatik Secret Üretimi ────────────────────────────────────────────────
@@ -4035,6 +4036,63 @@ PY
             warn "METRICS_TOKEN otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
         fi
     fi
+}
+
+propagate_shared_secrets_to_env_variants() {
+    local src="$1"
+    local -a shared_keys=(
+        POSTGRES_PASSWORD
+        API_KEY
+        JWT_SECRET_KEY
+        MEMORY_ENCRYPTION_KEY
+        AUTONOMY_WEBHOOK_SECRET
+        SWARM_FEDERATION_SHARED_SECRET
+        GITHUB_WEBHOOK_SECRET
+        GRAFANA_ADMIN_PASSWORD
+        METRICS_TOKEN
+    )
+    local -a variants=(
+        ".env.development:.env.development.example"
+        ".env.test:.env.test.example"
+    )
+
+    [[ -f "$src" ]] || return 0
+
+    local pair target example name key val cur example_val
+    for pair in "${variants[@]}"; do
+        target="$SCRIPT_DIR/${pair%%:*}"
+        example="$SCRIPT_DIR/${pair##*:}"
+        name="${pair%%:*}"
+
+        if [[ ! -f "$target" ]]; then
+            if [[ -f "$example" ]]; then
+                cp "$example" "$target"
+                ok "${name} dosyası ${pair##*:} üzerinden oluşturuldu."
+            else
+                warn "${pair##*:} bulunamadı; ${name} secret senkronizasyonu atlandı."
+                continue
+            fi
+        fi
+
+        for key in "${shared_keys[@]}"; do
+            val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+            [[ -z "${val//[[:space:]]/}" ]] && continue
+
+            cur=$(read_env_value_from_file "$key" "$target" | tr -d '\n')
+            example_val=$(read_env_value_from_file "$key" "$example" | tr -d '\n')
+            if is_weak_secret_value "$cur" \
+                || is_known_weak_secret_value "$key" "$cur" \
+                || is_env_example_secret_value "$key" "$cur" \
+                || [[ -n "${example_val//[[:space:]]/}" && "$cur" == "$example_val" ]]; then
+                if grep -q "^${key}=" "$target" 2>/dev/null; then
+                    sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+                else
+                    echo "${key}=${val}" >> "$target"
+                fi
+                ok "${name}: ${key} .env ile senkronize edildi."
+            fi
+        done
+    done
 }
 
 ensure_local_service_host_defaults() {
