@@ -239,6 +239,7 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore
         DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
         HF_TOKEN=getattr(Config, "HF_TOKEN", ""),
         HF_HUB_OFFLINE=getattr(Config, "HF_HUB_OFFLINE", False),
+        HF_USE_LOCAL_CACHE_ONLY=getattr(Config, "HF_USE_LOCAL_CACHE_ONLY", False),
     )
     return DocumentStore(
         rag_dir,

@@ -298,14 +298,42 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
     assert "scripts.bootstrap_env" in output
 
 
-def test_doctor_auto_fix_prompts_and_runs_seed_command(
+def test_doctor_auto_fix_prompts_and_runs_seed_command_in_process(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, object] = {}
     check = SimpleNamespace(
         name="rag_readiness",
         status="warn",
-        details={"auto_fix": "uv run python -m scripts.seed_rag"},
+        details={"auto_fix": "uv run python -m scripts.seed_rag --metadata-only"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        main.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("seed_rag auto-fix should run in-process"),
+    )
+
+    def _run_seed(argv: list[str]) -> int:
+        seen["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(main, "_run_seed_rag_auto_fix_in_process", _run_seed)
+
+    assert main._run_doctor_auto_fix(check) is True
+    assert seen["argv"] == ["--metadata-only"]
+    assert "Auto-fix tamamlandı" in capsys.readouterr().out
+
+
+def test_doctor_auto_fix_uses_subprocess_for_other_commands(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, object] = {}
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
     )
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
@@ -318,7 +346,7 @@ def test_doctor_auto_fix_prompts_and_runs_seed_command(
     monkeypatch.setattr(main.subprocess, "run", _run)
 
     assert main._run_doctor_auto_fix(check) is True
-    assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.seed_rag"]
+    assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
     assert "Auto-fix tamamlandı" in capsys.readouterr().out
 
 

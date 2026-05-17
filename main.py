@@ -415,6 +415,33 @@ def _print_doctor_check_summary(check: Any) -> None:
             print(f"{CYAN}   • Komut: {command}{RESET}")
 
 
+
+def _seed_rag_argv_from_auto_fix(cmd: list[str]) -> list[str] | None:
+    """Return seed_rag argv when Doctor auto_fix targets scripts.seed_rag."""
+    if len(cmd) >= 4 and cmd[:2] == ["uv", "run"]:
+        cmd = cmd[2:]
+    if len(cmd) >= 3 and Path(cmd[0]).name in {"python", "python3"} and cmd[1] == "-m":
+        if cmd[2] == "scripts.seed_rag":
+            return cmd[3:]
+    return None
+
+
+def _run_seed_rag_auto_fix_in_process(argv: list[str]) -> int:
+    """Run seed_rag without spawning a second Python process/model loader."""
+    from scripts.seed_rag import main as seed_rag_main
+
+    try:
+        return int(seed_rag_main(argv))
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(code)
+        return 1
+
+
 def _run_doctor_auto_fix(check: Any) -> bool:
     """Doctor check auto_fix komutunu etkileşimli kısa kontrolde güvenle önerip çalıştırır."""
     details = getattr(check, "details", {}) or {}
@@ -437,20 +464,30 @@ def _run_doctor_auto_fix(check: Any) -> bool:
         return False
 
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
-    try:
-        completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
-            cmd, check=False, cwd=_project_base_dir()
-        )
-    except OSError as exc:
-        logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
-        print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
-        return False
+    seed_rag_argv = _seed_rag_argv_from_auto_fix(cmd)
+    if seed_rag_argv is not None:
+        try:
+            returncode = _run_seed_rag_auto_fix_in_process(seed_rag_argv)
+        except Exception as exc:
+            logger.warning("Doctor seed_rag auto_fix başlatılamadı: %s", exc)
+            print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
+            return False
+    else:
+        try:
+            completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
+                cmd, check=False, cwd=_project_base_dir()
+            )
+        except OSError as exc:
+            logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
+            print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
+            return False
+        returncode = int(completed.returncode)
 
-    if completed.returncode == 0:
+    if returncode == 0:
         print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
         return True
 
-    print(f"{YELLOW}   • Auto-fix {completed.returncode} koduyla tamamlandı.{RESET}")
+    print(f"{YELLOW}   • Auto-fix {returncode} koduyla tamamlandı.{RESET}")
     return False
 
 

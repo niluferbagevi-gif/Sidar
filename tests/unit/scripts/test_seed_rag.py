@@ -134,7 +134,7 @@ def test_build_store_routes_import_time_notices_to_stderr(
     def fake_import(name: str, *args: object, **kwargs: object) -> object:
         if name == "config":
             print("config stdout notice")
-            return SimpleNamespace(Config=SimpleNamespace())
+            return SimpleNamespace(Config=SimpleNamespace(HF_USE_LOCAL_CACHE_ONLY=True))
         if name == "core.rag":
             print("rag stdout notice")
             return SimpleNamespace(DocumentStore=FakeDocumentStore)
@@ -146,6 +146,7 @@ def test_build_store_routes_import_time_notices_to_stderr(
 
     captured = capsys.readouterr()
     assert isinstance(store, FakeDocumentStore)
+    assert store.kwargs["cfg"].HF_USE_LOCAL_CACHE_ONLY is True
     assert captured.out == ""
     assert "config stdout notice" in captured.err
     assert "rag stdout notice" in captured.err
