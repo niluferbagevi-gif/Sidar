@@ -347,6 +347,7 @@ def test_doctor_auto_fix_uses_subprocess_for_other_commands(
 
     assert main._run_doctor_auto_fix(check) is True
     assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
+    assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
     assert "Auto-fix tamamlandı" in capsys.readouterr().out
 
 
@@ -567,6 +568,17 @@ def test_launcher_session_save_load_normalizes_values(
     assert loaded["extra_args"]["port"] == "9999"
 
 
+def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIDAR_CONFIG_QUIET", "false")
+    monkeypatch.setenv("CUSTOM_ENV", "kept")
+
+    child_env = main._launcher_child_env()
+
+    assert child_env["SIDAR_CONFIG_QUIET"] == "true"
+    assert child_env["SIDAR_LAUNCHED_BY_MAIN"] == "true"
+    assert child_env["CUSTOM_ENV"] == "kept"
+
+
 def test_maybe_bootstrap_development_env_runs_bootstrap_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -598,6 +610,8 @@ def test_maybe_bootstrap_development_env_runs_bootstrap_command(
         "--profile",
         "development",
     ]
+    assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
+    assert seen["kwargs"]["env"]["SIDAR_LAUNCHED_BY_MAIN"] == "true"
     assert reload_calls == ["development"]
     assert "bootstrap tamamlandı" in capsys.readouterr().out
 
@@ -623,6 +637,7 @@ def test_execute_command_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert main.execute_command(["python", "cli.py"]) == 0
     assert seen["cmd"] == ["python", "cli.py"]
+    assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
 
 
 def test_main_quick_mode_without_telemetry_hook(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -993,6 +1008,7 @@ def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
     assert popen_calls["kwargs"]["stdout"] is main.subprocess.PIPE
     assert popen_calls["kwargs"]["stderr"] is main.subprocess.PIPE
     assert popen_calls["kwargs"]["text"] is True
+    assert popen_calls["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
     assert fake_stdout.closed_by_streamer is True
     assert fake_stderr.closed_by_streamer is True
 

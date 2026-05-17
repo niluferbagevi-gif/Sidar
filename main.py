@@ -288,7 +288,7 @@ def _maybe_bootstrap_development_env() -> bool:
     cmd = ["uv", "run", "python", "-m", "scripts.bootstrap_env", "--profile", "development"]
     try:
         completed = subprocess.run(  # nosec B603  # sabit komut listesi, kullanıcı girdisi eklenmez.
-            cmd, check=False, cwd=_project_base_dir()
+            cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
         logger.warning("Development dotenv bootstrap başlatılamadı: %s", exc)
@@ -475,7 +475,7 @@ def _run_doctor_auto_fix(check: Any) -> bool:
     else:
         try:
             completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
-                cmd, check=False, cwd=_project_base_dir()
+                cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
             )
         except OSError as exc:
             logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
@@ -614,6 +614,14 @@ def build_command(
     return cmd
 
 
+def _launcher_child_env() -> dict[str, str]:
+    """Environment for child processes launched by main.py without duplicate config banners."""
+    child_env = os.environ.copy()
+    child_env["SIDAR_CONFIG_QUIET"] = "true"
+    child_env["SIDAR_LAUNCHED_BY_MAIN"] = "true"
+    return child_env
+
+
 def _format_cmd(cmd: list[str]) -> str:
     """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
     return " ".join(shlex.quote(part) for part in cmd)
@@ -641,6 +649,7 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        env=_launcher_child_env(),
     )
 
     if process.stdout is None or process.stderr is None:
@@ -810,7 +819,7 @@ def execute_command(
             return return_code
 
         subprocess.run(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
-            cmd, check=True, cwd=os.path.dirname(__file__) or "."
+            cmd, check=True, cwd=os.path.dirname(__file__) or ".", env=_launcher_child_env()
         )
         return 0
     except KeyboardInterrupt:

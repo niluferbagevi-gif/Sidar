@@ -461,6 +461,8 @@ def get_db_pool_size_default() -> int:
 _LOG_DIR = BASE_DIR / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
+os.environ.setdefault("SIDAR_CONFIG_QUIET", "false")
+
 _LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
 _LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
 _LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
@@ -1744,7 +1746,8 @@ def get_config() -> "Config":
 # ═══════════════════════════════════════════════════════════════
 # BAŞLANGIÇ
 # ═══════════════════════════════════════════════════════════════
-logger.info("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)
+_config_banner_log = logger.debug if get_bool_env("SIDAR_CONFIG_QUIET", False) else logger.info
+_config_banner_log("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)
 
 if __name__ == "__main__":
     Config.initialize_directories()

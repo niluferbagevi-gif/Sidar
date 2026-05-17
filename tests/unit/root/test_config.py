@@ -1259,6 +1259,14 @@ def test_repair_log_file_permissions_skips_chown_when_ids_missing(monkeypatch, t
     assert len(called_chmod) == 1
 
 
+def test_config_banner_uses_debug_when_quiet_flag_is_enabled(monkeypatch):
+    monkeypatch.setenv("SIDAR_CONFIG_QUIET", "true")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded._config_banner_log.__name__ == "debug"
+
+
 def test_noisy_dependency_loggers_stay_quiet_in_debug_unless_verbose_http(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("SIDAR_VERBOSE_HTTP", "false")
