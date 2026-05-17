@@ -1041,7 +1041,7 @@ class DocumentStore:
                     }
                     for idx, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False))
                 ]
-                upsert_sql = """  # nosec B608
+                upsert_sql = """
                         INSERT INTO __TABLE__
                         (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
                         VALUES
@@ -1054,7 +1054,7 @@ class DocumentStore:
                             source = EXCLUDED.source,
                             chunk_content = EXCLUDED.chunk_content,
                             embedding = EXCLUDED.embedding
-                    """.replace("__TABLE__", self._pg_table)
+                    """.replace("__TABLE__", self._pg_table)  # nosec B608
                 conn.execute(text(upsert_sql), rows)
         except Exception as exc:
             logger.error("pgvector belge ekleme hatası: %s", exc)
@@ -2376,14 +2376,14 @@ class DocumentStore:
             qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
             engine = self._require_pg_engine()
             with engine.begin() as conn:
-                select_sql = """  # nosec B608
+                select_sql = """
                         SELECT doc_id, parent_id, title, source, chunk_content,
                                (embedding <=> CAST(:qvec AS vector)) AS distance
                         FROM __TABLE__
                         WHERE session_id = :session_id
                         ORDER BY embedding <=> CAST(:qvec AS vector) ASC
                         LIMIT :lim
-                    """.replace("__TABLE__", self._pg_table)
+                    """.replace("__TABLE__", self._pg_table)  # nosec B608
                 rows = conn.execute(
                     text(select_sql),
                     {

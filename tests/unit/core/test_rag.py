@@ -1420,6 +1420,9 @@ async def test_document_store_pgvector_init_and_query_helpers(
     store._upsert_pgvector_chunks("chunk-1", "parent-1", "s1", "title", "src", ["content"])
     store._delete_pgvector_parent("parent-1", "s1")
     assert any("DELETE FROM rag_pg" in sql for sql, _ in executed)
+    assert not any(sql.lstrip().startswith("# nosec") for sql, _ in executed)
+    assert any(sql.lstrip().startswith("INSERT INTO rag_pg") for sql, _ in executed)
+    assert any(sql.lstrip().startswith("SELECT doc_id") for sql, _ in executed)
 
 
 async def test_document_store_load_and_bm25_fetch_and_keyword_paths(
