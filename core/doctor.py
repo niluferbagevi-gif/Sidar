@@ -528,6 +528,7 @@ def check_rag_readiness() -> DoctorCheck:
         "recommended_commands": [
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
+            "uv run python cli.py seed-rag",
             "belge ekle <url>",
         ],
     }
@@ -545,7 +546,9 @@ def check_rag_readiness() -> DoctorCheck:
         warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
     if document_count == 0:
         warnings.append(
-            "RAG has no indexed documents yet; searches will rely on code graph/keyword/BM25 only"
+            "RAG has no indexed documents yet; run `uv run python cli.py seed-rag` to "
+            "ingest project docs (README/AGENTS/docs/*.md) or `belge ekle <url>` for "
+            "external sources; otherwise searches will rely on code graph/keyword/BM25 only"
         )
     if entity_node_count == 0 and graph_enabled:
         warnings.append(

@@ -2785,3 +2785,93 @@ class DocumentStore:
             engines.append(f"GraphRAG ({graph_state})")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+
+    # ─────────────────────────────────────────────
+    #  PROJE BELGELERİNDEN OTOMATİK SEED
+    # ─────────────────────────────────────────────
+
+    def bootstrap_project_docs(
+        self,
+        *,
+        project_root: Path | None = None,
+        session_id: str = "global",
+        extra_files: builtins.list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Proje köküne ait kritik belgeleri (README, AGENTS, docs/*.md) deposuna seed eder.
+
+        Boş RAG indeksi `doctor` raporunda uyarı tetikler; researcher/poyraz
+        ajanları semantik bağlam bulamadığı için BM25/anahtar kelime moduna düşer.
+        Bu metot idempotenttir: source URI'si zaten indekste olan belgeleri atlar.
+        Yeni komut: `python cli.py seed-rag`.
+        """
+        root = Path(project_root) if project_root else Path(
+            getattr(self.cfg, "BASE_DIR", Path.cwd()) or Path.cwd()
+        )
+        root = root.resolve()
+
+        seen: set[Path] = set()
+        candidates: builtins.list[Path] = []
+
+        def _add(candidate: Path) -> None:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                return
+            if resolved in seen or not resolved.is_file():
+                return
+            seen.add(resolved)
+            candidates.append(resolved)
+
+        for name in ("README.md", "AGENTS.md", "AI_CONTEXT.md", "CHANGELOG.md"):
+            _add(root / name)
+
+        docs_dir = root / "docs"
+        if docs_dir.is_dir():
+            for path in sorted(docs_dir.rglob("*.md")):
+                if "archive" in path.parts:
+                    continue
+                _add(path)
+
+        for extra in extra_files or []:
+            extra_path = Path(extra)
+            if not extra_path.is_absolute():
+                extra_path = root / extra_path
+            _add(extra_path)
+
+        indexed_sources = {
+            str(meta.get("source", "")) for meta in self._index.values()
+        }
+        added: builtins.list[str] = []
+        skipped: builtins.list[str] = []
+        failed: builtins.list[dict[str, str]] = []
+
+        for path in candidates:
+            source = f"file://{path}"
+            if source in indexed_sources:
+                skipped.append(str(path))
+                continue
+            ok, message = self.add_document_from_file(
+                str(path),
+                title=path.name,
+                tags=["project-docs", "bootstrap"],
+                session_id=session_id,
+            )
+            if ok:
+                added.append(str(path))
+            else:
+                failed.append({"path": str(path), "error": message})
+
+        logger.info(
+            "RAG bootstrap tamamlandı: %d eklendi, %d atlandı, %d hata (toplam aday: %d)",
+            len(added),
+            len(skipped),
+            len(failed),
+            len(candidates),
+        )
+        return {
+            "added": added,
+            "skipped": skipped,
+            "failed": failed,
+            "total_candidates": len(candidates),
+            "project_root": str(root),
+        }

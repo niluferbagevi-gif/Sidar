@@ -408,8 +408,10 @@ def test_rag_readiness_warns_for_empty_index_and_entity_graph(monkeypatch, tmp_p
     assert check.status == "warn"
     assert check.details["document_count"] == 0
     assert "no indexed documents" in check.message
+    assert "seed-rag" in check.message
     assert "entity memory is empty" in check.message
     assert "belge ekle <url>" in check.details["recommended_commands"]
+    assert "uv run python cli.py seed-rag" in check.details["recommended_commands"]
 
 
 def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
