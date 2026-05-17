@@ -526,9 +526,10 @@ def check_rag_readiness() -> DoctorCheck:
         "entity_edge_count": entity_edge_count,
         "bm25_fallback": "SQLite FTS5",
         "recommended_commands": [
+            "uv run python -m scripts.seed_rag",
+            "uv run python cli.py -c \"belge ekle <url>\"",
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
-            "belge ekle <url>",
         ],
     }
 
@@ -545,7 +546,9 @@ def check_rag_readiness() -> DoctorCheck:
         warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
     if document_count == 0:
         warnings.append(
-            "RAG has no indexed documents yet; searches will rely on code graph/keyword/BM25 only"
+            "RAG has no indexed documents yet; run `uv run python -m scripts.seed_rag` "
+            "or add external sources with `uv run python cli.py -c \"belge ekle <url>\"`; "
+            "searches will rely on code graph/keyword/BM25 only until then"
         )
     if entity_node_count == 0 and graph_enabled:
         warnings.append(

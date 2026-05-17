@@ -1,0 +1,289 @@
+"""Seed Sidar's local RAG store with curated project documentation.
+
+This command is intentionally small and deterministic so operators can clear the
+``Doctor/rag_readiness`` warning without hand-entering many ``belge ekle``
+commands.  It indexes local text documents into the same ``DocumentStore`` used
+by the CLI, which updates the file index, BM25 cache, optional vector backend,
+and GraphRAG entity projection.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Protocol
+
+from config import Config
+from core.rag import DocumentStore
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_INCLUDE_PATTERNS = (
+    "README.md",
+    "AGENTS.md",
+    "docs/SIDAR.md",
+    "docs/TEKNIK_REFERANS.md",
+    "docs/PROJE_RAPORU.md",
+    "docs/SIDAR_v5_0_MIMARI_RAPORU.md",
+    "docs/SIDAR_v5_1_MIMARI_RAPORU.md",
+)
+TEXT_EXTENSIONS = {
+    ".md",
+    ".rst",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+}
+
+
+class SeedDocumentStore(Protocol):
+    """Minimal DocumentStore protocol used by the seeding workflow."""
+
+    def add_document_from_file(
+        self,
+        path: str,
+        title: str = "",
+        tags: list[str] | None = None,
+        session_id: str = "global",
+    ) -> tuple[bool, str]: ...
+
+    def delete_document(self, doc_id: str, session_id: str = "global") -> str: ...
+
+    def get_index_info(self, session_id: str | None = None) -> list[dict[str, Any]]: ...
+
+    def close(self) -> None: ...
+
+
+class SeedError(RuntimeError):
+    """Raised for invalid seeding inputs."""
+
+
+class DryRunStore:
+    """Store shim that prevents filesystem/vector side effects during dry runs."""
+
+    def add_document_from_file(
+        self,
+        path: str,
+        title: str = "",
+        tags: list[str] | None = None,
+        session_id: str = "global",
+    ) -> tuple[bool, str]:
+        return True, f"dry-run {title or path}"
+
+    def delete_document(self, doc_id: str, session_id: str = "global") -> str:
+        return f"dry-run delete {doc_id}"
+
+    def get_index_info(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        return []
+
+    def close(self) -> None:
+        return None
+
+
+def _resolve_rag_dir(raw: str | None) -> Path:
+    value = raw or os.getenv("RAG_DIR") or "data/rag"
+    path = Path(value)
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+def _is_safe_text_file(path: Path, *, max_bytes: int) -> bool:
+    if not path.is_file():
+        return False
+    if path.suffix.lower() not in TEXT_EXTENSIONS:
+        return False
+    return path.stat().st_size <= max_bytes
+
+
+def discover_seed_files(
+    patterns: list[str] | tuple[str, ...],
+    *,
+    base_dir: Path = BASE_DIR,
+    max_bytes: int = 750_000,
+) -> list[Path]:
+    """Resolve repo-relative file/glob patterns to safe text files."""
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    base = base_dir.resolve()
+    for raw_pattern in patterns:
+        pattern = str(raw_pattern or "").strip()
+        if not pattern:
+            continue
+        matches = sorted(base.glob(pattern)) if any(ch in pattern for ch in "*?[]") else [base / pattern]
+        for match in matches:
+            path = match.resolve()
+            if not path.is_relative_to(base):
+                raise SeedError(f"Repo dışı dosya indekslenemez: {match}")
+            if path in seen or not _is_safe_text_file(path, max_bytes=max_bytes):
+                continue
+            seen.add(path)
+            resolved.append(path)
+    return resolved
+
+
+def _existing_doc_ids_for_source(store: SeedDocumentStore, source: str, session_id: str) -> list[str]:
+    return [
+        str(item.get("id"))
+        for item in store.get_index_info(session_id=session_id)
+        if str(item.get("source", "")) == source and item.get("id")
+    ]
+
+
+def seed_files(
+    store: SeedDocumentStore,
+    files: list[Path],
+    *,
+    session_id: str = "global",
+    replace_existing: bool = True,
+    dry_run: bool = False,
+    base_dir: Path = BASE_DIR,
+) -> dict[str, Any]:
+    """Index files and return a machine-readable summary."""
+    added: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    deleted: list[str] = []
+    for file_path in files:
+        try:
+            rel_path = file_path.relative_to(base_dir.resolve()).as_posix()
+        except ValueError:
+            rel_path = file_path.name
+        source = f"file://{file_path}"
+        existing_ids = _existing_doc_ids_for_source(store, source, session_id)
+        if existing_ids and not replace_existing:
+            skipped.append({"path": rel_path, "reason": "already_indexed"})
+            continue
+        if dry_run:
+            added.append({"path": rel_path, "status": "dry_run"})
+            continue
+        for doc_id in existing_ids:
+            store.delete_document(doc_id, session_id=session_id)
+            deleted.append(doc_id)
+        ok, message = store.add_document_from_file(
+            str(file_path),
+            title=rel_path,
+            tags=["source:repo-docs", "brand:Sidar", "audience:Sidar operators"],
+            session_id=session_id,
+        )
+        target = added if ok else skipped
+        target.append({"path": rel_path, "message": message})
+    return {
+        "session_id": session_id,
+        "added_count": len(added),
+        "skipped_count": len(skipped),
+        "deleted_count": len(deleted),
+        "added": added,
+        "skipped": skipped,
+        "deleted": deleted,
+    }
+
+
+def _build_store(rag_dir: Path, *, initialize_vector: bool) -> DocumentStore:
+    # RAG seeding should not be blocked by unrelated web/API secrets such as
+    # JWT_SECRET_KEY.  Use Config class defaults (already loaded from env at
+    # import time) without constructing Config(), whose runtime validation is
+    # intentionally stricter for serving the application.
+    rag_dir.mkdir(parents=True, exist_ok=True)
+    cfg = SimpleNamespace(
+        BASE_DIR=BASE_DIR,
+        RAG_DIR=rag_dir,
+        RAG_TOP_K=getattr(Config, "RAG_TOP_K", 3),
+        RAG_CHUNK_SIZE=getattr(Config, "RAG_CHUNK_SIZE", 1000),
+        RAG_CHUNK_OVERLAP=getattr(Config, "RAG_CHUNK_OVERLAP", 200),
+        USE_GPU=getattr(Config, "USE_GPU", False),
+        GPU_DEVICE=getattr(Config, "GPU_DEVICE", 0),
+        GPU_MIXED_PRECISION=getattr(Config, "GPU_MIXED_PRECISION", False),
+        ENABLE_RAG_ENTITY_EXTRACTION=getattr(Config, "ENABLE_RAG_ENTITY_EXTRACTION", True),
+        RAG_ENTITY_MAX_PER_DOC=getattr(Config, "RAG_ENTITY_MAX_PER_DOC", 24),
+        RAG_VECTOR_BACKEND=getattr(Config, "RAG_VECTOR_BACKEND", "chroma"),
+        RAG_LOCAL_ENABLE_HYBRID=getattr(Config, "RAG_LOCAL_ENABLE_HYBRID", False),
+        ENABLE_GRAPH_RAG=getattr(Config, "ENABLE_GRAPH_RAG", True),
+        GRAPH_RAG_MAX_FILES=getattr(Config, "GRAPH_RAG_MAX_FILES", 5000),
+        AI_PROVIDER=getattr(Config, "AI_PROVIDER", "ollama"),
+        PGVECTOR_TABLE=getattr(Config, "PGVECTOR_TABLE", "rag_embeddings"),
+        PGVECTOR_EMBEDDING_DIM=getattr(Config, "PGVECTOR_EMBEDDING_DIM", 384),
+        PGVECTOR_EMBEDDING_MODEL=getattr(
+            Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
+        ),
+        DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
+        HF_TOKEN=getattr(Config, "HF_TOKEN", ""),
+        HF_HUB_OFFLINE=getattr(Config, "HF_HUB_OFFLINE", False),
+    )
+    return DocumentStore(
+        rag_dir,
+        use_gpu=bool(getattr(cfg, "USE_GPU", False)),
+        gpu_device=int(getattr(cfg, "GPU_DEVICE", 0) or 0),
+        mixed_precision=bool(getattr(cfg, "GPU_MIXED_PRECISION", False)),
+        cfg=cfg,
+        initialize_vector=initialize_vector,
+    )
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Sidar RAG deposunu repo dokümantasyonu ile hazırla",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--rag-dir",
+        default=None,
+        help="RAG dizini; verilmezse RAG_DIR veya data/rag kullanılır",
+    )
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=None,
+        help="Repo göreli dosya veya glob. Birden fazla kez verilebilir.",
+    )
+    parser.add_argument("--session-id", default="global", help="RAG session_id değeri")
+    parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=750_000,
+        help="Tek dosya için maksimum boyut",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Aynı source daha önce indekslendiyse eski kaydı silme",
+    )
+    parser.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Chroma/pgvector başlatmadan index, BM25 ve GraphRAG entity projection yaz",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Dosya keşfini raporla, indeks yazma")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    patterns = args.include or list(DEFAULT_INCLUDE_PATTERNS)
+    files = discover_seed_files(patterns, max_bytes=max(1, int(args.max_bytes or 1)))
+    if not files:
+        raise SystemExit("İndekslenecek güvenli metin dosyası bulunamadı.")
+
+    if args.dry_run:
+        store: SeedDocumentStore = DryRunStore()
+    else:
+        store = _build_store(_resolve_rag_dir(args.rag_dir), initialize_vector=not args.metadata_only)
+    try:
+        summary = seed_files(
+            store,
+            files,
+            session_id=str(args.session_id or "global"),
+            replace_existing=not bool(args.append),
+            dry_run=bool(args.dry_run),
+        )
+    finally:
+        store.close()
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
