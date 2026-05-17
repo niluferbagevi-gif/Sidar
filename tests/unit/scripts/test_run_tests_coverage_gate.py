@@ -87,6 +87,9 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
 
     assert "Override hiyerarşisi" in env_advanced
+    assert "override=False ile yüklenir" in env_advanced
+    assert "boş" in env_advanced and ".env içindeki dolu değerleri ezmez" in env_advanced
+    assert "docker-compose env_file:" in env_advanced
     assert "AUTONOMOUS_LOOP_COVERAGE_XML=coverage.xml" in env_advanced
     assert "SIDAR_EVENT_BUS_BACKEND=redis" in env_advanced
     assert "SIDAR_RABBITMQ_URL=" in env_advanced
