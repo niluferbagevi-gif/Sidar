@@ -101,6 +101,52 @@ def _replace_assignment_line(lines: list[str], assignment: EnvAssignment, value:
     )
 
 
+
+def _remove_assignment_lines(
+    lines: list[str], assignments: dict[str, EnvAssignment], keys: tuple[str, ...]
+) -> list[str]:
+    remove_indexes = {
+        assignment.line_index for key in keys if (assignment := assignments.get(key)) is not None
+    }
+    return [line for index, line in enumerate(lines) if index not in remove_indexes]
+
+
+def remove_explicit_database_urls_from_text(text: str) -> tuple[str, dict[str, Any]]:
+    """Remove explicit PostgreSQL URL overrides so config.py derives DSNs.
+
+    Non-PostgreSQL URL assignments are preserved because they may intentionally
+    select a non-PostgreSQL backend for a specialized environment.
+    """
+    assignments = _parse_env_text(text)
+    removable_keys: list[str] = []
+    skipped: dict[str, str] = {}
+    for key in DATABASE_URL_KEYS:
+        assignment = assignments.get(key)
+        if assignment is None or not assignment.value:
+            skipped[key] = "missing"
+            continue
+        parsed = urlsplit(assignment.value)
+        if not parsed.scheme.startswith("postgresql"):
+            skipped[key] = "not_postgresql"
+            continue
+        removable_keys.append(key)
+
+    lines = text.splitlines()
+    updated_lines = _remove_assignment_lines(lines, assignments, tuple(removable_keys))
+    trailing_newline = "\n" if text.endswith("\n") or updated_lines else ""
+    updated_text = "\n".join(updated_lines) + trailing_newline
+    summary = {
+        "changed": bool(removable_keys),
+        "changed_keys": removable_keys,
+        "removed_keys": removable_keys,
+        "skipped": skipped,
+        "checked_keys": list(DATABASE_URL_KEYS),
+        "postgres_password_set": "POSTGRES_PASSWORD" in assignments
+        and bool(assignments["POSTGRES_PASSWORD"].value),
+        "strategy": "remove_explicit_urls",
+    }
+    return updated_text, summary
+
 def _postgres_url_with_password(database_url: str, postgres_password: str) -> str | None:
     parsed = urlsplit(database_url)
     if not parsed.scheme.startswith("postgresql"):
@@ -148,6 +194,7 @@ def _sync_env_text_with_password(text: str, postgres_password: str) -> tuple[str
         "skipped": skipped,
         "checked_keys": list(DATABASE_URL_KEYS),
         "postgres_password_set": True,
+        "strategy": "sync_passwords",
     }
     return updated_text, summary
 
@@ -342,7 +389,7 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     return {"env_file": str(env_file), **summary}
 
 
-def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
+def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE, *, remove_explicit_urls: bool = False) -> dict[str, Any]:
     specs = discover_env_chain(base_env_file)
     if not specs or not specs[0].path.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
@@ -375,12 +422,18 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
 
         original = spec.path.read_text(encoding="utf-8")
         assignments = _parse_env_text(original)
-        updated, summary = _sync_env_text_with_password(original, postgres_password)
-        file_warnings, file_notes = _file_skip_diagnostics(
-            spec=spec, assignments=assignments, skipped=summary["skipped"]
-        )
-        warnings.extend(file_warnings)
-        notes.extend(file_notes)
+        if remove_explicit_urls:
+            updated, summary = remove_explicit_database_urls_from_text(original)
+        else:
+            updated, summary = _sync_env_text_with_password(original, postgres_password)
+        if remove_explicit_urls:
+            file_warnings, file_notes = [], []
+        else:
+            file_warnings, file_notes = _file_skip_diagnostics(
+                spec=spec, assignments=assignments, skipped=summary["skipped"]
+            )
+            warnings.extend(file_warnings)
+            notes.extend(file_notes)
         if updated != original:
             spec.path.write_text(updated, encoding="utf-8")
             changed_files.append(str(spec.path))
@@ -396,15 +449,32 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
             }
         )
 
-    effective_env_after_sync = _effective_env_from_specs(specs)
-    warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
+    if remove_explicit_urls:
+        for key in DATABASE_URL_KEYS:
+            if os.environ.get(key, "").strip():
+                notes.append(
+                    _message_entry(
+                        f"Parent process still exports {key}; restart the launcher or unset it so Sidar derives the URL from POSTGRES_* values.",
+                        severity="info",
+                        key=key,
+                    )
+                )
+    else:
+        effective_env_after_sync = _effective_env_from_specs(specs)
+        warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
 
     changed_keys = sorted({key for keys in changed_keys_by_file.values() for key in keys})
     no_change_guidance = (
-        "No dotenv URL changes were needed. If Doctor still reports database_env drift, "
-        "reload the launcher environment or restart the parent process before rechecking."
-        if not changed_files
-        else ""
+        "No explicit PostgreSQL URL entries were found in the dotenv chain. If Doctor "
+        "still reports database_env drift, clear DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL "
+        "from the parent shell or restart the launcher before rechecking."
+        if remove_explicit_urls and not changed_files
+        else (
+            "No dotenv URL changes were needed. If Doctor still reports database_env drift, "
+            "reload the launcher environment or restart the parent process before rechecking."
+            if not changed_files
+            else ""
+        )
     )
     return {
         "env_file": str(specs[0].path),
@@ -416,6 +486,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         "checked_files": [str(spec.path) for spec in specs],
         "checked_keys": list(DATABASE_URL_KEYS),
         "postgres_password_set": True,
+        "strategy": "remove_explicit_urls" if remove_explicit_urls else "sync_passwords",
         "warnings": warnings,
         "notes": notes,
         "file_summaries": file_summaries,
@@ -430,21 +501,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
     )
+    parser.add_argument(
+        "--remove-explicit-urls",
+        action="store_true",
+        help=(
+            "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL PostgreSQL tanımlarını "
+            "dotenv zincirinden kaldırarak DSN üretimini POSTGRES_* parçalarına bırak"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        summary = sync_env_chain(Path(args.env_file))
+        summary = sync_env_chain(Path(args.env_file), remove_explicit_urls=args.remove_explicit_urls)
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
 
     if summary.get("changed"):
-        print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
+        if args.remove_explicit_urls:
+            print("✅ PostgreSQL URL override tanımları dotenv zincirinden kaldırıldı.", file=sys.stderr)
+        else:
+            print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
     else:
-        print("ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr)
+        if args.remove_explicit_urls:
+            print("ℹ️ Kaldırılacak açık PostgreSQL URL override tanımı bulunamadı.", file=sys.stderr)
+        else:
+            print("ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr)
         if summary.get("no_change_guidance"):
             print(f"ℹ️ {summary['no_change_guidance']}", file=sys.stderr)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

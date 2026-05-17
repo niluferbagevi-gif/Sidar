@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from sidar_assets.paths import migrations_path
 
@@ -111,6 +111,42 @@ def _is_postgres_url(parsed: Any) -> bool:
     return bool(parsed and str(parsed.scheme).startswith("postgresql"))
 
 
+
+def _postgres_dsn_from_components(*, host: str | None = None) -> str:
+    user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
+    password = os.getenv("POSTGRES_PASSWORD", "sidar")
+    resolved_host = (
+        host if host is not None else os.getenv("POSTGRES_HOST") or "localhost"
+    ).strip() or "localhost"
+    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
+    return (
+        f"postgresql+asyncpg://{quote(user, safe='')}:{quote(password, safe='')}"
+        f"@{resolved_host}:{port}/{quote(database, safe='')}"
+    )
+
+
+def _resolved_database_urls() -> tuple[str, str, bool, bool]:
+    """Return effective database URLs and whether each one was explicit.
+
+    Sidar intentionally allows DATABASE_URL and SIDAR_CONTAINER_DATABASE_URL to be
+    absent from dotenv files. In that case config.py derives both DSNs from the
+    normalized POSTGRES_* parts, which avoids password drift between local and
+    Docker startup paths.
+    """
+    explicit_database_url = os.getenv("DATABASE_URL", "").strip()
+    explicit_container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    postgres_password_set = bool(os.getenv("POSTGRES_PASSWORD", "").strip())
+    database_url = explicit_database_url or (
+        _postgres_dsn_from_components() if postgres_password_set else ""
+    )
+    container_url = explicit_container_url or (
+        _postgres_dsn_from_components(host=os.getenv("POSTGRES_CONTAINER_HOST", "postgres"))
+        if postgres_password_set
+        else ""
+    )
+    return database_url, container_url, bool(explicit_database_url), bool(explicit_container_url)
+
 def _normalize_postgres_dsn(database_url: str) -> str:
     return str(database_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
 
@@ -171,13 +207,14 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                     "sidar user exists with a different password in PostgreSQL",
                 ],
                 "remediation_steps": [
-                    "Compare POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, DATABASE_URL and SIDAR_CONTAINER_DATABASE_URL in .env.",
-                    "If the env values are correct but auth still fails, run ALTER USER for the existing PostgreSQL user or reset the PostgreSQL volume in development only.",
+                    "If Doctor/database_env is already pass but auth still fails, synchronize the stored PostgreSQL role password in the existing Docker volume.",
+                    "Run uv run python -m scripts.sync_postgres_password so the password is read from POSTGRES_PASSWORD without exposing it in the shell command.",
                     "Restart PostgreSQL and rerun `uv run python -m core.doctor artifacts/install/doctor.json`.",
                 ],
-                "recommended_commands": common_commands
-                + [
-                    "docker compose exec postgres psql -U postgres -d postgres -c \"ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';\"",
+                "auto_fix": "uv run python -m scripts.sync_postgres_password",
+                "recommended_commands": [
+                    "uv run python -m scripts.sync_postgres_password",
+                    *common_commands,
                     "# development only: docker compose down && docker volume rm <sidar_postgres_data> && docker compose up -d postgres",
                 ],
             },
@@ -391,8 +428,9 @@ def _validate_database_url_pair_sync(
 
 
 def check_database_env() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    database_url, container_url, explicit_database_url, explicit_container_url = (
+        _resolved_database_urls()
+    )
     postgres_user = os.getenv("POSTGRES_USER", "").strip()
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     postgres_db = os.getenv("POSTGRES_DB", "").strip()
@@ -407,13 +445,7 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        if postgres_password:
-            failures.append(
-                "DATABASE_URL was lost during env reload while POSTGRES_PASSWORD is set; "
-                "database readiness cannot be verified"
-            )
-        else:
-            warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
+        warnings.append("DATABASE_URL could not be resolved; database readiness cannot be fully verified")
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",
@@ -462,6 +494,10 @@ def check_database_env() -> DoctorCheck:
         {
             "database_url_set": bool(database_url),
             "container_database_url_set": bool(container_url),
+            "database_url_explicit": explicit_database_url,
+            "container_database_url_explicit": explicit_container_url,
+            "database_url_derived": bool(database_url) and not explicit_database_url,
+            "container_database_url_derived": bool(container_url) and not explicit_container_url,
             "postgres_user_set": bool(postgres_user),
             "postgres_password_set": bool(postgres_password),
             "postgres_db_set": bool(postgres_db),
@@ -476,18 +512,20 @@ def check_database_env() -> DoctorCheck:
                 "path", ""
             ),
             "env_source_definitions": env_definitions,
-            "auto_fix": "uv run python -m scripts.sync_database_passwords",
+            "auto_fix": "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
             "recommended_commands": [
+                "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
                 "uv run python -m scripts.sync_database_passwords",
                 "uv run python -m core.doctor artifacts/install/doctor.json",
                 "docker compose ps postgres",
             ],
             "root_cause_hints": [
-                "DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD değerleri aynı parolayı kullanmalı",
-                "URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
+                "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",
+                "Açık PostgreSQL URL tanımları tutulacaksa URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
             ],
             "remediation_steps": [
-                "uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
+                "Kalıcı çözüm için uv run python -m scripts.sync_database_passwords --remove-explicit-urls ile dotenv zincirindeki açık DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL tanımlarını kaldırıp Sidar'ın POSTGRES_* parçalarından üretmesine izin verin.",
+                "Açık URL tutmanız gerekiyorsa uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
                 "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız geliştirme ortamında volume resetleyin.",
             ],
         },
@@ -539,10 +577,12 @@ async def _probe_postgres_connectivity(
 
 
 def check_database_connectivity() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url, _, explicit_database_url, _ = _resolved_database_urls()
     parsed = urlparse(database_url) if database_url else None
     details: dict[str, Any] = {
         "database_url_set": bool(database_url),
+        "database_url_explicit": explicit_database_url,
+        "database_url_derived": bool(database_url) and not explicit_database_url,
         "database_url": _redact_url(database_url),
         "scheme": parsed.scheme if parsed else "",
         "recommended_commands": [
@@ -554,7 +594,7 @@ def check_database_connectivity() -> DoctorCheck:
         return DoctorCheck(
             "database_connectivity",
             "warn",
-            "DATABASE_URL is not set; PostgreSQL connectivity smoke was skipped",
+            "DATABASE_URL could not be resolved; PostgreSQL connectivity smoke was skipped",
             details,
         )
     if not _is_postgres_url(parsed):

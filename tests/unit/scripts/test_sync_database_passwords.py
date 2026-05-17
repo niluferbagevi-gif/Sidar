@@ -242,3 +242,77 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
         }
     ]
     assert summary["notes"] == []
+
+def test_remove_explicit_database_urls_from_text_preserves_non_postgres_url() -> None:
+    updated, summary = sync_database_passwords.remove_explicit_database_urls_from_text(
+        "POSTGRES_PASSWORD=cccccccccccccccccccccccc\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
+        "SIDAR_CONTAINER_DATABASE_URL=sqlite:///tmp/sidar.db\n"
+        "WEB_PORT=8080\n"
+    )
+
+    assert "DATABASE_URL=postgresql" not in updated
+    assert "SIDAR_CONTAINER_DATABASE_URL=sqlite:///tmp/sidar.db" in updated
+    assert "WEB_PORT=8080" in updated
+    assert summary["changed"] is True
+    assert summary["removed_keys"] == ["DATABASE_URL"]
+    assert summary["skipped"] == {"SIDAR_CONTAINER_DATABASE_URL": "not_postgresql"}
+
+
+def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "POSTGRES_PASSWORD=" + "d" * 24 + "\n"
+        "POSTGRES_HOST=localhost\n"
+        "POSTGRES_CONTAINER_HOST=postgres\n"
+        "POSTGRES_PORT=5432\n"
+        "POSTGRES_DB=sidar\n"
+        "POSTGRES_USER=sidar\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
+        "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    summary = sync_database_passwords.sync_env_chain(env_file, remove_explicit_urls=True)
+
+    text = env_file.read_text(encoding="utf-8")
+    assert "DATABASE_URL=" not in text
+    assert "SIDAR_CONTAINER_DATABASE_URL=" not in text
+    assert "POSTGRES_PASSWORD=" in text
+    assert summary["changed"] is True
+    assert summary["strategy"] == "remove_explicit_urls"
+    assert summary["warnings"] == []
+    assert summary["notes"] == []
+    assert summary["changed_keys"] == ["DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"]
+
+
+def test_remove_explicit_urls_reports_parent_shell_exports_as_info(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:stale@localhost:5432/sidar")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "POSTGRES_PASSWORD=" + "e" * 24 + "\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    summary = sync_database_passwords.sync_env_chain(env_file, remove_explicit_urls=True)
+
+    assert summary["warnings"] == []
+    assert summary["notes"] == [
+        {
+            "severity": "info",
+            "message": (
+                "Parent process still exports DATABASE_URL; restart the launcher or unset it "
+                "so Sidar derives the URL from POSTGRES_* values."
+            ),
+            "key": "DATABASE_URL",
+        }
+    ]
