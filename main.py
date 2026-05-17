@@ -179,7 +179,8 @@ def _safe_host(value: object, default: str = "127.0.0.1") -> str:
 
 
 def _doctor_status_icon(status: str) -> str:
-    return {"pass": "✅", "warn": "⚠", "fail": "❌"}.get(status, "ℹ️")
+    # "pass" is a doctor check status key, not a credential.
+    return {"pass": "✅", "warn": "⚠", "fail": "❌"}.get(status, "ℹ️")  # nosec B105
 
 
 def _print_doctor_check_summary(check: Any) -> None:

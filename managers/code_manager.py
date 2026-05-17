@@ -239,10 +239,19 @@ class CodeManager:
             getattr(self.cfg, "DOCKER_TEST_IMAGE_EXPLICIT", False)
         ) or (bool(configured_test_image) and configured_test_image != self.docker_image)
         self.docker_test_image: str = configured_test_image or self.docker_image
+        _sandbox_timeout = SANDBOX_LIMITS.get("timeout", 10)
+        _default_exec_timeout: int = (
+            int(_sandbox_timeout)
+            if isinstance(_sandbox_timeout, int | str)
+            else 10
+        )
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
             if docker_exec_timeout is not None
-            else int(getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", SANDBOX_LIMITS.get("timeout", 10)))
+            else int(
+                getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", _default_exec_timeout)
+                or _default_exec_timeout
+            )
         )
         self.max_output_chars = 10000
         self._lock = threading.RLock()
