@@ -77,6 +77,9 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert advanced_variant in variants_block
     assert variants_block.index(development_variant) < variants_block.index(test_variant)
     assert variants_block.index(test_variant) < variants_block.index(advanced_variant)
+    assert 'ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"' in install_script
+    assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in install_script
+    assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in install_script
 
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
@@ -488,6 +491,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "sync_postgres_env_with_database_url()" in db_utils
     assert "ensure_database_url_defaults()" in db_utils
     assert "setup_env_file()" in env_utils
+    assert 'ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"' in env_utils
+    assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in env_utils
+    assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
+    assert "propagate_shared_secrets_to_env_variants" in env_utils
     assert "harden_database_credentials" in env_utils
     assert "download_ollama_models()" in ollama_utils
     assert "qwen2.5-coder:7b" in ollama_utils

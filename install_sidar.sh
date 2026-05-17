@@ -4322,6 +4322,17 @@ setup_env_file() {
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
+    ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"
+    ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"
+
+    # .env.advanced eksikse example üzerinden oluştur. Secret değerleri
+    # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
+    # ile .env dosyasından senkronize edilir.
+    if [[ ! -f "$ADVANCED_ENV_FILE" && -f "$ADVANCED_EXAMPLE_FILE" ]]; then
+        cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"
+        ok ".env.advanced dosyası .env.advanced.example'dan oluşturuldu."
+    fi
+
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
         ensure_sidar_env_default "$ENV_FILE"
