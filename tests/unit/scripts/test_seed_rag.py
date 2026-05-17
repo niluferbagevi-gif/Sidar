@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -162,3 +163,29 @@ def test_seed_rag_boolish_normalizes_external_aliases() -> None:
     assert seed_rag._boolish("off") is False
     with pytest.raises(seed_rag.SeedError):
         seed_rag._boolish("maybe")
+
+
+def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    doc = tmp_path / "README.md"
+    doc.write_text("Sidar", encoding="utf-8")
+    monkeypatch.setattr(seed_rag, "discover_seed_files", lambda *_args, **_kwargs: [doc])
+
+    def fake_seed_files(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "session_id": "global",
+            "added_count": 2,
+            "skipped_count": 1,
+            "deleted_count": 1,
+            "added": [{"path": "a.md"}, {"path": "b.md"}],
+            "skipped": [{"path": "c.md"}],
+            "deleted": ["old"],
+        }
+
+    monkeypatch.setattr(seed_rag, "seed_files", fake_seed_files)
+
+    assert seed_rag.main(["--dry-run", "--summary-only"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"added_count": 2, "skipped_count": 1}

@@ -544,11 +544,22 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     return []
 
 
+def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
+    """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
+    if "--summary-only" in cmd or "--quiet" in cmd:
+        return cmd
+    for index in range(len(cmd) - 2):
+        if cmd[index : index + 3] == ["python", "-m", "scripts.seed_rag"]:
+            return [*cmd, "--summary-only"]
+    return cmd
+
+
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     """Run one Doctor auto-fix command without invoking a shell."""
     cmd = shlex.split(auto_fix)
     if not cmd:
         return False
+    cmd = _launcher_auto_fix_command(cmd)
 
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:

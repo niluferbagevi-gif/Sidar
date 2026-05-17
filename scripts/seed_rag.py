@@ -267,6 +267,14 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore
     )
 
 
+def _summary_only_payload(summary: dict[str, Any]) -> dict[str, int]:
+    """Return compact seeding output for interactive Doctor auto-fix runs."""
+    return {
+        "added_count": int(summary.get("added_count", 0) or 0),
+        "skipped_count": int(summary.get("skipped_count", 0) or 0),
+    }
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Sidar RAG deposunu repo dokümantasyonu ile hazırla",
@@ -303,6 +311,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--dry-run", action="store_true", help="Dosya keşfini raporla, indeks yazma"
     )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Yalnız added_count/skipped_count özetini yazdır",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="--summary-only alias; interaktif başlatıcı çıktısını kısa tutar",
+    )
     return parser.parse_args(argv)
 
 
@@ -329,7 +347,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     finally:
         store.close()
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    output = _summary_only_payload(summary) if (args.summary_only or args.quiet) else summary
+    print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
 
 
