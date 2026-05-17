@@ -624,6 +624,57 @@ def check_environment_profile() -> DoctorCheck:
         details,
     )
 
+
+def check_gpu_memory_config() -> DoctorCheck:
+    """Report effective local model and VRAM budget settings."""
+    from config import Config, normalize_gpu_memory_fractions
+
+    provider = str(getattr(Config, "AI_PROVIDER", "ollama") or "ollama").strip().lower()
+    coding_model = str(getattr(Config, "CODING_MODEL", "") or "").strip()
+    access_level = str(getattr(Config, "ACCESS_LEVEL", "") or "").strip().lower()
+    llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
+    rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
+    legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
+    budget = normalize_gpu_memory_fractions(llm_fraction, rag_fraction)
+    total = llm_fraction + rag_fraction
+    details: dict[str, Any] = {
+        "ai_provider": provider,
+        "coding_model": coding_model,
+        "access_level": access_level,
+        "gpu_memory_fraction": legacy_fraction,
+        "llm_gpu_memory_fraction": llm_fraction,
+        "rag_gpu_memory_fraction": rag_fraction,
+        "total_gpu_memory_fraction": round(total, 4),
+        "effective_gpu_memory_fraction": budget["gpu"],
+        "effective_llm_gpu_memory_fraction": budget["llm"],
+        "effective_rag_gpu_memory_fraction": budget["rag"],
+        "normalized": budget["normalized"],
+        "recommended_commands": [
+            "uv run python -m scripts.bootstrap_env --profile development",
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+        ],
+    }
+
+    warnings: list[str] = []
+    if budget["normalized"]:
+        warnings.append(
+            "LLM/RAG VRAM fractions exceed 100% or are non-positive; Sidar will normalize the effective GPU budget to 80%"
+        )
+    elif total > 0.95:
+        warnings.append(
+            "LLM/RAG VRAM fractions are very high; consider lowering .env.development limits before bulk RAG ingestion"
+        )
+    if provider == "ollama" and coding_model != "qwen2.5-coder:7b":
+        warnings.append(
+            "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
+        )
+    if access_level != "sandbox":
+        warnings.append("CLI access level is not sandbox; verify this is intentional")
+
+    status = "warn" if warnings else "pass"
+    message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
+    return DoctorCheck("gpu_memory_config", status, message, details)
+
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
     revisions: list[str] = []
     down_revisions: list[str] = []
@@ -843,6 +894,7 @@ def run_doctor_report(
     checks = [
         check_uv(),
         check_environment_profile(),
+        check_gpu_memory_config(),
         check_database_env(),
         check_database_connectivity(),
         check_rag_readiness(),

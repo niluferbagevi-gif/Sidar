@@ -340,6 +340,24 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
     assert config.Config.validate_critical_settings() is False
 
 
+
+def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
+    safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
+    assert safe == {
+        "llm": 0.6,
+        "rag": 0.3,
+        "gpu": 0.9,
+        "total": 0.9,
+        "original_total": 0.9,
+        "normalized": False,
+    }
+
+    normalized = config.normalize_gpu_memory_fractions(0.9, 0.4)
+    assert normalized["normalized"] is True
+    assert normalized["gpu"] == pytest.approx(0.8)
+    assert normalized["total"] == pytest.approx(0.8)
+    assert normalized["llm"] + normalized["rag"] == pytest.approx(0.8)
+
 def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
     monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
     monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
@@ -812,6 +830,30 @@ def test_check_hardware_non_cuda_and_generic_exception(monkeypatch):
     info2 = config.check_hardware()
     assert info2.gpu_name == "Tespit Edilemedi"
 
+
+
+def test_check_hardware_normalizes_explicit_llm_rag_fraction_sum(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("LLM_GPU_MEMORY_FRACTION", "0.9")
+    monkeypatch.setenv("RAG_GPU_MEMORY_FRACTION", "0.4")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+    called = []
+
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            device_count=lambda: 1,
+            get_device_name=lambda _idx: "FakeGPU",
+            set_per_process_memory_fraction=lambda frac, device=0: called.append((frac, device)),
+        ),
+        version=types.SimpleNamespace(cuda="12.1"),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "torch", fake_torch)
+
+    info = config.check_hardware()
+
+    assert info.has_cuda is True
+    assert called == [(0.8, 0)]
 
 def test_check_hardware_invalid_fraction_and_fraction_set_exception(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")

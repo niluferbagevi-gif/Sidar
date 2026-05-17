@@ -13,7 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import quote, urlparse
 
 from dotenv import load_dotenv
@@ -296,6 +296,71 @@ def get_container_database_url() -> str:
     return build_postgres_dsn(host=container_host)
 
 
+class GpuMemoryBudget(TypedDict):
+    llm: float
+    rag: float
+    gpu: float
+    total: float
+    original_total: float
+    normalized: bool
+
+def normalize_gpu_memory_fractions(
+    llm_fraction: float,
+    rag_fraction: float,
+    *,
+    target_total: float = 0.8,
+    min_fraction: float = 0.05,
+) -> GpuMemoryBudget:
+    """Normalize LLM/RAG VRAM fractions when their total is unsafe.
+
+    The helper is intentionally side-effect free so startup hardware probing,
+    Config validation, doctor checks, and tests all report the same effective
+    VRAM budget.
+    """
+    llm = float(llm_fraction or 0.0)
+    rag = float(rag_fraction or 0.0)
+    total = llm + rag
+    safe_total = float(target_total)
+    floor = max(0.0, float(min_fraction))
+
+    if total <= 0:
+        return {
+            "llm": round(safe_total / 2, 4),
+            "rag": round(safe_total / 2, 4),
+            "gpu": round(safe_total, 4),
+            "total": round(safe_total, 4),
+            "original_total": round(total, 4),
+            "normalized": True,
+        }
+
+    if total <= 1.0:
+        return {
+            "llm": round(llm, 4),
+            "rag": round(rag, 4),
+            "gpu": round(total, 4),
+            "total": round(total, 4),
+            "original_total": round(total, 4),
+            "normalized": False,
+        }
+
+    scale = safe_total / total
+    normalized_llm = max(floor, llm * scale)
+    normalized_rag = max(floor, rag * scale)
+    normalized_total = normalized_llm + normalized_rag
+    if normalized_total > safe_total:
+        second_scale = safe_total / normalized_total
+        normalized_llm *= second_scale
+        normalized_rag *= second_scale
+
+    return {
+        "llm": round(normalized_llm, 4),
+        "rag": round(normalized_rag, 4),
+        "gpu": round(safe_total, 4),
+        "total": round(normalized_llm + normalized_rag, 4),
+        "original_total": round(total, 4),
+        "normalized": True,
+    }
+
 def get_web_scrape_max_chars(default: int = 12000) -> int:
     """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
     if os.getenv("WEB_SCRAPE_MAX_CHARS") is not None:
@@ -558,7 +623,19 @@ def check_hardware() -> HardwareInfo:
                 os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
                 or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
             ):
-                frac = llm_frac + rag_frac
+                vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
+                frac = float(
+                    vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"]
+                )
+                if vram_budget["normalized"]:
+                    logger.warning(
+                        "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize edilmiş bütçeyi uyguluyor "
+                        "(LLM=%.2f, RAG=%.2f).",
+                        vram_budget["original_total"],
+                        vram_budget["gpu"],
+                        vram_budget["llm"],
+                        vram_budget["rag"],
+                    )
             else:
                 frac = legacy_frac
             if not (0.1 <= frac < 1.0):
@@ -1227,35 +1304,24 @@ class Config:
         rag = float(cls.RAG_GPU_MEMORY_FRACTION or 0.0)
         total = llm + rag
 
-        target_total = 0.8
+        budget = normalize_gpu_memory_fractions(llm, rag)
         if total <= 0:
-            cls.LLM_GPU_MEMORY_FRACTION = 0.4
-            cls.RAG_GPU_MEMORY_FRACTION = 0.4
-            cls.GPU_MEMORY_FRACTION = target_total
+            cls.LLM_GPU_MEMORY_FRACTION = float(budget["llm"])
+            cls.RAG_GPU_MEMORY_FRACTION = float(budget["rag"])
+            cls.GPU_MEMORY_FRACTION = float(budget["gpu"])
             return
 
-        if total <= 1.0:
+        if not budget["normalized"]:
             return
 
-        scale = target_total / total
-        normalized_llm = max(0.05, llm * scale)
-        normalized_rag = max(0.05, rag * scale)
-        normalized_total = normalized_llm + normalized_rag
-
-        # Min floor nedeniyle hedef toplamın üstüne çıkarsa oranı koruyarak tekrar ölçekle.
-        if normalized_total > target_total:
-            second_scale = target_total / normalized_total
-            normalized_llm *= second_scale
-            normalized_rag *= second_scale
-
-        cls.LLM_GPU_MEMORY_FRACTION = round(normalized_llm, 4)
-        cls.RAG_GPU_MEMORY_FRACTION = round(normalized_rag, 4)
-        cls.GPU_MEMORY_FRACTION = round(target_total, 4)
+        cls.LLM_GPU_MEMORY_FRACTION = float(budget["llm"])
+        cls.RAG_GPU_MEMORY_FRACTION = float(budget["rag"])
+        cls.GPU_MEMORY_FRACTION = float(budget["gpu"])
         logger.warning(
             "LLM/RAG GPU bellek fraksiyonları toplamı %.2f bulundu; OOM riskini azaltmak için %.2f toplamına normalize edildi "
             "(LLM=%.2f, RAG=%.2f).",
-            total,
-            target_total,
+            budget["original_total"],
+            budget["gpu"],
             cls.LLM_GPU_MEMORY_FRACTION,
             cls.RAG_GPU_MEMORY_FRACTION,
         )

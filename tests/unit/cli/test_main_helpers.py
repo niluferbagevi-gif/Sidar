@@ -272,6 +272,20 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
             details={"recommended_commands": ["belge ekle <url>"]},
         ),
     )
+    monkeypatch.setattr(
+        doctor,
+        "check_gpu_memory_config",
+        lambda: SimpleNamespace(
+            name="gpu_memory_config",
+            status="warn",
+            message="VRAM normalized",
+            details={
+                "recommended_commands": [
+                    "uv run python -m scripts.bootstrap_env --profile development"
+                ]
+            },
+        ),
+    )
 
     main._run_launcher_doctor_preflight()
 
@@ -280,6 +294,8 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
     assert "old volume password" in output
     assert "run ALTER USER" in output
     assert "belge ekle <url>" in output
+    assert "Doctor/gpu_memory_config" in output
+    assert "scripts.bootstrap_env" in output
 
 
 def test_preflight_reports_existing_env_and_database_url_warning(

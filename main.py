@@ -211,6 +211,7 @@ def _run_launcher_doctor_preflight() -> None:
         from core.doctor import (
             check_database_connectivity,
             check_database_env,
+            check_gpu_memory_config,
             check_rag_readiness,
         )
     except Exception as exc:  # pragma: no cover - defensive launcher path
@@ -218,7 +219,12 @@ def _run_launcher_doctor_preflight() -> None:
         return
 
     print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
-    for check_func in (check_database_env, check_database_connectivity, check_rag_readiness):
+    for check_func in (
+        check_database_env,
+        check_database_connectivity,
+        check_rag_readiness,
+        check_gpu_memory_config,
+    ):
         try:
             _print_doctor_check_summary(check_func())
         except Exception as exc:  # pragma: no cover - defensive launcher path

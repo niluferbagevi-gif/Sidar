@@ -36,6 +36,9 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
     monkeypatch.setattr(
         doctor, "check_environment_profile", lambda: DoctorCheck("env", "pass", "ok")
     )
+    monkeypatch.setattr(
+        doctor, "check_gpu_memory_config", lambda: DoctorCheck("gpu_memory_config", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
     monkeypatch.setattr(
         doctor, "check_database_connectivity", lambda: DoctorCheck("db_conn", "pass", "ok")
@@ -466,6 +469,42 @@ def test_environment_profile_passes_when_profile_file_exists_or_test_profile(mon
 
     assert test_profile.status == "pass"
     assert "test fixtures" in test_profile.message
+
+
+def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.9)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "warn"
+    assert check.details["normalized"] is True
+    assert check.details["effective_gpu_memory_fraction"] == pytest.approx(0.8)
+    assert "normalize" in check.message
+
+
+def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.3)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "pass"
+    assert check.details["coding_model"] == "qwen2.5-coder:7b"
+    assert check.details["access_level"] == "sandbox"
+    assert check.details["total_gpu_memory_fraction"] == pytest.approx(0.9)
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
     versions = tmp_path / "migrations" / "versions"
