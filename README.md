@@ -438,15 +438,45 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
+**Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir.**
+Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirir; betik repo checkout
+yoksa `scripts/install_modules/` altındaki güncel yardımcı ve faz modüllerini
+GitHub üzerinden otomatik indirir. Böylece kurulum tek parça bir araç gibi
+hissedilirken kaynak kod modüler kalır:
+
 ```bash
+curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+chmod +x install_sidar.sh
 ./install_sidar.sh
 
 # Bulut/CI ortamı (ChatGPT Codex Cloud, Gitpod, Codespaces vb.) için
 # etkileşim istemeden test-ready kurulum:
-bash install_sidar.sh --ci
+./install_sidar.sh --ci
 
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
+```
+
+Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya
+uzun coverage kampanyaları için repoyu klonlamak hâlâ en doğru çalışma şeklidir:
+
+```bash
+git clone https://github.com/niluferbagevi-gif/Sidar.git
+cd Sidar
+uv sync --all-extras
+./install_sidar.sh
+```
+
+Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik Release
+bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
+ile üretilir ve modül indirme ihtiyacı olmadan çalışır:
+
+```bash
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh --ci
 ```
 
 > Kurulum sırasında bir hata alırsanız betik loglarını `logs/install_YYYYMMDD_HHMMSS.log` altında inceleyin.
