@@ -26,6 +26,7 @@ env/
 # Environment variables
 .env
 .env.advanced
+!.env.advanced.example
 .env.local
 .env.development
 .env.development.local
