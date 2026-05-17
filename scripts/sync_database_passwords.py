@@ -21,9 +21,22 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 DATABASE_URL_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+# Keys whose post-sync effective values the launcher re-applies to its own
+# os.environ. POSTGRES_* helpers are included so config.get_database_url can
+# rebuild a derived DSN when DATABASE_URL is not stored verbatim in any file.
+SNAPSHOT_KEYS = (
+    "DATABASE_URL",
+    "SIDAR_CONTAINER_DATABASE_URL",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_CONTAINER_HOST",
+)
 ENV_CHAIN_KEYS = (
     *DATABASE_URL_KEYS,
-    "POSTGRES_PASSWORD",
+    *SNAPSHOT_KEYS,
     "SIDAR_ENV",
     "DOTENV_FILE",
     "SIDAR_KEYS_FILE",
@@ -320,6 +333,20 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     return {"env_file": str(env_file), **summary}
 
 
+def _effective_snapshot(specs: list[EnvFileSpec]) -> dict[str, str]:
+    """Resolve only the keys the launcher re-applies after a Doctor auto-fix."""
+    effective_env = _effective_env_from_specs(specs)
+    return {key: effective_env[key] for key in SNAPSHOT_KEYS if key in effective_env}
+
+
+def _write_effective_snapshot(path: Path, snapshot: dict[str, str]) -> None:
+    """Write the effective env snapshot atomically so the launcher reads a complete file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
 def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     specs = discover_env_chain(base_env_file)
     if not specs or not specs[0].path.is_file():
@@ -403,6 +430,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
     )
+    parser.add_argument(
+        "--snapshot-out",
+        default="",
+        help=(
+            "Sync sonrası etkin DB ortam değişkenlerini JSON dosyasına yaz "
+            "(launcher os.environ'a doğrudan uygulasın)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -413,6 +448,14 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
+
+    snapshot_path = args.snapshot_out.strip()
+    if snapshot_path:
+        specs = discover_env_chain(Path(args.env_file))
+        snapshot = _effective_snapshot(specs)
+        _write_effective_snapshot(Path(snapshot_path).expanduser(), snapshot)
+        summary["snapshot_out"] = str(Path(snapshot_path).expanduser())
+        summary["snapshot_keys"] = sorted(snapshot.keys())
 
     if summary.get("changed"):
         print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)

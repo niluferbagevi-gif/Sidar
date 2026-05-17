@@ -183,6 +183,44 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
     assert _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1]) == "s" * 24
 
 
+def test_main_writes_effective_env_snapshot_for_caller(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    env_file = tmp_path / ".env"
+    password = "x" * 24
+    env_file.write_text(
+        f"POSTGRES_PASSWORD={password}\n"
+        "POSTGRES_USER=sidar\n"
+        "POSTGRES_DB=sidar\n"
+        "POSTGRES_HOST=localhost\n"
+        f"DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
+        f"SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n",
+        encoding="utf-8",
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+
+    assert (
+        sync_database_passwords.main(
+            ["--env-file", str(env_file), "--snapshot-out", str(snapshot_path)]
+        )
+        == 0
+    )
+
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["DATABASE_URL"] == f"postgresql://sidar:{password}@localhost:5432/sidar"
+    assert snapshot["SIDAR_CONTAINER_DATABASE_URL"] == (
+        f"postgresql://sidar:{password}@postgres:5432/sidar"
+    )
+    assert snapshot["POSTGRES_PASSWORD"] == password
+    assert snapshot["POSTGRES_USER"] == "sidar"
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["snapshot_out"] == str(snapshot_path)
+    assert "DATABASE_URL" in summary["snapshot_keys"]
+
+
 def test_main_reports_no_change_guidance_for_idempotent_chain(monkeypatch, tmp_path, capsys) -> None:
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
