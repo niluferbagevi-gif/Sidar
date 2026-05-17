@@ -21,6 +21,7 @@ from core.rag import DocumentStore
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INCLUDE_PATTERNS = (
+    # Operator-facing documentation.
     "README.md",
     "AGENTS.md",
     "docs/SIDAR.md",
@@ -28,6 +29,23 @@ DEFAULT_INCLUDE_PATTERNS = (
     "docs/PROJE_RAPORU.md",
     "docs/SIDAR_v5_0_MIMARI_RAPORU.md",
     "docs/SIDAR_v5_1_MIMARI_RAPORU.md",
+    # Curated architecture/runtime code entry points.  This keeps the seed
+    # deterministic and compact while giving local coding agents enough context
+    # for self-healing, RAG/GraphRAG routing, coverage, and startup behavior.
+    "config.py",
+    "pyproject.toml",
+    "run_tests.sh",
+    "autonomous_loop.sh",
+    "agent/registry.py",
+    "agent/sidar_agent.py",
+    "agent/core/supervisor.py",
+    "agent/swarm.py",
+    "agent/roles/__init__.py",
+    "core/rag.py",
+    "core/ci_remediation.py",
+    "scripts/auto_heal.py",
+    "scripts/coverage_hotspots.py",
+    "scripts/seed_rag.py",
 )
 TEXT_EXTENSIONS = {
     ".md",
@@ -39,6 +57,8 @@ TEXT_EXTENSIONS = {
     ".toml",
     ".ini",
     ".cfg",
+    ".py",
+    ".sh",
 }
 
 
@@ -114,7 +134,9 @@ def discover_seed_files(
         pattern = str(raw_pattern or "").strip()
         if not pattern:
             continue
-        matches = sorted(base.glob(pattern)) if any(ch in pattern for ch in "*?[]") else [base / pattern]
+        matches = (
+            sorted(base.glob(pattern)) if any(ch in pattern for ch in "*?[]") else [base / pattern]
+        )
         for match in matches:
             path = match.resolve()
             if not path.is_relative_to(base):
@@ -126,7 +148,9 @@ def discover_seed_files(
     return resolved
 
 
-def _existing_doc_ids_for_source(store: SeedDocumentStore, source: str, session_id: str) -> list[str]:
+def _existing_doc_ids_for_source(
+    store: SeedDocumentStore, source: str, session_id: str
+) -> list[str]:
     return [
         str(item.get("id"))
         for item in store.get_index_info(session_id=session_id)
@@ -206,9 +230,7 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> DocumentStore:
         AI_PROVIDER=getattr(Config, "AI_PROVIDER", "ollama"),
         PGVECTOR_TABLE=getattr(Config, "PGVECTOR_TABLE", "rag_embeddings"),
         PGVECTOR_EMBEDDING_DIM=getattr(Config, "PGVECTOR_EMBEDDING_DIM", 384),
-        PGVECTOR_EMBEDDING_MODEL=getattr(
-            Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
-        ),
+        PGVECTOR_EMBEDDING_MODEL=getattr(Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
         DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
         HF_TOKEN=getattr(Config, "HF_TOKEN", ""),
         HF_HUB_OFFLINE=getattr(Config, "HF_HUB_OFFLINE", False),
@@ -256,7 +278,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Chroma/pgvector başlatmadan index, BM25 ve GraphRAG entity projection yaz",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Dosya keşfini raporla, indeks yazma")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Dosya keşfini raporla, indeks yazma"
+    )
     return parser.parse_args(argv)
 
 
@@ -270,7 +294,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
-        store = _build_store(_resolve_rag_dir(args.rag_dir), initialize_vector=not args.metadata_only)
+        store = _build_store(
+            _resolve_rag_dir(args.rag_dir), initialize_vector=not args.metadata_only
+        )
     try:
         summary = seed_files(
             store,

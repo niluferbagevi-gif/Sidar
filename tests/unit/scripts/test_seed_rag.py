@@ -41,19 +41,23 @@ class FakeStore:
         return None
 
 
-def test_discover_seed_files_filters_to_repo_text_files(tmp_path: Path) -> None:
+def test_discover_seed_files_filters_to_repo_text_and_code_files(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
     keep = docs / "keep.md"
     keep.write_text("# Keep", encoding="utf-8")
+    code = docs / "agent.py"
+    code.write_text("print('Sidar')", encoding="utf-8")
+    shell = docs / "run.sh"
+    shell.write_text("#!/usr/bin/env bash\necho Sidar", encoding="utf-8")
     large = docs / "large.md"
-    large.write_text("x" * 20, encoding="utf-8")
+    large.write_text("x" * 40, encoding="utf-8")
     ignored = docs / "image.png"
     ignored.write_bytes(b"png")
 
-    files = seed_rag.discover_seed_files(["docs/*"], base_dir=tmp_path, max_bytes=10)
+    files = seed_rag.discover_seed_files(["docs/*"], base_dir=tmp_path, max_bytes=30)
 
-    assert files == [keep.resolve()]
+    assert files == [code.resolve(), keep.resolve(), shell.resolve()]
 
 
 def test_discover_seed_files_rejects_repo_escape(tmp_path: Path) -> None:
@@ -101,3 +105,11 @@ def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) ->
     assert summary["added_count"] == 0
     assert summary["skipped"] == [{"path": "README.md", "reason": "already_indexed"}]
     assert store.added == []
+
+
+def test_default_seed_patterns_include_curated_code_context() -> None:
+    assert "core/rag.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert "agent/sidar_agent.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert "run_tests.sh" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert ".py" in seed_rag.TEXT_EXTENSIONS
+    assert ".sh" in seed_rag.TEXT_EXTENSIONS
