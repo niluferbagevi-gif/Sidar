@@ -20,6 +20,7 @@ setup_env_file() {
         sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
+        propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
@@ -43,6 +44,7 @@ setup_env_file() {
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"
+    propagate_shared_secrets_to_env_variants "$ENV_FILE"
     validate_required_security_profile "$ENV_FILE"
 
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir

@@ -2823,13 +2823,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    warn "Pyright LSP proje ortamında bulunamadı; uv tool install pyright fallback deneniyor."
-    if uv tool install pyright >/dev/null 2>&1 && command -v pyright-langserver >/dev/null 2>&1; then
-        ok "Pyright LSP uv tool fallback ile hazır: $(command -v pyright-langserver)"
-        return
-    fi
-
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya fallback için 'uv tool install pyright' komutunu doğrulayın."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın ve dev bağımlılıklarının proje ortamında kurulu olduğunu doğrulayın."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -4052,6 +4046,7 @@ propagate_shared_secrets_to_env_variants() {
         METRICS_TOKEN
     )
     local -a variants=(
+        ".env.advanced:.env.advanced.example"
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
     )
@@ -4336,6 +4331,7 @@ setup_env_file() {
         sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
+        propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
@@ -4359,6 +4355,7 @@ setup_env_file() {
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"
+    propagate_shared_secrets_to_env_variants "$ENV_FILE"
     validate_required_security_profile "$ENV_FILE"
 
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir

@@ -356,8 +356,9 @@ cp .env.example .env
 # Gizli servis anahtarlarını repo dışında tutmak için kişisel dosya oluşturun.
 cp .sidar_keys.env.example ~/.sidar_keys.env
 chmod 600 ~/.sidar_keys.env
-# Uzman ayarları gerekiyorsa sadece ihtiyaç duyduğunuz anahtarları .env.advanced içinden
-# ayrı bir override dosyasına kopyalayın ve DOTENV_FILE=.env.<dosya> ile yükleyin.
+# Uzman ayarları gerekiyorsa .env.advanced.example şablonunu .env.advanced olarak
+# kopyalayın veya sadece ihtiyaç duyduğunuz anahtarları ayrı bir override dosyasına
+# taşıyıp DOTENV_FILE=.env.<dosya> ile yükleyin.
 ```
 
 ### Ollama Kurulumu
@@ -770,7 +771,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 ## Yapılandırma (.env)
 
 Temel kurulum şablonu bilinçli olarak kısa tutulur (`.env.example`, 40-50 satır).
-Gelişmiş/operasyonel anahtarlar `.env.advanced` içindedir; override hiyerarşisi dosyanın
+Gelişmiş/operasyonel anahtarlar `.env.advanced.example` şablonundadır; override hiyerarşisi dosyanın
 başında açıklanır.
 
 ```env
@@ -809,7 +810,7 @@ JWT_TTL_DAYS=7
 ```
 
 Gelişmiş örnekler: otonom coverage, Swarm federation, HITL/Judge, Kafka/RabbitMQ event bus,
-LoRA/Active Learning ve sandbox ince ayarları için `.env.advanced` dosyasından yalnız gerekli
+LoRA/Active Learning ve sandbox ince ayarları için `.env.advanced.example` şablonundan yalnız gerekli
 anahtarları kendi override dosyanıza taşıyın. `SIDAR_ENV=development` aktifken
 `.env.development` dosyası yoksa config yükleme zinciri temel `.env/.env.advanced` değerlerine
 düşer ve bunu loglar; yerel geliştirme izolasyonunu hazırlamak için
