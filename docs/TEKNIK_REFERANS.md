@@ -413,10 +413,23 @@ Operasyonel olarak bu mekanizma, vektör veritabanının şişmesini engelleyen 
 
 `config.py` yükleme sırası:
 
-1. Temel `.env`
-2. Varsa profil dosyası `.env.<sidar_env>`
+1. Kod içi güvenli varsayılanlar.
+2. Temel `.env` (`override=False`; mevcut shell environment değerlerini ezmez).
+3. Varsa `.env.advanced` (`override=False`; boş placeholder değerler `.env` içindeki dolu değerleri ezmez).
+4. Varsa profil dosyası `.env.<sidar_env>` (örn. `SIDAR_ENV=production` için `.env.production`).
+5. `DOTENV_FILE` ile açıkça işaret edilen ek override dosyası.
+6. `SIDAR_KEYS_FILE` veya varsayılan `~/.sidar_keys.env` secret dosyası.
 
-Böylece `SIDAR_ENV=production` gibi bir değer ile profil bazlı override uygulanır.
+Böylece `SIDAR_ENV=production` gibi bir değer ile profil bazlı override uygulanır;
+son adımda yüklenen `~/.sidar_keys.env` ise repo dışında tutulan servis anahtarlarını
+çalışma zamanına taşır.
+
+**API anahtarı saklama politikası:** Gerçek sağlayıcı anahtarları için kalıcı kaynak
+yalnız `.env` ve repo dışındaki `~/.sidar_keys.env` olmalıdır. `.env.advanced` ve
+`.env.<profil>` dosyaları operasyonel ayar/override şablonlarıdır; kurulum betiği
+boş placeholder karışıklığını azaltmak için anahtarları runtime varyantlarına
+senkronize edebilir, ancak bu dosyalar elle yönetilen anahtar kasası veya Compose
+`env_file:` kaynağı olarak kullanılmamalıdır.
 
 ### 5.2 Config tarafından okunan env anahtarları (tam liste)
 

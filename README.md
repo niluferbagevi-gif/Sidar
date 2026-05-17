@@ -356,6 +356,8 @@ cp .env.example .env
 # Gizli servis anahtarlarını repo dışında tutmak için kişisel dosya oluşturun.
 cp .sidar_keys.env.example ~/.sidar_keys.env
 chmod 600 ~/.sidar_keys.env
+# API anahtarları için kalıcı kaynaklar yalnızca .env ve repo dışındaki
+# ~/.sidar_keys.env dosyasıdır; .env.advanced'i anahtar kasası gibi kullanmayın.
 # Uzman ayarları gerekiyorsa .env.advanced.example şablonunu .env.advanced olarak
 # kopyalayın veya sadece ihtiyaç duyduğunuz anahtarları ayrı bir override dosyasına
 # taşıyıp DOTENV_FILE=.env.<dosya> ile yükleyin.
@@ -772,7 +774,16 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 
 Temel kurulum şablonu bilinçli olarak kısa tutulur (`.env.example`, 40-50 satır).
 Gelişmiş/operasyonel anahtarlar `.env.advanced.example` şablonundadır; override hiyerarşisi dosyanın
-başında açıklanır.
+başında açıklanır. Runtime yükleme zinciri özetle `config.py` varsayılanları → `.env`
+(`override=False`) → `.env.advanced` (`override=False`) → `.env.${SIDAR_ENV}` →
+`DOTENV_FILE` → `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` şeklindedir.
+
+**API anahtarı politikası:** OpenAI/Gemini/Anthropic/GitHub/Slack/Jira/Teams gibi gerçek
+servis anahtarları için kalıcı kaynak olarak yalnız `.env` ve repo dışındaki
+`~/.sidar_keys.env` kullanılmalıdır. `.env.advanced` referans/operasyonel override
+şablonudur; `install_sidar.sh` runtime dosyalarında boş placeholder kalmasın diye mevcut
+anahtarları env varyantlarına senkronize edebilir, fakat `.env.advanced` elle yönetilen
+bir anahtar kasası veya Docker Compose `env_file:` kaynağı yapılmamalıdır.
 
 ```env
 # Ortam
@@ -823,7 +834,8 @@ Ollama + `qwen2.5-coder:7b` kullanımında
 `RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
 aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API
-tokenlarını ise repo dışında `~/.sidar_keys.env` içinde tutun; güncel anahtar şablonu
+tokenlarını ise `.env` veya tercihen repo dışında `~/.sidar_keys.env` içinde tutun;
+`.env.advanced` yalnız referans/override şablonudur ve güncel anahtar şablonu
 `.sidar_keys.env.example` dosyasındadır.
 
 

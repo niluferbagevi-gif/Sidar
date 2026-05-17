@@ -100,6 +100,31 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_advanced
 
 
+
+def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
+    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+
+    for content in (readme, technical_reference, project_report):
+        assert ".env.advanced" in content
+        assert "SIDAR_KEYS_FILE" in content
+        assert "~/.sidar_keys.env" in content
+
+    assert "Runtime yükleme zinciri" in readme
+    assert "`.env.advanced` (`override=False`)" in readme
+    assert "API anahtarı politikası" in readme
+    assert "kalıcı kaynak olarak yalnız `.env`" in readme
+    assert "Docker Compose `env_file:` kaynağı yapılmamalıdır" in readme
+
+    assert "Kod içi güvenli varsayılanlar" in technical_reference
+    assert "API anahtarı saklama politikası" in technical_reference
+    assert "yalnız `.env` ve repo dışındaki `~/.sidar_keys.env`" in technical_reference
+    assert "Compose" in technical_reference and "`env_file:` kaynağı" in technical_reference
+
+    assert "Yükleme zinciri `config.py` varsayılanları" in project_report
+    assert "kalıcı kaynak politikası yalnız `.env`" in project_report
+
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
