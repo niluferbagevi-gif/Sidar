@@ -161,6 +161,7 @@ INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+INSTALL_MODULES_MISSING_HINT="${SIDAR_INSTALL_MODULES_MISSING_HINT:-Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest üzerinden indirin veya repoyu git clone ile alın.}"
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -228,7 +229,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     for module_rel in "${REMOTE_INSTALL_MODULES[@]}"; do
         if ! download_remote_install_module "$module_rel"; then
             rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli kurulum modülü indirilemedi: ${REMOTE_MODULE_BASE%/}/${module_rel}"
+            fail "Gerekli kurulum modülü indirilemedi: ${REMOTE_MODULE_BASE%/}/${module_rel}. ${INSTALL_MODULES_MISSING_HINT}"
         fi
     done
 
@@ -243,7 +244,7 @@ validate_install_utility_modules() {
     for module_rel in "${INSTALL_UTILITY_MODULES[@]}"; do
         module_path="${INSTALL_MODULE_DIR}/${module_rel}"
         if [[ ! -f "$module_path" ]]; then
-            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. ${INSTALL_MODULES_MISSING_HINT}"
         fi
     done
 }
@@ -254,7 +255,7 @@ load_install_phase_modules() {
     for module_rel in "${INSTALL_PHASE_MODULES[@]}"; do
         module_path="${INSTALL_MODULE_DIR}/${module_rel}"
         if [[ ! -f "$module_path" ]]; then
-            fail "Kurulum faz modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+            fail "Kurulum faz modülü bulunamadı: ${module_path}. ${INSTALL_MODULES_MISSING_HINT}"
         fi
         # shellcheck disable=SC1090
         source "$module_path"

@@ -368,6 +368,21 @@ def test_single_file_installer_fallback_downloads_all_required_modules() -> None
     assert "${REMOTE_MODULE_BASE%/}/${module_rel}" in script
 
 
+def test_install_sidar_missing_module_errors_point_to_release_or_clone() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    expected_hint = (
+        "Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. "
+        "Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest "
+        "üzerinden indirin veya repoyu git clone ile alın."
+    )
+
+    assert expected_hint in script
+    assert expected_hint in helper
+    assert "Repo modülleri eksik; lütfen depoyu güncelleyin" not in script
+    assert "Repo modülleri eksik; lütfen depoyu güncelleyin" not in helper
+
+
 def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
     tmp_path: Path,
 ) -> None:
