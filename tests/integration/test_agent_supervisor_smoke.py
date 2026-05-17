@@ -43,8 +43,16 @@ async def test_agent_catalog_and_auto_handle_heal_flow(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_judge_ci_and_federation_smoke(monkeypatch) -> None:
+    # Config sınıf-seviyesi attribute'ları (JUDGE_ENABLED/JUDGE_SAMPLE_RATE)
+    # modül import anında resolve edilir; .env.advanced JUDGE_ENABLED=false
+    # değerini yükler. Sadece os.environ'u monkeypatch'lemek Config'i etkilemez,
+    # bu yüzden hem env hem de Config attr'larını test scope'unda override ediyoruz.
     monkeypatch.setenv("JUDGE_ENABLED", "true")
     monkeypatch.setenv("JUDGE_SAMPLE_RATE", "1")
+    from config import Config as _Config
+
+    monkeypatch.setattr(_Config, "JUDGE_ENABLED", True)
+    monkeypatch.setattr(_Config, "JUDGE_SAMPLE_RATE", 1.0)
 
     judge = LLMJudge()
     assert judge.should_evaluate() is True
