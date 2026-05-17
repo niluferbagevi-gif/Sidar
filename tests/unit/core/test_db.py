@@ -11,6 +11,7 @@ import types
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import jwt
@@ -1472,7 +1473,9 @@ async def test_connect_postgresql_connection_drop_enters_degraded_mode(
 async def test_connect_postgresql_auth_failure_logs_actionable_warning_without_raw_error(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path
 ) -> None:
-    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path))
+    cfg = DummyCfg(
+        DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path)
+    )
     db = Database(cfg)
 
     async def _raise_auth(**_kwargs):
@@ -2289,3 +2292,31 @@ async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
     assert resolved.username == "jwt-only"
     assert resolved.role == "analyst"
     assert resolved.tenant_id == "tenant-z"
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_degraded_mode_uses_doctor_lost_url_diagnosis(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    cfg = DummyCfg(
+        DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path)
+    )
+    db = Database(cfg)
+
+    async def _raise_auth(**_kwargs):
+        raise RuntimeError('password authentication failed for user "sidar"')
+
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        types.SimpleNamespace(create_pool=_raise_auth, PoolError=RuntimeError),
+    )
+
+    await db._connect_postgresql()
+
+    assert db.degraded_mode is True
+    assert "DATABASE_URL yok/kayboldu" in db.degraded_reason
+    assert "yetki/parola hatası" not in db.degraded_reason

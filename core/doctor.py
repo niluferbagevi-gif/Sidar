@@ -454,6 +454,7 @@ def check_database_env() -> DoctorCheck:
 
     status = "fail" if failures else ("warn" if warnings else "pass")
     message = "; ".join(failures or warnings or ["database environment looks secure"])
+    failure_reason = "; ".join(failures) if failures else ""
     return DoctorCheck(
         "database_env",
         status,
@@ -464,6 +465,7 @@ def check_database_env() -> DoctorCheck:
             "postgres_user_set": bool(postgres_user),
             "postgres_password_set": bool(postgres_password),
             "postgres_db_set": bool(postgres_db),
+            "failure_reason": failure_reason,
             "scheme": parsed.scheme if parsed else "",
             "container_scheme": container_parsed.scheme if container_parsed else "",
             "database_url_source": (env_sources.get("DATABASE_URL") or {}).get("path", ""),

@@ -194,6 +194,7 @@ def test_database_env_fails_when_url_missing_but_postgres_password_present(monke
 
     assert check.status == "fail"
     assert "DATABASE_URL was lost during env reload" in check.message
+    assert "DATABASE_URL was lost during env reload" in check.details["failure_reason"]
     assert check.details["database_url_set"] is False
     assert check.details["postgres_password_set"] is True
 

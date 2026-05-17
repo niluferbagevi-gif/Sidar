@@ -36,6 +36,7 @@ import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
 from config import Config
+from core.db import postgres_failure_diagnosis
 from core.embeddings import (
     sentence_transformer_device_from_config,
     sentence_transformer_local_files_only,
@@ -49,53 +50,10 @@ list = builtins.list
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
-    """pgvector başlatma hatasını kullanıcıya yönelik, fallback odaklı mesaja çevir."""
+    """Return a single-line pgvector fallback message using DB diagnostics."""
 
-    text = f"{type(exc).__name__} {exc}".lower()
-    if any(
-        marker in text
-        for marker in (
-            "password authentication failed",
-            "authentication failed",
-            "invalid password",
-            "28p01",
-            "permission denied",
-            "auth",
-        )
-    ):
-        return (
-            "PostgreSQL/pgvector bağlantısı başarısız (yetki/parola hatası). "
-            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD "
-            "değerlerini kontrol edin. RAG için BM25 fallback aktif edildi."
-        )
-    if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
-        return (
-            "PostgreSQL/pgvector bağlantısı zaman aşımına uğradı. Veritabanı servisinin "
-            "çalıştığını ve DATABASE_URL host/port bilgisini kontrol edin. BM25 fallback aktif edildi."
-        )
-    if any(
-        marker in text
-        for marker in (
-            "connection refused",
-            "could not connect",
-            "server closed",
-            "connection failed",
-        )
-    ):
-        return (
-            "PostgreSQL/pgvector bağlantısı kurulamadı. Veritabanı servisinin çalıştığını, "
-            "container ağını ve DATABASE_URL değerini kontrol edin. BM25 fallback aktif edildi."
-        )
-    if "extension" in text or "vector" in text:
-        return (
-            "PostgreSQL bağlantısı açıldı ancak pgvector hazırlığı tamamlanamadı. "
-            "Veritabanında `CREATE EXTENSION IF NOT EXISTS vector;` ve Alembic migrasyonlarını "
-            "kontrol edin. BM25 fallback aktif edildi."
-        )
-    return (
-        "pgvector backend başlatılamadı. PostgreSQL bağlantısı, pgvector extension ve "
-        "DATABASE_URL ayarlarını kontrol edin. BM25 fallback aktif edildi."
-    )
+    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
+    return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
 
 
 class GraphIndex:
@@ -965,12 +923,14 @@ class DocumentStore:
         db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
         if not db_url.startswith("postgresql"):
             logger.warning(
-                "pgvector backend için PostgreSQL DATABASE_URL gerekli. Alınan: %s", db_url
+                _pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL"))
             )
             return
 
         if not self._check_import("sqlalchemy") or not self._check_import("pgvector"):
-            logger.warning("pgvector backend için sqlalchemy ve pgvector paketleri gerekli.")
+            logger.warning(
+                _pgvector_failure_action_message(RuntimeError("pgvector dependencies missing"))
+            )
             return
 
         try:

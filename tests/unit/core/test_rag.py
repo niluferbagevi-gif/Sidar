@@ -1419,9 +1419,11 @@ async def test_document_store_init_backends_and_import_checks(
     monkeypatch.setattr(
         importlib,
         "import_module",
-        lambda name: (_ for _ in ()).throw(ImportError())
-        if name == "missing.mod"
-        else original_import_module(name),
+        lambda name: (
+            (_ for _ in ()).throw(ImportError())
+            if name == "missing.mod"
+            else original_import_module(name)
+        ),
     )
     assert store._check_import("json") is True
     assert store._check_import("missing.mod") is False
@@ -3464,3 +3466,14 @@ async def test_entity_extraction_ignores_blank_regex_capture_and_scalar_json_pay
     assert "Brand" in labels
     assert "Campaign" in labels
     assert store._extract_json_entities("plain scalar") == []
+
+
+async def test_pgvector_failure_message_uses_shared_db_diagnosis(monkeypatch) -> None:
+    monkeypatch.setattr(
+        rag, "postgres_failure_diagnosis", lambda _reason, _exc: "shared-db-diagnosis"
+    )
+
+    message = rag._pgvector_failure_action_message(RuntimeError("password authentication failed"))
+
+    assert message == "pgvector pasif, BM25 fallback aktif. Teşhis: shared-db-diagnosis."
+    assert "DATABASE_URL değerlerini kontrol edin" not in message
