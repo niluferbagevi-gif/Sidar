@@ -55,7 +55,9 @@ def test_ratchet_coverage_gate_updates_coveragerc_preserving_comments(tmp_path: 
     assert "show_missing = True" in coveragerc.read_text(encoding="utf-8")
 
 
-def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(tmp_path: Path) -> None:
+def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(
+    tmp_path: Path,
+) -> None:
     coveragerc = tmp_path / ".coveragerc"
     coverage_json = tmp_path / "coverage.json"
     coveragerc.write_text("[report]\nfail_under = 30\n", encoding="utf-8")
@@ -81,7 +83,9 @@ def test_read_total_coverage_validates_totals_and_display_fallback(tmp_path: Pat
     from scripts.coverage_ratchet import read_total_coverage
 
     coverage_json = tmp_path / "coverage.json"
-    coverage_json.write_text(json.dumps({"totals": {"percent_covered_display": "42.50"}}), encoding="utf-8")
+    coverage_json.write_text(
+        json.dumps({"totals": {"percent_covered_display": "42.50"}}), encoding="utf-8"
+    )
     assert read_total_coverage(coverage_json) == 42.5
 
     coverage_json.write_text(json.dumps({"totals": []}), encoding="utf-8")
@@ -105,7 +109,9 @@ def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_
     from scripts.coverage_ratchet import write_fail_under
 
     coveragerc = tmp_path / ".coveragerc"
-    coveragerc.write_text("[report]\nshow_missing = True\n[html]\ndirectory = htmlcov\n", encoding="utf-8")
+    coveragerc.write_text(
+        "[report]\nshow_missing = True\n[html]\ndirectory = htmlcov\n", encoding="utf-8"
+    )
     write_fail_under(coveragerc, 12.5)
     assert "fail_under = 12.5\n[html]" in coveragerc.read_text(encoding="utf-8")
 
@@ -114,7 +120,9 @@ def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_
     assert coveragerc.read_text(encoding="utf-8").endswith("\n[report]\nfail_under = 7\n")
 
 
-def test_main_prints_updated_and_unchanged_results(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_prints_updated_and_unchanged_results(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     from scripts.coverage_ratchet import main
 
     coveragerc = tmp_path / ".coveragerc"

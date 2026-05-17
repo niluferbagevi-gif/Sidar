@@ -130,7 +130,7 @@ jobs:
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run bandit -c pyproject.toml -q -r .
-          uv run --with pip-audit pip-audit --timeout 30
+          uv run --with pip-audit pip-audit --timeout 90
 
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh

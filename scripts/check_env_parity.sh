@@ -94,7 +94,7 @@ SCAN_PATHS=(
 
 ENV_TEMPLATES=(
   "$PROJECT_ROOT/.env.example"
-  "$PROJECT_ROOT/.env.advanced"
+  "$PROJECT_ROOT/.env.advanced.example"
   "$PROJECT_ROOT/.env.development.example"
   "$PROJECT_ROOT/.env.test.example"
 )

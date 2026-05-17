@@ -219,8 +219,7 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert check.details["postgres_db_set"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
     assert (
-        "uv run python -m scripts.sync_database_passwords"
-        in check.details["recommended_commands"]
+        "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
     )
     assert "URL-encoded" in check.details["root_cause_hints"][1]
 

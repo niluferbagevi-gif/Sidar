@@ -26,6 +26,8 @@ env/
 # Environment variables
 .env
 .env.local
+.env.advanced
+.env.advanced.local
 .env.development
 .env.development.local
 .env.test

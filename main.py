@@ -415,7 +415,6 @@ def _print_doctor_check_summary(check: Any) -> None:
             print(f"{CYAN}   • Komut: {command}{RESET}")
 
 
-
 def _seed_rag_argv_from_auto_fix(cmd: list[str]) -> list[str] | None:
     """Return seed_rag argv when Doctor auto_fix targets scripts.seed_rag."""
     if len(cmd) >= 4 and cmd[:2] == ["uv", "run"]:

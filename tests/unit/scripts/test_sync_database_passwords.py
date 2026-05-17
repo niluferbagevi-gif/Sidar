@@ -11,13 +11,16 @@ def _password_from(url: str) -> str:
 
 
 def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() -> None:
-    env_text = "\n".join(
-        [
-            "POSTGRES_PASSWORD=p@ss word/with:symbols",
-            "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar?sslmode=disable",
-            'SIDAR_CONTAINER_DATABASE_URL="postgresql+asyncpg://sidar:old@postgres:5432/sidar"',
-        ]
-    ) + "\n"
+    env_text = (
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=p@ss word/with:symbols",
+                "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar?sslmode=disable",
+                'SIDAR_CONTAINER_DATABASE_URL="postgresql+asyncpg://sidar:old@postgres:5432/sidar"',
+            ]
+        )
+        + "\n"
+    )
 
     updated, summary = sync_database_passwords.sync_env_text(env_text)
 
@@ -32,13 +35,16 @@ def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() ->
 
 
 def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
-    env_text = "\n".join(
-        [
-            "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa",
-            "DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@localhost:5432/sidar",
-            "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/sidar",
-        ]
-    ) + "\n"
+    env_text = (
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa",
+                "DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@localhost:5432/sidar",
+                "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/sidar",
+            ]
+        )
+        + "\n"
+    )
 
     updated, summary = sync_database_passwords.sync_env_text(env_text)
 
