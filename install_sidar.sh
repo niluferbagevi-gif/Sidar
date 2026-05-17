@@ -3593,18 +3593,44 @@ collect_api_keys_interactive() {
         esac
     }
 
-    # Anahtarı .env'e yazar; boşsa sessizce atlar
+    _api_key_env_targets() {
+        local -a targets=("$env_file")
+        local advanced_env_file="$SCRIPT_DIR/.env.advanced"
+        local advanced_example_file="$SCRIPT_DIR/.env.advanced.example"
+        local optional_env_file
+
+        if [[ ! -f "$advanced_env_file" && -f "$advanced_example_file" ]]; then
+            cp "$advanced_example_file" "$advanced_env_file"
+            ok ".env.advanced dosyası .env.advanced.example'dan API anahtarı senkronizasyonu için oluşturuldu."
+        fi
+
+        [[ -f "$advanced_env_file" && "$advanced_env_file" != "$env_file" ]] && targets+=("$advanced_env_file")
+
+        for optional_env_file in "$SCRIPT_DIR/.env.development" "$SCRIPT_DIR/.env.test"; do
+            [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]] && targets+=("$optional_env_file")
+        done
+
+        printf '%s\n' "${targets[@]}"
+    }
+
+    # Anahtarı .env ve mevcut runtime env varyantlarına yazar; boşsa sessizce atlar.
     _write_key() {
         local key="$1"
-        local val
+        local val target target_name
+        local -a target_env_files=()
         val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
-        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-            sed_inplace "s|^${key}=.*|${key}=${val}|" "$env_file"
-        else
-            echo "${key}=${val}" >> "$env_file"
-        fi
-        ok ".env: ${key} güncellendi."
+
+        mapfile -t target_env_files < <(_api_key_env_targets)
+        for target in "${target_env_files[@]}"; do
+            if grep -q "^${key}=" "$target" 2>/dev/null; then
+                sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+            else
+                echo "${key}=${val}" >> "$target"
+            fi
+            target_name="$(basename "$target")"
+            ok "${target_name}: ${key} güncellendi."
+        done
     }
 
     _warn_if_missing_critical_provider_keys() {
@@ -3620,8 +3646,13 @@ collect_api_keys_interactive() {
         fi
     }
 
-    _sync_env_variants_after_api_key_update() {
-        propagate_shared_secrets_to_env_variants "$env_file"
+    _sync_existing_api_keys_to_env_targets() {
+        local key current_val
+        for key in "${KEY_ORDER[@]}"; do
+            current_val=$(read_env_value_from_file "$key" "$env_file" | tr -d '\n')
+            [[ -z "${current_val//[[:space:]]/}" ]] && continue
+            _write_key "$key" "$current_val"
+        done
     }
 
     # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
@@ -3666,7 +3697,7 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
-        _sync_env_variants_after_api_key_update
+        _sync_existing_api_keys_to_env_targets
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3687,7 +3718,7 @@ collect_api_keys_interactive() {
 
     if [[ ${#missing_keys[@]} -eq 0 ]]; then
         ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
-        _sync_env_variants_after_api_key_update
+        _sync_existing_api_keys_to_env_targets
         return
     fi
 
@@ -3749,7 +3780,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
-        _sync_env_variants_after_api_key_update
+        _sync_existing_api_keys_to_env_targets
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3782,7 +3813,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
-        _sync_env_variants_after_api_key_update
+        _sync_existing_api_keys_to_env_targets
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3812,7 +3843,7 @@ collect_api_keys_interactive() {
         echo ""
     done
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
-    _sync_env_variants_after_api_key_update
+    _sync_existing_api_keys_to_env_targets
     _warn_if_missing_critical_provider_keys
 }
 
@@ -4067,9 +4098,6 @@ propagate_shared_secrets_to_env_variants() {
         GRAFANA_ADMIN_PASSWORD
         METRICS_TOKEN
     )
-    local -a api_keys=()
-    mapfile -t api_keys < <(sidar_user_api_key_names)
-    shared_keys+=("${api_keys[@]}")
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"

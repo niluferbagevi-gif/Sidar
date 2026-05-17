@@ -112,19 +112,31 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     ):
         assert key in api_keys_block
 
-    propagate_start = install_script.index("propagate_shared_secrets_to_env_variants()")
-    propagate_block = install_script[propagate_start : install_script.index("local -a variants=(", propagate_start)]
-    assert "mapfile -t api_keys < <(sidar_user_api_key_names)" in propagate_block
-    assert 'shared_keys+=("${api_keys[@]}")' in propagate_block
-
     collect_start = install_script.index("collect_api_keys_interactive()")
-    collect_block = install_script[collect_start : install_script.index("report_env_api_key_status()", collect_start)]
+    collect_block = install_script[
+        collect_start : install_script.index("report_env_api_key_status()", collect_start)
+    ]
     assert "mapfile -t KEY_ORDER < <(sidar_user_api_key_names)" in collect_block
-    assert "_sync_env_variants_after_api_key_update" in collect_block
-    assert collect_block.count("_sync_env_variants_after_api_key_update") >= 5
+    assert "_api_key_env_targets()" in collect_block
+    assert 'local -a targets=("$env_file")' in collect_block
+    assert 'local advanced_env_file="$SCRIPT_DIR/.env.advanced"' in collect_block
+    assert '"$SCRIPT_DIR/.env.development" "$SCRIPT_DIR/.env.test"' in collect_block
+    assert "mapfile -t target_env_files < <(_api_key_env_targets)" in collect_block
+    assert 'for target in "${target_env_files[@]}"' in collect_block
+    assert "_sync_existing_api_keys_to_env_targets" in collect_block
+    assert collect_block.count("_sync_existing_api_keys_to_env_targets") >= 5
+
+    propagate_start = install_script.index("propagate_shared_secrets_to_env_variants()")
+    propagate_block = install_script[
+        propagate_start : install_script.index("local -a variants=", propagate_start)
+    ]
+    assert "mapfile -t api_keys < <(sidar_user_api_key_names)" not in propagate_block
+    assert 'shared_keys+=("${api_keys[@]}")' not in propagate_block
 
     report_start = install_script.index("report_env_api_key_status()")
-    report_block = install_script[report_start : install_script.index("validate_runtime_env_loading()", report_start)]
+    report_block = install_script[
+        report_start : install_script.index("validate_runtime_env_loading()", report_start)
+    ]
     assert "mapfile -t key_order < <(sidar_user_api_key_names)" in report_block
 
 
