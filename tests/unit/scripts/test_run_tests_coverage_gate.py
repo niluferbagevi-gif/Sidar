@@ -277,7 +277,14 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     )
     assert release_url in readme
     assert release_url in modularization_note
-    assert "raw repo kökündeki modüler `install_sidar.sh`" in modularization_note
+    for content in (readme, modularization_note):
+        assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in content
+        assert "uv sync --all-extras" in content
+    assert "Önerilen yöntem repo klonlamadır" in readme
+    assert "tek dosya" in modularization_note
+    assert "bu bağlamı sağlayamaz" in modularization_note
+    assert "raw repo" in modularization_note
+    assert "kökündeki modüler `install_sidar.sh`" in modularization_note
 
 
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:

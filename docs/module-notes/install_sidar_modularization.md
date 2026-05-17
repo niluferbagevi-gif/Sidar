@@ -22,11 +22,27 @@ Bu yaklaşım ile:
 - bakım/debug kolaylaşır,
 - dağıtımda tek dosya avantajı korunur.
 
+## Kullanıcı yönlendirmesi: önce repo klonu
+
+Tam yetkili geliştirme, QA, coverage kampanyası veya self-healing çalıştırmaları için
+önerilen yol repo klonudur. Bu akışlar `uv` kilit dosyasına, test/modül ağacına, git
+geçmişine ve patch/rollback için yazılabilir workspace'e ihtiyaç duyar; tek dosya
+installer bu bağlamı sağlayamaz. Kullanıcı yönergelerinde varsayılan yöntem şu
+şekilde verilmelidir:
+
+```bash
+git clone https://github.com/niluferbagevi-gif/Sidar.git
+cd Sidar
+uv sync --all-extras
+./install_sidar.sh
+```
+
 ## Standalone dağıtım sözleşmesi
 
-Kullanıcılar repo olmadan `wget`/`curl` ile tek dosyalık kurulum yapacaksa hedef dosya
-raw repo kökündeki modüler `install_sidar.sh` değil, CI tarafından üretilen release
-bundle artefaktı olmalıdır:
+Kullanıcılar repo olmadan `wget`/`curl` ile tek dosyalık kurulum yapacaksa bu yol
+yalnız bootstrap/son kullanıcı kurulumu olarak sunulmalı; hedef dosya raw repo
+kökündeki modüler `install_sidar.sh` değil, CI tarafından üretilen release bundle
+artefaktı olmalıdır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
