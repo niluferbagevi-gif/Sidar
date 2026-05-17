@@ -407,7 +407,13 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
+        if postgres_password:
+            failures.append(
+                "DATABASE_URL was lost during env reload while POSTGRES_PASSWORD is set; "
+                "database readiness cannot be verified"
+            )
+        else:
+            warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",

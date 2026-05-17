@@ -605,6 +605,30 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     return ran_any
 
 
+def _doctor_auto_fix_lost_env_keys(
+    source_details: dict[str, Any] | None, updated_check: Any
+) -> list[str]:
+    """Return env keys that were set before auto-fix but missing after re-validation."""
+    if not isinstance(source_details, dict):
+        return []
+    updated_details = getattr(updated_check, "details", {}) or {}
+    if not isinstance(updated_details, dict):
+        return []
+
+    set_flags = {
+        "database_url_set": "DATABASE_URL",
+        "container_database_url_set": "SIDAR_CONTAINER_DATABASE_URL",
+        "postgres_user_set": "POSTGRES_USER",
+        "postgres_password_set": "POSTGRES_PASSWORD",
+        "postgres_db_set": "POSTGRES_DB",
+    }
+    lost_keys: list[str] = []
+    for detail_key, env_key in set_flags.items():
+        if source_details.get(detail_key) is True and updated_details.get(detail_key) is False:
+            lost_keys.append(env_key)
+    return lost_keys
+
+
 def _revalidate_doctor_check_after_auto_fix(
     check_func: Any, source_details: dict[str, Any] | None = None
 ) -> Any | None:
@@ -624,7 +648,14 @@ def _revalidate_doctor_check_after_auto_fix(
     _print_doctor_check_summary(updated_check)
     updated_status = str(getattr(updated_check, "status", "warn") or "warn")
     updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
-    if updated_status == "fail":
+    lost_env_keys = _doctor_auto_fix_lost_env_keys(source_details, updated_check)
+    if lost_env_keys:
+        print(
+            f"{RED}   • Auto-fix Doctor/{updated_name} regresyon üretti: "
+            f"önceden set olan {', '.join(lost_env_keys)} yeniden doğrulamada boş görünüyor. "
+            f"Bu durum düzeltilmiş kabul edilmedi; env reload zincirini manuel inceleyin.{RESET}"
+        )
+    elif updated_status == "fail":
         print(
             f"{RED}   • Auto-fix Doctor/{updated_name} sorununu gideremedi; "
             f"yukarıdaki önerileri manuel uygulayın.{RESET}"

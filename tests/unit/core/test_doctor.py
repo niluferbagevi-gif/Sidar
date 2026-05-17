@@ -185,6 +185,19 @@ def test_database_env_warns_without_url(monkeypatch):
     assert check.details["database_url_set"] is False
 
 
+def test_database_env_fails_when_url_missing_but_postgres_password_present(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "DATABASE_URL was lost during env reload" in check.message
+    assert check.details["database_url_set"] is False
+    assert check.details["postgres_password_set"] is True
+
+
 def test_database_env_fails_for_weak_passwords_and_legacy_container_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:short@localhost:5432/sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "postgres")

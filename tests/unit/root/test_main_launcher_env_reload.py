@@ -52,3 +52,32 @@ def test_doctor_auto_fix_reloads_database_url_from_dotenv_chain(monkeypatch, tmp
         fake_config.DATABASE_URL
         == "postgresql://sidar:new-password-1234567890@localhost:5432/sidar"
     )
+
+
+def test_revalidate_doctor_check_flags_lost_env_key_regression(monkeypatch, capsys):
+    monkeypatch.setattr(launcher, "_reload_environment_after_auto_fix", lambda details: True)
+    updated_check = SimpleNamespace(
+        name="database_env",
+        status="warn",
+        message="DATABASE_URL is not set; database readiness cannot be fully verified",
+        details={
+            "database_url_set": False,
+            "container_database_url_set": True,
+            "postgres_password_set": True,
+        },
+    )
+
+    result = launcher._revalidate_doctor_check_after_auto_fix(
+        lambda: updated_check,
+        {
+            "database_url_set": True,
+            "container_database_url_set": True,
+            "postgres_password_set": True,
+        },
+    )
+
+    captured = capsys.readouterr()
+    assert result is updated_check
+    assert "regresyon üretti" in captured.out
+    assert "DATABASE_URL" in captured.out
+    assert "kalan uyarıları inceleyin" not in captured.out
