@@ -236,9 +236,57 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
             "severity": "critical",
             "message": (
                 "Effective DATABASE_URL password still differs from POSTGRES_PASSWORD after sync; "
-                "check later dotenv overrides or unsupported dotenv syntax."
+                "a parent-process environment value or later dotenv override may still be active. "
+                "Restart the launcher, unset the inherited variable, or use --prefer-derived if URL rows are not needed."
             ),
             "key": "DATABASE_URL",
         }
     ]
     assert summary["notes"] == []
+
+
+def test_prune_env_text_removes_database_url_assignments() -> None:
+    env_text = (
+        "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
+        "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n"
+        "POSTGRES_DB=sidar\n"
+    )
+
+    updated, summary = sync_database_passwords.prune_env_text(env_text)
+
+    assert summary["changed"] is True
+    assert summary["removed_keys"] == ["DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"]
+    assert "DATABASE_URL=" not in updated
+    assert "SIDAR_CONTAINER_DATABASE_URL=" not in updated
+    assert "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa" in updated
+    assert "POSTGRES_DB=sidar" in updated
+
+
+def test_sync_env_chain_prefer_derived_removes_urls_from_chain(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    development_env = tmp_path / ".env.development"
+    development_env.write_text(
+        "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    summary = sync_database_passwords.sync_env_chain(base_env, prefer_derived=True)
+
+    assert summary["changed"] is True
+    assert summary["prefer_derived"] is True
+    assert str(base_env) in summary["changed_files"]
+    assert str(development_env) in summary["changed_files"]
+    assert "DATABASE_URL=" not in base_env.read_text(encoding="utf-8")
+    assert "SIDAR_CONTAINER_DATABASE_URL=" not in development_env.read_text(encoding="utf-8")

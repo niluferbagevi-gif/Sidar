@@ -101,6 +101,43 @@ def _replace_assignment_line(lines: list[str], assignment: EnvAssignment, value:
     )
 
 
+def _remove_assignment_lines(text: str, keys: tuple[str, ...]) -> tuple[str, dict[str, Any]]:
+    """Remove selected dotenv assignments so config.py can derive them from POSTGRES_*."""
+    assignments = _parse_env_text(text)
+    remove_indexes = {
+        assignment.line_index for key in keys if (assignment := assignments.get(key)) is not None
+    }
+    removed_keys = [key for key in keys if key in assignments]
+    postgres_assignment = assignments.get("POSTGRES_PASSWORD")
+    postgres_password_set = bool(postgres_assignment and postgres_assignment.value)
+    if not remove_indexes:
+        return text, {
+            "changed": False,
+            "changed_keys": [],
+            "removed_keys": [],
+            "skipped": {key: "missing" for key in keys},
+            "checked_keys": list(keys),
+            "postgres_password_set": postgres_password_set,
+        }
+
+    lines = [line for index, line in enumerate(text.splitlines()) if index not in remove_indexes]
+    trailing_newline = "\n" if text.endswith("\n") or lines else ""
+    skipped = {key: "missing" for key in keys if key not in assignments}
+    return "\n".join(lines) + trailing_newline, {
+        "changed": True,
+        "changed_keys": removed_keys,
+        "removed_keys": removed_keys,
+        "skipped": skipped,
+        "checked_keys": list(keys),
+        "postgres_password_set": postgres_password_set,
+    }
+
+
+def prune_env_text(text: str) -> tuple[str, dict[str, Any]]:
+    """Remove explicit database URL assignments and rely on POSTGRES_* derivation."""
+    return _remove_assignment_lines(text, DATABASE_URL_KEYS)
+
+
 def _postgres_url_with_password(database_url: str, postgres_password: str) -> str | None:
     parsed = urlsplit(database_url)
     if not parsed.scheme.startswith("postgresql"):
@@ -324,7 +361,8 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[di
             warnings.append(
                 _message_entry(
                     f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
-                    "check later dotenv overrides or unsupported dotenv syntax.",
+                    "a parent-process environment value or later dotenv override may still be active. "
+                    "Restart the launcher, unset the inherited variable, or use --prefer-derived if URL rows are not needed.",
                     severity="critical",
                     key=key,
                 )
@@ -342,13 +380,15 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     return {"env_file": str(env_file), **summary}
 
 
-def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
+def sync_env_chain(
+    base_env_file: Path = DEFAULT_ENV_FILE, *, prefer_derived: bool = False
+) -> dict[str, Any]:
     specs = discover_env_chain(base_env_file)
     if not specs or not specs[0].path.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
 
     postgres_password = _effective_postgres_password(specs)
-    if not postgres_password:
+    if not prefer_derived and not postgres_password:
         raise ValueError("POSTGRES_PASSWORD is not set in the env chain")
 
     file_summaries: list[dict[str, Any]] = []
@@ -375,7 +415,10 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
 
         original = spec.path.read_text(encoding="utf-8")
         assignments = _parse_env_text(original)
-        updated, summary = _sync_env_text_with_password(original, postgres_password)
+        if prefer_derived:
+            updated, summary = prune_env_text(original)
+        else:
+            updated, summary = _sync_env_text_with_password(original, postgres_password)
         file_warnings, file_notes = _file_skip_diagnostics(
             spec=spec, assignments=assignments, skipped=summary["skipped"]
         )
@@ -397,7 +440,19 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         )
 
     effective_env_after_sync = _effective_env_from_specs(specs)
-    warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
+    if prefer_derived:
+        for key in DATABASE_URL_KEYS:
+            raw_url = effective_env_after_sync.get(key, "").strip()
+            if raw_url:
+                warnings.append(
+                    _message_entry(
+                        f"Effective {key} is still set after removal; a parent-process environment value or later dotenv source still defines it.",
+                        severity="critical",
+                        key=key,
+                    )
+                )
+    else:
+        warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
 
     changed_keys = sorted({key for keys in changed_keys_by_file.values() for key in keys})
     no_change_guidance = (
@@ -415,7 +470,8 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         "changed_keys_by_file": changed_keys_by_file,
         "checked_files": [str(spec.path) for spec in specs],
         "checked_keys": list(DATABASE_URL_KEYS),
-        "postgres_password_set": True,
+        "postgres_password_set": bool(postgres_password),
+        "prefer_derived": prefer_derived,
         "warnings": warnings,
         "notes": notes,
         "file_summaries": file_summaries,
@@ -430,19 +486,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
     )
+    parser.add_argument(
+        "--prefer-derived",
+        action="store_true",
+        help=(
+            "DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL satırlarını kaldırıp "
+            "config.py içindeki POSTGRES_* tabanlı dinamik üretimi tercih et"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        summary = sync_env_chain(Path(args.env_file))
+        summary = sync_env_chain(Path(args.env_file), prefer_derived=args.prefer_derived)
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
 
     if summary.get("changed"):
-        print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
+        if summary.get("prefer_derived"):
+            print(
+                "✅ PostgreSQL URL satırları kaldırıldı; bağlantılar POSTGRES_* değerlerinden üretilecek.",
+                file=sys.stderr,
+            )
+        else:
+            print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
     else:
         print("ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr)
         if summary.get("no_change_guidance"):

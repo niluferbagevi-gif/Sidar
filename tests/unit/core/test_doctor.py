@@ -185,17 +185,19 @@ def test_database_env_warns_without_url(monkeypatch):
     assert check.details["database_url_set"] is False
 
 
-def test_database_env_fails_when_url_missing_but_postgres_password_present(monkeypatch):
+def test_database_env_derives_urls_when_url_missing_but_postgres_password_present(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
 
     check = doctor.check_database_env()
 
-    assert check.status == "fail"
-    assert "DATABASE_URL was lost during env reload" in check.message
-    assert "DATABASE_URL was lost during env reload" in check.details["failure_reason"]
+    assert check.status == "pass"
+    assert check.message == "database environment looks secure"
     assert check.details["database_url_set"] is False
+    assert check.details["container_database_url_set"] is False
+    assert check.details["effective_database_url_derived"] is True
+    assert check.details["effective_container_database_url_derived"] is True
     assert check.details["postgres_password_set"] is True
 
 
@@ -354,6 +356,23 @@ def test_database_connectivity_passes_and_redacts_password(monkeypatch):
     assert "secretpassword" not in check.details["database_url"]
 
 
+def test_database_connectivity_uses_derived_database_url(monkeypatch):
+    async def _connect(dsn):
+        assert "postgresql://sidar:" in dsn
+        raise ConnectionRefusedError("db down")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert check.details["database_url_set"] is False
+    assert check.details["effective_database_url_derived"] is True
+    assert check.details["scheme"] == "postgresql"
+
+
 def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
     async def _connect(dsn):
         raise ConnectionRefusedError("db down")
@@ -379,6 +398,9 @@ def test_database_connectivity_auth_failure_reports_volume_remediation_and_redac
         raise RuntimeError(f"password authentication failed for {dsn} with password={password}")
 
     monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
     monkeypatch.setenv(
         "DATABASE_URL", f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar"
     )
@@ -386,8 +408,9 @@ def test_database_connectivity_auth_failure_reports_volume_remediation_and_redac
     check = doctor.check_database_connectivity()
 
     assert check.status == "warn"
-    assert "Docker volume already existed" in check.message
+    assert "database_env parity passed" in check.message
     assert check.details["failure_category"] == "authentication"
+    assert check.details["database_env_status"] == "pass"
     assert any("older password" in hint for hint in check.details["root_cause_hints"])
     assert any("ALTER USER" in cmd for cmd in check.details["recommended_commands"])
     assert password not in check.details["error"]
