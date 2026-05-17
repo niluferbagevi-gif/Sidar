@@ -481,6 +481,61 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     assert updated.status == "pass"
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
 
+def test_revalidate_doctor_auto_fix_flags_regression_when_set_flag_becomes_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Status improvement (fail → warn) must not mask a key that became unset."""
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda *_args: True)
+
+    previous_details = {
+        "database_url_set": True,
+        "postgres_password_set": True,
+        "auto_fix": "uv run python -m scripts.sync_database_passwords",
+    }
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="warn",
+            message="DATABASE_URL is not set; database readiness cannot be fully verified",
+            details={"database_url_set": False, "postgres_password_set": True},
+        )
+
+    updated = main._revalidate_doctor_check_after_auto_fix(_check_func, previous_details)
+
+    assert updated is not None
+    output = capsys.readouterr().out
+    assert "REGRESYON" in output
+    assert "DATABASE_URL" in output
+    # "düzeltti" success messaging must not appear when there is a regression.
+    assert "kontrolünü düzeltti" not in output
+    assert "kontrolünü yeniden çalıştırdı" not in output
+    assert "regresyon yarattı" in output
+
+
+def test_revalidate_doctor_auto_fix_no_regression_when_pre_flag_was_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Don't flag regression when the field was already unset before the auto-fix."""
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda *_args: True)
+
+    previous_details = {"database_url_set": False, "postgres_password_set": True}
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="pass",
+            message="database environment looks secure",
+            details={"database_url_set": True, "postgres_password_set": True},
+        )
+
+    main._revalidate_doctor_check_after_auto_fix(_check_func, previous_details)
+
+    output = capsys.readouterr().out
+    assert "REGRESYON" not in output
+    assert "kontrolünü düzeltti" in output
+
+
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -562,6 +617,10 @@ def test_doctor_auto_fix_surfaces_critical_warnings_from_snapshot(
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
     monkeypatch.setattr(main, "_reload_doctor_env_source_definitions", lambda *_args: False)
+    # Track DATABASE_URL via monkeypatch.setenv so the snapshot application
+    # below is rolled back at teardown and does not leak into other tests
+    # (monkeypatch.delenv on an absent key does not register a rollback).
+    monkeypatch.setenv("DATABASE_URL", "")
 
     def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
         flag_index = cmd.index("--snapshot-out")

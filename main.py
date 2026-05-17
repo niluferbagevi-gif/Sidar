@@ -689,6 +689,38 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     return ran_any
 
 
+def _detect_doctor_auto_fix_regressions(
+    previous_details: dict[str, Any] | None, updated_check: Any
+) -> list[str]:
+    """Return human-readable regression notes when an auto-fix made things worse.
+
+    The Doctor checks publish ``*_set`` boolean flags in ``details`` (for
+    example ``database_url_set``). If a key was ``True`` before the auto-fix
+    and ``False`` after, the env reload dropped state the auto-fix had no
+    business clearing; surface that explicitly even when the overall status
+    superficially improved (fail → warn).
+    """
+    if not isinstance(previous_details, dict):
+        return []
+    updated_details = getattr(updated_check, "details", {}) or {}
+    if not isinstance(updated_details, dict):
+        return []
+
+    regressions: list[str] = []
+    for key, prev_value in previous_details.items():
+        if not isinstance(key, str) or not key.endswith("_set"):
+            continue
+        if prev_value is not True:
+            continue
+        if updated_details.get(key) is False:
+            label = key[: -len("_set")].upper()
+            regressions.append(
+                f"{label} auto-fix öncesi set idi, sonrasında boş; auto-fix env reload "
+                "sırasında değeri kaybetmiş olabilir."
+            )
+    return regressions
+
+
 def _revalidate_doctor_check_after_auto_fix(
     check_func: Any, source_details: dict[str, Any] | None = None
 ) -> Any | None:
@@ -706,9 +738,22 @@ def _revalidate_doctor_check_after_auto_fix(
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = updated_check
     print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
     _print_doctor_check_summary(updated_check)
+
+    regressions = _detect_doctor_auto_fix_regressions(source_details, updated_check)
+    for regression in regressions:
+        print(f"{RED}   • REGRESYON: {regression}{RESET}")
+
     updated_status = str(getattr(updated_check, "status", "warn") or "warn")
     updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
-    if updated_status == "fail":
+    if regressions:
+        # Even if the status nominally improved (fail → warn), a state
+        # regression means auto-fix is not a real fix; flag it loudly so the
+        # user does not move on thinking the issue is resolved.
+        print(
+            f"{RED}   • Auto-fix Doctor/{updated_name} kontrolünde regresyon yarattı; "
+            f"yukarıdaki REGRESYON satırlarını inceleyin ve manuel doğrulama yapın.{RESET}"
+        )
+    elif updated_status == "fail":
         print(
             f"{RED}   • Auto-fix Doctor/{updated_name} sorununu gideremedi; "
             f"yukarıdaki önerileri manuel uygulayın.{RESET}"
