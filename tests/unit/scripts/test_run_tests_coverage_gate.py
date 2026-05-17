@@ -483,8 +483,14 @@ def test_bundled_installer_release_asset_is_documented_and_published() -> None:
     )
     assert release_url in readme
     assert release_url in modularization_note
+    assert "Raw `main/install_sidar.sh` URL'sini `wget`/`curl` ile indirmeyin" in readme
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in readme
+    assert "wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh" in readme
     assert "tek dosya olarak çalıştırıldığında eksik modül dizini için erken hata verir" in readme
     assert "Raw `main/install_sidar.sh` tek dosya olarak desteklenmez" in modularization_note
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git && cd Sidar && ./install_sidar.sh" in modularization_note
+    assert "raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh" not in readme
+    assert "raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh" not in modularization_note
     assert "bash scripts/tools/bundle_install_sidar.sh" in workflow
     assert "gh release upload installer-latest dist/install_sidar.sh --clobber" in workflow
     assert (

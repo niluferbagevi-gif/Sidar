@@ -438,9 +438,13 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
-Repoyu klonladıysanız modüler kaynak betiği doğrudan çalıştırabilirsiniz:
+Desteklenen iki kurulum yolu vardır. **Raw `main/install_sidar.sh` URL'sini `wget`/`curl` ile indirmeyin**; bu dosya geliştirme kaynağıdır ve modül dizini olmadan erken hata verir.
+
+1. Repoyu klonlayarak modüler kaynak betiği çalıştırın:
 
 ```bash
+git clone https://github.com/niluferbagevi-gif/Sidar.git
+cd Sidar
 ./install_sidar.sh
 
 # Bulut/CI ortamı (ChatGPT Codex Cloud, Gitpod, Codespaces vb.) için
@@ -451,10 +455,11 @@ bash install_sidar.sh --ci
 ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ```
 
-Repoyu klonlamadan tek dosyalık kurulum yapacaksanız GitHub release asset olarak yayınlanan bundled installer'ı kullanın; bu dosya `scripts/install_modules/**` yardımcılarını içine gömülü taşır:
+2. Repoyu klonlamadan tek dosyalık kurulum yapacaksanız GitHub release asset olarak yayınlanan bundled installer'ı kullanın; bu dosya `scripts/install_modules/**` yardımcılarını içine gömülü taşır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh -o install_sidar.sh
+# curl yoksa: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh
 chmod +x install_sidar.sh
 ./install_sidar.sh
 ```
