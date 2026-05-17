@@ -11,13 +11,16 @@ def _password_from(url: str) -> str:
 
 
 def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() -> None:
-    env_text = "\n".join(
-        [
-            "POSTGRES_PASSWORD=p@ss word/with:symbols",
-            "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar?sslmode=disable",
-            'SIDAR_CONTAINER_DATABASE_URL="postgresql+asyncpg://sidar:old@postgres:5432/sidar"',
-        ]
-    ) + "\n"
+    env_text = (
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=p@ss word/with:symbols",
+                "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar?sslmode=disable",
+                'SIDAR_CONTAINER_DATABASE_URL="postgresql+asyncpg://sidar:old@postgres:5432/sidar"',
+            ]
+        )
+        + "\n"
+    )
 
     updated, summary = sync_database_passwords.sync_env_text(env_text)
 
@@ -32,13 +35,16 @@ def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() ->
 
 
 def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
-    env_text = "\n".join(
-        [
-            "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa",
-            "DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@localhost:5432/sidar",
-            "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/sidar",
-        ]
-    ) + "\n"
+    env_text = (
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa",
+                "DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@localhost:5432/sidar",
+                "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:aaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/sidar",
+            ]
+        )
+        + "\n"
+    )
 
     updated, summary = sync_database_passwords.sync_env_text(env_text)
 
@@ -98,3 +104,49 @@ def test_main_emits_redacted_json_summary(monkeypatch, tmp_path, capsys) -> None
     assert summary["changed"] is True
     assert "cccccccc" not in output.out
     assert "cccccccc" not in output.err
+
+
+def test_sync_env_chain_updates_later_override_files_with_effective_password(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    secret_file = tmp_path / "keys.env"
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(secret_file))
+
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        "POSTGRES_PASSWORD=" + "a" * 24 + "\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    advanced_env = tmp_path / ".env.advanced"
+    advanced_env.write_text(
+        "SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n",
+        encoding="utf-8",
+    )
+    development_env = tmp_path / ".env.development"
+    development_env.write_text(
+        "DATABASE_URL=postgresql://sidar:devold@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    secret_file.write_text("POSTGRES_PASSWORD=" + "s" * 24 + "\n", encoding="utf-8")
+
+    summary = sync_database_passwords.sync_env_chain(base_env)
+
+    assert summary["changed"] is True
+    assert str(base_env) in summary["changed_files"]
+    assert str(advanced_env) in summary["changed_files"]
+    assert str(development_env) in summary["changed_files"]
+    base_database_url = next(
+        line.split("=", 1)[1]
+        for line in base_env.read_text(encoding="utf-8").splitlines()
+        if line.startswith("DATABASE_URL=")
+    )
+    development_database_url = development_env.read_text(encoding="utf-8").split("=", 1)[1]
+    advanced_container_url = advanced_env.read_text(encoding="utf-8").split("=", 1)[1]
+    assert _password_from(base_database_url) == "s" * 24
+    assert _password_from(development_database_url) == "s" * 24
+    assert _password_from(advanced_container_url) == "s" * 24
+    assert summary["changed_keys_by_file"][str(development_env)] == ["DATABASE_URL"]

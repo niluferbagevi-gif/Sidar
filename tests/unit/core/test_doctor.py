@@ -219,8 +219,7 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert check.details["postgres_db_set"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
     assert (
-        "uv run python -m scripts.sync_database_passwords"
-        in check.details["recommended_commands"]
+        "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
     )
     assert "URL-encoded" in check.details["root_cause_hints"][1]
 
@@ -981,3 +980,64 @@ def test_main_returns_zero_for_warn_and_one_for_fail(monkeypatch, tmp_path, caps
         },
     )
     assert doctor.main() == 1
+
+
+def test_database_env_reports_database_url_override_source(monkeypatch, tmp_path):
+    password = "a" * 24
+    database_env = tmp_path / ".env.development"
+    database_env.write_text(
+        f"DATABASE_URL=postgresql://sidar:{'b' * 24}@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    secret_env = tmp_path / "keys.env"
+    secret_env.write_text(f"POSTGRES_PASSWORD={password}\n", encoding="utf-8")
+
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{'b' * 24}@localhost:5432/sidar")
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda _keys: {
+            "sources": {
+                "DATABASE_URL": {
+                    "label": "environment:development",
+                    "path": str(database_env),
+                    "override": "True",
+                },
+                "POSTGRES_PASSWORD": {
+                    "label": "secret:SIDAR_KEYS_FILE",
+                    "path": str(secret_env),
+                    "override": "True",
+                },
+            },
+            "definitions": {
+                "DATABASE_URL": [
+                    {
+                        "label": "environment:development",
+                        "path": str(database_env),
+                        "override": "True",
+                    }
+                ],
+                "SIDAR_CONTAINER_DATABASE_URL": [],
+                "POSTGRES_PASSWORD": [
+                    {
+                        "label": "secret:SIDAR_KEYS_FILE",
+                        "path": str(secret_env),
+                        "override": "True",
+                    }
+                ],
+            },
+        },
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "DATABASE_URL password does not match POSTGRES_PASSWORD" in check.message
+    assert f"DATABASE_URL is overridden in {database_env}" in check.message
+    assert check.details["database_url_source"] == str(database_env)
+    assert check.details["postgres_password_source"] == str(secret_env)

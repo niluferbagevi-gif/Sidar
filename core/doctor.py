@@ -266,6 +266,67 @@ def _load_json_object(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _parse_env_file_values(path: Path) -> dict[str, str]:
+    """Parse simple dotenv assignments for source attribution without exposing secrets."""
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :]
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key or any(char.isspace() for char in key):
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _dotenv_source_report(keys: tuple[str, ...]) -> dict[str, Any]:
+    """Return best-effort source files for effective env values loaded by config.py."""
+    try:
+        from config import get_dotenv_load_report
+    except Exception:
+        return {"sources": {}, "definitions": {key: [] for key in keys}}
+
+    sources: dict[str, dict[str, str]] = {}
+    definitions: dict[str, list[dict[str, str]]] = {key: [] for key in keys}
+    for event in get_dotenv_load_report():
+        if not event.get("loaded") or not event.get("path"):
+            continue
+        path = Path(str(event["path"]))
+        values = _parse_env_file_values(path)
+        for key in keys:
+            if key not in values:
+                continue
+            source = {
+                "label": str(event.get("label", "")),
+                "path": str(path),
+                "override": str(bool(event.get("override"))),
+            }
+            definitions[key].append(source)
+            if values[key] == os.getenv(key, "") or bool(event.get("override")):
+                sources[key] = source
+    return {"sources": sources, "definitions": definitions}
+
+
+def _source_message(key: str, sources: dict[str, dict[str, str]]) -> str:
+    source = sources.get(key) or {}
+    path = source.get("path", "")
+    label = source.get("label", "")
+    if not path or label == "base":
+        return ""
+    return f"{key} is overridden in {path}"
+
+
 def _database_name(parsed: Any) -> str:
     return str(getattr(parsed, "path", "") or "").lstrip("/").split("/", 1)[0]
 
@@ -337,6 +398,11 @@ def check_database_env() -> DoctorCheck:
     postgres_db = os.getenv("POSTGRES_DB", "").strip()
     parsed = urlparse(database_url) if database_url else None
     container_parsed = urlparse(container_url) if container_url else None
+    source_report = _dotenv_source_report(
+        ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL", "POSTGRES_PASSWORD")
+    )
+    env_sources = source_report.get("sources", {})
+    env_definitions = source_report.get("definitions", {})
 
     failures: list[str] = []
     warnings: list[str] = []
@@ -374,6 +440,12 @@ def check_database_env() -> DoctorCheck:
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 
+    if failures:
+        for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"):
+            source_note = _source_message(key, env_sources)
+            if source_note and source_note not in failures:
+                failures.append(source_note)
+
     status = "fail" if failures else ("warn" if warnings else "pass")
     message = "; ".join(failures or warnings or ["database environment looks secure"])
     return DoctorCheck(
@@ -388,6 +460,14 @@ def check_database_env() -> DoctorCheck:
             "postgres_db_set": bool(postgres_db),
             "scheme": parsed.scheme if parsed else "",
             "container_scheme": container_parsed.scheme if container_parsed else "",
+            "database_url_source": (env_sources.get("DATABASE_URL") or {}).get("path", ""),
+            "container_database_url_source": (
+                env_sources.get("SIDAR_CONTAINER_DATABASE_URL") or {}
+            ).get("path", ""),
+            "postgres_password_source": (env_sources.get("POSTGRES_PASSWORD") or {}).get(
+                "path", ""
+            ),
+            "env_source_definitions": env_definitions,
             "auto_fix": "uv run python -m scripts.sync_database_passwords",
             "recommended_commands": [
                 "uv run python -m scripts.sync_database_passwords",
@@ -400,7 +480,7 @@ def check_database_env() -> DoctorCheck:
                 "Mevcut PostgreSQL Docker volume eski parola ile başlatılmış olabilir",
             ],
             "remediation_steps": [
-                "uv run python -m scripts.sync_database_passwords ile .env içindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
+                "uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
                 "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız geliştirme ortamında volume resetleyin.",
             ],
         },

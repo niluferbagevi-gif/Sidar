@@ -1,15 +1,17 @@
-"""Synchronize PostgreSQL URL passwords in a Sidar env file.
+"""Synchronize PostgreSQL URL passwords across Sidar dotenv files.
 
 The script keeps ``DATABASE_URL`` and ``SIDAR_CONTAINER_DATABASE_URL`` aligned
-with ``POSTGRES_PASSWORD`` without printing secret values. It is intentionally
-idempotent so Doctor auto-fix can offer it safely when database_env detects
-password drift.
+with the effective ``POSTGRES_PASSWORD`` without printing secret values. It is
+intentionally idempotent so Doctor auto-fix can offer it safely when
+``database_env`` detects password drift, including drift introduced by later
+dotenv overrides such as ``.env.development`` or ``SIDAR_KEYS_FILE``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,20 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 DATABASE_URL_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+ENV_CHAIN_KEYS = (
+    *DATABASE_URL_KEYS,
+    "POSTGRES_PASSWORD",
+    "SIDAR_ENV",
+    "DOTENV_FILE",
+    "SIDAR_KEYS_FILE",
+)
+
+
+@dataclass(frozen=True)
+class EnvFileSpec:
+    label: str
+    path: Path
+    override: bool
 
 
 @dataclass(frozen=True)
@@ -102,13 +118,12 @@ def _postgres_url_with_password(database_url: str, postgres_password: str) -> st
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
-def sync_env_text(text: str) -> tuple[str, dict[str, Any]]:
-    """Return updated env text plus a redacted summary."""
-    assignments = _parse_env_text(text)
-    postgres_password = assignments.get("POSTGRES_PASSWORD")
-    if postgres_password is None or not postgres_password.value:
-        raise ValueError("POSTGRES_PASSWORD is not set in the env file")
+def _sync_env_text_with_password(text: str, postgres_password: str) -> tuple[str, dict[str, Any]]:
+    """Return updated env text using an already-resolved effective password."""
+    if not postgres_password:
+        raise ValueError("POSTGRES_PASSWORD is not set in the effective env chain")
 
+    assignments = _parse_env_text(text)
     lines = text.splitlines()
     changed_keys: list[str] = []
     skipped: dict[str, str] = {}
@@ -117,7 +132,7 @@ def sync_env_text(text: str) -> tuple[str, dict[str, Any]]:
         if assignment is None or not assignment.value:
             skipped[key] = "missing"
             continue
-        updated = _postgres_url_with_password(assignment.value, postgres_password.value)
+        updated = _postgres_url_with_password(assignment.value, postgres_password)
         if updated is None:
             skipped[key] = "not_postgresql_or_missing_username"
             continue
@@ -137,6 +152,108 @@ def sync_env_text(text: str) -> tuple[str, dict[str, Any]]:
     return updated_text, summary
 
 
+def sync_env_text(text: str) -> tuple[str, dict[str, Any]]:
+    """Return updated env text plus a redacted summary for a single env file."""
+    assignments = _parse_env_text(text)
+    postgres_password = assignments.get("POSTGRES_PASSWORD")
+    if postgres_password is None or not postgres_password.value:
+        raise ValueError("POSTGRES_PASSWORD is not set in the env file")
+    return _sync_env_text_with_password(text, postgres_password.value)
+
+
+def _resolve_chain_path(raw_path: str, *, root: Path) -> Path:
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    return candidate
+
+
+def _read_assignments(path: Path) -> dict[str, EnvAssignment]:
+    if not path.is_file():
+        return {}
+    return _parse_env_text(path.read_text(encoding="utf-8"))
+
+
+def _apply_assignments_to_env(
+    env: dict[str, str],
+    assignments: dict[str, EnvAssignment],
+    *,
+    override: bool,
+) -> None:
+    for key in ENV_CHAIN_KEYS:
+        assignment = assignments.get(key)
+        if assignment is None:
+            continue
+        if override or key not in env:
+            env[key] = assignment.value
+
+
+def _append_existing_spec(specs: list[EnvFileSpec], seen: set[Path], spec: EnvFileSpec) -> None:
+    resolved = spec.path.expanduser().resolve()
+    if resolved in seen:
+        return
+    seen.add(resolved)
+    specs.append(EnvFileSpec(spec.label, resolved, spec.override))
+
+
+def discover_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> list[EnvFileSpec]:
+    """Discover Sidar's dotenv chain without mutating ``os.environ``."""
+    base_env_file = base_env_file.expanduser()
+    if not base_env_file.is_absolute():
+        base_env_file = (PROJECT_ROOT / base_env_file).resolve()
+    root = base_env_file.parent
+    effective_env = dict(os.environ)
+    specs: list[EnvFileSpec] = []
+    seen: set[Path] = set()
+
+    for spec in (
+        EnvFileSpec("base", base_env_file, False),
+        EnvFileSpec("advanced", root / ".env.advanced", False),
+    ):
+        _append_existing_spec(specs, seen, spec)
+        _apply_assignments_to_env(
+            effective_env, _read_assignments(spec.path), override=spec.override
+        )
+
+    sidar_env = effective_env.get("SIDAR_ENV", "").strip().lower()
+    # Development is Sidar's common local override file and was historically
+    # missed by the auto-fix when SIDAR_ENV was not exported in the shell.
+    environment_names = [sidar_env] if sidar_env else ["development"]
+    for env_name in environment_names:
+        spec = EnvFileSpec(f"environment:{env_name}", root / f".env.{env_name}", True)
+        _append_existing_spec(specs, seen, spec)
+        _apply_assignments_to_env(effective_env, _read_assignments(spec.path), override=True)
+
+    explicit_dotenv = effective_env.get("DOTENV_FILE", "").strip()
+    if explicit_dotenv:
+        spec = EnvFileSpec(
+            "explicit:DOTENV_FILE",
+            _resolve_chain_path(explicit_dotenv, root=root),
+            True,
+        )
+        _append_existing_spec(specs, seen, spec)
+        _apply_assignments_to_env(effective_env, _read_assignments(spec.path), override=True)
+
+    sidar_keys_file = effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    if sidar_keys_file:
+        spec = EnvFileSpec(
+            "secret:SIDAR_KEYS_FILE",
+            _resolve_chain_path(sidar_keys_file, root=root),
+            True,
+        )
+        _append_existing_spec(specs, seen, spec)
+    return specs
+
+
+def _effective_postgres_password(specs: list[EnvFileSpec]) -> str:
+    effective_env = dict(os.environ)
+    for spec in specs:
+        _apply_assignments_to_env(
+            effective_env, _read_assignments(spec.path), override=spec.override
+        )
+    return effective_env.get("POSTGRES_PASSWORD", "")
+
+
 def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     if not env_file.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {env_file}")
@@ -147,19 +264,76 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     return {"env_file": str(env_file), **summary}
 
 
+def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
+    specs = discover_env_chain(base_env_file)
+    if not specs or not specs[0].path.is_file():
+        raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
+
+    postgres_password = _effective_postgres_password(specs)
+    if not postgres_password:
+        raise ValueError("POSTGRES_PASSWORD is not set in the env chain")
+
+    file_summaries: list[dict[str, Any]] = []
+    changed_files: list[str] = []
+    changed_keys_by_file: dict[str, list[str]] = {}
+    for spec in specs:
+        if not spec.path.is_file():
+            file_summaries.append(
+                {
+                    "label": spec.label,
+                    "env_file": str(spec.path),
+                    "exists": False,
+                    "changed": False,
+                    "changed_keys": [],
+                    "skipped": {key: "file_missing" for key in DATABASE_URL_KEYS},
+                }
+            )
+            continue
+
+        original = spec.path.read_text(encoding="utf-8")
+        updated, summary = _sync_env_text_with_password(original, postgres_password)
+        if updated != original:
+            spec.path.write_text(updated, encoding="utf-8")
+            changed_files.append(str(spec.path))
+            changed_keys_by_file[str(spec.path)] = list(summary["changed_keys"])
+        file_summaries.append(
+            {
+                "label": spec.label,
+                "env_file": str(spec.path),
+                "exists": True,
+                **summary,
+            }
+        )
+
+    changed_keys = sorted({key for keys in changed_keys_by_file.values() for key in keys})
+    return {
+        "env_file": str(specs[0].path),
+        "changed": bool(changed_files),
+        "changed_keys": changed_keys,
+        "changed_files": changed_files,
+        "changed_keys_by_file": changed_keys_by_file,
+        "checked_files": [str(spec.path) for spec in specs],
+        "checked_keys": list(DATABASE_URL_KEYS),
+        "postgres_password_set": True,
+        "file_summaries": file_summaries,
+    }
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL parolalarını POSTGRES_PASSWORD ile eşitle",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası")
+    parser.add_argument(
+        "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        summary = sync_env_file(Path(args.env_file))
+        summary = sync_env_chain(Path(args.env_file))
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
