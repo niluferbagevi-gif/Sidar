@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import secrets
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,7 @@ def bootstrap_profile_env(
             "profile": profile,
             "created": False,
             "reason": "already_exists",
+            "message": f"ℹ️ Zaten mevcut: {target}",
             "source": str(source),
             "target": str(target),
             "generated_secrets": {},
@@ -96,6 +98,7 @@ def bootstrap_profile_env(
         "profile": profile,
         "created": True,
         "reason": "created" if not force else "overwritten",
+        "message": f"✅ Oluşturuldu: {target}" if not force else f"✅ Güncellendi: {target}",
         "source": str(source),
         "target": str(target),
         "generated_secrets": generated,
@@ -121,6 +124,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _emit_human_feedback(summary: dict[str, Any]) -> None:
+    """Emit a concise terminal-friendly status without breaking JSON stdout."""
+    message = str(summary.get("message") or "").strip()
+    if message:
+        print(message, file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     summary = bootstrap_profile_env(
@@ -128,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         force=bool(args.force),
         generate_secrets=not bool(args.no_generate_secrets),
     )
+    _emit_human_feedback(summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

@@ -245,7 +245,7 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
 
 
 def _maybe_bootstrap_development_env() -> bool:
-    """Eksik .env.development için sihirbazdan önce opsiyonel bootstrap komutu önerir."""
+    """Eksik .env.development için ön kontroller sırasında opsiyonel bootstrap önerir."""
     env_path = _development_env_path()
     if env_path.exists() or not sys.stdin.isatty():
         return False
@@ -457,6 +457,7 @@ def _run_launcher_doctor_preflight() -> None:
 def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
+    _maybe_bootstrap_development_env()
 
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
@@ -804,9 +805,6 @@ def main() -> None:
     launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(args.last)]
     if sum(launch_modes) > 1:
         parser.error("--quick, --skip-wizard ve --last aynı anda kullanılamaz")
-
-    if not any(launch_modes):
-        _maybe_bootstrap_development_env()
 
     if hasattr(cfg, "validate_critical_settings") and not cfg.validate_critical_settings():
         print(f"{RED}❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.{RESET}")

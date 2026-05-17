@@ -25,6 +25,7 @@ def test_bootstrap_profile_env_creates_gitignored_development_file_with_generate
 
     target = tmp_path / ".env.development"
     assert summary["created"] is True
+    assert summary["message"] == f"✅ Oluşturuldu: {target}"
     assert summary["generated_secrets"] == {
         "POSTGRES_PASSWORD": True,
         "API_KEY": True,
@@ -47,6 +48,7 @@ def test_bootstrap_profile_env_is_non_destructive_without_force(tmp_path: Path) 
 
     assert summary["created"] is False
     assert summary["reason"] == "already_exists"
+    assert summary["message"] == f"ℹ️ Zaten mevcut: {target}"
     assert target.read_text(encoding="utf-8") == "SIDAR_ENV=development\nAPI_KEY=keep\n"
 
 
@@ -75,3 +77,28 @@ def test_render_env_template_adds_missing_sidar_env_for_isolation() -> None:
 
     assert generated == {}
     assert rendered == "API_KEY=local\nSIDAR_ENV=development\n"
+
+
+def test_bootstrap_env_main_prints_feedback_to_stderr_and_json_to_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / ".env.development"
+
+    def _fake_bootstrap_profile_env(*_args, **_kwargs):
+        return {
+            "profile": "development",
+            "created": True,
+            "reason": "created",
+            "message": f"✅ Oluşturuldu: {target}",
+            "target": str(target),
+            "generated_secrets": {},
+        }
+
+    monkeypatch.setattr(bootstrap_env, "bootstrap_profile_env", _fake_bootstrap_profile_env)
+
+    assert bootstrap_env.main(["--profile", "development"]) == 0
+
+    captured = capsys.readouterr()
+    assert "✅ Oluşturuldu:" in captured.err
+    assert '"created": true' in captured.out
+    assert str(target) in captured.out

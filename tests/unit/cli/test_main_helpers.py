@@ -334,6 +334,28 @@ def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> N
     assert main._run_doctor_auto_fix(check) is False
 
 
+def test_preflight_offers_development_bootstrap_from_preflight_block(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / ".env").write_text("DATABASE_URL=sqlite:///x", encoding="utf-8")
+    monkeypatch.setattr(
+        main,
+        "cfg",
+        SimpleNamespace(
+            BASE_DIR=str(tmp_path), DATABASE_URL="sqlite:///db", OLLAMA_URL="http://ollama"
+        ),
+    )
+    called = {"bootstrap": 0}
+    monkeypatch.setattr(
+        main, "_maybe_bootstrap_development_env", lambda: called.__setitem__("bootstrap", 1) or True
+    )
+    monkeypatch.setattr(main, "_run_launcher_doctor_preflight", lambda: None)
+
+    main.preflight("openai")
+
+    assert called["bootstrap"] == 1
+
+
 def test_preflight_reports_existing_env_and_database_url_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
