@@ -98,6 +98,7 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "SELF_HEAL_DATABASE_URL=postgresql" not in env_development
     assert "POSTGRES_CONTAINER_HOST=postgres" in env_development
     assert "OLLAMA_NUM_PARALLEL=4" in env_development
+    assert "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars" in env_development
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:

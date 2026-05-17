@@ -33,6 +33,9 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
         DoctorCheck("gpu", "warn", "no gpu", {"run_gpu_stress": False}),
     ]
     monkeypatch.setattr(doctor, "check_uv", lambda: checks[0])
+    monkeypatch.setattr(
+        doctor, "check_environment_profile", lambda: DoctorCheck("env", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
     monkeypatch.setattr(
         doctor, "check_database_connectivity", lambda: DoctorCheck("db_conn", "pass", "ok")
@@ -432,6 +435,37 @@ def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_pat
     assert "database environment parity failed" in check.message
     assert check.details["database_env_status"] == "fail"
 
+
+
+def test_environment_profile_warns_when_development_file_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    (tmp_path / ".env.development.example").write_text("SIDAR_ENV=development\n", encoding="utf-8")
+
+    check = doctor.check_environment_profile()
+
+    assert check.status == "warn"
+    assert ".env.development is missing" in check.message
+    assert "uv run python -m scripts.bootstrap_env --profile development" in check.details[
+        "recommended_commands"
+    ]
+
+
+def test_environment_profile_passes_when_profile_file_exists_or_test_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    (tmp_path / ".env.development").write_text("SIDAR_ENV=development\n", encoding="utf-8")
+
+    present = doctor.check_environment_profile()
+
+    assert present.status == "pass"
+    assert present.details["profile_env_exists"] is True
+
+    monkeypatch.setenv("SIDAR_ENV", "test")
+    test_profile = doctor.check_environment_profile()
+
+    assert test_profile.status == "pass"
+    assert "test fixtures" in test_profile.message
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
     versions = tmp_path / "migrations" / "versions"

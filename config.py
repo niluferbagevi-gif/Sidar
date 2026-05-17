@@ -136,9 +136,10 @@ if sidar_env:
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}
-        if sidar_env in optional_env_aliases and base_env_path.exists():
+        if sidar_env in optional_env_aliases and (base_env_path.exists() or advanced_env_path.exists()):
             print(
-                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env/.env.advanced ayarları kullanılacak."
+                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env/.env.advanced ayarları kullanılacak. "
+                f"Yerel izolasyon için: uv run python -m scripts.bootstrap_env --profile {sidar_env}"
             )
         else:
             print(

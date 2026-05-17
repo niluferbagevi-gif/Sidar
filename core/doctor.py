@@ -560,6 +560,70 @@ def check_rag_readiness() -> DoctorCheck:
     return DoctorCheck("rag_readiness", status, message, details)
 
 
+
+def check_environment_profile() -> DoctorCheck:
+    """Validate that the selected SIDAR_ENV profile has an isolated dotenv file."""
+    profile = os.getenv("SIDAR_ENV", "").strip().lower()
+    details: dict[str, Any] = {
+        "sidar_env": profile,
+        "base_env_path": str(BASE_DIR / ".env"),
+        "advanced_env_path": str(BASE_DIR / ".env.advanced"),
+        "recommended_commands": [
+            "uv run python -m scripts.bootstrap_env --profile development",
+            "cp .env.development.example .env.development",
+        ],
+    }
+    if not profile:
+        return DoctorCheck(
+            "environment_profile",
+            "pass",
+            "SIDAR_ENV profile is not set; base dotenv/default settings are in use",
+            details,
+        )
+
+    profile_path = BASE_DIR / f".env.{profile}"
+    template_path = BASE_DIR / f".env.{profile}.example"
+    details.update(
+        {
+            "profile_env_path": str(profile_path),
+            "profile_env_exists": profile_path.exists(),
+            "profile_template_path": str(template_path),
+            "profile_template_exists": template_path.exists(),
+        }
+    )
+
+    if profile == "test":
+        return DoctorCheck(
+            "environment_profile",
+            "pass",
+            "SIDAR_ENV=test uses test fixtures/process environment isolation",
+            details,
+        )
+    if profile_path.exists():
+        return DoctorCheck(
+            "environment_profile",
+            "pass",
+            f"SIDAR_ENV={profile} isolated dotenv file is present",
+            details,
+        )
+
+    if template_path.exists():
+        command = f"uv run python -m scripts.bootstrap_env --profile {profile}"
+        details["recommended_commands"] = [command, f"cp .env.{profile}.example .env.{profile}"]
+        return DoctorCheck(
+            "environment_profile",
+            "warn",
+            f"SIDAR_ENV={profile} is active but .env.{profile} is missing; create it from .env.{profile}.example to isolate local settings",
+            details,
+        )
+
+    return DoctorCheck(
+        "environment_profile",
+        "warn",
+        f"SIDAR_ENV={profile} is active but no .env.{profile} or .env.{profile}.example file exists",
+        details,
+    )
+
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
     revisions: list[str] = []
     down_revisions: list[str] = []
@@ -778,6 +842,7 @@ def run_doctor_report(
 ) -> dict[str, Any]:
     checks = [
         check_uv(),
+        check_environment_profile(),
         check_database_env(),
         check_database_connectivity(),
         check_rag_readiness(),

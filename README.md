@@ -810,8 +810,13 @@ JWT_TTL_DAYS=7
 
 Gelişmiş örnekler: otonom coverage, Swarm federation, HITL/Judge, Kafka/RabbitMQ event bus,
 LoRA/Active Learning ve sandbox ince ayarları için `.env.advanced` dosyasından yalnız gerekli
-anahtarları kendi override dosyanıza taşıyın. Gerçek API tokenlarını ise repo dışında
-`~/.sidar_keys.env` içinde tutun; güncel anahtar şablonu `.sidar_keys.env.example` dosyasındadır.
+anahtarları kendi override dosyanıza taşıyın. `SIDAR_ENV=development` aktifken
+`.env.development` dosyası yoksa config yükleme zinciri temel `.env/.env.advanced` değerlerine
+düşer ve bunu loglar; yerel geliştirme izolasyonunu hazırlamak için
+`uv run python -m scripts.bootstrap_env --profile development` komutunu çalıştırın veya
+`.env.development.example` dosyasını `.env.development` olarak kopyalayıp placeholder secret
+değerlerini güncelleyin. Gerçek API tokenlarını ise repo dışında `~/.sidar_keys.env` içinde
+tutun; güncel anahtar şablonu `.sidar_keys.env.example` dosyasındadır.
 
 
 ---
