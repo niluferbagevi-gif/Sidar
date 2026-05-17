@@ -124,7 +124,14 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "mapfile -t target_env_files < <(_api_key_env_targets)" in collect_block
     assert 'for target in "${target_env_files[@]}"' in collect_block
     assert "_sync_existing_api_keys_to_env_targets" in collect_block
-    assert collect_block.count("_sync_existing_api_keys_to_env_targets") >= 5
+    assert collect_block.count("_sync_existing_api_keys_to_env_targets") >= 6
+    no_interaction_pos = collect_block.index('if [[ "$NO_INTERACTION" == true ]]')
+    import_pos = collect_block.index("_import_api_keys_from_file()")
+    assert no_interaction_pos < import_pos
+    assert (
+        '_sync_existing_api_keys_to_env_targets\n        return'
+        in collect_block[no_interaction_pos:import_pos]
+    )
 
     propagate_start = install_script.index("propagate_shared_secrets_to_env_variants()")
     propagate_block = install_script[
@@ -538,6 +545,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in env_utils
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
     assert "propagate_shared_secrets_to_env_variants" in env_utils
+    assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
+    existing_env_branch = env_utils[
+        env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index('return', env_utils.index('if [[ -f "$ENV_FILE" ]]'))
+    ]
+    assert existing_env_branch.index("propagate_shared_secrets_to_env_variants") < existing_env_branch.index("collect_api_keys_interactive")
+    assert "ikinci bir generic propagate gerekmez" in existing_env_branch
     assert "harden_database_credentials" in env_utils
     assert "download_ollama_models()" in ollama_utils
     assert "qwen2.5-coder:7b" in ollama_utils

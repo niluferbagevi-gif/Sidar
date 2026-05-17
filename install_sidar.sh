@@ -3549,11 +3549,6 @@ sidar_user_api_key_names() {
 collect_api_keys_interactive() {
     local env_file="$1"
 
-    if [[ "$NO_INTERACTION" == true ]]; then
-        info "--ci/--no-interaction etkin: API anahtarı etkileşimli toplama adımı atlandı."
-        return
-    fi
-
     # ── Tüm kullanıcı girişi gerektiren anahtarlar (otomatik üretilenler hariç) ──
     local -a KEY_ORDER=()
     mapfile -t KEY_ORDER < <(sidar_user_api_key_names)
@@ -3654,6 +3649,12 @@ collect_api_keys_interactive() {
             _write_key "$key" "$current_val"
         done
     }
+
+    if [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: API anahtarı etkileşimli toplama adımı atlandı."
+        _sync_existing_api_keys_to_env_targets
+        return
+    fi
 
     # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
     # Dosya varsa etkileşimli (zenity/whiptail/read) adımı tamamen atlanır.

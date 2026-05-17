@@ -33,6 +33,8 @@ setup_env_file() {
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
+        # collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına
+        # API anahtarlarını yazar; bu yüzden burada ikinci bir generic propagate gerekmez.
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
         validate_runtime_env_loading
@@ -103,6 +105,8 @@ setup_env_file() {
         ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
     fi
 
+    # collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına
+    # API anahtarlarını yazar; bu yüzden burada ikinci bir generic propagate gerekmez.
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"
     validate_runtime_env_loading
