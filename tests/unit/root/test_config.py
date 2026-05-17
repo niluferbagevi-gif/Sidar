@@ -243,6 +243,24 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
     assert all(call.get("override") in (False, None) for call in calls)
 
 
+def test_config_import_buffers_missing_environment_file_until_logger_status(monkeypatch, capsys):
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+
+    reloaded = importlib.reload(config)
+
+    captured = capsys.readouterr()
+    assert ".env.development bulunamadı" not in captured.out
+    assert "Belirtilen ortam dosyası bulunamadı" not in captured.out
+
+    reloaded.Config._log_dotenv_load_status(missing_keys=[])
+    status_output = capsys.readouterr().out
+
+    assert "Opsiyonel dotenv dosyaları bulunamadı" in status_output
+    assert "environment:development=" in status_output
+
+
 def test_sidar_keys_file_supports_user_home_and_overrides(monkeypatch, tmp_path):
     keys_file = tmp_path / "sidar_keys.env"
     keys_file.write_text(
@@ -340,7 +358,6 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
     assert config.Config.validate_critical_settings() is False
 
 
-
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
     assert safe == {
@@ -357,6 +374,7 @@ def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     assert normalized["gpu"] == pytest.approx(0.8)
     assert normalized["total"] == pytest.approx(0.8)
     assert normalized["llm"] + normalized["rag"] == pytest.approx(0.8)
+
 
 def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
     monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
@@ -831,7 +849,6 @@ def test_check_hardware_non_cuda_and_generic_exception(monkeypatch):
     assert info2.gpu_name == "Tespit Edilemedi"
 
 
-
 def test_check_hardware_normalizes_explicit_llm_rag_fraction_sum(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setenv("LLM_GPU_MEMORY_FRACTION", "0.9")
@@ -854,6 +871,7 @@ def test_check_hardware_normalizes_explicit_llm_rag_fraction_sum(monkeypatch):
 
     assert info.has_cuda is True
     assert called == [(0.8, 0)]
+
 
 def test_check_hardware_invalid_fraction_and_fraction_set_exception(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")

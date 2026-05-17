@@ -127,26 +127,12 @@ _load_dotenv_if_exists(str(advanced_env_path), override=False, label="advanced")
 # .env veya .env.advanced SIDAR_ENV değerini değiştirdiyse ortam dosyası seçimini güncelle.
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
-# 4. Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz
+# 4. Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz.
+#    Import aşamasında stdout'a erken uyarı basmayın; tüm dotenv durumu
+#    Config._log_dotenv_load_status() içinde tek logger kanalından raporlanır.
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
-    if _load_dotenv_if_exists(
-        str(specific_env_path), override=True, label=f"environment:{sidar_env}"
-    ):
-        print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
-    else:
-        optional_env_aliases = {"development", "dev", "local"}
-        if sidar_env in optional_env_aliases and (base_env_path.exists() or advanced_env_path.exists()):
-            print(
-                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env/.env.advanced ayarları kullanılacak. "
-                f"Yerel izolasyon için: uv run python -m scripts.bootstrap_env --profile {sidar_env}"
-            )
-        else:
-            print(
-                f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak."
-            )
-elif not base_env_path.exists():
-    print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
+    _load_dotenv_if_exists(str(specific_env_path), override=True, label=f"environment:{sidar_env}")
 
 # 5. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
 #    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
@@ -304,6 +290,7 @@ class GpuMemoryBudget(TypedDict):
     original_total: float
     normalized: bool
 
+
 def normalize_gpu_memory_fractions(
     llm_fraction: float,
     rag_fraction: float,
@@ -360,6 +347,7 @@ def normalize_gpu_memory_fractions(
         "original_total": round(total, 4),
         "normalized": True,
     }
+
 
 def get_web_scrape_max_chars(default: int = 12000) -> int:
     """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
