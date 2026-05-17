@@ -1472,7 +1472,9 @@ async def test_connect_postgresql_connection_drop_enters_degraded_mode(
 async def test_connect_postgresql_auth_failure_logs_actionable_warning_without_raw_error(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path
 ) -> None:
-    cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path))
+    cfg = DummyCfg(
+        DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path)
+    )
     db = Database(cfg)
 
     async def _raise_auth(**_kwargs):
