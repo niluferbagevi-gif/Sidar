@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 from config import Config
 
@@ -13,6 +13,19 @@ except ImportError:  # pragma: no cover - test doubles may only expose Config
     _config_get_config = None
 
 logger = logging.getLogger(__name__)
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+    return bool(value)
+
+
+def sentence_transformer_device_from_config(cfg: Any) -> str:
+    """Resolve the explicit SentenceTransformer device from Sidar GPU config."""
+    if not _as_bool(getattr(cfg, "USE_GPU", False)):
+        return "cpu"
+    return f"cuda:{getattr(cfg, 'GPU_DEVICE', 0)}"
 
 
 def embed_texts_for_semantic_cache(
@@ -29,7 +42,10 @@ def embed_texts_for_semantic_cache(
     try:
         from sentence_transformers import SentenceTransformer
 
-        model = SentenceTransformer(model_name)
+        model = SentenceTransformer(
+            model_name,
+            device=sentence_transformer_device_from_config(cfg),
+        )
         vectors = model.encode(texts, normalize_embeddings=True)
         raw = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
         return cast("list[list[float]]", raw)

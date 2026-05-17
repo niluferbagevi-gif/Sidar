@@ -322,8 +322,25 @@ async def test_embed_texts_for_semantic_cache_empty() -> None:
     assert rag.embed_texts_for_semantic_cache([]) == []
 
 
-async def test_build_embedding_function_returns_none_without_gpu() -> None:
-    assert rag._build_embedding_function(use_gpu=False) is None
+async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _EF:
+        def __init__(self, model_name: str, device: str) -> None:
+            self.model_name = model_name
+            self.device = device
+
+    monkeypatch.setitem(
+        sys.modules,
+        "chromadb.utils.embedding_functions",
+        SimpleNamespace(SentenceTransformerEmbeddingFunction=_EF),
+    )
+
+    ef = rag._build_embedding_function(use_gpu=False, gpu_device=3)
+
+    assert ef is not None
+    assert ef.model_name == "all-MiniLM-L6-v2"
+    assert ef.device == "cpu"
 
 
 async def test_document_store_helper_methods(tmp_path: Path) -> None:
@@ -837,9 +854,11 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
         def tolist(self) -> list[list[float]]:
             return [[0.1, 0.2]]
 
+    seen: dict[str, str] = {}
+
     class _ST:
-        def __init__(self, _name: str) -> None:
-            pass
+        def __init__(self, _name: str, *, device: str) -> None:
+            seen["device"] = device
 
         def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> _Vec:
             assert normalize_embeddings is True
@@ -848,10 +867,20 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
     monkeypatch.setitem(
         __import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_ST)
     )
-    assert rag.embed_texts_for_semantic_cache(["hello"]) == [[0.1, 0.2]]
+    cfg = SimpleNamespace(
+        PGVECTOR_EMBEDDING_MODEL="mini",
+        USE_GPU="false",
+        GPU_DEVICE=1,
+    )
+    assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == [[0.1, 0.2]]
+    assert seen["device"] == "cpu"
+
+    cfg.USE_GPU = "true"
+    assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == [[0.1, 0.2]]
+    assert seen["device"] == "cuda:1"
 
     class _BrokenST:
-        def __init__(self, _name: str) -> None:
+        def __init__(self, _name: str, **_kwargs: object) -> None:
             raise RuntimeError("boom")
 
     monkeypatch.setitem(
@@ -859,7 +888,7 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
         "sentence_transformers",
         SimpleNamespace(SentenceTransformer=_BrokenST),
     )
-    assert rag.embed_texts_for_semantic_cache(["hello"]) == []
+    assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == []
 
 
 async def test_build_embedding_function_gpu_success_and_fallback(
@@ -1395,9 +1424,11 @@ async def test_document_store_pgvector_init_and_query_helpers(
         SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda s: s),
     )
 
+    seen_sentence_transformer: dict[str, str] = {}
+
     class _ST:
-        def __init__(self, _model: str) -> None:
-            pass
+        def __init__(self, _model: str, *, device: str) -> None:
+            seen_sentence_transformer["device"] = device
 
         def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> list[list[float]]:
             assert normalize_embeddings is True
@@ -1406,9 +1437,12 @@ async def test_document_store_pgvector_init_and_query_helpers(
     monkeypatch.setitem(
         __import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_ST)
     )
+    store.cfg.USE_GPU = False
+    store.cfg.GPU_DEVICE = 1
     store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
     store._init_pgvector()
     assert store._pgvector_available is True
+    assert seen_sentence_transformer["device"] == "cpu"
 
     # _fetch_pgvector with parent de-dup
     store._is_local_llm_provider = False

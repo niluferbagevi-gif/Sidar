@@ -35,6 +35,7 @@ import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
 from config import Config
+from core.embeddings import sentence_transformer_device_from_config
 from core.utils.network_validation import is_local_only_host
 
 _BLEACH_AVAILABLE = True
@@ -615,22 +616,24 @@ def _build_embedding_function(
     """
     ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
 
-    use_gpu=True  →  sentence-transformers all-MiniLM-L6-v2  CUDA üzerinde çalışır.
-    use_gpu=False →  ChromaDB varsayılan CPU embedding'i kullanılır (None).
+    use_gpu=True  →  sentence-transformers all-MiniLM-L6-v2 CUDA üzerinde çalışır.
+    use_gpu=False →  embedding fonksiyonu açıkça CPU device ile kurulur.
 
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
     """
-    if not use_gpu:
-        return None  # ChromaDB varsayılan (CPU) embedding fonksiyonu
-
     try:
         embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
         if embedding_module is None:
             embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
         SentenceTransformerEmbeddingFunction = embedding_module.SentenceTransformerEmbeddingFunction
-        import torch
 
-        device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
+        device = "cpu"
+        torch: Any | None = None
+        if use_gpu:
+            import torch as _torch
+
+            torch = _torch
+            device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
 
         ef = SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2",
@@ -639,7 +642,7 @@ def _build_embedding_function(
 
         # Mixed precision: sentence-transformers encode sırasında half() uygula
         if mixed_precision and device.startswith("cuda"):
-            if hasattr(torch, "autocast"):
+            if torch is not None and hasattr(torch, "autocast"):
                 _orig_call = ef.__call__
 
                 def _fp16_call(input: Any) -> Any:
@@ -653,7 +656,7 @@ def _build_embedding_function(
                 )
 
         logger.info(
-            "🚀 ChromaDB GPU Embedding: device=%s  mixed_precision=%s",
+            "ChromaDB embedding fonksiyonu başlatıldı: device=%s  mixed_precision=%s",
             device,
             mixed_precision,
         )
@@ -971,7 +974,10 @@ class DocumentStore:
                     )
                 )
 
-            self._pg_embedding_model = SentenceTransformer(self._pg_embedding_model_name)
+            self._pg_embedding_model = SentenceTransformer(
+                self._pg_embedding_model_name,
+                device=sentence_transformer_device_from_config(self.cfg),
+            )
             self._pgvector_available = True
             logger.info(
                 "pgvector backend başlatıldı: table=%s model=%s",
