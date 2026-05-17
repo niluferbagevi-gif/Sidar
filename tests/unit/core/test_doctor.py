@@ -404,7 +404,7 @@ def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch
     assert "pgvector extension is not installed" in check.message
 
 
-def test_rag_readiness_warns_for_empty_index_and_entity_graph(monkeypatch, tmp_path):
+def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     monkeypatch.setenv("RAG_DIR", str(rag_dir))
@@ -413,10 +413,27 @@ def test_rag_readiness_warns_for_empty_index_and_entity_graph(monkeypatch, tmp_p
 
     assert check.status == "warn"
     assert check.details["document_count"] == 0
-    assert "no indexed documents" in check.message
+    assert check.details["index_exists"] is False
+    assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag"
+    assert "index file is missing" in check.message
     assert "entity memory is empty" in check.message
     assert "uv run python -m scripts.seed_rag" in check.details["recommended_commands"]
     assert any("belge ekle <url>" in cmd for cmd in check.details["recommended_commands"])
+    assert check.as_dict()["details"]["auto_fix"] == "uv run python -m scripts.seed_rag"
+
+
+def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    (rag_dir / "index.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "warn"
+    assert check.details["index_exists"] is True
+    assert "no indexed documents" in check.message
+    assert "index file is missing" not in check.message
 
 
 def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
@@ -439,7 +456,6 @@ def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_pat
     assert check.details["database_env_status"] == "fail"
 
 
-
 def test_environment_profile_warns_when_development_file_is_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
@@ -449,9 +465,10 @@ def test_environment_profile_warns_when_development_file_is_missing(monkeypatch,
 
     assert check.status == "warn"
     assert ".env.development is missing" in check.message
-    assert "uv run python -m scripts.bootstrap_env --profile development" in check.details[
-        "recommended_commands"
-    ]
+    assert (
+        "uv run python -m scripts.bootstrap_env --profile development"
+        in check.details["recommended_commands"]
+    )
 
 
 def test_environment_profile_passes_when_profile_file_exists_or_test_profile(monkeypatch, tmp_path):
@@ -522,6 +539,7 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
     assert check.details["coding_model"] == "qwen2.5-coder:7b"
     assert check.details["access_level"] == "sandbox"
     assert check.details["total_gpu_memory_fraction"] == pytest.approx(0.9)
+
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
     versions = tmp_path / "migrations" / "versions"

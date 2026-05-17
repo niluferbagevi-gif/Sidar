@@ -509,8 +509,12 @@ def check_rag_readiness() -> DoctorCheck:
     if not rag_dir.is_absolute():
         rag_dir = BASE_DIR / rag_dir
 
-    index = _load_json_object(rag_dir / "index.json")
-    entity_graph = _load_json_object(rag_dir / "entity_graph.json")
+    index_path = rag_dir / "index.json"
+    entity_graph_path = rag_dir / "entity_graph.json"
+    index_exists = index_path.exists()
+    entity_graph_exists = entity_graph_path.exists()
+    index = _load_json_object(index_path)
+    entity_graph = _load_json_object(entity_graph_path)
     entity_nodes = entity_graph.get("nodes", {}) if isinstance(entity_graph, dict) else {}
     entity_edges = entity_graph.get("edges", []) if isinstance(entity_graph, dict) else []
     document_count = len(index)
@@ -521,13 +525,18 @@ def check_rag_readiness() -> DoctorCheck:
         "vector_backend": vector_backend,
         "graph_rag_enabled": graph_enabled,
         "rag_dir": str(rag_dir),
+        "index_path": str(index_path),
+        "index_exists": index_exists,
+        "entity_graph_path": str(entity_graph_path),
+        "entity_graph_exists": entity_graph_exists,
         "document_count": document_count,
         "entity_node_count": entity_node_count,
         "entity_edge_count": entity_edge_count,
         "bm25_fallback": "SQLite FTS5",
+        "auto_fix": "uv run python -m scripts.seed_rag",
         "recommended_commands": [
             "uv run python -m scripts.seed_rag",
-            "uv run python cli.py -c \"belge ekle <url>\"",
+            'uv run python cli.py -c "belge ekle <url>"',
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
         ],
@@ -545,11 +554,19 @@ def check_rag_readiness() -> DoctorCheck:
     if not graph_enabled:
         warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
     if document_count == 0:
-        warnings.append(
-            "RAG has no indexed documents yet; run `uv run python -m scripts.seed_rag` "
-            "or add external sources with `uv run python cli.py -c \"belge ekle <url>\"`; "
-            "searches will rely on code graph/keyword/BM25 only until then"
-        )
+        if not index_exists:
+            warnings.append(
+                "RAG index file is missing at data/rag/index.json; run "
+                "`uv run python -m scripts.seed_rag` to create the local seed index or add "
+                'external sources with `uv run python cli.py -c "belge ekle <url>"`; '
+                "searches will rely on code graph/keyword/BM25 only until then"
+            )
+        else:
+            warnings.append(
+                "RAG has no indexed documents yet; run `uv run python -m scripts.seed_rag` "
+                'or add external sources with `uv run python cli.py -c "belge ekle <url>"`; '
+                "searches will rely on code graph/keyword/BM25 only until then"
+            )
     if entity_node_count == 0 and graph_enabled:
         warnings.append(
             "GraphRAG entity memory is empty until documents are indexed or entity extraction runs"
@@ -558,7 +575,6 @@ def check_rag_readiness() -> DoctorCheck:
     status = "fail" if failures else ("warn" if warnings else "pass")
     message = "; ".join(failures or warnings or ["RAG readiness looks healthy"])
     return DoctorCheck("rag_readiness", status, message, details)
-
 
 
 def _read_env_file_assignments(path: Path) -> dict[str, str]:
@@ -620,9 +636,7 @@ def check_environment_profile() -> DoctorCheck:
         )
     if profile_path.exists():
         profile_values = _read_env_file_assignments(profile_path)
-        effective_postgres_db = profile_values.get("POSTGRES_DB") or os.getenv(
-            "POSTGRES_DB", ""
-        )
+        effective_postgres_db = profile_values.get("POSTGRES_DB") or os.getenv("POSTGRES_DB", "")
         details["profile_postgres_db"] = effective_postgres_db
         if profile in {"development", "dev", "local"} and effective_postgres_db in {
             "sidar",
@@ -719,6 +733,7 @@ def check_gpu_memory_config() -> DoctorCheck:
     status = "warn" if warnings else "pass"
     message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
     return DoctorCheck("gpu_memory_config", status, message, details)
+
 
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
     revisions: list[str] = []

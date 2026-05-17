@@ -388,6 +388,44 @@ def _print_doctor_check_summary(check: Any) -> None:
             print(f"{CYAN}   • Komut: {command}{RESET}")
 
 
+def _run_doctor_auto_fix(check: Any) -> bool:
+    """Doctor check auto_fix komutunu etkileşimli kısa kontrolde güvenle önerip çalıştırır."""
+    details = getattr(check, "details", {}) or {}
+    status = str(getattr(check, "status", "warn") or "warn")
+    if status not in {"warn", "fail"} or not isinstance(details, dict):
+        return False
+
+    auto_fix = details.get("auto_fix")
+    if not isinstance(auto_fix, str) or not auto_fix.strip() or not sys.stdin.isatty():
+        return False
+
+    if not confirm(
+        f"Doctor/{getattr(check, 'name', 'doctor')} için şimdi seed çalıştırılsın mı?", False
+    ):
+        return False
+
+    cmd = shlex.split(auto_fix)
+    if not cmd:
+        return False
+
+    print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
+    try:
+        completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
+            cmd, check=False, cwd=_project_base_dir()
+        )
+    except OSError as exc:
+        logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
+        print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
+        return False
+
+    if completed.returncode == 0:
+        print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
+        return True
+
+    print(f"{YELLOW}   • Auto-fix {completed.returncode} koduyla tamamlandı.{RESET}")
+    return False
+
+
 def _run_launcher_doctor_preflight() -> None:
     try:
         from core.doctor import (
@@ -408,7 +446,9 @@ def _run_launcher_doctor_preflight() -> None:
         check_gpu_memory_config,
     ):
         try:
-            _print_doctor_check_summary(check_func())
+            check = check_func()
+            _print_doctor_check_summary(check)
+            _run_doctor_auto_fix(check)
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")

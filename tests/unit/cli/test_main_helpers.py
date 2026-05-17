@@ -298,6 +298,42 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
     assert "scripts.bootstrap_env" in output
 
 
+def test_doctor_auto_fix_prompts_and_runs_seed_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, object] = {}
+    check = SimpleNamespace(
+        name="rag_readiness",
+        status="warn",
+        details={"auto_fix": "uv run python -m scripts.seed_rag"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+
+    def _run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check) is True
+    assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.seed_rag"]
+    assert "Auto-fix tamamlandı" in capsys.readouterr().out
+
+
+def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    check = SimpleNamespace(
+        name="rag_readiness",
+        status="warn",
+        details={"auto_fix": "uv run python -m scripts.seed_rag"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: pytest.fail("should not prompt"))
+
+    assert main._run_doctor_auto_fix(check) is False
+
+
 def test_preflight_reports_existing_env_and_database_url_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
