@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from sidar_assets.paths import migrations_path
 
@@ -327,6 +327,44 @@ def _source_message(key: str, sources: dict[str, dict[str, str]]) -> str:
     return f"{key} is overridden in {path}"
 
 
+def _build_postgres_dsn_from_env(
+    *, host_key: str = "POSTGRES_HOST", default_host: str = "localhost"
+) -> str:
+    """Build a PostgreSQL DSN from POSTGRES_* env parts for doctor-only checks."""
+    user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    host = os.getenv(host_key, default_host).strip() or default_host
+    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
+    return (
+        "postgresql://"
+        f"{quote(user, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{port}/{quote(database, safe='')}"
+    )
+
+
+def _resolve_database_url_for_doctor() -> tuple[str, bool]:
+    """Return DATABASE_URL or the same POSTGRES_* derived fallback used by config.py."""
+    explicit_url = os.getenv("DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url, False
+    if not os.getenv("POSTGRES_PASSWORD", "").strip():
+        return "", False
+    return _build_postgres_dsn_from_env(), True
+
+
+def _resolve_container_database_url_for_doctor() -> tuple[str, bool]:
+    """Return SIDAR_CONTAINER_DATABASE_URL or the derived container-host fallback."""
+    explicit_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    if explicit_url:
+        return explicit_url, False
+    if not os.getenv("POSTGRES_PASSWORD", "").strip():
+        return "", False
+    return _build_postgres_dsn_from_env(
+        host_key="POSTGRES_CONTAINER_HOST", default_host="postgres"
+    ), True
+
+
 def _database_name(parsed: Any) -> str:
     return str(getattr(parsed, "path", "") or "").lstrip("/").split("/", 1)[0]
 
@@ -391,8 +429,10 @@ def _validate_database_url_pair_sync(
 
 
 def check_database_env() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    explicit_database_url = os.getenv("DATABASE_URL", "").strip()
+    explicit_container_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
+    database_url, database_url_derived = _resolve_database_url_for_doctor()
+    container_url, container_url_derived = _resolve_container_database_url_for_doctor()
     postgres_user = os.getenv("POSTGRES_USER", "").strip()
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     postgres_db = os.getenv("POSTGRES_DB", "").strip()
@@ -407,13 +447,7 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        if postgres_password:
-            failures.append(
-                "DATABASE_URL was lost during env reload while POSTGRES_PASSWORD is set; "
-                "database readiness cannot be verified"
-            )
-        else:
-            warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
+        warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",
@@ -460,8 +494,10 @@ def check_database_env() -> DoctorCheck:
         status,
         message,
         {
-            "database_url_set": bool(database_url),
-            "container_database_url_set": bool(container_url),
+            "database_url_set": bool(explicit_database_url),
+            "container_database_url_set": bool(explicit_container_url),
+            "effective_database_url_derived": database_url_derived,
+            "effective_container_database_url_derived": container_url_derived,
             "postgres_user_set": bool(postgres_user),
             "postgres_password_set": bool(postgres_password),
             "postgres_db_set": bool(postgres_db),
@@ -487,7 +523,8 @@ def check_database_env() -> DoctorCheck:
                 "URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
             ],
             "remediation_steps": [
-                "uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
+                "Kalıcı çözüm için gerekmiyorsa dotenv zincirindeki DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL satırlarını kaldırıp POSTGRES_* parçalarından dinamik üretimi kullanın.",
+                "URL tanımlarını tutmanız gerekiyorsa uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
                 "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız geliştirme ortamında volume resetleyin.",
             ],
         },
@@ -539,10 +576,12 @@ async def _probe_postgres_connectivity(
 
 
 def check_database_connectivity() -> DoctorCheck:
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    explicit_database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url, database_url_derived = _resolve_database_url_for_doctor()
     parsed = urlparse(database_url) if database_url else None
     details: dict[str, Any] = {
-        "database_url_set": bool(database_url),
+        "database_url_set": bool(explicit_database_url),
+        "effective_database_url_derived": database_url_derived,
         "database_url": _redact_url(database_url),
         "scheme": parsed.scheme if parsed else "",
         "recommended_commands": [
