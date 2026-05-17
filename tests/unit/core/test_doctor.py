@@ -185,17 +185,21 @@ def test_database_env_warns_without_url(monkeypatch):
     assert check.details["database_url_set"] is False
 
 
-def test_database_env_fails_when_url_missing_but_postgres_password_present(monkeypatch):
+def test_database_env_derives_urls_when_missing_but_postgres_password_present(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
 
     check = doctor.check_database_env()
 
-    assert check.status == "fail"
-    assert "DATABASE_URL was lost during env reload" in check.message
-    assert "DATABASE_URL was lost during env reload" in check.details["failure_reason"]
-    assert check.details["database_url_set"] is False
+    assert check.status == "pass"
+    assert check.details["database_url_set"] is True
+    assert check.details["container_database_url_set"] is True
+    assert check.details["database_url_explicit"] is False
+    assert check.details["container_database_url_explicit"] is False
+    assert check.details["database_url_derived"] is True
     assert check.details["postgres_password_set"] is True
 
 
@@ -231,11 +235,11 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert "DATABASE_URL password does not match POSTGRES_PASSWORD" in check.message
     assert check.details["postgres_user_set"] is True
     assert check.details["postgres_db_set"] is True
-    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     assert (
-        "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in check.details["recommended_commands"]
     )
-    assert "URL-encoded" in check.details["root_cause_hints"][1]
+    assert "otomatik üretir" in check.details["root_cause_hints"][0]
     assert not any("Docker volume" in hint for hint in check.details["root_cause_hints"])
 
 
@@ -353,6 +357,35 @@ def test_database_connectivity_passes_and_redacts_password(monkeypatch):
     assert check.details["pgvector_extension_installed"] is True
     assert "secretpassword" not in check.details["database_url"]
 
+
+
+def test_database_connectivity_uses_derived_database_url(monkeypatch):
+    captured = {}
+
+    class _Conn:
+        async def fetchval(self, query):
+            return True if "pg_extension" in query else 1
+
+        async def close(self):
+            return None
+
+    async def _connect(dsn):
+        captured["dsn"] = dsn
+        return _Conn()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "1000")
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "pass"
+    assert check.details["database_url_explicit"] is False
+    assert check.details["database_url_derived"] is True
+    assert captured["dsn"].startswith("postgresql://sidar:")
 
 def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
     async def _connect(dsn):
@@ -475,10 +508,12 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     assert "blocked until database_env is fixed" in check.message
     assert check.details["database_env_status"] == "fail"
     assert check.details["blocked_by"] == "database_env"
-    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
-    assert check.details["auto_fix_steps"] == ["uv run python -m scripts.sync_database_passwords"]
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    assert check.details["auto_fix_steps"] == [
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    ]
     assert (
-        "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in check.details["recommended_commands"]
     )
     assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
     assert "uv run python -m scripts.seed_rag" in check.details["follow_up_commands"]
@@ -498,13 +533,13 @@ def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
 
     assert check.status == "warn"
     assert check.details["blocked_by"] == "database_env"
-    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     assert check.details["auto_fix_steps"] == [
-        "uv run python -m scripts.sync_database_passwords",
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
         "uv run python -m scripts.seed_rag",
     ]
     assert check.details["recommended_commands"][:2] == [
-        "uv run python -m scripts.sync_database_passwords",
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
         "uv run python -m scripts.seed_rag",
     ]
     assert "index file is missing" in check.message
