@@ -427,7 +427,8 @@ def _run_doctor_auto_fix(check: Any) -> bool:
         return False
 
     if not confirm(
-        f"Doctor/{getattr(check, 'name', 'doctor')} için şimdi seed çalıştırılsın mı?", False
+        f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix şimdi çalıştırılsın mı?",
+        False,
     ):
         return False
 

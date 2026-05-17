@@ -388,6 +388,21 @@ def check_database_env() -> DoctorCheck:
             "postgres_db_set": bool(postgres_db),
             "scheme": parsed.scheme if parsed else "",
             "container_scheme": container_parsed.scheme if container_parsed else "",
+            "auto_fix": "uv run python -m scripts.sync_database_passwords",
+            "recommended_commands": [
+                "uv run python -m scripts.sync_database_passwords",
+                "uv run python -m core.doctor artifacts/install/doctor.json",
+                "docker compose ps postgres",
+            ],
+            "root_cause_hints": [
+                "DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD değerleri aynı parolayı kullanmalı",
+                "URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
+                "Mevcut PostgreSQL Docker volume eski parola ile başlatılmış olabilir",
+            ],
+            "remediation_steps": [
+                "uv run python -m scripts.sync_database_passwords ile .env içindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
+                "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız geliştirme ortamında volume resetleyin.",
+            ],
         },
     )
 

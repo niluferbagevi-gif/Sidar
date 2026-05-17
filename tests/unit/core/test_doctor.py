@@ -217,6 +217,12 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
     assert "DATABASE_URL password does not match POSTGRES_PASSWORD" in check.message
     assert check.details["postgres_user_set"] is True
     assert check.details["postgres_db_set"] is True
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert (
+        "uv run python -m scripts.sync_database_passwords"
+        in check.details["recommended_commands"]
+    )
+    assert "URL-encoded" in check.details["root_cause_hints"][1]
 
 
 def test_database_env_fails_when_local_and_container_passwords_drift_without_postgres_password(
