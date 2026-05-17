@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     cargo \
     pkg-config \
+    shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
 ENV UV_INDEX_STRATEGY=first-index \

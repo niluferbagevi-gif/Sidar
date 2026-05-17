@@ -19,6 +19,13 @@ def test_main_dockerfile_defaults_to_python_311_runtime():
     assert "python:3.12" not in dockerfile
 
 
+def test_main_dockerfile_installs_shellcheck_os_package():
+    dockerfile = _read("Dockerfile")
+
+    assert "shellcheck \\" in dockerfile
+    assert dockerfile.index("pkg-config") < dockerfile.index("shellcheck")
+    assert dockerfile.index("shellcheck") < dockerfile.index("rm -rf /var/lib/apt/lists/*")
+
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
     dockerfile = _read("Dockerfile")
 
