@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 RUN_TESTS = Path("run_tests.sh")
 
@@ -349,6 +355,149 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/utils' in bundler
     assert 'module_dir "/phases' in bundler
 
+
+def test_single_file_installer_fallback_downloads_all_required_modules() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "fail_missing_local_install_modules()" in script
+    assert "SIDAR_ENABLE_REMOTE_MODULE_FALLBACK" in script
+    assert "download_remote_install_manifest()" in script
+    assert "download_remote_install_module()" in script
+    assert "verify_remote_install_module()" in script
+    assert 'download_remote_install_file "manifest.sha256"' in script
+    assert (
+        'REMOTE_INSTALL_MODULES=("install_helpers.sh" "${INSTALL_UTILITY_MODULES[@]}" '
+        '"${INSTALL_PHASE_MODULES[@]}")' in script
+    )
+    assert 'for module_rel in "${REMOTE_INSTALL_MODULES[@]}"' in script
+    assert "validate_install_utility_modules\nsidar_source_install_utils" in script
+    assert "${REMOTE_MODULE_BASE%/}/${module_rel}" in script
+
+
+def test_install_sidar_module_manifest_covers_current_remote_modules() -> None:
+    manifest_path = Path("scripts/install_modules/manifest.sha256")
+    manifest_entries = {}
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        digest, relative_path = line.split(maxsplit=1)
+        manifest_entries[relative_path] = digest
+
+    expected_paths = [
+        "install_helpers.sh",
+        *sorted(
+            str(path.relative_to("scripts/install_modules"))
+            for path in Path("scripts/install_modules/utils").glob("*.sh")
+        ),
+        *sorted(
+            str(path.relative_to("scripts/install_modules"))
+            for path in Path("scripts/install_modules/phases").glob("*.sh")
+        ),
+    ]
+
+    assert sorted(manifest_entries) == sorted(expected_paths)
+    for relative_path in expected_paths:
+        file_bytes = Path("scripts/install_modules", relative_path).read_bytes()
+        assert manifest_entries[relative_path] == hashlib.sha256(file_bytes).hexdigest()
+
+
+def test_install_sidar_missing_module_errors_point_to_release_or_clone() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+    expected_hint = (
+        "Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. "
+        "Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest "
+        "üzerinden indirin veya repoyu git clone ile alın."
+    )
+
+    assert expected_hint in script
+    assert expected_hint in helper
+    assert "Repo modülleri eksik; lütfen depoyu güncelleyin" not in script
+    assert "Repo modülleri eksik; lütfen depoyu güncelleyin" not in helper
+
+
+def test_raw_single_file_installer_fails_fast_without_remote_fallback(
+    tmp_path: Path,
+) -> None:
+    isolated_installer = tmp_path / "install_sidar.sh"
+    shutil.copy2("install_sidar.sh", isolated_installer)
+
+    env = os.environ.copy()
+    env["SIDAR_INSTALL_TEST_MODE"] = "1"
+    env.pop("SIDAR_ENABLE_REMOTE_MODULE_FALLBACK", None)
+
+    result = subprocess.run(
+        ["bash", str(isolated_installer)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Raw main/install_sidar.sh tek dosya olarak desteklenmez" in result.stderr
+    assert "curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh" in result.stderr
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in result.stderr
+    assert "SIDAR_ENABLE_REMOTE_MODULE_FALLBACK=1" in result.stderr
+
+
+def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("curl") is None:
+        pytest.skip("installer fallback runtime test uses curl file:// support")
+
+    isolated_installer = tmp_path / "install_sidar.sh"
+    shutil.copy2("install_sidar.sh", isolated_installer)
+
+    env = os.environ.copy()
+    env["SIDAR_INSTALL_TEST_MODE"] = "1"
+    env["SIDAR_ENABLE_REMOTE_MODULE_FALLBACK"] = "1"
+    env["SIDAR_INSTALL_MODULE_BASE_URL"] = (
+        f"file://{Path.cwd() / 'scripts' / 'install_modules'}"
+    )
+
+    result = subprocess.run(
+        ["bash", str(isolated_installer)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Kurulum modülü SHA256 manifesti indirildi" in result.stderr
+    assert "Tek dosyalık kurulum için 15 modül" in result.stderr
+
+
+def test_bundled_installer_release_asset_is_documented_and_published() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/publish-installer.yml").read_text(encoding="utf-8")
+    modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
+        encoding="utf-8"
+    )
+
+    release_url = (
+        "https://github.com/niluferbagevi-gif/Sidar/releases/download/"
+        "installer-latest/install_sidar.sh"
+    )
+    assert release_url in readme
+    assert release_url in modularization_note
+    assert "Raw `main/install_sidar.sh` URL'sini `wget`/`curl` ile indirmeyin" in readme
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in readme
+    assert "wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh" in readme
+    assert "tek dosya olarak çalıştırıldığında eksik modül dizini için erken hata verir" in readme
+    assert "Raw `main/install_sidar.sh` tek dosya olarak desteklenmez" in modularization_note
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git && cd Sidar && ./install_sidar.sh" in modularization_note
+    assert "raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh" not in readme
+    assert "raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh" not in modularization_note
+    assert "bash scripts/tools/bundle_install_sidar.sh" in workflow
+    assert "gh release upload installer-latest dist/install_sidar.sh --clobber" in workflow
+    assert (
+        'gh release upload "${{ github.event.release.tag_name }}" dist/install_sidar.sh --clobber'
+        in workflow
+    )
+    assert "bash -n dist/install_sidar.sh" in workflow
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")

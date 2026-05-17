@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+INSTALL_MODULES_MISSING_HINT="${SIDAR_INSTALL_MODULES_MISSING_HINT:-Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest üzerinden indirin veya repoyu git clone ile alın.}"
+
 extract_node_major_from_spec() {
     local version_spec="${1:-}"
     local extracted_major=""
@@ -97,7 +99,7 @@ sidar_source_install_utils() {
         fi
         module_path="${INSTALL_MODULE_DIR}/utils/${module_rel}"
         if [[ ! -f "$module_path" ]]; then
-            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. ${INSTALL_MODULES_MISSING_HINT}"
         fi
         # shellcheck disable=SC1090
         source "$module_path"
