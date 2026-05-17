@@ -891,6 +891,68 @@ EOF
     fi
 }
 
+is_transient_docker_pull_error() {
+    local err="${1:-}"
+    [[ -z "$err" ]] && return 1
+    # Geçici (retry edilmeli) ağ/registry hatalarını tespit et.
+    case "$err" in
+        *"TLS handshake timeout"*) return 0 ;;
+        *"i/o timeout"*) return 0 ;;
+        *"EOF"*) return 0 ;;
+        *"connection reset by peer"*) return 0 ;;
+        *"failed to do request"*) return 0 ;;
+        *"net/http"*"timeout"*) return 0 ;;
+        *"context deadline exceeded"*) return 0 ;;
+        *"503 Service Unavailable"*) return 0 ;;
+        *"502 Bad Gateway"*) return 0 ;;
+        *"504 Gateway Timeout"*) return 0 ;;
+        *"received unexpected HTTP status"*) return 0 ;;
+        *"toomanyrequests"*) return 0 ;;
+        *"server gave HTTP response to HTTPS client"*) return 0 ;;
+        *"temporary failure in name resolution"*) return 0 ;;
+        *"could not resolve host"*) return 0 ;;
+    esac
+    return 1
+}
+
+run_compose_up_with_retry() {
+    local stderr_file="$1"; shift
+    local label="${SIDAR_COMPOSE_RETRY_LABEL:-compose up}"
+    local max_attempts="${SIDAR_COMPOSE_RETRY_MAX:-4}"
+    local backoff=2
+    local attempt=1
+    local rc=0
+
+    while (( attempt <= max_attempts )); do
+        : > "$stderr_file"
+        # set -Eeuo pipefail altında çağrıldığımız için non-zero exit'in
+        # ERR trap'ini tetiklememesi adına `|| rc=$?` ile yakalıyoruz.
+        rc=0
+        "$@" 2>"$stderr_file" || rc=$?
+        if (( rc == 0 )); then
+            return 0
+        fi
+
+        local err_text=""
+        err_text="$(<"$stderr_file")"
+
+        if ! is_transient_docker_pull_error "$err_text"; then
+            return "$rc"
+        fi
+
+        if (( attempt >= max_attempts )); then
+            warn "${label}: geçici hata ${attempt}/${max_attempts} denemeden sonra hala devam ediyor; bırakılıyor."
+            return "$rc"
+        fi
+
+        warn "${label}: geçici ağ/registry hatası tespit edildi (deneme ${attempt}/${max_attempts}); ${backoff}s sonra tekrar denenecek."
+        sleep "$backoff"
+        backoff=$(( backoff * 2 ))
+        attempt=$(( attempt + 1 ))
+    done
+    return 1
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -909,7 +971,8 @@ start_docker_services_or_fail() {
         fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
     fi
 
-    if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
+    if SIDAR_COMPOSE_RETRY_LABEL="compose up ${services[*]}" run_compose_up_with_retry "$stderr_file" \
+            "${compose_cmd[@]}" up -d "${services[@]}"; then
         rm -f "$stderr_file"
         return 0
     fi
@@ -1953,23 +2016,40 @@ if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
 fi
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
+# Standalone (curl|bash veya wget+bash) çalıştırmalarda banner sürüm satırının
+# "v0.0.0" düşmemesi için bakılan kaynak yoksa kullanılacak gömülü değer.
+# release otomasyonu (github_upload.py) bu satırı güncel sürüme çeker.
+EMBEDDED_INSTALL_SIDAR_VERSION="5.2.0"
+
 resolve_install_sidar_version() {
     local resolved_version=""
+    local candidate_dir=""
+    local -a search_dirs=(
+        "$SCRIPT_DIR"
+        "${ORIGINAL_SCRIPT_DIR:-}"
+        "${TARGET_DIR:-$HOME/Sidar}"
+    )
 
-    if command -v python3 &>/dev/null && [[ -f "$SCRIPT_DIR/sidar_version.py" ]]; then
-        resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>/dev/null || true
+    for candidate_dir in "${search_dirs[@]}"; do
+        [[ -n "$candidate_dir" && -d "$candidate_dir" ]] || continue
+        if command -v python3 &>/dev/null && [[ -f "$candidate_dir/sidar_version.py" ]]; then
+            resolved_version=$(PYTHONPATH="$candidate_dir" python3 - <<'PY_VERSION' 2>/dev/null || true
 from sidar_version import resolve_version
 print(resolve_version())
 PY_VERSION
 )
-    fi
+            resolved_version="${resolved_version//[[:space:]]/}"
+            [[ -n "$resolved_version" ]] && { echo "$resolved_version"; return 0; }
+        fi
+        if [[ -f "$candidate_dir/pyproject.toml" ]]; then
+            resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$candidate_dir/pyproject.toml" | head -n1 || true)
+            resolved_version="${resolved_version//[[:space:]]/}"
+            [[ -n "$resolved_version" ]] && { echo "$resolved_version"; return 0; }
+        fi
+    done
 
-    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-        resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
-    fi
-
-    resolved_version="${resolved_version//[[:space:]]/}"
-    echo "${resolved_version:-0.0.0}"
+    # Repo yoksa (standalone bootstrap) gömülü değere düşelim; son çare "0.0.0".
+    echo "${EMBEDDED_INSTALL_SIDAR_VERSION:-0.0.0}"
 }
 
 INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
@@ -1994,6 +2074,12 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
 banner() {
+    # Banner çağrısı sırasında repo (henüz) yoksa veya sürüm gömülü/0.0.0 olarak
+    # düştüyse, son bir kez daha gerçek sürümü çözmeyi dene. Böylece repo
+    # klonlandıktan sonra çağrılan ikinci banner'lar da güncel sürümü gösterir.
+    if [[ -z "${INSTALL_SIDAR_VERSION:-}" || "$INSTALL_SIDAR_VERSION" == "0.0.0" ]]; then
+        INSTALL_SIDAR_VERSION="$(resolve_install_sidar_version)"
+    fi
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
     printf "║          %-34s (v%-10s)║\n" "$(sidar_t banner_title)" "$INSTALL_SIDAR_VERSION"
@@ -5467,22 +5553,41 @@ launch_docker_services() {
             info "Docker Compose servisleri başlatılıyor..."
             info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
             validate_monitoring_mount_paths
+            local compose_up_stderr
+            compose_up_stderr=$(mktemp)
             if [[ "$runtime_mode" == "local" ]]; then
                 info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)"
-                if "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                if SIDAR_COMPOSE_RETRY_LABEL="compose up ${infra_services[*]}" \
+                        run_compose_up_with_retry "$compose_up_stderr" \
+                        "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    local compose_err=""
+                    compose_err="$(<"$compose_up_stderr")"
+                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması, ağ sorunu veya Docker kapalı olabilir."
+                    if [[ -n "$compose_err" ]]; then
+                        info "Compose hata özeti: $(echo "$compose_err" | tail -n 2 | tr '\n' ' ' | head -c 400)"
+                    fi
+                    info "Manuel yeniden deneme: ${docker_compose_cmd[*]} pull ${infra_services[*]} && ${docker_compose_cmd[*]} up -d ${infra_services[*]}"
                 fi
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                if SIDAR_COMPOSE_RETRY_LABEL="compose up (profile=${compose_profiles})" \
+                        run_compose_up_with_retry "$compose_up_stderr" \
+                        env COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    local compose_err=""
+                    compose_err="$(<"$compose_up_stderr")"
+                    warn "Docker servisleri başlatılamadı. Port çakışması, ağ sorunu veya Docker kapalı olabilir."
+                    if [[ -n "$compose_err" ]]; then
+                        info "Compose hata özeti: $(echo "$compose_err" | tail -n 2 | tr '\n' ' ' | head -c 400)"
+                    fi
+                    info "Manuel yeniden deneme: COMPOSE_PROFILES=${compose_profiles} ${docker_compose_cmd[*]} pull && COMPOSE_PROFILES=${compose_profiles} ${docker_compose_cmd[*]} up -d"
                 fi
             fi
+            rm -f "$compose_up_stderr"
             ;;
         *)
             if [[ "$runtime_mode" == "local" ]]; then

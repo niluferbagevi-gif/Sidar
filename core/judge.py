@@ -141,13 +141,13 @@ class LLMJudge:
         self.config = Config()
         self.enabled = bool(getattr(self.config, "JUDGE_ENABLED", False))
         self.model = str(getattr(self.config, "JUDGE_MODEL", "") or "").strip() or None
-        self.provider = str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama").strip().lower()
+        self.provider = (
+            str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama").strip().lower()
+        )
         self.sample_rate = max(
             0.0, min(1.0, float(getattr(self.config, "JUDGE_SAMPLE_RATE", 0.2) or 0.2))
         )
-        self.auto_feedback_enabled = bool(
-            getattr(self.config, "JUDGE_AUTO_FEEDBACK_ENABLED", True)
-        )
+        self.auto_feedback_enabled = bool(getattr(self.config, "JUDGE_AUTO_FEEDBACK_ENABLED", True))
         self.auto_feedback_threshold = max(
             0.0,
             min(10.0, float(getattr(self.config, "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0) or 8.0)),

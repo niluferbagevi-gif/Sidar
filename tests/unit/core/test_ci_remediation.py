@@ -38,7 +38,13 @@ def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
     assert command == "uv run ruff check --fix --unsafe-fixes --select I,UP034 ."
 
 
-def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> None:
+def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `.env.advanced` `RUFF_AUTOFIX_UNSAFE_RULES=""` enjekte ediyor; defaults
+    # davranışı (("I","UP")) testte explicit olarak None'a normalize edilmeli.
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", None)
+
     assert ci._is_allowed_validation_command("uv run ruff check --fix .") is True
     assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
     assert (
@@ -786,7 +792,14 @@ def test_build_remediation_loop_large_scope_respects_env_threshold(
     assert result["needs_human_approval"] is True
 
 
-def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
+def test_build_remediation_loop_reports_safe_ruff_autofix_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Bkz. test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes:
+    # `.env.advanced` boş override enjekte ediyor; default selector listesini
+    # test eden assertion'lar için explicit None.
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", None)
+
     context = {
         "suspected_targets": ["core/ci_remediation.py"],
         "failed_jobs": ["lint"],

@@ -255,7 +255,9 @@ async def _first_token_seconds(prompt: str, http: httpx.AsyncClient) -> float:
         "options": _ollama_options(),
     }
     started_at = time.perf_counter()
-    async with http.stream("POST", f"{_OLLAMA_BASE_URL}/api/chat", json=_apply_keep_alive(payload)) as resp:
+    async with http.stream(
+        "POST", f"{_OLLAMA_BASE_URL}/api/chat", json=_apply_keep_alive(payload)
+    ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
             if not line.strip():

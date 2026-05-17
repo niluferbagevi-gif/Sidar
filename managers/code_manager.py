@@ -220,12 +220,8 @@ class CodeManager:
         self.docker_microvm_mode = (
             str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
         )
-        self.docker_mem_limit = str(
-            getattr(self.cfg, "DOCKER_MEM_LIMIT", "256m") or "256m"
-        ).strip()
-        self.docker_network_disabled = bool(
-            getattr(self.cfg, "DOCKER_NETWORK_DISABLED", True)
-        )
+        self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", "256m") or "256m").strip()
+        self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", True))
         self.docker_nano_cpus = int(
             getattr(self.cfg, "DOCKER_NANO_CPUS", 1_000_000_000) or 1_000_000_000
         )

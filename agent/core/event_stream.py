@@ -37,14 +37,12 @@ class AgentEventBus:
         self._buffered_events: dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
         cfg = Config()
-        self._backend = str(getattr(cfg, "SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
+        self._backend = (
+            str(getattr(cfg, "SIDAR_EVENT_BUS_BACKEND", "redis") or "redis").strip().lower()
+        )
         self._channel = str(getattr(cfg, "SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events"))
-        self._consumer_group = str(
-            getattr(cfg, "SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
-        )
-        self._dlq_channel = str(
-            getattr(cfg, "SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
-        )
+        self._consumer_group = str(getattr(cfg, "SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg"))
+        self._dlq_channel = str(getattr(cfg, "SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq"))
         self._dlq_buffer: deque[dict[str, object]] = deque(
             maxlen=max(10, int(getattr(cfg, "SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000) or 1000))
         )

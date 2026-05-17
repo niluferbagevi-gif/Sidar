@@ -306,3 +306,95 @@ ENV
   '
   [ "$status" -eq 0 ]
 }
+
+@test "resolve_install_sidar_version falls back to embedded constant outside repo" {
+  run_installer_function '
+    tmp_dir="$(mktemp -d)"
+    SCRIPT_DIR="$tmp_dir"
+    ORIGINAL_SCRIPT_DIR="$tmp_dir"
+    TARGET_DIR="$tmp_dir/missing"
+    EMBEDDED_INSTALL_SIDAR_VERSION="9.9.9"
+    resolved="$(resolve_install_sidar_version)"
+    rm -rf "$tmp_dir"
+    [[ "$resolved" == "9.9.9" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "resolve_install_sidar_version reads pyproject.toml when repo present" {
+  run_installer_function '
+    tmp_dir="$(mktemp -d)"
+    cat > "$tmp_dir/pyproject.toml" <<TOML
+[project]
+name = "sidar"
+version = "7.7.7"
+TOML
+    SCRIPT_DIR="$tmp_dir"
+    ORIGINAL_SCRIPT_DIR="$tmp_dir"
+    TARGET_DIR="$tmp_dir"
+    EMBEDDED_INSTALL_SIDAR_VERSION="0.0.0"
+    resolved="$(resolve_install_sidar_version)"
+    rm -rf "$tmp_dir"
+    [[ "$resolved" == "7.7.7" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "is_transient_docker_pull_error matches known transient registry failures" {
+  run_installer_function '
+    is_transient_docker_pull_error "net/http: TLS handshake timeout"
+    is_transient_docker_pull_error "failed to do request: dial tcp i/o timeout"
+    is_transient_docker_pull_error "received unexpected HTTP status: 503 Service Unavailable"
+    is_transient_docker_pull_error "Get https://registry-1.docker.io/v2/: net/http: TLS handshake timeout"
+    if is_transient_docker_pull_error "Error response from daemon: port is already allocated"; then
+      exit 1
+    fi
+    if is_transient_docker_pull_error "no such image"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "run_compose_up_with_retry retries transient errors and succeeds when registry recovers" {
+  run_installer_function '
+    tmp_state="$(mktemp)"
+    stderr_file="$(mktemp)"
+    echo 0 > "$tmp_state"
+    fake_cmd() {
+      local n; n=$(<"$tmp_state"); n=$((n + 1)); echo "$n" > "$tmp_state"
+      if (( n < 2 )); then
+        echo "failed to do request: net/http: TLS handshake timeout" >&2
+        return 1
+      fi
+      return 0
+    }
+    SIDAR_COMPOSE_RETRY_MAX=4 SIDAR_COMPOSE_RETRY_LABEL=bats run_compose_up_with_retry "$stderr_file" fake_cmd
+    rc=$?
+    attempts=$(<"$tmp_state")
+    rm -f "$tmp_state" "$stderr_file"
+    [[ "$rc" -eq 0 ]]
+    [[ "$attempts" -eq 2 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "run_compose_up_with_retry exits immediately on non-transient compose errors" {
+  run_installer_function '
+    tmp_state="$(mktemp)"
+    stderr_file="$(mktemp)"
+    echo 0 > "$tmp_state"
+    fake_cmd() {
+      local n; n=$(<"$tmp_state"); n=$((n + 1)); echo "$n" > "$tmp_state"
+      echo "Error response from daemon: port is already allocated" >&2
+      return 1
+    }
+    rc=0
+    SIDAR_COMPOSE_RETRY_MAX=4 SIDAR_COMPOSE_RETRY_LABEL=bats run_compose_up_with_retry "$stderr_file" fake_cmd || rc=$?
+    attempts=$(<"$tmp_state")
+    rm -f "$tmp_state" "$stderr_file"
+    [[ "$rc" -eq 1 ]]
+    [[ "$attempts" -eq 1 ]]
+  '
+  [ "$status" -eq 0 ]
+}
