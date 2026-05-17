@@ -461,6 +461,7 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     assert check.details["database_env_status"] == "fail"
     assert check.details["blocked_by"] == "database_env"
     assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert check.details["auto_fix_steps"] == ["uv run python -m scripts.sync_database_passwords"]
     assert (
         "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
     )
@@ -483,11 +484,14 @@ def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
     assert check.status == "warn"
     assert check.details["blocked_by"] == "database_env"
     assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
-    assert (
-        check.details["recommended_commands"][0]
-        == "uv run python -m scripts.sync_database_passwords"
-    )
-    assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
+    assert check.details["auto_fix_steps"] == [
+        "uv run python -m scripts.sync_database_passwords",
+        "uv run python -m scripts.seed_rag",
+    ]
+    assert check.details["recommended_commands"][:2] == [
+        "uv run python -m scripts.sync_database_passwords",
+        "uv run python -m scripts.seed_rag",
+    ]
     assert "index file is missing" in check.message
 
 

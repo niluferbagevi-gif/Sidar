@@ -666,15 +666,23 @@ def check_rag_readiness() -> DoctorCheck:
         )
 
     if blockers:
-        details["auto_fix"] = "uv run python -m scripts.sync_database_passwords"
+        auto_fix_steps = [details["database_env_auto_fix"]]
+        if document_count == 0:
+            auto_fix_steps.append("uv run python -m scripts.seed_rag")
+        details["auto_fix"] = auto_fix_steps[0]
+        details["auto_fix_steps"] = auto_fix_steps
         details["recommended_commands"] = [
-            "uv run python -m scripts.sync_database_passwords",
+            *auto_fix_steps,
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
         ]
         details["follow_up_commands"] = [
-            "uv run python -m scripts.seed_rag",
-            'uv run python cli.py -c "belge ekle <url>"',
+            command
+            for command in (
+                "uv run python -m scripts.seed_rag",
+                'uv run python cli.py -c "belge ekle <url>"',
+            )
+            if command not in auto_fix_steps
         ]
         status = "warn"
         message = "; ".join(blockers + warnings)

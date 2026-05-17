@@ -340,7 +340,14 @@ def test_launcher_doctor_preflight_revalidates_successful_auto_fix(
         "check_gpu_memory_config",
         lambda: SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={}),
     )
-    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda check: check.name == "database_env")
+
+    def _auto_fix(check: SimpleNamespace, check_func=None) -> bool:
+        if check.name != "database_env":
+            return False
+        main._revalidate_doctor_check_after_auto_fix(check_func)
+        return True
+
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", _auto_fix)
 
     main._run_launcher_doctor_preflight()
 
@@ -384,7 +391,14 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
         "check_gpu_memory_config",
         lambda: SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={}),
     )
-    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda check: check.name == "database_env")
+
+    def _auto_fix(check: SimpleNamespace, check_func=None) -> bool:
+        if check.name != "database_env":
+            return False
+        main._revalidate_doctor_check_after_auto_fix(check_func)
+        return True
+
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", _auto_fix)
 
     main._run_launcher_doctor_preflight()
 
@@ -423,6 +437,7 @@ def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     assert updated is not None
     assert updated.status == "pass"
     assert reload_calls == [(None, "Doctor auto-fix")]
+
 
 def test_doctor_auto_fix_runs_seed_command_in_subprocess(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -472,6 +487,52 @@ def test_doctor_auto_fix_uses_subprocess_for_other_commands(
     assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
     assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
     assert "Auto-fix tamamlandı" in capsys.readouterr().out
+
+
+def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[list[str]] = []
+    revalidation_calls = {"count": 0}
+    check = SimpleNamespace(
+        name="rag_readiness",
+        status="warn",
+        details={
+            "auto_fix": "uv run python -m scripts.sync_database_passwords",
+            "auto_fix_steps": [
+                "uv run python -m scripts.sync_database_passwords",
+                "uv run python -m scripts.seed_rag",
+                "uv run python -m scripts.unused_follow_up",
+            ],
+        },
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda: True)
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(cmd)
+        return SimpleNamespace(returncode=0)
+
+    def _check_func() -> SimpleNamespace:
+        revalidation_calls["count"] += 1
+        if revalidation_calls["count"] == 1:
+            return SimpleNamespace(
+                name="rag_readiness", status="warn", message="index still missing", details={}
+            )
+        return SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check, _check_func) is True
+    assert commands == [
+        ["uv", "run", "python", "-m", "scripts.sync_database_passwords"],
+        ["uv", "run", "python", "-m", "scripts.seed_rag"],
+    ]
+    assert revalidation_calls["count"] == 2
+    output = capsys.readouterr().out
+    assert "scripts.unused_follow_up" not in output
+    assert "Auto-fix Doctor/rag_readiness kontrolünü düzeltti" in output
 
 
 def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:

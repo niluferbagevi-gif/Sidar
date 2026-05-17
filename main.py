@@ -429,23 +429,24 @@ def _print_doctor_check_summary(check: Any) -> None:
             print(f"{CYAN}   • Komut: {command}{RESET}")
 
 
-def _run_doctor_auto_fix(check: Any) -> bool:
-    """Doctor check auto_fix komutunu etkileşimli kısa kontrolde güvenle önerip çalıştırır."""
-    details = getattr(check, "details", {}) or {}
-    status = str(getattr(check, "status", "warn") or "warn")
-    if status not in {"warn", "fail"} or not isinstance(details, dict):
-        return False
+def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
+    """Return ordered Doctor auto-fix commands from legacy or multi-step metadata."""
+    steps = details.get("auto_fix_steps")
+    if isinstance(steps, list):
+        commands = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
+        if commands:
+            return commands
 
     auto_fix = details.get("auto_fix")
-    if not isinstance(auto_fix, str) or not auto_fix.strip() or not sys.stdin.isatty():
-        return False
+    if isinstance(auto_fix, list):
+        return [step.strip() for step in auto_fix if isinstance(step, str) and step.strip()]
+    if isinstance(auto_fix, str) and auto_fix.strip():
+        return [auto_fix.strip()]
+    return []
 
-    if not confirm(
-        f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix şimdi çalıştırılsın mı?",
-        False,
-    ):
-        return False
 
+def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
+    """Run one Doctor auto-fix command without invoking a shell."""
     cmd = shlex.split(auto_fix)
     if not cmd:
         return False
@@ -467,6 +468,40 @@ def _run_doctor_auto_fix(check: Any) -> bool:
 
     print(f"{YELLOW}   • Auto-fix {returncode} koduyla tamamlandı.{RESET}")
     return False
+
+
+def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
+    """Run Doctor auto-fix command(s), optionally revalidating after each successful step."""
+    details = getattr(check, "details", {}) or {}
+    status = str(getattr(check, "status", "warn") or "warn")
+    if status not in {"warn", "fail"} or not isinstance(details, dict):
+        return False
+
+    auto_fix_commands = _doctor_auto_fix_commands(details)
+    if not auto_fix_commands or not sys.stdin.isatty():
+        return False
+
+    prompt_suffix = "adımları" if len(auto_fix_commands) > 1 else "komutu"
+    if not confirm(
+        f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} şimdi çalıştırılsın mı?",
+        False,
+    ):
+        return False
+
+    ran_any = False
+    for auto_fix in auto_fix_commands:
+        if not _run_doctor_auto_fix_command(auto_fix):
+            return ran_any
+        ran_any = True
+        if check_func is None:
+            continue
+
+        updated_check = _revalidate_doctor_check_after_auto_fix(check_func)
+        updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+        if updated_status == "pass":
+            return True
+
+    return ran_any
 
 
 def _revalidate_doctor_check_after_auto_fix(check_func: Any) -> Any | None:
@@ -520,8 +555,7 @@ def _run_launcher_doctor_preflight() -> None:
         try:
             check = check_func()
             _print_doctor_check_summary(check)
-            if _run_doctor_auto_fix(check):
-                _revalidate_doctor_check_after_auto_fix(check_func)
+            _run_doctor_auto_fix(check, check_func)
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
