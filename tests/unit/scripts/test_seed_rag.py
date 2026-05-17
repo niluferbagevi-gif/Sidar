@@ -134,7 +134,9 @@ def test_build_store_routes_import_time_notices_to_stderr(
     def fake_import(name: str, *args: object, **kwargs: object) -> object:
         if name == "config":
             print("config stdout notice")
-            return SimpleNamespace(Config=SimpleNamespace(HF_USE_LOCAL_CACHE_ONLY=True))
+            return SimpleNamespace(
+                Config=SimpleNamespace(HF_HUB_OFFLINE="1", HF_USE_LOCAL_CACHE_ONLY="yes")
+            )
         if name == "core.rag":
             print("rag stdout notice")
             return SimpleNamespace(DocumentStore=FakeDocumentStore)
@@ -146,7 +148,17 @@ def test_build_store_routes_import_time_notices_to_stderr(
 
     captured = capsys.readouterr()
     assert isinstance(store, FakeDocumentStore)
+    assert store.kwargs["cfg"].HF_HUB_OFFLINE is True
     assert store.kwargs["cfg"].HF_USE_LOCAL_CACHE_ONLY is True
     assert captured.out == ""
     assert "config stdout notice" in captured.err
     assert "rag stdout notice" in captured.err
+
+
+def test_seed_rag_boolish_normalizes_external_aliases() -> None:
+    assert seed_rag._boolish("1") is True
+    assert seed_rag._boolish("yes") is True
+    assert seed_rag._boolish("0") is False
+    assert seed_rag._boolish("off") is False
+    with pytest.raises(seed_rag.SeedError):
+        seed_rag._boolish("maybe")

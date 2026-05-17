@@ -1607,6 +1607,33 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     assert "Hiçbir dotenv dosyası yüklenmedi" in caplog.text
 
 
+def test_dotenv_key_source_report_and_debug_log(monkeypatch, tmp_path, caplog):
+    env_file = tmp_path / "source.env"
+    env_file.write_text(
+        "OPENAI_API_KEY=sk-source\nDATABASE_URL=postgresql://sidar:secret@localhost/sidar\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(config, "_DOTENV_LOAD_EVENTS", [], raising=False)
+    monkeypatch.setattr(config, "_DOTENV_KEY_SOURCES", {}, raising=False)
+    caplog.set_level(logging.DEBUG, logger="Sidar.Config")
+
+    loaded = config._load_dotenv_if_exists(str(env_file), override=False, label="test-source")
+
+    assert loaded == env_file
+    sources = config.get_dotenv_key_source_report()
+    assert sources["OPENAI_API_KEY"]["path"] == str(env_file)
+    assert sources["DATABASE_URL"]["label"] == "test-source"
+
+    config.Config._log_dotenv_load_status(missing_keys=[])
+
+    assert "Runtime env anahtar kaynakları" in caplog.text
+    assert f"OPENAI_API_KEY->test-source={env_file}" in caplog.text
+    assert "sk-source" not in caplog.text
+    assert "secret" not in caplog.text
+
+
 def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     monkeypatch.setattr(config.Config, "_hardware_loaded", False)
     monkeypatch.setattr(config.Config, "USE_GPU", True)

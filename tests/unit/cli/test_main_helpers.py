@@ -394,7 +394,7 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
     assert "password drift attempt 2" in output
 
 
-def test_doctor_auto_fix_prompts_and_runs_seed_command_in_process(
+def test_doctor_auto_fix_runs_seed_command_in_subprocess(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, object] = {}
@@ -405,20 +405,17 @@ def test_doctor_auto_fix_prompts_and_runs_seed_command_in_process(
     )
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(
-        main.subprocess,
-        "run",
-        lambda *_args, **_kwargs: pytest.fail("seed_rag auto-fix should run in-process"),
-    )
 
-    def _run_seed(argv: list[str]) -> int:
-        seen["argv"] = argv
-        return 0
+    def _run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(main, "_run_seed_rag_auto_fix_in_process", _run_seed)
+    monkeypatch.setattr(main.subprocess, "run", _run)
 
     assert main._run_doctor_auto_fix(check) is True
-    assert seen["argv"] == ["--metadata-only"]
+    assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.seed_rag", "--metadata-only"]
+    assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
     assert "Auto-fix tamamlandı" in capsys.readouterr().out
 
 

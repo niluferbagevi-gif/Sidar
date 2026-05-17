@@ -33,6 +33,51 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 BASE_DIR = Path(__file__).resolve().parent
 
 _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
+_DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
+
+
+def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
+    """Parse simple dotenv assignments for source attribution without logging values."""
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :]
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key or any(char.isspace() for char in key):
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _record_dotenv_key_sources(
+    *,
+    label: str,
+    path: Path,
+    override: bool,
+    parsed_values: dict[str, str],
+    before_values: dict[str, str | None],
+) -> None:
+    """Track which dotenv file supplied each effective key without storing values."""
+    for key in parsed_values:
+        if key not in os.environ:
+            continue
+        if override or before_values.get(key) is None:
+            _DOTENV_KEY_SOURCES[key] = {
+                "label": label,
+                "path": str(path),
+                "override": override,
+            }
 
 
 def _record_dotenv_event(
@@ -60,6 +105,11 @@ def _record_dotenv_event(
 def get_dotenv_load_report() -> list[dict[str, Any]]:
     """Return the ordered dotenv load attempts used by this runtime."""
     return deepcopy(_DOTENV_LOAD_EVENTS)
+
+
+def get_dotenv_key_source_report() -> dict[str, dict[str, Any]]:
+    """Return dotenv key-to-source metadata without exposing secret values."""
+    return deepcopy(_DOTENV_KEY_SOURCES)
 
 
 def _resolve_dotenv_path(raw_path: str) -> Path:
@@ -91,6 +141,8 @@ def _load_dotenv_if_exists(
         return None
     dotenv_path = _resolve_dotenv_path(cleaned_path)
     if dotenv_path.exists():
+        parsed_values = _parse_dotenv_source_values(dotenv_path)
+        before_values = {key: os.environ.get(key) for key in parsed_values}
         # Import at call time so tests/runtime reloads observe the current dotenv loader
         # instead of a stale function captured by a previous module reload.
         from dotenv import load_dotenv as current_load_dotenv
@@ -102,6 +154,13 @@ def _load_dotenv_if_exists(
             resolved_path=dotenv_path,
             loaded=True,
             override=override,
+        )
+        _record_dotenv_key_sources(
+            label=label,
+            path=dotenv_path,
+            override=override,
+            parsed_values=parsed_values,
+            before_values=before_values,
         )
         return dotenv_path
     if record_missing:
@@ -1271,6 +1330,15 @@ class Config:
                 ", ".join(f"{event['label']}={event['path']}" for event in missing_files),
             )
 
+        if _DOTENV_KEY_SOURCES:
+            logger.debug(
+                "Runtime env anahtar kaynakları: %s",
+                ", ".join(
+                    f"{key}->{source['label']}={source['path']}"
+                    for key, source in sorted(_DOTENV_KEY_SOURCES.items())
+                ),
+            )
+
         if missing_keys:
             logger.warning(
                 "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, .env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri korunur; SIDAR_KEYS_FILE en son yüklenir. "
@@ -1696,6 +1764,7 @@ class Config:
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
     _DOTENV_LOAD_EVENTS.clear()
+    _DOTENV_KEY_SOURCES.clear()
     base_path = BASE_DIR / ".env"
     advanced_path = BASE_DIR / ".env.advanced"
     _load_dotenv_if_exists(str(base_path), override=False, label="base")

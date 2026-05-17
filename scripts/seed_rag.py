@@ -205,6 +205,22 @@ def seed_files(
     }
 
 
+def _boolish(value: Any, *, default: bool = False) -> bool:
+    """Normalize config/env booleans including external provider aliases."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return default
+        if normalized in {"1", "true", "yes", "y", "on", "enabled"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "disabled"}:
+            return False
+        raise SeedError(f"Invalid boolean value for seed_rag config: {value!r}")
+    return bool(value)
+
+
 def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore:
     # Keep CLI stdout machine-readable: config/core imports may print dotenv or
     # startup diagnostics, so route those import-time notices to stderr before
@@ -238,8 +254,8 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore
         PGVECTOR_EMBEDDING_MODEL=getattr(Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
         DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
         HF_TOKEN=getattr(Config, "HF_TOKEN", ""),
-        HF_HUB_OFFLINE=getattr(Config, "HF_HUB_OFFLINE", False),
-        HF_USE_LOCAL_CACHE_ONLY=getattr(Config, "HF_USE_LOCAL_CACHE_ONLY", False),
+        HF_HUB_OFFLINE=_boolish(getattr(Config, "HF_HUB_OFFLINE", False)),
+        HF_USE_LOCAL_CACHE_ONLY=_boolish(getattr(Config, "HF_USE_LOCAL_CACHE_ONLY", False)),
     )
     return DocumentStore(
         rag_dir,
