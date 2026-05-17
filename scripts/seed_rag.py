@@ -10,14 +10,13 @@ and GraphRAG entity projection.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol
-
-from config import Config
-from core.rag import DocumentStore
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INCLUDE_PATTERNS = (
@@ -206,11 +205,17 @@ def seed_files(
     }
 
 
-def _build_store(rag_dir: Path, *, initialize_vector: bool) -> DocumentStore:
-    # RAG seeding should not be blocked by unrelated web/API secrets such as
-    # JWT_SECRET_KEY.  Use Config class defaults (already loaded from env at
-    # import time) without constructing Config(), whose runtime validation is
+def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore:
+    # Keep CLI stdout machine-readable: config/core imports may print dotenv or
+    # startup diagnostics, so route those import-time notices to stderr before
+    # emitting the final JSON summary on stdout.  RAG seeding should not be
+    # blocked by unrelated web/API secrets such as JWT_SECRET_KEY, so use Config
+    # class defaults without constructing Config(), whose runtime validation is
     # intentionally stricter for serving the application.
+    with contextlib.redirect_stdout(sys.stderr):
+        from config import Config
+        from core.rag import DocumentStore
+
     rag_dir.mkdir(parents=True, exist_ok=True)
     cfg = SimpleNamespace(
         BASE_DIR=BASE_DIR,

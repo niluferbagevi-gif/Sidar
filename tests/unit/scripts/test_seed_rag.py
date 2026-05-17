@@ -113,3 +113,39 @@ def test_default_seed_patterns_include_curated_code_context() -> None:
     assert "run_tests.sh" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert ".py" in seed_rag.TEXT_EXTENSIONS
     assert ".sh" in seed_rag.TEXT_EXTENSIONS
+
+
+def test_build_store_routes_import_time_notices_to_stderr(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import builtins
+    from types import SimpleNamespace
+
+    class FakeDocumentStore:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+        def close(self) -> None:
+            return None
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "config":
+            print("config stdout notice")
+            return SimpleNamespace(Config=SimpleNamespace())
+        if name == "core.rag":
+            print("rag stdout notice")
+            return SimpleNamespace(DocumentStore=FakeDocumentStore)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    store = seed_rag._build_store(tmp_path, initialize_vector=False)
+
+    captured = capsys.readouterr()
+    assert isinstance(store, FakeDocumentStore)
+    assert captured.out == ""
+    assert "config stdout notice" in captured.err
+    assert "rag stdout notice" in captured.err
