@@ -561,6 +561,25 @@ def check_rag_readiness() -> DoctorCheck:
 
 
 
+def _read_env_file_assignments(path: Path) -> dict[str, str]:
+    """Read simple KEY=VALUE assignments from a dotenv file without expanding secrets."""
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key.removeprefix("export ").strip()
+        if not key:
+            continue
+        values[key] = value.strip().strip('"').strip("'")
+    return values
+
+
 def check_environment_profile() -> DoctorCheck:
     """Validate that the selected SIDAR_ENV profile has an isolated dotenv file."""
     profile = os.getenv("SIDAR_ENV", "").strip().lower()
@@ -600,6 +619,32 @@ def check_environment_profile() -> DoctorCheck:
             details,
         )
     if profile_path.exists():
+        profile_values = _read_env_file_assignments(profile_path)
+        effective_postgres_db = profile_values.get("POSTGRES_DB") or os.getenv(
+            "POSTGRES_DB", ""
+        )
+        details["profile_postgres_db"] = effective_postgres_db
+        if profile in {"development", "dev", "local"} and effective_postgres_db in {
+            "sidar",
+            "postgres",
+        }:
+            details["recommended_commands"] = [
+                f"uv run python -m scripts.bootstrap_env --profile {profile} --force",
+                (
+                    f"edit .env.{profile} and set "
+                    f"POSTGRES_DB=sidar_{profile if profile != 'dev' else 'development'}"
+                ),
+            ]
+            return DoctorCheck(
+                "environment_profile",
+                "warn",
+                (
+                    f"SIDAR_ENV={profile} has .env.{profile}, but "
+                    f"POSTGRES_DB={effective_postgres_db!r} is not isolated from the "
+                    "base/production database"
+                ),
+                details,
+            )
         return DoctorCheck(
             "environment_profile",
             "pass",

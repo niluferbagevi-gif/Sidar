@@ -815,7 +815,9 @@ anahtarları kendi override dosyanıza taşıyın. `SIDAR_ENV=development` aktif
 düşer ve bunu loglar; yerel geliştirme izolasyonunu hazırlamak için
 `uv run python -m scripts.bootstrap_env --profile development` komutunu çalıştırın veya
 `.env.development.example` dosyasını `.env.development` olarak kopyalayıp placeholder secret
-değerlerini güncelleyin. Yerel Ollama + `qwen2.5-coder:7b` kullanımında
+değerlerini güncelleyin. Geliştirme şablonu `POSTGRES_DB=sidar_development` kullanır;
+böylece temel/production `POSTGRES_DB=sidar` verisiyle aynı veritabanına yazmaz. Yerel
+Ollama + `qwen2.5-coder:7b` kullanımında
 `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
 `RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
 aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında

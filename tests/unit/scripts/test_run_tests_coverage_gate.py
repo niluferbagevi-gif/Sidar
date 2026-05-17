@@ -97,6 +97,7 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "SIDAR_CONTAINER_DATABASE_URL=postgresql" not in env_development
     assert "SELF_HEAL_DATABASE_URL=postgresql" not in env_development
     assert "POSTGRES_CONTAINER_HOST=postgres" in env_development
+    assert "POSTGRES_DB=sidar_development" in env_development
     assert "OLLAMA_NUM_PARALLEL=4" in env_development
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
     assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development

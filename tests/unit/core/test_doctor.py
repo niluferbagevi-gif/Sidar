@@ -457,7 +457,9 @@ def test_environment_profile_warns_when_development_file_is_missing(monkeypatch,
 def test_environment_profile_passes_when_profile_file_exists_or_test_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setenv("SIDAR_ENV", "development")
-    (tmp_path / ".env.development").write_text("SIDAR_ENV=development\n", encoding="utf-8")
+    (tmp_path / ".env.development").write_text(
+        "SIDAR_ENV=development\nPOSTGRES_DB=sidar_development\n", encoding="utf-8"
+    )
 
     present = doctor.check_environment_profile()
 
@@ -469,6 +471,21 @@ def test_environment_profile_passes_when_profile_file_exists_or_test_profile(mon
 
     assert test_profile.status == "pass"
     assert "test fixtures" in test_profile.message
+
+
+def test_environment_profile_warns_when_development_database_is_not_isolated(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    (tmp_path / ".env.development").write_text(
+        "SIDAR_ENV=development\nPOSTGRES_DB=sidar\n", encoding="utf-8"
+    )
+
+    check = doctor.check_environment_profile()
+
+    assert check.status == "warn"
+    assert "not isolated" in check.message
+    assert check.details["profile_postgres_db"] == "sidar"
+    assert "--force" in check.details["recommended_commands"][0]
 
 
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
