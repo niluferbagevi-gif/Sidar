@@ -3,7 +3,7 @@
 
 # Konfigürasyon ve ortam şablonları
 include .env.example
-include .env.advanced
+include .env.advanced.example
 include .sidar_keys.env.example
 include alembic.ini
 
