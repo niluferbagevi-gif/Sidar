@@ -242,7 +242,10 @@ class CodeManager:
         self.docker_exec_timeout = (
             int(docker_exec_timeout)
             if docker_exec_timeout is not None
-            else int(getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", SANDBOX_LIMITS.get("timeout", 10)))
+            else _to_int(
+                getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", SANDBOX_LIMITS.get("timeout", 10)),
+                10,
+            )
         )
         self.max_output_chars = 10000
         self._lock = threading.RLock()
