@@ -27,6 +27,7 @@ import threading
 import time
 import urllib.parse
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -791,32 +792,52 @@ class DocumentStore:
             raise RuntimeError("Chroma collection başlatılmamış.")
         return collection
 
-    def _apply_hf_runtime_env(self) -> None:
-        """HF model yükleme davranışını Config üzerinden ortama uygula."""
+    def _hf_runtime_env_overrides(self) -> dict[str, str]:
+        """HF SDK/transformers için gerekli geçici ortam değişkenlerini hesapla."""
+        overrides: dict[str, str] = {}
+        hf_token = getattr(self.cfg, "HF_TOKEN", "")
+        if hf_token:
+            overrides["HF_TOKEN"] = str(hf_token)
+            overrides["HUGGING_FACE_HUB_TOKEN"] = str(hf_token)
+
+        model_names = {
+            "sentence-transformers/all-MiniLM-L6-v2",
+            "all-MiniLM-L6-v2",
+            str(getattr(self, "_pg_embedding_model_name", "") or ""),
+        }
+        if any(
+            sentence_transformer_local_files_only(self.cfg, model_name)
+            for model_name in model_names
+            if model_name
+        ):
+            # HuggingFace/transformers explicitly support the numeric convention.
+            # Keep it scoped to the SDK call so a parent Sidar process does not
+            # leak HF_HUB_OFFLINE=1 into subprocesses that import config.py.
+            overrides["HF_HUB_OFFLINE"] = "1"
+            overrides["TRANSFORMERS_OFFLINE"] = "1"
+        return overrides
+
+    @contextmanager
+    def _scoped_hf_runtime_env(self) -> Any:
+        """Temporarily apply HuggingFace runtime environment and then restore it."""
         with self._hf_env_lock:
-            # Environment variables may be cleared or altered by tests, subprocess
-            # boundaries, or runtime bootstrap code after a previous application.
-            # Re-assert configured values on each call instead of treating the
-            # class-level marker as a hard skip.
-            hf_token = getattr(self.cfg, "HF_TOKEN", "")
-            if hf_token:
-                os.environ["HF_TOKEN"] = hf_token
-                os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+            overrides = self._hf_runtime_env_overrides()
+            previous = {key: os.environ.get(key) for key in overrides}
+            try:
+                os.environ.update(overrides)
+                type(self)._hf_env_applied = True
+                yield
+            finally:
+                for key, value in previous.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
 
-            model_names = {
-                "sentence-transformers/all-MiniLM-L6-v2",
-                "all-MiniLM-L6-v2",
-                str(getattr(self, "_pg_embedding_model_name", "") or ""),
-            }
-            if any(
-                sentence_transformer_local_files_only(self.cfg, model_name)
-                for model_name in model_names
-                if model_name
-            ):
-                os.environ["HF_HUB_OFFLINE"] = "1"
-                os.environ["TRANSFORMERS_OFFLINE"] = "1"
-
-            type(self)._hf_env_applied = True
+    def _apply_hf_runtime_env(self) -> None:
+        """Backward-compatible no-leak wrapper for scoped HF runtime setup."""
+        with self._scoped_hf_runtime_env():
+            return None
 
     def close(self) -> None:
         """Ağır kaynakları serbest bırak."""
@@ -857,23 +878,22 @@ class DocumentStore:
             import chromadb
             from chromadb.config import Settings
 
-            # Embedding modeli başlatılmadan önce HF runtime değişkenlerini uygula.
-            self._apply_hf_runtime_env()
+            # Embedding modeli başlatılırken HF runtime değişkenlerini sızdırmadan uygula.
+            with self._scoped_hf_runtime_env():
+                # Veritabanını data/rag/chroma_db içinde tut
+                db_path = self.store_dir / "chroma_db"
+                self.chroma_client = chromadb.PersistentClient(
+                    path=str(db_path),
+                    settings=Settings(anonymized_telemetry=False),
+                )
 
-            # Veritabanını data/rag/chroma_db içinde tut
-            db_path = self.store_dir / "chroma_db"
-            self.chroma_client = chromadb.PersistentClient(
-                path=str(db_path),
-                settings=Settings(anonymized_telemetry=False),
-            )
-
-            # GPU-farkında embedding fonksiyonu
-            embedding_fn = _build_embedding_function(
-                use_gpu=self._use_gpu,
-                gpu_device=self._gpu_device,
-                mixed_precision=self._mixed_precision,
-                cfg=self.cfg,
-            )
+                # GPU-farkında embedding fonksiyonu
+                embedding_fn = _build_embedding_function(
+                    use_gpu=self._use_gpu,
+                    gpu_device=self._gpu_device,
+                    mixed_precision=self._mixed_precision,
+                    cfg=self.cfg,
+                )
 
             create_kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
             if embedding_fn is not None:
@@ -957,7 +977,6 @@ class DocumentStore:
             from sentence_transformers import SentenceTransformer
             from sqlalchemy import create_engine, text
 
-            self._apply_hf_runtime_env()
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
             engine = self._require_pg_engine()
             with engine.begin() as conn:
@@ -992,13 +1011,14 @@ class DocumentStore:
                     )
                 )
 
-            self._pg_embedding_model = SentenceTransformer(
-                self._pg_embedding_model_name,
-                device=sentence_transformer_device_from_config(self.cfg),
-                local_files_only=sentence_transformer_local_files_only(
-                    self.cfg, self._pg_embedding_model_name
-                ),
-            )
+            with self._scoped_hf_runtime_env():
+                self._pg_embedding_model = SentenceTransformer(
+                    self._pg_embedding_model_name,
+                    device=sentence_transformer_device_from_config(self.cfg),
+                    local_files_only=sentence_transformer_local_files_only(
+                        self.cfg, self._pg_embedding_model_name
+                    ),
+                )
             self._pgvector_available = True
             logger.info(
                 "pgvector backend başlatıldı: table=%s model=%s",

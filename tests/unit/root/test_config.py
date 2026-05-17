@@ -30,6 +30,21 @@ def test_get_bool_env_rejects_numeric_and_yes_no_aliases(monkeypatch):
         config.get_bool_env("FLAG_B", False)
 
 
+def test_get_external_bool_env_accepts_provider_aliases(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "no")
+
+    assert config.get_external_bool_env("HF_HUB_OFFLINE", False) is True
+    assert config.get_external_bool_env("TRANSFORMERS_OFFLINE", True) is False
+
+
+def test_get_external_bool_env_rejects_unknown_values(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "maybe")
+
+    with pytest.raises(ValueError, match="HF_HUB_OFFLINE must be a boolean accepted"):
+        config.get_external_bool_env("HF_HUB_OFFLINE", False)
+
+
 def test_database_urls_are_derived_from_postgres_parts(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)

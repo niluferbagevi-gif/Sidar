@@ -455,7 +455,30 @@ async def test_document_store_clean_html_with_bleach(monkeypatch: pytest.MonkeyP
     assert rag.DocumentStore._clean_html(html) == "<ignored>Clean Text</ignored>"
 
 
-async def test_document_store_apply_hf_runtime_env_sets_expected_vars(
+async def test_document_store_scoped_hf_runtime_env_sets_expected_vars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _make_store_stub(Path("/tmp"))
+    store.cfg = SimpleNamespace(HF_TOKEN="abc-token", HF_HUB_OFFLINE=True)
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    with store._scoped_hf_runtime_env():
+        assert os.environ["HF_TOKEN"] == "abc-token"
+        assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "abc-token"
+        assert os.environ["HF_HUB_OFFLINE"] == "1"
+        assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+    assert "HF_TOKEN" not in os.environ
+    assert "HUGGING_FACE_HUB_TOKEN" not in os.environ
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "TRANSFORMERS_OFFLINE" not in os.environ
+
+
+async def test_document_store_apply_hf_runtime_env_does_not_leak(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = _make_store_stub(Path("/tmp"))
@@ -468,10 +491,33 @@ async def test_document_store_apply_hf_runtime_env_sets_expected_vars(
 
     store._apply_hf_runtime_env()
 
-    assert os.environ["HF_TOKEN"] == "abc-token"
-    assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "abc-token"
-    assert os.environ["HF_HUB_OFFLINE"] == "1"
-    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    assert "HF_TOKEN" not in os.environ
+    assert "HUGGING_FACE_HUB_TOKEN" not in os.environ
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "TRANSFORMERS_OFFLINE" not in os.environ
+
+
+async def test_document_store_scoped_hf_runtime_env_restores_existing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _make_store_stub(Path("/tmp"))
+    store.cfg = SimpleNamespace(HF_TOKEN="new-token", HF_HUB_OFFLINE=True)
+
+    monkeypatch.setenv("HF_TOKEN", "old-token")
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "old-hub-token")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "0")
+
+    with store._scoped_hf_runtime_env():
+        assert os.environ["HF_TOKEN"] == "new-token"
+        assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "new-token"
+        assert os.environ["HF_HUB_OFFLINE"] == "1"
+        assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+
+    assert os.environ["HF_TOKEN"] == "old-token"
+    assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "old-hub-token"
+    assert os.environ["HF_HUB_OFFLINE"] == "0"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "0"
 
 
 async def test_document_store_apply_hf_runtime_env_uses_local_cache_flag(
@@ -484,19 +530,19 @@ async def test_document_store_apply_hf_runtime_env_uses_local_cache_flag(
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
     monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
 
-    store._apply_hf_runtime_env()
+    with store._scoped_hf_runtime_env():
+        assert os.environ["HF_HUB_OFFLINE"] == "1"
+        assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
 
-    assert os.environ["HF_HUB_OFFLINE"] == "1"
-    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "TRANSFORMERS_OFFLINE" not in os.environ
 
 
 async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache_root = tmp_path / "hf"
-    (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(
-        parents=True
-    )
+    (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(parents=True)
     monkeypatch.setenv("HF_HOME", str(cache_root))
     monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
@@ -507,10 +553,12 @@ async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False, HF_USE_LOCAL_CACHE_ONLY=False)
 
-    store._apply_hf_runtime_env()
+    with store._scoped_hf_runtime_env():
+        assert os.environ["HF_HUB_OFFLINE"] == "1"
+        assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
 
-    assert os.environ["HF_HUB_OFFLINE"] == "1"
-    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "TRANSFORMERS_OFFLINE" not in os.environ
 
 
 async def test_document_store_add_document_from_file_validation_branches(tmp_path: Path) -> None:

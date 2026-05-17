@@ -252,6 +252,28 @@ def get_bool_env(key: str, default: bool = False) -> bool:
     raise ValueError(f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}.")
 
 
+def get_external_bool_env(key: str, default: bool = False) -> bool:
+    """Return a boolean environment value for third-party library conventions.
+
+    External tools such as HuggingFace commonly document both ``1``/``0`` and
+    ``true``/``false`` style booleans. Keep Sidar feature flags strict via
+    :func:`get_bool_env`, but tolerate these aliases at integration boundaries
+    so externally owned variables cannot crash Sidar during import.
+    """
+    raw_val = os.getenv(key)
+    if raw_val is None or not raw_val.strip():
+        return default
+    val = raw_val.strip().lower()
+    if val in {"1", "true", "yes", "y", "on", "enabled"}:
+        return True
+    if val in {"0", "false", "no", "n", "off", "disabled"}:
+        return False
+    raise ValueError(
+        f"{key} must be a boolean accepted by the external provider "
+        f"('true'/'false', '1'/'0', 'yes'/'no', or 'on'/'off'); got {raw_val!r}."
+    )
+
+
 def build_postgres_dsn(*, host: str | None = None) -> str:
     """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
     user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
@@ -801,7 +823,7 @@ class Config:
 
     # ─── HuggingFace ─────────────────────────────────────────
     HF_TOKEN: str = os.getenv("HF_TOKEN", "")
-    HF_HUB_OFFLINE: bool = get_bool_env("HF_HUB_OFFLINE", False)
+    HF_HUB_OFFLINE: bool = get_external_bool_env("HF_HUB_OFFLINE", False)
     HF_USE_LOCAL_CACHE_ONLY: bool = get_bool_env("HF_USE_LOCAL_CACHE_ONLY", False)
 
     # ─── Donanım & GPU ───────────────────────────────────────
