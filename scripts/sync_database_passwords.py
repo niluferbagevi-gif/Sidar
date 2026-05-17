@@ -260,40 +260,58 @@ def _effective_postgres_password(specs: list[EnvFileSpec]) -> str:
     return _effective_env_from_specs(specs).get("POSTGRES_PASSWORD", "")
 
 
-def _file_skip_warnings(
+def _message_entry(message: str, *, severity: str, **metadata: str) -> dict[str, str]:
+    """Build a machine-readable, secret-free sync diagnostic entry."""
+    return {"severity": severity, "message": message, **metadata}
+
+
+def _file_skip_diagnostics(
     *,
     spec: EnvFileSpec,
     assignments: dict[str, EnvAssignment],
     skipped: dict[str, str],
-) -> list[str]:
-    """Explain skipped URL keys without exposing secret values."""
-    warnings: list[str] = []
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Explain skipped URL keys without treating normal chained-dotenv absence as warnings."""
+    warnings: list[dict[str, str]] = []
+    notes: list[dict[str, str]] = []
     if not skipped:
-        return warnings
+        return warnings, notes
 
     defines_password = bool(assignments.get("POSTGRES_PASSWORD"))
     for key, reason in skipped.items():
-        if reason == "missing" and (spec.override or defines_password):
+        if reason == "missing":
+            if spec.override and defines_password:
+                notes.append(
+                    _message_entry(
+                        f"{spec.label} defines POSTGRES_PASSWORD but does not define {key}; "
+                        "the effective PostgreSQL URL is expected to come from an earlier "
+                        "dotenv file in chained configurations.",
+                        severity="info",
+                        key=key,
+                        label=spec.label,
+                    )
+                )
+            continue
+        if reason == "not_postgresql_or_missing_username":
             warnings.append(
-                f"{spec.label} does not define {key}; an earlier dotenv file must provide "
-                "the effective PostgreSQL URL. If Doctor still reports password drift, "
-                "check this file for unsupported multiline or malformed dotenv syntax."
+                _message_entry(
+                    f"{spec.label} defines {key}, but it is not a PostgreSQL URL with a username; "
+                    "password synchronization skipped that key.",
+                    severity="warning",
+                    key=key,
+                    label=spec.label,
+                )
             )
-        elif reason == "not_postgresql_or_missing_username":
-            warnings.append(
-                f"{spec.label} defines {key}, but it is not a PostgreSQL URL with a username; "
-                "password synchronization skipped that key."
-            )
-    return warnings
+    return warnings, notes
 
 
-def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[str]:
+def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[dict[str, str]]:
     """Validate effective URL passwords after syncing all files."""
     postgres_password = effective_env.get("POSTGRES_PASSWORD", "")
     if not postgres_password:
         return []
 
-    warnings: list[str] = []
+    warnings: list[dict[str, str]] = []
     for key in DATABASE_URL_KEYS:
         raw_url = effective_env.get(key, "").strip()
         if not raw_url:
@@ -304,8 +322,12 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[st
         url_password = unquote(parsed.password or "")
         if url_password != postgres_password:
             warnings.append(
-                f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
-                "check later dotenv overrides or unsupported dotenv syntax."
+                _message_entry(
+                    f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
+                    "check later dotenv overrides or unsupported dotenv syntax.",
+                    severity="critical",
+                    key=key,
+                )
             )
     return warnings
 
@@ -332,7 +354,8 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     file_summaries: list[dict[str, Any]] = []
     changed_files: list[str] = []
     changed_keys_by_file: dict[str, list[str]] = {}
-    warnings: list[str] = []
+    warnings: list[dict[str, str]] = []
+    notes: list[dict[str, str]] = []
     for spec in specs:
         if not spec.path.is_file():
             skipped = {key: "file_missing" for key in DATABASE_URL_KEYS}
@@ -345,6 +368,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
                     "changed_keys": [],
                     "skipped": skipped,
                     "warnings": [],
+                    "notes": [],
                 }
             )
             continue
@@ -352,10 +376,11 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         original = spec.path.read_text(encoding="utf-8")
         assignments = _parse_env_text(original)
         updated, summary = _sync_env_text_with_password(original, postgres_password)
-        file_warnings = _file_skip_warnings(
+        file_warnings, file_notes = _file_skip_diagnostics(
             spec=spec, assignments=assignments, skipped=summary["skipped"]
         )
         warnings.extend(file_warnings)
+        notes.extend(file_notes)
         if updated != original:
             spec.path.write_text(updated, encoding="utf-8")
             changed_files.append(str(spec.path))
@@ -367,6 +392,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
                 "exists": True,
                 **summary,
                 "warnings": file_warnings,
+                "notes": file_notes,
             }
         )
 
@@ -391,6 +417,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         "checked_keys": list(DATABASE_URL_KEYS),
         "postgres_password_set": True,
         "warnings": warnings,
+        "notes": notes,
         "file_summaries": file_summaries,
     }
 

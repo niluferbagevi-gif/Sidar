@@ -158,6 +158,8 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     secret_file = tmp_path / "keys.env"
     monkeypatch.setenv("SIDAR_KEYS_FILE", str(secret_file))
 
@@ -178,12 +180,21 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
         "DATABASE_URL": "missing",
         "SIDAR_CONTAINER_DATABASE_URL": "missing",
     }
-    assert any("does not define DATABASE_URL" in warning for warning in summary["warnings"])
-    assert all("s" * 24 not in warning for warning in summary["warnings"])
-    assert _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1]) == "s" * 24
+    assert not summary["warnings"]
+    assert any(
+        note["severity"] == "info" and "does not define DATABASE_URL" in note["message"]
+        for note in summary["notes"]
+    )
+    assert all("s" * 24 not in note["message"] for note in summary["notes"])
+    assert (
+        _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1])
+        == "s" * 24
+    )
 
 
-def test_main_reports_no_change_guidance_for_idempotent_chain(monkeypatch, tmp_path, capsys) -> None:
+def test_main_reports_no_change_guidance_for_idempotent_chain(
+    monkeypatch, tmp_path, capsys
+) -> None:
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -201,3 +212,33 @@ def test_main_reports_no_change_guidance_for_idempotent_chain(monkeypatch, tmp_p
     captured = capsys.readouterr()
     assert "zaten POSTGRES_PASSWORD ile uyumlu" in captured.err
     assert "reload the launcher environment" in captured.err
+
+
+def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:stale@localhost:5432/sidar")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "POSTGRES_PASSWORD=" + "n" * 24 + "\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    summary = sync_database_passwords.sync_env_chain(env_file)
+
+    assert summary["warnings"] == [
+        {
+            "severity": "critical",
+            "message": (
+                "Effective DATABASE_URL password still differs from POSTGRES_PASSWORD after sync; "
+                "check later dotenv overrides or unsupported dotenv syntax."
+            ),
+            "key": "DATABASE_URL",
+        }
+    ]
+    assert summary["notes"] == []
