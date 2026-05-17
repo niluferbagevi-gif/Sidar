@@ -3319,3 +3319,56 @@ async def test_entity_extraction_ignores_blank_regex_capture_and_scalar_json_pay
     assert "Brand" in labels
     assert "Campaign" in labels
     assert store._extract_json_entities("plain scalar") == []
+
+
+async def test_bootstrap_project_docs_seeds_core_docs_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    project_root = tmp_path / "project"
+    (project_root / "docs").mkdir(parents=True)
+    (project_root / "README.md").write_text("# Sidar\nProject overview.", encoding="utf-8")
+    (project_root / "AGENTS.md").write_text("Agent catalog.", encoding="utf-8")
+    (project_root / "docs" / "TEKNIK_REFERANS.md").write_text(
+        "Teknik referans", encoding="utf-8"
+    )
+    archive_dir = project_root / "docs" / "archive"
+    archive_dir.mkdir()
+    (archive_dir / "OLD.md").write_text("eski belge", encoding="utf-8")
+
+    ingested: list[dict[str, object]] = []
+
+    def _fake_add(title, content, source, tags, session_id):
+        doc_id = f"doc-{len(ingested):03d}"
+        ingested.append(
+            {
+                "title": title,
+                "source": source,
+                "tags": list(tags or []),
+                "session_id": session_id,
+            }
+        )
+        store._index[doc_id] = {
+            "title": title,
+            "source": source,
+            "tags": list(tags or []),
+        }
+        return doc_id
+
+    store._add_document_sync = _fake_add  # type: ignore[method-assign]
+
+    result = store.bootstrap_project_docs(project_root=project_root)
+
+    seeded_titles = {entry["title"] for entry in ingested}
+    assert {"README.md", "AGENTS.md", "TEKNIK_REFERANS.md"} <= seeded_titles
+    assert "OLD.md" not in seeded_titles, "archive klasörü atlanmalı"
+    assert result["total_candidates"] == len(ingested)
+    assert result["failed"] == []
+    assert all("bootstrap" in entry["tags"] for entry in ingested)
+
+    # İkinci çalıştırma — idempotent davranış
+    before = len(ingested)
+    result2 = store.bootstrap_project_docs(project_root=project_root)
+    assert len(ingested) == before, "zaten indekslenmiş kaynaklar tekrar eklenmemeli"
+    assert len(result2["skipped"]) == before
+    assert result2["added"] == []

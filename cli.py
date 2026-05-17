@@ -15,6 +15,7 @@ Kullanım:
     python cli.py -c "komut"       # tek komut çalıştır
     python cli.py --level full     # erişim seviyesini geçici olarak ayarla
     python cli.py doctor           # artifacts/install/doctor.json sağlık raporu üret
+    python cli.py seed-rag         # Proje belgelerini RAG deposuna idempotent seed eder
 
 Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
 noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
@@ -94,6 +95,7 @@ Komutlar:
   .level <seviye> — Erişim seviyesini değiştir (restricted/sandbox/full)
   .web        — Web arama durumu
   .docs       — Belge deposunu listele
+  .seed       — Proje belgelerini RAG deposuna seed eder (idempotent)
   .help       — Bu yardım mesajını göster
   .exit / .q  — Çıkış
 
@@ -156,7 +158,10 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
         )
     if "RAG: 0 belge" in docs_status:
-        print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")
+        print(
+            "  RAG İpucu       : indeks boş; proje belgelerini seed etmek için `.seed` veya "
+            "`python cli.py seed-rag` kullanın, ya da URL eklemek için `belge ekle <url>`."
+        )
     print("\n  '.help' yazarak komut listesini görebilirsiniz.\n")
 
     while True:
@@ -207,6 +212,14 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             continue
         elif user_input.lower() == ".docs":
             print(agent.docs.list_documents())
+            continue
+        elif user_input.lower() == ".seed":
+            result = await asyncio.to_thread(agent.docs.bootstrap_project_docs)
+            print(
+                f"RAG seed tamamlandı — eklenen: {len(result['added'])}, "
+                f"atlanan: {len(result['skipped'])}, hata: {len(result['failed'])}"
+            )
+            print(f"Güncel durum: {agent.docs.status()}")
             continue
 
         # Ajan yanıtı — aynı event loop içinde doğrudan async for kullanılır
@@ -289,6 +302,44 @@ def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> i
     return 0 if report["overall_status"] in {"pass", "warn"} else 1
 
 
+def _run_seed_rag_command(extra_files: list[str] | None = None) -> int:
+    """RAG indeksi boşken Doctor uyarısını çözmek için proje belgelerini seed eder.
+
+    Yalnızca local dosyaları (README, AGENTS, docs/*.md vb.) okur; URL/ağ erişimi yoktur.
+    Idempotenttir — daha önce indekslenmiş dosyalar atlanır.
+    """
+    cfg = Config()
+    cfg.initialize_directories()
+    agent = SidarAgent(cfg)
+
+    async def _flow() -> int:
+        try:
+            await agent.initialize()
+            result = await asyncio.to_thread(
+                agent.docs.bootstrap_project_docs,
+                extra_files=extra_files,
+            )
+        finally:
+            await _shutdown_agent(agent)
+
+        print(
+            f"RAG seed tamamlandı — eklenen: {len(result['added'])}, "
+            f"atlanan: {len(result['skipped'])}, hata: {len(result['failed'])}"
+        )
+        if result["added"]:
+            print("Eklenen belgeler:")
+            for path in result["added"]:
+                print(f"  + {path}")
+        if result["failed"]:
+            print("Başarısız belgeler:")
+            for entry in result["failed"]:
+                print(f"  ! {entry['path']}: {entry['error']}")
+        print(f"\nGüncel durum: {agent.docs.status()}")
+        return 0 if not result["failed"] else 1
+
+    return asyncio.run(_flow())
+
+
 # ─────────────────────────────────────────────
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
@@ -305,6 +356,20 @@ def main() -> None:
         )
         doctor_args = doctor_parser.parse_args()
         raise SystemExit(_run_doctor_command(doctor_args.output))
+
+    if len(sys.argv) > 1 and sys.argv[1] == "seed-rag":
+        seed_parser = argparse.ArgumentParser(
+            description="Proje belgelerini RAG indeksine seed eder (idempotent)"
+        )
+        seed_parser.add_argument("seed-rag", nargs="?")
+        seed_parser.add_argument(
+            "--file",
+            action="append",
+            default=[],
+            help="Çekirdek belgelere ek olarak indekslenecek dosya yolu (birden çok kez verilebilir)",
+        )
+        seed_args = seed_parser.parse_args()
+        raise SystemExit(_run_seed_rag_command(extra_files=seed_args.file or None))
 
     cfg_defaults = Config()
 
