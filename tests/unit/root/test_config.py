@@ -1624,3 +1624,32 @@ def test_sidar_keys_example_documents_manual_and_autonomous_sections() -> None:
     assert "Boş `KEY=` satırlarını aktif bırakmayın" in content
     assert "Gerçek tokenları issue/PR/chat ekranlarına yapıştırmayın" in content
     assert "config preflight en az LITELLM_GATEWAY_URL bekler" in content
+
+
+def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path):
+    (tmp_path / ".env.development").write_text(
+        "SIDAR_ENV=development\n"
+        "AI_PROVIDER=openai\n"
+        "OPENAI_API_KEY=sk-test\n"
+        "API_KEY=api-reloaded\n"
+        "JWT_SECRET_KEY=jwt-reloaded\n"
+        "WEB_PORT=8765\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+
+    reloaded = config.reload_environment(profile="development")
+
+    assert reloaded is config.get_config()
+    assert config.Config.AI_PROVIDER == "openai"
+    assert config.Config.OPENAI_API_KEY == "sk-test"
+    assert config.Config.API_KEY == "api-reloaded"
+    assert config.Config.JWT_SECRET_KEY == "jwt-reloaded"
+    assert config.Config.WEB_PORT == 8765
+    report = config.get_dotenv_load_report()
+    assert any(event["label"] == "environment:development" and event["loaded"] for event in report)

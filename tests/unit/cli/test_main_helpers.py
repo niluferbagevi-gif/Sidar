@@ -543,6 +543,7 @@ def test_maybe_bootstrap_development_env_runs_bootstrap_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, object] = {}
+    reload_calls: list[str] = []
     monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
@@ -553,6 +554,11 @@ def test_maybe_bootstrap_development_env_runs_bootstrap_command(
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(main.subprocess, "run", _run)
+    monkeypatch.setattr(
+        main,
+        "_reload_environment_after_bootstrap",
+        lambda profile: reload_calls.append(profile) or True,
+    )
 
     assert main._maybe_bootstrap_development_env() is True
     assert seen["cmd"] == [
@@ -564,6 +570,7 @@ def test_maybe_bootstrap_development_env_runs_bootstrap_command(
         "--profile",
         "development",
     ]
+    assert reload_calls == ["development"]
     assert "bootstrap tamamlandı" in capsys.readouterr().out
 
 

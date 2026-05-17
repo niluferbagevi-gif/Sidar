@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, TypedDict
 from urllib.parse import quote, urlparse
 
-from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from sidar_version import PRODUCT_VERSION
@@ -92,7 +91,11 @@ def _load_dotenv_if_exists(
         return None
     dotenv_path = _resolve_dotenv_path(cleaned_path)
     if dotenv_path.exists():
-        load_dotenv(dotenv_path=dotenv_path, override=override)
+        # Import at call time so tests/runtime reloads observe the current dotenv loader
+        # instead of a stale function captured by a previous module reload.
+        from dotenv import load_dotenv as current_load_dotenv
+
+        current_load_dotenv(dotenv_path=dotenv_path, override=override)
         _record_dotenv_event(
             label=label,
             raw_path=raw_path,
@@ -1650,6 +1653,64 @@ class Config:
         enc_status = "Etkin (Fernet)" if cls.MEMORY_ENCRYPTION_KEY else "Devre Dışı"
         print(f"  Bellek Şifreleme : {enc_status}")
         print("═" * 62 + "\n")
+
+
+def _reload_dotenv_chain(*, profile: str | None = None) -> None:
+    """Reload the dotenv precedence chain without re-importing the module."""
+    _DOTENV_LOAD_EVENTS.clear()
+    base_path = BASE_DIR / ".env"
+    advanced_path = BASE_DIR / ".env.advanced"
+    _load_dotenv_if_exists(str(base_path), override=False, label="base")
+    _load_dotenv_if_exists(str(advanced_path), override=False, label="advanced")
+
+    selected_env = (profile or os.getenv("SIDAR_ENV", "")).strip().lower()
+    if selected_env:
+        os.environ["SIDAR_ENV"] = selected_env
+        _load_dotenv_if_exists(
+            str(BASE_DIR / f".env.{selected_env}"),
+            override=True,
+            label=f"environment:{selected_env}",
+        )
+
+    explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
+    _load_dotenv_if_exists(explicit_dotenv, override=True, label="explicit:DOTENV_FILE")
+    sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    _load_dotenv_if_exists(sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
+
+
+def reload_environment(*, profile: str | None = None) -> "Config":
+    """Reload dotenv files after an environment file is created and refresh Config defaults."""
+    global _config_instance
+    _reload_dotenv_chain(profile=profile)
+
+    Config.AI_PROVIDER = normalize_ai_provider(os.getenv("AI_PROVIDER", Config.AI_PROVIDER))
+    Config.ACCESS_LEVEL = _safe_choice_for_reload(
+        os.getenv("ACCESS_LEVEL", Config.ACCESS_LEVEL),
+        Config.ACCESS_LEVEL,
+        {"restricted", "sandbox", "full"},
+    )
+    Config.WEB_HOST = os.getenv("WEB_HOST", str(Config.WEB_HOST))
+    Config.WEB_PORT = get_int_env("WEB_PORT", int(Config.WEB_PORT))
+    Config.CODING_MODEL = os.getenv("CODING_MODEL", str(Config.CODING_MODEL))
+    Config.TEXT_MODEL = os.getenv("TEXT_MODEL", str(Config.TEXT_MODEL))
+    Config.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", str(Config.GEMINI_API_KEY or ""))
+    Config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", str(Config.OPENAI_API_KEY or ""))
+    Config.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", str(Config.ANTHROPIC_API_KEY or ""))
+    Config.API_KEY = os.getenv("API_KEY", str(Config.API_KEY or ""))
+    Config.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", str(Config.JWT_SECRET_KEY or ""))
+    Config.SIDAR_KEYS_FILE = os.getenv("SIDAR_KEYS_FILE", str(Config.SIDAR_KEYS_FILE or ""))
+    Config.DATABASE_URL = get_database_url()
+    Config.CONTAINER_DATABASE_URL = get_container_database_url()
+    Config.RAG_DIR = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
+    Config._hardware_loaded = False
+    _config_instance = None
+    Config._log_dotenv_load_status(missing_keys=Config.get_missing_critical_runtime_keys())
+    return get_config()
+
+
+def _safe_choice_for_reload(value: object, default: str, allowed: set[str]) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in allowed else default
 
 
 # ═══════════════════════════════════════════════════════════════

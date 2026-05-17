@@ -57,12 +57,14 @@ CONFIG_IMPORT_OK = True
 logger = logging.getLogger(__name__)
 
 try:
-    from config import Config
+    import config as config_module
 
+    Config = config_module.Config
     cfg: Any = Config()
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
 except (ImportError, AttributeError):
+    config_module = None
     CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()
@@ -244,6 +246,30 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     return _normalize_launch_selection(selection)
 
 
+def _reload_environment_after_bootstrap(profile: str = "development") -> bool:
+    """Reload config dotenv chain after bootstrap creates a profile env file."""
+    if config_module is None:
+        return False
+
+    reload_environment = getattr(config_module, "reload_environment", None)
+    if not callable(reload_environment):
+        logger.warning("config.reload_environment bulunamadı; bootstrap sonrası reload atlandı.")
+        return False
+
+    global cfg
+    try:
+        reloaded_cfg = reload_environment(profile=profile)
+    except Exception as exc:
+        logger.warning("Bootstrap sonrası environment reload başarısız: %s", exc)
+        print(f"{YELLOW}⚠ Environment reload başarısız: {exc}{RESET}")
+        return False
+
+    if reloaded_cfg is not None:
+        cfg = reloaded_cfg
+    print(f"{GREEN}✅ Environment yeniden yüklendi: SIDAR_ENV={profile}{RESET}")
+    return True
+
+
 def _maybe_bootstrap_development_env() -> bool:
     """Eksik .env.development için ön kontroller sırasında opsiyonel bootstrap önerir."""
     env_path = _development_env_path()
@@ -273,6 +299,7 @@ def _maybe_bootstrap_development_env() -> bool:
         print(f"{YELLOW}⚠ Bootstrap komutu {completed.returncode} koduyla tamamlandı.{RESET}")
         return False
 
+    _reload_environment_after_bootstrap("development")
     print(f"{GREEN}✅ .env.development bootstrap tamamlandı.{RESET}")
     return True
 
