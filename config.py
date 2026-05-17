@@ -465,6 +465,8 @@ _LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
 _LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
 _LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
 _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
+_VERBOSE_HTTP_LOGS = get_bool_env("SIDAR_VERBOSE_HTTP", False)
+_NOISY_DEPENDENCY_LOGGERS = ("httpx", "huggingface_hub")
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -490,6 +492,14 @@ def _repair_log_file_permissions(log_file: Path) -> None:
 
 
 _repair_log_file_permissions(_LOG_FILE_PATH)
+
+
+def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
+    """Keep chatty HTTP/HF dependency logs quiet unless explicitly requested."""
+    target_level = logging.NOTSET if verbose_http else logging.WARNING
+    for logger_name in _NOISY_DEPENDENCY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(target_level)
+
 
 _root_logger = logging.getLogger()
 for _handler in list(_root_logger.handlers):
@@ -526,6 +536,8 @@ except (PermissionError, OSError) as exc:
         "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
         exc,
     )
+
+_configure_noisy_dependency_loggers()
 
 logger = logging.getLogger("Sidar.Config")
 

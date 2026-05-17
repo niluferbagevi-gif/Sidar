@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 import types
 import warnings
@@ -1256,6 +1257,25 @@ def test_repair_log_file_permissions_skips_chown_when_ids_missing(monkeypatch, t
 
     config._repair_log_file_permissions(log_file)
     assert len(called_chmod) == 1
+
+
+def test_noisy_dependency_loggers_stay_quiet_in_debug_unless_verbose_http(monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("SIDAR_VERBOSE_HTTP", "false")
+
+    reloaded = importlib.reload(config)
+
+    assert logging.getLogger().level == logging.DEBUG
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("huggingface_hub").level == logging.WARNING
+
+    reloaded._configure_noisy_dependency_loggers(verbose_http=True)
+    assert logging.getLogger("httpx").level == logging.NOTSET
+    assert logging.getLogger("huggingface_hub").level == logging.NOTSET
+
+    reloaded._configure_noisy_dependency_loggers(verbose_http=False)
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("huggingface_hub").level == logging.WARNING
 
 
 def test_rotating_file_handler_permission_error_coverage(monkeypatch):
