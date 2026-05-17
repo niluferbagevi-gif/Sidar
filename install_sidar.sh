@@ -3529,6 +3529,20 @@ ensure_rag_vector_backend_pgvector() {
     fi
 }
 
+# Kurulum sırasında kullanıcıdan veya SIDAR_KEYS_FILE üzerinden alınan API
+# anahtarları tek merkezden yönetilir. Bu liste .env, raporlama ve .env.*
+# varyant senkronizasyonunda ortak kullanılarak .env.advanced gibi şablondan
+# üretilen dosyalarda boş placeholder kalması engellenir.
+sidar_user_api_key_names() {
+    printf '%s\n' \
+        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN \
+        GITHUB_TOKEN \
+        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX \
+        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL \
+        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT \
+        TEAMS_WEBHOOK_URL
+}
+
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
 # Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
 # sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
@@ -3541,14 +3555,8 @@ collect_api_keys_interactive() {
     fi
 
     # ── Tüm kullanıcı girişi gerektiren anahtarlar (otomatik üretilenler hariç) ──
-    local -a KEY_ORDER=(
-        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
-        GITHUB_TOKEN
-        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
-        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
-        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
-        TEAMS_WEBHOOK_URL
-    )
+    local -a KEY_ORDER=()
+    mapfile -t KEY_ORDER < <(sidar_user_api_key_names)
     local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
 
     # Gruplar: "Başlık|KEY1,KEY2,..."  (her grup zenity'de ayrı form / whiptail'de bölüm)
@@ -3612,6 +3620,10 @@ collect_api_keys_interactive() {
         fi
     }
 
+    _sync_env_variants_after_api_key_update() {
+        propagate_shared_secrets_to_env_variants "$env_file"
+    }
+
     # ~/.sidar_keys.env gibi kalıcı bir dosyadan anahtarları içeri al.
     # Dosya varsa etkileşimli (zenity/whiptail/read) adımı tamamen atlanır.
     _import_api_keys_from_file() {
@@ -3654,6 +3666,7 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
+        _sync_env_variants_after_api_key_update
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3674,6 +3687,7 @@ collect_api_keys_interactive() {
 
     if [[ ${#missing_keys[@]} -eq 0 ]]; then
         ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
+        _sync_env_variants_after_api_key_update
         return
     fi
 
@@ -3735,6 +3749,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
+        _sync_env_variants_after_api_key_update
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3767,6 +3782,7 @@ collect_api_keys_interactive() {
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+        _sync_env_variants_after_api_key_update
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -3796,18 +3812,14 @@ collect_api_keys_interactive() {
         echo ""
     done
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
+    _sync_env_variants_after_api_key_update
     _warn_if_missing_critical_provider_keys
 }
 
 report_env_api_key_status() {
     local env_file="$1"
-    local -a key_order=(
-        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN GITHUB_TOKEN
-        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
-        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
-        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
-        TEAMS_WEBHOOK_URL
-    )
+    local -a key_order=()
+    mapfile -t key_order < <(sidar_user_api_key_names)
 
     ENV_API_KEYS_TOTAL="${#key_order[@]}"
     ENV_API_KEYS_FILLED=0
@@ -4055,6 +4067,9 @@ propagate_shared_secrets_to_env_variants() {
         GRAFANA_ADMIN_PASSWORD
         METRICS_TOKEN
     )
+    local -a api_keys=()
+    mapfile -t api_keys < <(sidar_user_api_key_names)
+    shared_keys+=("${api_keys[@]}")
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"

@@ -97,6 +97,37 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_advanced
 
 
+def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    api_keys_start = install_script.index("sidar_user_api_key_names()")
+    api_keys_block = install_script[api_keys_start : install_script.index("}", api_keys_start)]
+    for key in (
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GITHUB_TOKEN",
+        "JIRA_TOKEN",
+        "TEAMS_WEBHOOK_URL",
+    ):
+        assert key in api_keys_block
+
+    propagate_start = install_script.index("propagate_shared_secrets_to_env_variants()")
+    propagate_block = install_script[propagate_start : install_script.index("local -a variants=(", propagate_start)]
+    assert "mapfile -t api_keys < <(sidar_user_api_key_names)" in propagate_block
+    assert 'shared_keys+=("${api_keys[@]}")' in propagate_block
+
+    collect_start = install_script.index("collect_api_keys_interactive()")
+    collect_block = install_script[collect_start : install_script.index("report_env_api_key_status()", collect_start)]
+    assert "mapfile -t KEY_ORDER < <(sidar_user_api_key_names)" in collect_block
+    assert "_sync_env_variants_after_api_key_update" in collect_block
+    assert collect_block.count("_sync_env_variants_after_api_key_update") >= 5
+
+    report_start = install_script.index("report_env_api_key_status()")
+    report_block = install_script[report_start : install_script.index("validate_runtime_env_loading()", report_start)]
+    assert "mapfile -t key_order < <(sidar_user_api_key_names)" in report_block
+
+
 def test_primary_env_example_stays_minimal_for_new_users() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
