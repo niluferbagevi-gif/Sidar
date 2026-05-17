@@ -60,6 +60,23 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 ):
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    variants_start = install_script.index(
+        "local -a variants=(",
+        install_script.index("propagate_shared_secrets_to_env_variants()"),
+    )
+    variants_block = install_script[
+        variants_start : install_script.index(")", variants_start)
+    ]
+    development_variant = '".env.development:.env.development.example"'
+    test_variant = '".env.test:.env.test.example"'
+    advanced_variant = '".env.advanced:.env.advanced.example"'
+    assert development_variant in variants_block
+    assert test_variant in variants_block
+    assert advanced_variant in variants_block
+    assert variants_block.index(development_variant) < variants_block.index(test_variant)
+    assert variants_block.index(test_variant) < variants_block.index(advanced_variant)
 
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content

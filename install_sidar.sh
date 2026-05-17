@@ -4046,9 +4046,9 @@ propagate_shared_secrets_to_env_variants() {
         METRICS_TOKEN
     )
     local -a variants=(
-        ".env.advanced:.env.advanced.example"
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
+        ".env.advanced:.env.advanced.example"  # Sürüm kontrollü şablondan üretilen advanced runtime env.
     )
 
     [[ -f "$src" ]] || return 0
