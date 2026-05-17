@@ -10,6 +10,7 @@ Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shlex
@@ -18,6 +19,10 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, TextIO
+
+LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
+LAUNCHER_SESSION_VERSION = 1
+
 
 # Terminal Renkleri (ANSI)
 CYAN = "\033[96m"
@@ -127,6 +132,183 @@ def validate_runtime_dependencies(mode: str) -> tuple[bool, str | None]:
         f"config.py yüklenemediği için {target_script} güvenli şekilde başlatılamıyor. "
         "Launcher varsayılanlarla açıldı ancak child process fail-fast olarak durduruldu.",
     )
+
+
+def _project_base_dir() -> Path:
+    """Launcher dosyalarını repo kökünde tutmak için güvenli base dizini döndürür."""
+    raw_base_dir = getattr(cfg, "BASE_DIR", Path(__file__).resolve().parent)
+    try:
+        return Path(raw_base_dir).expanduser().resolve()
+    except TypeError:
+        return Path(__file__).resolve().parent
+
+
+def _launcher_session_path(base_dir: Path | None = None) -> Path:
+    """Son sihirbaz seçimlerinin yazıldığı git-ignored cache dosyasını döndürür."""
+    return (base_dir or _project_base_dir()) / LAUNCHER_SESSION_FILENAME
+
+
+def _development_env_path(base_dir: Path | None = None) -> Path:
+    """Yerel geliştirme dotenv dosyasının beklenen konumunu döndürür."""
+    return (base_dir or _project_base_dir()) / ".env.development"
+
+
+def _normalize_launch_selection(selection: dict[str, object]) -> dict[str, Any]:
+    """Cache/varsayılan kaynaklı launcher seçimlerini güvenli değerlere normalize eder."""
+    mode = _safe_choice(selection.get("mode"), "web", {"web", "cli"})
+    provider = _safe_choice(
+        selection.get("provider"),
+        _safe_choice(
+            getattr(cfg, "AI_PROVIDER", "ollama"),
+            "ollama",
+            {"ollama", "gemini", "openai", "anthropic"},
+        ),
+        {"ollama", "gemini", "openai", "anthropic"},
+    )
+    level = _safe_choice(
+        selection.get("level"),
+        _safe_choice(
+            getattr(cfg, "ACCESS_LEVEL", "full"), "full", {"restricted", "sandbox", "full"}
+        ),
+        {"restricted", "sandbox", "full"},
+    )
+    log_level = _safe_choice(selection.get("log"), "info", {"info", "debug", "warning", "error"})
+
+    raw_extra_args = selection.get("extra_args")
+    extra_args = raw_extra_args if isinstance(raw_extra_args, dict) else {}
+    normalized_extra_args = {
+        "model": _safe_text(
+            extra_args.get("model"),
+            _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
+        ),
+        "host": _safe_host(extra_args.get("host", getattr(cfg, "WEB_HOST", "127.0.0.1"))),
+        "port": _safe_port(extra_args.get("port", getattr(cfg, "WEB_PORT", 7860)), "7860"),
+    }
+    return {
+        "mode": mode,
+        "provider": provider,
+        "level": level,
+        "log": log_level,
+        "extra_args": normalized_extra_args,
+    }
+
+
+def _default_launch_selection() -> dict[str, Any]:
+    """--skip-wizard için config/default değerlerinden çalıştırılabilir seçim üretir."""
+    return _normalize_launch_selection(
+        {
+            "mode": "web",
+            "provider": getattr(cfg, "AI_PROVIDER", "ollama"),
+            "level": getattr(cfg, "ACCESS_LEVEL", "full"),
+            "log": "info",
+            "extra_args": {
+                "model": getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"),
+                "host": getattr(cfg, "WEB_HOST", "127.0.0.1"),
+                "port": getattr(cfg, "WEB_PORT", 7860),
+            },
+        }
+    )
+
+
+def _save_launcher_session(selection: dict[str, object], path: Path | None = None) -> Path:
+    """Sihirbaz seçimlerini atomik şekilde .sidar_session.json cache'ine yazar."""
+    session_path = path or _launcher_session_path()
+    payload = {
+        "version": LAUNCHER_SESSION_VERSION,
+        "selection": _normalize_launch_selection(selection),
+    }
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = session_path.with_suffix(session_path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp_path.replace(session_path)
+    return session_path
+
+
+def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
+    """Son sihirbaz seçimlerini cache'den güvenli şekilde okur."""
+    session_path = path or _launcher_session_path()
+    try:
+        payload = json.loads(session_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        logger.warning("Launcher oturum cache'i okunamadı (%s): %s", session_path, exc)
+        return None
+
+    if not isinstance(payload, dict) or payload.get("version") != LAUNCHER_SESSION_VERSION:
+        logger.warning("Launcher oturum cache'i desteklenmeyen biçimde: %s", session_path)
+        return None
+
+    selection = payload.get("selection")
+    if not isinstance(selection, dict):
+        logger.warning("Launcher oturum cache'i seçim alanı içermiyor: %s", session_path)
+        return None
+    return _normalize_launch_selection(selection)
+
+
+def _maybe_bootstrap_development_env() -> bool:
+    """Eksik .env.development için sihirbazdan önce opsiyonel bootstrap komutu önerir."""
+    env_path = _development_env_path()
+    if env_path.exists() or not sys.stdin.isatty():
+        return False
+
+    print(
+        f"{YELLOW}⚠ .env.development bulunamadı. Yerel profil sihirbazdan önce oluşturulabilir.{RESET}"
+    )
+    if not confirm(
+        "Şimdi uv run python -m scripts.bootstrap_env --profile development çalıştırılsın mı?",
+        True,
+    ):
+        return False
+
+    cmd = ["uv", "run", "python", "-m", "scripts.bootstrap_env", "--profile", "development"]
+    try:
+        completed = subprocess.run(  # nosec B603  # sabit komut listesi, kullanıcı girdisi eklenmez.
+            cmd, check=False, cwd=_project_base_dir()
+        )
+    except OSError as exc:
+        logger.warning("Development dotenv bootstrap başlatılamadı: %s", exc)
+        print(f"{RED}⛔ Bootstrap komutu başlatılamadı: {exc}{RESET}")
+        return False
+
+    if completed.returncode != 0:
+        print(f"{YELLOW}⚠ Bootstrap komutu {completed.returncode} koduyla tamamlandı.{RESET}")
+        return False
+
+    print(f"{GREEN}✅ .env.development bootstrap tamamlandı.{RESET}")
+    return True
+
+
+def _apply_cli_overrides(selection: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """--skip-wizard akışında config/default seçime açık CLI override'larını uygular."""
+    merged = dict(selection)
+    extra_args = dict(selection.get("extra_args", {}))
+    if args.provider:
+        merged["provider"] = args.provider
+    if args.level:
+        merged["level"] = args.level
+    if args.log:
+        merged["log"] = str(args.log).lower()
+    if args.model:
+        extra_args["model"] = args.model
+    if args.host:
+        extra_args["host"] = args.host
+    if args.port:
+        extra_args["port"] = args.port
+    merged["extra_args"] = extra_args
+    return _normalize_launch_selection(merged)
+
+
+def _execute_launch_selection(
+    selection: dict[str, Any], *, capture_output: bool = False, child_log_path: str | None = None
+) -> int:
+    """Normalize edilmiş seçimden komut oluşturup çalıştırır."""
+    cmd = build_command(
+        selection["mode"],
+        selection["provider"],
+        selection["level"],
+        selection["log"],
+        selection["extra_args"],
+    )
+    return execute_command(cmd, capture_output=capture_output, child_log_path=child_log_path)
 
 
 def _safe_choice(value: object, default: str, allowed: set[str]) -> str:
@@ -476,6 +658,17 @@ def run_wizard() -> int:
             _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
         )
 
+    selection = _normalize_launch_selection(
+        {
+            "mode": mode,
+            "provider": provider,
+            "level": level,
+            "log": log_level,
+            "extra_args": extra_args,
+        }
+    )
+    _save_launcher_session(selection)
+
     preflight(provider)
 
     runtime_ok, runtime_error = validate_runtime_dependencies(mode)
@@ -483,14 +676,16 @@ def run_wizard() -> int:
         print(f"{RED}⛔ {runtime_error}{RESET}")
         return 2
 
-    cmd = build_command(mode, provider, level, log_level, extra_args)
+    cmd = build_command(
+        selection["mode"],
+        selection["provider"],
+        selection["level"],
+        selection["log"],
+        selection["extra_args"],
+    )
 
     print(f"\n{CYAN}🚀 Başlatılacak komut:{RESET}")
     print(f"   {GREEN}{_format_cmd(cmd)}{RESET}")
-
-    if not confirm("Sidar'ı başlatmak istiyor musunuz?", True):
-        print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
-        return 0
 
     return execute_command(cmd)
 
@@ -532,6 +727,16 @@ def main() -> None:
         "--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat"
     )
     parser.add_argument(
+        "--skip-wizard",
+        action="store_true",
+        help="Sihirbaz sorularını atla ve config/default seçimlerle başlat",
+    )
+    parser.add_argument(
+        "--last",
+        action="store_true",
+        help=f"Son {LAUNCHER_SESSION_FILENAME} sihirbaz seçimleriyle başlat",
+    )
+    parser.add_argument(
         "--provider",
         choices=["ollama", "gemini", "openai", "anthropic"],
         help="Hızlı başlat için AI sağlayıcı",
@@ -556,6 +761,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(args.last)]
+    if sum(launch_modes) > 1:
+        parser.error("--quick, --skip-wizard ve --last aynı anda kullanılamaz")
+
+    if not any(launch_modes):
+        _maybe_bootstrap_development_env()
+
     if hasattr(cfg, "validate_critical_settings") and not cfg.validate_critical_settings():
         print(f"{RED}❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.{RESET}")
         sys.exit(2)
@@ -570,6 +782,35 @@ def main() -> None:
             parser.error(
                 f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})"
             )
+
+    if args.last:
+        selection = _load_launcher_session()
+        if selection is None:
+            print(
+                f"{RED}❌ Son sihirbaz oturumu bulunamadı veya okunamadı: {_launcher_session_path()}{RESET}"
+            )
+            sys.exit(2)
+        runtime_ok, runtime_error = validate_runtime_dependencies(selection["mode"])
+        if not runtime_ok:
+            print(f"{RED}⛔ {runtime_error}{RESET}")
+            sys.exit(2)
+        sys.exit(
+            _execute_launch_selection(
+                selection, capture_output=args.capture_output, child_log_path=args.child_log
+            )
+        )
+
+    if args.skip_wizard:
+        selection = _apply_cli_overrides(_default_launch_selection(), args)
+        runtime_ok, runtime_error = validate_runtime_dependencies(selection["mode"])
+        if not runtime_ok:
+            print(f"{RED}⛔ {runtime_error}{RESET}")
+            sys.exit(2)
+        sys.exit(
+            _execute_launch_selection(
+                selection, capture_output=args.capture_output, child_log_path=args.child_log
+            )
+        )
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
     if not args.quick:

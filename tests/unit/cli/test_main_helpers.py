@@ -395,19 +395,33 @@ def test_preflight_ollama_import_error_and_runtime_error(
     assert "Ollama erişimi doğrulanamadı" in capsys.readouterr().out
 
 
-def test_run_wizard_cli_ollama_cancel_covers_command_preview(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_run_wizard_cli_ollama_runs_without_extra_final_confirm(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     monkeypatch.setattr(main, "print_banner", lambda: None)
     choices = iter(["cli", "ollama", "sandbox", "debug"])
+    seen: dict[str, object] = {}
     monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
     monkeypatch.setattr(main, "ask_text", lambda *args, **kwargs: "qwen2.5-coder:7b")
     monkeypatch.setattr(main, "preflight", lambda _provider: None)
     monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
-    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        main, "confirm", lambda *_args, **_kwargs: pytest.fail("final confirm should not run")
+    )
+    monkeypatch.setattr(
+        main, "_launcher_session_path", lambda _base_dir=None: tmp_path / ".sidar_session.json"
+    )
+
+    def _execute(cmd: list[str]) -> int:
+        seen["cmd"] = cmd
+        return 0
+
+    monkeypatch.setattr(main, "execute_command", _execute)
 
     assert main.run_wizard() == 0
-    assert "İşlem kullanıcı tarafından iptal edildi" in capsys.readouterr().out
+    assert "Başlatılacak komut" in capsys.readouterr().out
+    assert seen["cmd"][-2:] == ["--model", "qwen2.5-coder:7b"]
+    assert (tmp_path / ".sidar_session.json").exists()
 
 
 def test_run_wizard_web_executes_confirmed_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -420,6 +434,7 @@ def test_run_wizard_web_executes_confirmed_command(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(main, "preflight", lambda _provider: None)
     monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(main, "_save_launcher_session", lambda _selection: Path("/tmp/session"))
 
     def _execute(cmd: list[str]) -> int:
         seen["cmd"] = cmd
@@ -429,6 +444,79 @@ def test_run_wizard_web_executes_confirmed_command(monkeypatch: pytest.MonkeyPat
 
     assert main.run_wizard() == 6
     assert seen["cmd"][-4:] == ["--host", "127.0.0.1", "--port", "9000"]
+
+
+def test_launcher_session_save_load_normalizes_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        main,
+        "cfg",
+        SimpleNamespace(
+            AI_PROVIDER="ollama",
+            ACCESS_LEVEL="full",
+            CODING_MODEL="qwen2.5-coder:7b",
+            WEB_HOST="127.0.0.1",
+            WEB_PORT=7860,
+        ),
+    )
+    session_path = tmp_path / ".sidar_session.json"
+
+    saved_path = main._save_launcher_session(
+        {
+            "mode": "web",
+            "provider": "bad-provider",
+            "level": "sandbox",
+            "log": "debug",
+            "extra_args": {"host": "127.0.0.1", "port": "9999"},
+        },
+        session_path,
+    )
+    loaded = main._load_launcher_session(saved_path)
+
+    assert saved_path == session_path
+    assert loaded is not None
+    assert loaded["provider"] == "ollama"
+    assert loaded["level"] == "sandbox"
+    assert loaded["extra_args"]["port"] == "9999"
+
+
+def test_maybe_bootstrap_development_env_runs_bootstrap_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+
+    def _run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._maybe_bootstrap_development_env() is True
+    assert seen["cmd"] == [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "scripts.bootstrap_env",
+        "--profile",
+        "development",
+    ]
+    assert "bootstrap tamamlandı" in capsys.readouterr().out
+
+
+def test_maybe_bootstrap_development_env_skips_non_interactive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: pytest.fail("should not prompt"))
+
+    assert main._maybe_bootstrap_development_env() is False
 
 
 def test_execute_command_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -528,6 +616,90 @@ def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch)
     assert seen["child_log"] is None
 
 
+def test_main_skip_wizard_uses_default_selection_with_cli_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--skip-wizard",
+            "--capture-output",
+            "--provider",
+            "gemini",
+            "--host",
+            "127.0.0.1",
+        ],
+    )
+    monkeypatch.setattr(
+        main,
+        "cfg",
+        SimpleNamespace(
+            validate_critical_settings=lambda: True,
+            AI_PROVIDER="openai",
+            ACCESS_LEVEL="sandbox",
+            CODING_MODEL="qwen2.5-coder:7b",
+            WEB_HOST="127.0.0.1",
+            WEB_PORT=9001,
+        ),
+    )
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+    seen: dict[str, object] = {}
+
+    def _execute_selection(selection: dict[str, object], **kwargs: object) -> int:
+        seen["selection"] = selection
+        seen["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(main, "_execute_launch_selection", _execute_selection)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 0
+    assert seen["selection"]["mode"] == "web"
+    assert seen["selection"]["provider"] == "gemini"
+    assert seen["selection"]["extra_args"]["port"] == "9001"
+    assert seen["kwargs"]["capture_output"] is True
+
+
+def test_main_last_replays_cached_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    cached = {
+        "mode": "cli",
+        "provider": "ollama",
+        "level": "full",
+        "log": "debug",
+        "extra_args": {"model": "qwen2.5-coder:7b"},
+    }
+    monkeypatch.setattr("sys.argv", ["main.py", "--last", "--child-log", "logs/child.log"])
+    monkeypatch.setattr(main, "_load_launcher_session", lambda: cached)
+    monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+    seen: dict[str, object] = {}
+
+    def _execute_selection(selection: dict[str, object], **kwargs: object) -> int:
+        seen["selection"] = selection
+        seen["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(main, "_execute_launch_selection", _execute_selection)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 0
+    assert seen["selection"] == cached
+    assert seen["kwargs"]["child_log_path"] == "logs/child.log"
+
+
+def test_main_rejects_conflicting_launch_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--last"])
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
+
+
 def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--port", "70000"])
 
@@ -566,6 +738,7 @@ def test_run_wizard_returns_2_when_runtime_dependencies_fail(
     monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
     monkeypatch.setattr(main, "ask_text", lambda *args, **kwargs: "7860")
     monkeypatch.setattr(main, "preflight", lambda _provider: None)
+    monkeypatch.setattr(main, "_save_launcher_session", lambda _selection: Path("/tmp/session"))
     monkeypatch.setattr(
         main, "validate_runtime_dependencies", lambda _mode: (False, "runtime boom")
     )
@@ -849,7 +1022,11 @@ def test_run_wizard_cli_non_ollama_provider_skips_ollama_model_prompt(
     monkeypatch.setattr(main, "ask_text", _ask_text)
     monkeypatch.setattr(main, "preflight", lambda _provider: None)
     monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
-    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        main, "confirm", lambda *_args, **_kwargs: pytest.fail("final confirm should not run")
+    )
+    monkeypatch.setattr(main, "_save_launcher_session", lambda _selection: Path("/tmp/session"))
+    monkeypatch.setattr(main, "execute_command", lambda _cmd: 0)
 
     assert main.run_wizard() == 0
     # cli + non-ollama → ne ollama prompt ne de web prompt çalışmalı
