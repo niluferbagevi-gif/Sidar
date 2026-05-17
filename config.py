@@ -193,6 +193,91 @@ def _load_dotenv_if_exists(
     return None
 
 
+def _dotenv_values_for_reload(path: Path) -> dict[str, str]:
+    """Read dotenv assignments for reload-time effective env calculation."""
+    from dotenv import dotenv_values
+
+    values: dict[str, str] = {}
+    for key, value in dotenv_values(path).items():
+        if key and value is not None:
+            values[key] = str(value)
+    return values
+
+
+def _load_dotenv_into_effective_env(
+    effective_env: dict[str, str],
+    raw_path: str,
+    *,
+    override: bool,
+    label: str,
+) -> Path | None:
+    """Record and merge one dotenv file into an in-memory env without mutating os.environ."""
+    cleaned_path = raw_path.strip()
+    if not cleaned_path:
+        _record_dotenv_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=None,
+            loaded=False,
+            override=override,
+            reason="empty_path",
+        )
+        return None
+
+    dotenv_path = _resolve_dotenv_path(cleaned_path)
+    if not dotenv_path.exists():
+        _record_dotenv_event(
+            label=label,
+            raw_path=raw_path,
+            resolved_path=dotenv_path,
+            loaded=False,
+            override=override,
+            reason="missing",
+        )
+        return None
+
+    parsed_values = _dotenv_values_for_reload(dotenv_path)
+    before_values = {key: effective_env.get(key) for key in parsed_values}
+    for key, value in parsed_values.items():
+        if override or key not in effective_env:
+            effective_env[key] = value
+
+    _record_dotenv_event(
+        label=label,
+        raw_path=raw_path,
+        resolved_path=dotenv_path,
+        loaded=True,
+        override=override,
+    )
+    for key in parsed_values:
+        if key not in effective_env:
+            continue
+        if override or before_values.get(key) is None:
+            if key not in _DOTENV_MANAGED_KEYS:
+                original_value = before_values.get(key)
+                if original_value is not None:
+                    _DOTENV_ORIGINAL_ENV_VALUES[key] = original_value
+            _DOTENV_MANAGED_KEYS.add(key)
+            _DOTENV_KEY_SOURCES[key] = {
+                "label": label,
+                "path": str(dotenv_path),
+                "override": override,
+            }
+    return dotenv_path
+
+
+def _dotenv_reload_baseline_environment() -> dict[str, str]:
+    """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
+    effective_env = dict(os.environ)
+    for key in tuple(_DOTENV_MANAGED_KEYS):
+        original_value = _DOTENV_ORIGINAL_ENV_VALUES.get(key)
+        if original_value is None:
+            effective_env.pop(key, None)
+        else:
+            effective_env[key] = original_value
+    return effective_env
+
+
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
@@ -1781,27 +1866,42 @@ class Config:
 
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
-    _reset_dotenv_managed_environment()
+    previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
+    effective_env = _dotenv_reload_baseline_environment()
+    _DOTENV_MANAGED_KEYS.clear()
     _DOTENV_LOAD_EVENTS.clear()
     _DOTENV_KEY_SOURCES.clear()
+
     base_path = BASE_DIR / ".env"
     advanced_path = BASE_DIR / ".env.advanced"
-    _load_dotenv_if_exists(str(base_path), override=False, label="base")
-    _load_dotenv_if_exists(str(advanced_path), override=False, label="advanced")
+    _load_dotenv_into_effective_env(effective_env, str(base_path), override=False, label="base")
+    _load_dotenv_into_effective_env(
+        effective_env, str(advanced_path), override=False, label="advanced"
+    )
 
-    selected_env = (profile or os.getenv("SIDAR_ENV", "")).strip().lower()
+    selected_env = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
     if selected_env:
-        os.environ["SIDAR_ENV"] = selected_env
-        _load_dotenv_if_exists(
+        effective_env["SIDAR_ENV"] = selected_env
+        _load_dotenv_into_effective_env(
+            effective_env,
             str(BASE_DIR / f".env.{selected_env}"),
             override=True,
             label=f"environment:{selected_env}",
         )
 
-    explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
-    _load_dotenv_if_exists(explicit_dotenv, override=True, label="explicit:DOTENV_FILE")
-    sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-    _load_dotenv_if_exists(sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
+    explicit_dotenv = effective_env.get("DOTENV_FILE", "").strip()
+    _load_dotenv_into_effective_env(
+        effective_env, explicit_dotenv, override=True, label="explicit:DOTENV_FILE"
+    )
+    sidar_keys_file = effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    _load_dotenv_into_effective_env(
+        effective_env, sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE"
+    )
+
+    removed_managed_keys = previous_managed_keys - set(effective_env)
+    for key in removed_managed_keys:
+        os.environ.pop(key, None)
+    os.environ.update(effective_env)
 
 
 def reload_environment(*, profile: str | None = None) -> "Config":

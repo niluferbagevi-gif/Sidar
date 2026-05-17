@@ -326,16 +326,61 @@ def _reload_doctor_env_source_definitions(details: dict[str, Any] | None) -> boo
     return applied
 
 
+_DATABASE_AUTO_FIX_ENV_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL", "POSTGRES_PASSWORD")
+
+
+def _reload_database_env_from_loaded_dotenv_chain() -> bool:
+    """Force Doctor auto-fixed database keys from loaded dotenv files into this process."""
+    if config_module is None or not hasattr(config_module, "get_dotenv_load_report"):
+        return False
+
+    try:
+        events = config_module.get_dotenv_load_report()
+    except Exception as exc:
+        logger.debug("Doctor auto-fix dotenv raporu okunamadı: %s", exc)
+        return False
+
+    effective_values: dict[str, str] = {}
+    applied = False
+    for event in events:
+        if not event.get("loaded"):
+            continue
+        raw_path = str(event.get("path", "") or "").strip()
+        if not raw_path:
+            continue
+        values = _parse_doctor_env_source_file(Path(raw_path).expanduser())
+        override = bool(event.get("override"))
+        for key in _DATABASE_AUTO_FIX_ENV_KEYS:
+            if key not in values:
+                continue
+            if override or key not in effective_values:
+                effective_values[key] = values[key]
+
+    for key, value in effective_values.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+            applied = True
+
+    if applied and hasattr(config_module, "Config"):
+        config_cls = config_module.Config
+        if hasattr(config_module, "get_database_url"):
+            config_cls.DATABASE_URL = config_module.get_database_url()
+        if hasattr(config_module, "get_container_database_url"):
+            config_cls.CONTAINER_DATABASE_URL = config_module.get_container_database_url()
+    return applied
+
+
 def _reload_environment_after_auto_fix(details: dict[str, Any] | None = None) -> bool:
     """Reload dotenv values in this process after a Doctor auto-fix subprocess."""
     profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
     if profile is None and _development_env_path().exists():
         profile = "development"
     config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
+    database_env_reloaded = _reload_database_env_from_loaded_dotenv_chain()
     source_reloaded = _reload_doctor_env_source_definitions(details)
-    if source_reloaded:
+    if source_reloaded or database_env_reloaded:
         print(f"{GREEN}✅ Doctor env kaynakları yeniden uygulandı.{RESET}")
-    return config_reloaded or source_reloaded
+    return config_reloaded or database_env_reloaded or source_reloaded
 
 
 def _maybe_bootstrap_development_env() -> bool:
@@ -637,6 +682,7 @@ def _run_launcher_doctor_preflight() -> None:
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
+
 
 def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""

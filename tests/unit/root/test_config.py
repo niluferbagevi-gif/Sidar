@@ -1729,6 +1729,7 @@ def test_reload_environment_refreshes_dotenv_managed_base_values(monkeypatch, tm
     assert os.environ["POSTGRES_PASSWORD"] == "new-password-1234567890"
     assert config.Config.DATABASE_URL == "postgresql://sidar:new@localhost:5432/sidar"
 
+
 def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path):
     (tmp_path / ".env.development").write_text(
         "SIDAR_ENV=development\n"
@@ -1756,3 +1757,41 @@ def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path)
     assert config.Config.WEB_PORT == 8765
     report = config.get_dotenv_load_report()
     assert any(event["label"] == "environment:development" and event["loaded"] for event in report)
+
+
+def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "DATABASE_URL=postgresql://sidar:first@localhost:5432/sidar\n"
+        "POSTGRES_PASSWORD=first-password-123456789\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+
+    config.reload_environment()
+    observed_during_second_reload = []
+    env_path.write_text(
+        "DATABASE_URL=postgresql://sidar:second@localhost:5432/sidar\n"
+        "POSTGRES_PASSWORD=second-password-12345678\n",
+        encoding="utf-8",
+    )
+    original_loader = config._load_dotenv_into_effective_env
+
+    def recording_loader(*args, **kwargs):
+        observed_during_second_reload.append(os.environ.get("DATABASE_URL"))
+        return original_loader(*args, **kwargs)
+
+    monkeypatch.setattr(config, "_load_dotenv_into_effective_env", recording_loader)
+
+    config.reload_environment()
+
+    assert observed_during_second_reload
+    assert set(observed_during_second_reload) == {"postgresql://sidar:first@localhost:5432/sidar"}
+    assert os.environ["DATABASE_URL"] == "postgresql://sidar:second@localhost:5432/sidar"
