@@ -628,23 +628,21 @@ def check_rag_readiness() -> DoctorCheck:
         "entity_node_count": entity_node_count,
         "entity_edge_count": entity_edge_count,
         "bm25_fallback": "SQLite FTS5",
-        "auto_fix": "uv run python -m scripts.seed_rag",
-        "recommended_commands": [
-            "uv run python -m scripts.seed_rag",
-            'uv run python cli.py -c "belge ekle <url>"',
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-            "docker compose ps postgres",
-        ],
     }
 
-    failures: list[str] = []
+    blockers: list[str] = []
     warnings: list[str] = []
     if vector_backend == "pgvector":
         database_check = check_database_env()
         details["database_env_status"] = database_check.status
         if database_check.status == "fail":
-            failures.append(
-                "pgvector backend is configured but database environment parity failed; semantic RAG will fall back to BM25"
+            blockers.append(
+                "pgvector backend is configured but database environment parity failed; semantic RAG is blocked until database_env is fixed"
+            )
+            details["blocked_by"] = "database_env"
+            details["database_env_message"] = database_check.message
+            details["database_env_auto_fix"] = database_check.details.get(
+                "auto_fix", "uv run python -m scripts.sync_database_passwords"
             )
     if not graph_enabled:
         warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
@@ -667,8 +665,35 @@ def check_rag_readiness() -> DoctorCheck:
             "GraphRAG entity memory is empty until documents are indexed or entity extraction runs"
         )
 
-    status = "fail" if failures else ("warn" if warnings else "pass")
-    message = "; ".join(failures or warnings or ["RAG readiness looks healthy"])
+    if blockers:
+        details["auto_fix"] = "uv run python -m scripts.sync_database_passwords"
+        details["recommended_commands"] = [
+            "uv run python -m scripts.sync_database_passwords",
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+            "docker compose ps postgres",
+        ]
+        details["follow_up_commands"] = [
+            "uv run python -m scripts.seed_rag",
+            'uv run python cli.py -c "belge ekle <url>"',
+        ]
+        status = "warn"
+        message = "; ".join(blockers + warnings)
+    elif document_count == 0:
+        details["auto_fix"] = "uv run python -m scripts.seed_rag"
+        details["recommended_commands"] = [
+            "uv run python -m scripts.seed_rag",
+            'uv run python cli.py -c "belge ekle <url>"',
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+        ]
+        status = "warn"
+        message = "; ".join(warnings)
+    else:
+        details["auto_fix"] = ""
+        details["recommended_commands"] = [
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+        ]
+        status = "warn" if warnings else "pass"
+        message = "; ".join(warnings or ["RAG readiness looks healthy"])
     return DoctorCheck("rag_readiness", status, message, details)
 
 

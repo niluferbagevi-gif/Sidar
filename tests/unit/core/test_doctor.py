@@ -441,7 +441,7 @@ def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
     assert "index file is missing" not in check.message
 
 
-def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
+def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
@@ -456,9 +456,39 @@ def test_rag_readiness_fails_when_pgvector_env_parity_fails(monkeypatch, tmp_pat
 
     check = doctor.check_rag_readiness()
 
-    assert check.status == "fail"
-    assert "database environment parity failed" in check.message
+    assert check.status == "warn"
+    assert "blocked until database_env is fixed" in check.message
     assert check.details["database_env_status"] == "fail"
+    assert check.details["blocked_by"] == "database_env"
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert (
+        "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
+    )
+    assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
+    assert "uv run python -m scripts.seed_rag" in check.details["follow_up_commands"]
+
+
+def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
+    monkeypatch, tmp_path
+):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "b" * 24 + "@localhost:5432/sidar")
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "warn"
+    assert check.details["blocked_by"] == "database_env"
+    assert check.details["auto_fix"] == "uv run python -m scripts.sync_database_passwords"
+    assert (
+        check.details["recommended_commands"][0]
+        == "uv run python -m scripts.sync_database_passwords"
+    )
+    assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
+    assert "index file is missing" in check.message
 
 
 def test_environment_profile_warns_when_development_file_is_missing(monkeypatch, tmp_path):
