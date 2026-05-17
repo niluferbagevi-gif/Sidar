@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 RUN_TESTS = Path("run_tests.sh")
 
@@ -354,13 +359,41 @@ def test_single_file_installer_fallback_downloads_all_required_modules() -> None
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "download_remote_install_module()" in script
-    assert "ensure_remote_install_modules()" in script
     assert (
-        'local -a remote_modules=("${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")'
-        in script
+        'REMOTE_INSTALL_MODULES=("install_helpers.sh" "${INSTALL_UTILITY_MODULES[@]}" '
+        '"${INSTALL_PHASE_MODULES[@]}")' in script
     )
-    assert "ensure_remote_install_modules\nvalidate_install_utility_modules" in script
-    assert "${remote_module_base%/}/${module_rel}" in script
+    assert 'for module_rel in "${REMOTE_INSTALL_MODULES[@]}"' in script
+    assert "validate_install_utility_modules\nsidar_source_install_utils" in script
+    assert "${REMOTE_MODULE_BASE%/}/${module_rel}" in script
+
+
+def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("curl") is None:
+        pytest.skip("installer fallback runtime test uses curl file:// support")
+
+    isolated_installer = tmp_path / "install_sidar.sh"
+    shutil.copy2("install_sidar.sh", isolated_installer)
+
+    env = os.environ.copy()
+    env["SIDAR_INSTALL_TEST_MODE"] = "1"
+    env["SIDAR_INSTALL_MODULE_BASE_URL"] = (
+        f"file://{Path.cwd() / 'scripts' / 'install_modules'}"
+    )
+
+    result = subprocess.run(
+        ["bash", str(isolated_installer)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Tek dosyalık kurulum için 15 modül" in result.stderr
 
 
 def test_bundled_installer_release_asset_is_documented_and_published() -> None:

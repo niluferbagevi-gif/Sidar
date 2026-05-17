@@ -160,42 +160,7 @@ sed_inplace() {
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
-if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
-    warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; modül uzaktan indirilmeyi deneyecek."
-
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    mkdir -p "$INSTALL_MODULE_DIR"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-    REMOTE_HELPERS_URL="${REMOTE_MODULE_BASE}/install_helpers.sh"
-    TMP_HELPERS_PATH="$(mktemp "${TMPDIR:-/tmp}/sidar_install_helpers.XXXXXX.sh")"
-
-    if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$REMOTE_HELPERS_URL" -o "$TMP_HELPERS_PATH"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$TMP_HELPERS_PATH" "$REMOTE_HELPERS_URL"; then
-            rm -f "$TMP_HELPERS_PATH"
-            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${REMOTE_HELPERS_URL}"
-        fi
-    else
-        rm -f "$TMP_HELPERS_PATH"
-        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
-    fi
-
-    install -m 0644 "$TMP_HELPERS_PATH" "$INSTALL_HELPERS_MODULE"
-    rm -f "$TMP_HELPERS_PATH"
-    ok "Modül indirildi ve geçici dizine kaydedildi: $INSTALL_HELPERS_MODULE"
-fi
-# shellcheck disable=SC1090
-source "$INSTALL_HELPERS_MODULE"
+REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -221,8 +186,7 @@ download_remote_install_module() {
     local module_rel="${1:-}"
     [[ -n "$module_rel" ]] || fail "İndirilecek kurulum modülü adı boş olamaz."
 
-    local remote_module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-    local remote_module_url="${remote_module_base%/}/${module_rel}"
+    local remote_module_url="${REMOTE_MODULE_BASE%/}/${module_rel}"
     local module_path="${INSTALL_MODULE_DIR}/${module_rel}"
     local tmp_module_path=""
 
@@ -230,44 +194,48 @@ download_remote_install_module() {
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX.sh")"
 
     if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
+        curl -fsSL "$remote_module_url" -o "$tmp_module_path" || {
             rm -f "$tmp_module_path"
-            fail "Gerekli kurulum modülü indirilemedi: ${remote_module_url}"
-        fi
+            return 1
+        }
     elif command -v wget &>/dev/null; then
-        if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
+        wget -qO "$tmp_module_path" "$remote_module_url" || {
             rm -f "$tmp_module_path"
-            fail "Gerekli kurulum modülü indirilemedi: ${remote_module_url}"
-        fi
+            return 1
+        }
     else
         rm -f "$tmp_module_path"
         fail "Ne curl ne de wget bulundu; kurulum modülü indirilemiyor: ${module_rel}"
     fi
 
-    install -m 0644 "$tmp_module_path" "$module_path"
+    install -m 0644 "$tmp_module_path" "$module_path" || {
+        rm -f "$tmp_module_path"
+        return 1
+    }
     rm -f "$tmp_module_path"
 }
 
-ensure_remote_install_modules() {
-    [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" ]] || return 0
+if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
+    warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
 
-    local module_rel=""
-    local downloaded_count=0
-    local module_path=""
-    local -a remote_modules=("${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+    mkdir -p "$INSTALL_MODULE_DIR"
 
-    for module_rel in "${remote_modules[@]}"; do
-        module_path="${INSTALL_MODULE_DIR}/${module_rel}"
-        if [[ ! -f "$module_path" ]]; then
-            download_remote_install_module "$module_rel"
-            downloaded_count=$((downloaded_count + 1))
+    REMOTE_INSTALL_MODULES=("install_helpers.sh" "${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")
+    for module_rel in "${REMOTE_INSTALL_MODULES[@]}"; do
+        if ! download_remote_install_module "$module_rel"; then
+            rm -rf "$INSTALL_HELPERS_TEMP_DIR"
+            fail "Gerekli kurulum modülü indirilemedi: ${REMOTE_MODULE_BASE%/}/${module_rel}"
         fi
     done
 
-    if [[ "$downloaded_count" -gt 0 ]]; then
-        ok "Tek dosyalık kurulum için ${downloaded_count} ek modül geçici dizine indirildi."
-    fi
-}
+    ok "Tek dosyalık kurulum için ${#REMOTE_INSTALL_MODULES[@]} modül geçici dizine indirildi: $INSTALL_MODULE_DIR"
+fi
+# shellcheck disable=SC1090
+source "$INSTALL_HELPERS_MODULE"
 
 validate_install_utility_modules() {
     local module_rel=""
@@ -293,7 +261,6 @@ load_install_phase_modules() {
     done
 }
 
-ensure_remote_install_modules
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 load_install_phase_modules
