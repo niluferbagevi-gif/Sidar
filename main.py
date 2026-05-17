@@ -55,6 +55,7 @@ class DummyConfig:
 
 CONFIG_IMPORT_OK = True
 logger = logging.getLogger(__name__)
+_LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 
 try:
     import config as config_module
@@ -276,12 +277,65 @@ def _reload_environment_after_bootstrap(profile: str = "development") -> bool:
     return _reload_config_environment(profile=profile, reason="Bootstrap")
 
 
-def _reload_environment_after_auto_fix() -> bool:
+def _parse_doctor_env_source_file(path: Path) -> dict[str, str]:
+    """Parse simple dotenv assignments for Doctor source reloads without logging values."""
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :]
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key or any(char.isspace() for char in key):
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _reload_doctor_env_source_definitions(details: dict[str, Any] | None) -> bool:
+    """Best-effort reload of Doctor-reported dotenv source files into ``os.environ``."""
+    if not isinstance(details, dict):
+        return False
+    definitions = details.get("env_source_definitions")
+    if not isinstance(definitions, dict):
+        return False
+
+    applied = False
+    for key, sources in definitions.items():
+        if not isinstance(key, str) or not isinstance(sources, list):
+            continue
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            raw_path = str(source.get("path", "") or "").strip()
+            if not raw_path:
+                continue
+            values = _parse_doctor_env_source_file(Path(raw_path).expanduser())
+            if key in values:
+                os.environ[key] = values[key]
+                applied = True
+    return applied
+
+
+def _reload_environment_after_auto_fix(details: dict[str, Any] | None = None) -> bool:
     """Reload dotenv values in this process after a Doctor auto-fix subprocess."""
     profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
     if profile is None and _development_env_path().exists():
         profile = "development"
-    return _reload_config_environment(profile=profile, reason="Doctor auto-fix")
+    config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
+    source_reloaded = _reload_doctor_env_source_definitions(details)
+    if source_reloaded:
+        print(f"{GREEN}✅ Doctor env kaynakları yeniden uygulandı.{RESET}")
+    return config_reloaded or source_reloaded
 
 
 def _maybe_bootstrap_development_env() -> bool:
@@ -472,6 +526,8 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
 
 def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     """Run Doctor auto-fix command(s), optionally revalidating after each successful step."""
+    global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+    _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
     details = getattr(check, "details", {}) or {}
     status = str(getattr(check, "status", "warn") or "warn")
     if status not in {"warn", "fail"} or not isinstance(details, dict):
@@ -496,7 +552,7 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
         if check_func is None:
             continue
 
-        updated_check = _revalidate_doctor_check_after_auto_fix(check_func)
+        updated_check = _revalidate_doctor_check_after_auto_fix(check_func, details)
         updated_status = str(getattr(updated_check, "status", "warn") or "warn")
         if updated_status == "pass":
             return True
@@ -504,16 +560,21 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     return ran_any
 
 
-def _revalidate_doctor_check_after_auto_fix(check_func: Any) -> Any | None:
+def _revalidate_doctor_check_after_auto_fix(
+    check_func: Any, source_details: dict[str, Any] | None = None
+) -> Any | None:
     """Run a Doctor check once after a successful auto-fix and print the result."""
-    _reload_environment_after_auto_fix()
+    global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+    _reload_environment_after_auto_fix(source_details)
     try:
         updated_check = check_func()
     except Exception as exc:  # pragma: no cover - defensive launcher path
         logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
         print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
+        _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
         return None
 
+    _LAST_DOCTOR_AUTO_FIX_REVALIDATION = updated_check
     print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
     _print_doctor_check_summary(updated_check)
     updated_status = str(getattr(updated_check, "status", "warn") or "warn")
@@ -546,20 +607,36 @@ def _run_launcher_doctor_preflight() -> None:
         return
 
     print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
-    for check_func in (
-        check_database_env,
-        check_database_connectivity,
-        check_rag_readiness,
-        check_gpu_memory_config,
-    ):
+    skip_database_dependents = False
+    skip_summary_printed = False
+    doctor_checks = (
+        ("database_env", check_database_env),
+        ("database_connectivity", check_database_connectivity),
+        ("rag_readiness", check_rag_readiness),
+        ("gpu_memory_config", check_gpu_memory_config),
+    )
+    for check_name, check_func in doctor_checks:
+        if skip_database_dependents and check_name in {"database_connectivity", "rag_readiness"}:
+            if not skip_summary_printed:
+                print(
+                    f"{YELLOW}   • Doctor/database_env hâlâ fail; "
+                    "database_connectivity ve rag_readiness kontrolleri atlandı. "
+                    f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
+                )
+                skip_summary_printed = True
+            continue
+
         try:
             check = check_func()
             _print_doctor_check_summary(check)
             _run_doctor_auto_fix(check, check_func)
+            if check_name == "database_env":
+                final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION or check
+                final_status = str(getattr(final_check, "status", "warn") or "warn")
+                skip_database_dependents = final_status == "fail"
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
-
 
 def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""

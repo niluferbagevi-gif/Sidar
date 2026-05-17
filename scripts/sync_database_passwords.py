@@ -374,9 +374,16 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
 
     changed_keys = sorted({key for keys in changed_keys_by_file.values() for key in keys})
+    no_change_guidance = (
+        "No dotenv URL changes were needed. If Doctor still reports database_env drift, "
+        "reload the launcher environment or restart the parent process before rechecking."
+        if not changed_files
+        else ""
+    )
     return {
         "env_file": str(specs[0].path),
         "changed": bool(changed_files),
+        "no_change_guidance": no_change_guidance,
         "changed_keys": changed_keys,
         "changed_files": changed_files,
         "changed_keys_by_file": changed_keys_by_file,
@@ -411,6 +418,8 @@ def main(argv: list[str] | None = None) -> int:
         print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
     else:
         print("ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr)
+        if summary.get("no_change_guidance"):
+            print(f"ℹ️ {summary['no_change_guidance']}", file=sys.stderr)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

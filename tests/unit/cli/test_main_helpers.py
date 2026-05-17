@@ -409,6 +409,78 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
     assert "password drift attempt 2" in output
 
 
+
+def test_launcher_doctor_preflight_skips_database_dependents_after_failed_database_env(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    calls = {"database_env": 0, "connectivity": 0, "rag": 0, "gpu": 0}
+
+    def _database_check() -> SimpleNamespace:
+        calls["database_env"] += 1
+        return SimpleNamespace(
+            name="database_env",
+            status="fail",
+            message="password drift",
+            details={},
+        )
+
+    def _connectivity_check() -> SimpleNamespace:
+        calls["connectivity"] += 1
+        return SimpleNamespace(name="database_connectivity", status="pass", message="ok", details={})
+
+    def _rag_check() -> SimpleNamespace:
+        calls["rag"] += 1
+        return SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={})
+
+    def _gpu_check() -> SimpleNamespace:
+        calls["gpu"] += 1
+        return SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(doctor, "check_database_env", _database_check)
+    monkeypatch.setattr(doctor, "check_database_connectivity", _connectivity_check)
+    monkeypatch.setattr(doctor, "check_rag_readiness", _rag_check)
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", _gpu_check)
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda *_args, **_kwargs: False)
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert calls == {"database_env": 1, "connectivity": 0, "rag": 0, "gpu": 1}
+    assert "database_connectivity ve rag_readiness kontrolleri atlandı" in output
+
+
+def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:old@localhost:5432/sidar")
+    monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
+
+    source_details = {
+        "env_source_definitions": {
+            "DATABASE_URL": [
+                {"label": "base", "path": str(env_file), "override": "False"},
+            ]
+        }
+    }
+
+    def _database_check() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="pass" if ":new@" in os.environ["DATABASE_URL"] else "fail",
+            message=os.environ["DATABASE_URL"],
+            details={},
+        )
+
+    updated = main._revalidate_doctor_check_after_auto_fix(_database_check, source_details)
+
+    assert updated is not None
+    assert updated.status == "pass"
+    assert os.environ["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
+
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -508,7 +580,7 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     )
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda: True)
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda *_args: True)
 
     def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
         commands.append(cmd)

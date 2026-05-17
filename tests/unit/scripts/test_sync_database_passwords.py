@@ -181,3 +181,23 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
     assert any("does not define DATABASE_URL" in warning for warning in summary["warnings"])
     assert all("s" * 24 not in warning for warning in summary["warnings"])
     assert _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1]) == "s" * 24
+
+
+def test_main_reports_no_change_guidance_for_idempotent_chain(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    env_file = tmp_path / ".env"
+    password = "a" * 24
+    env_file.write_text(
+        f"POSTGRES_PASSWORD={password}\n"
+        f"DATABASE_URL=postgresql://sidar:{password}@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    assert sync_database_passwords.main(["--env-file", str(env_file)]) == 0
+
+    captured = capsys.readouterr()
+    assert "zaten POSTGRES_PASSWORD ile uyumlu" in captured.err
+    assert "reload the launcher environment" in captured.err

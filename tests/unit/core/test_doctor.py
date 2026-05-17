@@ -222,6 +222,7 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
         "uv run python -m scripts.sync_database_passwords" in check.details["recommended_commands"]
     )
     assert "URL-encoded" in check.details["root_cause_hints"][1]
+    assert not any("Docker volume" in hint for hint in check.details["root_cause_hints"])
 
 
 def test_database_env_fails_when_local_and_container_passwords_drift_without_postgres_password(

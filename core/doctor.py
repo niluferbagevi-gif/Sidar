@@ -477,7 +477,6 @@ def check_database_env() -> DoctorCheck:
             "root_cause_hints": [
                 "DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD değerleri aynı parolayı kullanmalı",
                 "URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
-                "Mevcut PostgreSQL Docker volume eski parola ile başlatılmış olabilir",
             ],
             "remediation_steps": [
                 "uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
