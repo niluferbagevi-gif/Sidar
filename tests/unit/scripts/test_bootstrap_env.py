@@ -53,3 +53,25 @@ def test_bootstrap_profile_env_is_non_destructive_without_force(tmp_path: Path) 
 def test_bootstrap_profile_env_rejects_unsafe_profiles(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         bootstrap_env.bootstrap_profile_env("../production", project_root=tmp_path)
+
+
+def test_bootstrap_profile_env_pins_sidar_env_to_selected_profile(tmp_path: Path) -> None:
+    (tmp_path / ".env.qa.example").write_text(
+        "API_KEY=local\nSIDAR_ENV=development\n", encoding="utf-8"
+    )
+
+    summary = bootstrap_env.bootstrap_profile_env(
+        "qa", project_root=tmp_path, generate_secrets=False
+    )
+
+    assert summary["next_steps"][0] == "export SIDAR_ENV=qa"
+    assert (tmp_path / ".env.qa").read_text(encoding="utf-8") == "API_KEY=local\nSIDAR_ENV=qa\n"
+
+
+def test_render_env_template_adds_missing_sidar_env_for_isolation() -> None:
+    rendered, generated = bootstrap_env.render_env_template(
+        "API_KEY=local\n", profile="development", generate_secrets=False
+    )
+
+    assert generated == {}
+    assert rendered == "API_KEY=local\nSIDAR_ENV=development\n"

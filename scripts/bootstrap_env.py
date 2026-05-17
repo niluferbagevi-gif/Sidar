@@ -39,9 +39,14 @@ def _replace_assignment(text: str, key: str, value: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_env_template(template: str, *, generate_secrets: bool = True) -> tuple[str, dict[str, bool]]:
-    """Render a template and optionally replace local placeholder secrets."""
-    rendered = template
+def render_env_template(
+    template: str,
+    *,
+    profile: str = DEFAULT_PROFILE,
+    generate_secrets: bool = True,
+) -> tuple[str, dict[str, bool]]:
+    """Render a template, pin SIDAR_ENV, and optionally replace local placeholder secrets."""
+    rendered = _replace_assignment(template, "SIDAR_ENV", profile)
     generated: dict[str, bool] = {}
     if not generate_secrets:
         return rendered if rendered.endswith("\n") else rendered + "\n", generated
@@ -78,6 +83,7 @@ def bootstrap_profile_env(
 
     rendered, generated = render_env_template(
         source.read_text(encoding="utf-8"),
+        profile=source.stem.removeprefix(".env."),
         generate_secrets=generate_secrets,
     )
     target.write_text(rendered, encoding="utf-8")
@@ -93,6 +99,10 @@ def bootstrap_profile_env(
         "source": str(source),
         "target": str(target),
         "generated_secrets": generated,
+        "next_steps": [
+            f"export SIDAR_ENV={source.stem.removeprefix('.env.')}",
+            "uv run python -m core.doctor",
+        ],
     }
 
 
