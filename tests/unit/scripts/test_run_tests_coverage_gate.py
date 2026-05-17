@@ -359,6 +359,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 def test_single_file_installer_fallback_downloads_all_required_modules() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
+    assert "fail_missing_local_install_modules()" in script
+    assert "SIDAR_ENABLE_REMOTE_MODULE_FALLBACK" in script
     assert "download_remote_install_manifest()" in script
     assert "download_remote_install_module()" in script
     assert "verify_remote_install_module()" in script
@@ -412,6 +414,32 @@ def test_install_sidar_missing_module_errors_point_to_release_or_clone() -> None
     assert "Repo modülleri eksik; lütfen depoyu güncelleyin" not in helper
 
 
+def test_raw_single_file_installer_fails_fast_without_remote_fallback(
+    tmp_path: Path,
+) -> None:
+    isolated_installer = tmp_path / "install_sidar.sh"
+    shutil.copy2("install_sidar.sh", isolated_installer)
+
+    env = os.environ.copy()
+    env["SIDAR_INSTALL_TEST_MODE"] = "1"
+    env.pop("SIDAR_ENABLE_REMOTE_MODULE_FALLBACK", None)
+
+    result = subprocess.run(
+        ["bash", str(isolated_installer)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Raw main/install_sidar.sh tek dosya olarak desteklenmez" in result.stderr
+    assert "curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh" in result.stderr
+    assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in result.stderr
+    assert "SIDAR_ENABLE_REMOTE_MODULE_FALLBACK=1" in result.stderr
+
+
 def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
     tmp_path: Path,
 ) -> None:
@@ -423,6 +451,7 @@ def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
 
     env = os.environ.copy()
     env["SIDAR_INSTALL_TEST_MODE"] = "1"
+    env["SIDAR_ENABLE_REMOTE_MODULE_FALLBACK"] = "1"
     env["SIDAR_INSTALL_MODULE_BASE_URL"] = (
         f"file://{Path.cwd() / 'scripts' / 'install_modules'}"
     )
@@ -454,6 +483,8 @@ def test_bundled_installer_release_asset_is_documented_and_published() -> None:
     )
     assert release_url in readme
     assert release_url in modularization_note
+    assert "tek dosya olarak çalıştırıldığında eksik modül dizini için erken hata verir" in readme
+    assert "Raw `main/install_sidar.sh` tek dosya olarak desteklenmez" in modularization_note
     assert "bash scripts/tools/bundle_install_sidar.sh" in workflow
     assert "gh release upload installer-latest dist/install_sidar.sh --clobber" in workflow
     assert (

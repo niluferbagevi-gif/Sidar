@@ -16,7 +16,7 @@ Komut sonunda tek dosyalık dağıtım çıktısı:
 
 - `dist/install_sidar.sh`
 
-`dist/` çıktısı repoya commit edilmez; `.github/workflows/publish-installer.yml` ana dala gelen kurulum değişikliklerinde bundle'ı üretir, self-contained olduğunu doğrular ve `installer-latest` release asset'i olarak yayınlar. Kullanıcı dokümantasyonunda repoyu klonlamadan kurulum için `https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh` URL'si tercih edilmelidir.
+`dist/` çıktısı repoya commit edilmez; `.github/workflows/publish-installer.yml` ana dala gelen kurulum değişikliklerinde bundle'ı üretir, self-contained olduğunu doğrular ve `installer-latest` release asset'i olarak yayınlar. Kullanıcı dokümantasyonunda repoyu klonlamadan kurulum için `https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh` URL'si tercih edilmelidir. Raw `main/install_sidar.sh` tek dosya olarak desteklenmez; yerel modül dizini yoksa erken hata verir.
 
 Bu yaklaşım ile:
 

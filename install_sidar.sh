@@ -162,6 +162,8 @@ INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
 INSTALL_MODULES_MISSING_HINT="${SIDAR_INSTALL_MODULES_MISSING_HINT:-Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest üzerinden indirin veya repoyu git clone ile alın.}"
+SIDAR_BUNDLED_INSTALLER_URL="${SIDAR_BUNDLED_INSTALLER_URL:-https://github.com/niluferbagevi-gif/Sidar/releases/download/installer-latest/install_sidar.sh}"
+SIDAR_REPO_CLONE_URL="${SIDAR_REPO_CLONE_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
 INSTALL_REMOTE_MANIFEST_FILE=""
 
 INSTALL_UTILITY_MODULES=(
@@ -183,6 +185,10 @@ INSTALL_PHASE_MODULES=(
     "phases/06_services.sh"
     "phases/07_finish.sh"
 )
+
+fail_missing_local_install_modules() {
+    fail "Yerel kurulum modül dizini bulunamadı: ${INSTALL_MODULE_DIR}. Raw main/install_sidar.sh tek dosya olarak desteklenmez. Repoyu klonlamadan kurulum için: curl -fsSL ${SIDAR_BUNDLED_INSTALLER_URL} -o install_sidar.sh && chmod +x install_sidar.sh && ./install_sidar.sh . Repo tabanlı kurulum için: git clone ${SIDAR_REPO_CLONE_URL} && cd Sidar && ./install_sidar.sh . Geliştirici amaçlı doğrulanmış uzaktan modül fallback'i için SIDAR_ENABLE_REMOTE_MODULE_FALLBACK=1 ayarlayın."
+}
 
 download_remote_install_file() {
     local remote_rel="${1:-}"
@@ -281,7 +287,10 @@ download_remote_install_module() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    if [[ "${SIDAR_ENABLE_REMOTE_MODULE_FALLBACK:-0}" != "1" ]]; then
+        fail_missing_local_install_modules
+    fi
+    warn "SIDAR_ENABLE_REMOTE_MODULE_FALLBACK=1 etkin; tüm kurulum modülleri uzaktan indirilip SHA256 manifestiyle doğrulanacak."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"

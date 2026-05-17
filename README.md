@@ -459,7 +459,7 @@ chmod +x install_sidar.sh
 ./install_sidar.sh
 ```
 
-> Not: `main/install_sidar.sh` geliştirme kaynağıdır. Tek dosya olarak indirilirse betik eksik modülleri güvenli şekilde `SIDAR_INSTALL_MODULE_BASE_URL` üzerinden tamamlamayı dener; yine de dağıtım için önerilen URL bundled release asset'idir.
+> Not: `main/install_sidar.sh` geliştirme kaynağıdır ve tek dosya olarak çalıştırıldığında eksik modül dizini için erken hata verir. Tek dosya kullanımı için bundled release asset'ini indirin veya repoyu `git clone` ile alın. Yalnız geliştirici/debug amaçlı doğrulanmış uzak modül fallback'i gerekiyorsa `SIDAR_ENABLE_REMOTE_MODULE_FALLBACK=1` ve `SIDAR_INSTALL_MODULE_BASE_URL` bilinçli verilmelidir.
 > Kurulum sırasında bir hata alırsanız betik loglarını `logs/install_YYYYMMDD_HHMMSS.log` altında inceleyin.
 > En güncel log: `ls -1t logs/install_*.log | head -n 1`
 
