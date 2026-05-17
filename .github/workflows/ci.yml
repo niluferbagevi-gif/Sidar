@@ -75,7 +75,7 @@ jobs:
       - name: Install shell test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y bats
+          sudo apt-get install -y bats shellcheck
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.4.3

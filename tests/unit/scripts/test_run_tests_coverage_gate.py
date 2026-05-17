@@ -217,6 +217,7 @@ def test_ci_system_dependency_installer_provisions_shellcheck() -> None:
     assert "MISSING_PACKAGES=()" in installer
     assert 'apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
 
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -228,8 +229,7 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "run_tests.sh" in makefile
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
-    assert "sudo apt-get install -y bats" in ci_workflow
-    assert "sudo apt-get install -y shellcheck" not in ci_workflow
+    assert "sudo apt-get install -y bats shellcheck" in ci_workflow
     assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index("make lint")
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
