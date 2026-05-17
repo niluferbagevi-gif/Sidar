@@ -272,19 +272,21 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "softprops/action-gh-release@v2" in ci_workflow
     assert "files: dist/install_sidar.sh" in ci_workflow
 
+    dynamic_url = "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh"
     release_url = (
         "https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh"
     )
     assert release_url in readme
     assert release_url in modularization_note
     for content in (readme, modularization_note):
+        assert dynamic_url in content
         assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in content
         assert "uv sync --all-extras" in content
-    assert "Önerilen yöntem repo klonlamadır" in readme
-    assert "tek dosya" in modularization_note
-    assert "bu bağlamı sağlayamaz" in modularization_note
-    assert "raw repo" in modularization_note
-    assert "kökündeki modüler `install_sidar.sh`" in modularization_note
+        assert "dinamik modül" in content
+    assert "Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir" in readme
+    assert "Standart çevrimiçi kullanıcı akışında ana yöntem" in modularization_note
+    assert "Kurumsal, offline veya interneti kısıtlı" in readme
+    assert "monolitik Release bundle" in modularization_note
 
 
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:

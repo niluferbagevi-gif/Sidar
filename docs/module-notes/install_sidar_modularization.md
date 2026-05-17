@@ -22,13 +22,24 @@ Bu yaklaşım ile:
 - bakım/debug kolaylaşır,
 - dağıtımda tek dosya avantajı korunur.
 
-## Kullanıcı yönlendirmesi: önce repo klonu
+## Kullanıcı yönlendirmesi: çevrimiçi varsayılan dinamik modül indirme
 
-Tam yetkili geliştirme, QA, coverage kampanyası veya self-healing çalıştırmaları için
-önerilen yol repo klonudur. Bu akışlar `uv` kilit dosyasına, test/modül ağacına, git
-geçmişine ve patch/rollback için yazılabilir workspace'e ihtiyaç duyar; tek dosya
-installer bu bağlamı sağlayamaz. Kullanıcı yönergelerinde varsayılan yöntem şu
-şekilde verilmelidir:
+Standart çevrimiçi kullanıcı akışında ana yöntem, kök `install_sidar.sh` dosyasının
+indirilmesi ve bu betiğin eksik `scripts/install_modules/` modüllerini GitHub'dan
+dinamik olarak çekmesidir. Bu yaklaşım kurulum deneyimini tek parça bir araç gibi
+sunar; bakım tarafında ise yardımcı/faz dosyaları modüler kalır ve yeni kurulumlar
+GitHub'daki düzeltilmiş modülleri hemen alabilir:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh
+```
+
+Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya uzun
+coverage kampanyaları için repo klonu ayrıca desteklenir ve bu senaryolarda daha
+uygun çalışma şeklidir:
 
 ```bash
 git clone https://github.com/niluferbagevi-gif/Sidar.git
@@ -37,12 +48,10 @@ uv sync --all-extras
 ./install_sidar.sh
 ```
 
-## Standalone dağıtım sözleşmesi
+## Standalone / offline dağıtım sözleşmesi
 
-Kullanıcılar repo olmadan `wget`/`curl` ile tek dosyalık kurulum yapacaksa bu yol
-yalnız bootstrap/son kullanıcı kurulumu olarak sunulmalı; hedef dosya raw repo
-kökündeki modüler `install_sidar.sh` değil, CI tarafından üretilen release bundle
-artefaktı olmalıdır:
+Kurumsal, offline veya interneti kısıtlı ortamlarda ağdan modül indiren varsayılan
+yol yerine CI tarafından üretilen monolitik Release bundle artefaktı kullanılmalıdır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
@@ -56,7 +65,6 @@ komutunu çalıştırır, `dist/install_sidar.sh` dosyasını syntax-check'ten g
 `standalone-install-sidar` artefaktı olarak yükler ve `v*` tag release'lerinde aynı
 dosyayı GitHub Release asset'i olarak yayınlar.
 
-Raw modüler `install_sidar.sh` içinde uzak modülleri indiren fallback korunur; ancak
-standalone kullanımda tercih edilen yol release bundle artefaktıdır. Böylece kök betik
-ile `scripts/install_modules/` içeriğinin ayrı ayrı indirilmesi veya versiyon drift'i
-riski kullanıcıya yansıtılmaz.
+Böylece hibrit dağıtım korunur: çevrimiçi standart kullanıcılar dinamik modül
+indiren kök betiği kullanır; kurumsal/offline kullanıcılar ise modül indirme ihtiyacı
+olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
