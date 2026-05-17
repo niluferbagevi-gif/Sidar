@@ -407,7 +407,21 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        warnings.append("DATABASE_URL is not set; database readiness cannot be fully verified")
+        if postgres_password:
+            # Contradictory state: POSTGRES_PASSWORD survived but DATABASE_URL
+            # is empty. This typically means the URL was lost during an env
+            # reload (e.g. a Doctor auto-fix that popped a dotenv-managed key
+            # without re-applying the chain). Treat as a fail so re-validation
+            # cannot mask the regression as a soft warning.
+            failures.append(
+                "DATABASE_URL is not set while POSTGRES_PASSWORD is; URL was likely lost "
+                "during env reload. Re-run the auto-fix to apply the snapshot or restart "
+                "the launcher to repopulate the dotenv chain."
+            )
+        else:
+            warnings.append(
+                "DATABASE_URL is not set; database readiness cannot be fully verified"
+            )
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",

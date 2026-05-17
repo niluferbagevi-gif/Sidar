@@ -178,9 +178,120 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
         "DATABASE_URL": "missing",
         "SIDAR_CONTAINER_DATABASE_URL": "missing",
     }
-    assert any("does not define DATABASE_URL" in warning for warning in summary["warnings"])
-    assert all("s" * 24 not in warning for warning in summary["warnings"])
+    # "missing" in an override file that also defines POSTGRES_PASSWORD is now an
+    # informational note rather than a warning, so the loud warnings list stays
+    # focused on actionable items.
+    assert summary["warnings"] == []
+    assert any("DATABASE_URL" in note for note in summary["notes"])
+    assert any("DATABASE_URL" in note for note in secret_summary["notes"])
+    assert all("s" * 24 not in note for note in summary["notes"])
     assert _password_from(base_env.read_text(encoding="utf-8").split("DATABASE_URL=", 1)[1]) == "s" * 24
+
+
+def test_main_writes_effective_env_snapshot_for_caller(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    env_file = tmp_path / ".env"
+    password = "x" * 24
+    env_file.write_text(
+        f"POSTGRES_PASSWORD={password}\n"
+        "POSTGRES_USER=sidar\n"
+        "POSTGRES_DB=sidar\n"
+        "POSTGRES_HOST=localhost\n"
+        f"DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
+        f"SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:old@postgres:5432/sidar\n",
+        encoding="utf-8",
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+
+    assert (
+        sync_database_passwords.main(
+            ["--env-file", str(env_file), "--snapshot-out", str(snapshot_path)]
+        )
+        == 0
+    )
+
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["env"]["DATABASE_URL"] == f"postgresql://sidar:{password}@localhost:5432/sidar"
+    assert snapshot["env"]["SIDAR_CONTAINER_DATABASE_URL"] == (
+        f"postgresql://sidar:{password}@postgres:5432/sidar"
+    )
+    assert snapshot["env"]["POSTGRES_PASSWORD"] == password
+    assert snapshot["env"]["POSTGRES_USER"] == "sidar"
+    assert snapshot["critical_warnings"] == []
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["snapshot_out"] == str(snapshot_path)
+    assert "DATABASE_URL" in summary["snapshot_keys"]
+
+
+def test_sync_env_chain_keeps_warnings_focused_on_critical_signals(
+    monkeypatch, tmp_path
+) -> None:
+    """Missing keys in mid-chain files become notes; effective drift stays in warnings."""
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    secret_file = tmp_path / "keys.env"
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(secret_file))
+
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        "POSTGRES_PASSWORD=" + "a" * 24 + "\n"
+        "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    advanced_env = tmp_path / ".env.advanced"
+    # advanced does not define POSTGRES_PASSWORD and does not override URLs.
+    # Previously this produced "does not define DATABASE_URL" noise; now suppressed.
+    advanced_env.write_text("UNRELATED_SETTING=value\n", encoding="utf-8")
+    # Secret file defines a different POSTGRES_PASSWORD but no URLs — the kind
+    # of case that legitimately deserves an info note (override + has password).
+    secret_file.write_text("POSTGRES_PASSWORD=" + "s" * 24 + "\n", encoding="utf-8")
+
+    summary = sync_database_passwords.sync_env_chain(base_env)
+
+    # advanced is informational silence (not override, no password) — must not
+    # appear in either warnings or notes.
+    assert not any(".env.advanced" in note for note in summary["notes"])
+    assert not any(".env.advanced" in warning for warning in summary["warnings"])
+    # secret keys file is the legitimate info note case.
+    assert any("secret:SIDAR_KEYS_FILE" in note for note in summary["notes"])
+    # No actionable misconfiguration → warnings list stays empty.
+    assert summary["warnings"] == []
+    assert summary["critical_warnings"] == []
+
+
+def test_sync_env_chain_marks_effective_password_mismatch_as_critical(
+    monkeypatch, tmp_path
+) -> None:
+    """When the parent process env leaves the effective URL with the wrong password, severity=critical."""
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    # Sync rewrites dotenv files but it does not (and should not) touch the
+    # parent process env, so a stale DATABASE_URL exported in the shell that
+    # disagrees with POSTGRES_PASSWORD is the canonical "real drift" case.
+    monkeypatch.setenv("POSTGRES_PASSWORD", "s" * 24)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:wrongpwd@localhost:5432/sidar")
+
+    base_env = tmp_path / ".env"
+    base_env.write_text("UNRELATED_SETTING=value\n", encoding="utf-8")
+
+    summary = sync_database_passwords.sync_env_chain(base_env)
+
+    assert summary["critical_warnings"], summary
+    assert any(
+        item.get("severity") == "critical"
+        and "Effective DATABASE_URL password still differs" in item.get("message", "")
+        for item in summary["warning_details"]
+    )
+    # All critical messages must also surface in the flat warnings list so
+    # callers that only consume warnings still see them.
+    for critical in summary["critical_warnings"]:
+        assert critical in summary["warnings"]
 
 
 def test_main_reports_no_change_guidance_for_idempotent_chain(monkeypatch, tmp_path, capsys) -> None:

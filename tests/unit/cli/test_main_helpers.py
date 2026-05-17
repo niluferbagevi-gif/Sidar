@@ -481,6 +481,61 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     assert updated.status == "pass"
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
 
+def test_revalidate_doctor_auto_fix_flags_regression_when_set_flag_becomes_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Status improvement (fail → warn) must not mask a key that became unset."""
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda *_args: True)
+
+    previous_details = {
+        "database_url_set": True,
+        "postgres_password_set": True,
+        "auto_fix": "uv run python -m scripts.sync_database_passwords",
+    }
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="warn",
+            message="DATABASE_URL is not set; database readiness cannot be fully verified",
+            details={"database_url_set": False, "postgres_password_set": True},
+        )
+
+    updated = main._revalidate_doctor_check_after_auto_fix(_check_func, previous_details)
+
+    assert updated is not None
+    output = capsys.readouterr().out
+    assert "REGRESYON" in output
+    assert "DATABASE_URL" in output
+    # "düzeltti" success messaging must not appear when there is a regression.
+    assert "kontrolünü düzeltti" not in output
+    assert "kontrolünü yeniden çalıştırdı" not in output
+    assert "regresyon yarattı" in output
+
+
+def test_revalidate_doctor_auto_fix_no_regression_when_pre_flag_was_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Don't flag regression when the field was already unset before the auto-fix."""
+    monkeypatch.setattr(main, "_reload_environment_after_auto_fix", lambda *_args: True)
+
+    previous_details = {"database_url_set": False, "postgres_password_set": True}
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(
+            name="database_env",
+            status="pass",
+            message="database environment looks secure",
+            details={"database_url_set": True, "postgres_password_set": True},
+        )
+
+    main._revalidate_doctor_check_after_auto_fix(_check_func, previous_details)
+
+    output = capsys.readouterr().out
+    assert "REGRESYON" not in output
+    assert "kontrolünü düzeltti" in output
+
+
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -509,6 +564,103 @@ def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     assert updated is not None
     assert updated.status == "pass"
     assert reload_calls == [(None, "Doctor auto-fix")]
+
+
+def test_doctor_auto_fix_applies_sync_env_snapshot_after_subprocess(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:old@localhost:5432/sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "old-password-1234567890")
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        flag_index = cmd.index("--snapshot-out")
+        snapshot_path = Path(cmd[flag_index + 1])
+        snapshot_path.write_text(
+            '{"DATABASE_URL": "postgresql://sidar:new@localhost:5432/sidar",'
+            ' "POSTGRES_PASSWORD": "new-password-1234567890"}',
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    captured_status: dict[str, str] = {}
+
+    def _check_func() -> SimpleNamespace:
+        captured_status["DATABASE_URL"] = os.environ.get("DATABASE_URL", "")
+        captured_status["POSTGRES_PASSWORD"] = os.environ.get("POSTGRES_PASSWORD", "")
+        return SimpleNamespace(name="database_env", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+    monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
+    monkeypatch.setattr(main, "_reload_doctor_env_source_definitions", lambda *_args: False)
+
+    assert main._run_doctor_auto_fix(check, _check_func) is True
+    assert captured_status["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
+    assert captured_status["POSTGRES_PASSWORD"] == "new-password-1234567890"
+
+
+def test_doctor_auto_fix_surfaces_critical_warnings_from_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
+    monkeypatch.setattr(main, "_reload_doctor_env_source_definitions", lambda *_args: False)
+    # Track DATABASE_URL via monkeypatch.setenv so the snapshot application
+    # below is rolled back at teardown and does not leak into other tests
+    # (monkeypatch.delenv on an absent key does not register a rollback).
+    monkeypatch.setenv("DATABASE_URL", "")
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        flag_index = cmd.index("--snapshot-out")
+        snapshot_path = Path(cmd[flag_index + 1])
+        snapshot_path.write_text(
+            '{"env": {"DATABASE_URL": "postgresql://sidar:new@localhost:5432/sidar"},'
+            ' "critical_warnings": ["Effective DATABASE_URL password still differs"]}',
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    def _check_func() -> SimpleNamespace:
+        return SimpleNamespace(name="database_env", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check, _check_func) is True
+    output = capsys.readouterr().out
+    assert "Kritik uyarı (severity=critical)" in output
+    assert "Effective DATABASE_URL password still differs" in output
+
+
+def test_doctor_auto_fix_cleans_up_snapshot_when_subprocess_fails(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot_paths: list[Path] = []
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        flag_index = cmd.index("--snapshot-out")
+        snapshot_paths.append(Path(cmd[flag_index + 1]))
+        return SimpleNamespace(returncode=2)
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert (
+        main._run_doctor_auto_fix_command("uv run python -m scripts.sync_database_passwords")
+        is False
+    )
+    assert snapshot_paths and not snapshot_paths[0].exists()
+    assert not main._PENDING_AUTO_FIX_ENV_SNAPSHOTS
 
 
 def test_doctor_auto_fix_runs_seed_command_in_subprocess(
@@ -556,7 +708,11 @@ def test_doctor_auto_fix_uses_subprocess_for_other_commands(
     monkeypatch.setattr(main.subprocess, "run", _run)
 
     assert main._run_doctor_auto_fix(check) is True
-    assert seen["cmd"] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
+    cmd = seen["cmd"]
+    assert isinstance(cmd, list)
+    assert cmd[:5] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
+    assert cmd[5] == "--snapshot-out"
+    assert cmd[6].endswith(".json")
     assert seen["kwargs"]["env"]["SIDAR_CONFIG_QUIET"] == "true"
     assert "Auto-fix tamamlandı" in capsys.readouterr().out
 
@@ -597,10 +753,11 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     monkeypatch.setattr(main.subprocess, "run", _run)
 
     assert main._run_doctor_auto_fix(check, _check_func) is True
-    assert commands == [
-        ["uv", "run", "python", "-m", "scripts.sync_database_passwords"],
-        ["uv", "run", "python", "-m", "scripts.seed_rag"],
-    ]
+    assert len(commands) == 2
+    assert commands[0][:5] == ["uv", "run", "python", "-m", "scripts.sync_database_passwords"]
+    assert commands[0][5] == "--snapshot-out"
+    assert commands[0][6].endswith(".json")
+    assert commands[1] == ["uv", "run", "python", "-m", "scripts.seed_rag"]
     assert revalidation_calls["count"] == 2
     output = capsys.readouterr().out
     assert "scripts.unused_follow_up" not in output

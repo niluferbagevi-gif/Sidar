@@ -326,6 +326,24 @@ def _reload_doctor_env_source_definitions(details: dict[str, Any] | None) -> boo
     return applied
 
 
+def _refresh_config_database_attributes_from_environment() -> None:
+    """Refresh Config DB attributes from os.environ without re-running the dotenv chain."""
+    if config_module is None:
+        return
+    config_cls = getattr(config_module, "Config", None)
+    get_database_url = getattr(config_module, "get_database_url", None)
+    get_container_database_url = getattr(config_module, "get_container_database_url", None)
+    if config_cls is None or not callable(get_database_url) or not callable(
+        get_container_database_url
+    ):
+        return
+    try:
+        config_cls.DATABASE_URL = get_database_url()
+        config_cls.CONTAINER_DATABASE_URL = get_container_database_url()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Snapshot sonrası Config DATABASE_URL refresh başarısız: %s", exc)
+
+
 def _reload_environment_after_auto_fix(details: dict[str, Any] | None = None) -> bool:
     """Reload dotenv values in this process after a Doctor auto-fix subprocess."""
     profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
@@ -335,7 +353,15 @@ def _reload_environment_after_auto_fix(details: dict[str, Any] | None = None) ->
     source_reloaded = _reload_doctor_env_source_definitions(details)
     if source_reloaded:
         print(f"{GREEN}✅ Doctor env kaynakları yeniden uygulandı.{RESET}")
-    return config_reloaded or source_reloaded
+    # Auto-fix subprocess snapshots are the authoritative effective values
+    # (they reflect the full dotenv chain after the script wrote its updates),
+    # so apply them last to override anything stale the chain reload may have
+    # produced when DATABASE_URL is derived rather than stored verbatim.
+    snapshot_applied = _apply_auto_fix_env_snapshots()
+    if snapshot_applied:
+        _refresh_config_database_attributes_from_environment()
+        print(f"{GREEN}✅ Auto-fix env snapshot launcher process'ine uygulandı.{RESET}")
+    return config_reloaded or source_reloaded or snapshot_applied
 
 
 def _maybe_bootstrap_development_env() -> bool:
@@ -499,12 +525,98 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     return []
 
 
+_PENDING_AUTO_FIX_ENV_SNAPSHOTS: list[Path] = []
+_AUTO_FIX_SNAPSHOT_MODULES: frozenset[str] = frozenset({"scripts.sync_database_passwords"})
+
+
+def _auto_fix_snapshot_module(cmd: list[str]) -> str | None:
+    """Return the sync module name if the auto-fix runs a snapshot-aware script."""
+    for index, token in enumerate(cmd):
+        if token == "-m" and index + 1 < len(cmd):
+            module = cmd[index + 1]
+            if module in _AUTO_FIX_SNAPSHOT_MODULES:
+                return module
+    return None
+
+
+def _prepare_auto_fix_snapshot(cmd: list[str]) -> tuple[list[str], Path | None]:
+    """Augment a snapshot-aware auto-fix command with ``--snapshot-out`` and return the path."""
+    module = _auto_fix_snapshot_module(cmd)
+    if module is None:
+        return cmd, None
+    if any(token == "--snapshot-out" or token.startswith("--snapshot-out=") for token in cmd):
+        return cmd, None
+
+    import tempfile
+
+    fd, snapshot_path = tempfile.mkstemp(prefix="sidar_auto_fix_env_", suffix=".json")
+    os.close(fd)
+    return [*cmd, "--snapshot-out", snapshot_path], Path(snapshot_path)
+
+
+def _split_auto_fix_snapshot_payload(
+    payload: object,
+) -> tuple[dict[str, str], list[str]]:
+    """Return (env_values, critical_warnings) from either flat or structured snapshots."""
+    if not isinstance(payload, dict):
+        return {}, []
+
+    raw_env = payload.get("env") if "env" in payload else payload
+    env_values: dict[str, str] = {}
+    if isinstance(raw_env, dict):
+        for key, value in raw_env.items():
+            if isinstance(key, str) and isinstance(value, str) and key:
+                env_values[key] = value
+
+    critical_warnings: list[str] = []
+    raw_warnings = payload.get("critical_warnings") if "env" in payload else None
+    if isinstance(raw_warnings, list):
+        critical_warnings = [item for item in raw_warnings if isinstance(item, str) and item]
+
+    return env_values, critical_warnings
+
+
+def _apply_auto_fix_env_snapshots() -> bool:
+    """Apply queued effective env snapshots to ``os.environ`` and clean their files up."""
+    if not _PENDING_AUTO_FIX_ENV_SNAPSHOTS:
+        return False
+
+    applied_any = False
+    critical_warnings: list[str] = []
+    for snapshot_path in list(_PENDING_AUTO_FIX_ENV_SNAPSHOTS):
+        try:
+            raw_text = snapshot_path.read_text(encoding="utf-8")
+            payload = json.loads(raw_text) if raw_text.strip() else {}
+        except (OSError, ValueError) as exc:
+            logger.warning("Auto-fix env snapshot okunamadı (%s): %s", snapshot_path, exc)
+            payload = {}
+
+        env_values, snapshot_warnings = _split_auto_fix_snapshot_payload(payload)
+        for key, value in env_values.items():
+            os.environ[key] = value
+            applied_any = True
+        critical_warnings.extend(snapshot_warnings)
+
+        try:
+            snapshot_path.unlink()
+        except OSError:
+            pass
+
+    _PENDING_AUTO_FIX_ENV_SNAPSHOTS.clear()
+
+    for warning in critical_warnings:
+        print(f"{RED}   • Kritik uyarı (severity=critical): {warning}{RESET}")
+
+    return applied_any
+
+
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     """Run one Doctor auto-fix command without invoking a shell."""
     cmd = shlex.split(auto_fix)
     if not cmd:
         return False
 
+    cmd, snapshot_path = _prepare_auto_fix_snapshot(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:
         completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
@@ -513,13 +625,30 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     except OSError as exc:
         logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
         print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
+        if snapshot_path is not None:
+            try:
+                snapshot_path.unlink()
+            except OSError:
+                pass
         return False
     returncode = int(completed.returncode)
 
     if returncode == 0:
+        if snapshot_path is not None and snapshot_path.is_file():
+            _PENDING_AUTO_FIX_ENV_SNAPSHOTS.append(snapshot_path)
+        elif snapshot_path is not None:
+            try:
+                snapshot_path.unlink()
+            except OSError:
+                pass
         print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
         return True
 
+    if snapshot_path is not None:
+        try:
+            snapshot_path.unlink()
+        except OSError:
+            pass
     print(f"{YELLOW}   • Auto-fix {returncode} koduyla tamamlandı.{RESET}")
     return False
 
@@ -560,6 +689,38 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     return ran_any
 
 
+def _detect_doctor_auto_fix_regressions(
+    previous_details: dict[str, Any] | None, updated_check: Any
+) -> list[str]:
+    """Return human-readable regression notes when an auto-fix made things worse.
+
+    The Doctor checks publish ``*_set`` boolean flags in ``details`` (for
+    example ``database_url_set``). If a key was ``True`` before the auto-fix
+    and ``False`` after, the env reload dropped state the auto-fix had no
+    business clearing; surface that explicitly even when the overall status
+    superficially improved (fail → warn).
+    """
+    if not isinstance(previous_details, dict):
+        return []
+    updated_details = getattr(updated_check, "details", {}) or {}
+    if not isinstance(updated_details, dict):
+        return []
+
+    regressions: list[str] = []
+    for key, prev_value in previous_details.items():
+        if not isinstance(key, str) or not key.endswith("_set"):
+            continue
+        if prev_value is not True:
+            continue
+        if updated_details.get(key) is False:
+            label = key[: -len("_set")].upper()
+            regressions.append(
+                f"{label} auto-fix öncesi set idi, sonrasında boş; auto-fix env reload "
+                "sırasında değeri kaybetmiş olabilir."
+            )
+    return regressions
+
+
 def _revalidate_doctor_check_after_auto_fix(
     check_func: Any, source_details: dict[str, Any] | None = None
 ) -> Any | None:
@@ -577,9 +738,22 @@ def _revalidate_doctor_check_after_auto_fix(
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = updated_check
     print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
     _print_doctor_check_summary(updated_check)
+
+    regressions = _detect_doctor_auto_fix_regressions(source_details, updated_check)
+    for regression in regressions:
+        print(f"{RED}   • REGRESYON: {regression}{RESET}")
+
     updated_status = str(getattr(updated_check, "status", "warn") or "warn")
     updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
-    if updated_status == "fail":
+    if regressions:
+        # Even if the status nominally improved (fail → warn), a state
+        # regression means auto-fix is not a real fix; flag it loudly so the
+        # user does not move on thinking the issue is resolved.
+        print(
+            f"{RED}   • Auto-fix Doctor/{updated_name} kontrolünde regresyon yarattı; "
+            f"yukarıdaki REGRESYON satırlarını inceleyin ve manuel doğrulama yapın.{RESET}"
+        )
+    elif updated_status == "fail":
         print(
             f"{RED}   • Auto-fix Doctor/{updated_name} sorununu gideremedi; "
             f"yukarıdaki önerileri manuel uygulayın.{RESET}"

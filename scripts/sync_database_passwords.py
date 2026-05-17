@@ -21,9 +21,22 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 DATABASE_URL_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+# Keys whose post-sync effective values the launcher re-applies to its own
+# os.environ. POSTGRES_* helpers are included so config.get_database_url can
+# rebuild a derived DSN when DATABASE_URL is not stored verbatim in any file.
+SNAPSHOT_KEYS = (
+    "DATABASE_URL",
+    "SIDAR_CONTAINER_DATABASE_URL",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_CONTAINER_HOST",
+)
 ENV_CHAIN_KEYS = (
     *DATABASE_URL_KEYS,
-    "POSTGRES_PASSWORD",
+    *SNAPSHOT_KEYS,
     "SIDAR_ENV",
     "DOTENV_FILE",
     "SIDAR_KEYS_FILE",
@@ -260,40 +273,62 @@ def _effective_postgres_password(specs: list[EnvFileSpec]) -> str:
     return _effective_env_from_specs(specs).get("POSTGRES_PASSWORD", "")
 
 
-def _file_skip_warnings(
+def _file_skip_diagnostics(
     *,
     spec: EnvFileSpec,
     assignments: dict[str, EnvAssignment],
     skipped: dict[str, str],
-) -> list[str]:
-    """Explain skipped URL keys without exposing secret values."""
-    warnings: list[str] = []
+) -> dict[str, list[dict[str, str]]]:
+    """Classify skipped URL keys into actionable warnings and informational notes.
+
+    "missing" is the expected case for chained dotenv files since a single file
+    typically owns each URL, so it is treated as an informational note (and
+    only emitted when the same file also defines POSTGRES_PASSWORD or carries
+    the override flag, where the absence is unusual enough to mention).
+    Genuine misconfigurations (non-postgres URLs or missing usernames) remain
+    warnings so they stand out.
+    """
+    diagnostics: dict[str, list[dict[str, str]]] = {"warnings": [], "notes": []}
     if not skipped:
-        return warnings
+        return diagnostics
 
     defines_password = bool(assignments.get("POSTGRES_PASSWORD"))
     for key, reason in skipped.items():
-        if reason == "missing" and (spec.override or defines_password):
-            warnings.append(
-                f"{spec.label} does not define {key}; an earlier dotenv file must provide "
-                "the effective PostgreSQL URL. If Doctor still reports password drift, "
-                "check this file for unsupported multiline or malformed dotenv syntax."
+        if reason == "missing":
+            if spec.override and defines_password:
+                diagnostics["notes"].append(
+                    {
+                        "severity": "info",
+                        "message": (
+                            f"{spec.label} defines POSTGRES_PASSWORD but not {key}; an earlier "
+                            "dotenv file is expected to provide the effective PostgreSQL URL. "
+                            "Only investigate if Doctor still reports password drift."
+                        ),
+                    }
+                )
+            continue
+        if reason == "not_postgresql_or_missing_username":
+            diagnostics["warnings"].append(
+                {
+                    "severity": "warning",
+                    "message": (
+                        f"{spec.label} defines {key}, but it is not a PostgreSQL URL with a "
+                        "username; password synchronization skipped that key."
+                    ),
+                }
             )
-        elif reason == "not_postgresql_or_missing_username":
-            warnings.append(
-                f"{spec.label} defines {key}, but it is not a PostgreSQL URL with a username; "
-                "password synchronization skipped that key."
-            )
-    return warnings
+    return diagnostics
 
 
-def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[str]:
-    """Validate effective URL passwords after syncing all files."""
+def _effective_url_validation_diagnostics(
+    effective_env: dict[str, str],
+) -> list[dict[str, str]]:
+    """Validate effective URL passwords after syncing all files (critical severity)."""
     postgres_password = effective_env.get("POSTGRES_PASSWORD", "")
     if not postgres_password:
         return []
 
-    warnings: list[str] = []
+    diagnostics: list[dict[str, str]] = []
     for key in DATABASE_URL_KEYS:
         raw_url = effective_env.get(key, "").strip()
         if not raw_url:
@@ -303,11 +338,16 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[st
             continue
         url_password = unquote(parsed.password or "")
         if url_password != postgres_password:
-            warnings.append(
-                f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
-                "check later dotenv overrides or unsupported dotenv syntax."
+            diagnostics.append(
+                {
+                    "severity": "critical",
+                    "message": (
+                        f"Effective {key} password still differs from POSTGRES_PASSWORD after "
+                        "sync; check later dotenv overrides or unsupported dotenv syntax."
+                    ),
+                }
             )
-    return warnings
+    return diagnostics
 
 
 def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
@@ -318,6 +358,20 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     if updated != original:
         env_file.write_text(updated, encoding="utf-8")
     return {"env_file": str(env_file), **summary}
+
+
+def _effective_snapshot(specs: list[EnvFileSpec]) -> dict[str, str]:
+    """Resolve only the keys the launcher re-applies after a Doctor auto-fix."""
+    effective_env = _effective_env_from_specs(specs)
+    return {key: effective_env[key] for key in SNAPSHOT_KEYS if key in effective_env}
+
+
+def _write_effective_snapshot(path: Path, snapshot: dict[str, str]) -> None:
+    """Write the effective env snapshot atomically so the launcher reads a complete file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
@@ -332,7 +386,8 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     file_summaries: list[dict[str, Any]] = []
     changed_files: list[str] = []
     changed_keys_by_file: dict[str, list[str]] = {}
-    warnings: list[str] = []
+    warning_details: list[dict[str, str]] = []
+    notes: list[str] = []
     for spec in specs:
         if not spec.path.is_file():
             skipped = {key: "file_missing" for key in DATABASE_URL_KEYS}
@@ -345,6 +400,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
                     "changed_keys": [],
                     "skipped": skipped,
                     "warnings": [],
+                    "notes": [],
                 }
             )
             continue
@@ -352,10 +408,13 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         original = spec.path.read_text(encoding="utf-8")
         assignments = _parse_env_text(original)
         updated, summary = _sync_env_text_with_password(original, postgres_password)
-        file_warnings = _file_skip_warnings(
+        diagnostics = _file_skip_diagnostics(
             spec=spec, assignments=assignments, skipped=summary["skipped"]
         )
-        warnings.extend(file_warnings)
+        file_warning_messages = [item["message"] for item in diagnostics["warnings"]]
+        file_note_messages = [item["message"] for item in diagnostics["notes"]]
+        warning_details.extend(diagnostics["warnings"])
+        notes.extend(file_note_messages)
         if updated != original:
             spec.path.write_text(updated, encoding="utf-8")
             changed_files.append(str(spec.path))
@@ -366,12 +425,19 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
                 "env_file": str(spec.path),
                 "exists": True,
                 **summary,
-                "warnings": file_warnings,
+                "warnings": file_warning_messages,
+                "notes": file_note_messages,
             }
         )
 
     effective_env_after_sync = _effective_env_from_specs(specs)
-    warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
+    critical_diagnostics = _effective_url_validation_diagnostics(effective_env_after_sync)
+    warning_details.extend(critical_diagnostics)
+
+    warnings = [item["message"] for item in warning_details]
+    critical_warnings = [
+        item["message"] for item in warning_details if item.get("severity") == "critical"
+    ]
 
     changed_keys = sorted({key for keys in changed_keys_by_file.values() for key in keys})
     no_change_guidance = (
@@ -391,6 +457,9 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
         "checked_keys": list(DATABASE_URL_KEYS),
         "postgres_password_set": True,
         "warnings": warnings,
+        "warning_details": warning_details,
+        "critical_warnings": critical_warnings,
+        "notes": notes,
         "file_summaries": file_summaries,
     }
 
@@ -403,6 +472,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--env-file", default=str(DEFAULT_ENV_FILE), help="Güncellenecek env dosyası"
     )
+    parser.add_argument(
+        "--snapshot-out",
+        default="",
+        help=(
+            "Sync sonrası etkin DB ortam değişkenlerini JSON dosyasına yaz "
+            "(launcher os.environ'a doğrudan uygulasın)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -413,6 +490,18 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
+
+    snapshot_path = args.snapshot_out.strip()
+    if snapshot_path:
+        specs = discover_env_chain(Path(args.env_file))
+        snapshot_env = _effective_snapshot(specs)
+        snapshot_payload = {
+            "env": snapshot_env,
+            "critical_warnings": list(summary.get("critical_warnings", [])),
+        }
+        _write_effective_snapshot(Path(snapshot_path).expanduser(), snapshot_payload)
+        summary["snapshot_out"] = str(Path(snapshot_path).expanduser())
+        summary["snapshot_keys"] = sorted(snapshot_env.keys())
 
     if summary.get("changed"):
         print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
