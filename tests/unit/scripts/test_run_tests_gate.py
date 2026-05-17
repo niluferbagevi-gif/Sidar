@@ -9,9 +9,7 @@ RUN_TESTS = Path("run_tests.sh")
 
 # `uv tool install` çağrılarını yakala ve hangi paketi kurduklarını çıkar.
 # Sadece pyright fallback'i (proje sync'i ile gelmeyen LSP) izinli.
-_UV_TOOL_INSTALL_RE = re.compile(
-    r"uv\s+tool\s+install\s+(?:--[^\s]+\s+)*([A-Za-z0-9_.\-]+)"
-)
+_UV_TOOL_INSTALL_RE = re.compile(r"uv\s+tool\s+install\s+(?:--[^\s]+\s+)*([A-Za-z0-9_.\-]+)")
 _UV_TOOL_INSTALL_ALLOWLIST = frozenset({"pyright"})
 
 
