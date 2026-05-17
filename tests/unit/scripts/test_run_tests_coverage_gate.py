@@ -48,14 +48,16 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert 'find .benchmarks -type f -name "*.json"' in script
     assert 'BENCHMARK_COMPARE_FILE="${latest_file}"' in script
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
-    assert 'BASH_REMATCH' not in script[script.index("resolve_benchmark_compare_target()") :]
+    assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
-def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> None:
+def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> (
+    None
+):
     env_advanced = Path(".env.advanced").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
@@ -113,9 +115,10 @@ def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
 
     assert "ensure_env_file_secrets_after_uv_sync" in script
     assert 'ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."' in script
-    assert "ensure_env_file_secrets_after_uv_sync" in script[
-        script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")
-    ]
+    assert (
+        "ensure_env_file_secrets_after_uv_sync"
+        in script[script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")]
+    )
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
 
@@ -134,9 +137,9 @@ def test_install_sidar_uses_central_known_weak_secret_list() -> None:
     assert "is_known_weak_secret_value" in script
     assert "is_env_example_secret_value" in script
     assert "known_weak_secrets.txt" in script
-    assert "is_weak_secret_value \"$val\" && return 0" in script
-    assert "is_known_weak_secret_value \"$key\" \"$val\" && return 0" in script
-    assert "is_env_example_secret_value \"$key\" \"$val\" && return 0" in script
+    assert 'is_weak_secret_value "$val" && return 0' in script
+    assert 'is_known_weak_secret_value "$key" "$val" && return 0' in script
+    assert 'is_env_example_secret_value "$key" "$val" && return 0' in script
 
     for line in known_weak.splitlines():
         if not line or line.startswith("#") or "=" not in line:
@@ -171,16 +174,23 @@ def test_install_sidar_uses_entropy_checker_for_database_password_hardening() ->
 
 def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
-    recovery_start = script.index("warn \"Stash apply sırasında çakışma oluştu")
-    recovery_block = script[recovery_start : script.index("SCRIPT_DIR=\"$TARGET_DIR\"", recovery_start)]
+    recovery_start = script.index('warn "Stash apply sırasında çakışma oluştu')
+    recovery_block = script[
+        recovery_start : script.index('SCRIPT_DIR="$TARGET_DIR"', recovery_start)
+    ]
 
-    assert "git stash apply \"$INSTALL_STASH_REF\"" in script
+    assert 'git stash apply "$INSTALL_STASH_REF"' in script
     assert "git stash pop" not in script
-    assert "git rev-parse -q --verify \"${INSTALL_STASH_REF}^{commit}\"" in recovery_block
-    assert recovery_block.index("git rev-parse -q --verify") < recovery_block.index("git clean -fd ||")
+    assert 'git rev-parse -q --verify "${INSTALL_STASH_REF}^{commit}"' in recovery_block
+    assert recovery_block.index("git rev-parse -q --verify") < recovery_block.index(
+        "git clean -fd ||"
+    )
     assert "Yedek stash korunuyor" in recovery_block
     assert "git stash apply ${INSTALL_STASH_REF}" in recovery_block
-    assert "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın" not in script
+    assert (
+        "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın"
+        not in script
+    )
 
 
 def test_install_sidar_has_locale_switch_for_english_messages() -> None:
@@ -246,6 +256,30 @@ def test_pytest_shellcheck_quality_gate_is_registered() -> None:
     assert "shellcheck-py must expose the shellcheck executable via uv" in shellcheck_gate
 
 
+def test_ci_publishes_standalone_installer_bundle() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "tags:" in ci_workflow
+    assert '"v*"' in ci_workflow
+    assert "bash scripts/tools/bundle_install_sidar.sh" in ci_workflow
+    assert "bash -n dist/install_sidar.sh" in ci_workflow
+    assert "name: standalone-install-sidar" in ci_workflow
+    assert "path: dist/install_sidar.sh" in ci_workflow
+    assert "softprops/action-gh-release@v2" in ci_workflow
+    assert "files: dist/install_sidar.sh" in ci_workflow
+
+    release_url = (
+        "https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh"
+    )
+    assert release_url in readme
+    assert release_url in modularization_note
+    assert "raw repo kökündeki modüler `install_sidar.sh`" in modularization_note
+
+
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
     remote_modules = tmp_path / "remote"
     runner_dir = tmp_path / "runner"
@@ -301,7 +335,11 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
-    main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
+    main_body = script[
+        script.index("main() {") : script.index(
+            '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
+        )
+    ]
 
     expected_modules = (
         "phases/01_context.sh",
@@ -355,15 +393,27 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
-    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
-    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
-    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
-    preflight_utils = Path("scripts/install_modules/utils/wsl_gpu_preflight.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
+        encoding="utf-8"
+    )
+    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
+        encoding="utf-8"
+    )
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
+        encoding="utf-8"
+    )
+    preflight_utils = Path("scripts/install_modules/utils/wsl_gpu_preflight.sh").read_text(
+        encoding="utf-8"
+    )
     gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
-    python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
+    python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(
+        encoding="utf-8"
+    )
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
     env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
-    ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(encoding="utf-8")
+    ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(
+        encoding="utf-8"
+    )
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
@@ -377,7 +427,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "run_wsl2_gpu_preflight" in context_phase
     assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
     assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
-    assert 'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"' in workspace_phase
+    assert (
+        'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"'
+        in workspace_phase
+    )
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
 
     assert "run_wsl2_gpu_preflight()" in preflight_utils
@@ -407,8 +460,14 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
-    main_body = script[script.index("main() {") : script.index('\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]')]
-    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(encoding="utf-8")
+    main_body = script[
+        script.index("main() {") : script.index(
+            '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
+        )
+    ]
+    remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert '"utils/install_remediation.sh"' in script
     assert 'sidar_source_install_utils "install_remediation.sh"' in script
@@ -436,6 +495,7 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "exec env" in remediation_utils
     assert "artifacts/install/remediation" in remediation_utils
 
+
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
@@ -447,7 +507,7 @@ def test_install_sidar_uses_single_source_project_version() -> None:
 
     assert "resolve_install_sidar_version()" in script
     assert "sidar_version import resolve_version" in script
-    assert 'version[[:space:]]*=' in script
+    assert "version[[:space:]]*=" in script
     assert "INSTALL_SIDAR_VERSION" in script
     assert "Kurulum Başlıyor (v5.2.3)" not in script
     assert "# Sürüm : 5.2.3" not in script
@@ -457,9 +517,15 @@ def test_install_sidar_uses_single_source_project_version() -> None:
 def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     launch_body = script[
-        script.index("launch_docker_services() {") : script.index("# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {"))
+        script.index("launch_docker_services() {") : script.index(
+            "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
+        )
     ]
-    select_body = script[script.index("select_runtime_mode() {") : script.index("# ── Kurulum Sonrası IDE", script.index("select_runtime_mode() {"))]
+    select_body = script[
+        script.index("select_runtime_mode() {") : script.index(
+            "# ── Kurulum Sonrası IDE", script.index("select_runtime_mode() {")
+        )
+    ]
 
     assert "select_runtime_mode_early" not in script
     assert "select_runtime_mode" in Path("scripts/install_modules/phases/03_runtime.sh").read_text(
@@ -471,16 +537,23 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "Çalışma modu seçimi:" not in launch_body
     assert "Geliştirici modu" not in launch_body
     assert "Tam Docker modu" not in launch_body
-    assert 'local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"' in launch_body
+    assert (
+        'local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"'
+        in launch_body
+    )
     assert "tekrar menü göstermeden" in launch_body
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
-    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(encoding="utf-8")
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
+        encoding="utf-8"
+    )
     sync_deps_start = script.index("run_sync_deps_phase()")
-    sync_deps_body = script[sync_deps_start : script.index("run_provision_models_phase()", sync_deps_start)]
+    sync_deps_body = script[
+        sync_deps_start : script.index("run_provision_models_phase()", sync_deps_start)
+    ]
 
     assert "setup_uv" not in script
     assert "setup_python_env" not in script
@@ -496,10 +569,13 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
 def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
-    assert 'REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"' in script
+    assert (
+        'REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"'
+        in script
+    )
     assert 'REPO_URL="https://github.com/niluferbagevi-gif/Sidar"' not in script
     assert "SIDAR_REPO_URL=https://..." in script
-    assert script.index("SIDAR_REPO_URL") < script.index("git clone \"$REPO_URL\"")
+    assert script.index("SIDAR_REPO_URL") < script.index('git clone "$REPO_URL"')
 
 
 def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
@@ -513,38 +589,44 @@ def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
     assert '*) sed -i "$expression" "$@"' in wrapper_body
     assert "sed -i " not in script_without_wrapper
     assert "sed_inplace 's/^ENABLE_MULTIMODAL=" in script
-    assert "sed_inplace \"s|^DATABASE_URL=.*|DATABASE_URL=" in script
+    assert 'sed_inplace "s|^DATABASE_URL=.*|DATABASE_URL=' in script
 
 
 def test_install_sidar_centralizes_env_value_reads() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "read_env_value_from_file()" in script
-    assert "current_backend=$(read_env_value_from_file \"RAG_VECTOR_BACKEND\" \"$env_file\")" in script
-    assert "openai_key=$(read_env_value_from_file \"OPENAI_API_KEY\" \"$env_file\"" in script
-    assert "DB_URL=$(read_env_value_from_file \"DATABASE_URL\" \"$ENV_FILE\")" in script
-    assert "compose_profiles=$(read_env_value_from_file \"COMPOSE_PROFILES\" \"$env_file\"" in script
+    assert 'current_backend=$(read_env_value_from_file "RAG_VECTOR_BACKEND" "$env_file")' in script
+    assert 'openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file"' in script
+    assert 'DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")' in script
+    assert 'compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file"' in script
     assert "cut -d= -f2-" not in script
-    assert "grep -E \"^${key}=\"" not in script
+    assert 'grep -E "^${key}="' not in script
 
 
 def test_install_sidar_prompt_timeout_is_centralized() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
-    assert '${2:-$SIDAR_PROMPT_TIMEOUT}' in script
+    assert "${2:-$SIDAR_PROMPT_TIMEOUT}" in script
     assert 'read -r -t "$SIDAR_PROMPT_TIMEOUT"' in script
     assert "SIDAR_PROMPT_TIMEOUT=180" in script
     assert "read -r -t 180" not in script
     assert "180 saniye içinde" not in script
-    assert '${2:-180}' not in script
+    assert "${2:-180}" not in script
 
 
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")
-    selector_body = script[selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)]
-    verify_body = script[script.index("verify_torch_cuda()") : script.index("# ── 14.", script.index("verify_torch_cuda()"))]
+    selector_body = script[
+        selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)
+    ]
+    verify_body = script[
+        script.index("verify_torch_cuda()") : script.index(
+            "# ── 14.", script.index("verify_torch_cuda()")
+        )
+    ]
 
     assert "PyTorch cu124 fallback" not in script
     assert "--query-gpu=compute_cap" in script

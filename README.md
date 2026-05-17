@@ -438,6 +438,8 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
+Repo checkout içinden çalıştırıyorsanız modüler kaynak betiği doğrudan kullanabilirsiniz:
+
 ```bash
 ./install_sidar.sh
 
@@ -447,6 +449,15 @@ bash install_sidar.sh --ci
 
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
+```
+
+Repo olmadan tek dosyalık kurulum gerekiyorsa GitHub Release artefaktındaki bundle çıktısını indirin; raw repo kökündeki `install_sidar.sh` modüllerinden ayrıldığında eksik kalabilir:
+
+```bash
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh --ci
 ```
 
 > Kurulum sırasında bir hata alırsanız betik loglarını `logs/install_YYYYMMDD_HHMMSS.log` altında inceleyin.
