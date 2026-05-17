@@ -162,6 +162,7 @@ INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
 INSTALL_MODULES_MISSING_HINT="${SIDAR_INSTALL_MODULES_MISSING_HINT:-Yerel modül dizini bulunamadı ve uzaktan indirme tamamlanmadı. Tam paketi https://github.com/niluferbagevi-gif/Sidar/releases/latest üzerinden indirin veya repoyu git clone ile alın.}"
+INSTALL_REMOTE_MANIFEST_FILE=""
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -183,32 +184,94 @@ INSTALL_PHASE_MODULES=(
     "phases/07_finish.sh"
 )
 
+download_remote_install_file() {
+    local remote_rel="${1:-}"
+    local output_path="${2:-}"
+    [[ -n "$remote_rel" ]] || fail "İndirilecek kurulum dosyası adı boş olamaz."
+    [[ -n "$output_path" ]] || fail "Kurulum dosyası hedef yolu boş olamaz."
+
+    local remote_url="${REMOTE_MODULE_BASE%/}/${remote_rel}"
+    mkdir -p "$(dirname "$output_path")"
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$remote_url" -o "$output_path" || return 1
+    elif command -v wget &>/dev/null; then
+        wget -qO "$output_path" "$remote_url" || return 1
+    else
+        fail "Ne curl ne de wget bulundu; kurulum dosyası indirilemiyor: ${remote_rel}"
+    fi
+}
+
+sha256_file() {
+    local file_path="${1:-}"
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file_path" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file_path" | awk '{print $1}'
+    else
+        fail "SHA256 doğrulaması için sha256sum veya shasum gereklidir."
+    fi
+}
+
+expected_remote_module_sha256() {
+    local module_rel="${1:-}"
+    [[ -n "${INSTALL_REMOTE_MANIFEST_FILE:-}" ]] || return 1
+    awk -v module_rel="$module_rel" '$2 == module_rel { print $1; found = 1; exit } END { exit found ? 0 : 1 }' \
+        "$INSTALL_REMOTE_MANIFEST_FILE"
+}
+
+verify_remote_install_module() {
+    local module_rel="${1:-}"
+    local module_path="${2:-}"
+    local expected_sha=""
+    local actual_sha=""
+
+    expected_sha="$(expected_remote_module_sha256 "$module_rel" || true)"
+    if [[ ! "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        fail "Kurulum modülü manifestte bulunamadı veya SHA256 geçersiz: ${module_rel}. ${INSTALL_MODULES_MISSING_HINT}"
+    fi
+
+    actual_sha="$(sha256_file "$module_path")"
+    if [[ "${actual_sha,,}" != "${expected_sha,,}" ]]; then
+        fail "Kurulum modülü SHA256 doğrulaması başarısız: ${module_rel}. Beklenen: ${expected_sha}; gerçek: ${actual_sha}. ${INSTALL_MODULES_MISSING_HINT}"
+    fi
+}
+
+download_remote_install_manifest() {
+    INSTALL_REMOTE_MANIFEST_FILE="${INSTALL_MODULE_DIR}/manifest.sha256"
+    if download_remote_install_file "manifest.sha256" "$INSTALL_REMOTE_MANIFEST_FILE"; then
+        ok "Kurulum modülü SHA256 manifesti indirildi: $INSTALL_REMOTE_MANIFEST_FILE"
+        return 0
+    fi
+
+    rm -f "$INSTALL_REMOTE_MANIFEST_FILE"
+    INSTALL_REMOTE_MANIFEST_FILE=""
+    if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+        warn "Kurulum modülü manifest.sha256 indirilemedi; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle doğrulamasız modül indirmeye izin veriliyor."
+        return 0
+    fi
+
+    fail "Kurulum modülü manifest.sha256 indirilemedi. Uzak modüller SHA256 doğrulaması olmadan çalıştırılmaz. ${INSTALL_MODULES_MISSING_HINT}"
+}
+
 download_remote_install_module() {
     local module_rel="${1:-}"
     [[ -n "$module_rel" ]] || fail "İndirilecek kurulum modülü adı boş olamaz."
 
-    local remote_module_url="${REMOTE_MODULE_BASE%/}/${module_rel}"
     local module_path="${INSTALL_MODULE_DIR}/${module_rel}"
     local tmp_module_path=""
 
-    mkdir -p "$(dirname "$module_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX.sh")"
-
-    if command -v curl &>/dev/null; then
-        curl -fsSL "$remote_module_url" -o "$tmp_module_path" || {
-            rm -f "$tmp_module_path"
-            return 1
-        }
-    elif command -v wget &>/dev/null; then
-        wget -qO "$tmp_module_path" "$remote_module_url" || {
-            rm -f "$tmp_module_path"
-            return 1
-        }
-    else
+    if ! download_remote_install_file "$module_rel" "$tmp_module_path"; then
         rm -f "$tmp_module_path"
-        fail "Ne curl ne de wget bulundu; kurulum modülü indirilemiyor: ${module_rel}"
+        return 1
     fi
 
+    if [[ -n "${INSTALL_REMOTE_MANIFEST_FILE:-}" ]]; then
+        verify_remote_install_module "$module_rel" "$tmp_module_path"
+    fi
+
+    mkdir -p "$(dirname "$module_path")"
     install -m 0644 "$tmp_module_path" "$module_path" || {
         rm -f "$tmp_module_path"
         return 1
@@ -224,6 +287,8 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
     mkdir -p "$INSTALL_MODULE_DIR"
+
+    download_remote_install_manifest
 
     REMOTE_INSTALL_MODULES=("install_helpers.sh" "${INSTALL_UTILITY_MODULES[@]}" "${INSTALL_PHASE_MODULES[@]}")
     for module_rel in "${REMOTE_INSTALL_MODULES[@]}"; do

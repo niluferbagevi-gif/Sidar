@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -358,7 +359,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 def test_single_file_installer_fallback_downloads_all_required_modules() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
+    assert "download_remote_install_manifest()" in script
     assert "download_remote_install_module()" in script
+    assert "verify_remote_install_module()" in script
+    assert 'download_remote_install_file "manifest.sha256"' in script
     assert (
         'REMOTE_INSTALL_MODULES=("install_helpers.sh" "${INSTALL_UTILITY_MODULES[@]}" '
         '"${INSTALL_PHASE_MODULES[@]}")' in script
@@ -366,6 +370,31 @@ def test_single_file_installer_fallback_downloads_all_required_modules() -> None
     assert 'for module_rel in "${REMOTE_INSTALL_MODULES[@]}"' in script
     assert "validate_install_utility_modules\nsidar_source_install_utils" in script
     assert "${REMOTE_MODULE_BASE%/}/${module_rel}" in script
+
+
+def test_install_sidar_module_manifest_covers_current_remote_modules() -> None:
+    manifest_path = Path("scripts/install_modules/manifest.sha256")
+    manifest_entries = {}
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        digest, relative_path = line.split(maxsplit=1)
+        manifest_entries[relative_path] = digest
+
+    expected_paths = [
+        "install_helpers.sh",
+        *sorted(
+            str(path.relative_to("scripts/install_modules"))
+            for path in Path("scripts/install_modules/utils").glob("*.sh")
+        ),
+        *sorted(
+            str(path.relative_to("scripts/install_modules"))
+            for path in Path("scripts/install_modules/phases").glob("*.sh")
+        ),
+    ]
+
+    assert sorted(manifest_entries) == sorted(expected_paths)
+    for relative_path in expected_paths:
+        file_bytes = Path("scripts/install_modules", relative_path).read_bytes()
+        assert manifest_entries[relative_path] == hashlib.sha256(file_bytes).hexdigest()
 
 
 def test_install_sidar_missing_module_errors_point_to_release_or_clone() -> None:
@@ -408,6 +437,7 @@ def test_single_file_installer_runtime_fallback_loads_modules_from_remote_base(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "Kurulum modülü SHA256 manifesti indirildi" in result.stderr
     assert "Tek dosyalık kurulum için 15 modül" in result.stderr
 
 
