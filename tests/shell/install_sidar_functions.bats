@@ -97,6 +97,50 @@ ENV
   [ "$status" -eq 0 ]
 }
 
+
+@test "propagate_shared_secrets_to_env_variants always syncs PostgreSQL credentials" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    master_pw="MasterStrongDbToken_1234567890"
+    stale_pw="sidar_test_secure_pw"
+    preserved_api_key="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    cat > "$tmpdir/.env" <<ENV
+POSTGRES_PASSWORD=${master_pw}
+DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar
+API_KEY=MasterApiKeyValue_1234567890
+ENV
+
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/$variant" <<ENV
+POSTGRES_PASSWORD=${stale_pw}
+DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@127.0.0.1:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@postgres:5432/sidar
+API_KEY=${preserved_api_key}
+ENV
+      cat > "$tmpdir/${variant}.example" <<ENV
+POSTGRES_PASSWORD=example_password
+DATABASE_URL=postgresql+asyncpg://sidar:example_password@127.0.0.1:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:example_password@postgres:5432/sidar
+API_KEY=example_api_key
+ENV
+    done
+
+    SCRIPT_DIR="$tmpdir"
+    propagate_shared_secrets_to_env_variants "$tmpdir/.env"
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^API_KEY=${preserved_api_key}$" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "SIDAR_LOCALE=en renders installer help in English" {
   local root
   root="$(repo_root)"

@@ -4222,6 +4222,8 @@ propagate_shared_secrets_to_env_variants() {
     local src="$1"
     local -a shared_keys=(
         POSTGRES_PASSWORD
+        DATABASE_URL
+        SIDAR_CONTAINER_DATABASE_URL
         API_KEY
         JWT_SECRET_KEY
         MEMORY_ENCRYPTION_KEY
@@ -4261,7 +4263,16 @@ propagate_shared_secrets_to_env_variants() {
 
             cur=$(read_env_value_from_file "$key" "$target" | tr -d '\n')
             example_val=$(read_env_value_from_file "$key" "$example" | tr -d '\n')
-            if is_weak_secret_value "$cur" \
+
+            local always_overwrite=false
+            case "$key" in
+                POSTGRES_PASSWORD|DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL)
+                    always_overwrite=true
+                    ;;
+            esac
+
+            if [[ "$always_overwrite" == true ]] \
+                || is_weak_secret_value "$cur" \
                 || is_known_weak_secret_value "$key" "$cur" \
                 || is_env_example_secret_value "$key" "$cur" \
                 || [[ -n "${example_val//[[:space:]]/}" && "$cur" == "$example_val" ]]; then
