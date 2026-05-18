@@ -56,7 +56,11 @@ def _check_environment_allowed(*, allow_non_dev: bool) -> None:
     )
 
 
-def _docker_compose_command() -> list[str]:
+def _env_value(name: str, default: str) -> str:
+    return os.getenv(name, default).strip() or default
+
+
+def _docker_compose_command(admin_user: str, admin_db: str) -> list[str]:
     docker = shutil.which("docker")
     if not docker:
         raise RuntimeError("docker executable not found on PATH")
@@ -68,9 +72,9 @@ def _docker_compose_command() -> list[str]:
         "postgres",
         "psql",
         "-U",
-        os.getenv("POSTGRES_ADMIN_USER", "postgres").strip() or "postgres",
+        admin_user,
         "-d",
-        os.getenv("POSTGRES_ADMIN_DB", "postgres").strip() or "postgres",
+        admin_db,
         "-v",
         "ON_ERROR_STOP=1",
         "--quiet",
@@ -80,12 +84,16 @@ def _docker_compose_command() -> list[str]:
 def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -> dict[str, Any]:
     """Run ALTER USER inside the local Docker Compose PostgreSQL service."""
     _check_environment_allowed(allow_non_dev=allow_non_dev)
-    postgres_user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
+    postgres_user = _env_value("POSTGRES_USER", "sidar")
+    postgres_db = _env_value("POSTGRES_DB", "sidar")
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     if not postgres_password:
         raise RuntimeError("POSTGRES_PASSWORD is not set")
 
-    cmd = _docker_compose_command()
+    admin_user = _env_value("POSTGRES_ADMIN_USER", postgres_user)
+    admin_db = _env_value("POSTGRES_ADMIN_DB", postgres_db)
+
+    cmd = _docker_compose_command(admin_user=admin_user, admin_db=admin_db)
     sql = _build_alter_user_sql(
         postgres_user=postgres_user,
         postgres_password=postgres_password,
@@ -111,6 +119,9 @@ def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -
         method="docker-compose",
         service="postgres",
         postgres_user=postgres_user,
+        postgres_db=postgres_db,
+        admin_user=admin_user,
+        admin_db=admin_db,
         postgres_password_set=True,
         command="docker compose exec -T postgres psql -U <admin> -d <admin_db>",
     )
