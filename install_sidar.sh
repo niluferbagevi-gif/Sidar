@@ -259,9 +259,9 @@ source "$INSTALL_HELPERS_MODULE"
 # kurulum akışını korumak için güvenli fallback tanımla.
 if ! declare -F clear_stdin_buffer >/dev/null 2>&1; then
     clear_stdin_buffer() {
-        local trash=""
+        local _trash=""
         [[ -t 0 ]] || return 0
-        while IFS= read -r -t 0.01 trash; do
+        while IFS= read -r -t 0.01 _trash; do
             :
         done
     }

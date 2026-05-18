@@ -50,13 +50,13 @@ resolve_target_node_major() {
 # Kullanıcıdan etkileşimli girdi almadan önce terminal tamponunda
 # (typeahead/stdin buffering) birikmiş olabilecek yanlış tuş vuruşlarını temizler.
 clear_stdin_buffer() {
-    local trash=""
+    local _trash=""
 
     # Sadece gerçek bir terminalden okurken tampon temizlenir. Pipe/CI gibi
     # etkileşimsiz stdin akışlarında veri tüketmemek için sessizce atla.
     [[ -t 0 ]] || return 0
 
-    while IFS= read -r -t 0.01 trash; do
+    while IFS= read -r -t 0.01 _trash; do
         :
     done
 }

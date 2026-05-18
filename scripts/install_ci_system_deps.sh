@@ -5,7 +5,7 @@ set -euo pipefail
 # Keeping this in a script provides environment parity between developer machines
 # and GitHub Actions.
 
-PACKAGES=(portaudio19-dev shellcheck)
+PACKAGES=(portaudio19-dev shellcheck bats)
 
 if ! command -v apt-get >/dev/null 2>&1; then
   echo "This installer currently supports Debian/Ubuntu hosts (apt-get required)." >&2
@@ -35,4 +35,4 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 ${SUDO} apt-get update
-${SUDO} DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
+${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"

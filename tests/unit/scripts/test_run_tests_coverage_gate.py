@@ -308,12 +308,12 @@ def test_install_sidar_has_locale_switch_for_english_messages() -> None:
     assert "Select installer message language" in script
 
 
-def test_ci_system_dependency_installer_provisions_shellcheck() -> None:
+def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
 
-    assert "PACKAGES=(portaudio19-dev shellcheck)" in installer
+    assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert "MISSING_PACKAGES=()" in installer
-    assert 'apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
+    assert 'env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
@@ -775,7 +775,7 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
 
     assert "clear_stdin_buffer()" in helpers
     assert "[[ -t 0 ]] || return 0" in helpers
-    assert "read -r -t 0.01 trash" in helpers
+    assert "read -r -t 0.01 _trash" in helpers
     assert "if ! declare -F clear_stdin_buffer" in script
 
     default_yes = script[
