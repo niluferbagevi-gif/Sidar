@@ -5362,6 +5362,30 @@ run_smoke_tests() {
     fi
     wait_for_core_docker_health_before_smoke_tests
 
+    local env_file="$SCRIPT_DIR/.env"
+    local smoke_database_url=""
+    local smoke_postgres_password=""
+    local smoke_redis_url=""
+    if [[ -f "$env_file" ]]; then
+        smoke_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+        smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
+        smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        if [[ -z "$smoke_redis_url" ]]; then
+            smoke_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        fi
+
+        if [[ -n "$smoke_database_url" ]]; then
+            pytest_smoke_env+=("DATABASE_URL=$smoke_database_url")
+            info "Smoke test DATABASE_URL değeri .env dosyasından yenilendi."
+        fi
+        if [[ -n "$smoke_postgres_password" ]]; then
+            pytest_smoke_env+=("POSTGRES_PASSWORD=$smoke_postgres_password")
+        fi
+        if [[ -n "$smoke_redis_url" ]]; then
+            pytest_smoke_env+=("REDIS_URL=$smoke_redis_url")
+        fi
+    fi
+
     if [[ "${RUN_GPU_STRESS:-0}" == "1" ]]; then
         info "RUN_GPU_STRESS=1 zaten tanımlı; GPU stres smoke testi zorunlu çalıştırılacak."
     elif [[ "$GPU_AVAILABLE" == true ]]; then
