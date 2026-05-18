@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from scripts import sync_database_passwords
@@ -242,6 +243,85 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
         }
     ]
     assert summary["notes"] == []
+
+
+def test_sync_env_chain_all_envs_includes_env_test_and_uses_base_password(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+
+    master_password = "m" * 24
+    stale_password = "sidar_test_secure_pw"
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        f"POSTGRES_PASSWORD={master_password}\n"
+        f"DATABASE_URL=postgresql://sidar:{master_password}@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    for filename in (".env.development", ".env.test", ".env.advanced"):
+        (tmp_path / filename).write_text(
+            f"POSTGRES_PASSWORD={stale_password}\n"
+            f"DATABASE_URL=postgresql://sidar:{stale_password}@localhost:5432/sidar\n"
+            f"SIDAR_CONTAINER_DATABASE_URL=postgresql://sidar:{stale_password}@postgres:5432/sidar\n",
+            encoding="utf-8",
+        )
+
+    summary = sync_database_passwords.sync_env_chain(base_env, all_envs=True)
+
+    checked_names = {Path(path).name for path in summary["checked_files"]}
+    assert {".env.development", ".env.test", ".env.advanced"}.issubset(checked_names)
+    assert str(tmp_path / ".env.test") in summary["changed_files"]
+    assert summary["all_envs"] is True
+    for filename in (".env.development", ".env.test", ".env.advanced"):
+        text = (tmp_path / filename).read_text(encoding="utf-8")
+        assert f"POSTGRES_PASSWORD={master_password}" in text
+        assert stale_password not in text
+        database_url = next(
+            line.split("=", 1)[1] for line in text.splitlines() if line.startswith("DATABASE_URL=")
+        )
+        container_url = next(
+            line.split("=", 1)[1]
+            for line in text.splitlines()
+            if line.startswith("SIDAR_CONTAINER_DATABASE_URL=")
+        )
+        assert _password_from(database_url) == master_password
+        assert _password_from(container_url) == master_password
+
+
+def test_main_all_envs_emits_redacted_summary(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+
+    master_password = "n" * 24
+    stale_password = "sidar_test_secure_pw"
+    base_env = tmp_path / ".env"
+    base_env.write_text(
+        f"POSTGRES_PASSWORD={master_password}\n"
+        f"DATABASE_URL=postgresql://sidar:{master_password}@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.test").write_text(
+        f"POSTGRES_PASSWORD={stale_password}\n"
+        f"DATABASE_URL=postgresql://sidar:{stale_password}@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+
+    assert sync_database_passwords.main(["--env-file", str(base_env), "--all-envs"]) == 0
+
+    output = capsys.readouterr()
+    summary = json.loads(output.out)
+    assert summary["all_envs"] is True
+    assert str(tmp_path / ".env.test") in summary["changed_files"]
+    assert master_password not in output.out
+    assert master_password not in output.err
+
 
 def test_remove_explicit_database_urls_from_text_preserves_non_postgres_url() -> None:
     updated, summary = sync_database_passwords.remove_explicit_database_urls_from_text(

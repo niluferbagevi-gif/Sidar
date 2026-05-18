@@ -21,6 +21,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 DATABASE_URL_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+ALL_ENVIRONMENT_NAMES = ("development", "test")
 ENV_CHAIN_KEYS = (
     *DATABASE_URL_KEYS,
     "POSTGRES_PASSWORD",
@@ -101,7 +102,6 @@ def _replace_assignment_line(lines: list[str], assignment: EnvAssignment, value:
     )
 
 
-
 def _remove_assignment_lines(
     lines: list[str], assignments: dict[str, EnvAssignment], keys: tuple[str, ...]
 ) -> list[str]:
@@ -147,6 +147,7 @@ def remove_explicit_database_urls_from_text(text: str) -> tuple[str, dict[str, A
     }
     return updated_text, summary
 
+
 def _postgres_url_with_password(database_url: str, postgres_password: str) -> str | None:
     parsed = urlsplit(database_url)
     if not parsed.scheme.startswith("postgresql"):
@@ -164,7 +165,12 @@ def _postgres_url_with_password(database_url: str, postgres_password: str) -> st
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
-def _sync_env_text_with_password(text: str, postgres_password: str) -> tuple[str, dict[str, Any]]:
+def _sync_env_text_with_password(
+    text: str,
+    postgres_password: str,
+    *,
+    sync_postgres_password_assignment: bool = False,
+) -> tuple[str, dict[str, Any]]:
     """Return updated env text using an already-resolved effective password."""
     if not postgres_password:
         raise ValueError("POSTGRES_PASSWORD is not set in the effective env chain")
@@ -173,6 +179,16 @@ def _sync_env_text_with_password(text: str, postgres_password: str) -> tuple[str
     lines = text.splitlines()
     changed_keys: list[str] = []
     skipped: dict[str, str] = {}
+
+    if sync_postgres_password_assignment:
+        password_assignment = assignments.get("POSTGRES_PASSWORD")
+        if password_assignment is None:
+            lines.append(f"POSTGRES_PASSWORD={postgres_password}")
+            changed_keys.append("POSTGRES_PASSWORD")
+        elif password_assignment.value != postgres_password:
+            _replace_assignment_line(lines, password_assignment, postgres_password)
+            changed_keys.append("POSTGRES_PASSWORD")
+
     for key in DATABASE_URL_KEYS:
         assignment = assignments.get(key)
         if assignment is None or not assignment.value:
@@ -253,7 +269,11 @@ def _append_existing_spec(specs: list[EnvFileSpec], seen: set[Path], spec: EnvFi
     specs.append(EnvFileSpec(spec.label, resolved, spec.override))
 
 
-def discover_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> list[EnvFileSpec]:
+def discover_env_chain(
+    base_env_file: Path = DEFAULT_ENV_FILE,
+    *,
+    include_all_envs: bool = False,
+) -> list[EnvFileSpec]:
     """Discover Sidar's dotenv chain without mutating ``os.environ``."""
     base_env_file = base_env_file.expanduser()
     if not base_env_file.is_absolute():
@@ -275,7 +295,12 @@ def discover_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> list[EnvFileSp
     sidar_env = effective_env.get("SIDAR_ENV", "").strip().lower()
     # Development is Sidar's common local override file and was historically
     # missed by the auto-fix when SIDAR_ENV was not exported in the shell.
-    environment_names = [sidar_env] if sidar_env else ["development"]
+    if include_all_envs:
+        environment_names = list(ALL_ENVIRONMENT_NAMES)
+        if sidar_env and sidar_env not in environment_names and sidar_env != "advanced":
+            environment_names.append(sidar_env)
+    else:
+        environment_names = [sidar_env] if sidar_env else ["development"]
     for env_name in environment_names:
         spec = EnvFileSpec(f"environment:{env_name}", root / f".env.{env_name}", True)
         _append_existing_spec(specs, seen, spec)
@@ -301,6 +326,11 @@ def discover_env_chain(base_env_file: Path = DEFAULT_ENV_FILE) -> list[EnvFileSp
         _append_existing_spec(specs, seen, spec)
         _apply_assignments_to_env(effective_env, _read_assignments(spec.path), override=True)
     return specs
+
+
+def _base_postgres_password(base_env_file: Path) -> str:
+    assignment = _read_assignments(base_env_file).get("POSTGRES_PASSWORD")
+    return assignment.value if assignment is not None else ""
 
 
 def _effective_postgres_password(specs: list[EnvFileSpec]) -> str:
@@ -389,12 +419,25 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     return {"env_file": str(env_file), **summary}
 
 
-def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE, *, remove_explicit_urls: bool = False) -> dict[str, Any]:
-    specs = discover_env_chain(base_env_file)
+def sync_env_chain(
+    base_env_file: Path = DEFAULT_ENV_FILE,
+    *,
+    remove_explicit_urls: bool = False,
+    all_envs: bool = False,
+) -> dict[str, Any]:
+    specs = discover_env_chain(base_env_file, include_all_envs=all_envs)
     if not specs or not specs[0].path.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
 
-    postgres_password = _effective_postgres_password(specs)
+    if all_envs:
+        # Smoke tests load .env.test after the installer has accepted .env as the
+        # credential source of truth. Do not let stale variant POSTGRES_PASSWORD
+        # values become the effective password while repairing all variants.
+        postgres_password = _base_postgres_password(specs[0].path) or _effective_postgres_password(
+            discover_env_chain(base_env_file)
+        )
+    else:
+        postgres_password = _effective_postgres_password(specs)
     if not postgres_password:
         raise ValueError("POSTGRES_PASSWORD is not set in the env chain")
 
@@ -425,7 +468,11 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE, *, remove_explicit_ur
         if remove_explicit_urls:
             updated, summary = remove_explicit_database_urls_from_text(original)
         else:
-            updated, summary = _sync_env_text_with_password(original, postgres_password)
+            updated, summary = _sync_env_text_with_password(
+                original,
+                postgres_password,
+                sync_postgres_password_assignment=all_envs,
+            )
         if remove_explicit_urls:
             file_warnings, file_notes = [], []
         else:
@@ -487,6 +534,7 @@ def sync_env_chain(base_env_file: Path = DEFAULT_ENV_FILE, *, remove_explicit_ur
         "checked_keys": list(DATABASE_URL_KEYS),
         "postgres_password_set": True,
         "strategy": "remove_explicit_urls" if remove_explicit_urls else "sync_passwords",
+        "all_envs": all_envs,
         "warnings": warnings,
         "notes": notes,
         "file_summaries": file_summaries,
@@ -509,27 +557,44 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "dotenv zincirinden kaldırarak DSN üretimini POSTGRES_* parçalarına bırak"
         ),
     )
+    parser.add_argument(
+        "--all-envs",
+        action="store_true",
+        help=(
+            ".env değerini kaynak kabul ederek .env.development, .env.test ve "
+            ".env.advanced dosyalarındaki PostgreSQL parolalarını/URL'lerini eşitle"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        summary = sync_env_chain(Path(args.env_file), remove_explicit_urls=args.remove_explicit_urls)
+        summary = sync_env_chain(
+            Path(args.env_file),
+            remove_explicit_urls=args.remove_explicit_urls,
+            all_envs=args.all_envs,
+        )
     except Exception as exc:
         print(f"❌ PostgreSQL parola senkronizasyonu başarısız: {exc}", file=sys.stderr)
         return 1
 
     if summary.get("changed"):
         if args.remove_explicit_urls:
-            print("✅ PostgreSQL URL override tanımları dotenv zincirinden kaldırıldı.", file=sys.stderr)
+            print(
+                "✅ PostgreSQL URL override tanımları dotenv zincirinden kaldırıldı.",
+                file=sys.stderr,
+            )
         else:
             print("✅ PostgreSQL URL parolaları POSTGRES_PASSWORD ile eşitlendi.", file=sys.stderr)
     else:
         if args.remove_explicit_urls:
             print("ℹ️ Kaldırılacak açık PostgreSQL URL override tanımı bulunamadı.", file=sys.stderr)
         else:
-            print("ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr)
+            print(
+                "ℹ️ PostgreSQL URL parolaları zaten POSTGRES_PASSWORD ile uyumlu.", file=sys.stderr
+            )
         if summary.get("no_change_guidance"):
             print(f"ℹ️ {summary['no_change_guidance']}", file=sys.stderr)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

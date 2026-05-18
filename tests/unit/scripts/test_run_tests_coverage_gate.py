@@ -559,6 +559,15 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         in workspace_phase
     )
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
+    assert "sync_database_passwords_before_smoke_tests" in services_phase
+    assert "uv run python scripts/sync_database_passwords.py --all-envs" in services_phase
+    assert "uv run python scripts/sync_postgres_password.py" in services_phase
+    assert services_phase.index(
+        "sync_database_passwords_before_smoke_tests"
+    ) < services_phase.index("run_smoke_tests")
+    assert services_phase.index(
+        "scripts/sync_database_passwords.py --all-envs"
+    ) < services_phase.index("scripts/sync_postgres_password.py")
 
     assert "run_wsl2_gpu_preflight()" in preflight_utils
     assert "SIDAR_WSL_GPU_PREFLIGHT" in preflight_utils

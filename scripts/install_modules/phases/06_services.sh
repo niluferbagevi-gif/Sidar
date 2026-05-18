@@ -18,10 +18,43 @@ sidar_phase_local_migrations_and_models() {
     fi
 }
 
+
+sync_database_passwords_before_smoke_tests() {
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; smoke test öncesi PostgreSQL dotenv senkronizasyonu atlandı."
+        return 0
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/sync_database_passwords.py" ]]; then
+        warn "scripts/sync_database_passwords.py bulunamadı; smoke test öncesi PostgreSQL dotenv senkronizasyonu atlandı."
+        return 0
+    fi
+
+    info "Smoke test öncesi PostgreSQL dotenv profilleri eşitleniyor (.env.test dahil)..."
+    if (cd "$SCRIPT_DIR" && uv run python scripts/sync_database_passwords.py --all-envs >/dev/null 2>&1); then
+        ok "Smoke test öncesi PostgreSQL dotenv profilleri eşitlendi."
+    else
+        warn "Smoke test öncesi PostgreSQL dotenv senkronizasyonu tamamlanamadı; smoke testler mevcut ortamla devam edecek."
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/sync_postgres_password.py" ]]; then
+        warn "scripts/sync_postgres_password.py bulunamadı; canlı PostgreSQL parola senkronizasyonu atlandı."
+        return 0
+    fi
+
+    info "Smoke test öncesi canlı PostgreSQL kullanıcı parolası doğrulanıyor..."
+    if (cd "$SCRIPT_DIR" && uv run python scripts/sync_postgres_password.py >/dev/null 2>&1); then
+        ok "Canlı PostgreSQL kullanıcı parolası smoke test öncesi eşitlendi."
+    else
+        warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı; smoke testler mevcut veritabanı durumu ile devam edecek."
+    fi
+}
+
 sidar_phase_services_and_validation() {
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
     launch_docker_services
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+        sync_database_passwords_before_smoke_tests
         run_smoke_tests
         run_test_artifact_audit
     else
