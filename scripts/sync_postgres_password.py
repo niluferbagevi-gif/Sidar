@@ -1,16 +1,16 @@
-"""Synchronize the stored PostgreSQL role password with Sidar's POSTGRES_PASSWORD.
+"""Synchronize the live PostgreSQL role password with Sidar's effective env chain.
 
 This repair targets the case where dotenv parity is correct, but an existing
-local Docker PostgreSQL volume still contains an older password for POSTGRES_USER.
-It never prints the password and sends the ALTER USER statement through stdin
-instead of embedding secrets in the command line.
+Docker PostgreSQL volume still contains an older password for ``POSTGRES_USER``.
+It reads the effective Sidar dotenv chain, never prints the password, and sends
+``ALTER USER ... WITH PASSWORD ...`` through ``docker exec`` stdin instead of
+embedding secrets in the command line.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -18,7 +18,17 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.sync_database_passwords import (  # noqa: E402
+    DEFAULT_ENV_FILE,
+    _effective_env_from_specs,
+    discover_env_chain,
+)
+
 DEFAULT_ALLOWED_ENVS = {"", "development", "dev", "local", "test", "testing"}
+DEFAULT_POSTGRES_CONTAINER = "sidar_postgres"
 
 
 def _redacted_summary(**values: Any) -> dict[str, Any]:
@@ -46,8 +56,15 @@ $$;
 """.lstrip()
 
 
-def _check_environment_allowed(*, allow_non_dev: bool) -> None:
-    sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+def _effective_env(env_file: Path = DEFAULT_ENV_FILE) -> tuple[dict[str, str], list[str]]:
+    specs = discover_env_chain(env_file)
+    if not specs or not specs[0].path.is_file():
+        raise FileNotFoundError(f"Env dosyası bulunamadı: {env_file}")
+    return _effective_env_from_specs(specs), [str(spec.path) for spec in specs]
+
+
+def _check_environment_allowed(*, env: dict[str, str], allow_non_dev: bool) -> None:
+    sidar_env = env.get("SIDAR_ENV", "").strip().lower()
     if allow_non_dev or sidar_env in DEFAULT_ALLOWED_ENVS:
         return
     raise RuntimeError(
@@ -56,36 +73,60 @@ def _check_environment_allowed(*, allow_non_dev: bool) -> None:
     )
 
 
-def _docker_compose_command() -> list[str]:
+def _postgres_container_name(env: dict[str, str], explicit_container: str | None = None) -> str:
+    return (
+        explicit_container
+        or env.get("SIDAR_POSTGRES_CONTAINER", "").strip()
+        or env.get("POSTGRES_CONTAINER_NAME", "").strip()
+        or DEFAULT_POSTGRES_CONTAINER
+    )
+
+
+def _docker_exec_command(
+    env: dict[str, str], *, postgres_container: str | None = None
+) -> list[str]:
     docker = shutil.which("docker")
     if not docker:
         raise RuntimeError("docker executable not found on PATH")
+    postgres_user = env.get("POSTGRES_USER", "sidar").strip() or "sidar"
+    admin_user = env.get("POSTGRES_ADMIN_USER", "").strip() or postgres_user
+    admin_db = (
+        env.get("POSTGRES_ADMIN_DB", "").strip()
+        or env.get("POSTGRES_DB", "").strip()
+        or "postgres"
+    )
+    container = _postgres_container_name(env, explicit_container=postgres_container)
     return [
         docker,
-        "compose",
         "exec",
-        "-T",
-        "postgres",
+        "-i",
+        container,
         "psql",
         "-U",
-        os.getenv("POSTGRES_ADMIN_USER", "postgres").strip() or "postgres",
+        admin_user,
         "-d",
-        os.getenv("POSTGRES_ADMIN_DB", "postgres").strip() or "postgres",
+        admin_db,
         "-v",
         "ON_ERROR_STOP=1",
         "--quiet",
     ]
 
 
-def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -> dict[str, Any]:
-    """Run ALTER USER inside the local Docker Compose PostgreSQL service."""
-    _check_environment_allowed(allow_non_dev=allow_non_dev)
-    postgres_user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
-    postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
+def sync_postgres_password_with_docker_exec(
+    *,
+    allow_non_dev: bool = False,
+    env_file: Path = DEFAULT_ENV_FILE,
+    postgres_container: str | None = None,
+) -> dict[str, Any]:
+    """Run ALTER USER inside the running PostgreSQL container via docker exec."""
+    effective_env, checked_files = _effective_env(env_file)
+    _check_environment_allowed(env=effective_env, allow_non_dev=allow_non_dev)
+    postgres_user = effective_env.get("POSTGRES_USER", "sidar").strip() or "sidar"
+    postgres_password = effective_env.get("POSTGRES_PASSWORD", "").strip()
     if not postgres_password:
-        raise RuntimeError("POSTGRES_PASSWORD is not set")
+        raise RuntimeError("POSTGRES_PASSWORD is not set in the effective env chain")
 
-    cmd = _docker_compose_command()
+    cmd = _docker_exec_command(effective_env, postgres_container=postgres_container)
     sql = _build_alter_user_sql(
         postgres_user=postgres_user,
         postgres_password=postgres_password,
@@ -103,32 +144,61 @@ def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -
     output = (completed.stdout or "").replace(postgres_password, "***")
     if completed.returncode != 0:
         raise RuntimeError(
-            "docker compose PostgreSQL password sync failed "
+            "docker exec PostgreSQL password sync failed "
             f"with exit code {completed.returncode}: {output.strip()}"
         )
     return _redacted_summary(
         changed=True,
-        method="docker-compose",
+        method="docker-exec",
+        container=cmd[3],
         service="postgres",
         postgres_user=postgres_user,
         postgres_password_set=True,
-        command="docker compose exec -T postgres psql -U <admin> -d <admin_db>",
+        checked_files=checked_files,
+        command="docker exec -i <postgres_container> psql -U <admin> -d <admin_db>",
+    )
+
+
+def sync_postgres_password_with_docker_compose(
+    *,
+    allow_non_dev: bool = False,
+    env_file: Path = DEFAULT_ENV_FILE,
+    postgres_container: str | None = None,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper; implementation now uses docker exec directly."""
+    return sync_postgres_password_with_docker_exec(
+        allow_non_dev=allow_non_dev,
+        env_file=env_file,
+        postgres_container=postgres_container,
     )
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Mevcut yerel PostgreSQL rol parolasını POSTGRES_PASSWORD ile eşitle "
+            "Mevcut PostgreSQL rol parolasını etkili POSTGRES_PASSWORD ile eşitle "
             "(Docker volume eski parola ile başlatıldıysa kullanılır)"
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--method",
-        choices=("docker-compose",),
-        default="docker-compose",
-        help="Parola eşitleme yöntemi",
+        choices=("docker-exec", "docker-compose"),
+        default="docker-exec",
+        help=(
+            "Parola eşitleme yöntemi. docker-compose geriye dönük uyumluluk alias'ıdır; "
+            "uygulama yine docker exec kullanır."
+        ),
+    )
+    parser.add_argument(
+        "--env-file",
+        default=str(DEFAULT_ENV_FILE),
+        help="Etkili dotenv zincirini başlatan temel env dosyası",
+    )
+    parser.add_argument(
+        "--postgres-container",
+        default="",
+        help="docker exec hedef container adı/ID'si; boşsa sidar_postgres kullanılır",
     )
     parser.add_argument(
         "--allow-non-dev",
@@ -141,9 +211,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        if args.method == "docker-compose":
-            summary = sync_postgres_password_with_docker_compose(
-                allow_non_dev=args.allow_non_dev
+        if args.method in {"docker-exec", "docker-compose"}:
+            summary = sync_postgres_password_with_docker_exec(
+                allow_non_dev=args.allow_non_dev,
+                env_file=Path(args.env_file),
+                postgres_container=args.postgres_container or None,
             )
         else:  # pragma: no cover - argparse choices prevent this path.
             raise RuntimeError(f"Unsupported method: {args.method}")
