@@ -65,7 +65,7 @@ harden_database_credentials() {
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                     if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                         local detected_pg_volume=""
-                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -Ei '(^|[_-])sidar([_-].*)?[_-](postgres|pg)[_-]?data$|(^|[_-])(postgres|pg)_?data$' | head -n1 || true)
                         if [[ -n "$detected_pg_volume" ]]; then
                             info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
                         fi

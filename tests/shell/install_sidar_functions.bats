@@ -306,3 +306,68 @@ ENV
   '
   [ "$status" -eq 0 ]
 }
+
+@test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
+  run_installer_function '
+    docker() {
+      if [[ "$1" == "volume" && "$2" == "ls" ]]; then
+        printf "%s\n" "oldproj_postgres_data" "sidar_postgres_data" "other_postgres_data"
+        return 0
+      fi
+      if [[ "$1" == "volume" && "$2" == "inspect" ]]; then
+        printf "%s\n" "<no value>|<no value>"
+        return 0
+      fi
+      return 0
+    }
+
+    mapfile -t discovered < <(sidar_discover_postgres_volumes "freshclone" postgres_data)
+    [[ "${#discovered[@]}" -eq 1 ]]
+    [[ "${discovered[0]}" == "sidar_postgres_data" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "postgres password hardening reset runs compose down fallback when no volume is directly detected" {
+  run_installer_function '
+    down_called=false
+    fake_compose() {
+      case "$1" in
+        config)
+          if [[ "${2:-}" == "--volumes" ]]; then
+            printf "%s\n" "postgres_data"
+          fi
+          ;;
+        down)
+          down_called=true
+          [[ "$*" == *"--volumes"* ]]
+          [[ "$*" == *"--remove-orphans"* ]]
+          ;;
+        ps)
+          return 0
+          ;;
+      esac
+      return 0
+    }
+    docker() {
+      if [[ "$1" == "volume" && "$2" == "ls" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "volume" && "$2" == "inspect" ]]; then
+        return 1
+      fi
+      return 0
+    }
+
+    DB_PASSWORD_HARDENED=true
+    POSTGRES_VOLUME_RESET_DONE=false
+    AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1
+    AUTO_RESET_POSTGRES_VOLUMES=true
+    NO_INTERACTION=true
+
+    maybe_reset_postgres_volume_after_password_hardening fake_compose -- postgres redis
+    [[ "$down_called" == true ]]
+    [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]
+  '
+  [ "$status" -eq 0 ]
+}

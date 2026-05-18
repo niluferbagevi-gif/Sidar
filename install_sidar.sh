@@ -999,6 +999,128 @@ wait_for_compose_services_health() {
     return 0
 }
 
+
+sidar_add_unique_value() {
+    local array_name="$1"
+    local value="${2:-}"
+    local existing=""
+
+    [[ -n "$value" ]] || return 0
+    local -n target_array="$array_name"
+    for existing in "${target_array[@]}"; do
+        [[ "$existing" == "$value" ]] && return 0
+    done
+    target_array+=("$value")
+}
+
+sidar_normalize_compose_project_name() {
+    local raw="${1:-}"
+    raw="${raw,,}"
+    raw="$(printf '%s' "$raw" | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')"
+    printf '%s' "$raw"
+}
+
+sidar_volume_name_matches_suffix() {
+    local docker_volume_name="$1"
+    local volume_suffix="$2"
+    local compose_project_candidate="${3:-}"
+    local normalized_project=""
+    local lower_volume_name="${docker_volume_name,,}"
+    local lower_volume_suffix="${volume_suffix,,}"
+
+    [[ -n "$docker_volume_name" && -n "$volume_suffix" ]] || return 1
+
+    if [[ "$docker_volume_name" == "$volume_suffix" || "$lower_volume_name" == "$lower_volume_suffix" ]]; then
+        return 0
+    fi
+
+    if [[ -n "$compose_project_candidate" ]]; then
+        normalized_project="$(sidar_normalize_compose_project_name "$compose_project_candidate")"
+        if [[ "$docker_volume_name" == "${compose_project_candidate}_${volume_suffix}" || "$lower_volume_name" == "${compose_project_candidate,,}_${lower_volume_suffix}" ]]; then
+            return 0
+        fi
+        if [[ -n "$normalized_project" && ( "$lower_volume_name" == "${normalized_project}_${lower_volume_suffix}" || "$lower_volume_name" == "${normalized_project}-${lower_volume_suffix//_/-}" ) ]]; then
+            return 0
+        fi
+    fi
+
+    # Sidar'ın eski/yeniden klonlanmış dizinlerinden kalmış, compose label'ı olmayan
+    # volume adlarını da yakala. Başka projelerin genel postgres_data volume'lerini
+    # proje adı bilinçli olarak Sidar ile ilişkilendirilemediği sürece kapsam dışında bırakır.
+    if [[ "$lower_volume_name" =~ (^|[_-])sidar([_-].*)?([_-])(postgres|pg)([_-])?data$ ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+sidar_volume_has_matching_compose_labels() {
+    local docker_volume_name="$1"
+    local volume_suffix="$2"
+    shift 2
+    local -a compose_project_candidates=("$@")
+    local label_output=""
+    local label_project=""
+    local label_volume=""
+    local candidate=""
+
+    label_output=$(docker volume inspect "$docker_volume_name" --format '{{ index .Labels "com.docker.compose.project" }}|{{ index .Labels "com.docker.compose.volume" }}' 2>/dev/null || true)
+    [[ -n "$label_output" ]] || return 1
+    label_project="${label_output%%|*}"
+    label_volume="${label_output#*|}"
+    [[ "$label_project" != "<no value>" ]] || label_project=""
+    [[ "$label_volume" != "<no value>" ]] || label_volume=""
+
+    [[ "$label_volume" == "$volume_suffix" || "${label_volume,,}" == "${volume_suffix,,}" ]] || return 1
+    for candidate in "${compose_project_candidates[@]}"; do
+        if [[ "$label_project" == "$candidate" || "${label_project,,}" == "${candidate,,}" || "${label_project,,}" == "$(sidar_normalize_compose_project_name "$candidate")" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+sidar_discover_postgres_volumes() {
+    local compose_project_name="${1:-}"
+    shift || true
+    local -a candidate_volume_suffixes=("$@")
+    local -a compose_project_candidates=()
+    local docker_volume_name=""
+    local volume_suffix=""
+    local project_candidate=""
+    local script_project_name=""
+    local matched_volume=false
+
+    sidar_add_unique_value compose_project_candidates "$compose_project_name"
+    sidar_add_unique_value compose_project_candidates "$(sidar_normalize_compose_project_name "$compose_project_name")"
+    script_project_name="$(basename "$SCRIPT_DIR")"
+    sidar_add_unique_value compose_project_candidates "$script_project_name"
+    sidar_add_unique_value compose_project_candidates "$(sidar_normalize_compose_project_name "$script_project_name")"
+    sidar_add_unique_value compose_project_candidates "sidar"
+
+    if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
+        for docker_volume_name in "${docker_volume_names[@]}"; do
+            matched_volume=false
+            for volume_suffix in "${candidate_volume_suffixes[@]}"; do
+                for project_candidate in "${compose_project_candidates[@]}"; do
+                    if sidar_volume_name_matches_suffix "$docker_volume_name" "$volume_suffix" "$project_candidate"; then
+                        printf '%s\n' "$docker_volume_name"
+                        matched_volume=true
+                        break 2
+                    fi
+                done
+                if sidar_volume_has_matching_compose_labels "$docker_volume_name" "$volume_suffix" "${compose_project_candidates[@]}"; then
+                    printf '%s\n' "$docker_volume_name"
+                    matched_volume=true
+                    break
+                fi
+            done
+            if [[ "$matched_volume" == true ]]; then
+                continue
+            fi
+        done
+    fi
+}
 maybe_reset_postgres_volume_after_password_hardening() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -1100,20 +1222,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     local -a existing_pg_volumes=()
-    if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
-        for docker_volume_name in "${docker_volume_names[@]}"; do
-            for volume_suffix in "${candidate_volume_suffixes[@]}"; do
-                if [[ -n "$compose_project_name" ]]; then
-                    if [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == "${compose_project_name}_${volume_suffix}" ]]; then
-                        existing_pg_volumes+=("$docker_volume_name")
-                        break
-                    fi
-                elif [[ "$docker_volume_name" == "$volume_suffix" || "$docker_volume_name" == *_"$volume_suffix" ]]; then
-                    existing_pg_volumes+=("$docker_volume_name")
-                    break
-                fi
-            done
-        done
+    if mapfile -t existing_pg_volumes < <(sidar_discover_postgres_volumes "$compose_project_name" "${candidate_volume_suffixes[@]}"); then
+        :
     fi
 
     if [[ ${#existing_pg_volumes[@]} -gt 1 ]]; then
@@ -1129,9 +1239,20 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
-        info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
-        POSTGRES_VOLUME_RESET_DONE=true
-        return 0
+        warn "DB parola hardening sonrası PostgreSQL volume doğrudan bulunamadı; olası compose proje adı uyuşmazlığına karşı docker compose down --volumes --remove-orphans fallback'i çalıştırılacak."
+        if "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
+            if mapfile -t existing_pg_volumes < <(sidar_discover_postgres_volumes "$compose_project_name" "${candidate_volume_suffixes[@]}"); then
+                :
+            fi
+            if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
+                ok "PostgreSQL volume fallback temizliği tamamlandı veya temiz başlangıç doğrulandı."
+                POSTGRES_VOLUME_RESET_DONE=true
+                return 0
+            fi
+            warn "Fallback sonrası PostgreSQL volume adayları bulundu: ${existing_pg_volumes[*]}"
+        else
+            warn "docker compose down --volumes --remove-orphans fallback'i çalıştırılamadı; volume adı eşleşmesi bulunamazsa kurulum güvenli uyarıyla devam edecek."
+        fi
     fi
 
     local should_reset="E"
@@ -2843,17 +2964,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    info "Pyright LSP bulunamadı; standart fallback çalıştırılıyor: uv tool install pyright"
-    if uv tool install pyright; then
-        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-        if command -v pyright-langserver >/dev/null 2>&1; then
-            ok "Pyright LSP 'uv tool install pyright' fallback'i ile kuruldu: $(command -v pyright-langserver)"
-            return
-        fi
-        warn "uv tool install pyright tamamlandı ancak pyright-langserver PATH'te değil; ~/.local/bin PATH ayarını kontrol edin."
-    fi
-
-    fail "Pyright LSP bulunamadı. 'uv sync --frozen --all-extras' ya da 'uv tool install pyright' komutlarını manuel çalıştırın."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın ve dev bağımlılıklarının proje ortamında kurulu olduğunu doğrulayın."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
@@ -3414,7 +3525,7 @@ harden_database_credentials() {
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                     if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                         local detected_pg_volume=""
-                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)postgres_data$' | head -n1 || true)
+                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -Ei '(^|[_-])sidar([_-].*)?[_-](postgres|pg)[_-]?data$|(^|[_-])(postgres|pg)_?data$' | head -n1 || true)
                         if [[ -n "$detected_pg_volume" ]]; then
                             info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
                         fi
