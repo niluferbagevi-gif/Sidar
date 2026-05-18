@@ -27,9 +27,37 @@ def test_sync_postgres_password_uses_stdin_and_redacts_secret(monkeypatch):
     assert summary["changed"] is True
     assert summary["postgres_user"] == "sidar"
     assert secret not in " ".join(calls["cmd"])
+    assert calls["cmd"][calls["cmd"].index("-U") + 1] == "sidar"
+    assert calls["cmd"][calls["cmd"].index("-d") + 1] == "sidar"
+    assert summary["admin_user"] == "sidar"
+    assert summary["admin_db"] == "sidar"
     assert "ALTER USER" in calls["kwargs"]["input"]
     assert secret in calls["kwargs"]["input"]
     assert calls["kwargs"]["cwd"] == sync_postgres_password.PROJECT_ROOT
+
+
+def test_sync_postgres_password_honors_explicit_admin_overrides(monkeypatch):
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="ALTER ROLE\n")
+
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("POSTGRES_ADMIN_USER", "postgres_admin")
+    monkeypatch.setenv("POSTGRES_ADMIN_DB", "postgres_admin_db")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "super-secret-password-123456")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    summary = sync_postgres_password.sync_postgres_password_with_docker_compose()
+
+    assert calls["cmd"][calls["cmd"].index("-U") + 1] == "postgres_admin"
+    assert calls["cmd"][calls["cmd"].index("-d") + 1] == "postgres_admin_db"
+    assert summary["admin_user"] == "postgres_admin"
+    assert summary["admin_db"] == "postgres_admin_db"
 
 
 def test_sync_postgres_password_refuses_non_dev_without_override(monkeypatch):
