@@ -21,6 +21,31 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ALLOWED_ENVS = {"", "development", "dev", "local", "test", "testing"}
 
 
+def _load_dotenv_defaults(path: Path | None = None) -> None:
+    """Populate missing process env values from Sidar's local dotenv file.
+
+    The installer invokes this module as a subprocess after rewriting ``.env``.
+    Docker Compose reads that file automatically, but Python subprocesses do not;
+    loading only missing keys keeps explicit operator overrides authoritative while
+    allowing the rotation command to use the freshly generated POSTGRES_PASSWORD.
+    """
+    path = path or PROJECT_ROOT / ".env"
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 def _redacted_summary(**values: Any) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
 
@@ -60,6 +85,7 @@ def _docker_compose_command() -> list[str]:
     docker = shutil.which("docker")
     if not docker:
         raise RuntimeError("docker executable not found on PATH")
+    postgres_user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     return [
         docker,
         "compose",
@@ -68,9 +94,9 @@ def _docker_compose_command() -> list[str]:
         "postgres",
         "psql",
         "-U",
-        os.getenv("POSTGRES_ADMIN_USER", "postgres").strip() or "postgres",
+        os.getenv("POSTGRES_ADMIN_USER", postgres_user).strip() or postgres_user,
         "-d",
-        os.getenv("POSTGRES_ADMIN_DB", "postgres").strip() or "postgres",
+        os.getenv("POSTGRES_ADMIN_DB", os.getenv("POSTGRES_DB", "sidar")).strip() or "sidar",
         "-v",
         "ON_ERROR_STOP=1",
         "--quiet",
@@ -79,6 +105,7 @@ def _docker_compose_command() -> list[str]:
 
 def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -> dict[str, Any]:
     """Run ALTER USER inside the local Docker Compose PostgreSQL service."""
+    _load_dotenv_defaults()
     _check_environment_allowed(allow_non_dev=allow_non_dev)
     postgres_user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()

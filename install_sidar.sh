@@ -994,6 +994,71 @@ wait_for_compose_services_health() {
     return 0
 }
 
+sync_postgres_password_in_place_after_hardening() {
+    local -a compose_cmd=("$@")
+    local env_file="$SCRIPT_DIR/.env"
+
+    if ! command -v docker &>/dev/null; then
+        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL parolası yerinde döndürülemedi."
+        return 1
+    fi
+    if ! command -v uv &>/dev/null; then
+        warn "DB parola hardening algılandı ancak uv bulunamadı; scripts.sync_postgres_password çalıştırılamadı."
+        return 1
+    fi
+
+    info "PostgreSQL parolası mevcut volume korunarak yerinde güncelleniyor (ALTER USER)."
+    if ! "${compose_cmd[@]}" up -d postgres >/dev/null 2>&1; then
+        warn "PostgreSQL servisi parola rotasyonu için başlatılamadı."
+        return 1
+    fi
+
+    local postgres_container_id=""
+    postgres_container_id=$("${compose_cmd[@]}" ps -q postgres 2>/dev/null | head -n1 || true)
+    if [[ -z "$postgres_container_id" ]]; then
+        warn "PostgreSQL parola rotasyonu için postgres container ID alınamadı."
+        return 1
+    fi
+
+    local state=""
+    for _ in {1..45}; do
+        state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$postgres_container_id" 2>/dev/null || echo unknown)
+        case "$state" in
+            healthy|running)
+                break
+                ;;
+            unhealthy|exited|dead)
+                warn "PostgreSQL parola rotasyonu için servis sağlıksız durumda: ${state}"
+                return 1
+                ;;
+        esac
+        sleep 2
+    done
+
+    local -a sync_cmd=(uv run python -m scripts.sync_postgres_password)
+    local sidar_env="${SIDAR_ENV:-development}"
+    if [[ -f "$env_file" ]]; then
+        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    fi
+    sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
+    case "$sidar_env" in
+        production|prod|staging|preprod)
+            if [[ "${ALLOW_NON_DEV_POSTGRES_PASSWORD_SYNC:-0}" == "1" ]]; then
+                sync_cmd+=(--allow-non-dev)
+            fi
+            ;;
+    esac
+
+    if "${sync_cmd[@]}" >/dev/null; then
+        ok "PostgreSQL kullanıcı parolası mevcut volume silinmeden POSTGRES_PASSWORD ile eşitlendi."
+        POSTGRES_VOLUME_RESET_DONE=true
+        return 0
+    fi
+
+    warn "PostgreSQL parola rotasyonu yerinde tamamlanamadı; volume silinmedi."
+    return 1
+}
+
 maybe_reset_postgres_volume_after_password_hardening() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -1027,17 +1092,18 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
     sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
 
+    local allow_production_password_rotation="${ALLOW_NON_DEV_POSTGRES_PASSWORD_SYNC:-${ALLOW_PRODUCTION_DB_PASSWORD_ROTATION:-0}}"
     local allow_production_volume_reset="${ALLOW_PRODUCTION_DB_VOLUME_RESET:-0}"
     case "$sidar_env" in
         development|dev|local|test)
             ;;
         production|prod|staging|preprod)
-            if [[ "$allow_production_volume_reset" != "1" ]]; then
-                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için PostgreSQL volume otomatik sıfırlanmadı (güvenlik freni)."
-                warn "Sadece bilinçli operasyonlarda ALLOW_PRODUCTION_DB_VOLUME_RESET=1 ile açıkça izin verin."
+            if [[ "$allow_production_password_rotation" != "1" && "$allow_production_volume_reset" != "1" ]]; then
+                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için otomatik PostgreSQL parola rotasyonu yapılmadı (güvenlik freni)."
+                warn "Yerinde rotasyon için ALLOW_NON_DEV_POSTGRES_PASSWORD_SYNC=1; volume reset için ayrıca ALLOW_PRODUCTION_DB_VOLUME_RESET=1 gerekir."
                 return 0
             fi
-            warn "ALLOW_PRODUCTION_DB_VOLUME_RESET=1 verildi; SIDAR_ENV=${sidar_env} için PostgreSQL volume sıfırlama güvenlik freni operatör onayıyla bypass edildi."
+            warn "SIDAR_ENV=${sidar_env} için PostgreSQL parola hardening onarımı operatör onayıyla devam ediyor."
             ;;
         *)
             warn "SIDAR_ENV='${sidar_env}' tanınmadı; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı."
@@ -1045,13 +1111,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
             ;;
     esac
 
-    if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
-        warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
-        return 0
-    fi
-
     if ! command -v docker &>/dev/null; then
-        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
+        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL parola rotasyonu yapılamadı."
         return 0
     fi
 
@@ -1124,8 +1185,35 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
-        info "DB parola hardening sonrası silinecek PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
+        info "DB parola hardening sonrası onarım gerektiren PostgreSQL volume bulunamadı; temiz başlangıç varsayıldı."
         POSTGRES_VOLUME_RESET_DONE=true
+        return 0
+    fi
+
+    local postgres_password_rotation_strategy="${POSTGRES_PASSWORD_ROTATION_STRATEGY:-inplace}"
+    case "$postgres_password_rotation_strategy" in
+        inplace|in-place|alter-user|alter_user)
+            if sync_postgres_password_in_place_after_hardening "${compose_cmd[@]}"; then
+                return 0
+            fi
+            if [[ "${ALLOW_POSTGRES_VOLUME_RESET_FALLBACK:-0}" != "1" ]]; then
+                warn "Mevcut PostgreSQL volume korundu. Manuel onarım: uv run python -m scripts.sync_postgres_password"
+                warn "Sadece veri kaybını kabul ettiğiniz geliştirme ortamlarında ALLOW_POSTGRES_VOLUME_RESET_FALLBACK=1 veya POSTGRES_PASSWORD_ROTATION_STRATEGY=reset kullanın."
+                return 0
+            fi
+            warn "ALLOW_POSTGRES_VOLUME_RESET_FALLBACK=1 verildi; yerinde parola rotasyonu başarısız olduğu için legacy volume sıfırlama akışına geçiliyor."
+            ;;
+        reset|volume-reset|delete-volume)
+            warn "POSTGRES_PASSWORD_ROTATION_STRATEGY=${postgres_password_rotation_strategy}; PostgreSQL volume sıfırlama legacy stratejisi açıkça seçildi."
+            ;;
+        *)
+            warn "POSTGRES_PASSWORD_ROTATION_STRATEGY='${postgres_password_rotation_strategy}' tanınmadı; veri kaybını önlemek için PostgreSQL volume silinmedi."
+            return 0
+            ;;
+    esac
+
+    if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-0}" != "1" ]]; then
+        warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
         return 0
     fi
 
