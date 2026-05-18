@@ -327,8 +327,15 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "run_tests.sh" in makefile
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
-    assert "sudo apt-get install -y bats shellcheck" in ci_workflow
-    assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index("make lint")
+    assert "sudo apt-get install -y bats shellcheck" not in ci_workflow
+    assert "Install shell test tools" not in ci_workflow
+    assert "run: bash scripts/install_ci_system_deps.sh" in ci_workflow
+    assert ci_workflow.index(
+        "run: bash scripts/install_ci_system_deps.sh"
+    ) < ci_workflow.index("uv sync --frozen --all-extras")
+    assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index(
+        "make lint"
+    )
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
 
