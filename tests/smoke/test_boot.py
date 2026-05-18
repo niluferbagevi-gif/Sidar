@@ -17,6 +17,13 @@ def _is_external_infra_checks_disabled() -> bool:
     return os.getenv("SMOKE_SKIP_EXTERNAL_INFRA", "0") == "1"
 
 
+def _runtime_config_value(name: str, fallback: str) -> str:
+    """Dotenv yükleyen uygulama config değerini env fallback'iyle döndür."""
+    config_module = pytest.importorskip("config")
+    value = str(getattr(config_module.Config, name, "") or "").strip()
+    return value or os.getenv(name, fallback)
+
+
 def test_boot_agent_catalog_api_available() -> None:
     """Boot sonrası AgentCatalog API'sinin çalıştığını doğrular."""
     specs = AgentCatalog.list_all()
@@ -174,7 +181,9 @@ async def test_boot_postgresql_connection_select_1() -> None:
         "asyncpg", reason="PostgreSQL smoke testi için asyncpg gereklidir."
     )
 
-    database_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sidar")
+    database_url = _runtime_config_value(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sidar"
+    )
     if database_url.startswith("postgresql+asyncpg://"):
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
@@ -199,7 +208,7 @@ async def test_boot_redis_ping() -> None:
     if _is_external_infra_checks_disabled():
         pytest.skip("Harici altyapı smoke testleri SMOKE_SKIP_EXTERNAL_INFRA=1 ile kapatıldı.")
 
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_url = _runtime_config_value("REDIS_URL", "redis://localhost:6379/0")
     client = Redis.from_url(
         redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3
     )
