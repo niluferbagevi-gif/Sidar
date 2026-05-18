@@ -1,9 +1,11 @@
 """Smoke tests for application boot sanity."""
 
+import hashlib
 import inspect
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -15,6 +17,65 @@ from tests.helpers import make_test_config
 
 def _is_external_infra_checks_disabled() -> bool:
     return os.getenv("SMOKE_SKIP_EXTERNAL_INFRA", "0") == "1"
+
+
+def _masked_secret_hash(value: str) -> str:
+    """Return a non-reversible, length-aware secret fingerprint for diagnostics."""
+
+    if not value:
+        return "<missing>"
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{digest} len={len(value)}"
+
+
+def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
+    """Summarize a PostgreSQL DSN without exposing the password."""
+
+    parsed = urlsplit(database_url.strip())
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    password = unquote(parsed.password or "")
+    database_name = parsed.path.lstrip("/") or "<missing>"
+    return (
+        f"scheme={parsed.scheme or '<missing>'} "
+        f"user={parsed.username or '<missing>'} "
+        f"host={parsed.hostname or '<missing>'} "
+        f"port={port or '<missing>'} "
+        f"database={database_name} "
+        f"password_hash={_masked_secret_hash(password)}"
+    )
+
+
+def _database_url_dotenv_diagnostics(database_url: str) -> str:
+    """Build failure diagnostics for smoke DB checks without logging secrets."""
+
+    config_module = pytest.importorskip("config")
+    key_sources = config_module.get_dotenv_key_source_report()
+    load_events = config_module.get_dotenv_load_report()
+    database_url_source = key_sources.get("DATABASE_URL") or {}
+    postgres_password_source = key_sources.get("POSTGRES_PASSWORD") or {}
+    source_label = database_url_source.get("label") or "process-env/fallback"
+    source_path = database_url_source.get("path") or "<not tracked>"
+    password_source_label = postgres_password_source.get("label") or "process-env/fallback"
+    password_source_path = postgres_password_source.get("path") or "<not tracked>"
+    loaded_paths = [
+        f"{event.get('label')}={event.get('path')}"
+        for event in load_events
+        if event.get("loaded") and event.get("path")
+    ]
+    return (
+        "PostgreSQL smoke test dotenv diagnostics: "
+        f"SIDAR_ENV={os.getenv('SIDAR_ENV', '<unset>')!r}; "
+        f"DATABASE_URL_SOURCE={source_label}; "
+        f"DATABASE_URL_DOTENV_PATH={source_path}; "
+        f"POSTGRES_PASSWORD_SOURCE={password_source_label}; "
+        f"POSTGRES_PASSWORD_DOTENV_PATH={password_source_path}; "
+        f"POSTGRES_PASSWORD_HASH={_masked_secret_hash(os.getenv('POSTGRES_PASSWORD', ''))}; "
+        f"DATABASE_URL_SUMMARY={_postgres_dsn_diagnostic_summary(database_url)}; "
+        f"LOADED_DOTENV_PATHS={loaded_paths or ['<none>']}"
+    )
 
 
 def _runtime_config_value(name: str, fallback: str) -> str:
@@ -187,13 +248,19 @@ async def test_boot_postgresql_connection_select_1() -> None:
     if database_url.startswith("postgresql+asyncpg://"):
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
+    diagnostics = _database_url_dotenv_diagnostics(database_url)
     if not database_url.startswith(("postgresql://", "postgres://")):
         pytest.skip(
             "PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. "
-            f"Mevcut DATABASE_URL={database_url!r}"
+            f"{diagnostics}"
         )
 
-    conn = await asyncpg.connect(dsn=database_url, timeout=3)
+    try:
+        conn = await asyncpg.connect(dsn=database_url, timeout=3)
+    except Exception as exc:
+        pytest.fail(
+            f"PostgreSQL smoke bağlantısı başarısız: {exc!r}. {diagnostics}", pytrace=False
+        )
     try:
         result = await conn.fetchval("SELECT 1")
     finally:
