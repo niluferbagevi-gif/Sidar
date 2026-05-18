@@ -334,7 +334,7 @@ prompt_yes_no_with_timeout_default_yes() {
     local reply=""
 
     clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
         :
     else
         warn "$(sidar_t timeout_yes "$timeout_seconds")"
@@ -350,7 +350,7 @@ prompt_yes_no_with_timeout_default_no() {
     local reply=""
 
     clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply; then
+    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
         :
     else
         warn "$(sidar_t timeout_no "$timeout_seconds")"
@@ -2549,7 +2549,7 @@ ensure_prerequisites() {
             echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
             echo ""
             clear_stdin_buffer
-            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
+            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! docker_cli_healthy; then
@@ -4226,7 +4226,7 @@ prompt_post_install_sidar_env_mode() {
         echo "======================================================"
 
         clear_stdin_buffer
-        if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
+        if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice 2>/dev/tty; then
             :
         else
             warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (Development)."
@@ -5646,7 +5646,7 @@ select_runtime_mode() {
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
             clear_stdin_buffer
-            if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
+            if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer 2>/dev/tty; then
                 :
             else
                 warn "${SIDAR_PROMPT_TIMEOUT} saniye içinde seçim yapılmadı. Varsayılan seçim: 1 (geliştirici modu)."
