@@ -578,6 +578,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in env_utils
     assert "sync_database_env_chain_after_setup()" in install_script
     assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
+    assert "sync_postgres_password_in_place_after_hardening()" in install_script
+    assert "uv run python -m scripts.sync_postgres_password" in install_script
+    assert "POSTGRES_PASSWORD_ROTATION_STRATEGY:-inplace" in install_script
+    assert "ALLOW_POSTGRES_VOLUME_RESET_FALLBACK=1" in install_script
     assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in install_script
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[
