@@ -601,6 +601,16 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/phases' in bundler
 
 
+def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    strict_mode_pos = script.index("set -Eeuo pipefail")
+    default_pos = script.index('export GPU_AVAILABLE="${GPU_AVAILABLE:-false}"')
+    phase_runner_pos = script.index('sidar_run_install_phase "01_context"')
+
+    assert strict_mode_pos < default_pos < phase_runner_pos
+
+
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     main_body = script[
