@@ -745,6 +745,39 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
     assert "${2:-180}" not in script
 
 
+def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    helpers = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
+
+    assert "clear_stdin_buffer()" in helpers
+    assert "[[ -t 0 ]] || return 0" in helpers
+    assert "read -r -t 0.01 trash" in helpers
+    assert "if ! declare -F clear_stdin_buffer" in script
+
+    default_yes = script[
+        script.index("prompt_yes_no_with_timeout_default_yes()")
+        : script.index("prompt_yes_no_with_timeout_default_no()")
+    ]
+    default_no = script[
+        script.index("prompt_yes_no_with_timeout_default_no()")
+        : script.index("on_install_error()")
+    ]
+    assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_yes
+    assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_no
+
+    for prompt_marker in (
+        "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER]",
+        "Seçiminiz (1 veya 2, varsayılan=1)",
+        "Seçim [1/2, varsayılan=1]",
+    ):
+        read_pos = script.index(prompt_marker)
+        window = script[max(0, read_pos - 120) : read_pos]
+        assert "clear_stdin_buffer" in window
+
+    secret_input_pos = script.index("IFS= read -rs input || true")
+    assert "clear_stdin_buffer" in script[secret_input_pos - 120 : secret_input_pos]
+
+
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")

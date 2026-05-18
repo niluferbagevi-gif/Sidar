@@ -47,6 +47,20 @@ resolve_target_node_major() {
     echo "$default_major"
 }
 
+# Kullanıcıdan etkileşimli girdi almadan önce terminal tamponunda
+# (typeahead/stdin buffering) birikmiş olabilecek yanlış tuş vuruşlarını temizler.
+clear_stdin_buffer() {
+    local trash=""
+
+    # Sadece gerçek bir terminalden okurken tampon temizlenir. Pipe/CI gibi
+    # etkileşimsiz stdin akışlarında veri tüketmemek için sessizce atla.
+    [[ -t 0 ]] || return 0
+
+    while IFS= read -r -t 0.01 trash; do
+        :
+    done
+}
+
 resolve_offline_packages_dir() {
     local -a candidates=(
         "${SCRIPT_DIR}/${OFFLINE_PACKAGES_DIR_DEFAULT_NAME}"

@@ -250,6 +250,18 @@ fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
 
+# Eski/uzaktan indirilen yardımcı modüllerde fonksiyon henüz yoksa tek dosyalık
+# kurulum akışını korumak için güvenli fallback tanımla.
+if ! declare -F clear_stdin_buffer >/dev/null 2>&1; then
+    clear_stdin_buffer() {
+        local trash=""
+        [[ -t 0 ]] || return 0
+        while IFS= read -r -t 0.01 trash; do
+            :
+        done
+    }
+fi
+
 validate_install_utility_modules() {
     local module_rel=""
     local module_path=""
@@ -321,6 +333,7 @@ prompt_yes_no_with_timeout_default_yes() {
     local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
+    clear_stdin_buffer
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
     else
@@ -336,6 +349,7 @@ prompt_yes_no_with_timeout_default_no() {
     local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
     local reply=""
 
+    clear_stdin_buffer
     if read -r -t "$timeout_seconds" -p "$prompt" reply; then
         :
     else
@@ -2534,6 +2548,7 @@ ensure_prerequisites() {
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
             echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
             echo ""
+            clear_stdin_buffer
             read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..."
 
             # Kullanıcıdan onay sonrası tekrar doğrula
@@ -3837,6 +3852,7 @@ collect_api_keys_interactive() {
             printf "  %-46s : " "$lbl"
             input=""
             # Gizli giriş: anahtarlar terminalde görünmez; satır düzeni için ardından echo basılır.
+            clear_stdin_buffer
             IFS= read -rs input || true
             echo ""
             _write_key "$mk" "$input"
@@ -4209,6 +4225,7 @@ prompt_post_install_sidar_env_mode() {
         echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
         echo "======================================================"
 
+        clear_stdin_buffer
         if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice; then
             :
         else
@@ -5628,6 +5645,7 @@ select_runtime_mode() {
             info "Çalışma modu seçimi:"
             echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
             echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            clear_stdin_buffer
             if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer; then
                 :
             else
