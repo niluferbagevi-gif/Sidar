@@ -48,6 +48,13 @@ def test_compose_cpu_builds_use_python_311_base_image():
     assert "python:3.12-slim" not in compose
 
 
+def test_compose_postgres_volume_uses_predictable_name():
+    compose = _read("docker-compose.yml")
+
+    assert "- postgres_data:/var/lib/postgresql/data" in compose
+    assert "  postgres_data:\n    name: sidar_postgres_data" in compose
+
+
 def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
     compose = _read("docker-compose.yml")
 

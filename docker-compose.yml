@@ -321,6 +321,7 @@ services:
 volumes:
   redis_data:
   postgres_data:
+    name: sidar_postgres_data
   ollama_data:
   sidar_data_prod:
   sidar_logs_prod:
