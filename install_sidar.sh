@@ -3591,7 +3591,7 @@ write_generated_default_database_url() {
     generated_password=$(generate_secure_token 24)
     [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
 
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@localhost:5432/sidar"
+    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@127.0.0.1:5432/sidar"
     local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
 
     sed_inplace '/^POSTGRES_USER=/d' "$env_file"
@@ -4963,7 +4963,7 @@ for raw_line in env_path.read_text(encoding="utf-8").splitlines():
 password = values.get("POSTGRES_PASSWORD", "")
 if password:
     user = values.get("POSTGRES_USER") or "sidar"
-    host = values.get("POSTGRES_HOST") or "localhost"
+    host = values.get("POSTGRES_HOST") or "127.0.0.1"
     port = values.get("POSTGRES_PORT") or "5432"
     database = values.get("POSTGRES_DB") or "sidar"
     print(
@@ -5026,7 +5026,7 @@ url = sys.argv[1]
 url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
 parsed = urlparse(url)
 
-host = parsed.hostname or "localhost"
+host = parsed.hostname or "127.0.0.1"
 port = str(parsed.port or 5432)
 user = unquote(parsed.username or "postgres")
 password = unquote(parsed.password or "")

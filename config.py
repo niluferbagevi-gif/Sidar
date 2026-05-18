@@ -441,8 +441,8 @@ def build_postgres_dsn(*, host: str | None = None) -> str:
     user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     password = os.getenv("POSTGRES_PASSWORD", "sidar")
     resolved_host = (
-        host if host is not None else os.getenv("POSTGRES_HOST") or "localhost"
-    ).strip() or "localhost"
+        host if host is not None else os.getenv("POSTGRES_HOST") or "127.0.0.1"
+    ).strip() or "127.0.0.1"
     port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
     database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
 

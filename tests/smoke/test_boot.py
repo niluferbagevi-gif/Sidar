@@ -182,7 +182,7 @@ async def test_boot_postgresql_connection_select_1() -> None:
     )
 
     database_url = _runtime_config_value(
-        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sidar"
+        "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/sidar"
     )
     if database_url.startswith("postgresql+asyncpg://"):
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)

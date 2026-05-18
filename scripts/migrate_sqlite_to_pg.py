@@ -3,7 +3,7 @@
 Kullanım örneği:
     python scripts/migrate_sqlite_to_pg.py \
         --sqlite-path data/sidar.db \
-        --postgres-dsn postgresql://user:pass@localhost:5432/sidar
+        --postgres-dsn postgresql://user:pass@127.0.0.1:5432/sidar
 """
 
 from __future__ import annotations

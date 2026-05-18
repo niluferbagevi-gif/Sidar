@@ -552,7 +552,7 @@ class SystemHealthManager:
                 ),
             }
         parsed = urlparse(raw)
-        host = parsed.hostname or "localhost"
+        host = parsed.hostname or "127.0.0.1"
         port = int(parsed.port or 5432)
         status = self._tcp_dependency_health(host, port, label="database")
         status["mode"] = parsed.scheme or "tcp"

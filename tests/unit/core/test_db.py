@@ -2301,6 +2301,10 @@ async def test_connect_postgresql_degraded_mode_uses_doctor_lost_url_diagnosis(
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setattr(
+        "core.db._doctor_database_env_failure_reason",
+        lambda: "DATABASE_URL is not set; database readiness cannot be fully verified",
+    )
     cfg = DummyCfg(
         DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path)
     )

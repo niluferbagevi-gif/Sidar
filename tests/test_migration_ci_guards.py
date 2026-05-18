@@ -97,7 +97,7 @@ def test_alembic_default_url_is_documented_as_local_only() -> None:
         config_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         assert "Local development fallback only" in config_text
         assert "DATABASE_URL or -x database_url=..." in config_text
-        assert "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar" in config_text
+        assert "postgresql+asyncpg://sidar:sidar@127.0.0.1:5432/sidar" in config_text
 
 
 def test_alembic_env_rejects_local_fallback_in_production() -> None:

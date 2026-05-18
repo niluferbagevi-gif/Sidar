@@ -801,7 +801,7 @@ OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 
 # PostgreSQL kök bilgileri; DATABASE_URL aktif tanımlı değilse config.py bunlardan DSN üretir.
-POSTGRES_HOST=localhost
+POSTGRES_HOST=127.0.0.1
 POSTGRES_CONTAINER_HOST=postgres
 POSTGRES_PORT=5432
 POSTGRES_DB=sidar

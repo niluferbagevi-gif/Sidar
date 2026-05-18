@@ -2,7 +2,7 @@
 
 Örnek:
   python scripts/load_test_db_pool.py \
-    --database-url postgresql://sidar:sidar@localhost:5432/sidar \
+    --database-url postgresql://sidar:sidar@127.0.0.1:5432/sidar \
     --concurrency 50 \
     --requests 300
 """

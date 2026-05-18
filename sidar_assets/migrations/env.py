@@ -52,7 +52,7 @@ def _resolve_dotenv_loader() -> DotenvLoader:
 
 _load_dotenv = _resolve_dotenv_loader()
 
-LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@localhost:5432/sidar"
+LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@127.0.0.1:5432/sidar"
 PRODUCTION_ENV_NAMES = {"prod", "production"}
 
 
