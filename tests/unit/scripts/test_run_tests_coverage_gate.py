@@ -319,7 +319,22 @@ def test_install_sidar_uses_central_known_weak_secret_list() -> None:
 def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
     known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
 
-    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" in known_weak
+    for weak_postgres_password in (
+        "change-me-to-a-strong-password",
+        "replace-with-a-strong-24-plus-character-password",
+        "__GENERATE__",
+        "sidar_test_secure_pw",
+        "sidar_dev_secure_pw",
+        "sidar_development_secure_pw",
+        "sidar_prod_secure_pw",
+        "sidar_production_secure_pw",
+    ):
+        assert f"POSTGRES_PASSWORD={weak_postgres_password}" in known_weak
+
+    for env_example in Path(".").glob(".env*.example"):
+        for line in env_example.read_text(encoding="utf-8").splitlines():
+            if line.startswith("POSTGRES_PASSWORD=") and line.strip() != "POSTGRES_PASSWORD=":
+                assert line in known_weak
 
     for key in (
         "API_KEY",
