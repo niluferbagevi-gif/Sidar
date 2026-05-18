@@ -126,6 +126,46 @@ PY
 
 check_python_version
 
+generate_test_secret_value() {
+  python - <<'PY_SECRET' 2>/dev/null || openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n='
+import secrets
+print(secrets.token_urlsafe(32))
+PY_SECRET
+}
+
+render_generated_secret_sentinels() {
+  local target="$1"
+  local generated_password=""
+
+  if [ ! -f "${target}" ] || ! grep -q '^POSTGRES_PASSWORD=__GENERATE__$' "${target}"; then
+    return 0
+  fi
+
+  generated_password="$(generate_test_secret_value)"
+  if [ -z "${generated_password}" ]; then
+    echo "⚠️ POSTGRES_PASSWORD=__GENERATE__ için parola üretilemedi; '${target}' dosyasını elle güncelleyin."
+    return 1
+  fi
+
+  python - "${target}" "${generated_password}" <<'PY_RENDER'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+password = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+path.write_text(
+    "\n".join(
+        f"POSTGRES_PASSWORD={password}" if line == "POSTGRES_PASSWORD=__GENERATE__" else line
+        for line in lines
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY_RENDER
+  echo "✅ '${target}' içindeki POSTGRES_PASSWORD=__GENERATE__ güçlü lokal parola ile değiştirildi."
+}
+
 # Test ortam değişken dosyasının (.env.test veya DOTENV_FILE ile belirtilen)
 # var olduğundan emin olur; yoksa .env.test.example şablonundan otomatik
 # olarak oluşturur. Böylece yeni klonlanan bir checkout'ta `bash run_tests.sh`
@@ -145,6 +185,7 @@ ensure_test_dotenv() {
 
   echo "ℹ️ '${target}' bulunamadı; '${template}' şablonundan otomatik oluşturuluyor."
   if cp "${template}" "${target}"; then
+    render_generated_secret_sentinels "${target}" || true
     echo "✅ '${target}' oluşturuldu. Lokal ihtiyaçlarınıza göre düzenleyebilirsiniz (sırlar yalnızca bu dosyada tutulur)."
   else
     echo "⚠️ '${target}' otomatik oluşturulamadı; ortam değişkenleri olmadan devam edilecek."

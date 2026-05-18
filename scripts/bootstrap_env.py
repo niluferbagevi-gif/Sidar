@@ -12,9 +12,9 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE = "development"
 SECRET_PLACEHOLDERS = {
-    "POSTGRES_PASSWORD": "replace-with-a-strong-24-plus-character-password",
-    "API_KEY": "replace-with-a-local-development-api-key",
-    "JWT_SECRET_KEY": "replace-with-a-local-development-jwt-secret-32-plus-chars",
+    "POSTGRES_PASSWORD": ("replace-with-a-strong-24-plus-character-password", "__GENERATE__"),
+    "API_KEY": ("replace-with-a-local-development-api-key",),
+    "JWT_SECRET_KEY": ("replace-with-a-local-development-jwt-secret-32-plus-chars",),
 }
 
 
@@ -52,8 +52,8 @@ def render_env_template(
     if not generate_secrets:
         return rendered if rendered.endswith("\n") else rendered + "\n", generated
 
-    for key, placeholder in SECRET_PLACEHOLDERS.items():
-        if f"{key}={placeholder}" not in rendered:
+    for key, placeholders in SECRET_PLACEHOLDERS.items():
+        if not any(f"{key}={placeholder}" in rendered for placeholder in placeholders):
             generated[key] = False
             continue
         rendered = _replace_assignment(rendered, key, secrets.token_urlsafe(32))

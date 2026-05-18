@@ -261,11 +261,21 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
-    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" in env_test_example
+    assert "POSTGRES_PASSWORD=__GENERATE__" in env_test_example
+    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" not in env_test_example
     assert "POSTGRES_PASSWORD=sidar\n" not in env_test_example
     assert "DATABASE_URL=postgresql" not in env_test_example
     assert "TEST_DATABASE_URL=" not in env_test_example
     assert "izole test DATABASE_URL değerini çalışma zamanında üretir" in env_test_example
+    assert "güçlü, lokal" in env_test_example
+
+
+def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
+    script = RUN_TESTS.read_text(encoding="utf-8")
+
+    assert "render_generated_secret_sentinels" in script
+    assert "POSTGRES_PASSWORD=__GENERATE__" in script
+    assert "secrets.token_urlsafe(32)" in script
 
 
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
@@ -308,6 +318,8 @@ def test_install_sidar_uses_central_known_weak_secret_list() -> None:
 
 def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
     known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
+
+    assert "POSTGRES_PASSWORD=sidar_test_secure_pw" in known_weak
 
     for key in (
         "API_KEY",

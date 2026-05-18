@@ -79,6 +79,21 @@ def test_render_env_template_adds_missing_sidar_env_for_isolation() -> None:
     assert rendered == "API_KEY=local\nSIDAR_ENV=development\n"
 
 
+def test_render_env_template_generates_postgres_password_for_generate_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bootstrap_env.secrets, "token_urlsafe", lambda _size: "generated-pg")
+
+    rendered, generated = bootstrap_env.render_env_template(
+        "SIDAR_ENV=test\nPOSTGRES_PASSWORD=__GENERATE__\n",
+        profile="test",
+    )
+
+    assert generated["POSTGRES_PASSWORD"] is True
+    assert "POSTGRES_PASSWORD=generated-pg" in rendered
+    assert "__GENERATE__" not in rendered
+
+
 def test_bootstrap_env_main_prints_feedback_to_stderr_and_json_to_stdout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
