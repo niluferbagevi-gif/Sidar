@@ -800,7 +800,7 @@ GEMINI_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 
-# PostgreSQL kök bilgileri; DATABASE_URL boşsa config.py bunlardan DSN üretir.
+# PostgreSQL kök bilgileri; DATABASE_URL aktif tanımlı değilse config.py bunlardan DSN üretir.
 POSTGRES_HOST=localhost
 POSTGRES_CONTAINER_HOST=postgres
 POSTGRES_PORT=5432

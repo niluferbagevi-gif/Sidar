@@ -1670,6 +1670,32 @@ def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch
     assert config.Config.get_missing_critical_runtime_keys() == []
 
 
+def test_database_url_examples_do_not_ship_blank_runtime_overrides() -> None:
+    """Database DSNs must be derived from POSTGRES_* unless explicitly overridden."""
+    repo_root = Path(__file__).resolve().parents[3]
+    forbidden_keys = {
+        "DATABASE_URL",
+        "SIDAR_CONTAINER_DATABASE_URL",
+        "SELF_HEAL_DATABASE_URL",
+    }
+    offenders: dict[str, list[str]] = {}
+
+    for relative_path in (".env.advanced.example", ".env.development.example"):
+        active_keys: list[str] = []
+        content = (repo_root / relative_path).read_text(encoding="utf-8")
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _value = line.split("=", 1)
+            if key.strip() in forbidden_keys:
+                active_keys.append(key.strip())
+        if active_keys:
+            offenders[relative_path] = active_keys
+
+    assert offenders == {}
+
+
 def test_sidar_keys_example_does_not_ship_active_empty_overrides() -> None:
     """The personal keys template must not blank .env values when copied as-is."""
     example_path = Path(__file__).resolve().parents[3] / ".sidar_keys.env.example"
