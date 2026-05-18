@@ -6,8 +6,75 @@ SIDAR_INSTALL_UTIL_DB_CREDENTIALS_SH_LOADED=1
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the workspace phase.
 
+
+sidar_default_db_env_variant_specs() {
+    printf '%s\n' \
+        "$SCRIPT_DIR/.env.development:$SCRIPT_DIR/.env.development.example" \
+        "$SCRIPT_DIR/.env.test:$SCRIPT_DIR/.env.test.example" \
+        "$SCRIPT_DIR/.env.advanced:$SCRIPT_DIR/.env.advanced.example"
+}
+
+sidar_write_env_value() {
+    local env_file="$1"
+    local key="$2"
+    local value="$3"
+
+    sed_inplace "/^${key}=/d" "$env_file"
+    echo "${key}=${value}" >> "$env_file"
+}
+
+sync_postgres_env_variants_with_source() {
+    local source_env_file="$1"
+    shift || true
+    local -a variant_specs=("$@")
+    local -a postgres_keys=(
+        POSTGRES_USER
+        POSTGRES_PASSWORD
+        POSTGRES_DB
+        DATABASE_URL
+        SIDAR_CONTAINER_DATABASE_URL
+    )
+
+    [[ -f "$source_env_file" ]] || return 0
+
+    if [[ "${#variant_specs[@]}" -eq 0 ]]; then
+        mapfile -t variant_specs < <(sidar_default_db_env_variant_specs)
+    fi
+
+    local spec target example key value label
+    for spec in "${variant_specs[@]}"; do
+        target="${spec%%:*}"
+        example=""
+        if [[ "$spec" == *:* ]]; then
+            example="${spec#*:}"
+        fi
+        [[ -n "$target" ]] || continue
+
+        if [[ ! -f "$target" ]]; then
+            if [[ -n "$example" && -f "$example" ]]; then
+                cp "$example" "$target"
+                ok "$(basename "$target") dosyası $(basename "$example") üzerinden oluşturuldu."
+            else
+                warn "$(basename "$target") bulunamadı; PostgreSQL credential senkronizasyonu atlandı."
+                continue
+            fi
+        fi
+
+        for key in "${postgres_keys[@]}"; do
+            value=$(read_env_value_from_file "$key" "$source_env_file" | tr -d '\n')
+            [[ -z "${value//[[:space:]]/}" ]] && continue
+            sidar_write_env_value "$target" "$key" "$value"
+        done
+
+        label="$(basename "$target")"
+        ok "${label}: PostgreSQL credential değerleri .env ile zorunlu olarak senkronize edildi."
+    done
+}
+
 harden_database_credentials() {
     local env_file="$1"
+    shift || true
+    local -a variant_specs=("$@")
     local db_url=""
     local sidar_env="development"
     local safe_db_url=""
@@ -62,6 +129,7 @@ harden_database_credentials() {
                     # shellcheck disable=SC2034  # summarized later by installer status output.
                     DB_PASSWORD_HARDENED=true
                     ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
+                    sync_postgres_env_variants_with_source "$env_file" "${variant_specs[@]}"
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
                     if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
                         local detected_pg_volume=""
@@ -84,6 +152,8 @@ harden_database_credentials() {
 
 sync_postgres_env_with_database_url() {
     local env_file="$1"
+    shift || true
+    local -a variant_specs=("$@")
     local db_url=""
 
     [[ -f "$env_file" ]] || return
@@ -122,6 +192,7 @@ sync_postgres_env_with_database_url() {
         } >> "$env_file"
 
         ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
+        sync_postgres_env_variants_with_source "$env_file" "${variant_specs[@]}"
     fi
 }
 

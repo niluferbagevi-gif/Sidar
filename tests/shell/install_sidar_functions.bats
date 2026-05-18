@@ -141,6 +141,75 @@ ENV
   [ "$status" -eq 0 ]
 }
 
+
+@test "modular harden_database_credentials syncs explicit env variants" {
+  run_installer_function '
+    source ./scripts/install_modules/utils/db_credentials.sh
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    variant_file="$tmpdir/.env.test"
+
+    cat > "$env_file" <<ENV
+SIDAR_ENV=development
+DATABASE_URL=postgresql+asyncpg://sidar:postgres@127.0.0.1:5432/sidar?ssl=disable
+POSTGRES_PASSWORD=postgres
+ENV
+    cat > "$variant_file" <<ENV
+POSTGRES_PASSWORD=sidar_test_secure_pw
+DATABASE_URL=postgresql+asyncpg://sidar:sidar_test_secure_pw@127.0.0.1:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:sidar_test_secure_pw@postgres:5432/sidar
+ENV
+
+    generate_secure_token() { printf "%s\n" "GeneratedStrongDbToken_1234567890"; }
+    harden_database_credentials "$env_file" "$variant_file"
+
+    grep -q "^POSTGRES_PASSWORD=GeneratedStrongDbToken_1234567890$" "$variant_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@127.0.0.1:5432/sidar?ssl=disable$" "$variant_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@postgres:5432/sidar$" "$variant_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "modular sync_postgres_env_with_database_url forces default env variant consistency" {
+  run_installer_function '
+    source ./scripts/install_modules/utils/db_credentials.sh
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    master_pw="MasterStrongDbToken_1234567890"
+    stale_pw="sidar_test_secure_pw"
+
+    cat > "$env_file" <<ENV
+DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable
+POSTGRES_PASSWORD=old_value_that_should_be_replaced
+ENV
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/${variant}.example" <<ENV
+POSTGRES_PASSWORD=example_password
+DATABASE_URL=postgresql+asyncpg://sidar:example_password@127.0.0.1:5432/sidar
+ENV
+      cat > "$tmpdir/$variant" <<ENV
+POSTGRES_PASSWORD=${stale_pw}
+DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@127.0.0.1:5432/sidar
+SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@postgres:5432/sidar
+ENV
+    done
+
+    SCRIPT_DIR="$tmpdir"
+    sync_postgres_env_with_database_url "$env_file"
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^POSTGRES_USER=sidar$" "$tmpdir/$variant"
+      grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
+      grep -q "^POSTGRES_DB=sidar$" "$tmpdir/$variant"
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "SIDAR_LOCALE=en renders installer help in English" {
   local root
   root="$(repo_root)"
