@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 RUN_TESTS = Path("run_tests.sh")
 
 
@@ -124,6 +126,59 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
 
     assert "Yükleme zinciri `config.py` varsayılanları" in project_report
     assert "kalıcı kaynak politikası yalnız `.env`" in project_report
+
+
+def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
+    conftest = Path("tests/conftest.py").read_text(encoding="utf-8")
+
+    assert "_assert_test_dotenv_postgres_parity()" in conftest
+    assert ".env.test içindeki POSTGRES_PASSWORD" in conftest
+    assert "scripts/sync_database_passwords.py --all-envs" in conftest
+    assert "InvalidPasswordError" in conftest
+    assert conftest.index("_load_pytest_dotenv_chain()") < conftest.index(
+        "_assert_test_dotenv_postgres_parity()"
+    )
+
+
+def test_pytest_conftest_parity_guard_fails_on_password_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import tests.conftest as conftest
+
+    (tmp_path / ".env").write_text(
+        "POSTGRES_PASSWORD=base_secure_password_123456\n"
+        "DATABASE_URL=postgresql://sidar:base_secure_password_123456@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.test").write_text(
+        "POSTGRES_PASSWORD=stale_test_password_123456\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(conftest, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(pytest.fail.Exception, match="InvalidPasswordError"):
+        conftest._assert_test_dotenv_postgres_parity()
+
+
+def test_pytest_conftest_parity_guard_accepts_matching_passwords(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import tests.conftest as conftest
+
+    (tmp_path / ".env").write_text(
+        "POSTGRES_PASSWORD=base_secure_password_123456\n"
+        "DATABASE_URL=postgresql://sidar:base_secure_password_123456@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.test").write_text(
+        "POSTGRES_PASSWORD=base_secure_password_123456\n"
+        "DATABASE_URL=postgresql://sidar:base_secure_password_123456@localhost:5432/sidar\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(conftest, "PROJECT_ROOT", tmp_path)
+
+    conftest._assert_test_dotenv_postgres_parity()
+
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")

@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import unquote, urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -22,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 os.environ.setdefault("SIDAR_ENV", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
 
+import pytest
 from dotenv import load_dotenv
 
 
@@ -51,9 +53,74 @@ def _load_pytest_dotenv_chain() -> None:
         load_dotenv(dotenv_path=Path(keys_file).expanduser(), override=True)
 
 
-_load_pytest_dotenv_chain()
+def _read_dotenv_assignment(dotenv_path: Path, key: str) -> str:
+    if not dotenv_path.is_file():
+        return ""
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        current_key, raw_value = line.split("=", 1)
+        if current_key.strip() != key:
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        return value
+    return ""
 
-import pytest
+
+def _postgres_url_password(raw_url: str) -> str:
+    parsed = urlsplit(raw_url.strip())
+    if not parsed.scheme.startswith("postgresql"):
+        return ""
+    return unquote(parsed.password or "")
+
+
+def _assert_test_dotenv_postgres_parity() -> None:
+    """Fail early when .env.test would override runtime DB credentials."""
+
+    base_env_path = PROJECT_ROOT / ".env"
+    test_env_path = PROJECT_ROOT / ".env.test"
+    if not base_env_path.is_file() or not test_env_path.is_file():
+        return
+
+    base_password = _read_dotenv_assignment(base_env_path, "POSTGRES_PASSWORD")
+    test_password = _read_dotenv_assignment(test_env_path, "POSTGRES_PASSWORD")
+    if base_password and test_password and base_password != test_password:
+        pytest.fail(
+            "PostgreSQL dotenv parity check failed before tests: "
+            ".env.test içindeki POSTGRES_PASSWORD, .env içindeki POSTGRES_PASSWORD "
+            "ile aynı değil. Smoke testler runtime PostgreSQL'e bağlanırken bu drift "
+            "InvalidPasswordError üretebilir. Düzeltme: `uv run python "
+            "scripts/sync_database_passwords.py --all-envs` veya `./install_sidar.sh "
+            "--smoke-test` pre-smoke sync adımını çalıştırın.",
+            pytrace=False,
+        )
+
+    base_database_url = _read_dotenv_assignment(base_env_path, "DATABASE_URL")
+    test_database_url = _read_dotenv_assignment(test_env_path, "DATABASE_URL")
+    base_url_password = _postgres_url_password(base_database_url)
+    test_url_password = _postgres_url_password(test_database_url)
+    if base_password and base_url_password and base_url_password != base_password:
+        pytest.fail(
+            "PostgreSQL dotenv parity check failed before tests: .env içindeki "
+            "DATABASE_URL parolası POSTGRES_PASSWORD ile aynı değil. Önce "
+            "`uv run python scripts/sync_database_passwords.py --all-envs` çalıştırın.",
+            pytrace=False,
+        )
+    if base_password and test_url_password and test_url_password != base_password:
+        pytest.fail(
+            "PostgreSQL dotenv parity check failed before tests: .env.test içindeki "
+            "DATABASE_URL parolası .env POSTGRES_PASSWORD ile aynı değil. Smoke testler "
+            "yanlış parola ile runtime PostgreSQL'e bağlanabilir. Düzeltme: `uv run "
+            "python scripts/sync_database_passwords.py --all-envs`.",
+            pytrace=False,
+        )
+
+
+_load_pytest_dotenv_chain()
+_assert_test_dotenv_postgres_parity()
 from sqlalchemy import text
 
 _REQUIRED_TEST_MODULES = {
@@ -110,7 +177,6 @@ DEFAULT_FREEZEGUN_IGNORE_MODULES = (
     "langchain_core",
     "langchain_community",
 )
-
 
 
 @pytest.fixture(autouse=True)
