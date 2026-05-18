@@ -85,12 +85,13 @@ def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -
     """Run ALTER USER inside the local Docker Compose PostgreSQL service."""
     _check_environment_allowed(allow_non_dev=allow_non_dev)
     postgres_user = _env_value("POSTGRES_USER", "sidar")
+    postgres_db = _env_value("POSTGRES_DB", "sidar")
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     if not postgres_password:
         raise RuntimeError("POSTGRES_PASSWORD is not set")
 
     admin_user = _env_value("POSTGRES_ADMIN_USER", postgres_user)
-    admin_db = _env_value("POSTGRES_ADMIN_DB", _env_value("POSTGRES_DB", postgres_user))
+    admin_db = _env_value("POSTGRES_ADMIN_DB", postgres_db)
 
     cmd = _docker_compose_command(admin_user=admin_user, admin_db=admin_db)
     sql = _build_alter_user_sql(
@@ -118,6 +119,7 @@ def sync_postgres_password_with_docker_compose(*, allow_non_dev: bool = False) -
         method="docker-compose",
         service="postgres",
         postgres_user=postgres_user,
+        postgres_db=postgres_db,
         admin_user=admin_user,
         admin_db=admin_db,
         postgres_password_set=True,
