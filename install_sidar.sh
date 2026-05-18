@@ -5713,7 +5713,8 @@ launch_ide() {
             open_code="H"
             info "AUTO_INSTALL: OPEN_VSCODE=false olduğu için VS Code açılmayacak."
         else
-            open_code=$(prompt_yes_no_with_timeout_default_yes "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
+            clear_stdin_buffer
+            open_code=$(prompt_yes_no_with_timeout_default_no "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H] ")
         fi
         case "${open_code:-H}" in
             [EeYy]*)

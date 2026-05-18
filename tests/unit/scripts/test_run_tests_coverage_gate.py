@@ -769,6 +769,7 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
         "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER]",
         "Seçiminiz (1 veya 2, varsayılan=1)",
         "Seçim [1/2, varsayılan=1]",
+        "Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H]",
     ):
         read_pos = script.index(prompt_marker)
         window = script[max(0, read_pos - 120) : read_pos]
@@ -776,6 +777,10 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
 
     secret_input_pos = script.index("IFS= read -rs input || true")
     assert "clear_stdin_buffer" in script[secret_input_pos - 120 : secret_input_pos]
+
+    vscode_prompt_pos = script.index("Kurulum tamamlandı. Proje VS Code ile açılsın mı? [e/H]")
+    vscode_prompt_window = script[vscode_prompt_pos - 160 : vscode_prompt_pos + 120]
+    assert "prompt_yes_no_with_timeout_default_no" in vscode_prompt_window
 
 
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
