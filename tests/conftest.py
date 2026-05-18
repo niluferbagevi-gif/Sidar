@@ -12,11 +12,46 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # Bazı modüller import anında Config() oluşturuyor.
 # Pytest collection aşamasında test-env işaretleri henüz garanti olmadığından
 # kritik ayarların boş gelmesini önlemek için en erken noktada varsayılanları set ediyoruz.
 os.environ.setdefault("SIDAR_ENV", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
+
+from dotenv import load_dotenv
+
+
+def _load_pytest_dotenv_chain() -> None:
+    """Pytest collection öncesinde runtime dotenv zincirini test sürecine yükle."""
+
+    base_env_path = PROJECT_ROOT / ".env"
+    advanced_env_path = PROJECT_ROOT / ".env.advanced"
+    profile_env_path = PROJECT_ROOT / f".env.{os.getenv('SIDAR_ENV', '').strip()}"
+
+    # config.py ile aynı temel önceliği koru: .env ve .env.advanced mevcut
+    # process ortamını ezmez; profil/explicit/secret dosyaları bilinçli override eder.
+    load_dotenv(dotenv_path=base_env_path, override=False)
+    load_dotenv(dotenv_path=advanced_env_path, override=False)
+    if profile_env_path.name != ".env." and profile_env_path.exists():
+        load_dotenv(dotenv_path=profile_env_path, override=True)
+
+    explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
+    if explicit_dotenv:
+        explicit_path = Path(explicit_dotenv).expanduser()
+        if not explicit_path.is_absolute():
+            explicit_path = PROJECT_ROOT / explicit_path
+        load_dotenv(dotenv_path=explicit_path, override=True)
+
+    keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+    if keys_file:
+        load_dotenv(dotenv_path=Path(keys_file).expanduser(), override=True)
+
+
+_load_pytest_dotenv_chain()
 
 import pytest
 from sqlalchemy import text
@@ -76,10 +111,6 @@ DEFAULT_FREEZEGUN_IGNORE_MODULES = (
     "langchain_community",
 )
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture(autouse=True)
