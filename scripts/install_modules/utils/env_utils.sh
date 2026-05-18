@@ -6,6 +6,26 @@ SIDAR_INSTALL_UTIL_ENV_UTILS_SH_LOADED=1
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
 
+sync_database_env_chain_after_setup() {
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
+        return 0
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/sync_database_passwords.py" ]]; then
+        warn "scripts.sync_database_passwords bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
+        return 0
+    fi
+
+    info "Ortam değişkenlerindeki veritabanı şifre çakışmaları temizleniyor..."
+    if (cd "$SCRIPT_DIR" && uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1); then
+        ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
+    else
+        warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
+            "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -37,6 +57,7 @@ setup_env_file() {
         # API anahtarlarını yazar; bu yüzden burada ikinci bir generic propagate gerekmez.
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
+        sync_database_env_chain_after_setup
         validate_runtime_env_loading
         return
     fi
@@ -109,5 +130,6 @@ setup_env_file() {
     # API anahtarlarını yazar; bu yüzden burada ikinci bir generic propagate gerekmez.
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"
+    sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }

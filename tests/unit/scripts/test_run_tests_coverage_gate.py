@@ -534,6 +534,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         encoding="utf-8"
     )
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
     assert "sidar_run_install_phase()" in remediation_utils
@@ -573,11 +574,24 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in env_utils
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
     assert "propagate_shared_secrets_to_env_variants" in env_utils
+    assert "sync_database_env_chain_after_setup()" in env_utils
+    assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in env_utils
+    assert "sync_database_env_chain_after_setup()" in install_script
+    assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
+    assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in install_script
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[
         env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index('return', env_utils.index('if [[ -f "$ENV_FILE" ]]'))
     ]
-    assert existing_env_branch.index("propagate_shared_secrets_to_env_variants") < existing_env_branch.index("collect_api_keys_interactive")
+    assert existing_env_branch.index(
+        "propagate_shared_secrets_to_env_variants"
+    ) < existing_env_branch.index("collect_api_keys_interactive")
+    assert existing_env_branch.index("report_env_api_key_status") < existing_env_branch.index(
+        "sync_database_env_chain_after_setup"
+    )
+    assert existing_env_branch.index(
+        "sync_database_env_chain_after_setup"
+    ) < existing_env_branch.index("validate_runtime_env_loading")
     assert "ikinci bir generic propagate gerekmez" in existing_env_branch
     assert "harden_database_credentials" in env_utils
     assert "download_ollama_models()" in ollama_utils

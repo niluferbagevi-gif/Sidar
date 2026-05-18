@@ -4388,6 +4388,26 @@ PYDB
     fi
 }
 
+sync_database_env_chain_after_setup() {
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
+        return 0
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/sync_database_passwords.py" ]]; then
+        warn "scripts.sync_database_passwords bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
+        return 0
+    fi
+
+    info "Ortam değişkenlerindeki veritabanı şifre çakışmaları temizleniyor..."
+    if (cd "$SCRIPT_DIR" && uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1); then
+        ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
+    else
+        warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
+            "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -4417,6 +4437,7 @@ setup_env_file() {
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
+        sync_database_env_chain_after_setup
         validate_runtime_env_loading
         return
     fi
@@ -4487,6 +4508,7 @@ setup_env_file() {
 
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"
+    sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }
 
@@ -4803,6 +4825,42 @@ run_migrations() {
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
     fi
     ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
+
+    if [[ -z "$DB_URL" && -f "$ENV_FILE" ]]; then
+        DB_URL=$("$ALEMBIC_PYTHON" - "$ENV_FILE" <<'PY'
+from pathlib import Path
+from urllib.parse import quote
+import sys
+
+env_path = Path(sys.argv[1])
+values = {}
+for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    values[key.strip()] = value
+
+password = values.get("POSTGRES_PASSWORD", "")
+if password:
+    user = values.get("POSTGRES_USER") or "sidar"
+    host = values.get("POSTGRES_HOST") or "localhost"
+    port = values.get("POSTGRES_PORT") or "5432"
+    database = values.get("POSTGRES_DB") or "sidar"
+    print(
+        "postgresql+asyncpg://"
+        f"{quote(user, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{port}/{quote(database, safe='')}"
+    )
+PY
+)
+        if [[ -n "$DB_URL" ]]; then
+            info "DATABASE_URL .env içinde aktif tanımlı değil; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
+        fi
+    fi
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
