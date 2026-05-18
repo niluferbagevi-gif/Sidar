@@ -45,12 +45,14 @@
       "settings": {
         "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv-container/bin/python",
         "python.terminal.activateEnvironment": true,
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "shellcheck.executablePath": "${containerWorkspaceFolder}/.venv-container/bin/shellcheck"
       },
       "extensions": [
         "ms-python.python",
         "charliermarsh.ruff",
-        "ms-python.mypy-type-checker"
+        "ms-python.mypy-type-checker",
+        "timonwong.shellcheck"
       ]
     }
   },
