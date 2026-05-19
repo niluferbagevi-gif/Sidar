@@ -68,6 +68,7 @@ from pydantic import BaseModel, Field
 from web.routes.health import build_health_router
 from web.routes.agent import build_agent_router
 from web.routes.rag import build_rag_router
+from web.routes.auth_admin import build_auth_admin_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -2381,146 +2382,6 @@ def _register_plugin_agent(
     }
 
 
-@app.post("/auth/register")
-async def register_user(payload: _RegisterRequest) -> Any:
-    username = payload.username.strip()
-    password = payload.password
-    tenant_id = payload.tenant_id.strip() or "default"
-    if len(username) < 3 or len(password) < 6:
-        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
-
-    agent = await _resolve_agent_instance()
-    try:
-        user = await agent.memory.db.register_user(
-            username=username, password=password, tenant_id=tenant_id
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
-
-    token = await _issue_auth_token(agent, user)
-    return JSONResponse(
-        {
-            "user": {"id": user.id, "username": user.username, "role": user.role},
-            "access_token": token,
-        }
-    )
-
-
-@app.post("/auth/login")
-async def login_user(payload: _LoginRequest) -> Any:
-    username = payload.username.strip()
-    password = payload.password
-    agent = await _resolve_agent_instance()
-    try:
-        user = await agent.memory.db.authenticate_user(username=username, password=password)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
-        ) from exc
-    if not user:
-        raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı")
-
-    token = await _issue_auth_token(agent, user)
-    return JSONResponse(
-        {
-            "user": {"id": user.id, "username": user.username, "role": user.role},
-            "access_token": token,
-        }
-    )
-
-
-@app.get("/auth/me")
-async def auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
-    return JSONResponse({"id": user.id, "username": user.username, "role": user.role})
-
-
-@app.get("/admin/stats")
-async def admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
-    agent = await _resolve_agent_instance()
-    stats = await agent.memory.db.get_admin_stats()
-    return JSONResponse(stats)
-
-
-@app.get("/admin/prompts")
-async def admin_list_prompts(role_name: str = "", _user: Any = Depends(_require_admin_user)) -> Any:
-    agent = await _resolve_agent_instance()
-    prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
-    return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
-
-
-@app.get("/admin/prompts/active")
-async def admin_active_prompt(
-    role_name: str = "system", _user: Any = Depends(_require_admin_user)
-) -> Any:
-    agent = await _resolve_agent_instance()
-    active = await agent.memory.db.get_active_prompt(role_name)
-    if not active:
-        raise HTTPException(status_code=404, detail="Aktif prompt bulunamadı")
-    return JSONResponse(_serialize_prompt(active))
-
-
-@app.post("/admin/prompts")
-async def admin_upsert_prompt(
-    payload: _PromptUpsertRequest, _user: Any = Depends(_require_admin_user)
-) -> Any:
-    role_name = (payload.role_name or "").strip().lower()
-    prompt_text = (payload.prompt_text or "").strip()
-    if not role_name or not prompt_text:
-        raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
-
-    agent = await _await_if_needed(_resolve_agent_instance())
-    record = await agent.memory.db.upsert_prompt(
-        role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate)
-    )
-    if role_name == "system" and bool(record.is_active):
-        agent.system_prompt = record.prompt_text
-    return JSONResponse(_serialize_prompt(record))
-
-
-@app.post("/admin/prompts/activate")
-async def admin_activate_prompt(
-    payload: _PromptActivateRequest, _user: Any = Depends(_require_admin_user)
-) -> Any:
-    agent = await _await_if_needed(_resolve_agent_instance())
-    active = await agent.memory.db.activate_prompt(payload.prompt_id)
-    if not active:
-        raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
-    if active.role_name == "system":
-        agent.system_prompt = active.prompt_text
-    return JSONResponse(_serialize_prompt(active))
-
-
-@app.get("/admin/policies/{user_id}")
-async def admin_list_policies(
-    user_id: str, tenant_id: str = "", _user: Any = Depends(_require_admin_user)
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    records = await agent.memory.db.list_access_policies(
-        user_id=user_id, tenant_id=tenant_id.strip() or None
-    )
-    return JSONResponse({"items": [_serialize_policy(r) for r in records]})
-
-
-@app.post("/admin/policies")
-async def admin_upsert_policy(
-    payload: _PolicyUpsertRequest, _user: Any = Depends(_require_admin_user)
-) -> Any:
-    agent = await _resolve_agent_instance()
-    await agent.memory.db.upsert_access_policy(
-        user_id=payload.user_id.strip(),
-        tenant_id=payload.tenant_id.strip() or "default",
-        resource_type=payload.resource_type.strip().lower(),
-        resource_id=payload.resource_id.strip() or "*",
-        action=payload.action.strip().lower(),
-        effect=payload.effect.strip().lower(),
-    )
-    records = await agent.memory.db.list_access_policies(
-        user_id=payload.user_id.strip(), tenant_id=payload.tenant_id.strip() or "default"
-    )
-    return JSONResponse({"success": True, "items": [_serialize_policy(r) for r in records]})
-
-
-
 
 @app.post("/api/swarm/execute")
 async def execute_swarm(
@@ -3956,6 +3817,24 @@ app.include_router(
     )
 )
 
+
+
+app.include_router(
+    build_auth_admin_router(
+        resolve_agent_instance=_resolve_agent_instance,
+        await_if_needed=_await_if_needed,
+        get_request_user=_get_request_user,
+        require_admin_user=_require_admin_user,
+        issue_auth_token=_issue_auth_token,
+        serialize_prompt=_serialize_prompt,
+        serialize_policy=_serialize_policy,
+        register_request_model=_RegisterRequest,
+        login_request_model=_LoginRequest,
+        prompt_upsert_request_model=_PromptUpsertRequest,
+        prompt_activate_request_model=_PromptActivateRequest,
+        policy_upsert_request_model=_PolicyUpsertRequest,
+    )
+)
 
 
 
