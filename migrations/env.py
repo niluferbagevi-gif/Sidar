@@ -5,7 +5,6 @@ import importlib
 import importlib.util
 import os
 from collections.abc import Callable
-from logging.config import fileConfig
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -14,6 +13,12 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+# Importing the top-level `config` module installs Sidar's canonical root
+# logger (see config.py › logging.basicConfig). This must happen before
+# Alembic emits any log records so that messages such as "Context impl
+# PostgresqlImpl." use Sidar's format instead of Alembic's default
+# "LEVEL [name] message" layout.
+import config as _sidar_config_bootstrap  # noqa: F401
 from core.models import Base
 
 if TYPE_CHECKING:
@@ -52,8 +57,12 @@ _InvalidRequestError = cast(
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name, disable_existing_loggers=False)
+# Note: we intentionally do NOT call logging.config.fileConfig(...) here.
+# Sidar's `config` module (imported above) installs the canonical root
+# logger; calling fileConfig() would let Alembic attach its own
+# StreamHandler+Formatter (defined in alembic.ini's logger sections,
+# which we have removed) and produce duplicate, differently-formatted
+# log lines for the same record.
 
 target_metadata = Base.metadata
 
