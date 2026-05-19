@@ -513,12 +513,12 @@ def _print_doctor_check_summary(check: Any) -> None:
     print(f"{color}{_doctor_status_icon(status)} Doctor/{name}: {message}{RESET}")
 
     hints = details.get("root_cause_hints") if isinstance(details, dict) else None
-    if isinstance(hints, list):
+    if isinstance(hints, list) and status in {"warn", "fail"}:
         for hint in hints[:3]:
             print(f"{YELLOW}   • Olası neden: {hint}{RESET}")
 
     steps = details.get("remediation_steps") if isinstance(details, dict) else None
-    if isinstance(steps, list):
+    if isinstance(steps, list) and status in {"warn", "fail"}:
         for step in steps[:2]:
             print(f"{YELLOW}   • Çözüm: {step}{RESET}")
 
@@ -531,7 +531,7 @@ def _print_doctor_check_summary(check: Any) -> None:
 def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     """Return ordered Doctor auto-fix commands from legacy or multi-step metadata."""
     steps = details.get("auto_fix_steps")
-    if isinstance(steps, list):
+    if isinstance(steps, list) and status in {"warn", "fail"}:
         commands = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
         if commands:
             return commands

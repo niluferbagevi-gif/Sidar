@@ -143,7 +143,7 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             gpu_line += ")"
         print(f"  GPU             : {gpu_line}")
     else:
-        print(f"  GPU             : ✗ CPU Modu  ({agent.cfg.GPU_INFO})")
+        print(f"  GPU             : ✗ {agent.cfg.GPU_INFO}")
     print(f"  GitHub          : {'Bağlı' if agent.github.is_available() else 'Bağlı değil'}")
     print(
         f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"

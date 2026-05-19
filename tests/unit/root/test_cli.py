@@ -272,7 +272,7 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
     monkeypatch.setattr(cli.asyncio, "to_thread", _raise_interrupt)
     await cli._interactive_loop_async(agent)
     output = capsys.readouterr().out
-    assert "CPU Modu" in output
+    assert "GPU             : ✗ RTX" in output
     assert "coder-test" in output
     assert "Bağlı değil" in output
     assert "duckduckgo-search kurulu değil" in output
