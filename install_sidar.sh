@@ -2677,7 +2677,7 @@ ensure_prerequisites() {
             fail "Docker Desktop sisteminizde hiç bulunamadı, lütfen önce Windows'a kurun."
         else
             # Windows'ta kurulu ama WSL2'de çalışmıyorsa entegrasyon bozuktur
-            warn "Docker kullanılamıyor! Yeni bir WSL dağıtımı kurduğunuz için Docker Desktop entegrasyonu kopmuş olabilir."
+            info "Docker şu anda WSL içinde kullanılamıyor; yeni bir dağıtım sonrası Docker Desktop entegrasyonu kopmuş olabilir."
             info "Lütfen şu adımları uygulayın:"
             echo "  1. Windows'ta Docker Desktop'ı açın."
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
@@ -2687,9 +2687,16 @@ ensure_prerequisites() {
             read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
 
             # Kullanıcıdan onay sonrası tekrar doğrula
-            if ! docker_cli_healthy; then
-                fail "Docker hâlâ kullanılamıyor. Kurulum iptal edildi; entegrasyonu tamamladıktan sonra tekrar deneyin."
+            if ! command -v docker &>/dev/null; then
+                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. Docker Desktop > Settings > Resources > WSL Integration altında Ubuntu entegrasyonunu açıp yeniden deneyin."
             fi
+            if ! docker_cli_healthy; then
+                fail "[ENTER] sonrası docker CLI hâlâ sağlıksız. Docker Desktop entegrasyonunu ve WSL erişimini doğrulayın."
+            fi
+            if ! docker info &>/dev/null; then
+                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). Docker Desktop'ı açıp entegrasyonu Apply & restart ile yenileyin."
+            fi
+            ok "WSL2 Docker Desktop entegrasyonu doğrulandı (docker CLI + docker info)."
         fi
     fi
 
