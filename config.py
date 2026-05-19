@@ -735,7 +735,7 @@ except (PermissionError, OSError) as exc:
 
 _configure_noisy_dependency_loggers()
 
-logger = logging.getLogger("Sidar.Config")
+logger = logging.getLogger(__name__)
 
 _DEPENDENCY_AUTO = object()
 
