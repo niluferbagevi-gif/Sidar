@@ -69,6 +69,7 @@ from web.routes.health import build_health_router
 from web.routes.agent import build_agent_router
 from web.routes.rag import build_rag_router
 from web.routes.auth_admin import build_auth_admin_router
+from web.routes.hitl import build_hitl_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -2428,100 +2429,6 @@ async def execute_swarm(
 # ─────────────────────────────────────────────
 
 
-class _HITLRespondRequest(BaseModel):
-    approved: bool
-    decided_by: str = "operator"
-    rejection_reason: str = ""
-
-
-@app.get("/api/hitl/pending")
-async def hitl_pending(user: Any = Depends(_get_request_user)) -> Any:
-    """Bekleyen HITL onay isteklerini listeler."""
-    store = get_hitl_store()
-    pending = await store.pending()
-    return JSONResponse({"pending": [r.to_dict() for r in pending], "count": len(pending)})
-
-
-@app.post("/api/hitl/request")
-async def hitl_create_request(
-    payload: dict[str, Any], user: Any = Depends(_get_request_user)
-) -> Any:
-    """Yeni bir HITL onay isteği oluşturur (iç API / test amaçlı)."""
-    gate = get_hitl_gate()
-    action = str(payload.get("action", "manual")).strip()
-    description = str(payload.get("description", "Manuel onay isteği")).strip()
-    hitl_payload = dict(payload.get("payload") or {})
-    requested_by = str(payload.get("requested_by", getattr(user, "username", "api"))).strip()
-
-    import time
-    import uuid
-
-    from core.hitl import HITLRequest, notify
-    from core.hitl import get_hitl_store as _store
-
-    now = time.time()
-    req = HITLRequest(
-        request_id=str(uuid.uuid4()),
-        action=action,
-        description=description,
-        payload=hitl_payload,
-        requested_by=requested_by,
-        created_at=now,
-        expires_at=now + gate.timeout,
-    )
-    await _store().add(req)
-    await notify(req)
-    return JSONResponse({"request_id": req.request_id, "expires_at": req.expires_at})
-
-
-@app.post("/api/hitl/respond/{request_id}")
-async def hitl_respond(
-    request_id: str, payload: _HITLRespondRequest, user: Any = Depends(_get_request_user)
-) -> Any:
-    """Bir HITL isteğini onayla veya reddet."""
-    gate = get_hitl_gate()
-    decided_by = payload.decided_by or getattr(user, "username", "operator")
-    req = await gate.respond(
-        request_id,
-        approved=payload.approved,
-        decided_by=decided_by,
-        rejection_reason=payload.rejection_reason,
-    )
-    if req is None:
-        raise HTTPException(status_code=404, detail="HITL isteği bulunamadı")
-    return JSONResponse({"request_id": req.request_id, "decision": req.decision.value})
-
-
-@app.websocket("/ws/hitl")
-async def websocket_hitl(websocket: WebSocket) -> Any:
-    """HITL request/decision events for operator approval panels."""
-    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token = proto_header or ""
-    if header_token:
-        await websocket.accept(subprotocol=header_token)
-    else:
-        await websocket.accept()
-
-    agent = await _resolve_agent_instance()
-    if header_token:
-        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await _ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
-    _hitl_ws_clients.add(websocket)
-    try:
-        pending = await get_hitl_store().pending()
-        await websocket.send_json(
-            {"type": "hitl_snapshot", "pending": [item.to_dict() for item in pending]}
-        )
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        _hitl_ws_clients.discard(websocket)
-
-
 @app.middleware("http")
 async def access_policy_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -3833,6 +3740,19 @@ app.include_router(
         prompt_upsert_request_model=_PromptUpsertRequest,
         prompt_activate_request_model=_PromptActivateRequest,
         policy_upsert_request_model=_PolicyUpsertRequest,
+    )
+)
+
+app.include_router(
+    build_hitl_router(
+        get_request_user=_get_request_user,
+        resolve_agent_instance=_resolve_agent_instance,
+        await_if_needed=_await_if_needed,
+        resolve_user_from_token=_resolve_user_from_token,
+        ws_close_policy_violation=_ws_close_policy_violation,
+        hitl_ws_clients=_hitl_ws_clients,
+        get_hitl_store=get_hitl_store,
+        get_hitl_gate=get_hitl_gate,
     )
 )
 
