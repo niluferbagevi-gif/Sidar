@@ -2113,6 +2113,12 @@ PY_VERSION
 }
 
 INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
+refresh_install_sidar_version_from_repo() {
+    local refreshed_version=""
+    refreshed_version="$(resolve_install_sidar_version)"
+    INSTALL_SIDAR_VERSION="${refreshed_version:-0.0.0}"
+}
+
 PYTHON_VERSION="3.11"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
@@ -2394,7 +2400,10 @@ sync_repo() {
     fi
 
     SCRIPT_DIR="$TARGET_DIR"
+    refresh_install_sidar_version_from_repo
     ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
+    info "Installer sürümü repo kaynaklarından yenilendi: v$INSTALL_SIDAR_VERSION"
+    banner
 }
 
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
