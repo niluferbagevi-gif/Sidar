@@ -3854,7 +3854,6 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
-        _sync_existing_api_keys_to_env_targets
         _warn_if_missing_critical_provider_keys
         return
     fi
