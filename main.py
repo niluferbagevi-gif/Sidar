@@ -564,6 +564,22 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     if not cmd:
         return False
     cmd = _launcher_auto_fix_command(cmd)
+    if cmd[:4] == ["uv", "run", "python", "-m"] and len(cmd) >= 5 and cmd[4] == "scripts.seed_rag":
+        summary_only = "--summary-only" in cmd or "--quiet" in cmd
+        metadata_only = "--metadata-only" in cmd
+        try:
+            from scripts.seed_rag import run as seed_rag_run
+
+            print(f"{CYAN}   • Auto-fix süreç içi çalışıyor: scripts.seed_rag{RESET}")
+            rc = seed_rag_run(summary_only=summary_only, metadata_only=metadata_only)
+            if rc == 0:
+                print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
+                return True
+            print(f"{YELLOW}   • Auto-fix {rc} koduyla tamamlandı.{RESET}")
+            return False
+        except Exception as exc:
+            logger.warning("Doctor auto_fix süreç içi seed_rag çalıştırılamadı: %s", exc)
+            print(f"{YELLOW}   • Süreç içi seed_rag başarısız, subprocess fallback çalışacak.{RESET}")
 
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:

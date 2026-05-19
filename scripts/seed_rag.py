@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import sys
@@ -157,6 +158,21 @@ def _existing_doc_ids_for_source(
     ]
 
 
+def _content_hash_tag(path: Path) -> str:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return f"content_sha256:{digest}"
+
+
+def _extract_content_hash(entry: dict[str, Any]) -> str | None:
+    tags = entry.get("tags")
+    if not isinstance(tags, list):
+        return None
+    for tag in tags:
+        if isinstance(tag, str) and tag.startswith("content_sha256:"):
+            return tag
+    return None
+
+
 def seed_files(
     store: SeedDocumentStore,
     files: list[Path],
@@ -176,7 +192,16 @@ def seed_files(
         except ValueError:
             rel_path = file_path.name
         source = f"file://{file_path}"
-        existing_ids = _existing_doc_ids_for_source(store, source, session_id)
+        content_hash_tag = _content_hash_tag(file_path)
+        matching_entries = [
+            item
+            for item in store.get_index_info(session_id=session_id)
+            if str(item.get("source", "")) == source and item.get("id")
+        ]
+        existing_ids = [str(item.get("id")) for item in matching_entries]
+        if any(_extract_content_hash(item) == content_hash_tag for item in matching_entries):
+            skipped.append({"path": rel_path, "reason": "unchanged_content"})
+            continue
         if existing_ids and not replace_existing:
             skipped.append({"path": rel_path, "reason": "already_indexed"})
             continue
@@ -189,7 +214,12 @@ def seed_files(
         ok, message = store.add_document_from_file(
             str(file_path),
             title=rel_path,
-            tags=["source:repo-docs", "brand:Sidar", "audience:Sidar operators"],
+            tags=[
+                "source:repo-docs",
+                "brand:Sidar",
+                "audience:Sidar operators",
+                content_hash_tag,
+            ],
             session_id=session_id,
         )
         target = added if ok else skipped
@@ -326,28 +356,50 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    patterns = args.include or list(DEFAULT_INCLUDE_PATTERNS)
-    files = discover_seed_files(patterns, max_bytes=max(1, int(args.max_bytes or 1)))
+    return run(
+        rag_dir=args.rag_dir,
+        include=args.include,
+        session_id=str(args.session_id or "global"),
+        max_bytes=max(1, int(args.max_bytes or 1)),
+        append=bool(args.append),
+        metadata_only=bool(args.metadata_only),
+        dry_run=bool(args.dry_run),
+        summary_only=bool(args.summary_only or args.quiet),
+    )
+
+
+def run(
+    *,
+    rag_dir: str | None = None,
+    include: list[str] | None = None,
+    session_id: str = "global",
+    max_bytes: int = 750_000,
+    append: bool = False,
+    metadata_only: bool = False,
+    dry_run: bool = False,
+    summary_only: bool = False,
+) -> int:
+    """In-process callable entrypoint for launcher/doctor integrations."""
+    patterns = include or list(DEFAULT_INCLUDE_PATTERNS)
+    files = discover_seed_files(patterns, max_bytes=max(1, int(max_bytes or 1)))
     if not files:
         raise SystemExit("İndekslenecek güvenli metin dosyası bulunamadı.")
 
-    if args.dry_run:
+    if dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
-        store = _build_store(
-            _resolve_rag_dir(args.rag_dir), initialize_vector=not args.metadata_only
-        )
+        store = _build_store(_resolve_rag_dir(rag_dir), initialize_vector=not metadata_only)
     try:
         summary = seed_files(
             store,
             files,
-            session_id=str(args.session_id or "global"),
-            replace_existing=not bool(args.append),
-            dry_run=bool(args.dry_run),
+            session_id=str(session_id or "global"),
+            replace_existing=not bool(append),
+            dry_run=bool(dry_run),
         )
     finally:
         store.close()
-    output = _summary_only_payload(summary) if (args.summary_only or args.quiet) else summary
+    output = _summary_only_payload(summary) if summary_only else summary
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
 
