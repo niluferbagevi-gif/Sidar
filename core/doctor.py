@@ -761,7 +761,7 @@ def check_rag_index_ready() -> DoctorCheck:
             "uv run python -m core.doctor artifacts/install/doctor.json",
         ]
         details["advisory_only"] = True
-        status = "info"
+        status = "warn"
         message = (
             "; ".join(index_warnings)
             if index_warnings
