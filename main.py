@@ -10,6 +10,7 @@ Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
@@ -775,14 +776,8 @@ def _run_launcher_doctor_preflight() -> None:
     print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
     skip_database_dependents = False
     skip_summary_printed = False
-    doctor_checks = (
-        ("database_env", check_database_env),
-        ("database_connectivity", check_database_connectivity),
-        ("rag_index_ready", check_rag_index_ready),
-        ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
-        ("gpu_memory_config", check_gpu_memory_config),
-    )
-    for check_name, check_func in doctor_checks:
+    def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
+        nonlocal skip_database_dependents, skip_summary_printed
         if skip_database_dependents and check_name in {
             "database_connectivity",
             "rag_index_ready",
@@ -795,7 +790,7 @@ def _run_launcher_doctor_preflight() -> None:
                     f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
                 )
                 skip_summary_printed = True
-            continue
+            return "skipped"
 
         try:
             check = check_func()
@@ -805,9 +800,47 @@ def _run_launcher_doctor_preflight() -> None:
                 final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION or check
                 final_status = str(getattr(final_check, "status", "warn") or "warn")
                 skip_database_dependents = final_status == "fail"
+                return final_status
+            return str(getattr(check, "status", "warn") or "warn")
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
+            return "error"
+
+    _run_single_doctor_check("database_env", check_database_env)
+    _run_single_doctor_check("database_connectivity", check_database_connectivity)
+    if skip_database_dependents:
+        _run_single_doctor_check("rag_index_ready", check_rag_index_ready)
+        _run_single_doctor_check("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready)
+        _run_single_doctor_check("gpu_memory_config", check_gpu_memory_config)
+        return
+
+    parallel_checks = [
+        ("rag_index_ready", check_rag_index_ready),
+        ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
+        ("gpu_memory_config", check_gpu_memory_config),
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(parallel_checks)) as executor:
+        futures = {
+            executor.submit(check_func): (check_name, check_func)
+            for check_name, check_func in parallel_checks
+        }
+        completed: dict[str, Any] = {}
+        for future in concurrent.futures.as_completed(futures):
+            check_name, _check_func = futures[future]
+            try:
+                completed[check_name] = future.result()
+            except Exception as exc:  # pragma: no cover - defensive launcher path
+                completed[check_name] = exc
+
+    for check_name, check_func in parallel_checks:
+        result = completed.get(check_name)
+        if isinstance(result, Exception):
+            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", result)
+            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
+            continue
+        _print_doctor_check_summary(result)
+        _run_doctor_auto_fix(result, check_func)
 
 
 def preflight(provider: str) -> None:
