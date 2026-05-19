@@ -599,6 +599,22 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
             print(f"{CYAN}   • Auto-fix süreç içi çalışıyor: scripts.seed_rag{RESET}")
             rc = seed_rag_run(summary_only=summary_only, metadata_only=metadata_only)
             if rc == 0:
+                try:
+                    from config import Config
+                    from core.rag import get_shared_document_store
+
+                    cfg = Config()
+                    get_shared_document_store(
+                        store_dir=cfg.RAG_DIR,
+                        cfg=cfg,
+                        initialize_vector=not bool(getattr(cfg, "CLI_FAST_MODE", False)),
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "Doctor auto_fix sonrası paylaşılan RAG store hazırlığı atlandı: %s",
+                        exc,
+                        exc_info=True,
+                    )
                 print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
                 return True
             print(f"{YELLOW}   • Auto-fix {rc} koduyla tamamlandı.{RESET}")

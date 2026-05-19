@@ -14,6 +14,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 import ast
 import asyncio
 import builtins
+import functools
 import hashlib
 import importlib
 import ipaddress
@@ -48,6 +49,8 @@ _BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 list = builtins.list
+_DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str], "DocumentStore"] = {}
+_DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
@@ -588,51 +591,65 @@ def _build_embedding_function(
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
     """
     try:
-        embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
-        if embedding_module is None:
-            embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
-        SentenceTransformerEmbeddingFunction = embedding_module.SentenceTransformerEmbeddingFunction
-
-        device = "cpu"
-        torch: Any | None = None
-        if use_gpu:
-            import torch as _torch
-
-            torch = _torch
-            device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
-
-        model_name = "all-MiniLM-L6-v2"
-        ef = SentenceTransformerEmbeddingFunction(
-            model_name=model_name,
-            device=device,
-            local_files_only=sentence_transformer_local_files_only(cfg or Config, model_name),
+        local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        return _build_embedding_function_cached(
+            use_gpu=use_gpu,
+            gpu_device=gpu_device,
+            mixed_precision=mixed_precision,
+            local_files_only=local_files_only,
         )
-
-        # Mixed precision: sentence-transformers encode sırasında half() uygula
-        if mixed_precision and device.startswith("cuda"):
-            if torch is not None and hasattr(torch, "autocast"):
-                _orig_call = ef.__call__
-
-                def _fp16_call(input: Any) -> Any:
-                    with torch.autocast(device_type="cuda", dtype=torch.float16):
-                        return _orig_call(input)
-
-                ef.__call__ = _fp16_call
-            else:
-                logging.warning(
-                    "⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı."
-                )
-
-        logger.info(
-            "ChromaDB embedding fonksiyonu başlatıldı: device=%s  mixed_precision=%s",
-            device,
-            mixed_precision,
-        )
-        return ef
-
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
         return None
+
+
+@functools.lru_cache(maxsize=8)
+def _build_embedding_function_cached(
+    *,
+    use_gpu: bool,
+    gpu_device: int,
+    mixed_precision: bool,
+    local_files_only: bool,
+) -> Any:
+    embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
+    if embedding_module is None:
+        embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
+    SentenceTransformerEmbeddingFunction = embedding_module.SentenceTransformerEmbeddingFunction
+
+    device = "cpu"
+    torch: Any | None = None
+    if use_gpu:
+        import torch as _torch
+
+        torch = _torch
+        device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
+
+    model_name = "all-MiniLM-L6-v2"
+    ef = SentenceTransformerEmbeddingFunction(
+        model_name=model_name,
+        device=device,
+        local_files_only=local_files_only,
+    )
+
+    # Mixed precision: sentence-transformers encode sırasında half() uygula
+    if mixed_precision and device.startswith("cuda"):
+        if torch is not None and hasattr(torch, "autocast"):
+            _orig_call = ef.__call__
+
+            def _fp16_call(input: Any) -> Any:
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    return _orig_call(input)
+
+            ef.__call__ = _fp16_call
+        else:
+            logging.warning("⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı.")
+
+    logger.info(
+        "ChromaDB embedding fonksiyonu başlatıldı: device=%s  mixed_precision=%s",
+        device,
+        mixed_precision,
+    )
+    return ef
 
 
 class DocumentStore:
@@ -2819,3 +2836,33 @@ class DocumentStore:
             engines.append("GraphRAG (hazır)")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+
+
+def get_shared_document_store(
+    *,
+    store_dir: Path | str,
+    cfg: Config,
+    initialize_vector: bool,
+) -> DocumentStore:
+    """Process içi aynı RAG store'u tekrar kullanarak model init maliyetini düşür."""
+    key = (
+        str(Path(store_dir).resolve()),
+        bool(initialize_vector),
+        str(getattr(cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower(),
+    )
+    with _DOCUMENT_STORE_SINGLETONS_LOCK:
+        store = _DOCUMENT_STORE_SINGLETONS.get(key)
+        if store is None:
+            store = DocumentStore(
+                store_dir,
+                top_k=cfg.RAG_TOP_K,
+                chunk_size=cfg.RAG_CHUNK_SIZE,
+                chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
+                use_gpu=getattr(cfg, "USE_GPU", False),
+                gpu_device=getattr(cfg, "GPU_DEVICE", 0),
+                mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
+                cfg=cfg,
+                initialize_vector=initialize_vector,
+            )
+            _DOCUMENT_STORE_SINGLETONS[key] = store
+        return store

@@ -38,7 +38,7 @@ from core.distributed_lock import DistributedLockLease, RedisDistributedLock
 from core.entity_memory import get_entity_memory
 from core.llm_client import LLMClient
 from core.memory import ConversationMemory
-from core.rag import DocumentStore
+from core.rag import DocumentStore, get_shared_document_store
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
 from managers.package_info import PackageInfoManager
@@ -213,14 +213,8 @@ class AgentDependencies:
         llm = LLMClient(cfg.AI_PROVIDER, cfg)
         web = WebSearchManager(cfg)
         pkg = PackageInfoManager(cfg)
-        docs = DocumentStore(
-            cfg.RAG_DIR,
-            top_k=cfg.RAG_TOP_K,
-            chunk_size=cfg.RAG_CHUNK_SIZE,
-            chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
-            use_gpu=getattr(cfg, "USE_GPU", False),
-            gpu_device=getattr(cfg, "GPU_DEVICE", 0),
-            mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
+        docs = get_shared_document_store(
+            store_dir=cfg.RAG_DIR,
             cfg=cfg,
             initialize_vector=not bool(getattr(cfg, "CLI_FAST_MODE", False)),
         )
