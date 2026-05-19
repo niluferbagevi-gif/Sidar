@@ -768,7 +768,7 @@ ensure_docker_cli_available() {
     fi
 
     if [[ "$WSL2" == true && "$mode" != "always" ]]; then
-        warn "WSL2 ortamında Docker CLI bulunamadı. Öncelik Docker Desktop WSL Integration olmalı; otomatik APT kurulumu için --install-docker-cli veya DOCKER_CLI_INSTALL=always kullanın."
+        warn "WSL2 ortamında Docker CLI bulunamadı. Öncelik Docker Desktop WSL Integration olmalı; otomatik APT kurulumu için --install-docker-cli veya DOCKER_CLI_INSTALL=always kullanın. Entegrasyon sonrası yeni terminalde doğrulama: docker ps"
         return 1
     fi
 
