@@ -17,6 +17,7 @@ from typing import Any, TypedDict
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides
 from core.config_runtime_env import safe_choice_for_reload
 
@@ -685,9 +686,7 @@ _repair_log_file_permissions(_LOG_FILE_PATH)
 
 def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
     """Keep chatty HTTP/HF dependency logs quiet unless explicitly requested."""
-    target_level = logging.NOTSET if verbose_http else logging.WARNING
-    for logger_name in _NOISY_DEPENDENCY_LOGGERS:
-        logging.getLogger(logger_name).setLevel(target_level)
+    configure_noisy_dependency_loggers(_NOISY_DEPENDENCY_LOGGERS, verbose_http=verbose_http)
 
 
 _root_logger = logging.getLogger()

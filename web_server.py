@@ -65,6 +65,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
+from web.routes.health import build_health_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -4006,29 +4007,9 @@ async def _health_response(*, require_dependencies: bool = False) -> JSONRespons
     return JSONResponse(health_data)
 
 
-@app.get(
-    "/health",
-    summary="Sağlık Kontrolü (Health Check)",
-    description="Liveness/readiness kontrolü için sistem sağlık bilgisini döndürür.",
-    responses={
-        200: {"description": "Sistem sağlıklı"},
-        503: {"description": "Sistemde kritik bir sorun var"},
-    },
+app.include_router(
+    build_health_router(lambda require_dependencies: _health_response(require_dependencies))
 )
-@app.get("/healthz", include_in_schema=False)
-async def health_check() -> Any:
-    """
-    Kubernetes/Docker liveness probe'ları için yapısal (JSON) sağlık kontrolü.
-    """
-    return await _health_response(require_dependencies=False)
-
-
-@app.get("/readyz", include_in_schema=False)
-async def readiness_check() -> Any:
-    """
-    Readiness probe: Redis/PostgreSQL gibi bağımlılıklar erişilemezse 503 döndürür.
-    """
-    return await _health_response(require_dependencies=True)
 
 
 @app.get("/metrics")
