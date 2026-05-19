@@ -23,6 +23,11 @@ from core.config_runtime_env import safe_choice_for_reload
 
 from sidar_version import PRODUCT_VERSION
 
+# HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
 # ═══════════════════════════════════════════════════════════════
 # UYARI FİLTRELERİ
 # ═══════════════════════════════════════════════════════════════

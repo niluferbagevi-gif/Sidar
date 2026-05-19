@@ -89,10 +89,15 @@ def sentence_transformer_local_files_only(cfg: Any, model_name: str) -> bool:
 
 @contextmanager
 def _scoped_hf_runtime_env() -> Any:
-    keys = ("HF_HUB_DISABLE_PROGRESS_BARS", "TRANSFORMERS_VERBOSITY")
+    keys = (
+        "HF_HUB_DISABLE_PROGRESS_BARS",
+        "TRANSFORMERS_NO_ADVISORY_WARNINGS",
+        "TRANSFORMERS_VERBOSITY",
+    )
     previous = {key: os.environ.get(key) for key in keys}
     try:
         os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
         os.environ["TRANSFORMERS_VERBOSITY"] = "error"
         yield
     finally:
