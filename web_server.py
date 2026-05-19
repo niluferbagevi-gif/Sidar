@@ -72,6 +72,7 @@ from web.routes.auth_admin import build_auth_admin_router
 from web.routes.hitl import build_hitl_router
 from web.routes.metrics import build_metrics_router
 from web.routes.project_ops import build_project_ops_router
+from web.routes.orchestration import build_orchestration_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -2386,46 +2387,6 @@ def _register_plugin_agent(
 
 
 
-@app.post("/api/swarm/execute")
-async def execute_swarm(
-    payload: _SwarmExecuteRequest, user: Any = Depends(_get_request_user)
-) -> Any:
-    agent = await _resolve_agent_instance()
-    orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
-    session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
-    tasks = [
-        SwarmTask(
-            goal=item.goal.strip(),
-            intent=item.intent.strip() or "mixed",
-            context=dict(item.context or {}),
-            preferred_agent=(item.preferred_agent or "").strip() or None,
-        )
-        for item in payload.tasks
-        if item.goal.strip()
-    ]
-    if not tasks:
-        raise HTTPException(status_code=400, detail="En az bir geçerli task gereklidir")
-
-    if payload.mode == "pipeline":
-        results = await orchestrator.run_pipeline(tasks, session_id=session_id)
-    else:
-        results = await orchestrator.run_parallel(
-            tasks,
-            session_id=session_id,
-            max_concurrency=payload.max_concurrency,
-        )
-
-    return JSONResponse(
-        {
-            "success": True,
-            "mode": payload.mode,
-            "session_id": session_id,
-            "task_count": len(tasks),
-            "results": [_serialize_swarm_result(item) for item in results],
-        }
-    )
-
-
 # ─────────────────────────────────────────────
 #  HITL — Human-in-the-Loop Onay Geçidi
 # ─────────────────────────────────────────────
@@ -3781,6 +3742,20 @@ app.include_router(
     )
 )
 
+app.include_router(
+    build_orchestration_router(
+        get_request_user=_get_request_user,
+        require_admin_user=_require_admin_user,
+        resolve_agent_instance=_resolve_agent_instance,
+        await_if_needed=_await_if_needed,
+        swarm_orchestrator_cls=SwarmOrchestrator,
+        swarm_task_cls=SwarmTask,
+        cfg=cfg,
+        swarm_execute_request_model=_SwarmExecuteRequest,
+        serialize_swarm_result=_serialize_swarm_result,
+    )
+)
+
 
 
 
@@ -3789,65 +3764,6 @@ app.include_router(
 # ─────────────────────────────────────────────
 
 
-
-
-@app.get(
-    "/todo",
-    summary="Görev Listesini Getir",
-    description="Aktif görev listesini ve özet sayaç bilgilerini döndürür.",
-    responses={200: {"description": "Görev listesi başarıyla alındı"}},
-)
-async def get_todo() -> Any:
-    """
-    Aktif görev listesini JSON olarak döndürür.
-    UI'daki Todo paneli bu endpoint'i periyodik olarak sorgular.
-    """
-    agent = await _resolve_agent_instance()
-    tasks = agent.todo.get_tasks()
-    active = sum(1 for t in tasks if t["status"] != "completed")
-    return JSONResponse({"tasks": tasks, "count": len(tasks), "active": active})
-
-
-@app.post(
-    "/clear",
-    summary="Aktif Belleği Temizle",
-    description="Mevcut aktif konuşma belleğini tamamen temizler.",
-    responses={200: {"description": "Bellek başarıyla temizlendi"}},
-)
-async def clear() -> Any:
-    """Aktif konuşma belleğini temizle."""
-    agent = await _resolve_agent_instance()
-    await _await_if_needed(agent.memory.clear())
-    return JSONResponse({"result": True})
-
-
-@app.post(
-    "/set-level",
-    summary="Güvenlik Seviyesini Değiştir",
-    description=(
-        "Ajanın çalışma zamanındaki erişim seviyesini "
-        "(restricted, sandbox, full) değiştirir ve sohbet belleğine loglar."
-    ),
-    responses={200: {"description": "Seviye başarıyla değiştirildi"}},
-)
-async def set_level_endpoint(request: Request, _user: Any = Depends(_require_admin_user)) -> Any:
-    """Güvenlik seviyesini çalışma zamanında değiştirir (yalnızca admin)."""
-    body = await request.json()
-    new_level = body.get("level", "").strip()
-    if not new_level:
-        return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
-
-    agent = await _await_if_needed(_resolve_agent_instance())
-    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
-    if asyncio.iscoroutine(result_msg):
-        result_msg = await result_msg
-    return JSONResponse(
-        {
-            "success": True,
-            "message": result_msg,
-            "current_level": agent.security.level_name,
-        }
-    )
 
 
 # ─────────────────────────────────────────────
