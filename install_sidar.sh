@@ -4404,7 +4404,7 @@ is_weak_secret_value() {
 
     strength_script="$(secret_strength_script_file)"
     if [[ -n "$strength_script" ]] && command -v python3 &>/dev/null; then
-        if python3 "$strength_script" --quiet "$value"; then
+        if python3 "$strength_script" --quiet -- "$value"; then
             return 0
         fi
         strength_status="$?"
