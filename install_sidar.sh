@@ -746,6 +746,7 @@ install_docker_cli_from_apt() {
 }
 
 ensure_docker_cli_available() {
+    DOCKER_CLI_WSL_WARNED="${DOCKER_CLI_WSL_WARNED:-false}"
     local mode="${DOCKER_CLI_INSTALL_MODE:-auto}"
     case "$mode" in
         auto|always|never) ;;
@@ -768,7 +769,10 @@ ensure_docker_cli_available() {
     fi
 
     if [[ "$WSL2" == true && "$mode" != "always" ]]; then
-        warn "WSL2 ortamında Docker CLI bulunamadı. Öncelik Docker Desktop WSL Integration olmalı; otomatik APT kurulumu için --install-docker-cli veya DOCKER_CLI_INSTALL=always kullanın."
+        if [[ "$DOCKER_CLI_WSL_WARNED" != "true" ]]; then
+            warn "WSL2 ortamında Docker CLI bulunamadı. Öncelik Docker Desktop WSL Integration olmalı; otomatik APT kurulumu için --install-docker-cli veya DOCKER_CLI_INSTALL=always kullanın."
+            DOCKER_CLI_WSL_WARNED="true"
+        fi
         return 1
     fi
 
