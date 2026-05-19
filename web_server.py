@@ -66,6 +66,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
 from web.routes.health import build_health_router
+from web.routes.agent import build_agent_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -2518,88 +2519,6 @@ async def admin_upsert_policy(
     return JSONResponse({"success": True, "items": [_serialize_policy(r) for r in records]})
 
 
-@app.post("/api/agents/register")
-async def register_agent_plugin(
-    payload: _AgentPluginRegisterRequest, _user: Any = Depends(_require_admin_user)
-) -> Any:
-    result = _register_plugin_agent(
-        role_name=payload.role_name,
-        source_code=payload.source_code,
-        class_name=payload.class_name,
-        capabilities=payload.capabilities,
-        description=payload.description,
-        version=payload.version,
-    )
-    return JSONResponse({"success": True, "agent": result})
-
-
-@app.post("/api/agents/register-file")
-async def register_agent_plugin_file(
-    file: UploadFile = File(...),
-    role_name: str = "",
-    class_name: str = "",
-    capabilities: str = "",
-    description: str = "",
-    version: str = "1.0.0",
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    data = await file.read()
-    await file.close()
-    if not data:
-        raise HTTPException(status_code=400, detail="Yüklü dosya boş")
-    if len(data) > MAX_FILE_CONTENT_BYTES:
-        raise HTTPException(status_code=413, detail="Dosya çok büyük")
-    try:
-        source_code = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Plugin dosyası UTF-8 olmalıdır") from exc
-
-    parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
-    target_role_name = role_name.strip() or Path(file.filename or "").stem
-    module_label = f"sidar_uploaded_plugin_{secrets.token_hex(4)}"
-    _persist_and_import_plugin_file(file.filename or target_role_name, data, module_label)
-    result = _register_plugin_agent(
-        role_name=target_role_name,
-        source_code=source_code,
-        class_name=class_name.strip() or None,
-        capabilities=parsed_capabilities,
-        description=description,
-        version=version,
-    )
-    return JSONResponse({"success": True, "agent": result})
-
-
-@app.get("/api/plugin-marketplace/catalog")
-async def plugin_marketplace_catalog(_user: Any = Depends(_require_admin_user)) -> Any:
-    state = _read_plugin_marketplace_state()
-    items = [
-        _serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {}))
-        for plugin_id in sorted(PLUGIN_MARKETPLACE_CATALOG)
-    ]
-    return JSONResponse({"items": items})
-
-
-@app.post("/api/plugin-marketplace/install")
-async def install_plugin_marketplace_item(
-    payload: _PluginMarketplaceInstallRequest,
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return JSONResponse(_install_marketplace_plugin(payload.plugin_id))
-
-
-@app.post("/api/plugin-marketplace/reload")
-async def reload_plugin_marketplace_item(
-    payload: _PluginMarketplaceInstallRequest,
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return JSONResponse(_install_marketplace_plugin(payload.plugin_id))
-
-
-@app.delete("/api/plugin-marketplace/install/{plugin_id}")
-async def uninstall_plugin_marketplace_item(
-    plugin_id: str, _user: Any = Depends(_require_admin_user)
-) -> Any:
-    return JSONResponse(_uninstall_marketplace_plugin(plugin_id))
 
 
 @app.post("/api/swarm/execute")
@@ -4009,6 +3928,21 @@ async def _health_response(*, require_dependencies: bool = False) -> JSONRespons
 
 app.include_router(
     build_health_router(lambda require_dependencies: _health_response(require_dependencies))
+)
+app.include_router(
+    build_agent_router(
+        require_admin_user=_require_admin_user,
+        register_plugin_agent=_register_plugin_agent,
+        persist_and_import_plugin_file=_persist_and_import_plugin_file,
+        max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
+        read_plugin_marketplace_state=_read_plugin_marketplace_state,
+        serialize_marketplace_plugin=_serialize_marketplace_plugin,
+        plugin_marketplace_catalog=PLUGIN_MARKETPLACE_CATALOG,
+        install_marketplace_plugin=_install_marketplace_plugin,
+        uninstall_marketplace_plugin=_uninstall_marketplace_plugin,
+        agent_plugin_register_request_model=_AgentPluginRegisterRequest,
+        plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
+    )
 )
 
 
