@@ -369,12 +369,17 @@ def _reload_database_env_from_loaded_dotenv_chain() -> bool:
     return applied
 
 
-def _reload_environment_after_auto_fix(details: dict[str, Any] | None = None) -> bool:
-    """Reload dotenv values in this process after a Doctor auto-fix subprocess."""
+def _reload_environment_after_auto_fix(
+    details: dict[str, Any] | None = None, *, check_name: str | None = None
+) -> bool:
+    """Reload only required env slices in this process after a Doctor auto-fix subprocess."""
     profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
     if profile is None and _development_env_path().exists():
         profile = "development"
-    config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
+    requires_full_reload = check_name in {"database_env", "database_connectivity", "rag_readiness"}
+    config_reloaded = False
+    if requires_full_reload:
+        config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
     database_env_reloaded = _reload_database_env_from_loaded_dotenv_chain()
     source_reloaded = _reload_doctor_env_source_definitions(details)
     if source_reloaded or database_env_reloaded:
@@ -584,6 +589,7 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
     details = getattr(check, "details", {}) or {}
+    check_name = str(getattr(check, "name", "doctor") or "doctor")
     status = str(getattr(check, "status", "warn") or "warn")
     if status not in {"warn", "fail"} or not isinstance(details, dict):
         return False
@@ -607,7 +613,7 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
         if check_func is None:
             continue
 
-        updated_check = _revalidate_doctor_check_after_auto_fix(check_func, details)
+        updated_check = _revalidate_doctor_check_after_auto_fix(check_name, check_func, details)
         updated_status = str(getattr(updated_check, "status", "warn") or "warn")
         if updated_status == "pass":
             return True
@@ -640,11 +646,11 @@ def _doctor_auto_fix_lost_env_keys(
 
 
 def _revalidate_doctor_check_after_auto_fix(
-    check_func: Any, source_details: dict[str, Any] | None = None
+    check_name: str, check_func: Any, source_details: dict[str, Any] | None = None
 ) -> Any | None:
     """Run a Doctor check once after a successful auto-fix and print the result."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
-    _reload_environment_after_auto_fix(source_details)
+    _reload_environment_after_auto_fix(source_details, check_name=check_name)
     try:
         updated_check = check_func()
     except Exception as exc:  # pragma: no cover - defensive launcher path

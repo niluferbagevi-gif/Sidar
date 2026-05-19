@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - test doubles may only expose Config
     _config_get_config = None
 
 logger = logging.getLogger(__name__)
+_MODEL_CACHE: dict[tuple[str, str, bool], Any] = {}
 
 
 def _as_bool(value: Any) -> bool:
@@ -108,17 +109,31 @@ def embed_texts_for_semantic_cache(
         getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2"
     )
     try:
-        from sentence_transformers import SentenceTransformer
-
-        with _scoped_hf_runtime_env():
-            model = SentenceTransformer(
-                model_name,
-                device=sentence_transformer_device_from_config(cfg),
-                local_files_only=sentence_transformer_local_files_only(cfg, model_name),
-            )
-        vectors = model.encode(texts, normalize_embeddings=True)
+        model = get_sentence_transformer_model(model_name, cfg)
+        vectors = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
         raw = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
         return cast("list[list[float]]", raw)
     except Exception as exc:
         logger.debug("Semantic cache embedding üretilemedi: %s", exc)
         return []
+
+
+def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
+    """Load and cache SentenceTransformer models for the current process."""
+    from sentence_transformers import SentenceTransformer
+
+    device = sentence_transformer_device_from_config(cfg)
+    local_files_only = sentence_transformer_local_files_only(cfg, model_name)
+    cache_key = (model_name, device, local_files_only)
+    model = _MODEL_CACHE.get(cache_key)
+    if model is not None:
+        return model
+
+    with _scoped_hf_runtime_env():
+        model = SentenceTransformer(
+            model_name,
+            device=device,
+            local_files_only=local_files_only,
+        )
+    _MODEL_CACHE[cache_key] = model
+    return model

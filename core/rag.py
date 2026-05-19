@@ -38,6 +38,7 @@ from opentelemetry import trace as _otel_trace
 from config import Config
 from core.db import postgres_failure_diagnosis
 from core.embeddings import (
+    get_sentence_transformer_model,
     sentence_transformer_device_from_config,
     sentence_transformer_local_files_only,
 )
@@ -965,7 +966,6 @@ class DocumentStore:
             return
 
         try:
-            from sentence_transformers import SentenceTransformer
             from sqlalchemy import create_engine, text
 
             self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
@@ -1002,14 +1002,9 @@ class DocumentStore:
                     )
                 )
 
-            with self._scoped_hf_runtime_env():
-                self._pg_embedding_model = SentenceTransformer(
-                    self._pg_embedding_model_name,
-                    device=sentence_transformer_device_from_config(self.cfg),
-                    local_files_only=sentence_transformer_local_files_only(
-                        self.cfg, self._pg_embedding_model_name
-                    ),
-                )
+            self._pg_embedding_model = get_sentence_transformer_model(
+                self._pg_embedding_model_name, self.cfg
+            )
             self._pgvector_available = True
             logger.info(
                 "pgvector backend başlatıldı: table=%s model=%s",
@@ -1027,7 +1022,9 @@ class DocumentStore:
         if not self._pg_embedding_model or not texts:
             return []
         try:
-            vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
+            vectors = self._pg_embedding_model.encode(
+                texts, normalize_embeddings=True, show_progress_bar=False
+            )
             if hasattr(vectors, "tolist"):
                 raw_vectors = vectors.tolist()
                 return [list(map(float, row)) for row in raw_vectors]
