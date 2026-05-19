@@ -4581,7 +4581,6 @@ setup_env_file() {
         ensure_database_url_defaults "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
-        sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
@@ -4604,8 +4603,9 @@ setup_env_file() {
     ensure_database_url_defaults "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
-    sync_postgres_env_with_database_url "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
+
+    sync_postgres_env_with_database_url "$ENV_FILE"
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"
@@ -4675,7 +4675,6 @@ setup_env_file() {
     fi
 
     collect_api_keys_interactive "$ENV_FILE"
-    report_env_api_key_status "$ENV_FILE"
     sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }

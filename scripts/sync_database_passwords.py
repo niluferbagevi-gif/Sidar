@@ -565,6 +565,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             ".env.advanced dosyalarındaki PostgreSQL parolalarını/URL'lerini eşitle"
         ),
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Detaylı JSON özeti yazdır",
+    )
     return parser.parse_args(argv)
 
 
@@ -597,7 +602,16 @@ def main(argv: list[str] | None = None) -> int:
             )
         if summary.get("no_change_guidance"):
             print(f"ℹ️ {summary['no_change_guidance']}", file=sys.stderr)
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if args.verbose:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    else:
+        touched_files = len(summary.get("touched_files", []))
+        changed_files = len(summary.get("changed_files", []))
+        print(
+            "summary: changed="
+            f"{bool(summary.get('changed'))} "
+            f"changed_files={changed_files} touched_files={touched_files}"
+        )
     return 0
 
 
