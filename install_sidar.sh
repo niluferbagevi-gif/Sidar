@@ -4591,8 +4591,16 @@ setup_env_file() {
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
-            sed_inplace 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
-            sed_inplace 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            if grep -q '^USE_GPU=' "$ENV_FILE"; then
+                sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$ENV_FILE"
+            else
+                echo 'USE_GPU=true' >> "$ENV_FILE"
+            fi
+            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
+                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            else
+                echo 'GPU_MIXED_PRECISION=true' >> "$ENV_FILE"
+            fi
 
             # Docker için GPU modunu ön tanımlı yap
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
@@ -4604,13 +4612,22 @@ setup_env_file() {
             ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
-            sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            if grep -q '^USE_GPU=' "$ENV_FILE"; then
+                sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$ENV_FILE"
+            else
+                echo 'USE_GPU=false' >> "$ENV_FILE"
+            fi
+            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
+                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=false/' "$ENV_FILE"
+            else
+                echo 'GPU_MIXED_PRECISION=false' >> "$ENV_FILE"
+            fi
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
                 sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
-            ok ".env: USE_GPU=false, COMPOSE_PROFILES=cpu ayarlandı."
+            ok ".env: USE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
         fi
     fi
 
