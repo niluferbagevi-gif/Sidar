@@ -1161,18 +1161,19 @@ def execute_command(
 ) -> int:
     """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
-        print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
-
         if (
             not capture_output
             and not child_log_path
             and len(cmd) >= 2
             and Path(cmd[1]).name == "cli.py"
         ):
+            print(f"\n{GREEN}{BOLD}Sidar başlatılıyor (in-process)...{RESET}\n")
             from cli import main_cli
 
             cli_argv = cmd[2:]
             return int(main_cli(cli_argv))
+
+        print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
 
         if capture_output or child_log_path:
             return_code = _run_with_streaming(cmd, child_log_path)
