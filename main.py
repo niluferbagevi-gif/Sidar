@@ -87,12 +87,22 @@ def print_banner() -> None:
     print(f"{GREEN}Hoş geldiniz! Lütfen Sidar'ı nasıl başlatmak istediğinizi seçin.{RESET}\n")
 
 
-def ask_choice(prompt: str, options: dict[str, tuple[str, str]], default_key: str) -> str:
+def ask_choice(
+    prompt: str,
+    options: dict[str, tuple[str, str]],
+    default_key: str,
+    *,
+    default_badge: str | None = None,
+) -> str:
     """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
     print(f"{YELLOW}{BOLD}{prompt}{RESET}")
 
     for key, (desc, _value) in options.items():
-        is_default = f" {GREEN}(Varsayılan){RESET}" if key == default_key else ""
+        if key == default_key:
+            badge = default_badge or "Varsayılan"
+            is_default = f" {GREEN}({badge}){RESET}"
+        else:
+            is_default = ""
         print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
 
     while True:
@@ -107,9 +117,13 @@ def ask_choice(prompt: str, options: dict[str, tuple[str, str]], default_key: st
         print(f"{MAGENTA}Geçersiz seçim. Lütfen tekrar deneyin.{RESET}")
 
 
-def ask_text(prompt: str, default: str = "") -> str:
+def ask_text(prompt: str, default: str = "", *, default_badge: str | None = None) -> str:
     """Kullanıcıdan metin girdisi alır."""
-    suffix = f" {CYAN}[{default}]{RESET}" if default else ""
+    if default:
+        badge = f" {GREEN}({default_badge}){RESET}" if default_badge else ""
+        suffix = f" {CYAN}[{default}]{RESET}{badge}"
+    else:
+        suffix = ""
     raw = input(f"{YELLOW}{BOLD}{prompt}{RESET}{suffix}: ").strip()
     return raw or default
 
@@ -963,17 +977,33 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
 def run_wizard() -> int:
     """Etkileşimli menüyü çalıştırır."""
     print_banner()
+    last_selection = _load_launcher_session()
+    has_last = last_selection is not None
+    default_badge = "Son seçim" if has_last else "Varsayılan"
 
     mode_options = {
         "1": ("Web Arayüzü Sunucusu (FastAPI + UI)", "web"),
         "2": ("CLI Terminal Arayüzü", "cli"),
     }
-    mode = ask_choice("1. Hangi arayüzle başlatmak istiyorsunuz?", mode_options, "1")
+    mode_default = "1"
+    if has_last and last_selection is not None:
+        mode_default = "2" if last_selection.get("mode") == "cli" else "1"
+    mode = ask_choice(
+        "1. Hangi arayüzle başlatmak istiyorsunuz?",
+        mode_options,
+        mode_default,
+        default_badge=default_badge,
+    )
     print("-" * 50)
 
     default_provider_map = {"ollama": "1", "gemini": "2", "openai": "3", "anthropic": "4"}
+    provider_default_source = (
+        last_selection.get("provider")
+        if has_last and last_selection is not None
+        else getattr(cfg, "AI_PROVIDER", "ollama")
+    )
     default_provider_value = _safe_choice(
-        getattr(cfg, "AI_PROVIDER", "ollama"),
+        provider_default_source,
         "ollama",
         {"ollama", "gemini", "openai", "anthropic"},
     )
@@ -985,12 +1015,20 @@ def run_wizard() -> int:
         "4": ("Anthropic Claude (Bulut LLM)", "anthropic"),
     }
     provider = ask_choice(
-        "2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider
+        "2. Hangi AI Sağlayıcısı kullanılsın?",
+        provider_options,
+        default_provider,
+        default_badge=default_badge,
     )
     print("-" * 50)
 
+    level_default_source = (
+        last_selection.get("level")
+        if has_last and last_selection is not None
+        else getattr(cfg, "ACCESS_LEVEL", "full")
+    )
     default_level_val = _safe_choice(
-        getattr(cfg, "ACCESS_LEVEL", "full"),
+        level_default_source,
         "full",
         {"restricted", "sandbox", "full"},
     )
@@ -1002,7 +1040,12 @@ def run_wizard() -> int:
         "2": ("Sandbox (Docker İzolasyonlu Sınırlandırılmış Erişim)", "sandbox"),
         "3": ("Restricted (Sadece Okuma ve Sohbet)", "restricted"),
     }
-    level = ask_choice("3. Güvenlik/Yetki seviyesi ne olsun?", level_options, default_level)
+    level = ask_choice(
+        "3. Güvenlik/Yetki seviyesi ne olsun?",
+        level_options,
+        default_level,
+        default_badge=default_badge,
+    )
     print("-" * 50)
 
     log_options = {
@@ -1010,22 +1053,42 @@ def run_wizard() -> int:
         "2": ("DEBUG (Detaylı Geliştirici Logları)", "debug"),
         "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "warning"),
     }
-    log_level = ask_choice("4. Log seviyesini seçin:", log_options, "1")
+    log_default_source = (
+        last_selection.get("log") if has_last and last_selection is not None else "info"
+    )
+    default_log = {"info": "1", "debug": "2", "warning": "3", "error": "3"}.get(
+        _safe_choice(log_default_source, "info", {"info", "debug", "warning", "error"}),
+        "1",
+    )
+    log_level = ask_choice(
+        "4. Log seviyesini seçin:", log_options, default_log, default_badge=default_badge
+    )
 
     extra_args = {}
+    last_extra_args = (
+        last_selection.get("extra_args")
+        if has_last and last_selection is not None and isinstance(last_selection.get("extra_args"), dict)
+        else {}
+    )
     if provider == "ollama" and mode == "cli":
         extra_args["model"] = ask_text(
             "\nKullanılacak Ollama modeli",
-            _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
+            _safe_text(
+                last_extra_args.get("model", getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b")),
+                "qwen2.5-coder:7b",
+            ),
+            default_badge=default_badge if has_last else None,
         )
     elif mode == "web":
         extra_args["host"] = ask_text(
             "\nWeb Sunucu Host IP'si",
-            _safe_host(getattr(cfg, "WEB_HOST", "127.0.0.1"), "127.0.0.1"),
+            _safe_host(last_extra_args.get("host", getattr(cfg, "WEB_HOST", "127.0.0.1")), "127.0.0.1"),
+            default_badge=default_badge if has_last else None,
         )
         extra_args["port"] = ask_text(
             "Web Sunucu Portu",
-            _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
+            _safe_port(last_extra_args.get("port", getattr(cfg, "WEB_PORT", 7860)), "7860"),
+            default_badge=default_badge if has_last else None,
         )
 
     selection = _normalize_launch_selection(
@@ -1118,6 +1181,11 @@ def main() -> None:
         help=f"Son {LAUNCHER_SESSION_FILENAME} sihirbaz seçimleriyle başlat",
     )
     parser.add_argument(
+        "--use-last",
+        action="store_true",
+        help=f"--last ile aynı: son {LAUNCHER_SESSION_FILENAME} seçimlerini kullan",
+    )
+    parser.add_argument(
         "--provider",
         choices=["ollama", "gemini", "openai", "anthropic"],
         help="Hızlı başlat için AI sağlayıcı",
@@ -1142,9 +1210,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(args.last)]
+    use_last_env = os.getenv("SIDAR_LAUNCHER_USE_LAST", "").strip().lower() in {"1", "true", "yes", "on"}
+    use_last = bool(args.last or args.use_last or use_last_env)
+    launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(use_last)]
     if sum(launch_modes) > 1:
-        parser.error("--quick, --skip-wizard ve --last aynı anda kullanılamaz")
+        parser.error("--quick, --skip-wizard ve --last/--use-last aynı anda kullanılamaz")
 
     if hasattr(cfg, "validate_critical_settings") and not cfg.validate_critical_settings():
         print(f"{RED}❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.{RESET}")
@@ -1161,7 +1231,7 @@ def main() -> None:
                 f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})"
             )
 
-    if args.last:
+    if use_last:
         selection = _load_launcher_session()
         if selection is None:
             print(
