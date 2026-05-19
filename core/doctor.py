@@ -946,6 +946,7 @@ def check_gpu_memory_config() -> DoctorCheck:
     use_gpu = bool(getattr(Config, "USE_GPU", False))
     gpu_info = str(getattr(Config, "GPU_INFO", "") or "").strip()
     docker_image = str(getattr(Config, "DOCKER_IMAGE", "") or "").strip()
+    docker_test_image = str(getattr(Config, "DOCKER_TEST_IMAGE", "") or "").strip()
     llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
@@ -958,6 +959,7 @@ def check_gpu_memory_config() -> DoctorCheck:
         "use_gpu": use_gpu,
         "gpu_info": gpu_info,
         "docker_image": docker_image,
+        "docker_test_image": docker_test_image,
         "gpu_memory_fraction": legacy_fraction,
         "llm_gpu_memory_fraction": llm_fraction,
         "rag_gpu_memory_fraction": rag_fraction,
@@ -985,7 +987,13 @@ def check_gpu_memory_config() -> DoctorCheck:
         warnings.append(
             "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
         )
-    if docker_image and "gpu" in docker_image.lower() and not use_gpu:
+    if (
+        not use_gpu
+        and (
+            (docker_image and "gpu" in docker_image.lower())
+            or (docker_test_image and "gpu" in docker_test_image.lower())
+        )
+    ):
         warnings.append(
             "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container Toolkit, CUDA visibility, and USE_GPU settings"
         )
