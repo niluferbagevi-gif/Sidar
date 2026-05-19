@@ -43,6 +43,7 @@ class DummyCfg:
     JWT_ALGORITHM: str = "HS256"
     JWT_TTL_DAYS: int = 3
     SQLITE_MAX_CONCURRENT_OPS: int = 4
+    SIDAR_AUTO_MIGRATE: bool = True
 
 
 class _FakeAcquire:
@@ -2324,3 +2325,25 @@ async def test_connect_postgresql_degraded_mode_uses_doctor_lost_url_diagnosis(
     assert db.degraded_mode is True
     assert "DATABASE_URL yok/kayboldu" in db.degraded_reason
     assert "yetki/parola hatası" not in db.degraded_reason
+
+
+@pytest.mark.asyncio
+async def test_init_schema_postgresql_skips_alembic_when_auto_migrate_disabled(tmp_path) -> None:
+    cfg = DummyCfg(
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost/db",
+        BASE_DIR=str(tmp_path),
+        SIDAR_AUTO_MIGRATE=False,
+    )
+    db = Database(cfg)
+    db._backend = "postgresql"
+    db._pg_pool = FakePgAdapter()
+    ran: list[str] = []
+
+    def _mark_alembic() -> None:
+        ran.append("head")
+
+    db._run_alembic_upgrade_head = _mark_alembic  # type: ignore[method-assign]
+
+    await db._init_schema_postgresql()
+
+    assert ran == []

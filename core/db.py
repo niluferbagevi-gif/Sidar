@@ -423,6 +423,7 @@ class Database:
         )
         self._schema_version_table_quoted = _quote_sql_identifier(self.schema_version_table)
         self.target_schema_version = int(getattr(self.cfg, "DB_SCHEMA_TARGET_VERSION", 1) or 1)
+        self.auto_migrate = bool(getattr(self.cfg, "SIDAR_AUTO_MIGRATE", True))
 
         self._backend = "sqlite"
         self._sqlite_path: Path | None = None
@@ -1046,8 +1047,11 @@ class Database:
         command.upgrade(alembic_cfg, "head")
 
     async def _init_schema_postgresql(self) -> None:
-        """Initialize PostgreSQL schema exclusively through Alembic migrations."""
+        """Initialize PostgreSQL schema through Alembic when auto-migrate is enabled."""
         assert self._pg_pool is not None
+        if not self.auto_migrate:
+            logger.info("SIDAR_AUTO_MIGRATE devre dışı; runtime Alembic upgrade atlandı.")
+            return
         await asyncio.to_thread(self._run_alembic_upgrade_head)
 
     async def ensure_default_prompt_registry(self) -> None:

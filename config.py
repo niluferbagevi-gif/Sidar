@@ -568,6 +568,11 @@ def get_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool = Fals
     )
 
 
+def _default_auto_migrate_enabled() -> bool:
+    """Enable runtime Alembic auto-migrate outside production by default."""
+    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+
+
 def get_db_pool_size_default() -> int:
     """
     DB havuz boyutu için çekirdek sayısı + PostgreSQL max_connections temelli varsayılan üretir.
@@ -1041,6 +1046,7 @@ class Config:
     DB_DEGRADED_SQLITE_URL: str = os.getenv("DB_DEGRADED_SQLITE_URL", "")
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
+    SIDAR_AUTO_MIGRATE: bool = get_bool_env("SIDAR_AUTO_MIGRATE", _default_auto_migrate_enabled())
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING: bool = get_bool_env("ENABLE_TRACING", False)
