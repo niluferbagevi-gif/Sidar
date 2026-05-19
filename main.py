@@ -826,6 +826,7 @@ def _launcher_child_env() -> dict[str, str]:
     child_env["SIDAR_CONFIG_QUIET"] = "true"
     child_env["SIDAR_LAUNCHED_BY_MAIN"] = "true"
     child_env["SIDAR_SKIP_BOOT_CHECKS"] = "1"
+    child_env["SIDAR_BANNER_SHOWN"] = "1"
     return child_env
 
 

@@ -295,6 +295,22 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_interactive_loop_skips_banner_when_already_shown(monkeypatch, capsys):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    agent = _InteractiveAgent()
+    monkeypatch.setenv("SIDAR_BANNER_SHOWN", "1")
+
+    async def _raise_interrupt(_fn, _prompt):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.asyncio, "to_thread", _raise_interrupt)
+    await cli._interactive_loop_async(agent)
+    output = capsys.readouterr().out
+    assert "Yazılım Mimarı & Baş Mühendis AI" not in output
+    assert "Erişim Seviyesi" in output
+
+
+@pytest.mark.asyncio
 async def test_interactive_loop_handles_gpu_without_cuda_suffix(monkeypatch, capsys):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(cuda_version="N/A", gpu_count=1)

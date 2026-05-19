@@ -124,7 +124,9 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     Çözüm: Tüm döngü tek bir async fonksiyon içine alındı.
     asyncio.Lock() tüm oturum boyunca aynı loop'ta yaşar.
     """
-    print(_make_banner(agent.VERSION))
+    banner_already_shown = os.getenv("SIDAR_BANNER_SHOWN", "").strip().lower() in {"1", "true", "yes"}
+    if not banner_already_shown:
+        print(_make_banner(agent.VERSION))
 
     # Sağlayıcıya göre doğru model adını göster
     if agent.cfg.AI_PROVIDER == "gemini":
