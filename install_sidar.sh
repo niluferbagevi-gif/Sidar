@@ -2140,9 +2140,14 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
 banner() {
+    local version_suffix=""
+    if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
+        version_suffix=" (v$INSTALL_SIDAR_VERSION)"
+    fi
+
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    printf "║          %-34s (v%-10s)║\n" "$(sidar_t banner_title)" "$INSTALL_SIDAR_VERSION"
+    printf "║          %-46s║\n" "$(sidar_t banner_title)${version_suffix}"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
