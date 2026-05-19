@@ -866,6 +866,9 @@ def check_gpu_memory_config() -> DoctorCheck:
     provider = str(getattr(Config, "AI_PROVIDER", "ollama") or "ollama").strip().lower()
     coding_model = str(getattr(Config, "CODING_MODEL", "") or "").strip()
     access_level = str(getattr(Config, "ACCESS_LEVEL", "") or "").strip().lower()
+    use_gpu = bool(getattr(Config, "USE_GPU", False))
+    gpu_info = str(getattr(Config, "GPU_INFO", "") or "").strip()
+    docker_image = str(getattr(Config, "DOCKER_IMAGE", "") or "").strip()
     llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
@@ -875,6 +878,9 @@ def check_gpu_memory_config() -> DoctorCheck:
         "ai_provider": provider,
         "coding_model": coding_model,
         "access_level": access_level,
+        "use_gpu": use_gpu,
+        "gpu_info": gpu_info,
+        "docker_image": docker_image,
         "gpu_memory_fraction": legacy_fraction,
         "llm_gpu_memory_fraction": llm_fraction,
         "rag_gpu_memory_fraction": rag_fraction,
@@ -901,6 +907,10 @@ def check_gpu_memory_config() -> DoctorCheck:
     if provider == "ollama" and coding_model != "qwen2.5-coder:7b":
         warnings.append(
             "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
+        )
+    if docker_image and "gpu" in docker_image.lower() and not use_gpu:
+        warnings.append(
+            "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container Toolkit, CUDA visibility, and USE_GPU settings"
         )
     if access_level != "sandbox":
         warnings.append("CLI access level is not sandbox; verify this is intentional")
