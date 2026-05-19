@@ -22,6 +22,8 @@ import time
 from pathlib import Path, PosixPath, PureWindowsPath
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
+from managers.image_resolver import canonical_project_image_alias
+from managers.image_resolver import is_gpu_project_image
 
 try:
     from config import SANDBOX_LIMITS, Config
@@ -103,20 +105,11 @@ def _build_sanitized_shell_args(command: str, *, allow_shell_features: bool) -> 
 
 def _canonical_project_image_alias(image: str) -> str | None:
     """Eski Sidar proje imaj adlarını güncel Docker tag karşılığına çevir."""
-    candidate = image.strip()
-    if not candidate:
-        return None
-
-    repository, separator, tag = candidate.partition(":")
-    canonical_repository = _LEGACY_PROJECT_IMAGE_PREFIXES.get(repository)
-    if canonical_repository is None:
-        return None
-    return f"{canonical_repository}:{tag or 'latest'}"
+    return canonical_project_image_alias(image, legacy_prefixes=_LEGACY_PROJECT_IMAGE_PREFIXES)
 
 
 def _is_gpu_project_image(image: str) -> bool:
-    repository = image.strip().split(":", 1)[0].lower()
-    return repository.startswith("sidar-gpu")
+    return is_gpu_project_image(image)
 
 
 def _sanitize_docker_token(
