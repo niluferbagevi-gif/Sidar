@@ -1334,7 +1334,13 @@ def test_noisy_dependency_loggers_stay_quiet_in_debug_unless_verbose_http(monkey
     assert logging.getLogger("httpx").level == logging.WARNING
     assert logging.getLogger("huggingface_hub").level == logging.WARNING
 
+    alembic_logger = logging.getLogger("alembic.runtime.migration")
+    alembic_logger.handlers = [logging.StreamHandler()]
+    alembic_logger.propagate = False
+
     reloaded._configure_noisy_dependency_loggers(verbose_http=True)
+    assert alembic_logger.handlers == []
+    assert alembic_logger.propagate is True
     assert logging.getLogger("httpx").level == logging.NOTSET
     assert logging.getLogger("huggingface_hub").level == logging.NOTSET
 
