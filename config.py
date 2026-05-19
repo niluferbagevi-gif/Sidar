@@ -13,10 +13,14 @@ from copy import deepcopy
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.config_dirs import initialize_directories as initialize_required_directories
+from core.config_dirs import repair_log_file_permissions
+from core.config_dirs import resolve_base_dir
+from core.config_gpu_detect import normalize_gpu_memory_fractions
 from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides
 from core.config_runtime_env import safe_choice_for_reload
@@ -38,7 +42,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 # TEMEL DİZİN VE .ENV YÜKLEMESİ  (diğer her şeyden ÖNCE)
 # ═══════════════════════════════════════════════════════════════
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = resolve_base_dir(__file__)
 
 _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
 _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
@@ -478,71 +482,6 @@ def get_container_database_url() -> str:
     return build_postgres_dsn(host=container_host)
 
 
-class GpuMemoryBudget(TypedDict):
-    llm: float
-    rag: float
-    gpu: float
-    total: float
-    original_total: float
-    normalized: bool
-
-
-def normalize_gpu_memory_fractions(
-    llm_fraction: float,
-    rag_fraction: float,
-    *,
-    target_total: float = 0.8,
-    min_fraction: float = 0.05,
-) -> GpuMemoryBudget:
-    """Normalize LLM/RAG VRAM fractions when their total is unsafe.
-
-    The helper is intentionally side-effect free so startup hardware probing,
-    Config validation, doctor checks, and tests all report the same effective
-    VRAM budget.
-    """
-    llm = float(llm_fraction or 0.0)
-    rag = float(rag_fraction or 0.0)
-    total = llm + rag
-    safe_total = float(target_total)
-    floor = max(0.0, float(min_fraction))
-
-    if total <= 0:
-        return {
-            "llm": round(safe_total / 2, 4),
-            "rag": round(safe_total / 2, 4),
-            "gpu": round(safe_total, 4),
-            "total": round(safe_total, 4),
-            "original_total": round(total, 4),
-            "normalized": True,
-        }
-
-    if total <= 1.0:
-        return {
-            "llm": round(llm, 4),
-            "rag": round(rag, 4),
-            "gpu": round(total, 4),
-            "total": round(total, 4),
-            "original_total": round(total, 4),
-            "normalized": False,
-        }
-
-    scale = safe_total / total
-    normalized_llm = max(floor, llm * scale)
-    normalized_rag = max(floor, rag * scale)
-    normalized_total = normalized_llm + normalized_rag
-    if normalized_total > safe_total:
-        second_scale = safe_total / normalized_total
-        normalized_llm *= second_scale
-        normalized_rag *= second_scale
-
-    return {
-        "llm": round(normalized_llm, 4),
-        "rag": round(normalized_rag, 4),
-        "gpu": round(safe_total, 4),
-        "total": round(normalized_llm + normalized_rag, 4),
-        "original_total": round(total, 4),
-        "normalized": True,
-    }
 
 
 def get_web_scrape_max_chars(default: int = 12000) -> int:
@@ -671,27 +610,7 @@ _NOISY_DEPENDENCY_LOGGERS = (
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _repair_log_file_permissions(log_file: Path) -> None:
-    """Yazılamayan log dosyasını mümkünse mevcut kullanıcıya göre onarır."""
-    if not log_file.exists():
-        return
-
-    if os.access(log_file, os.W_OK):
-        return
-
-    uid = os.getuid() if hasattr(os, "getuid") else None
-    gid = os.getgid() if hasattr(os, "getgid") else None
-
-    if uid is not None and gid is not None and hasattr(os, "chown"):
-        with contextlib.suppress(PermissionError, OSError):
-            os.chown(log_file, uid, gid)
-
-    current_mode = log_file.stat().st_mode & 0o777
-    with contextlib.suppress(PermissionError, OSError):
-        log_file.chmod(current_mode | 0o200)
-
-
-_repair_log_file_permissions(_LOG_FILE_PATH)
+repair_log_file_permissions(_LOG_FILE_PATH)
 
 
 def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
@@ -1563,15 +1482,7 @@ class Config:
     @classmethod
     def initialize_directories(cls) -> bool:
         """Gerekli tüm dizinleri oluşturur."""
-        success = True
-        for folder in cls.REQUIRED_DIRS:
-            try:
-                folder.mkdir(parents=True, exist_ok=True)
-                logger.debug("✅ Dizin hazır: %s", folder.name)
-            except Exception as exc:
-                logger.error("❌ Dizin oluşturulamadı (%s): %s", folder.name, exc)
-                success = False
-        return success
+        return initialize_required_directories(cls.REQUIRED_DIRS, logger)
 
     @classmethod
     def set_provider_mode(cls, mode: str) -> None:
