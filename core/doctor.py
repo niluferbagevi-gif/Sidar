@@ -478,6 +478,11 @@ def check_database_env() -> DoctorCheck:
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 
+    if explicit_database_url or explicit_container_url:
+        warnings.append(
+            "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls for long-term safety"
+        )
+
     if failures:
         for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"):
             source_note = _source_message(key, env_sources)
