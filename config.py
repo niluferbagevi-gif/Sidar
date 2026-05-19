@@ -696,7 +696,7 @@ for _handler in list(_root_logger.handlers):
 
 logging.basicConfig(
     level=getattr(logging, _LOG_LEVEL_STR, logging.INFO),
-    format="%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s",
+    format="%(asctime)s - [%(levelname)s] - %(name)s - [%(threadName)s] - (%(filename)s:%(lineno)d) - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
     force=True,
 )
@@ -713,7 +713,7 @@ try:
     )
     _file_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s"
+            "%(asctime)s - [%(levelname)s] - %(name)s - [%(threadName)s] - (%(filename)s:%(lineno)d) - %(message)s"
         )
     )
     _root_logger.addHandler(_file_handler)
