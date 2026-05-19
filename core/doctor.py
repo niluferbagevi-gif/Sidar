@@ -707,9 +707,10 @@ def check_rag_readiness() -> DoctorCheck:
                 'or add external sources with `uv run python cli.py -c "belge ekle <url>"`; '
                 "searches will rely on code graph/keyword/BM25 only until then"
             )
-    if entity_node_count == 0 and graph_enabled:
+    entity_memory_empty = entity_node_count == 0 and graph_enabled
+    if entity_memory_empty:
         warnings.append(
-            "GraphRAG entity memory is empty until documents are indexed or entity extraction runs"
+            "GraphRAG entity memory is empty; documents are indexed but entity extraction/projection has not populated relational memory yet"
         )
 
     if blockers:
@@ -744,9 +745,16 @@ def check_rag_readiness() -> DoctorCheck:
         message = "; ".join(warnings)
     else:
         details["auto_fix"] = ""
-        details["recommended_commands"] = [
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-        ]
+        if entity_memory_empty:
+            details["auto_fix"] = "uv run python -m scripts.seed_rag --metadata-only"
+            details["recommended_commands"] = [
+                "uv run python -m scripts.seed_rag --metadata-only",
+                "uv run python -m core.doctor artifacts/install/doctor.json",
+            ]
+        else:
+            details["recommended_commands"] = [
+                "uv run python -m core.doctor artifacts/install/doctor.json",
+            ]
         status = "warn" if warnings else "pass"
         message = "; ".join(warnings or ["RAG readiness looks healthy"])
     return DoctorCheck("rag_readiness", status, message, details)
