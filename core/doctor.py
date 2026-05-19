@@ -649,7 +649,7 @@ def check_database_connectivity() -> DoctorCheck:
     )
 
 
-def check_rag_readiness() -> DoctorCheck:
+def _rag_readiness_state() -> dict[str, Any]:
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() or "chroma"
     graph_enabled = _get_bool_env("ENABLE_GRAPH_RAG", True)
     rag_dir = Path(os.getenv("RAG_DIR", "data/rag"))
@@ -718,50 +718,114 @@ def check_rag_readiness() -> DoctorCheck:
             "GraphRAG entity memory is empty; documents are indexed but entity extraction/projection has not populated relational memory yet"
         )
 
+    return {
+        "details": details,
+        "blockers": blockers,
+        "warnings": warnings,
+        "document_count": document_count,
+        "entity_memory_empty": entity_memory_empty,
+    }
+
+
+def check_rag_index_ready() -> DoctorCheck:
+    state = _rag_readiness_state()
+    details = state["details"]
+    blockers = state["blockers"]
+    warnings = state["warnings"]
+    document_count = int(state["document_count"])
+    entity_memory_empty = bool(state["entity_memory_empty"])
+    index_warnings = [w for w in warnings if "RAG index" in w or "indexed documents" in w]
+
     if blockers:
         auto_fix_steps = [details["database_env_auto_fix"]]
         if document_count == 0:
             auto_fix_steps.append("uv run python -m scripts.seed_rag")
-        details["auto_fix"] = auto_fix_steps[0]
+        details["auto_fix"] = auto_fix_steps
         details["auto_fix_steps"] = auto_fix_steps
         details["recommended_commands"] = [
             *auto_fix_steps,
+            'uv run python cli.py -c "belge ekle <url>"',
             "uv run python -m core.doctor artifacts/install/doctor.json",
             "docker compose ps postgres",
         ]
-        details["follow_up_commands"] = [
-            command
-            for command in (
-                "uv run python -m scripts.seed_rag",
-                'uv run python cli.py -c "belge ekle <url>"',
-            )
-            if command not in auto_fix_steps
-        ]
         status = "warn"
-        message = "; ".join(blockers + warnings)
+        message = "; ".join(blockers + index_warnings)
     elif document_count == 0:
-        details["auto_fix"] = "uv run python -m scripts.seed_rag"
+        details["auto_fix"] = [
+            "uv run python -m scripts.seed_rag",
+            'uv run python cli.py -c "belge ekle <url>"',
+        ]
         details["recommended_commands"] = [
             "uv run python -m scripts.seed_rag",
             'uv run python cli.py -c "belge ekle <url>"',
             "uv run python -m core.doctor artifacts/install/doctor.json",
         ]
         status = "warn"
-        message = "; ".join(warnings)
+        message = "; ".join(index_warnings)
     else:
-        details["auto_fix"] = ""
         if entity_memory_empty:
-            details["auto_fix"] = "uv run python -m scripts.seed_rag --metadata-only"
-            details["recommended_commands"] = [
-                "uv run python -m scripts.seed_rag --metadata-only",
-                "uv run python -m core.doctor artifacts/install/doctor.json",
-            ]
-        else:
-            details["recommended_commands"] = [
-                "uv run python -m core.doctor artifacts/install/doctor.json",
-            ]
-        status = "warn" if warnings else "pass"
-        message = "; ".join(warnings or ["RAG readiness looks healthy"])
+            details["graphrag_entity_memory_warning"] = True
+        details["auto_fix"] = ""
+        details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
+        status = "pass"
+        message = "RAG index readiness looks healthy"
+    return DoctorCheck("rag_index_ready", status, message, details)
+
+
+def check_graphrag_entity_memory_ready() -> DoctorCheck:
+    state = _rag_readiness_state()
+    details = state["details"]
+    warnings = state["warnings"]
+    entity_memory_empty = bool(state["entity_memory_empty"])
+    graph_enabled = bool(details.get("graph_rag_enabled"))
+    entity_warnings = [w for w in warnings if "GraphRAG entity memory is empty" in w]
+
+    if not graph_enabled:
+        details["auto_fix"] = ""
+        details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
+        return DoctorCheck(
+            "graphrag_entity_memory_ready", "warn", "GraphRAG is disabled by configuration", details
+        )
+
+    if entity_memory_empty:
+        details["auto_fix"] = "uv run python -m scripts.seed_rag --metadata-only"
+        details["recommended_commands"] = [
+            "uv run python -m scripts.seed_rag --metadata-only",
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+        ]
+        return DoctorCheck(
+            "graphrag_entity_memory_ready", "warn", "; ".join(entity_warnings), details
+        )
+
+    details["auto_fix"] = ""
+    details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
+    return DoctorCheck(
+        "graphrag_entity_memory_ready", "pass", "GraphRAG entity memory looks healthy", details
+    )
+
+
+def check_rag_readiness() -> DoctorCheck:
+    """Backward-compatible aggregate check; prefer split checks in launcher."""
+    index_check = check_rag_index_ready()
+    graph_check = check_graphrag_entity_memory_ready()
+    status = "pass"
+    if "fail" in {index_check.status, graph_check.status}:
+        status = "fail"
+    elif "warn" in {index_check.status, graph_check.status}:
+        status = "warn"
+    details = {
+        "rag_index_ready_status": index_check.status,
+        "graphrag_entity_memory_ready_status": graph_check.status,
+        "recommended_commands": list(
+            dict.fromkeys(
+                [
+                    *index_check.details.get("recommended_commands", []),
+                    *graph_check.details.get("recommended_commands", []),
+                ]
+            )
+        ),
+    }
+    message = f"rag_index_ready={index_check.status}; graphrag_entity_memory_ready={graph_check.status}"
     return DoctorCheck("rag_readiness", status, message, details)
 
 
@@ -1155,7 +1219,8 @@ def run_doctor_report(
         check_gpu_memory_config(),
         check_database_env(),
         check_database_connectivity(),
-        check_rag_readiness(),
+        check_rag_index_ready(),
+        check_graphrag_entity_memory_ready(),
         check_migrations(),
         check_agent_catalog(),
         check_supervisor_routing(),

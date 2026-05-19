@@ -376,7 +376,13 @@ def _reload_environment_after_auto_fix(
     profile = os.getenv("SIDAR_ENV", "").strip().lower() or None
     if profile is None and _development_env_path().exists():
         profile = "development"
-    requires_full_reload = check_name in {"database_env", "database_connectivity", "rag_readiness"}
+    requires_full_reload = check_name in {
+        "database_env",
+        "database_connectivity",
+        "rag_readiness",
+        "rag_index_ready",
+        "graphrag_entity_memory_ready",
+    }
     config_reloaded = False
     if requires_full_reload:
         config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
@@ -548,6 +554,26 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     return []
 
 
+def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> list[str]:
+    """Interactive selector for checks that publish multiple auto-fix alternatives."""
+    if len(commands) <= 1 or not sys.stdin.isatty():
+        return commands
+    print(f"{CYAN}   • Doctor/{check_name} için çalıştırılacak auto-fix komutunu seçin:{RESET}")
+    for idx, command in enumerate(commands, start=1):
+        print(f"{CYAN}     [{idx}] {command}{RESET}")
+    print(f"{CYAN}     [A] Tümünü sırayla çalıştır{RESET}")
+    raw = input(f"{BOLD}Seçiminiz [1-{len(commands)}/A]: {RESET}").strip().lower()
+    if raw in {"a", "all"}:
+        return commands
+    try:
+        selected_index = int(raw) - 1
+    except ValueError:
+        return [commands[0]]
+    if 0 <= selected_index < len(commands):
+        return [commands[selected_index]]
+    return [commands[0]]
+
+
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
     if "--summary-only" in cmd or "--quiet" in cmd:
@@ -613,6 +639,7 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     auto_fix_commands = _doctor_auto_fix_commands(details)
     if not auto_fix_commands or not sys.stdin.isatty():
         return False
+    auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
 
     prompt_suffix = "adımları" if len(auto_fix_commands) > 1 else "komutu"
     if not confirm(
@@ -707,8 +734,9 @@ def _run_launcher_doctor_preflight() -> None:
         from core.doctor import (
             check_database_connectivity,
             check_database_env,
+            check_graphrag_entity_memory_ready,
             check_gpu_memory_config,
-            check_rag_readiness,
+            check_rag_index_ready,
         )
     except Exception as exc:  # pragma: no cover - defensive launcher path
         logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
@@ -720,15 +748,20 @@ def _run_launcher_doctor_preflight() -> None:
     doctor_checks = (
         ("database_env", check_database_env),
         ("database_connectivity", check_database_connectivity),
-        ("rag_readiness", check_rag_readiness),
+        ("rag_index_ready", check_rag_index_ready),
+        ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
         ("gpu_memory_config", check_gpu_memory_config),
     )
     for check_name, check_func in doctor_checks:
-        if skip_database_dependents and check_name in {"database_connectivity", "rag_readiness"}:
+        if skip_database_dependents and check_name in {
+            "database_connectivity",
+            "rag_index_ready",
+            "graphrag_entity_memory_ready",
+        }:
             if not skip_summary_printed:
                 print(
                     f"{YELLOW}   • Doctor/database_env hâlâ fail; "
-                    "database_connectivity ve rag_readiness kontrolleri atlandı. "
+                    "database_connectivity, rag_index_ready ve graphrag_entity_memory_ready kontrolleri atlandı. "
                     f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
                 )
                 skip_summary_printed = True
