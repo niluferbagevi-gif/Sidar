@@ -728,15 +728,23 @@ class DocumentStore:
             if self._vector_backend == "pgvector":
                 self._chroma_available = False
                 self._init_pgvector()
+                logger.info(
+                    "RAG backend init (1/2): pgvector=%s", "ready" if self._pgvector_available else "fallback"
+                )
             elif self._chroma_available:
                 self._init_chroma()
+                logger.info(
+                    "RAG backend init (1/2): chroma=%s", "ready" if self._chroma_available else "fallback"
+                )
         else:
             self._chroma_available = False
             logger.info("DocumentStore vektör başlatması devre dışı (initialize_vector=False).")
+            logger.info("RAG backend init (1/2): vector=disabled")
 
         # BM25 (SQLite FTS5) Başlatma
         self._bm25_available = True
         self._init_fts()
+        logger.info("RAG backend init (2/2): bm25=%s", "ready" if self._bm25_available else "fallback")
 
     def _require_pg_engine(self) -> Any:
         engine = getattr(self, "pg_engine", None)
