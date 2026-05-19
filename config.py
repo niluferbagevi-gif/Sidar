@@ -654,7 +654,7 @@ _LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
 _LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
 _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
 _VERBOSE_HTTP_LOGS = get_bool_env("SIDAR_VERBOSE_HTTP", False)
-_NOISY_DEPENDENCY_LOGGERS = ("httpx", "huggingface_hub")
+_NOISY_DEPENDENCY_LOGGERS = ("httpx", "huggingface_hub", "sentence_transformers")
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
