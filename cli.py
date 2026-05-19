@@ -357,7 +357,8 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
     if args.command:
         cfg.CLI_FAST_MODE = True
-    if not cfg.validate_critical_settings():
+    skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {"1", "true", "yes"}
+    if not skip_boot_checks and not cfg.validate_critical_settings():
         raise SystemExit("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
 
     agent = SidarAgent(cfg)

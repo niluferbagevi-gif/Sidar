@@ -179,6 +179,21 @@ def test_cli_main_fails_fast_on_invalid_critical_settings(monkeypatch):
         cli.main()
 
 
+def test_cli_main_skips_critical_validation_when_env_flag_set(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+
+    class _ExplodingConfig(_FakeConfig):
+        def validate_critical_settings(self):
+            raise AssertionError("validate_critical_settings should be skipped")
+
+    monkeypatch.setattr(cli, "Config", _ExplodingConfig)
+    monkeypatch.setattr(cli, "SidarAgent", _FakeAgent)
+    monkeypatch.setenv("SIDAR_SKIP_BOOT_CHECKS", "1")
+    monkeypatch.setattr(cli.sys, "argv", ["cli.py", "--status"])
+
+    cli.main()
+
+
 def test_setup_logging_sets_root_level(monkeypatch):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     cli._setup_logging("debug")

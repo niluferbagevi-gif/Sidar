@@ -16,9 +16,8 @@ import os
 import shlex
 import subprocess  # nosec B404
 import sys
-import threading
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
@@ -826,6 +825,7 @@ def _launcher_child_env() -> dict[str, str]:
     child_env = os.environ.copy()
     child_env["SIDAR_CONFIG_QUIET"] = "true"
     child_env["SIDAR_LAUNCHED_BY_MAIN"] = "true"
+    child_env["SIDAR_SKIP_BOOT_CHECKS"] = "1"
     return child_env
 
 
@@ -834,33 +834,20 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _stream_pipe(
-    pipe: TextIO, file_obj: TextIO | None, prefix: str, color: str, mirror: bool
-) -> None:
-    """Child process pipe akışını satır satır okuyup belleği şişirmeden dosyaya yazar."""
-    for line in iter(pipe.readline, ""):
-        if file_obj:
-            file_obj.write(f"[{prefix.strip('[]')}] {line}")
-            file_obj.flush()
-        if mirror:
-            print(f"{color}{prefix}{RESET} {line}", end="")
-    pipe.close()
-
-
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
-    """Child process çıktısını canlı izleyerek (stdout/stderr) bellek dostu şekilde loglar."""
+    """Child process çıktısını canlı ve sıralı biçimde (stdout+stderr) loglar."""
     process = subprocess.Popen(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
         cmd,
         cwd=os.path.dirname(__file__) or ".",
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
         env=_launcher_child_env(),
     )
 
-    if process.stdout is None or process.stderr is None:
-        raise RuntimeError("Child process stdout/stderr pipe oluşturulamadı.")
+    if process.stdout is None:
+        raise RuntimeError("Child process stdout pipe oluşturulamadı.")
 
     f = None
     log_path = None
@@ -873,21 +860,13 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
         f.write(f"$ {_format_cmd(cmd)}\n\n")
         f.flush()
 
-    t_out = threading.Thread(
-        target=_stream_pipe,
-        args=(process.stdout, f, "[stdout]", CYAN, True),
-        daemon=True,
-    )
-    t_err = threading.Thread(
-        target=_stream_pipe,
-        args=(process.stderr, f, "[stderr]", YELLOW, True),
-        daemon=True,
-    )
-    t_out.start()
-    t_err.start()
-
     return_code = 1
     try:
+        for line in iter(process.stdout.readline, ""):
+            if f:
+                f.write(f"[child] {line}")
+                f.flush()
+            print(f"{CYAN}[child]{RESET} {line}", end="")
         return_code = process.wait()
     finally:
         poll = getattr(process, "poll", None)
@@ -901,9 +880,6 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
             except Exception:
                 if callable(kill):  # pragma: no cover
                     kill()  # pragma: no cover
-        t_out.join()
-        t_err.join()
-
         if f:
             f.write(f"\n[exit_code]\n{return_code}\n")
             f.close()
