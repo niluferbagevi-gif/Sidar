@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import sys
 from collections import Counter
 
 DEFAULT_MIN_LENGTH = 24
@@ -156,11 +157,21 @@ def is_weak_secret(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Detect weak/placeholder Sidar secret values.")
-    parser.add_argument("value", help="Secret value to evaluate")
+    parser.add_argument("value", nargs="?", help="Secret value to evaluate")
     parser.add_argument("--min-length", type=int, default=DEFAULT_MIN_LENGTH)
     parser.add_argument("--min-entropy-bits", type=float, default=DEFAULT_MIN_ENTROPY_BITS)
     parser.add_argument("--quiet", action="store_true", help="Only use the exit code")
-    args = parser.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args, extras = parser.parse_known_args(raw_argv)
+
+    if args.value is None and len(extras) == 1 and extras[0].startswith("-"):
+        args.value = extras[0]
+        extras = []
+
+    if extras:
+        parser.error(f"unrecognized arguments: {' '.join(extras)}")
+    if args.value is None:
+        parser.error("the following arguments are required: value")
 
     weak = is_weak_secret(
         args.value,
