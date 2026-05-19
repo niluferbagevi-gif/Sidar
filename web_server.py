@@ -3619,7 +3619,7 @@ async def _await_if_needed(value: Any) -> Any:
     return value
 
 
-async def _health_response(*, require_dependencies: bool = False) -> JSONResponse:
+async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     try:
         agent = await _resolve_agent_instance()
         health_data = agent.health.get_health_summary()
