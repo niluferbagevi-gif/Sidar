@@ -38,6 +38,7 @@ _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
 _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
 _DOTENV_MANAGED_KEYS: set[str] = set()
 _DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
+_LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -1429,6 +1430,7 @@ class Config:
     @classmethod
     def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
         """Log the effective dotenv load chain and actionable missing-key guidance."""
+        global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
         loaded = [event for event in _DOTENV_LOAD_EVENTS if event.get("loaded")]
         missing_files = [
             event
@@ -1436,9 +1438,15 @@ class Config:
             if not event.get("loaded") and event.get("reason") == "missing"
         ]
         if loaded:
-            logger.info(
+            chain_text = " -> ".join(f"{event['label']}={event['path']}" for event in loaded)
+            chain_signature = tuple(
+                (str(event.get("label", "")), str(event.get("path", ""))) for event in loaded
+            )
+            chain_changed = chain_signature != _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
+            _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = chain_signature
+            (logger.info if chain_changed else logger.debug)(
                 "Runtime env yükleme zinciri: %s",
-                " -> ".join(f"{event['label']}={event['path']}" for event in loaded),
+                chain_text,
             )
         else:
             logger.warning(
@@ -1884,11 +1892,13 @@ class Config:
 
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
+    global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
     effective_env = _dotenv_reload_baseline_environment()
     _DOTENV_MANAGED_KEYS.clear()
     _DOTENV_LOAD_EVENTS.clear()
     _DOTENV_KEY_SOURCES.clear()
+    _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = None
 
     base_path = BASE_DIR / ".env"
     advanced_path = BASE_DIR / ".env.advanced"
