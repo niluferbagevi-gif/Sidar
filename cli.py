@@ -153,7 +153,7 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             print("  GPU             : ✗ GPU bulunamadı (CPU modunda çalışıyor)")
         else:
             print(f"  GPU             : ℹ CPU modu ({gpu_info or 'GPU devre dışı'})")
-    print(f"  GitHub          : {'Bağlı' if agent.github.is_available() else 'Bağlı değil'}")
+    print(f"  GitHub          : {'Hazır' if agent.github.is_available() else 'Hazır değil'}")
     print(
         f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
     )

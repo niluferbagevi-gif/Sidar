@@ -289,7 +289,7 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
     output = capsys.readouterr().out
     assert "GPU             : ✗ RTX" in output
     assert "coder-test" in output
-    assert "Bağlı değil" in output
+    assert "Hazır değil" in output
     assert "duckduckgo-search kurulu değil" in output
     assert "Görüşürüz. ✓" in output
 

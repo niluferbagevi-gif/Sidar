@@ -116,7 +116,11 @@ class GitHubManager:
         self._gh: Github | None = None
         self._repo: Repository | None = None
         self._available = False
-        self._init_client()
+        if not self.token and (self.require_token or self.repo_name):
+            raise ValueError(
+                "HATA: GitHub araçları aktif ancak GITHUB_TOKEN bulunamadı. "
+                "Lütfen .env dosyasını kontrol edin."
+            )
 
     # ─────────────────────────────────────────────
     #  BAŞLATMA
@@ -150,9 +154,24 @@ class GitHubManager:
         except Exception as exc:
             logger.error("GitHub bağlantı hatası: %s", exc)
 
+    def _ensure_client(self) -> bool:
+        """GitHub istemcisini ilk ihtiyaç anında başlatır (lazy init)."""
+        if self._gh:
+            return self._available
+        self._init_client()
+        return self._gh is not None and self._available
+
+    def _ensure_repo(self) -> bool:
+        """Repo adı tanımlıysa, depo nesnesini ilk ihtiyaçta yükler."""
+        if self._repo:
+            return True
+        if not self.repo_name:
+            return False
+        return self._load_repo(self.repo_name)
+
     def _load_repo(self, repo_name: str) -> bool:
         """Depo nesnesini yükle."""
-        if not self._gh:
+        if not self._ensure_client():
             return False
         try:
             self._repo = self._call_with_retry(self._gh.get_repo, repo_name)
@@ -172,7 +191,7 @@ class GitHubManager:
 
     def set_repo(self, repo_name: str) -> tuple[bool, str]:
         """Aktif depoyu değiştir."""
-        if not self._available:
+        if not self._ensure_client():
             return False, "GitHub bağlantısı yok."
         ok = self._load_repo(repo_name)
         if ok:
@@ -184,7 +203,7 @@ class GitHubManager:
         Erişilebilen depoları listeler.
         owner verilirse ilgili kullanıcı/organizasyon hesabının depolarını döner.
         """
-        if not self._gh:
+        if not self._ensure_client():
             return False, []
         try:
             repos: list[dict[str, str]] = []
@@ -665,12 +684,12 @@ class GitHubManager:
     # ─────────────────────────────────────────────
 
     def is_available(self) -> bool:
-        if not self._available and not self.token:
+        if not self.token:
             logger.debug(
                 "GitHub: Token eksik. .env dosyasına GITHUB_TOKEN=<token> ekleyin. "
                 "Token oluşturmak için: https://github.com/settings/tokens"
             )
-        return self._available
+        return bool(self.token)
 
     def status(self) -> str:
         if not self._available:
@@ -683,7 +702,7 @@ class GitHubManager:
                 )
             return "GitHub: Token geçersiz veya bağlantı hatası (log dosyasını kontrol edin)"
         repo_info = f" | Depo: {self.repo_name}" if self.repo_name else " | Depo: ayarlanmamış"
-        return f"GitHub: Bağlı{repo_info}"
+        return f"GitHub: Hazır{repo_info}"
 
     @property
     def default_branch(self) -> str:

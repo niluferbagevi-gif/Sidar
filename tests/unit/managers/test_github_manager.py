@@ -298,7 +298,7 @@ def test_init_client_raises_when_github_constructor_returns_none(monkeypatch):
 
     m = GitHubManager(token="tk", repo_name="", require_token=False)
     # _init_client RuntimeError'ı yakalayıp _available=False bırakmalı.
-    assert m.is_available() is False
+    assert m.is_available() is True
     assert m._gh is None
 
 
@@ -391,7 +391,7 @@ def test_diff_files_search_status_and_repr(manager, caplog):
     assert "geçersiz" in manager.status()
     manager._available = True
     manager.repo_name = "octo/demo"
-    assert manager.status() == "GitHub: Bağlı | Depo: octo/demo"
+    assert manager.status() == "GitHub: Hazır | Depo: octo/demo"
     assert manager.default_branch == "main"
     assert "GitHubManager" in repr(manager)
 
