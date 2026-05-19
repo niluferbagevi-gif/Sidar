@@ -5218,6 +5218,40 @@ PY
     fi
 }
 
+
+seed_rag_metadata_after_migrations() {
+    local seed_mode="${AUTO_SEED_RAG_METADATA:-true}"
+    seed_mode="$(normalize_bool "$seed_mode")"
+    [[ -z "$seed_mode" ]] && seed_mode="true"
+
+    if [[ "$seed_mode" != "true" ]]; then
+        info "AUTO_SEED_RAG_METADATA=${AUTO_SEED_RAG_METADATA:-false}; RAG metadata seed adımı atlandı."
+        return 0
+    fi
+
+    if [[ "${MIGRATION_STATUS:-}" != "tamamlandi" ]]; then
+        info "Migrasyon tamamlanmadığı için RAG metadata seed adımı atlandı (MIGRATION_STATUS=${MIGRATION_STATUS:-bilinmiyor})."
+        return 0
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; RAG metadata seed otomasyonu atlandı. Manuel: uv run python -m scripts.seed_rag --metadata-only"
+        return 0
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/seed_rag.py" ]]; then
+        warn "scripts/seed_rag.py bulunamadı; RAG metadata seed otomasyonu atlandı."
+        return 0
+    fi
+
+    info "RAG/GraphRAG metadata başlangıç seed'i uygulanıyor..."
+    if (cd "$SCRIPT_DIR" && uv run python -m scripts.seed_rag --metadata-only); then
+        ok "RAG index ve GraphRAG entity metadata seed adımı tamamlandı."
+    else
+        warn "RAG metadata seed adımı başarısız; Doctor uyarılarını gidermek için manuel çalıştırın: uv run python -m scripts.seed_rag --metadata-only"
+    fi
+}
+
 prepare_docker_for_migrations() {
     local docker_compose_cmd=()
 
@@ -6106,6 +6140,7 @@ run_smoke_phase() {
     detect_gpu
     prepare_docker_for_migrations
     run_migrations
+    seed_rag_metadata_after_migrations
     run_smoke_tests
     run_test_artifact_audit
     run_doctor_phase || true
