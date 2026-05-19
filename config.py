@@ -17,6 +17,8 @@ from typing import Any, TypedDict
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.config_runtime_env import apply_runtime_env_overrides
+from core.config_runtime_env import safe_choice_for_reload
 
 from sidar_version import PRODUCT_VERSION
 
@@ -1917,25 +1919,14 @@ def reload_environment(*, profile: str | None = None) -> "Config":
     global _config_instance
     _reload_dotenv_chain(profile=profile)
 
-    Config.AI_PROVIDER = normalize_ai_provider(os.getenv("AI_PROVIDER", Config.AI_PROVIDER))
-    Config.ACCESS_LEVEL = _safe_choice_for_reload(
-        os.getenv("ACCESS_LEVEL", Config.ACCESS_LEVEL),
-        Config.ACCESS_LEVEL,
-        {"restricted", "sandbox", "full"},
+    apply_runtime_env_overrides(
+        Config,
+        base_dir=BASE_DIR,
+        get_int_env=get_int_env,
+        get_database_url=get_database_url,
+        get_container_database_url=get_container_database_url,
+        normalize_ai_provider=normalize_ai_provider,
     )
-    Config.WEB_HOST = os.getenv("WEB_HOST", str(Config.WEB_HOST))
-    Config.WEB_PORT = get_int_env("WEB_PORT", int(Config.WEB_PORT))
-    Config.CODING_MODEL = os.getenv("CODING_MODEL", str(Config.CODING_MODEL))
-    Config.TEXT_MODEL = os.getenv("TEXT_MODEL", str(Config.TEXT_MODEL))
-    Config.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", str(Config.GEMINI_API_KEY or ""))
-    Config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", str(Config.OPENAI_API_KEY or ""))
-    Config.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", str(Config.ANTHROPIC_API_KEY or ""))
-    Config.API_KEY = os.getenv("API_KEY", str(Config.API_KEY or ""))
-    Config.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", str(Config.JWT_SECRET_KEY or ""))
-    Config.SIDAR_KEYS_FILE = os.getenv("SIDAR_KEYS_FILE", str(Config.SIDAR_KEYS_FILE or ""))
-    Config.DATABASE_URL = get_database_url()
-    Config.CONTAINER_DATABASE_URL = get_container_database_url()
-    Config.RAG_DIR = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
     Config._hardware_loaded = False
     _config_instance = None
     Config._log_dotenv_load_status(missing_keys=Config.get_missing_critical_runtime_keys())
@@ -1943,8 +1934,7 @@ def reload_environment(*, profile: str | None = None) -> "Config":
 
 
 def _safe_choice_for_reload(value: object, default: str, allowed: set[str]) -> str:
-    normalized = str(value or "").strip().lower()
-    return normalized if normalized in allowed else default
+    return safe_choice_for_reload(value, default, allowed)
 
 
 # ═══════════════════════════════════════════════════════════════

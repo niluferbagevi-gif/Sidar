@@ -26,6 +26,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None  # type: ignore[assignment]
 
 from config import Config
+from agent.bootstrap import log_sidar_agent_startup
 from core.ci_remediation import (
     build_ci_failure_context,
     build_ci_failure_prompt,
@@ -316,13 +317,7 @@ class SidarAgent:
         # Bulgu D: asyncio.Lock() lazy init — async bağlamda oluşturulur.
         self._init_lock: asyncio.Lock | None = None
 
-        logger.info(
-            "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
-            self.VERSION,
-            self.cfg.AI_PROVIDER,
-            self.cfg.CODING_MODEL,
-            self.cfg.ACCESS_LEVEL,
-        )
+        log_sidar_agent_startup(self.VERSION, self.cfg)
 
     def _normalize_config_defaults(self) -> None:
         """Eksik/uygunsuz config alanlarını varsayılan Config değerleriyle tamamlar."""
