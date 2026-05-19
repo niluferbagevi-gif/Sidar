@@ -646,6 +646,7 @@ class DocumentStore:
 
     _hf_env_lock = threading.Lock()
     _hf_env_applied = False
+    _backend_init_lock = threading.Lock()
 
     def __init__(
         self,
@@ -724,27 +725,46 @@ class DocumentStore:
         )
         self._vector_initialization_enabled = bool(initialize_vector)
 
-        if self._vector_initialization_enabled:
-            if self._vector_backend == "pgvector":
-                self._chroma_available = False
-                self._init_pgvector()
-                logger.info(
-                    "RAG backend init (1/2): pgvector=%s", "ready" if self._pgvector_available else "fallback"
-                )
-            elif self._chroma_available:
-                self._init_chroma()
-                logger.info(
-                    "RAG backend init (1/2): chroma=%s", "ready" if self._chroma_available else "fallback"
-                )
-        else:
-            self._chroma_available = False
-            logger.info("DocumentStore vektör başlatması devre dışı (initialize_vector=False).")
-            logger.info("RAG backend init (1/2): vector=disabled")
+        self._vector_init_done = False
+        self._bm25_init_done = False
+        self._initialize_backends_once()
 
-        # BM25 (SQLite FTS5) Başlatma
-        self._bm25_available = True
-        self._init_fts()
-        logger.info("RAG backend init (2/2): bm25=%s", "ready" if self._bm25_available else "fallback")
+    def _initialize_backends_once(self) -> None:
+        with self._backend_init_lock:
+            if self._vector_initialization_enabled:
+                if self._vector_init_done:
+                    logger.info("RAG backend init (1/2): vector=already-initialized")
+                elif self._vector_backend == "pgvector":
+                    self._chroma_available = False
+                    self._init_pgvector()
+                    self._vector_init_done = True
+                    logger.info(
+                        "RAG backend init (1/2): pgvector=%s",
+                        "ready" if self._pgvector_available else "fallback",
+                    )
+                elif self._chroma_available:
+                    self._init_chroma()
+                    self._vector_init_done = True
+                    logger.info(
+                        "RAG backend init (1/2): chroma=%s",
+                        "ready" if self._chroma_available else "fallback",
+                    )
+            else:
+                self._chroma_available = False
+                logger.info("DocumentStore vektör başlatması devre dışı (initialize_vector=False).")
+                logger.info("RAG backend init (1/2): vector=disabled")
+
+            # BM25 (SQLite FTS5) Başlatma
+            self._bm25_available = True
+            if self._bm25_init_done:
+                logger.info("RAG backend init (2/2): bm25=already-initialized")
+            else:
+                self._init_fts()
+                self._bm25_init_done = True
+                logger.info(
+                    "RAG backend init (2/2): bm25=%s",
+                    "ready" if self._bm25_available else "fallback",
+                )
 
     def _require_pg_engine(self) -> Any:
         engine = getattr(self, "pg_engine", None)
@@ -1616,7 +1636,7 @@ class DocumentStore:
                 session_id=session_id,
             )
 
-        logger.info(
+        logger.debug(
             "RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]",
             doc_id,
             title,
