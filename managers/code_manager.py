@@ -566,7 +566,19 @@ class CodeManager:
                 self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
             return
 
+        prefer_gpu_image = bool(getattr(self.cfg, "USE_GPU", False)) and self._gpu_runtime_available()
+        if bool(getattr(self.cfg, "USE_GPU", False)) and not prefer_gpu_image:
+            logger.warning(
+                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
+            )
+
         for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
+            if _is_gpu_project_image(candidate) and not prefer_gpu_image:
+                logger.warning(
+                    "GPU runtime uygun olmadığı için GPU test imajı otomatik seçimde atlanıyor: %s",
+                    candidate,
+                )
+                continue
             if self._docker_image_exists(candidate):
                 self.docker_test_image = candidate
                 logger.info(
