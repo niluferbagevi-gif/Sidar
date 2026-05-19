@@ -104,6 +104,7 @@ def bootstrap_profile_env(
         "generated_secrets": generated,
         "next_steps": [
             f"export SIDAR_ENV={source.stem.removeprefix('.env.')}",
+            "uv run python -m scripts.seed_rag --summary-only",
             "uv run python -m core.doctor",
         ],
     }

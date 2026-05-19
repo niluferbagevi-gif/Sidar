@@ -760,8 +760,13 @@ def check_rag_index_ready() -> DoctorCheck:
             'uv run python cli.py -c "belge ekle <url>"',
             "uv run python -m core.doctor artifacts/install/doctor.json",
         ]
-        status = "warn"
-        message = "; ".join(index_warnings)
+        details["advisory_only"] = True
+        status = "info"
+        message = (
+            "; ".join(index_warnings)
+            if index_warnings
+            else "RAG index is empty; this is optional and can be seeded later"
+        )
     else:
         if entity_memory_empty:
             details["graphrag_entity_memory_warning"] = True
