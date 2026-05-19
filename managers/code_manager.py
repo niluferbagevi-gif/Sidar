@@ -577,6 +577,11 @@ class CodeManager:
                 return
 
     def _gpu_runtime_available(self) -> bool:
+        cached = getattr(self, "_gpu_runtime_available_cached", None)
+        if cached is not None:
+            return bool(cached)
+
+        available = False
         try:
             probe = subprocess.run(  # nosec B603
                 ["nvidia-smi"],
@@ -586,16 +591,20 @@ class CodeManager:
                 cwd=str(self.base_dir),
             )
             if probe.returncode == 0:
-                return True
+                available = True
         except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
             pass
 
-        try:
-            import torch  # type: ignore
+        if not available:
+            try:
+                import torch  # type: ignore
 
-            return bool(torch.cuda.is_available())
-        except Exception:
-            return False
+                available = bool(torch.cuda.is_available())
+            except Exception:
+                available = False
+
+        self._gpu_runtime_available_cached = available
+        return available
 
     def _warn_gpu_image_runtime_mismatch(self, image_name: str) -> None:
         if not _is_gpu_project_image(image_name):

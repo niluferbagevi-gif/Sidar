@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import contextmanager
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,6 +17,12 @@ except ImportError:  # pragma: no cover - test doubles may only expose Config
 
 logger = logging.getLogger(__name__)
 _MODEL_CACHE: dict[tuple[str, str, bool], Any] = {}
+_MODEL_CACHE_MAX_SIZE = 4
+
+
+def clear_model_cache() -> None:
+    """Clear cached SentenceTransformer models for long-running processes."""
+    _MODEL_CACHE.clear()
 
 
 def _as_bool(value: Any) -> bool:
@@ -136,4 +142,7 @@ def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
             local_files_only=local_files_only,
         )
     _MODEL_CACHE[cache_key] = model
+    if len(_MODEL_CACHE) > _MODEL_CACHE_MAX_SIZE:
+        oldest_key = next(iter(_MODEL_CACHE))
+        _MODEL_CACHE.pop(oldest_key, None)
     return model
