@@ -305,6 +305,15 @@ def _summary_only_payload(summary: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _ensure_index_placeholder(rag_dir: Path) -> None:
+    """Ensure doctor-facing index.json exists even in metadata-only bootstrap flows."""
+    rag_dir.mkdir(parents=True, exist_ok=True)
+    index_path = rag_dir / "index.json"
+    if index_path.exists():
+        return
+    index_path.write_text("{}", encoding="utf-8")
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Sidar RAG deposunu repo dokümantasyonu ile hazırla",
@@ -380,6 +389,7 @@ def run(
     summary_only: bool = False,
 ) -> int:
     """In-process callable entrypoint for launcher/doctor integrations."""
+    resolved_rag_dir = _resolve_rag_dir(rag_dir)
     patterns = include or list(DEFAULT_INCLUDE_PATTERNS)
     files = discover_seed_files(patterns, max_bytes=max(1, int(max_bytes or 1)))
     if not files:
@@ -388,7 +398,7 @@ def run(
     if dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
-        store = _build_store(_resolve_rag_dir(rag_dir), initialize_vector=not metadata_only)
+        store = _build_store(resolved_rag_dir, initialize_vector=not metadata_only)
     try:
         summary = seed_files(
             store,
@@ -399,6 +409,8 @@ def run(
         )
     finally:
         store.close()
+    if not dry_run:
+        _ensure_index_placeholder(resolved_rag_dir)
     output = _summary_only_payload(summary) if summary_only else summary
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
