@@ -10862,15 +10862,34 @@ async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkey
 
 @pytest.mark.asyncio
 async def test_health_check_delegates_to_health_response(monkeypatch):
-    expected = web_server.JSONResponse({"status": "ok"}, status_code=200)
+    calls = []
 
     async def _health(require_dependencies: bool):
-        assert require_dependencies is False
-        return expected
+        calls.append(require_dependencies)
+        return web_server.JSONResponse({"status": "ok"}, status_code=200)
 
-    monkeypatch.setattr(web_server, "_health_response", _health)
-    response = await web_server.health_check()
-    assert response is expected
+    router = web_server.build_health_router(_health)
+    endpoint = next(route.endpoint for route in router.routes if route.path == "/healthz")
+    response = await endpoint()
+
+    assert response.status_code == 200
+    assert calls == [False]
+
+
+@pytest.mark.asyncio
+async def test_ready_check_delegates_to_health_response(monkeypatch):
+    calls = []
+
+    async def _health(require_dependencies: bool):
+        calls.append(require_dependencies)
+        return web_server.JSONResponse({"status": "ok"}, status_code=200)
+
+    router = web_server.build_health_router(_health)
+    endpoint = next(route.endpoint for route in router.routes if route.path == "/readyz")
+    response = await endpoint()
+
+    assert response.status_code == 200
+    assert calls == [True]
 
 
 @pytest.mark.asyncio

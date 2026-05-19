@@ -3659,7 +3659,11 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
 
 
 app.include_router(
-    build_health_router(lambda require_dependencies: _health_response(require_dependencies))
+    build_health_router(
+        lambda require_dependencies: _health_response(
+            require_dependencies=require_dependencies
+        )
+    )
 )
 app.include_router(
     build_agent_router(
