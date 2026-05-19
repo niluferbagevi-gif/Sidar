@@ -2798,8 +2798,7 @@ class DocumentStore:
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
         engines.append("Anahtar Kelime")
-        if self._graph_rag_enabled:  # pragma: no cover
-            graph_state = "hazır" if self._graph_ready else "pasif"
-            engines.append(f"GraphRAG ({graph_state})")
+        if self._graph_rag_enabled and self._graph_ready:  # pragma: no cover
+            engines.append("GraphRAG (hazır)")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"

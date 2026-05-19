@@ -1815,6 +1815,14 @@ async def test_document_store_list_documents_and_status_engine_variants(tmp_path
     store._use_gpu = True
     store._gpu_device = 1
     assert "ChromaDB (Chunking + GPU cuda:1)" in store.status()
+    assert "GraphRAG" not in store.status()
+
+    store._graph_rag_enabled = True
+    store._graph_ready = False
+    assert "GraphRAG" not in store.status()
+
+    store._graph_ready = True
+    assert "GraphRAG (hazır)" in store.status()
 
 
 async def test_document_store_add_file_security_and_failure_paths(
