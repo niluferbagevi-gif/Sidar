@@ -246,7 +246,10 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     session_path = path or _launcher_session_path()
     try:
         payload = json.loads(session_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+    except FileNotFoundError:
+        logger.debug("Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path)
+        return None
+    except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Launcher oturum cache'i okunamadı (%s): %s", session_path, exc)
         return None
 
