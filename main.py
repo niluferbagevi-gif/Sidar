@@ -1067,6 +1067,17 @@ def execute_command(
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
 
+        if (
+            not capture_output
+            and not child_log_path
+            and len(cmd) >= 2
+            and Path(cmd[1]).name == "cli.py"
+        ):
+            from cli import main_cli
+
+            cli_argv = cmd[2:]
+            return int(main_cli(cli_argv))
+
         if capture_output or child_log_path:
             return_code = _run_with_streaming(cmd, child_log_path)
             if return_code != 0:

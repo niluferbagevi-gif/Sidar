@@ -296,8 +296,9 @@ def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> i
 # ─────────────────────────────────────────────
 
 
-def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+def main_cli(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) > 0 and argv[0] == "doctor":
         doctor_parser = argparse.ArgumentParser(description="Sidar Doctor sağlık raporu üret")
         doctor_parser.add_argument("doctor", nargs="?")
         doctor_parser.add_argument(
@@ -305,8 +306,8 @@ def main() -> None:
             default="artifacts/install/doctor.json",
             help="Doctor JSON rapor yolu",
         )
-        doctor_args = doctor_parser.parse_args()
-        raise SystemExit(_run_doctor_command(doctor_args.output))
+        doctor_args = doctor_parser.parse_args(argv)
+        return _run_doctor_command(doctor_args.output)
 
     cfg_defaults = Config()
 
@@ -339,12 +340,12 @@ def main() -> None:
         default=getattr(cfg_defaults, "LOG_LEVEL", "INFO"),
         help="Log seviyesi (DEBUG/INFO/WARNING)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     _setup_logging(args.log)
 
     if getattr(args, "doctor", False):
-        raise SystemExit(_run_doctor_command())
+        return _run_doctor_command()
 
     # Config nesnesini oluştur; CLI flag'leri instance attribute olarak
     # doğrudan override et. os.environ üzerinden override ÇALIŞMAZ çünkü
@@ -361,7 +362,8 @@ def main() -> None:
         cfg.CLI_FAST_MODE = True
     skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {"1", "true", "yes"}
     if not skip_boot_checks and not cfg.validate_critical_settings():
-        raise SystemExit("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
+        print("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
+        return 2
 
     agent = SidarAgent(cfg)
 
@@ -375,7 +377,7 @@ def main() -> None:
                 await _shutdown_agent(agent)
 
         asyncio.run(_status_flow())
-        return
+        return 0
 
     if args.command:
         # Komut modunda init + kullanıcı bağlamı + yanıt zincirini
@@ -396,13 +398,18 @@ def main() -> None:
             asyncio.run(asyncio.wait_for(_run_command_with_setup(), timeout=command_timeout))
         except TimeoutError:
             print(f"\nSidar > ⚠ Komut zaman aşımına uğradı ({command_timeout}s).")
-        return
+        return 0
 
     # İnteraktif mod: initialize + ensure_user + REPL hepsi aynı event loop'ta.
     try:
         asyncio.run(_run_interactive_session(agent))
     except KeyboardInterrupt:
         print("\nSidar > Görüşürüz. ✓")
+    return 0
+
+
+def main() -> None:
+    raise SystemExit(main_cli())
 
 
 if __name__ == "__main__":
