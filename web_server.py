@@ -67,6 +67,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
 from web.routes.health import build_health_router
 from web.routes.agent import build_agent_router
+from web.routes.rag import build_rag_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -3945,6 +3946,18 @@ app.include_router(
     )
 )
 
+app.include_router(
+    build_rag_router(
+        resolve_agent_instance=_resolve_agent_instance,
+        await_if_needed=_await_if_needed,
+        max_rag_upload_bytes=Config.MAX_RAG_UPLOAD_BYTES,
+        server_root=Path(__file__).parent.resolve(),
+        logger=logger,
+    )
+)
+
+
+
 
 @app.get("/metrics")
 async def metrics(
@@ -4420,171 +4433,6 @@ async def set_repo(request: Request) -> Any:
     if ok:
         cfg.GITHUB_REPO = repo_name
     return JSONResponse({"success": ok, "message": msg})
-
-
-# ─────────────────────────────────────────────
-#  RAG BELGE DEPOSU YÖNETİMİ
-# ─────────────────────────────────────────────
-
-
-@app.get("/rag/docs")
-async def rag_list_docs() -> Any:
-    """RAG deposundaki aktif oturuma ait belgeleri listeler."""
-    agent = await _resolve_agent_instance()
-    session_id = agent.memory.active_session_id or "global"
-    docs = agent.docs.get_index_info(session_id=session_id)
-    return JSONResponse({"success": True, "docs": docs, "count": len(docs)})
-
-
-@app.post(
-    "/rag/add-file",
-    summary="Yerel Dosyayı RAG'a Ekle",
-    description="Proje dizinindeki yerel bir dosyayı RAG vektör deposuna ekler.",
-    responses={
-        200: {"description": "Dosya başarıyla RAG deposuna eklendi"},
-        400: {"description": "Dosya yolu boş veya geçersiz"},
-        403: {"description": "Güvenlik: Proje dizini dışına çıkma girişimi"},
-    },
-)
-async def rag_add_file(request: Request) -> Any:
-    """
-    Proje dizinindeki yerel bir dosyayı RAG deposuna ekler.
-    Body: {"path": "relative/path/to/file.py", "title": "Opsiyonel başlık"}
-    """
-    body = await request.json()
-    path = body.get("path", "").strip()
-    title = body.get("title", "").strip()
-    if not path:
-        return JSONResponse({"success": False, "error": "Dosya yolu boş."}, status_code=400)
-
-    _root = Path(__file__).parent.resolve()
-    target = (_root / path).resolve()
-    try:
-        target.relative_to(_root)
-    except ValueError:
-        return JSONResponse(
-            {"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403
-        )
-
-    agent = await _resolve_agent_instance()
-    session_id = agent.memory.active_session_id or "global"
-    ok, msg = await asyncio.to_thread(
-        agent.docs.add_document_from_file, str(target), title or target.name, None, session_id
-    )
-    return JSONResponse({"success": ok, "message": msg})
-
-
-@app.post("/rag/add-url")
-async def rag_add_url(request: Request) -> Any:
-    """URL'den içerik çekerek RAG deposuna ekler."""
-    body = await request.json()
-    url = body.get("url", "").strip()
-    title = body.get("title", "").strip()
-    if not url:
-        return JSONResponse({"success": False, "error": "URL boş."}, status_code=400)
-
-    agent = await _resolve_agent_instance()
-    session_id = agent.memory.active_session_id or "global"
-    ok, msg = await agent.docs.add_document_from_url(url, title=title, session_id=session_id)
-    return JSONResponse({"success": ok, "message": msg})
-
-
-@app.delete("/rag/docs/{doc_id}")
-async def rag_delete_doc(doc_id: str) -> Any:
-    """RAG deposundan belge siler (oturum izolasyonuna uygun)."""
-    agent = await _resolve_agent_instance()
-    session_id = agent.memory.active_session_id or "global"
-    msg = await asyncio.to_thread(agent.docs.delete_document, doc_id, session_id)
-    success = msg.startswith("✓")
-    return JSONResponse({"success": success, "message": msg})
-
-
-@app.post("/api/rag/upload")
-async def upload_rag_file(file: UploadFile = File(...)) -> Any:
-    """Web arayüzünden Sürükle-Bırak ile gelen dosyaları RAG deposuna ekler."""
-    agent = await _await_if_needed(_resolve_agent_instance())
-    session_id = agent.memory.active_session_id or "global"
-
-    temp_dir = None
-    try:
-        # Dosya boyutunu diske yazmadan önce kontrol et (DoS / disk doldurma koruması)
-        max_bytes = Config.MAX_RAG_UPLOAD_BYTES
-        data = await file.read(max_bytes + 1)
-        if len(data) > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail={
-                    "detail": f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB"
-                },
-            )
-
-        # Dosyayı orijinal adıyla güvenli bir geçici klasöre kaydet
-        temp_dir = Path(tempfile.mkdtemp())
-        original_name = file.filename or "uploaded_file.txt"
-        safe_filename = "".join(c for c in original_name if c.isalnum() or c in ".-_ ")
-        if not safe_filename:
-            safe_filename = "uploaded_file.txt"
-        tmp_path = temp_dir / safe_filename
-
-        async with await anyio.open_file(tmp_path, "wb") as buffer:
-            await buffer.write(data)
-
-        # RAG deposuna ekle (İzolasyon korumalı)
-        ok, msg = await asyncio.to_thread(
-            agent.docs.add_document_from_file,
-            str(tmp_path),
-            original_name,
-            None,
-            session_id,
-        )
-
-        if ok:
-            return JSONResponse({"success": True, "message": msg})
-        return JSONResponse({"success": False, "error": msg}, status_code=400)
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
-    finally:
-        try:
-            await file.close()
-        except Exception as exc:
-            logger.debug("Yüklenen dosya kapatılamadı: %s", exc)
-        if temp_dir is not None:
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception as exc:
-                logger.debug("Geçici dizin silinemedi (%s): %s", temp_dir, exc)
-
-
-@app.get(
-    "/rag/search",
-    summary="RAG Deposunda Arama Yap",
-    description="RAG deposunda belirtilen sorguyu mode/top_k parametreleriyle arar.",
-    responses={
-        200: {"description": "Arama başarılı"},
-        400: {"description": "Sorgu parametresi eksik veya hatalı"},
-    },
-)
-async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3) -> Any:
-    """RAG deposunda aktif oturuma ait belgelerde arama yapar."""
-    if not q.strip():
-        return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
-    agent = await _resolve_agent_instance()
-    session_id = agent.memory.active_session_id or "global"
-    search_call = agent.docs.search
-    if asyncio.iscoroutinefunction(search_call):
-        ok, result = await search_call(q.strip(), min(top_k, 10), mode, session_id)
-    else:
-        maybe_result = await asyncio.to_thread(
-            search_call, q.strip(), min(top_k, 10), mode, session_id
-        )
-        if inspect.isawaitable(maybe_result):
-            ok, result = await maybe_result
-        else:
-            ok, result = maybe_result
-    return JSONResponse({"success": ok, "result": result})
 
 
 @app.get(
