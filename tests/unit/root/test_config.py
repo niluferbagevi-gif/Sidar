@@ -515,7 +515,14 @@ def test_validate_critical_settings_ollama_http_paths(monkeypatch):
             return _Resp(200)
 
     monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
+
+    infos = []
+    monkeypatch.setattr(config.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+    monkeypatch.delenv("SIDAR_OLLAMA_OK_LOGGED", raising=False)
+
     assert config.Config.validate_critical_settings() is True
+    assert config.Config.validate_critical_settings() is True
+    assert infos.count("✅ Ollama bağlantısı başarılı.") == 1
 
     class _ClientBad(_ClientOK):
         def get(self, _url):
@@ -525,6 +532,21 @@ def test_validate_critical_settings_ollama_http_paths(monkeypatch):
         __import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBad)
     )
     assert config.Config.validate_critical_settings() is True
+
+
+
+
+def test_log_once_env_sets_flag_and_logs_once(monkeypatch):
+    monkeypatch.delenv("SIDAR_TEST_ONCE", raising=False)
+    calls = []
+
+    def _log(msg):
+        calls.append(msg)
+
+    config._log_once_env("SIDAR_TEST_ONCE", _log, "hello")
+    config._log_once_env("SIDAR_TEST_ONCE", _log, "hello")
+
+    assert calls == ["hello"]
 
 
 def test_init_telemetry_branches(monkeypatch):

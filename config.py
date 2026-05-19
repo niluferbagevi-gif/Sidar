@@ -729,8 +729,16 @@ logger = logging.getLogger("Sidar.Config")
 
 _DEPENDENCY_AUTO = object()
 
+
+def _log_once_env(flag: str, fn, *args):
+    if os.environ.get(flag) == "1":
+        return
+    os.environ[flag] = "1"
+    fn(*args)
+
+
 if ENV_PATH.exists():
-    logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
+    _log_once_env("SIDAR_ENV_LOGGED", logger.info, "✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
 
 # ═══════════════════════════════════════════════════════════════
 # SANDBOX KAYNAK KOTALARI (Docker/cgroups)
@@ -1678,7 +1686,7 @@ class Config:
                 with httpx.Client(timeout=2) as client:
                     r = client.get(tags_url)
                 if r.status_code == 200:
-                    logger.info("✅ Ollama bağlantısı başarılı.")
+                    _log_once_env("SIDAR_OLLAMA_OK_LOGGED", logger.info, "✅ Ollama bağlantısı başarılı.")
                 else:
                     logger.warning("⚠️  Ollama yanıt kodu: %d", r.status_code)
             except Exception:
