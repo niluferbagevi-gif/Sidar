@@ -114,6 +114,11 @@ def _canonical_project_image_alias(image: str) -> str | None:
     return f"{canonical_repository}:{tag or 'latest'}"
 
 
+def _is_gpu_project_image(image: str) -> bool:
+    repository = image.strip().split(":", 1)[0].lower()
+    return repository.startswith("sidar-gpu")
+
+
 def _sanitize_docker_token(
     value: object, *, pattern: re.Pattern[str], default: str, kind: str
 ) -> str:
@@ -545,8 +550,10 @@ class CodeManager:
         canonical_alias = _canonical_project_image_alias(self.docker_test_image)
         if self._docker_test_image_explicit:
             if not canonical_alias:
+                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
                 return
             if self._docker_image_exists(self.docker_test_image):
+                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
                 return
             if self._docker_image_exists(canonical_alias):
                 logger.warning(
@@ -556,6 +563,7 @@ class CodeManager:
                     canonical_alias,
                 )
                 self.docker_test_image = canonical_alias
+                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
             return
 
         for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
@@ -565,7 +573,40 @@ class CodeManager:
                     "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
                     candidate,
                 )
+                self._warn_gpu_image_runtime_mismatch(candidate)
                 return
+
+    def _gpu_runtime_available(self) -> bool:
+        try:
+            probe = subprocess.run(  # nosec B603
+                ["nvidia-smi"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                cwd=str(self.base_dir),
+            )
+            if probe.returncode == 0:
+                return True
+        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        try:
+            import torch  # type: ignore
+
+            return bool(torch.cuda.is_available())
+        except Exception:
+            return False
+
+    def _warn_gpu_image_runtime_mismatch(self, image_name: str) -> None:
+        if not _is_gpu_project_image(image_name):
+            return
+        if self._gpu_runtime_available():
+            return
+        logger.warning(
+            "GPU image selected but CUDA runtime unavailable — falling back to CPU; "
+            "consider sidar-cpu:latest (image=%s)",
+            image_name,
+        )
 
     # ─────────────────────────────────────────────
     #  DOSYA OKUMA
