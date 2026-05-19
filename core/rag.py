@@ -752,7 +752,10 @@ class DocumentStore:
 
     def _hf_runtime_env_overrides(self) -> dict[str, str]:
         """HF SDK/transformers için gerekli geçici ortam değişkenlerini hesapla."""
-        overrides: dict[str, str] = {}
+        overrides: dict[str, str] = {
+            "HF_HUB_DISABLE_PROGRESS_BARS": "1",
+            "TRANSFORMERS_VERBOSITY": "error",
+        }
         hf_token = getattr(self.cfg, "HF_TOKEN", "")
         if hf_token:
             overrides["HF_TOKEN"] = str(hf_token)

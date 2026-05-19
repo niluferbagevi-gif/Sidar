@@ -957,6 +957,8 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
         def __init__(self, _name: str, *, device: str, local_files_only: bool) -> None:
             seen["device"] = device
             seen["local_files_only"] = local_files_only
+            seen["hf_progress"] = os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS")
+            seen["transformers_verbosity"] = os.environ.get("TRANSFORMERS_VERBOSITY")
 
         def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> _Vec:
             assert normalize_embeddings is True
@@ -973,6 +975,8 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
     assert rag.embed_texts_for_semantic_cache(["hello"], cfg=cfg) == [[0.1, 0.2]]
     assert seen["device"] == "cpu"
     assert seen["local_files_only"] is False
+    assert seen["hf_progress"] == "1"
+    assert seen["transformers_verbosity"] == "error"
 
     cfg.USE_GPU = "true"
     cfg.HF_USE_LOCAL_CACHE_ONLY = True

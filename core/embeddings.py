@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import contextmanager
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -79,6 +80,22 @@ def sentence_transformer_local_files_only(cfg: Any, model_name: str) -> bool:
     return hf_model_cache_exists(model_name)
 
 
+@contextmanager
+def _scoped_hf_runtime_env() -> Any:
+    keys = ("HF_HUB_DISABLE_PROGRESS_BARS", "TRANSFORMERS_VERBOSITY")
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def embed_texts_for_semantic_cache(
     texts: list[str], cfg: Config | None = None
 ) -> list[list[float]]:
@@ -93,11 +110,12 @@ def embed_texts_for_semantic_cache(
     try:
         from sentence_transformers import SentenceTransformer
 
-        model = SentenceTransformer(
-            model_name,
-            device=sentence_transformer_device_from_config(cfg),
-            local_files_only=sentence_transformer_local_files_only(cfg, model_name),
-        )
+        with _scoped_hf_runtime_env():
+            model = SentenceTransformer(
+                model_name,
+                device=sentence_transformer_device_from_config(cfg),
+                local_files_only=sentence_transformer_local_files_only(cfg, model_name),
+            )
         vectors = model.encode(texts, normalize_embeddings=True)
         raw = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
         return cast("list[list[float]]", raw)
