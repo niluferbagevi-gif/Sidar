@@ -70,6 +70,7 @@ from web.routes.agent import build_agent_router
 from web.routes.rag import build_rag_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.hitl import build_hitl_router
+from web.routes.metrics import build_metrics_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -3756,102 +3757,18 @@ app.include_router(
     )
 )
 
+app.include_router(
+    build_metrics_router(
+        require_metrics_access=_require_metrics_access,
+        resolve_agent_instance=_resolve_agent_instance,
+        start_time=_start_time,
+        local_rate_limits=_local_rate_limits,
+        get_llm_metrics_collector=get_llm_metrics_collector,
+        render_llm_metrics_prometheus=render_llm_metrics_prometheus,
+        logger=logger,
+    )
+)
 
-
-@app.get("/metrics")
-async def metrics(
-    request: Request,
-    _user: dict[str, Any] = Depends(_require_metrics_access),
-) -> Response:
-    """
-    Temel operasyonel metrikler (admin veya METRICS_TOKEN gerektirir).
-    - Varsayılan: JSON formatı (her istemci için çalışır).
-    - 'Accept: text/plain' başlığı + prometheus_client kurulu ise Prometheus formatı döner.
-    """
-    agent = await _resolve_agent_instance()
-    uptime_s = int(time.monotonic() - _start_time)
-    rag_docs = agent.docs.doc_count
-    if hasattr(agent.memory, "aget_all_sessions"):
-        sessions = await agent.memory.aget_all_sessions()
-    else:
-        sessions = agent.memory.get_all_sessions()
-        if inspect.isawaitable(sessions):
-            sessions = await sessions
-    rl_total = sum(len(v) for v in _local_rate_limits.values())
-
-    llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
-    payload = {
-        "version": agent.VERSION,
-        "uptime_seconds": uptime_s,
-        "sessions_total": len(sessions),
-        "active_session_turns": len(agent.memory),
-        "rag_documents": rag_docs,
-        "rate_limit_buckets": len(_local_rate_limits),
-        "rate_limit_requests_in_window": rl_total,
-        "provider": agent.cfg.AI_PROVIDER,
-        "gpu_enabled": agent.cfg.USE_GPU,
-        "llm_calls": llm_totals.get("calls", 0),
-        "llm_total_tokens": llm_totals.get("total_tokens", 0),
-    }
-
-    # Prometheus formatı: istemci açıkça talep ederse VE kütüphane kuruluysa sun
-    accept = request.headers.get("Accept", "")
-    # Yalnızca gerçek HTTP isteğinde Prometheus çıktısı üret;
-    # test/yardımcı çağrılarda JSON fallback davranışını koru.
-    if isinstance(request, Request) and "text/plain" in accept:
-        try:
-            from prometheus_client import (
-                CONTENT_TYPE_LATEST,
-                CollectorRegistry,
-                Gauge,
-                generate_latest,
-            )
-            from starlette.responses import Response as _PromeResp
-
-            reg = CollectorRegistry()
-            Gauge("sidar_uptime_seconds", "Sunucu çalışma süresi (s)", registry=reg).set(uptime_s)
-            Gauge("sidar_sessions_total", "Toplam oturum sayısı", registry=reg).set(len(sessions))
-            Gauge("sidar_rag_documents_total", "RAG belge sayısı", registry=reg).set(rag_docs)
-            Gauge("sidar_active_turns", "Aktif oturum tur sayısı", registry=reg).set(
-                len(agent.memory)
-            )
-            Gauge("sidar_rate_limit_requests", "Rate limit penceredeki istek", registry=reg).set(
-                rl_total
-            )
-            return _PromeResp(generate_latest(reg), media_type=CONTENT_TYPE_LATEST)
-        except ImportError:
-            pass  # prometheus_client kurulu değil — JSON ile devam et
-
-    return JSONResponse(payload)
-
-
-@app.get("/metrics/llm/prometheus")
-async def llm_prometheus_metrics(
-    _user: dict[str, Any] = Depends(_require_metrics_access),
-) -> Response:
-    """LLM + ajan delegasyon metriklerini Prometheus text/plain formatında döndürür."""
-    snapshot = get_llm_metrics_collector().snapshot()
-    llm_part = render_llm_metrics_prometheus(snapshot)
-
-    delegation_part = ""
-    try:
-        from core.agent_metrics import get_agent_metrics_collector
-
-        delegation_part = get_agent_metrics_collector().render_prometheus()
-    except Exception as exc:
-        logger.debug("Delegation metrikleri render edilemedi: %s", exc)
-
-    return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
-
-
-@app.get("/metrics/llm")
-@app.get("/api/budget")
-async def llm_budget_metrics(
-    _user: dict[str, Any] = Depends(_require_metrics_access),
-) -> Response:
-    """LLM token/latency/rate-limit metriklerini JSON olarak döndürür (admin veya METRICS_TOKEN gerektirir)."""
-    collector = get_llm_metrics_collector()
-    return JSONResponse(collector.snapshot())
 
 
 # ─────────────────────────────────────────────
