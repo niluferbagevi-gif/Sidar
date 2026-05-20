@@ -992,21 +992,46 @@ ensure_docker_daemon_running() {
     fi
 
     if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
+        local desktop_timeout
+        desktop_timeout="${DOCKER_DESKTOP_READY_TIMEOUT:-240}"
+        if ! [[ "$desktop_timeout" =~ ^[0-9]+$ ]] || (( desktop_timeout < 30 )); then
+            desktop_timeout=240
+        fi
+        local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+        if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+            desktop_timeout=$(( desktop_timeout * 2 ))
+            info "WSL integration autofix bu oturumda uygulandığı için Docker Desktop bekleme süresi uzatıldı (${desktop_timeout}sn)."
+        fi
+
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
-        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. ${desktop_timeout}sn)..."
         local elapsed=0
-        while (( elapsed < 60 )); do
+        local sleep_step=3
+        local progress_mark=30
+        while (( elapsed < desktop_timeout )); do
             if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
                 return 0
             fi
-            sleep 3
-            ((elapsed += 3))
+            sleep "$sleep_step"
+            ((elapsed += sleep_step))
+            if (( elapsed >= progress_mark )); then
+                info "Docker daemon hâlâ hazırlanıyor... (${elapsed}/${desktop_timeout}sn)"
+                progress_mark=$(( progress_mark + 30 ))
+            fi
+            if (( sleep_step < 12 )); then
+                sleep_step=$(( sleep_step * 2 ))
+                (( sleep_step > 12 )) && sleep_step=12
+            fi
         done
-        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
+        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi (${desktop_timeout}sn)."
     fi
 
     if _docker_ready_with_socket; then return 0; fi
+
+    if [[ "$STRICT_DOCKER" == "true" ]]; then
+        fail "Docker daemon erişilemedi. --strict-docker / SIDAR_REQUIRE_DOCKER=1 etkin olduğu için kurulum fail-fast durduruldu."
+    fi
 
     return 1
 }
@@ -2002,6 +2027,7 @@ APP_RUNTIME_MODE="ask"
 ENABLE_AUDIO=true
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 AUTO_INSTALL=false
+STRICT_DOCKER=false
 AUTO_RUNTIME_MODE="ask"
 AUTO_START_DOCKER_SERVICES="ask"
 AUTO_RESET_POSTGRES_VOLUMES="ask"
@@ -2037,13 +2063,14 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
   --cpu  Force CPU mode even when a GPU is detected
   --docker-only  Do not install PostgreSQL/Redis on the host; use Docker services only
   --runtime-mode=local|docker  Runtime mode: local=app local + infrastructure in Docker, docker=all services in Docker
+  --strict-docker  Fail-fast if Docker daemon cannot be reached after retries
   --force-postgres-volume-cleanup / --force-docker-cleanup  Enable project-scoped aggressive docker rm -f cleanup after DB password hardening
   --kubernetes / --helm  Use the Helm chart/Kubernetes flow instead of local installation
   --helm-release=<name>  Helm release name (default: sidar)
@@ -2086,18 +2113,21 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
+    SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
   --cpu  GPU algılansa bile CPU modunda kur
   --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan
   --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker
+  --strict-docker  Docker daemon hazır değilse retry sonunda fail-fast dur
   --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir
   --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap
   --helm-release=<ad>  Helm release adı (varsayılan: sidar)
@@ -2140,6 +2170,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
+    SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
 EOF
@@ -2183,6 +2215,7 @@ for arg in "$@"; do
         --docker-only) DOCKER_ONLY=true ;;
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
         --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
+        --strict-docker) STRICT_DOCKER=true ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
@@ -2225,6 +2258,7 @@ resolve_env_type_choice() {
 
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
+STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
