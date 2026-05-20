@@ -820,6 +820,7 @@ ensure_docker_daemon_running() {
 
         local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
         local in_integrated=false default_covers=false
+        local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
 
         current_distro="$(_detect_current_wsl_distro_name)"
         [[ -n "$current_distro" ]] || return 0
@@ -849,6 +850,11 @@ ensure_docker_daemon_running() {
             if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
                 warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için explicit açılması gerekir."
             fi
+            return 0
+        fi
+
+        if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+            warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
             return 0
         fi
 
@@ -890,6 +896,10 @@ ensure_docker_daemon_running() {
             warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
             return 1
         fi
+
+        WSL_INTEGRATION_AUTOFIX_APPLIED=true
+        export WSL_INTEGRATION_AUTOFIX_APPLIED
+        : > "$integration_autofix_sentinel"
 
         info "Docker Desktop yeniden başlatıldı; WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
         local elapsed=0

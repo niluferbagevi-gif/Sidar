@@ -6,7 +6,11 @@ sidar_phase_initialize_context() {
     detect_environment
     sidar_source_install_utils "wsl_gpu_preflight.sh"
     run_wsl2_gpu_preflight
-    ( docker_desktop_wsl_integration_preflight ) || warn "Docker Desktop WSL Integration raporu alınamadı; kurulum non-critical bilgi fazında devam ediyor."
+    if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" ]]; then
+        info "Docker Desktop WSL Integration preflight tekrar çağrısı atlandı (oturum içinde otomatik düzeltme daha önce uygulandı)."
+    else
+        ( docker_desktop_wsl_integration_preflight ) || warn "Docker Desktop WSL Integration raporu alınamadı; kurulum non-critical bilgi fazında devam ediyor."
+    fi
     if [[ "$OFFLINE_MODE" == true ]]; then
         OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
         if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
