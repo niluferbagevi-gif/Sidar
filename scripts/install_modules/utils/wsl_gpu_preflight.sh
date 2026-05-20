@@ -211,6 +211,16 @@ docker_desktop_wsl_integration_preflight() {
     else
         export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
         warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
+        if declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
+            info "Preflight aşamasında erken autofix denemesi başlatılıyor: '${current_distro}'."
+            if apply_wsl_integration_autofix "$current_distro"; then
+                ok "Preflight autofix: Docker Desktop WSL Integration '${current_distro}' için etkinleştirildi."
+            else
+                warn "Preflight autofix tamamlanamadı; Docker daemon kontrol aşamasında tekrar denenecek."
+            fi
+        else
+            info "Preflight autofix yardımcı fonksiyonu bu bağlamda yüklü değil; düzeltme Docker daemon kontrol aşamasına devredildi."
+        fi
     fi
 
     [[ "$_had_errexit" == true ]] && set -e
