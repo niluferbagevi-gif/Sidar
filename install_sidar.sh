@@ -2665,10 +2665,14 @@ ensure_prerequisites() {
             warn "Docker Compose bulunamadı. Kurulum: https://docs.docker.com/compose/install/"
         fi
     else
-        if [[ "$WSL2" == true ]] && [[ "$docker_version_error" == *"Input/output error"* ]]; then
-            warn "Docker CLI çağrısı Input/output error döndürüyor. WSL entegrasyon mount'ları askıda kalmış olabilir."
+        if [[ "$WSL2" == true ]]; then
+            if [[ "$docker_version_error" == *"Input/output error"* ]]; then
+                warn "Docker CLI çağrısı Input/output error döndürüyor. WSL entegrasyon mount'ları askıda kalmış olabilir."
+            fi
+            info "Docker şu anda WSL içinde doğrulanamadı; Docker Desktop entegrasyon kontrolüne geçiliyor."
+        else
+            warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
         fi
-        warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
     fi
 
     # Sistem Python sürümü artık doğrulanmaz: uv, gerekli Python sürümünü izole
