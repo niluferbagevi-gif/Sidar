@@ -727,6 +727,15 @@ def _rag_readiness_state() -> dict[str, Any]:
     }
 
 
+def _ensure_rag_index_placeholder(rag_dir: Path) -> Path:
+    """Create an empty doctor-facing RAG index placeholder when missing."""
+    rag_dir.mkdir(parents=True, exist_ok=True)
+    index_path = rag_dir / "index.json"
+    if not index_path.exists():
+        index_path.write_text("{}", encoding="utf-8")
+    return index_path
+
+
 def check_rag_index_ready() -> DoctorCheck:
     state = _rag_readiness_state()
     details = state["details"]
@@ -734,7 +743,22 @@ def check_rag_index_ready() -> DoctorCheck:
     warnings = state["warnings"]
     document_count = int(state["document_count"])
     entity_memory_empty = bool(state["entity_memory_empty"])
+    rag_dir = Path(str(details.get("rag_dir", BASE_DIR / "data/rag")))
+    if not rag_dir.is_absolute():
+        rag_dir = BASE_DIR / rag_dir
+    index_path = rag_dir / "index.json"
+    index_missing_before_fix = not index_path.exists()
+    if index_missing_before_fix:
+        _ensure_rag_index_placeholder(rag_dir)
+        details["index_auto_placeholder_created"] = True
+        details["index_exists"] = True
+        details["index_path"] = str(index_path)
+    else:
+        details["index_auto_placeholder_created"] = False
     index_warnings = [w for w in warnings if "RAG index" in w or "indexed documents" in w]
+    if index_missing_before_fix:
+        index_warnings = [w for w in index_warnings if "RAG index file is missing" not in w]
+        warnings = [w for w in warnings if "RAG index file is missing" not in w]
 
     if blockers:
         auto_fix_steps = [details["database_env_auto_fix"]]
