@@ -2,7 +2,7 @@
 
 sidar_phase_local_migrations_and_models() {
     sidar_source_install_utils "ollama_models.sh"
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
@@ -234,7 +234,7 @@ sync_database_passwords_before_smoke_tests() {
 sidar_phase_services_and_validation() {
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
     launch_docker_services
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         sync_database_passwords_before_smoke_tests
         run_smoke_tests
         run_test_artifact_audit
