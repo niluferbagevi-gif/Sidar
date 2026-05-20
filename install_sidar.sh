@@ -2274,21 +2274,58 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
+_visible_width() {
+    local value="${1-}"
+    python3 - "$value" <<'PY'
+import sys
+import unicodedata
+
+text = sys.argv[1] if len(sys.argv) > 1 else ""
+width = 0
+for ch in text:
+    if unicodedata.combining(ch):
+        continue
+    width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+print(width)
+PY
+}
+
+_pad_visible() {
+    local value="${1-}" target_width="${2:-0}"
+    local current_width pad_len
+    current_width="$(_visible_width "$value")"
+    pad_len=$(( target_width - current_width ))
+    if (( pad_len < 0 )); then
+        pad_len=0
+    fi
+    printf '%s%*s' "$value" "$pad_len" ""
+}
+
+_center_visible() {
+    local value="${1-}" target_width="${2:-60}"
+    local current_width left_pad right_pad
+    current_width="$(_visible_width "$value")"
+    left_pad=$(( (target_width - current_width) / 2 ))
+    (( left_pad < 0 )) && left_pad=0
+    right_pad=$(( target_width - current_width - left_pad ))
+    (( right_pad < 0 )) && right_pad=0
+    printf '%*s%s%*s' "$left_pad" "" "$value" "$right_pad" ""
+}
+
 banner() {
+
     local version_suffix=""
     local banner_text=""
+    local centered_banner=""
     if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
         version_suffix=" (v$INSTALL_SIDAR_VERSION)"
     fi
     banner_text="$(sidar_t banner_title)${version_suffix}"
+    centered_banner="$(_center_visible "$banner_text" 60)"
 
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    if [[ -n "$version_suffix" ]]; then
-        printf "║          %-46s║\n" "$banner_text"
-    else
-        printf "║              %-38s║\n" "$banner_text"
-    fi
+    printf "║%s║\n" "$(_pad_visible "$centered_banner" 60)"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -5940,10 +5977,12 @@ run_test_artifact_audit() {
 
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
+    local summary_banner=""
+    summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
     echo ""
     echo -e "${BOLD}${GREEN}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║              Sidar AI Kurulumu Tamamlandı!                  ║"
+    printf "║%s║\n" "$(_pad_visible "$summary_banner" 60)"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 
