@@ -959,8 +959,8 @@ ensure_docker_daemon_running() {
     fi
 
     if _docker_ready_with_socket; then
-        _docker_wsl_integration_postcheck
-        return $?
+        _docker_wsl_integration_postcheck || true
+        return 0
     fi
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
@@ -980,8 +980,8 @@ ensure_docker_daemon_running() {
         while (( elapsed < 60 )); do
             if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
-                _docker_wsl_integration_postcheck
-                return $?
+                _docker_wsl_integration_postcheck || true
+                return 0
             fi
             sleep 3
             ((elapsed += 3))
@@ -990,8 +990,8 @@ ensure_docker_daemon_running() {
     fi
 
     if _docker_ready_with_socket; then
-        _docker_wsl_integration_postcheck
-        return $?
+        _docker_wsl_integration_postcheck || true
+        return 0
     fi
 
     return 1
