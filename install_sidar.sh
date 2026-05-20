@@ -4636,6 +4636,7 @@ setup_env_file() {
     # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
+            info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
             if grep -q '^USE_GPU=' "$ENV_FILE"; then
                 sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$ENV_FILE"
             else
