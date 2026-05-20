@@ -2692,8 +2692,12 @@ ensure_prerequisites() {
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
             echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
             echo ""
-            clear_stdin_buffer
-            read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
+            if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
+            else
+                clear_stdin_buffer
+                read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
+            fi
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! command -v docker &>/dev/null; then
