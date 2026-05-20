@@ -1243,13 +1243,11 @@ maybe_reset_postgres_volume_after_password_hardening() {
     fi
 
     if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
-        info "DB parola hardening sonrası PostgreSQL volume doğrudan bulunamadı; temiz kurulumda bu durum normaldir. Olası compose proje adı uyuşmazlığına karşı docker compose down --volumes --remove-orphans fallback'i çalıştırılacak."
         if "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
             if mapfile -t existing_pg_volumes < <(sidar_discover_postgres_volumes "$compose_project_name" "${candidate_volume_suffixes[@]}"); then
                 :
             fi
             if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
-                ok "PostgreSQL volume fallback temizliği tamamlandı veya temiz başlangıç doğrulandı."
                 POSTGRES_VOLUME_RESET_DONE=true
                 return 0
             fi
