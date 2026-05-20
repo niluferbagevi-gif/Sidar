@@ -787,12 +787,112 @@ ensure_docker_cli_available() {
 }
 
 ensure_docker_daemon_running() {
+    _detect_current_wsl_distro_name() {
+        if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+            printf '%s\n' "$WSL_DISTRO_NAME"
+            return 0
+        fi
+        if command -v powershell.exe &>/dev/null; then
+            powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null \
+                | tr -d '\r' | awk 'NF {print; exit}'
+            return 0
+        fi
+        printf '%s\n' ""
+    }
+
+    _docker_wsl_integration_postcheck() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+        local in_integrated=false default_covers=false
+
+        current_distro="$(_detect_current_wsl_distro_name)"
+        [[ -n "$current_distro" ]] || return 0
+
+        default_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
+        enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+        integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+
+        integrated_norm=",${integrated_csv// /},"
+        [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+
+        if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+            default_covers=true
+        fi
+
+        if [[ "$in_integrated" == true ]]; then
+            ok "WSL entegrasyonu '${current_distro}' için açık."
+            return 0
+        fi
+
+        if [[ "$default_covers" == true ]]; then
+            info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
+            warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+            return 0
+        fi
+
+        warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+        local should_apply=false
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            should_apply=true
+            info "NO_INTERACTION/AUTO_INSTALL etkin: '${current_distro}' için Docker Desktop WSL entegrasyonu otomatik etkinleştirilecek."
+        else
+            local reply
+            reply=$(prompt_yes_no_with_timeout_default_yes "'${current_distro}' için Docker Desktop WSL Integration ayarı otomatik açılsın mı? [E/h]: ")
+            reply="${reply^^}"
+            if [[ "$reply" == "E" || "$reply" == "EVET" || "$reply" == "Y" || "$reply" == "YES" || -z "$reply" ]]; then
+                should_apply=true
+            fi
+        fi
+
+        if [[ "$should_apply" != true ]]; then
+            warn "WSL Integration otomatik güncellemesi atlandı. Docker Desktop > Settings > Resources > WSL Integration bölümünden '${current_distro}' anahtarını açın."
+            return 1
+        fi
+
+        if ! powershell.exe -NoProfile -Command "\
+            \$ErrorActionPreference='Stop'; \
+            \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; \
+            if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; \
+            if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
+            Copy-Item \$p \"\$p.bak\" -Force; \
+            \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
+            if (\$null -eq \$cfg.IntegratedWslDistros) { \$cfg | Add-Member -NotePropertyName IntegratedWslDistros -NotePropertyValue @() -Force }; \
+            \$list=@(\$cfg.IntegratedWslDistros); \
+            if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
+            \$cfg.IntegratedWslDistros=\$list; \
+            \$cfg | ConvertTo-Json -Depth 100 | Set-Content \$p -Encoding UTF8; \
+            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' --quit -WindowStyle Hidden; \
+            Start-Sleep -Seconds 2; \
+            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
+        " >/dev/null 2>&1; then
+            warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
+            return 1
+        fi
+
+        info "Docker Desktop yeniden başlatıldı; WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        local elapsed=0
+        while (( elapsed < 60 )); do
+            if docker info &>/dev/null; then
+                ok "Docker daemon erişilebilir ve '${current_distro}' entegrasyonu güncellendi."
+                return 0
+            fi
+            sleep 3
+            ((elapsed += 3))
+        done
+
+        warn "Docker Desktop yeniden başlatma sonrası doğrulama zaman aşımına uğradı."
+        return 1
+    }
+
     if ! docker_cli_healthy; then
         return 1
     fi
 
     if docker info &>/dev/null; then
-        return 0
+        _docker_wsl_integration_postcheck
+        return $?
     fi
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
@@ -820,7 +920,12 @@ ensure_docker_daemon_running() {
         warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
-    docker info &>/dev/null
+    if docker info &>/dev/null; then
+        _docker_wsl_integration_postcheck
+        return $?
+    fi
+
+    return 1
 }
 
 ensure_current_user_in_docker_group() {
