@@ -8,6 +8,9 @@ OUTPUT_SCRIPT="${ROOT_DIR}/dist/install_sidar.sh"
 
 mkdir -p "${ROOT_DIR}/dist"
 
+SIDAR_VERSION="$(uv run python -c 'from sidar_version import get_sidar_version; print(get_sidar_version())' 2>/dev/null || echo 'unknown')"
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 if [[ ! -f "$SOURCE_SCRIPT" ]]; then
     echo "Kaynak betik bulunamadı: $SOURCE_SCRIPT" >&2
     exit 1
@@ -18,7 +21,9 @@ if [[ ! -d "$MODULE_DIR" ]]; then
     exit 1
 fi
 
-awk -v module_dir="$MODULE_DIR" '
+{
+    printf '#!/usr/bin/env bash\n# Sidar bundled installer\n# version: %s\n# bundled: %s\n# source: scripts/tools/bundle_install_sidar.sh\n\n' "$SIDAR_VERSION" "$BUILD_DATE"
+    awk -v module_dir="$MODULE_DIR" '
 function emit_module(file, line) {
     print ""
     print "# --- MODULE: " file " ---"
@@ -28,6 +33,7 @@ function emit_module(file, line) {
     close(file)
 }
 BEGIN { in_block = 0 }
+NR == 1 && /^#!/ { next }
 /^# BEGIN_BUNDLE_MODULES$/ {
     print "# BEGIN_BUNDLE_MODULES"
     print "# Bundled by scripts/tools/bundle_install_sidar.sh"
@@ -56,7 +62,8 @@ BEGIN { in_block = 0 }
     next
 }
 in_block == 0 { print }
-' "$SOURCE_SCRIPT" > "$OUTPUT_SCRIPT"
+' "$SOURCE_SCRIPT"
+} > "$OUTPUT_SCRIPT"
 
 chmod +x "$OUTPUT_SCRIPT"
 echo "Bundle oluşturuldu: $OUTPUT_SCRIPT"
