@@ -898,8 +898,13 @@ ensure_docker_daemon_running() {
             if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
             \$cfg.IntegratedWslDistros=\$list; \
             \$cfg | ConvertTo-Json -Depth 100 | Set-Content \$p -Encoding UTF8; \
-            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' --quit -WindowStyle Hidden; \
-            Start-Sleep -Seconds 2; \
+            if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
+                Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+                Start-Sleep -Seconds 3; \
+            } else { \
+                Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; \
+                Start-Sleep -Seconds 2; \
+            }; \
             Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
         " >/dev/null 2>&1; then
             warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
