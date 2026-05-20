@@ -68,3 +68,18 @@ dosyayı GitHub Release asset'i olarak yayınlar.
 Böylece hibrit dağıtım korunur: çevrimiçi standart kullanıcılar dinamik modül
 indiren kök betiği kullanır; kurumsal/offline kullanıcılar ise modül indirme ihtiyacı
 olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
+
+## WSL2 Docker uyumluluğu
+
+WSL2 ortamında Docker tabanlı akışların sağlıklı çalışması için Docker Desktop içinde
+ilgili Linux dağıtımı (ör. Ubuntu) adına **Settings > Resources > WSL Integration**
+anahtarı açık olmalıdır. Entegrasyon kapalıysa `install_sidar.sh`, etkileşimli modda
+kullanıcıyı yönlendirip doğrulama ister; `NO_INTERACTION=true` veya `AUTO_INSTALL=true`
+ile çalışan CI/otomasyon modlarında ise beklemeye girmeden fail-fast davranır.
+
+Docker CLI WSL içinde yoksa veya host sistemde kurulması gerekiyorsa kurulum
+komutuna `--install-docker-cli` bayrağı eklenebilir:
+
+```bash
+./install_sidar.sh --install-docker-cli
+```
