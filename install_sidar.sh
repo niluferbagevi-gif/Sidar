@@ -3759,11 +3759,15 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"
-            case $? in
+            local ensure_memory_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory" || ensure_memory_rc=$?
+            case $ensure_memory_rc in
                 0)
                     ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
                     changed=true
+                    ;;
+                1)
+                    : # no-op: zaten istenen durumda
                     ;;
                 2)
                     warn "WSL2: .wslconfig memory satırı güncellenemedi (dosya yazma hatası)."
@@ -3791,8 +3795,9 @@ WSLCFG
                     fi
                 fi
                 if [[ "$should_upgrade_mem" == true ]]; then
-                    _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory"
-                    case $? in
+                    local set_memory_rc=0
+                    _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory" || set_memory_rc=$?
+                    case $set_memory_rc in
                         0)
                             ok "WSL2: .wslconfig memory ${cur_mem} -> ${target_memory} olarak yükseltildi."
                             changed=true
@@ -3815,11 +3820,15 @@ WSLCFG
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"
-            case $? in
+            local ensure_swap_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap" || ensure_swap_rc=$?
+            case $ensure_swap_rc in
                 0)
                     ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
                     changed=true
+                    ;;
+                1)
+                    : # no-op: zaten istenen durumda
                     ;;
                 2)
                     warn "WSL2: .wslconfig swap satırı güncellenemedi (dosya yazma hatası)."
@@ -3847,8 +3856,9 @@ WSLCFG
                     fi
                 fi
                 if [[ "$should_upgrade_swap" == true ]]; then
-                    _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap"
-                    case $? in
+                    local set_swap_rc=0
+                    _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap" || set_swap_rc=$?
+                    case $set_swap_rc in
                         0)
                             ok "WSL2: .wslconfig swap ${cur_swap} -> ${target_swap} olarak yükseltildi."
                             changed=true
