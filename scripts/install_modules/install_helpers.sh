@@ -18,6 +18,11 @@ resolve_target_node_major() {
     local major=""
     local package_path=""
     local engines_node_spec=""
+    local has_repo_node_context="false"
+
+    if [[ -d "${TARGET_DIR:-}/web_ui_react" || -d "${SCRIPT_DIR:-}/web_ui_react" ]]; then
+        has_repo_node_context="true"
+    fi
 
     for nvmrc_path in "$SCRIPT_DIR/.nvmrc" "$SCRIPT_DIR/web_ui_react/.nvmrc"; do
         if [[ -f "$nvmrc_path" ]]; then
@@ -43,7 +48,9 @@ resolve_target_node_major() {
         fi
     done
 
-    info ".nvmrc veya package.json engines.node bulunamadı; Node.js için varsayılan hedef sürüm kullanılacak: ${default_major}.x"
+    if [[ "$has_repo_node_context" == "true" ]]; then
+        info ".nvmrc veya package.json engines.node bulunamadı; Node.js için varsayılan hedef sürüm kullanılacak: ${default_major}.x"
+    fi
     echo "$default_major"
 }
 
