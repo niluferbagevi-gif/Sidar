@@ -2844,11 +2844,13 @@ class DocumentStore:
         engines = []
         if getattr(self, "_pgvector_available", False):
             engines.append("pgvector")
-        elif self._vector_backend == "pgvector":
-            engines.append("pgvector (pasif)")
         elif self._chroma_available:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
+        elif self._vector_backend == "pgvector":
+            # Kullanıcıya banner'da kalıcı "pgvector pasif" ibaresi göstermek yerine
+            # aktif fallback motorunu göster. Ayrıntılı teşhis loglarda kalır.
+            engines.append("Vektör Arama (fallback devrede)")
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
         engines.append("Anahtar Kelime")
