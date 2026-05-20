@@ -153,6 +153,11 @@ sidar_phase_remediation_strategy() {
     local reason="$3"
 
     case "$phase" in
+        01_context)
+            warn "Auto-heal: ${phase} bilgilendirme/non-critical fazı için resume uygulanmayacak; yalnızca uyarı veriliyor."
+            sidar_write_remediation_report "$phase" "non-critical-context" "warn-only;no-resume"
+            return 1
+            ;;
         04_workspace)
             if [[ "$failed_cmd $reason" == *"uv sync"* || "$failed_cmd $reason" == *"uv.lock"* || "$failed_cmd $reason" == *"install_python_deps"* ]]; then
                 sidar_remediate_uv_sync_failure
