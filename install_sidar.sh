@@ -2287,11 +2287,16 @@ log_host_ollama_runtime_diagnostics() {
     host="${host%%:*}"
 
     info "Host Ollama çalışma tanısı toplanıyor (GPU kullanımı opsiyonel kontrol)."
+    local ollama_ps_reports_gpu=false
 
     if command -v ollama &>/dev/null; then
         if ollama ps >/tmp/sidar_ollama_ps.log 2>&1; then
             info "Host Ollama modelleri (ollama ps):"
             sed 's/^/       /' /tmp/sidar_ollama_ps.log
+            if awk 'NR==1 {for (i=1;i<=NF;i++) if ($i=="PROCESSOR") c=i; next} c && toupper($c) ~ /GPU/ {found=1} END {exit !found}' /tmp/sidar_ollama_ps.log; then
+                ollama_ps_reports_gpu=true
+                info "ollama ps PROCESSOR sütunu GPU gösteriyor; host Ollama GPU üzerinde çalışıyor."
+            fi
         else
             warn "ollama ps komutu çalıştırılamadı; host Ollama GPU durumu CLI üzerinden doğrulanamadı."
         fi
@@ -2307,13 +2312,19 @@ log_host_ollama_runtime_diagnostics() {
             smi_cmd="nvidia-smi.exe"
         fi
 
-        if [[ -n "$smi_cmd" ]]; then
+        if [[ "$ollama_ps_reports_gpu" == true ]]; then
+            info "GPU kullanımı ollama ps ile doğrulandı; nvidia-smi compute-apps sorgusu atlandı."
+        elif [[ -n "$smi_cmd" ]]; then
             if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
                 if awk -F, 'tolower($2) ~ /ollama/ {found=1} END {exit !found}' /tmp/sidar_ollama_gpu_apps.log; then
                     info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
                     awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
                 else
-                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
+                    if [[ "$WSL2" == true ]]; then
+                        info "nvidia-smi çalıştı ancak Ollama süreci görünmedi; WSL2'de compute-apps sorgusu host süreçlerini göstermeyebilir."
+                    else
+                        warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
+                    fi
                 fi
             else
                 warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
