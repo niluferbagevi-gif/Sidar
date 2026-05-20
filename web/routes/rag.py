@@ -4,8 +4,9 @@ import asyncio
 import inspect
 import shutil
 import tempfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import anyio
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile

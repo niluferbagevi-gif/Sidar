@@ -25,8 +25,8 @@ try:
 except Exception:  # OpenTelemetry opsiyoneldir
     trace = None  # type: ignore[assignment]
 
-from config import Config
 from agent.bootstrap import log_sidar_agent_startup
+from config import Config
 from core.ci_remediation import (
     build_ci_failure_context,
     build_ci_failure_prompt,

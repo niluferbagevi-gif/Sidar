@@ -768,8 +768,8 @@ def _run_launcher_doctor_preflight() -> None:
         from core.doctor import (
             check_database_connectivity,
             check_database_env,
-            check_graphrag_entity_memory_ready,
             check_gpu_memory_config,
+            check_graphrag_entity_memory_ready,
             check_rag_index_ready,
         )
     except Exception as exc:  # pragma: no cover - defensive launcher path

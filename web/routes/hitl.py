@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -43,7 +44,8 @@ def build_hitl_router(
         import time
         import uuid
 
-        from core.hitl import HITLRequest, get_hitl_store as _store, notify
+        from core.hitl import HITLRequest, notify
+        from core.hitl import get_hitl_store as _store
 
         now = time.time()
         req = HITLRequest(

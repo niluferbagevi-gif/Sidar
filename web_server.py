@@ -30,7 +30,6 @@ import shutil
 import signal
 import subprocess  # nosec B404
 import sys
-import tempfile
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -46,11 +45,9 @@ import uvicorn
 from fastapi import (
     Depends,
     FastAPI,
-    File,
     Header,
     HTTPException,
     Request,
-    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -65,14 +62,6 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
-from web.routes.health import build_health_router
-from web.routes.agent import build_agent_router
-from web.routes.rag import build_rag_router
-from web.routes.auth_admin import build_auth_admin_router
-from web.routes.hitl import build_hitl_router
-from web.routes.metrics import build_metrics_router
-from web.routes.project_ops import build_project_ops_router
-from web.routes.orchestration import build_orchestration_router
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -101,6 +90,14 @@ from core.utils.network_validation import (
 )
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
+from web.routes.agent import build_agent_router
+from web.routes.auth_admin import build_auth_admin_router
+from web.routes.health import build_health_router
+from web.routes.hitl import build_hitl_router
+from web.routes.metrics import build_metrics_router
+from web.routes.orchestration import build_orchestration_router
+from web.routes.project_ops import build_project_ops_router
+from web.routes.rag import build_rag_router
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 

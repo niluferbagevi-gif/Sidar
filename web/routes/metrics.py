@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import inspect
 import time
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -52,7 +53,12 @@ def build_metrics_router(
         accept = request.headers.get("Accept", "")
         if isinstance(request, Request) and "text/plain" in accept:
             try:
-                from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
+                from prometheus_client import (
+                    CONTENT_TYPE_LATEST,
+                    CollectorRegistry,
+                    Gauge,
+                    generate_latest,
+                )
                 from starlette.responses import Response as _PromeResp
 
                 reg = CollectorRegistry()

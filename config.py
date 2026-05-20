@@ -17,14 +17,12 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from core.config_dirs import initialize_directories as initialize_required_directories
-from core.config_dirs import repair_log_file_permissions
-from core.config_dirs import resolve_base_dir
+from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_gpu_detect import normalize_gpu_memory_fractions
 from core.config_logging_setup import configure_noisy_dependency_loggers
-from core.config_runtime_env import apply_runtime_env_overrides
-from core.config_runtime_env import safe_choice_for_reload
-
+from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from sidar_version import PRODUCT_VERSION
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
@@ -653,11 +651,11 @@ try:
     )
     _file_handler.setFormatter(
         logging.Formatter(
-            (
+
                 "%(asctime)s %(levelname)-7s %(name)s [%(threadName)s]:%(lineno)d › %(message)s"
                 if _LOG_LEVEL_STR == "DEBUG"
                 else "%(asctime)s %(levelname)-7s %(name)s:%(lineno)d › %(message)s"
-            )
+
         )
     )
     _root_logger.addHandler(_file_handler)

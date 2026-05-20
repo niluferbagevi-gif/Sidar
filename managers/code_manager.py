@@ -22,8 +22,8 @@ import time
 from pathlib import Path, PosixPath, PureWindowsPath
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
-from managers.image_resolver import canonical_project_image_alias
-from managers.image_resolver import is_gpu_project_image
+
+from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 try:
     from config import SANDBOX_LIMITS, Config
