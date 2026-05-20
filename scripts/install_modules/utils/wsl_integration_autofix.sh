@@ -10,40 +10,24 @@ apply_wsl_integration_autofix() {
     command -v powershell.exe &>/dev/null || return 1
     [[ -n "$current_distro" ]] || return 1
 
-    if ! powershell.exe -NoProfile -Command "\
-        \$ErrorActionPreference='Stop'; \
-        \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; \
-        if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; \
-        if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
-        Copy-Item \$p \"\$p.bak\" -Force; \
-        if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
-            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -ErrorAction SilentlyContinue; \
-            \$stopped=\$false; \
-            for (\$i=0; \$i -lt 10; \$i++) { \
-                Start-Sleep -Seconds 1; \
-                if (!(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) { \$stopped=\$true; break }; \
-            }; \
-            if (-not \$stopped) { \
-                Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
-                Start-Sleep -Seconds 3; \
-            }; \
-        }; \
-        \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
-        \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; \
-        if (\$null -eq \$prop) { \
-            \$cfg | Add-Member -NotePropertyName 'integratedWslDistros' -NotePropertyValue @() -Force; \
-            \$propName='integratedWslDistros'; \
-        } else { \
-            \$propName=\$prop.Name; \
-        }; \
-        \$list=@(\$cfg.\$propName); \
-        if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
-        \$cfg.\$propName=\$list; \
-        [System.IO.File]::WriteAllText(\$p, (\$cfg | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding \$false)); \
-        Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
-    " >/dev/null 2>&1; then
+    local script_dir script_path stderr_log
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    script_path="${script_dir}/wsl_integration_autofix.ps1"
+    [[ -f "$script_path" ]] || return 1
+
+    stderr_log="$(mktemp)"
+    if ! powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$script_path")" -CurrentDistro "$current_distro" 2>"$stderr_log"; then
+        warn "PowerShell WSL Integration autofix komutu başarısız oldu."
+        if [[ -s "$stderr_log" ]]; then
+            warn "PowerShell stderr (son 20 satır):"
+            while IFS= read -r _line; do
+                warn "$_line"
+            done < <(tail -n 20 "$stderr_log")
+        fi
+        rm -f "$stderr_log"
         return 1
     fi
+    rm -f "$stderr_log"
 
     WSL_INTEGRATION_AUTOFIX_APPLIED=true
     export WSL_INTEGRATION_AUTOFIX_APPLIED
