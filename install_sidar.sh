@@ -3498,19 +3498,23 @@ ASOUNDRC
         local wmic_bytes=""
         local ps_bytes=""
 
-        if command -v cmd.exe &>/dev/null; then
-            wmic_bytes=$(cmd.exe /c "wmic ComputerSystem get TotalPhysicalMemory /value" 2>/dev/null \
-                | tr -d '\r' \
-                | awk -F= '/^TotalPhysicalMemory=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}')
-        fi
-        if [[ -n "$wmic_bytes" ]]; then
-            total_bytes="$wmic_bytes"
-        elif command -v powershell.exe &>/dev/null; then
+        # Win11 24H2+ sürümlerde WMIC kaldırılabildiği için önce PowerShell/CIM yolunu dene.
+        if command -v powershell.exe &>/dev/null; then
             ps_bytes=$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory" 2>/dev/null \
                 | tr -d '\r' \
-                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}')
+                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}' || true)
             if [[ -n "$ps_bytes" ]]; then
                 total_bytes="$ps_bytes"
+            fi
+        fi
+        if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]] \
+            && command -v cmd.exe &>/dev/null \
+            && command -v wmic.exe &>/dev/null; then
+            wmic_bytes=$(cmd.exe /c "wmic ComputerSystem get TotalPhysicalMemory /value" 2>/dev/null \
+                | tr -d '\r' \
+                | awk -F= '/^TotalPhysicalMemory=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}' || true)
+            if [[ -n "$wmic_bytes" ]]; then
+                total_bytes="$wmic_bytes"
             fi
         fi
 
