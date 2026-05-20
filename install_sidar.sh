@@ -1075,7 +1075,7 @@ start_docker_services_or_fail() {
     rm -f "$stderr_file"
 
     if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
-        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
     fi
 
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
@@ -2900,7 +2900,7 @@ ensure_prerequisites() {
             info "Lütfen şu adımları uygulayın:"
             echo "  1. Windows'ta Docker Desktop'ı açın."
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-            echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+            echo "  3. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             echo ""
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
@@ -2911,13 +2911,13 @@ ensure_prerequisites() {
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! command -v docker &>/dev/null; then
-                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. Docker Desktop > Settings > Resources > WSL Integration altında Ubuntu entegrasyonunu açıp yeniden deneyin."
+                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             if ! docker_cli_healthy; then
                 fail "[ENTER] sonrası docker CLI hâlâ sağlıksız. Docker Desktop entegrasyonunu ve WSL erişimini doğrulayın."
             fi
             if ! docker info &>/dev/null; then
-                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). Docker Desktop'ı açıp entegrasyonu Apply & restart ile yenileyin."
+                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             ok "WSL2 Docker Desktop entegrasyonu doğrulandı (docker CLI + docker info)."
         fi
@@ -5520,7 +5520,7 @@ prepare_docker_for_migrations() {
     if ! ensure_docker_daemon_running; then
         warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
         if [[ "$WSL2" == true ]]; then
-            info "WSL2 için öneri: Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+            info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
         fi
         info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
         MIGRATION_DOCKER_POLICY="disabled"
@@ -6126,7 +6126,7 @@ launch_docker_services() {
             else
                 warn "Docker motoruna erişilemediği için arka plan servis başlatma adımı atlandı."
                 if [[ "$WSL2" == true ]]; then
-                    info "Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+                    info "$(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
                 fi
                 info "Entegrasyon tamamlandıktan sonra manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d"
                 return
