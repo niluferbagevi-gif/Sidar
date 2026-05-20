@@ -484,3 +484,38 @@ ENV
   '
   [ "$status" -eq 0 ]
 }
+
+@test "ensure_postgres_databases_exist reads password and creates only missing DBs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    psql_calls="$tmpdir/psql_calls.log"
+    psql_create="$tmpdir/psql_create.log"
+    cat > "$tmpdir/psql" <<"EOF"
+#!/usr/bin/env bash
+printf "%s\n" "$*" >> "__CALLS__"
+if [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
+  echo "1"
+  exit 0
+fi
+if [[ "$*" == *"CREATE DATABASE"* ]]; then
+  printf "%s\n" "$*" >> "__CREATE__"
+fi
+exit 0
+EOF
+    sed -i "s#__CALLS__#$psql_calls#g" "$tmpdir/psql"
+    sed -i "s#__CREATE__#$psql_create#g" "$tmpdir/psql"
+    chmod +x "$tmpdir/psql"
+    PATH="$tmpdir:$PATH"
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+
+    grep -q -- "-h 127.0.0.1 -p 5432 -U sidar -d postgres" "$psql_calls"
+    grep -q -- "CREATE DATABASE \"sidar_development\" OWNER \"sidar\";" "$psql_create"
+    grep -q -- "CREATE DATABASE \"sidar_test\" OWNER \"sidar\";" "$psql_create"
+    if grep -q -- "CREATE DATABASE \"sidar\" OWNER \"sidar\";" "$psql_create"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+}
