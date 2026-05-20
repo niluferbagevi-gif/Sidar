@@ -816,6 +816,19 @@ ensure_docker_daemon_running() {
         printf '%s\n' ""
     }
 
+
+    _wsl_integration_distro_listed() {
+        local distro_name="$1"
+        [[ "$WSL2" == true ]] || return 1
+        command -v powershell.exe &>/dev/null || return 1
+        [[ -n "$distro_name" ]] || return 1
+
+        local integrated_csv integrated_norm
+        integrated_csv="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ',' } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+        integrated_norm=",${integrated_csv// /},"
+        [[ "$integrated_norm" == *",$distro_name,"* ]]
+    }
+
     _docker_wsl_integration_postcheck() {
         [[ "$WSL2" == true ]] || return 0
         command -v powershell.exe &>/dev/null || return 0
@@ -921,18 +934,17 @@ ensure_docker_daemon_running() {
         export WSL_INTEGRATION_AUTOFIX_APPLIED
         : > "$integration_autofix_sentinel"
 
-        info "Docker Desktop yeniden başlatıldı; WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
-        local elapsed=0
-        while (( elapsed < 60 )); do
-            if _docker_ready_with_socket; then
-                ok "Docker daemon erişilebilir ve '${current_distro}' entegrasyonu güncellendi."
+        info "Docker Desktop yeniden başlatıldı; WSL Integration ayarının uygulanması bekleniyor..."
+        local attempt
+        for attempt in 1 2 3 4 5; do
+            sleep 4
+            if _wsl_integration_distro_listed "$current_distro"; then
+                ok "Docker Desktop WSL Integration: '${current_distro}' artık aktif."
                 return 0
             fi
-            sleep 3
-            ((elapsed += 3))
         done
 
-        warn "Docker Desktop yeniden başlatma sonrası doğrulama zaman aşımına uğradı."
+        warn "PowerShell autofix denendi fakat '${current_distro}' Docker Desktop tarafından hâlâ tanınmadı; Settings > Resources > WSL Integration üzerinden manuel açın."
         return 1
     }
 
