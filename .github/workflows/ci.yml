@@ -144,6 +144,11 @@ jobs:
           tests/quality/test_llm_quality_gate.py
           tests/quality/test_shellcheck_quality_gate.py
 
+      - name: Run ShellCheck for installer and install modules
+        run: |
+          shopt -s globstar nullglob
+          uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
+
       - name: Prepare isolated test database (sidar_test) + Alembic upgrade
         env:
           PGPASSWORD: sidar
