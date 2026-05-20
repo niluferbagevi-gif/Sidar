@@ -166,6 +166,8 @@ run_wsl2_gpu_preflight() {
 
 docker_desktop_wsl_integration_preflight() {
     step "Docker Desktop WSL Integration Durum Raporu"
+    export WSL_INTEGRATION_PREFLIGHT_REPORTED=true
+    export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
     local _had_errexit=false
     [[ $- == *e* ]] && _had_errexit=true
     set +e
@@ -207,6 +209,7 @@ docker_desktop_wsl_integration_preflight() {
     elif [[ "$default_covers" == true ]]; then
         warn "Docker Desktop WSL Integration: explicit toggle kapalı, default-distro toggle ile kapsanıyor. Default distro değişirse kırılabilir."
     else
+        export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
         warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
     fi
 

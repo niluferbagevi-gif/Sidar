@@ -885,12 +885,17 @@ ensure_docker_daemon_running() {
             return 0
         fi
 
-        warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
         local should_apply=false
-        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+        if [[ "${WSL_INTEGRATION_AUTOFIX_ELIGIBLE:-false}" == "true" ]]; then
+            should_apply=true
+            info "Preflight '${current_distro}' için autofix-eligible işareti verdi; aynı oturumda tekrar prompt göstermeden otomatik düzeltme uygulanacak."
+        else
+            warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+        fi
+        if [[ "$should_apply" != true && ( "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ) ]]; then
             should_apply=true
             info "NO_INTERACTION/AUTO_INSTALL etkin: '${current_distro}' için Docker Desktop WSL entegrasyonu otomatik etkinleştirilecek."
-        else
+        elif [[ "$should_apply" != true ]]; then
             local reply
             reply=$(prompt_yes_no_with_timeout_default_yes "'${current_distro}' için Docker Desktop WSL Integration ayarı otomatik açılsın mı? [E/h]: ")
             reply="${reply^^}"
