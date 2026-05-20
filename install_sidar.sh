@@ -3219,7 +3219,7 @@ setup_wsl2_audio() {
     if [[ -n "$pulse_socket" ]]; then
         ok "WSLg PulseAudio soketi tespit edildi: $pulse_socket"
         info "Windows 11 WSLg üzerinde ses desteği yapılandırılıyor..."
-        AUDIO_SESSION_RESTART_RECOMMENDED=true
+        local audio_restart_needed=false
 
         # PulseAudio istemci araçları + ALSA→PulseAudio köprüsü
         info "PulseAudio istemci kütüphaneleri kontrol ediliyor..."
@@ -3231,6 +3231,7 @@ setup_wsl2_audio() {
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" \
                 >/dev/null 2>&1 && ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}" \
                 || warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
+            audio_restart_needed=true
         else
             ok "PulseAudio paketleri zaten kurulu."
         fi
@@ -3251,6 +3252,7 @@ ctl.pulse {
 }
 ASOUNDRC
             ok "ALSA → PulseAudio köprüsü yapılandırıldı (~/.asoundrc)."
+            audio_restart_needed=true
         else
             ok "$HOME/.asoundrc zaten PulseAudio yapılandırması içeriyor."
         fi
@@ -3266,9 +3268,13 @@ ASOUNDRC
                     echo "# Sidar WSL2 ses desteği" >> "$rcfile"
                     echo "$pulse_export" >> "$rcfile"
                     ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
+                    audio_restart_needed=true
                 fi
             fi
         done
+        if [[ "$audio_restart_needed" == true ]]; then
+            AUDIO_SESSION_RESTART_RECOMMENDED=true
+        fi
         # Mevcut oturum için de hemen ayarla
         export PULSE_SERVER="unix:${pulse_socket}"
 
