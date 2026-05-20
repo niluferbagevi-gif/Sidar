@@ -793,6 +793,47 @@ ensure_docker_cli_available() {
     install_docker_cli_from_apt
 }
 
+verify_wsl_integration_listed() {
+    [[ "$WSL2" == true ]] || return 0
+    command -v powershell.exe &>/dev/null || return 0
+
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local in_integrated=false default_covers=false
+    local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+    current_distro="${WSL_DISTRO_NAME:-}"
+    if [[ -z "$current_distro" ]]; then
+        current_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+    fi
+    [[ -n "$current_distro" ]] || return 0
+
+    default_distro="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+    enable_default="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+    integrated_csv="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$found=\$false; \$keys=@('integratedWslDistros','IntegratedWslDistros','enabledWslIntegrations'); foreach (\$k in \$keys) { \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq \$k } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ','; \$found=\$true; break } }; if (-not \$found -and \$null -ne \$cfg.wsl) { \$nested=\$cfg.wsl.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedDistros' -or \$_.Name -ieq 'enabledWslIntegrations' } | Select-Object -First 1; if (\$null -ne \$nested -and \$null -ne \$cfg.wsl.(\$nested.Name)) { @(\$cfg.wsl.(\$nested.Name)) -join ',' } } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+
+    integrated_norm=",${integrated_csv// /},"
+    [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+    if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+        default_covers=true
+    fi
+
+    if [[ "$in_integrated" == true ]]; then
+        ok "WSL entegrasyonu '${current_distro}' için açık."
+        return 0
+    fi
+    if [[ "$default_covers" == true ]]; then
+        info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
+        warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+        return 0
+    fi
+    if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+        warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
+        return 0
+    fi
+    warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+    return 1
+}
+
 ensure_docker_daemon_running() {
     _docker_ready_with_socket() {
         if ! docker info &>/dev/null; then
@@ -971,10 +1012,7 @@ ensure_docker_daemon_running() {
         return 1
     fi
 
-    if _docker_ready_with_socket; then
-        _docker_wsl_integration_postcheck || true
-        return 0
-    fi
+    if _docker_ready_with_socket; then return 0; fi
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
@@ -993,7 +1031,6 @@ ensure_docker_daemon_running() {
         while (( elapsed < 60 )); do
             if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
-                _docker_wsl_integration_postcheck || true
                 return 0
             fi
             sleep 3
@@ -1002,10 +1039,7 @@ ensure_docker_daemon_running() {
         warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
-    if _docker_ready_with_socket; then
-        _docker_wsl_integration_postcheck || true
-        return 0
-    fi
+    if _docker_ready_with_socket; then return 0; fi
 
     return 1
 }
@@ -2953,8 +2987,10 @@ ensure_prerequisites() {
         ensure_current_user_in_docker_group
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
+            verify_wsl_integration_listed || true
         else
             warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
+            verify_wsl_integration_listed || true
         fi
         if docker compose version &>/dev/null; then
             ok "Docker Compose eklentisi mevcut."
