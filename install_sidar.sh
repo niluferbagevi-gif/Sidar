@@ -2847,13 +2847,19 @@ install_system_dependencies() {
         local -a ns_source_files=()
         mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
         if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
-            info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
+            local -a ns_needs_normalize_files=()
+            mapfile -t ns_needs_normalize_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | xargs -r grep -LE 'deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series}\\s+nodistro\\s+main'" || true)
             local src_file=""
-            for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
-                    "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
-                    "$src_file"
-            done
+            if [[ "${#ns_needs_normalize_files[@]}" -gt 0 ]]; then
+                for src_file in "${ns_needs_normalize_files[@]}"; do
+                    sudo sed -E -i \
+                        "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
+                        "$src_file"
+                done
+                ok "NodeSource apt girdileri nodistro formatına normalize edildi (${#ns_needs_normalize_files[@]} dosya)."
+            else
+                debug "NodeSource apt girdileri zaten nodistro formatında; normalize adımı değişiklik yapmadan atlandı."
+            fi
         fi
 
         if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
