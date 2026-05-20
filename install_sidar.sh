@@ -3114,8 +3114,9 @@ ensure_prerequisites() {
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum 10 saniye)..."
-    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" 10 1; then
+    local ollama_healthcheck_wait_seconds="${OLLAMA_API_HEALTHCHECK_MAX_WAIT_SECONDS:-30}"
+    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum ${ollama_healthcheck_wait_seconds} saniye)..."
+    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" "$ollama_healthcheck_wait_seconds" 1; then
         ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
         warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
