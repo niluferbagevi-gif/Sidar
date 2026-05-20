@@ -166,14 +166,19 @@ run_wsl2_gpu_preflight() {
 
 docker_desktop_wsl_integration_preflight() {
     step "Docker Desktop WSL Integration Durum Raporu"
+    local _had_errexit=false
+    [[ $- == *e* ]] && _had_errexit=true
+    set +e
 
     if [[ "${WSL2:-false}" != true ]]; then
         info "WSL2 tespit edilmedi; Docker Desktop WSL Integration raporu atlandı."
+        [[ "$_had_errexit" == true ]] && set -e
         return 0
     fi
 
     if ! command -v powershell.exe &>/dev/null; then
         warn "powershell.exe bulunamadı; Docker Desktop WSL Integration durumu doğrulanamadı."
+        [[ "$_had_errexit" == true ]] && set -e
         return 0
     fi
 
@@ -181,13 +186,13 @@ docker_desktop_wsl_integration_preflight() {
     local in_integrated=false default_covers=false
     current_distro="${WSL_DISTRO_NAME:-}"
     if [[ -z "$current_distro" ]]; then
-        current_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
+        current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
     fi
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
-    default_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
-    enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1)"
-    integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+    default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+    enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
+    integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
 
     integrated_norm=",${integrated_csv// /},"
     [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
@@ -204,4 +209,6 @@ docker_desktop_wsl_integration_preflight() {
     else
         warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
     fi
+
+    [[ "$_had_errexit" == true ]] && set -e
 }
