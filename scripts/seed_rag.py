@@ -302,6 +302,12 @@ def _summary_only_payload(summary: dict[str, Any]) -> dict[str, int]:
     return {
         "added_count": int(summary.get("added_count", 0) or 0),
         "skipped_count": int(summary.get("skipped_count", 0) or 0),
+        "entity_nodes_before": int(summary.get("entity_nodes_before", 0) or 0),
+        "entity_nodes_after": int(summary.get("entity_nodes_after", 0) or 0),
+        "entity_nodes_added": int(summary.get("entity_nodes_added", 0) or 0),
+        "entity_edges_before": int(summary.get("entity_edges_before", 0) or 0),
+        "entity_edges_after": int(summary.get("entity_edges_after", 0) or 0),
+        "entity_edges_added": int(summary.get("entity_edges_added", 0) or 0),
     }
 
 
@@ -389,6 +395,20 @@ def run(
     summary_only: bool = False,
 ) -> int:
     """In-process callable entrypoint for launcher/doctor integrations."""
+    def _entity_graph_counts(path: Path) -> tuple[int, int]:
+        entity_graph_path = path / "entity_graph.json"
+        if not entity_graph_path.exists():
+            return 0, 0
+        try:
+            parsed = json.loads(entity_graph_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return 0, 0
+        nodes = parsed.get("nodes", {}) if isinstance(parsed, dict) else {}
+        edges = parsed.get("edges", []) if isinstance(parsed, dict) else []
+        node_count = len(nodes) if isinstance(nodes, dict) else 0
+        edge_count = len(edges) if isinstance(edges, list) else 0
+        return node_count, edge_count
+
     resolved_rag_dir = _resolve_rag_dir(rag_dir)
     patterns = include or list(DEFAULT_INCLUDE_PATTERNS)
     files = discover_seed_files(patterns, max_bytes=max(1, int(max_bytes or 1)))
@@ -399,6 +419,7 @@ def run(
         store: SeedDocumentStore = DryRunStore()
     else:
         store = _build_store(resolved_rag_dir, initialize_vector=not metadata_only)
+    entity_nodes_before, entity_edges_before = _entity_graph_counts(resolved_rag_dir)
     try:
         summary = seed_files(
             store,
@@ -411,6 +432,13 @@ def run(
         store.close()
     if not dry_run:
         _ensure_index_placeholder(resolved_rag_dir)
+    entity_nodes_after, entity_edges_after = _entity_graph_counts(resolved_rag_dir)
+    summary["entity_nodes_before"] = entity_nodes_before
+    summary["entity_nodes_after"] = entity_nodes_after
+    summary["entity_nodes_added"] = max(0, entity_nodes_after - entity_nodes_before)
+    summary["entity_edges_before"] = entity_edges_before
+    summary["entity_edges_after"] = entity_edges_after
+    summary["entity_edges_added"] = max(0, entity_edges_after - entity_edges_before)
     output = _summary_only_payload(summary) if summary_only else summary
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
