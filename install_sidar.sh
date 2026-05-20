@@ -1782,6 +1782,7 @@ verify_postgres_auth_with_psql() {
     if psql_output=$(
         PGPASSWORD="$db_password" psql \
             "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+            -w \
             -tAc "SELECT 1" 2>&1
     ); then
         return 0
@@ -1914,6 +1915,7 @@ try_recover_postgres_password_with_alter_user() {
             if command -v psql &>/dev/null; then
                 if PGPASSWORD="$candidate" psql \
                     "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+                    -w \
                     -v ON_ERROR_STOP=1 \
                     -c "ALTER USER \"${escape_sql_identifier_user}\" WITH PASSWORD '${escape_sql_literal_password}';" \
                     >/dev/null 2>&1; then
@@ -5558,6 +5560,9 @@ PY
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
         DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
+        if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
+            DB_PASSWORD="$POSTGRES_PASSWORD"
+        fi
         ensure_postgres_databases_exist "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASSWORD" "$DB_NAME"
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
@@ -5710,16 +5715,30 @@ ensure_postgres_databases_exist() {
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        if ! PGPASSWORD="$db_password" psql \
+        local psql_err_file
+        psql_err_file="$(mktemp)"
+        if ! PGPASSWORD="$db_password" psql -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null | grep -q '^1$'; then
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
+            if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                rm -f "$psql_err_file"
+                fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+            fi
             info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
-            PGPASSWORD="$db_password" psql \
+            if ! PGPASSWORD="$db_password" psql -w \
                 -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
                 -v ON_ERROR_STOP=1 \
-                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null
+                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
+                if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                    rm -f "$psql_err_file"
+                    fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+                fi
+                rm -f "$psql_err_file"
+                return 1
+            fi
             ok "Veritabanı hazır: ${db_name}"
         fi
+        rm -f "$psql_err_file"
     done <<<"$unique_dbs"
 }
 
