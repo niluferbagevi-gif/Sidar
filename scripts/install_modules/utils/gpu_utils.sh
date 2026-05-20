@@ -109,5 +109,13 @@ setup_nvidia_docker() {
         else
             ok "nvidia-container-toolkit zaten kurulu."
         fi
+
+        if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
+            ok "Docker NVIDIA runtime doğrulandı."
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
+        elif [[ "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME:-false}" == "true" ]]; then
+            warn "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-Docker NVIDIA runtime kayıtlı görünmüyor; nvidia-container-toolkit doğrulamasını manuel kontrol edin.}"
+        fi
     fi
 }

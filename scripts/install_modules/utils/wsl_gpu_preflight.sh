@@ -121,11 +121,18 @@ run_wsl2_gpu_preflight() {
         failures=$((failures + 1))
     fi
 
+    SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME:-false}"
+    SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-}"
+
     if command -v docker &>/dev/null; then
         if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
             ok "Docker NVIDIA runtime kayıtlı."
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
         else
-            sidar_report_wsl_gpu_problem warn "Docker NVIDIA runtime henüz kayıtlı görünmüyor; setup_nvidia_docker fazı bunu kurmayı/etkinleştirmeyi deneyecek."
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="true"
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="Docker NVIDIA runtime henüz kayıtlı görünmüyor; setup_nvidia_docker fazı bunu kurmayı/etkinleştirmeyi deneyecek."
+            info "$SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG"
         fi
     else
         info "Docker CLI henüz yok; Docker GPU runtime kontrolü sistem bağımlılıkları fazına bırakıldı."
