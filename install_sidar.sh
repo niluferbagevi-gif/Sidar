@@ -293,6 +293,13 @@ load_install_phase_modules() {
 
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
+sidar_source_install_utils \
+    "wsl_gpu_preflight.sh" \
+    "gpu_utils.sh" \
+    "python_env.sh" \
+    "db_credentials.sh" \
+    "env_utils.sh" \
+    "ollama_models.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
