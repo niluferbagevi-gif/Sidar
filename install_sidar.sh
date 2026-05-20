@@ -175,6 +175,7 @@ INSTALL_HELPERS_TEMP_DIR=""
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
+    "utils/wsl_integration_autofix.sh"
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
     "utils/python_env.sh"
@@ -301,6 +302,7 @@ load_install_phase_modules() {
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 sidar_source_install_utils \
+    "wsl_integration_autofix.sh" \
     "wsl_gpu_preflight.sh" \
     "gpu_utils.sh" \
     "python_env.sh" \
@@ -950,45 +952,10 @@ ensure_docker_daemon_running() {
             return 1
         fi
 
-        if ! powershell.exe -NoProfile -Command "\
-            \$ErrorActionPreference='Stop'; \
-            \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; \
-            if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; \
-            if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
-            Copy-Item \$p \"\$p.bak\" -Force; \
-            if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
-                Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -ErrorAction SilentlyContinue; \
-                \$stopped=\$false; \
-                for (\$i=0; \$i -lt 10; \$i++) { \
-                    Start-Sleep -Seconds 1; \
-                    if (!(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) { \$stopped=\$true; break }; \
-                }; \
-                if (-not \$stopped) { \
-                    Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
-                    Start-Sleep -Seconds 3; \
-                }; \
-            }; \
-            \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
-            \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; \
-            if (\$null -eq \$prop) { \
-                \$cfg | Add-Member -NotePropertyName 'integratedWslDistros' -NotePropertyValue @() -Force; \
-                \$propName='integratedWslDistros'; \
-            } else { \
-                \$propName=\$prop.Name; \
-            }; \
-            \$list=@(\$cfg.\$propName); \
-            if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
-            \$cfg.\$propName=\$list; \
-            [System.IO.File]::WriteAllText(\$p, (\$cfg | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding \$false)); \
-            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
-        " >/dev/null 2>&1; then
+        if ! apply_wsl_integration_autofix "$current_distro"; then
             warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
             return 1
         fi
-
-        WSL_INTEGRATION_AUTOFIX_APPLIED=true
-        export WSL_INTEGRATION_AUTOFIX_APPLIED
-        : > "$integration_autofix_sentinel"
 
         info "Docker Desktop yeniden başlatıldı; WSL Integration ayarının uygulanması bekleniyor..."
         local attempt
