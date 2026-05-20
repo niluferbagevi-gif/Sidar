@@ -4573,6 +4573,41 @@ sync_database_env_chain_after_setup() {
     fi
 }
 
+ensure_docker_test_image_built() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local compose_cmd=()
+    local build_service="sidar"
+    local test_image="sidar:latest"
+
+    [[ -f "$env_file" ]] || return 0
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        compose_cmd=(docker-compose)
+    else
+        warn "Docker Compose bulunamadı; DOCKER_TEST_IMAGE için Sidar test imajı build adımı atlandı."
+        return 0
+    fi
+
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        build_service="sidar-gpu"
+        test_image="sidar-gpu:latest"
+    fi
+
+    info "Docker test sandbox imajı hazırlanıyor (${build_service} -> ${test_image})..."
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" build "$build_service"); then
+        if grep -q '^DOCKER_TEST_IMAGE=' "$env_file"; then
+            sed_inplace "s|^DOCKER_TEST_IMAGE=.*|DOCKER_TEST_IMAGE=${test_image}|" "$env_file"
+        else
+            echo "DOCKER_TEST_IMAGE=${test_image}" >> "$env_file"
+        fi
+        ok "DOCKER_TEST_IMAGE=${test_image} ayarlandı ve imaj build edildi."
+    else
+        warn "Docker test imajı build edilemedi (${build_service}). Gerekirse manuel çalıştırın: ${compose_cmd[*]} build ${build_service}"
+    fi
+}
+
 setup_env_file() {
     step ".env Yapılandırması"
     ENV_FILE="$SCRIPT_DIR/.env"
@@ -4601,6 +4636,7 @@ setup_env_file() {
         validate_required_security_profile "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
+        ensure_docker_test_image_built "$ENV_FILE"
         sync_database_env_chain_after_setup
         validate_runtime_env_loading
         return
@@ -4689,6 +4725,7 @@ setup_env_file() {
     fi
 
     collect_api_keys_interactive "$ENV_FILE"
+    ensure_docker_test_image_built "$ENV_FILE"
     sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }
