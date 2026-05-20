@@ -39,6 +39,7 @@ services:
     image: ollama/ollama:latest
     container_name: sidar_ollama
     restart: unless-stopped
+    runtime: ${DOCKER_RUNTIME:-runc}
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
@@ -46,6 +47,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
