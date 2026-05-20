@@ -3015,6 +3015,20 @@ ensure_prerequisites() {
         else
             warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
             verify_wsl_integration_listed || true
+            if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu."
+            fi
+
+            info "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
+            clear_stdin_buffer
+            read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
+
+            if ensure_docker_daemon_running; then
+                ok "Docker daemon manuel müdahale sonrası erişilebilir."
+                verify_wsl_integration_listed || true
+            else
+                fail "Docker daemon manuel yeniden denemeden sonra da erişilemedi. Kurulum devam ettirilmiyor."
+            fi
         fi
         if docker compose version &>/dev/null; then
             ok "Docker Compose eklentisi mevcut."
