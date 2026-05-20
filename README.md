@@ -400,6 +400,11 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 ### Docker ile
 
 > **Docker CLI notu:** `sidar[sandbox]` Python Docker SDK'sını kurar; sistem seviyesindeki `docker`, `docker buildx` ve `docker compose` binary'leri Python bağımlılığı değildir. Debian/Ubuntu hostlarda `./install_sidar.sh prepare-system --install-docker-cli` komutu Docker CLI + Buildx + Compose v2 kurulumunu zorlar; varsayılan `DOCKER_CLI_INSTALL=auto` yerel Linux'ta eksik CLI'ı tamamlamayı dener. Dev Container `initializeCommand` aşamasındaki `.devcontainer/host-preflight.sh` de Linux hostlarda eksik CLI'ı `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=auto` politikasıyla tamamlamayı dener; WSL2'de önerilen yol Docker Desktop WSL Integration'dır ve APT kurulumu için `SIDAR_DEVCONTAINER_PREFLIGHT_INSTALL_DOCKER_CLI=always` bilinçli verilmelidir.
+>
+> **Kurulum parametreleri (özet):**
+> - `--install-docker-cli`: Installer içinde `DOCKER_CLI_INSTALL_MODE=always` davranışını zorlar; Docker CLI eksikse APT kurulumu denenir.
+> - `DOCKER_CLI_INSTALL_MODE=auto|always|never`: Varsayılan `auto` (Linux hostta eksik CLI için tamamlamayı dener, WSL2'de entegrasyon öncelikli), `always` (WSL2 dahil APT kurulumunu zorlar), `never` (otomatik CLI kurulumu kapalı).
+> - Geriye dönük uyumluluk için `DOCKER_CLI_INSTALL=always`/`true` kullanımları `always` olarak yorumlanır; yeni dokümantasyonda kanonik değişken `DOCKER_CLI_INSTALL_MODE` kullanılmalıdır.
 
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 

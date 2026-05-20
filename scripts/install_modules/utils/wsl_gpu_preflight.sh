@@ -125,7 +125,10 @@ run_wsl2_gpu_preflight() {
     SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-}"
 
     if command -v docker &>/dev/null; then
-        if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
+        local docker_runtimes_json=""
+        if ! docker_runtimes_json="$(docker info --format '{{json .Runtimes}}' 2>/dev/null)"; then
+            info "Docker daemon şu an erişilebilir değil; NVIDIA runtime pre-flight kontrolü atlandı (runtime fazında tekrar doğrulanacak)."
+        elif echo "$docker_runtimes_json" | grep -q 'nvidia'; then
             ok "Docker NVIDIA runtime kayıtlı."
             SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
             SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
