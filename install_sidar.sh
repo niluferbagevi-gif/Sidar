@@ -877,6 +877,24 @@ ensure_docker_daemon_running() {
         [[ "$integrated_norm" == *",$distro_name,"* ]]
     }
 
+    _wait_for_docker_socket_mount_after_autofix() {
+        local mount_wait_timeout="${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}"
+        if ! [[ "$mount_wait_timeout" =~ ^[0-9]+$ ]] || (( mount_wait_timeout < 10 )); then
+            mount_wait_timeout=30
+        fi
+
+        local elapsed=0
+        while (( elapsed < mount_wait_timeout )); do
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                ok "Docker socket mount doğrulandı (autofix sonrası)."
+                return 0
+            fi
+            sleep 2
+            ((elapsed += 2))
+        done
+        return 1
+    }
+
     _docker_wsl_integration_postcheck() {
         [[ "$WSL2" == true ]] || return 0
         command -v powershell.exe &>/dev/null || return 0
@@ -925,6 +943,11 @@ ensure_docker_daemon_running() {
                 return 0
             fi
             warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
+            info "Autofix sonrası Docker socket mount doğrulaması başlatılıyor (maks. ${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}sn, 2sn aralıklarla)."
+            if _wait_for_docker_socket_mount_after_autofix; then
+                return 0
+            fi
+            warn "Autofix sonrası Docker socket mount doğrulanamadı; daemon hazırlanıyor olabilir."
             return 0
         fi
 
