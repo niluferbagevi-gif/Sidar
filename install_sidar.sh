@@ -3734,6 +3734,7 @@ WSLCFG
             ' "$wslconfig_path")
             cur_mem_gb=$(_parse_gb "$cur_mem")
             if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
                 local should_upgrade_mem=false
                 if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                     should_upgrade_mem=true
@@ -3747,7 +3748,7 @@ WSLCFG
                     changed=true
                     cur_mem="$target_memory"
                 else
-                    warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
+                    warn "WSL2: .wslconfig memory düşük kaldı (${cur_mem}). İsterseniz daha sonra ${target_memory} olarak güncelleyebilirsiniz."
                 fi
             elif [[ "$cur_mem_gb" -ge "$host_ram_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — Windows host RAM'i (${host_ram_gb}GB) ile aynı/üstü; host için RAM tamponu bırakmıyor olabilir."
@@ -3769,6 +3770,7 @@ WSLCFG
             ' "$wslconfig_path")
             cur_swap_gb=$(_parse_gb "$cur_swap")
             if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
+                warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
                 local should_upgrade_swap=false
                 if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                     should_upgrade_swap=true
@@ -3782,7 +3784,7 @@ WSLCFG
                     changed=true
                     cur_swap="$target_swap"
                 else
-                    warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
+                    warn "WSL2: .wslconfig swap düşük kaldı (${cur_swap}). İsterseniz daha sonra ${target_swap} olarak güncelleyebilirsiniz."
                 fi
             else
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
