@@ -1026,6 +1026,19 @@ ensure_docker_daemon_running() {
         if ! [[ "$desktop_timeout" =~ ^[0-9]+$ ]] || (( desktop_timeout < 30 )); then
             desktop_timeout=240
         fi
+        if [[ "${_DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT:-}" =~ ^[0-9]+$ ]]; then
+            local now_ts elapsed_since_autofix remaining_warmup
+            now_ts="$(date +%s)"
+            elapsed_since_autofix=$(( now_ts - _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT ))
+            if (( elapsed_since_autofix < 0 )); then
+                elapsed_since_autofix=0
+            fi
+            if (( elapsed_since_autofix < 300 )); then
+                remaining_warmup=$(( 300 - elapsed_since_autofix ))
+                desktop_timeout=$(( desktop_timeout + remaining_warmup ))
+                info "Preflight autofix sonrası Docker Desktop hâlâ ısınma penceresinde (${elapsed_since_autofix}sn); bekleme süresi ${remaining_warmup}sn uzatıldı (toplam ${desktop_timeout}sn)."
+            fi
+        fi
         local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
         if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
             desktop_timeout=$(( desktop_timeout * 2 ))

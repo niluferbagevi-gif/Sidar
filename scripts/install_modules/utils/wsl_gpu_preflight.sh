@@ -220,6 +220,8 @@ docker_desktop_wsl_integration_preflight() {
         if declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
             info "Preflight aşamasında erken autofix denemesi başlatılıyor: '${current_distro}'."
             if apply_wsl_integration_autofix "$current_distro"; then
+                export _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT
+                _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT="$(date +%s)"
                 ok "Preflight autofix: Docker Desktop WSL Integration '${current_distro}' için etkinleştirildi."
             else
                 warn "Preflight autofix tamamlanamadı; Docker daemon kontrol aşamasında tekrar denenecek."
