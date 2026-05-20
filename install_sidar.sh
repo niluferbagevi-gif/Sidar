@@ -5917,7 +5917,7 @@ launch_docker_services() {
                 else
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                 fi
-                if "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
                     warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
