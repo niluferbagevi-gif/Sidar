@@ -20,7 +20,7 @@ sidar_install_auto_heal_enabled() {
 wsl_integration_remediation_message() {
     local distro="${1:-${WSL_DISTRO_NAME:-Ubuntu}}"
     cat <<EOF
-Docker Desktop > Settings > Resources > WSL Integration bölümünde '${distro}' için explicit toggle'ı açıp Apply & restart yapın. Not: "Enable integration with my default WSL distro" açık olsa bile yalnızca default distro'yu kapsar; default distro değiştiğinde explicit toggle kapalıysa Docker socket mount'u bozulabilir.
+Docker Desktop WSL Integration için '${distro}' dağıtımında otomatik düzeltme denendi ancak başarısız oldu. Lütfen Docker Desktop > Settings > Resources > WSL Integration bölümünde '${distro}' için explicit toggle'ı açıp Apply & restart yapın. Not: "Enable integration with my default WSL distro" açık olsa bile yalnızca default distro'yu kapsar; default distro değiştiğinde explicit toggle kapalıysa Docker socket mount'u bozulabilir.
 EOF
 }
 
