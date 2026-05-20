@@ -262,6 +262,14 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## Kurulum
 
+### Kurulum yöntemi karşılaştırması
+
+| Yöntem | Komut | Kullanım | Avantaj |
+|---|---|---|---|
+| Online modüler | `wget .../install_sidar.sh && ./install_sidar.sh` | Hızlı tek seferlik | Modülleri runtime indirir |
+| Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
+| Offline bundle | `./dist/install_sidar.sh` (CI release) | Air-gapped | Tek dosya, ağ gerektirmez |
+
 ### Sistem Gereksinimleri
 
 - Python 3.11 (`>=3.11, <3.12`)
