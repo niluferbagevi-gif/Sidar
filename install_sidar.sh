@@ -47,6 +47,8 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# WSL integration autofix sentinel should not leak across reinstall attempts
+rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
