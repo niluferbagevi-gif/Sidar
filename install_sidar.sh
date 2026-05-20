@@ -903,7 +903,7 @@ ensure_docker_daemon_running() {
             \$list=@(\$cfg.\$propName); \
             if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
             \$cfg.\$propName=\$list; \
-            \$cfg | ConvertTo-Json -Depth 100 | Set-Content \$p -Encoding UTF8; \
+            [System.IO.File]::WriteAllText(\$p, (\$cfg | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding \$false)); \
             if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
                 Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
                 Start-Sleep -Seconds 3; \
