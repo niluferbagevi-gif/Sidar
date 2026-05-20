@@ -42,6 +42,12 @@ sidar_report_wsl_gpu_problem() {
     esac
 }
 
+wsl_powershell_read() {
+    local ps_command="$1"
+    powershell.exe -NoProfile -Command "$ps_command" 2>/dev/null \
+        | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1
+}
+
 run_wsl2_gpu_preflight() {
     step "WSL2 / NVIDIA GPU Pre-Flight Kontrolü"
 
@@ -193,8 +199,8 @@ docker_desktop_wsl_integration_preflight() {
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
     default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
-    enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
-    integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
+    enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" || true)"
+    integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" || true)"
 
     integrated_norm=",${integrated_csv// /},"
     [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
