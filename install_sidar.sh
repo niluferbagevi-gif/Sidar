@@ -856,6 +856,13 @@ ensure_docker_daemon_running() {
         fi
 
         if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                if [[ "${_WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN:-false}" != "true" ]]; then
+                    info "Docker Desktop WSL Integration UI listesi henüz güncellenmedi; daemon socket erişilebilir, kurulum devam ediyor."
+                    _WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN=true
+                fi
+                return 0
+            fi
             warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
             return 0
         fi
