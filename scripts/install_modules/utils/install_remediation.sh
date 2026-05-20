@@ -46,6 +46,14 @@ sidar_phase_is_informational() {
     esac
 }
 
+sidar_is_non_retryable_failure_code() {
+    local exit_code="${1:-0}"
+    case "$exit_code" in
+        2|127) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 sidar_should_skip_phase_for_resume() {
     local phase="$1"
     local resume_from="${SIDAR_INSTALL_RESUME_FROM_PHASE:-}"
@@ -217,6 +225,13 @@ sidar_handle_install_failure() {
     sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
+
+    if sidar_is_non_retryable_failure_code "$exit_code"; then
+        warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
+        sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+
     if (( attempt >= max_attempts )); then
         warn "Auto-heal: ${phase} fazı için retry limiti aşıldı (${attempt}/${max_attempts})."
         return 1
