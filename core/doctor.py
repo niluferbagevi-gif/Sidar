@@ -235,6 +235,7 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                     "Check POSTGRES_USER and POSTGRES_DB in .env.",
                     "Create the missing role/database or reset the development PostgreSQL volume.",
                 ],
+                "auto_fix": "uv run python -m scripts.create_missing_databases",
                 "recommended_commands": common_commands,
             },
         )

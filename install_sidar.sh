@@ -4757,6 +4757,8 @@ prompt_post_install_sidar_env_mode() {
         ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
+        info "Development ortamı seçildi; veritabanı migrasyonu tekrar doğrulanıyor..."
+        run_migrations
     fi
 
     ok "Sidar kullanıma hazır!"
@@ -5451,6 +5453,7 @@ PY
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
         DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
+        ensure_postgres_databases_exist "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASSWORD" "$DB_NAME"
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD=()
@@ -5582,6 +5585,37 @@ PY
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
+}
+
+ensure_postgres_databases_exist() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_password="$4"
+    local primary_db="$5"
+    local -a required_dbs=("$primary_db" "sidar" "sidar_development" "sidar_test")
+    local db_name=""
+    local unique_dbs=""
+
+    if ! command -v psql &>/dev/null; then
+        warn "psql bulunamadı; veritabanı varlık kontrolü atlandı."
+        return 0
+    fi
+
+    unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
+    while IFS= read -r db_name; do
+        [[ -n "$db_name" ]] || continue
+        if ! PGPASSWORD="$db_password" psql \
+            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null | grep -q '^1$'; then
+            info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
+            PGPASSWORD="$db_password" psql \
+                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+                -v ON_ERROR_STOP=1 \
+                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null
+            ok "Veritabanı hazır: ${db_name}"
+        fi
+    done <<<"$unique_dbs"
 }
 
 
