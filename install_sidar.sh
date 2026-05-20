@@ -787,6 +787,20 @@ ensure_docker_cli_available() {
 }
 
 ensure_docker_daemon_running() {
+    _docker_ready_with_socket() {
+        if ! docker info &>/dev/null; then
+            return 1
+        fi
+
+        if [[ "$WSL2" == true ]]; then
+            DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        else
+            docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        fi
+
+        return 0
+    }
+
     _detect_current_wsl_distro_name() {
         if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
             printf '%s\n' "$WSL_DISTRO_NAME"
@@ -880,7 +894,7 @@ ensure_docker_daemon_running() {
         info "Docker Desktop yeniden başlatıldı; WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
         local elapsed=0
         while (( elapsed < 60 )); do
-            if docker info &>/dev/null; then
+            if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir ve '${current_distro}' entegrasyonu güncellendi."
                 return 0
             fi
@@ -896,7 +910,7 @@ ensure_docker_daemon_running() {
         return 1
     fi
 
-    if docker info &>/dev/null; then
+    if _docker_ready_with_socket; then
         _docker_wsl_integration_postcheck
         return $?
     fi
@@ -916,9 +930,10 @@ ensure_docker_daemon_running() {
         info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
         local elapsed=0
         while (( elapsed < 60 )); do
-            if docker info &>/dev/null; then
+            if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
-                return 0
+                _docker_wsl_integration_postcheck
+                return $?
             fi
             sleep 3
             ((elapsed += 3))
@@ -926,7 +941,7 @@ ensure_docker_daemon_running() {
         warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
-    if docker info &>/dev/null; then
+    if _docker_ready_with_socket; then
         _docker_wsl_integration_postcheck
         return $?
     fi
