@@ -650,6 +650,74 @@ def check_database_connectivity() -> DoctorCheck:
     )
 
 
+def check_pgvector_ready() -> DoctorCheck:
+    vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
+    details: dict[str, Any] = {
+        "vector_backend": vector_backend,
+        "required": vector_backend == "pgvector",
+    }
+    if vector_backend != "pgvector":
+        return DoctorCheck(
+            "pgvector_ready",
+            "pass",
+            "RAG_VECTOR_BACKEND is not pgvector; pgvector readiness check skipped",
+            details,
+        )
+
+    database_url, _, explicit_database_url, _ = _resolved_database_urls()
+    parsed = urlparse(database_url) if database_url else None
+    details.update(
+        {
+            "database_url_set": bool(database_url),
+            "database_url_explicit": explicit_database_url,
+            "database_url_derived": bool(database_url) and not explicit_database_url,
+            "database_url": _redact_url(database_url),
+            "scheme": parsed.scheme if parsed else "",
+            "recommended_commands": [
+                "docker compose pull postgres && docker compose up -d postgres",
+                "uv run python -m scripts.create_missing_databases",
+                "uv run python -m core.doctor artifacts/install/doctor.json",
+            ],
+            "auto_fix": "docker compose pull postgres && docker compose up -d postgres",
+        }
+    )
+    if not database_url:
+        return DoctorCheck("pgvector_ready", "warn", "DATABASE_URL could not be resolved", details)
+    if not _is_postgres_url(parsed):
+        return DoctorCheck(
+            "pgvector_ready",
+            "warn",
+            "RAG_VECTOR_BACKEND=pgvector but DATABASE_URL is not PostgreSQL",
+            details,
+        )
+
+    timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
+    details["timeout_seconds"] = timeout_seconds
+    try:
+        probe = _run_coro_sync(
+            _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
+        )
+        details.update(probe)
+    except Exception as exc:
+        details["error"] = _redact_exception_text(exc, database_url=database_url)
+        details["error_type"] = type(exc).__name__
+        return DoctorCheck(
+            "pgvector_ready",
+            "warn",
+            "pgvector readiness could not be verified because PostgreSQL connectivity probe failed",
+            details,
+        )
+
+    if not details.get("pgvector_extension_installed"):
+        return DoctorCheck(
+            "pgvector_ready",
+            "fail",
+            "RAG_VECTOR_BACKEND=pgvector but 'vector' extension is not installed",
+            details,
+        )
+    return DoctorCheck("pgvector_ready", "pass", "pgvector extension is installed", details)
+
+
 def _rag_readiness_state() -> dict[str, Any]:
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() or "chroma"
     graph_enabled = _get_bool_env("ENABLE_GRAPH_RAG", True)
@@ -1309,6 +1377,7 @@ def run_doctor_report(
         check_gpu_memory_config(),
         check_database_env(),
         check_database_connectivity(),
+        check_pgvector_ready(),
         check_rag_index_ready(),
         check_graphrag_entity_memory_ready(),
         check_migrations(),
