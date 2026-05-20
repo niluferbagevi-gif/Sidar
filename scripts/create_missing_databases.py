@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import psycopg
+import psycopg2
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -31,7 +31,9 @@ def main() -> int:
     db_names = [primary_db, "sidar", "sidar_development", "sidar_test"]
     db_names = list(dict.fromkeys([name for name in db_names if name]))
 
-    with psycopg.connect(host=host, port=port, user=user, password=password, dbname="postgres", autocommit=True) as conn:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname="postgres")
+    conn.autocommit = True
+    try:
         with conn.cursor() as cur:
             for db_name in db_names:
                 cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
@@ -40,6 +42,9 @@ def main() -> int:
                     print(f"created: {db_name}")
                 else:
                     print(f"exists: {db_name}")
+
+    finally:
+        conn.close()
 
     return 0
 
