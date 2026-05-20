@@ -3361,16 +3361,39 @@ ASOUNDRC
     }
 
     _detect_host_ram_gb() {
-        local total_kb="0"
-        if [[ -r /proc/meminfo ]]; then
-            total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
+        local total_bytes="0"
+        local wmic_bytes=""
+        local ps_bytes=""
+
+        if command -v cmd.exe &>/dev/null; then
+            wmic_bytes=$(cmd.exe /c "wmic ComputerSystem get TotalPhysicalMemory /value" 2>/dev/null \
+                | tr -d '\r' \
+                | awk -F= '/^TotalPhysicalMemory=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}')
         fi
-        if [[ -z "$total_kb" || "$total_kb" -le 0 ]]; then
+        if [[ -n "$wmic_bytes" ]]; then
+            total_bytes="$wmic_bytes"
+        elif command -v powershell.exe &>/dev/null; then
+            ps_bytes=$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory" 2>/dev/null \
+                | tr -d '\r' \
+                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}')
+            if [[ -n "$ps_bytes" ]]; then
+                total_bytes="$ps_bytes"
+            fi
+        fi
+
+        if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]] && [[ -r /proc/meminfo ]]; then
+            local total_kb="0"
+            total_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo "0")
+            if [[ -n "$total_kb" && "$total_kb" -gt 0 ]]; then
+                total_bytes=$((total_kb * 1024))
+            fi
+        fi
+        if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]]; then
             echo "16"
             return
         fi
-        # Yukarı yuvarla: KB -> GB
-        echo $(((total_kb + 1048575) / 1048576))
+        # Yukarı yuvarla: bytes -> GB
+        echo $(((total_bytes + 1073741823) / 1073741824))
     }
 
     _clamp_int() {
@@ -3485,6 +3508,8 @@ WSLCFG
             cur_mem_gb=$(_parse_gb "$cur_mem")
             if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
+            elif [[ "$cur_mem_gb" -ge "$host_ram_gb" ]]; then
+                warn "WSL2: .wslconfig memory=${cur_mem} — Windows host RAM'i (${host_ram_gb}GB) ile aynı/üstü; host için RAM tamponu bırakmıyor olabilir."
             else
                 ok "WSL2: .wslconfig memory=${cur_mem} — yeterli."
             fi
