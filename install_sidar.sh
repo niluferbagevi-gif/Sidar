@@ -2481,7 +2481,9 @@ log_host_ollama_runtime_diagnostics() {
             smi_cmd="nvidia-smi.exe"
         fi
 
-        if [[ "$ollama_ps_reports_gpu" == true ]]; then
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2: ollama ps doğrulaması yeterli; nvidia-smi compute-apps sorgusu atlandı."
+        elif [[ "$ollama_ps_reports_gpu" == true ]]; then
             info "GPU kullanımı ollama ps ile doğrulandı; nvidia-smi compute-apps sorgusu atlandı."
         elif [[ -n "$smi_cmd" ]]; then
             if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
@@ -2489,11 +2491,7 @@ log_host_ollama_runtime_diagnostics() {
                     info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
                     awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
                 else
-                    if [[ "$WSL2" == true ]]; then
-                        info "nvidia-smi çalıştı ancak Ollama süreci görünmedi; WSL2'de compute-apps sorgusu host süreçlerini göstermeyebilir."
-                    else
-                        warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
-                    fi
+                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
                 fi
             else
                 warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
