@@ -2160,6 +2160,7 @@ resolve_env_type_choice() {
 }
 
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
+SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
@@ -3646,6 +3647,50 @@ ASOUNDRC
         return 1
     }
 
+    # [wsl2] bölümünde anahtar değerini zorla günceller (ilkini değiştirir, tekrarları temizler).
+    _set_wsl2_key_value() {
+        local cfg_file="$1"
+        local cfg_key="$2"
+        local cfg_value="$3"
+        local tmp_file
+        tmp_file=$(mktemp)
+
+        awk -v key="$cfg_key" -v value="$cfg_value" '
+            BEGIN { in_wsl2=0; set_key=0 }
+            {
+                if ($0 ~ /^\[.*\]$/) {
+                    if (in_wsl2 && !set_key) {
+                        print key "=" value
+                        set_key=1
+                    }
+                    in_wsl2 = ($0 == "[wsl2]")
+                    print
+                    next
+                }
+                if (in_wsl2 && $0 ~ ("^" key "=")) {
+                    if (!set_key) {
+                        print key "=" value
+                        set_key=1
+                    }
+                    next
+                }
+                print
+            }
+            END {
+                if (in_wsl2 && !set_key) {
+                    print key "=" value
+                }
+            }
+        ' "$cfg_file" > "$tmp_file"
+
+        if ! cmp -s "$cfg_file" "$tmp_file"; then
+            mv "$tmp_file" "$cfg_file"
+            return 0
+        fi
+        rm -f "$tmp_file"
+        return 1
+    }
+
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
@@ -3681,7 +3726,21 @@ WSLCFG
             ' "$wslconfig_path")
             cur_mem_gb=$(_parse_gb "$cur_mem")
             if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
-                warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
+                local should_upgrade_mem=false
+                if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                    should_upgrade_mem=true
+                else
+                    local upgrade_mem_reply
+                    upgrade_mem_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 memory=${cur_mem} düşük görünüyor. ${target_memory} değerine otomatik yükseltelim mi? [E/h]: ")
+                    [[ "$upgrade_mem_reply" == "yes" ]] && should_upgrade_mem=true
+                fi
+                if [[ "$should_upgrade_mem" == true ]] && _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory"; then
+                    ok "WSL2: .wslconfig memory ${cur_mem} -> ${target_memory} olarak yükseltildi."
+                    changed=true
+                    cur_mem="$target_memory"
+                else
+                    warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
+                fi
             elif [[ "$cur_mem_gb" -ge "$host_ram_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — Windows host RAM'i (${host_ram_gb}GB) ile aynı/üstü; host için RAM tamponu bırakmıyor olabilir."
             else
@@ -3702,7 +3761,21 @@ WSLCFG
             ' "$wslconfig_path")
             cur_swap_gb=$(_parse_gb "$cur_swap")
             if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
-                warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
+                local should_upgrade_swap=false
+                if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                    should_upgrade_swap=true
+                else
+                    local upgrade_swap_reply
+                    upgrade_swap_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 swap=${cur_swap} düşük görünüyor. ${target_swap} değerine otomatik yükseltelim mi? [E/h]: ")
+                    [[ "$upgrade_swap_reply" == "yes" ]] && should_upgrade_swap=true
+                fi
+                if [[ "$should_upgrade_swap" == true ]] && _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap"; then
+                    ok "WSL2: .wslconfig swap ${cur_swap} -> ${target_swap} olarak yükseltildi."
+                    changed=true
+                    cur_swap="$target_swap"
+                else
+                    warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
+                fi
             else
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
