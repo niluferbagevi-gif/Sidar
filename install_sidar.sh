@@ -2145,13 +2145,19 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
 banner() {
     local version_suffix=""
+    local banner_text=""
     if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
         version_suffix=" (v$INSTALL_SIDAR_VERSION)"
     fi
+    banner_text="$(sidar_t banner_title)${version_suffix}"
 
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    printf "║          %-46s║\n" "$(sidar_t banner_title)${version_suffix}"
+    if [[ -n "$version_suffix" ]]; then
+        printf "║          %-46s║\n" "$banner_text"
+    else
+        printf "║              %-38s║\n" "$banner_text"
+    fi
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
