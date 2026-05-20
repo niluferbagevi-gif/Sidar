@@ -5115,7 +5115,7 @@ if password:
 PY
 )
         if [[ -n "$DB_URL" ]]; then
-            info "DATABASE_URL .env içinde aktif tanımlı değil; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
+            info "DATABASE_URL .env içinde kasıtlı olarak tek kaynak yaklaşımıyla tutulmuyor; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
         fi
     fi
 
