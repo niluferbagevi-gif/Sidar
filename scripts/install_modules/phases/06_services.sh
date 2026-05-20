@@ -233,6 +233,10 @@ sync_database_passwords_before_smoke_tests() {
 
 sidar_phase_services_and_validation() {
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
+    # Ajan sandbox/test imajını (sidar[-gpu]:latest) önce hazırlayalım; aksi halde
+    # DOCKER_TEST_IMAGE lokalde bulunamadığı için CodeManager python:3.11-slim
+    # fallback'ine düşer ve uv tabanlı pytest izolasyonu çalışmaz.
+    build_sidar_docker_image
     launch_docker_services
     if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
         sync_database_passwords_before_smoke_tests

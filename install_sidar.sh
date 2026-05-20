@@ -99,7 +99,7 @@ sidar_t() {
             failed_command) printf '   Failed command: %s' "$1" ;;
             check_log) printf '   Check the log file for cleanup/review: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Installation Starting' ;;
-            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
+            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --build-image | --skip-image-build | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
             invalid_docker_cli) printf 'Invalid DOCKER_CLI_INSTALL value: %s. Supported: auto|always|never' "$1" ;;
             invalid_mode) printf 'Invalid --mode value: %s. Supported: local|docker' "$1" ;;
             invalid_env) printf 'Invalid --env value: %s. Supported: development|production' "$1" ;;
@@ -122,7 +122,7 @@ sidar_t() {
             failed_command) printf '   Hata veren komut: %s' "$1" ;;
             check_log) printf '   Temizleme/inceleme için log dosyasını kontrol edin: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Kurulum Başlıyor' ;;
-            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
+            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --build-image | --skip-image-build | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
             invalid_docker_cli) printf "Geçersiz DOCKER_CLI_INSTALL değeri: '%s'. Desteklenen: auto|always|never" "$1" ;;
             invalid_mode) printf "Geçersiz --mode değeri: '%s'. Desteklenen: local|docker" "$1" ;;
             invalid_env) printf "Geçersiz --env değeri: '%s'. Desteklenen: development|production" "$1" ;;
@@ -1816,6 +1816,8 @@ OFFLINE_MODE=false
 # shellcheck disable=SC2034  # phase modules read this runtime override after sync.
 OFFLINE_PACKAGES_DIR=""
 DOCKER_CLI_INSTALL_MODE="${DOCKER_CLI_INSTALL:-auto}"
+# auto = build if image missing and user onaylar; always = --build-image; never = --skip-image-build
+BUILD_DOCKER_IMAGE_MODE="auto"
 PLAYWRIGHT_BROWSERS_MODE="auto"
 CLI_MODE_RAW=""
 CLI_ENV_RAW=""
@@ -1842,7 +1844,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--build-image|--skip-image-build] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -1875,6 +1877,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
   --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
   --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
+  --build-image  Build the Sidar project Docker image (sidar:latest for CPU, sidar-gpu:latest for GPU) during install
+  --skip-image-build / --no-image-build  Skip the Sidar project Docker image build step (DOCKER_TEST_IMAGE sandbox will fall back to python:3.11-slim until built manually)
 
   Non-interactive environment variables:
     SIDAR_LOCALE=en|tr or LANG=en_US.UTF-8  Select installer message language
@@ -1896,7 +1900,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--build-image|--skip-image-build] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -1929,6 +1933,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
   --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
   --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
+  --build-image  Sidar proje Docker imajını kurulum esnasında build et (CPU için sidar:latest, GPU için sidar-gpu:latest)
+  --skip-image-build / --no-image-build  Sidar proje Docker imaj build adımını atla (DOCKER_TEST_IMAGE sandbox imaj manuel build edilene kadar python:3.11-slim fallback'ine düşer)
 
   Etkileşimsiz çevre değişkenleri:
     SIDAR_LOCALE=en|tr veya LANG=en_US.UTF-8  Kurulum mesaj dilini seçer
@@ -1979,6 +1985,8 @@ for arg in "$@"; do
         --offline|--air-gapped) OFFLINE_MODE=true ;;
         --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
         --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
+        --build-image) BUILD_DOCKER_IMAGE_MODE="always" ;;
+        --skip-image-build|--no-image-build) BUILD_DOCKER_IMAGE_MODE="never" ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
@@ -5828,6 +5836,75 @@ print_summary() {
     echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
     echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
     echo ""
+}
+
+# ── Sidar Proje Docker İmajı Build ───────────────────────────────────────────
+# CodeManager sandbox/test akışı (.env DOCKER_TEST_IMAGE) için sidar:latest /
+# sidar-gpu:latest imajını üretir. Aksi halde proje sandbox'ı python:3.11-slim
+# fallback'ine düşer ve uv içermediği için pytest izolasyonu başarısız olur.
+build_sidar_docker_image() {
+    if [[ "$INSTALL_KUBERNETES" == true ]]; then
+        info "Kubernetes/Helm modu aktif; Sidar Docker imaj build adımı atlanıyor (chart kendi imajını çeker)."
+        return 0
+    fi
+
+    if [[ "$BUILD_DOCKER_IMAGE_MODE" == "never" ]]; then
+        info "--skip-image-build: Sidar Docker imaj build adımı atlandı. DOCKER_TEST_IMAGE sandbox manuel build edilene kadar python:3.11-slim fallback'ine düşer."
+        return 0
+    fi
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadığı için Sidar Docker imaj build adımı atlanıyor."
+        return 0
+    fi
+    if ! docker info &>/dev/null; then
+        warn "Docker daemon erişilemediği için Sidar Docker imaj build adımı atlanıyor."
+        return 0
+    fi
+
+    local image_tag="sidar:latest"
+    local mode_label="CPU"
+    local -a build_args=()
+    if [[ "$GPU_AVAILABLE" == true && "$FORCE_CPU" != true ]]; then
+        image_tag="sidar-gpu:latest"
+        mode_label="GPU (CUDA)"
+        build_args=(
+            --build-arg "BASE_IMAGE=nvidia/cuda:13.0.0-runtime-ubuntu22.04"
+            --build-arg "GPU_ENABLED=true"
+        )
+    fi
+
+    if [[ "$BUILD_DOCKER_IMAGE_MODE" != "always" ]] && docker image inspect "$image_tag" >/dev/null 2>&1; then
+        ok "Sidar Docker imajı zaten mevcut: ${image_tag} (yeniden build için --build-image)."
+        return 0
+    fi
+
+    if [[ "$BUILD_DOCKER_IMAGE_MODE" != "always" ]]; then
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            info "Sidar Docker imajı (${image_tag}) lokalde yok; etkileşimsiz modda build atlandı."
+            info "Manuel build için: docker build ${build_args[*]:+${build_args[*]} }-t ${image_tag} ."
+            info "Veya kurulumu --build-image bayrağıyla tekrar çalıştırın."
+            return 0
+        fi
+        local reply=""
+        reply=$(prompt_yes_no_with_timeout_default_no "Sidar ${mode_label} Docker imajı (${image_tag}) şimdi build edilsin mi? Bu işlem birkaç dakika sürebilir. [e/H] ")
+        case "${reply}" in
+            [EeYy]*) ;;
+            *)
+                info "Sidar Docker imaj build adımı atlandı."
+                info "Manuel build için: docker build ${build_args[*]:+${build_args[*]} }-t ${image_tag} ."
+                return 0
+                ;;
+        esac
+    fi
+
+    step "Sidar Docker İmajı Build Ediliyor (${image_tag}, ${mode_label})"
+    if docker build "${build_args[@]}" -t "$image_tag" "$SCRIPT_DIR"; then
+        ok "Sidar Docker imajı build edildi: ${image_tag}"
+    else
+        warn "Sidar Docker imajı build edilemedi (${image_tag}). Ajan sandbox/test akışı için imajı manuel oluşturmanız gerekebilir."
+        warn "Manuel build için: docker build ${build_args[*]:+${build_args[*]} }-t ${image_tag} ."
+    fi
 }
 
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
