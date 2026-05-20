@@ -665,6 +665,7 @@ class DocumentStore:
     _hf_env_lock = threading.Lock()
     _hf_env_applied = False
     _backend_init_lock = threading.Lock()
+    _backend_info_logged: dict[str, bool] = {}
 
     def __init__(
         self,
@@ -756,21 +757,26 @@ class DocumentStore:
                     self._chroma_available = False
                     self._init_pgvector()
                     self._vector_init_done = True
-                    logger.info(
+                    self._log_backend_init_status_once(
+                        "vector_pgvector_status",
                         "RAG backend init (1/2): pgvector=%s",
                         "ready" if self._pgvector_available else "fallback",
                     )
                 elif self._chroma_available:
                     self._init_chroma()
                     self._vector_init_done = True
-                    logger.info(
+                    self._log_backend_init_status_once(
+                        "vector_chroma_status",
                         "RAG backend init (1/2): chroma=%s",
                         "ready" if self._chroma_available else "fallback",
                     )
             else:
                 self._chroma_available = False
-                logger.info("DocumentStore vektör başlatması devre dışı (initialize_vector=False).")
-                logger.info("RAG backend init (1/2): vector=disabled")
+                self._log_backend_init_status_once(
+                    "vector_disabled_notice",
+                    "DocumentStore vektör başlatması devre dışı (initialize_vector=False).",
+                )
+                self._log_backend_init_status_once("vector_disabled_status", "RAG backend init (1/2): vector=disabled")
 
             # BM25 (SQLite FTS5) Başlatma
             self._bm25_available = True
@@ -779,10 +785,20 @@ class DocumentStore:
             else:
                 self._init_fts()
                 self._bm25_init_done = True
-                logger.info(
+                self._log_backend_init_status_once(
+                    "bm25_status",
                     "RAG backend init (2/2): bm25=%s",
                     "ready" if self._bm25_available else "fallback",
                 )
+
+    @classmethod
+    def _log_backend_init_status_once(cls, key: str, message: str, *args: Any) -> None:
+        """Emit backend init messages as info once per process, then debug."""
+        if not cls._backend_info_logged.get(key, False):
+            cls._backend_info_logged[key] = True
+            logger.info(message, *args)
+            return
+        logger.debug(message, *args)
 
     def _require_pg_engine(self) -> Any:
         engine = getattr(self, "pg_engine", None)
@@ -954,7 +970,10 @@ class DocumentStore:
                         except Exception as exc:
                             logger.debug("Doküman FTS'e migrate edilemedi (%s): %s", doc_id, exc)
                 self.fts_conn.commit()
-            logger.info("SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.")
+            self._log_backend_init_status_once(
+                "bm25_fts_init_success",
+                "SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.",
+            )
         except Exception as exc:
             logger.error("FTS5 başlatma hatası: %s", exc)
             self._bm25_available = False
@@ -1023,7 +1042,8 @@ class DocumentStore:
                 self._pg_embedding_model_name, self.cfg
             )
             self._pgvector_available = True
-            logger.info(
+            self._log_backend_init_status_once(
+                "pgvector_init_success",
                 "pgvector backend başlatıldı: table=%s model=%s",
                 self._pg_table,
                 self._pg_embedding_model_name,
