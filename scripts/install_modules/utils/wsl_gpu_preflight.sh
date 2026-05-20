@@ -163,3 +163,45 @@ run_wsl2_gpu_preflight() {
 
     ok "WSL2 / NVIDIA / Ollama donanım pre-flight kontrolü geçti."
 }
+
+docker_desktop_wsl_integration_preflight() {
+    step "Docker Desktop WSL Integration Durum Raporu"
+
+    if [[ "${WSL2:-false}" != true ]]; then
+        info "WSL2 tespit edilmedi; Docker Desktop WSL Integration raporu atlandı."
+        return 0
+    fi
+
+    if ! command -v powershell.exe &>/dev/null; then
+        warn "powershell.exe bulunamadı; Docker Desktop WSL Integration durumu doğrulanamadı."
+        return 0
+    fi
+
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local in_integrated=false default_covers=false
+    current_distro="${WSL_DISTRO_NAME:-}"
+    if [[ -z "$current_distro" ]]; then
+        current_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
+    fi
+    [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
+
+    default_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
+    enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+    integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+
+    integrated_norm=",${integrated_csv// /},"
+    [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+    if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+        default_covers=true
+    fi
+
+    info "WSL Integration raporu: distro='${current_distro}', default='${default_distro:-bilinmiyor}', default-toggle='${enable_default:-bilinmiyor}', explicit-list='${integrated_csv:-boş}'."
+
+    if [[ "$in_integrated" == true ]]; then
+        ok "Docker Desktop WSL Integration: '${current_distro}' explicit toggle açık."
+    elif [[ "$default_covers" == true ]]; then
+        warn "Docker Desktop WSL Integration: explicit toggle kapalı, default-distro toggle ile kapsanıyor. Default distro değişirse kırılabilir."
+    else
+        warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
+    fi
+}
