@@ -56,7 +56,7 @@ SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 LOG_DIR="$SCRIPT_DIR/logs"
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
     mkdir -p "$LOG_DIR"
-    LOG_FILE="$LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
+    LOG_FILE="$LOG_DIR/install_$(date -u +%Y-%m-%dT%H%M%SZ).log"
     exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
 else
     LOG_FILE=""
